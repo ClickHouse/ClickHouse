@@ -13,6 +13,7 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperServer.h>
 #include <Coordination/KeeperConstants.h>
+#include <Coordination/KeeperSnapshotManager.h>
 #include <Coordination/KeeperStorage.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Common/ZooKeeper/Types.h>
@@ -39,6 +40,11 @@
 #include <future>
 #include <limits>
 #include <sstream>
+
+namespace DB::CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 write_snapshot_version;
+}
 
 TEST(CoordinationSettingsValidation, RejectZeroBatchSizes)
 {
@@ -94,6 +100,29 @@ TEST(CoordinationSettingsValidation, CommitProfilerRequiresSamplingProfiler)
 #else
     EXPECT_NO_THROW(load(config));
 #endif
+}
+
+TEST(CoordinationSettingsValidation, WriteSnapshotVersionHotReload)
+{
+    auto ctx = std::make_shared<DB::KeeperContext>(true, std::make_shared<DB::CoordinationSettings>());
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V8);
+
+    /// write_snapshot_version is hot-reloadable: a valid update takes effect.
+    auto updated = std::make_shared<DB::CoordinationSettings>();
+    (*updated)[DB::CoordinationSetting::write_snapshot_version] = 9;
+    ctx->updateSettings(updated);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    /// An out-of-range update is rejected and the previous value stays in effect.
+    auto too_old = std::make_shared<DB::CoordinationSettings>();
+    (*too_old)[DB::CoordinationSetting::write_snapshot_version] = 3;
+    EXPECT_THROW(ctx->updateSettings(too_old), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
+
+    auto too_new = std::make_shared<DB::CoordinationSettings>();
+    (*too_new)[DB::CoordinationSetting::write_snapshot_version] = DB::MAX_SUPPORTED_SNAPSHOT_VERSION + 1;
+    EXPECT_THROW(ctx->updateSettings(too_new), DB::Exception);
+    EXPECT_EQ(ctx->getWriteSnapshotVersion(), DB::SnapshotVersion::V9);
 }
 
 TEST(CoordinationSettingsParse, NuraftSnapshotSyncCtxTimeout)
