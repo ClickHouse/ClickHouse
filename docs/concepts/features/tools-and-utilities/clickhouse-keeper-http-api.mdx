@@ -6,7 +6,7 @@ title: 'Keeper HTTP API and Dashboard'
 doc_type: 'reference'
 ---
 
-ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management. 
+ClickHouse Keeper provides an HTTP API and embedded web dashboard for monitoring, health checks, and storage management.
 This interface allows operators to inspect cluster status, execute commands, and manage Keeper storage through a web browser or HTTP clients.
 
 ## Configuration {#configuration}
@@ -105,7 +105,18 @@ Response:
 
 #### Execute command {#execute-command}
 
-Response (CLI commands):
+Keeper Client CLI responses always include `result`. An optional `cwd` field is present only when the command successfully changed the working directory (currently, a successful `cd`). Four-Letter Word responses include `result` only.
+
+CLI command (for example, `ls` or `create`):
+
+```json
+{
+  "result": "..."
+}
+```
+
+Successful `cd`:
+
 ```json
 {
   "result": "",
@@ -113,7 +124,23 @@ Response (CLI commands):
 }
 ```
 
-`cwd` is the working directory after the command finishes. It is present for Keeper Client CLI commands and omitted for Four-Letter Word commands.
+Failed `cd` (path does not exist; working directory unchanged):
+
+```json
+{
+  "result": "Path /does_not_exist does not exist\n"
+}
+```
+
+Four-Letter Word command:
+
+```json
+{
+  "result": "..."
+}
+```
+
+Pass the current working directory in the `cwd` query parameter on each request. Update your local working directory only when the response includes `cwd`.
 
 Examples:
 ```bash
@@ -123,7 +150,7 @@ curl "http://localhost:9182/api/v1/commands?command=stat"
 # ZooKeeper CLI command
 curl "http://localhost:9182/api/v1/commands?command=ls%20'/'&cwd=/"
 
-# Change directory and read returned cwd
+# Change directory; cwd is returned only on success
 curl "http://localhost:9182/api/v1/commands?command=cd%20/clickhouse&cwd=/"
 ```
 ### Storage API {#storage-api}
