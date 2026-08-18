@@ -293,10 +293,10 @@ public:
 
     /// Whether the parallel delimiter walk (see `supportsDelimitedListing`) may start from `key_prefix`.
     /// The walk issues `ListObjectsV2` with `Delimiter='/'` from the glob's fixed prefix, and S3 Express /
-    /// directory buckets accept a delimiter only when the prefix ends with '/'. So a glob whose fixed prefix
-    /// ends mid-component (e.g. `data_` for `data_??.csv`, or `year=` for `year=*/month=*/...`) must fall back
-    /// to the serial (flat, no-delimiter) iterator, which those endpoints do support. The empty prefix (the
-    /// bucket root) is always allowed. Storages without this restriction just answer `supportsDelimitedListing`.
+    /// directory buckets accept a delimiter only when the prefix ends with '/'. The caller can start a
+    /// delimiter walk from an earlier '/' boundary when a glob's fixed prefix ends mid-component, provided
+    /// that doing so still leaves a directory level to walk. The empty prefix (the bucket root) is always
+    /// allowed. Storages without this restriction just answer `supportsDelimitedListing`.
     virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
 
     /// Whether `listObjectsSingleLevel` may resume strictly after an arbitrary key (`start_after`, i.e. the
@@ -307,10 +307,11 @@ public:
 
     /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
     /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
-    /// key (`start_after`) and use an empty delimiter to list a raw key range recursively. Endpoints without
-    /// `StartAfter` support (see `supportsStartAfterListing`) must answer false here, and flat ranges then
-    /// fall back to serial pagination (the hierarchical delimiter walk, which uses only '/' and continuation
-    /// tokens, stays available).
+    /// key (`start_after`) while keeping the '/' delimiter, so subdirectories discovered in later slices
+    /// remain visible as common prefixes. Endpoints without `StartAfter` support (see
+    /// `supportsStartAfterListing`) must answer false here, and flat ranges then fall back to serial
+    /// pagination (the hierarchical delimiter walk, which uses only '/' and continuation tokens, stays
+    /// available).
     virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
 
     /// The page size that list requests actually use when the caller passes `max_keys = 0`

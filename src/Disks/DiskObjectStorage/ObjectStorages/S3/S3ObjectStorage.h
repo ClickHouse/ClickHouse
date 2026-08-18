@@ -107,8 +107,8 @@ public:
     bool supportsDelimitedListing() const override { return true; }
 
     /// Directory buckets accept a `Delimiter` only when the `Prefix` ends with '/', so the delimiter walk
-    /// can only start from a prefix that ends at a '/' boundary (or the bucket root); other globs fall back
-    /// to the serial iterator (see the base declaration).
+    /// must start at a '/' boundary (or the bucket root). For a glob whose fixed prefix ends mid-component,
+    /// the caller may widen the walk to the preceding boundary (see the base declaration).
     bool supportsDelimitedListingFromPrefix(const std::string & key_prefix) const override
     {
         if (client.get()->isS3ExpressBucket())
