@@ -1477,6 +1477,15 @@ inline MutableColumnPtr readColumnFromDesc(
         auto dict_col = readColumnFromDesc(
             buf.subspan(0, region_end), dict_desc, dict_row_count, removeNullable(lowcard_type->getDictionaryType()));
 
+        // Unlike null_offset, offsets_offset has no "absent" meaning for COL_LOWCARD: the
+        // index array is mandatory, and the writer's cursor starts past the header and
+        // descriptor table, so it is never 0 in a genuine frame. Without this check a frame
+        // setting it to 0 makes idx_src point at the frame header, so a 1-row/1-byte-index
+        // column silently takes its dictionary index from the low byte of num_rows instead of
+        // from any real index array - metadata reparsed as payload rather than a rejection.
+        if (desc.offsets_offset == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD descriptor has no index array (offsets_offset is 0)");
         if (desc.offsets_offset > buf.size()
             || static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
