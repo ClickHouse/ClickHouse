@@ -1,3 +1,7 @@
+-- canary: variant A (partial pushdown) fires for case 1\'s query
+1	1	1
+-- canary: variant B (full pushdown) fires for case 13\'s query (no MergingAggregated above the join)
+1	1	0
 -- 1. INNER ALL with fan-out (variant A, push-left)
 0	10	450
 1	20	920
@@ -296,3 +300,16 @@
 -- 21. global aggregation over a join on an empty left table keeps the single-row result
 0
 0
+-- 22. keys-only GROUP BY, empty aggregate list (variant A, push-left)
+0
+1
+2
+3
+4
+5
+0
+1
+2
+3
+4
+5

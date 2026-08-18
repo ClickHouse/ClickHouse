@@ -58,6 +58,22 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_corr_left": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"k": 100, "v": 1000}}, "t_corr_empty": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"k": 100}}, "t_corr_right_multi": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_uniq": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000}}, "t_corr_right_2k": {"cardinality": 1000, "avg_row_bytes": 16, "distinct_keys": {"k": 1000}}, "t_corr_right_expr": {"cardinality": 1000, "avg_row_bytes": 8, "distinct_keys": {"b": 1000}}, "t_corr_empty_right": {"cardinality": 1000, "avg_row_bytes": 12, "distinct_keys": {"k": 1000}}}';
 
+-- Canaries: prove the stat hints above actually steer the cascades optimizer to the pushed
+-- shapes for this file's tables, not to a classic plan that would make every on/off pair below
+-- compare classic-vs-classic while staying green. Shape-insensitive (`countIf` over `EXPLAIN`
+-- lines), like 04926's task-budget case, so cosmetic plan-text churn does not break the canary.
+SELECT '-- canary: variant A (partial pushdown) fires for case 1''s query';
+SELECT countIf(explain LIKE '%JoinLogical%') >= 1, countIf(explain LIKE '%Aggregating%') >= 1, countIf(explain LIKE '%MergingAggregated%') >= 1 FROM (
+  EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+SELECT '-- canary: variant B (full pushdown) fires for case 13''s query (no MergingAggregated above the join)';
+SELECT countIf(explain LIKE '%JoinLogical%') >= 1, countIf(explain LIKE '%Aggregating%') >= 1, countIf(explain LIKE '%MergingAggregated%') = 0 FROM (
+  EXPLAIN SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 LEFT ANY JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
+  SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1
+) SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
 SELECT '-- 1. INNER ALL with fan-out (variant A, push-left)';
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
 SELECT t1.k AS k, count() AS c, sum(t1.v) AS s FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
@@ -172,6 +188,13 @@ SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 SELECT '-- 21. global aggregation over a join on an empty left table keeps the single-row result';
 SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k;
 SELECT count() FROM t_corr_empty AS t1 LEFT JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k
+SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
+
+-- keys 0-5 of t_corr_right_multi match; keys 6-9 of t_corr_left have no match and are dropped by
+-- the INNER JOIN; GROUP BY dedups the fan-out (keys 1 and 2 match more than once) to one row/key.
+SELECT '-- 22. keys-only GROUP BY, empty aggregate list (variant A, push-left)';
+SELECT t1.k AS k FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SELECT t1.k AS k FROM t_corr_left AS t1 INNER JOIN t_corr_right_multi AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 
 DROP TABLE t_corr_left;

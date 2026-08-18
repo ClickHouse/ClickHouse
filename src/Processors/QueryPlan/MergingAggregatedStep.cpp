@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
@@ -122,7 +123,7 @@ public:
             column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
         chunk.setColumns(std::move(columns), num_rows);
 
-        if (chunk.getChunkInfos().empty())
+        if (!chunk.getChunkInfos().get<AggregatedChunkInfo>() && !chunk.getChunkInfos().get<ChunkInfoWithAllocatedBytes>())
             chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
     }
 };
@@ -325,7 +326,8 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
     if ((flags & 64) && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Merging aggregated data produced by a non-aggregating operator requires query plan "
-            "serialization version >= {}; all nodes must run the same version",
+            "serialization version >= {}; all nodes must run the same version, or set "
+            "`cascades_aggregation_pushdown = 0` to avoid this plan shape entirely",
             DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_MERGING_WITHOUT_CHUNK_INFO);
 
     writeIntBinary(flags, ctx.out);
