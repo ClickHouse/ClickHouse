@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemStatements::getColumnsDescription()
         {"name", std::make_shared<DataTypeString>(), "The name of the SQL statement."},
         {"syntax", std::make_shared<DataTypeString>(), "The syntax of the statement."},
         {"description", std::make_shared<DataTypeString>(), "A description of what the statement does, with usage examples."},
-        {"parent_statement", std::make_shared<DataTypeString>(), "The name of the enclosing statement, e.g. SELECT for the WHERE clause. Empty for a top-level statement."},
+        {"parent_name", std::make_shared<DataTypeString>(), "The name of the enclosing statement, e.g. SELECT for the WHERE clause. Empty for a top-level statement."},
         {"related", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "The names of related statements."},
     };
 }
