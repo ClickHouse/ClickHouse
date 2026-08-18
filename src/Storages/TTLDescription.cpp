@@ -1069,8 +1069,57 @@ public:
 using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionData>;
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
+/// Widens `Date` / `DateTime` to `Date32` / `DateTime64(0, tz)`, recursively inside
+/// tuple carriers. A TTL expression can refer to a tuple element while its syntax-level
+/// source column is the enclosing tuple, so widening only top-level source types would
+/// leave `t.d + INTERVAL ...` in the 32-bit domain.
+static DataTypePtr widenTemporalType(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        DataTypes widened_elements;
+        widened_elements.reserve(tuple_type->getElements().size());
+        bool widened_any = false;
+
+        for (const auto & element : tuple_type->getElements())
+        {
+            auto widened_element = widenTemporalType(element);
+            widened_any |= !element->equals(*widened_element);
+            widened_elements.push_back(std::move(widened_element));
+        }
+
+        if (widened_any)
+            return std::make_shared<DataTypeTuple>(std::move(widened_elements), tuple_type->getElementNames());
+
+        return type;
+    }
+
+    const auto inner = removeLowCardinalityAndNullable(type);
+    DataTypePtr widened;
+    if (isDate(inner))
+    {
+        widened = std::make_shared<DataTypeDate32>();
+    }
+    else if (isDateTime(inner))
+    {
+        const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
+        const String & tz = dt.getTimeZone().getTimeZone();
+        widened = std::make_shared<DataTypeDateTime64>(0, tz);
+    }
+    else
+    {
+        return type;
+    }
+
+    if (isNullableOrLowCardinalityNullable(type))
+        widened = std::make_shared<DataTypeNullable>(widened);
+
+    return widened;
+}
+
 /// Returns the column list with every `Date` / `DateTime` source column widened to
-/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality`).
+/// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality` and
+/// through tuple carriers).
 /// The TTL expression is analyzed against this widened view so arithmetic in
 /// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
 /// wrap on overflow. The original timezone is preserved so calendar transforms
@@ -1087,28 +1136,7 @@ NamesAndTypesList widenTemporalColumns(const NamesAndTypesList & columns)
     NamesAndTypesList result;
     for (const auto & col : columns)
     {
-        const auto inner = removeLowCardinalityAndNullable(col.type);
-        DataTypePtr widened;
-        if (isDate(inner))
-        {
-            widened = std::make_shared<DataTypeDate32>();
-        }
-        else if (isDateTime(inner))
-        {
-            const auto & dt = typeid_cast<const DataTypeDateTime &>(*inner);
-            const String & tz = dt.getTimeZone().getTimeZone();
-            widened = std::make_shared<DataTypeDateTime64>(0, tz);
-        }
-        else
-        {
-            result.emplace_back(col);
-            continue;
-        }
-
-        if (isNullableOrLowCardinalityNullable(col.type))
-            widened = std::make_shared<DataTypeNullable>(widened);
-
-        result.emplace_back(col.name, widened);
+        result.emplace_back(col.name, widenTemporalType(col.type));
     }
     return result;
 }
