@@ -137,7 +137,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               toString(intDiv(x, 10))
-            Condition: (toString(intDiv(x, 10)) notIn 5-element set)
+            Condition: not((toString(intDiv(x, 10)) in 5-element set))
             Parts: 1/1
             Granules: 17/17
             Search Algorithm: generic exclusion search
@@ -226,7 +226,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               reverse(lower(s))
-            Condition: (reverse(lower(s)) notIn 5-element set)
+            Condition: not((reverse(lower(s)) in 5-element set))
             Parts: 1/1
             Granules: 17/17
             Search Algorithm: generic exclusion search
@@ -283,7 +283,7 @@ Expression (Project names)
             Keys:
               json.a
               CAST(json.b, \'String\')
-            Condition: and((CAST(json.b, \'String\') notIn 2-element set), (json.a in [0, 0]))
+            Condition: and(not((CAST(json.b, \'String\') in 2-element set)), (json.a in [0, 0]))
             Parts: 1/2
             Granules: 2/8
             Search Algorithm: generic exclusion search

@@ -28,7 +28,9 @@ doc_type: 'guide'
 يمكنك تنفيذ الخطوات التالية إما من خلال بيئة REPL الخاصة ببايثون أو عبر برنامج نصي.
 
 <Steps>
-  <Step title="تثبيت المكتبات" id="install-libraries">
+  <Step>
+    ## تثبيت المكتبات
+
     ثبّت مكتبة Agno عبر تشغيل الأوامر التالية:
 
     ```python
@@ -38,7 +40,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="إعداد بيانات الاعتماد" id="setup-credentials">
+  <Step>
+    ## إعداد بيانات الاعتماد
+
     بعد ذلك، ستحتاج إلى إدخال مفتاح واجهة برمجة تطبيقات Anthropic:
 
     ```python
@@ -54,7 +58,7 @@ doc_type: 'guide'
       **استخدام موفّر LLM آخر**
 
       إذا لم يكن لديك مفتاح API لـ Anthropic، وكنت ترغب في استخدام موفّر LLM آخر،
-      فيمكنك العثور على إرشادات إعداد بيانات الاعتماد في [وثائق Agno](https://docs.agno.com/models/overview)
+      فيمكنك العثور على إرشادات إعداد بيانات الاعتماد في [وثائق Agno](https://docs.agno.com/concepts/models/introduction)
     </Info>
 
     بعد ذلك، حدِّد بيانات الاعتماد اللازمة للاتصال بـ ClickHouse SQL playground:
@@ -70,7 +74,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="تهيئة MCP server ووكيل Agno" id="initialize-mcp-and-agent">
+  <Step>
+    ## تهيئة ClickHouse MCP server ووكيل Agno
+
     الآن اضبط ClickHouse MCP server بحيث يشير إلى بيئة ClickHouse SQL التفاعلية،
     وقم أيضًا بتهيئة وكيل Agno واطرح عليه سؤالًا:
 

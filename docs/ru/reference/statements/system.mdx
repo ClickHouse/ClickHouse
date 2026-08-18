@@ -6,7 +6,7 @@ title: 'Команды SYSTEM'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <div id="reload-embedded-dictionaries">
   ## SYSTEM RELOAD EMBEDDED DICTIONARIES
@@ -21,7 +21,7 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 </div>
 
 Запрос `SYSTEM RELOAD DICTIONARIES` перезагружает словари со status `LOADED` (см. столбец `status` в [`system.dictionaries`](/ru/reference/system-tables/dictionaries)), то есть словари, которые ранее уже были успешно загружены.
-По умолчанию словари загружаются лениво (см. [dictionaries&#95;lazy&#95;load](/ru/reference/settings/server-settings/settings/dictionaries#dictionaries_lazy_load)), поэтому вместо автоматической загрузки при запуске они инициализируются при первом обращении — через функцию [`dictGet`](/ru/reference/functions/regular-functions/ext-dict-functions#dictGet) или при выполнении `SELECT` из таблиц с `ENGINE = Dictionary`.
+По умолчанию словари загружаются лениво (см. [dictionaries&#95;lazy&#95;load](/ru/reference/settings/server-settings/settings#dictionaries_lazy_load)), поэтому вместо автоматической загрузки при запуске они инициализируются при первом обращении — через функцию [`dictGet`](/ru/reference/functions/regular-functions/ext-dict-functions#dictGet) или при выполнении `SELECT` из таблиц с `ENGINE = Dictionary`.
 
 **Синтаксис**
 
@@ -44,33 +44,6 @@ SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
 
 ```sql
 SELECT name, status FROM system.dictionaries;
-```
-
-<div id="unload-dictionary">
-  ## SYSTEM UNLOAD DICTIONARY
-</div>
-
-Выгружает словарь `dictionary_name`, чтобы освободить занимаемую им память, если статус словаря — `LOADED`.
-При следующем обращении словарь при необходимости снова загружается отложенно.
-
-```sql
-SYSTEM UNLOAD DICTIONARY dictionary_name
-```
-
-Статус словаря можно проверить, выполнив запрос к таблице `system.dictionaries`.
-
-```sql
-SELECT name, status FROM system.dictionaries;
-```
-
-<div id="unload-dictionaries">
-  ## SYSTEM UNLOAD DICTIONARIES
-</div>
-
-Запрос `SYSTEM UNLOAD DICTIONARIES` выгружает из памяти все словари со статусом `LOADED` (см. столбец `status` в [`system.dictionaries`](/ru/reference/system-tables/dictionaries)), то есть словари, которые ранее были успешно загружены.
-
-```sql
-SYSTEM UNLOAD DICTIONARIES
 ```
 
 <div id="reload-models">
@@ -119,7 +92,7 @@ SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
   ## SYSTEM RELOAD ASYNCHRONOUS METRICS
 </div>
 
-Пересчитывает все [асинхронные метрики](/ru/reference/system-tables/asynchronous_metrics). Поскольку асинхронные метрики периодически обновляются в соответствии с настройкой [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ru/reference/settings/server-settings/settings/asynchronous-metrics#asynchronous_metrics_update_period_s), вручную обновлять их с помощью этого оператора обычно не нужно.
+Пересчитывает все [асинхронные метрики](/ru/reference/system-tables/asynchronous_metrics). Поскольку асинхронные метрики периодически обновляются в соответствии с настройкой [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/ru/reference/settings/server-settings/settings), вручную обновлять их с помощью этого оператора обычно не нужно.
 
 ```sql
 SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
@@ -139,13 +112,6 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 Очищает кэш меток.
 
-<div id="drop-primary-index-cache">
-  ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE
-</div>
-
-Очищает кэш первичного индекса, в котором в памяти хранятся первичные ключи таблиц [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree).
-Его размер задаётся настройкой уровня сервера [`primary_index_cache_size`](/ru/reference/settings/server-settings/settings/primary-index#primary_index_cache_size).
-
 <div id="drop-iceberg-metadata-cache">
   ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
 </div>
@@ -164,125 +130,17 @@ SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
 
 Очищает кэш метаданных Parquet.
 
-<div id="drop-paimon-metadata-cache">
-  ## SYSTEM CLEAR|DROP PAIMON METADATA CACHE
-</div>
-
-Очищает хранящийся в памяти кэш разобранных файлов метаданных Paimon (manifest lists и manifests).
-
-<div id="drop-point-in-polygon-cache">
-  ## SYSTEM CLEAR|DROP POINT IN POLYGON CACHE
-</div>
-
-Очищает кэш предварительно обработанных константных полигонов, используемых функцией [`pointInPolygon`](/ru/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Настроенное ограничение размера (настройка сервера `point_in_polygon_cache_size`) остаётся без изменений, поэтому после этого кэш продолжает принимать новые записи. Чтобы отключить кэш, установите `point_in_polygon_cache_size` в `0`.
-
 <div id="drop-text-index-caches">
   ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
 </div>
 
-Очищает кэши токенов, заголовка и списков вхождений текстового индекса.
+Очищает кэши заголовка, словаря и списков вхождений текстового индекса.
 
 Если вы хотите очистить один из этих кэшей отдельно, можно выполнить
 
-* `SYSTEM CLEAR TEXT INDEX TOKENS CACHE`,
-* `SYSTEM CLEAR TEXT INDEX HEADER CACHE` или
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
+* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE` или
 * `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
-
-<div id="drop-index-mark-cache">
-  ## SYSTEM CLEAR|DROP INDEX MARK CACHE
-</div>
-
-Очищает кэш меток вторичных индексов пропуска данных.
-
-<div id="drop-index-uncompressed-cache">
-  ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE
-</div>
-
-Очищает кэш несжатых блоков для вторичных индексов пропуска данных.
-
-<div id="drop-mmap-cache">
-  ## SYSTEM CLEAR|DROP MMAP CACHE
-</div>
-
-Очищает кэш файлов, отображаемых в память.
-
-<div id="drop-page-cache">
-  ## SYSTEM CLEAR|DROP PAGE CACHE
-</div>
-
-Очищает кэш страниц в пространстве пользователя — собственный кэш данных ClickHouse в памяти, где хранятся данные, считанные из нижележащего хранилища.
-
-<div id="drop-vector-similarity-index-cache">
-  ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE
-</div>
-
-Очищает кэш индекса векторного сходства.
-
-<div id="drop-connections-cache">
-  ## SYSTEM CLEAR|DROP CONNECTIONS CACHE
-</div>
-
-Очищает кэш пулов HTTP-соединений для исходящих подключений.
-
-<div id="drop-s3-client-cache">
-  ## SYSTEM CLEAR|DROP S3 CLIENT CACHE
-</div>
-
-Очищает кэш S3-клиентов.
-
-<div id="prewarm-mark-cache">
-  ## SYSTEM PREWARM MARK CACHE
-</div>
-
-Загружает метки таблицы в [кэш меток](#drop-mark-cache). Метки вторичного индекса также загружаются в [кэш меток вторичного индекса пропуска данных](#drop-index-mark-cache).
-
-```sql
-SYSTEM PREWARM MARK CACHE [ON CLUSTER cluster_name] [db.]table
-```
-
-<div id="prewarm-primary-index-cache">
-  ## SYSTEM PREWARM PRIMARY INDEX CACHE
-</div>
-
-Загружает первичные индексы таблицы `MergeTree` в [кэш первичного индекса](#drop-primary-index-cache).
-
-```sql
-SYSTEM PREWARM PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [db.]table
-```
-
-<div id="drop-disk-metadata-cache">
-  ## SYSTEM CLEAR|DROP DISK METADATA CACHE
-</div>
-
-Очищает кэш метаданных указанного диска.
-
-```sql
-SYSTEM DROP DISK METADATA CACHE <disk_name>
-```
-
-<div id="sync-filesystem-cache">
-  ## SYSTEM SYNC FILESYSTEM CACHE
-</div>
-
-Синхронизирует хранящееся в памяти состояние файлового кэша ClickHouse с файлами кэша, фактически находящимися на диске, и возвращает `cache_name`, `path` и загруженный `size` каждого кэшированного сегмента файла. Необязательное имя кэша ограничивает операцию одним кэшем.
-
-```sql
-SYSTEM SYNC FILESYSTEM CACHE ['<cache_name>']
-```
-
-<div id="drop-distributed-cache">
-  ## SYSTEM CLEAR|DROP DISTRIBUTED CACHE
-</div>
-
-<Note>
-  `SYSTEM CLEAR|DROP DISTRIBUTED CACHE` доступна только в ClickHouse Cloud.
-</Note>
-
-Удаляет распределённый кэш. Используйте `CONNECTIONS`, чтобы удалить только кэшированные соединения с серверами распределённого кэша, либо передайте идентификатор сервера, чтобы выбрать только один сервер.
-
-```sql
-SYSTEM DROP DISTRIBUTED CACHE [CONNECTIONS | 'server_id']
-```
 
 <div id="drop-replica">
   ## SYSTEM DROP REPLICA
@@ -323,27 +181,21 @@ SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPAT
 </div>
 
 Очищает кэш несжатых данных.
-Кэш несжатых данных включается и отключается с помощью настройки уровня запроса, пользователя или профиля [`use_uncompressed_cache`](/ru/reference/settings/session-settings/use#use_uncompressed_cache).
-Его размер можно задать с помощью настройки уровня сервера [`uncompressed_cache_size`](/ru/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
+Кэш несжатых данных включается и отключается с помощью настройки уровня запроса, пользователя или профиля [`use_uncompressed_cache`](/ru/reference/settings/session-settings#use_uncompressed_cache).
+Его размер можно задать с помощью настройки уровня сервера [`uncompressed_cache_size`](/ru/reference/settings/server-settings/settings#uncompressed_cache_size).
 
 <div id="drop-compiled-expression-cache">
   ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE
 </div>
 
 Очищает кэш скомпилированных выражений.
-Кэш скомпилированных выражений включается и отключается с помощью настройки уровня запроса, пользователя или профиля [`compile_expressions`](/ru/reference/settings/session-settings/compile#compile_expressions).
+Кэш скомпилированных выражений включается и отключается с помощью настройки уровня запроса, пользователя или профиля [`compile_expressions`](/ru/reference/settings/session-settings#compile_expressions).
 
 <div id="drop-query-condition-cache">
   ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
 </div>
 
 Очищает кэш условий запроса.
-
-<div id="drop-encryption-headers-cache">
-  ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE
-</div>
-
-Очищает кэш заголовков шифрования. В этом кэше хранятся заголовки шифрования, считываемые из начала зашифрованных файлов. Он используется экспериментальным путём чтения `use_reader_executor`, чтобы избежать их повторного чтения; его размер задаётся настройкой сервера `encryption_header_cache_size`.
 
 <div id="drop-query-cache">
   ## SYSTEM CLEAR|DROP КЭШ ЗАПРОСОВ
@@ -361,12 +213,12 @@ SYSTEM CLEAR QUERY CACHE TAG '<tag>'
   ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
 </div>
 
-Очищает кэш для схем, загруженных из [`format_schema_path`](/ru/reference/settings/server-settings/settings/format#format_schema_path).
+Очищает кэш для схем, загруженных из [`format_schema_path`](/ru/reference/settings/server-settings/settings#format_schema_path).
 
 Поддерживаемые цели:
 
 * Protobuf: удаляет импортированные определения сообщений Protobuf из памяти.
-* Files: удаляет кэшированные файлы схем, хранящиеся локально в [`format_schema_path`](/ru/reference/settings/server-settings/settings/format#format_schema_path) и создаваемые, когда `format_schema_source` имеет значение `query`.
+* Files: удаляет кэшированные файлы схем, хранящиеся локально в [`format_schema_path`](/ru/reference/settings/server-settings/settings#format_schema_path) и создаваемые, когда `format_schema_source` имеет значение `query`.
   Примечание: если цель не указана, очищаются оба кэша.
 
 ```sql
@@ -523,7 +375,7 @@ SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
   ## Управление distributed таблицами
 </div>
 
-ClickHouse может работать с [distributed](/ru/reference/engines/table-engines/special/distributed) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала создаёт очередь данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет их. Вы можете управлять обработкой очереди с помощью запросов [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed) и [`START DISTRIBUTED SENDS`](#start-distributed-sends). Вы также можете синхронно вставлять распределённые данные с помощью настройки [`distributed_foreground_insert`](/ru/reference/settings/session-settings/distributed#distributed_foreground_insert).
+ClickHouse может работать с [distributed](/ru/reference/engines/table-engines/special/distributed) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала создаёт очередь данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет их. Вы можете управлять обработкой очереди с помощью запросов [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends), [FLUSH DISTRIBUTED](#flush-distributed) и [`START DISTRIBUTED SENDS`](#start-distributed-sends). Вы также можете синхронно вставлять распределённые данные с помощью настройки [`distributed_foreground_insert`](/ru/reference/settings/session-settings#distributed_foreground_insert).
 
 <div id="stop-distributed-sends">
   ### SYSTEM STOP DISTRIBUTED SENDS
@@ -536,7 +388,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_
 ```
 
 <Note>
-  Если параметр [`prefer_localhost_replica`](/ru/reference/settings/session-settings/prefer#prefer_localhost_replica) включен (по умолчанию), данные всё равно будут вставлены в локальный сегмент.
+  Если параметр [`prefer_localhost_replica`](/ru/reference/settings/session-settings#prefer_localhost_replica) включен (по умолчанию), данные всё равно будут вставлены в локальный сегмент.
 </Note>
 
 <div id="flush-distributed">
@@ -1070,88 +922,6 @@ SYSTEM WAIT VIEW [db.]name
 ```sql
 SYSTEM CANCEL VIEW [db.]name
 ```
-
-<div id="managing-background-activity">
-  ## Управление фоновой активностью
-</div>
-
-Команды, не зависящие от движка, для управления фоновой активностью одной таблицы или всех таких таблиц на сервере одновременно. Они применяются к:
-
-* [Refreshable materialized views](/ru/reference/statements/create/view#refreshable-materialized-view) (периодическому обновлению), и
-* потоковым движкам таблиц, непрерывно считывающим данные из внешнего источника: [Kafka](/ru/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ru/reference/engines/table-engines/integrations/rabbitmq), [NATS](/ru/reference/engines/table-engines/integrations/nats), [S3Queue](/ru/reference/engines/table-engines/integrations/s3queue) и [AzureQueue](/ru/reference/engines/table-engines/integrations/azure-queue).
-
-Для refreshable materialized view каждый глагол является псевдонимом соответствующей команды `SYSTEM ... VIEW` из раздела [Управление Refreshable Materialized Views](#managing-refreshable-materialized-views), поэтому `SYSTEM STOP [db.]name` работает точно так же, как `SYSTEM STOP VIEW [db.]name`, и так далее.
-
-Варианты для отдельной таблицы и с подстановочным знаком различаются обработкой таблиц без фоновой активности. Вариант для отдельной таблицы (`SYSTEM STOP [db.]table`) генерирует ошибку, если указанная таблица не является ни потоковым движком, ни refreshable materialized view. Вариант с подстановочным знаком молча пропускает такие таблицы, поэтому его всегда можно безопасно выполнять.
-
-`STOP` и `CANCEL` прерывают получение данных при первой возможности. Для [Kafka](/ru/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/ru/reference/engines/table-engines/integrations/rabbitmq) и [NATS](/ru/reference/engines/table-engines/integrations/nats) они прекращают чтение из источника, но не прерывают уже начавшуюся вставку: блок, уже записываемый в materialized views, всё равно дописывается и фиксируется. [S3Queue](/ru/reference/engines/table-engines/integrations/s3queue) и [AzureQueue](/ru/reference/engines/table-engines/integrations/azure-queue) выполняют чтение и вставку в рамках одного конвейера. При включённой дедупликации (по умолчанию) вставка также отменяется, а файлы позже обрабатываются повторно. При отключённой дедупликации текущий батч, напротив, завершается и фиксируется (как и для перечисленных выше движков), чтобы избежать дублирования строк. Данные, которые были прочитаны, но ещё не зафиксированы, позже считываются повторно, поэтому ничего не теряется, кроме core NATS (без JetStream), который не может повторно доставить эти данные и отбрасывает их.
-
-`PAUSE` не прерывает выполняющуюся вставку, поэтому обычно данные не теряются. Исключение — core NATS: приостановка прекращает получение данных и отбрасывает сообщения, которые он уже получил, но ещё не вставил, поскольку core NATS не может доставить их повторно.
-
-<Note>
-  Ни одно из этих состояний не сохраняется после перезапуска сервера. После перезапуска refreshable views возобновляют работу по настроенному расписанию, а потоковые движки возобновляют получение данных.
-</Note>
-
-<div id="stop-background">
-  ### SYSTEM STOP
-</div>
-
-Остановить фоновую активность: прервать выполняющиеся задачи и не запускать новые до выполнения `SYSTEM START`. Эквивалентно `PAUSE` + `CANCEL`.
-
-```sql
-SYSTEM STOP [db.]table
-SYSTEM STOP ALL BACKGROUND
-```
-
-<div id="start-background">
-  ### SYSTEM START
-</div>
-
-Возобновляет работу после выполнения `SYSTEM STOP` или `SYSTEM PAUSE`. Текущая активность не прерывается.
-
-```sql
-SYSTEM START [db.]table
-SYSTEM START ALL BACKGROUND
-```
-
-<div id="pause-background">
-  ### SYSTEM PAUSE
-</div>
-
-Приостанавливает дальнейшую фоновую активность, но позволяет текущим операциям завершиться.
-
-```sql
-SYSTEM PAUSE [db.]table
-SYSTEM PAUSE ALL BACKGROUND
-```
-
-<div id="cancel-background">
-  ### SYSTEM CANCEL
-</div>
-
-Прерывает только текущую выполняемую операцию, не блокируя последующие — таблица продолжает обновляться или потреблять данные по расписанию. Если никакая операция не выполняется, ничего не происходит.
-
-```sql
-SYSTEM CANCEL [db.]table
-SYSTEM CANCEL ALL BACKGROUND
-```
-
-<div id="refresh-background">
-  ### SYSTEM REFRESH
-</div>
-
-Запускает один дополнительный цикл вне расписания. Для потоковой таблицы выполняется немедленно и однократно, даже если таблица остановлена или приостановлена. Для refreshable materialized view действует аналогично `SYSTEM REFRESH VIEW`: если view остановлено, запрос на обновление запоминается и выполняется один раз после запуска с помощью `SYSTEM START`.
-
-```sql
-SYSTEM REFRESH [db.]table
-SYSTEM REFRESH ALL BACKGROUND
-```
-
-<div id="background-privileges">
-  ### Привилегии
-</div>
-
-Для каждой команды требуется привилегия соответствующего движка: `SYSTEM VIEWS` для refreshable materialized view и `SYSTEM STREAMING ENGINES` для потоковой таблицы. Обе привилегии являются дочерними по отношению к `SYSTEM BACKGROUND`, поэтому предоставление `SYSTEM BACKGROUND` позволяет управлять фоновой активностью всех таких таблиц. Варианты `ALL BACKGROUND` применяются только к таблицам, которыми пользователь имеет право управлять, и без уведомления пропускают остальные.
 
 <div id="flush-object-storage-queue">
   ## SYSTEM FLUSH OBJECT STORAGE QUEUE

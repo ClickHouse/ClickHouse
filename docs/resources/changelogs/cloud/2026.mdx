@@ -5,7 +5,6 @@ title: 'Cloud changelog - 2026'
 description: 'ClickHouse Cloud changelog providing descriptions of what is new in each ClickHouse Cloud release'
 doc_type: 'changelog'
 keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
-rss: true
 ---
 
 import { Image } from "/snippets/components/Image.jsx";
@@ -13,45 +12,18 @@ import { Image } from "/snippets/components/Image.jsx";
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
 
-<Update label="August 17, 2026">
-
-This week's updates bring broader platform reach and better operational visibility. Managed Postgres is now available on GCP for selected design partners, ClickStack resources can be managed through the official Terraform provider, and new billing notifications give customers early warning before credits expire or service is interrupted. We also shipped improved tracing for ClickHouse Agents and a smoother SAML sign-in experience.
-
-### Managed Postgres now available on GCP {#managed-postgres-now-available-on-gcp}
-
-[ClickHouse Cloud Managed Postgres](/products/managed-postgres/overview) is now available on GCP for selected design partners across all public GCP regions, with `us-west1` as the first private region. This extends Managed Postgres to customers building on GCP, with Private Preview planned for 2026-08.
-
-### Manage ClickStack resources with Terraform {#manage-clickstack-resources-with-terraform}
-
-ClickStack support is now available in beta through version 3.25.0 of the official [`ClickHouse/clickhouse` Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs#clickstack-alpha). Teams can create, update, import, and remove dashboards, alerts, sources, saved searches, connections, and webhooks using the standard `terraform plan` and `terraform apply` workflow. The integration supports both Managed ClickStack and self-hosted deployments.
-
-### New billing notifications for credits and payments {#new-billing-notifications-for-credits-and-payments}
-
-Billing notifications are now managed through the ClickHouse Cloud Notification Center, with delivery through the console, email, and Slack. Customers receive advance notice when prepaid or trial credits are about to expire or run out, as well as notifications when credits are added, payment methods change, or an account enters a non-payment grace period. This provides more time to renew, add credits, or resolve payment issues before service is interrupted.
-
-### Open Langfuse session traces from ClickHouse Agents {#open-langfuse-session-traces-from-clickhouse-agents}
-
-Organization administrators can now open the corresponding Langfuse session directly from a [ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) chat and inspect traces for the entire conversation. This makes it easier to investigate agent behavior and debug multi-step runs. The improvement is available in Public Beta for newly created chats.
-
-### SAML redirects help prevent duplicate accounts {#saml-redirects-help-prevent-duplicate-accounts}
-
-When a user attempts to sign in with Google or Microsoft while SAML is configured for their organization, ClickHouse Cloud now redirects them to the correct SAML sign-in flow. This helps prevent users from accidentally creating a separate organization when they intended to access an existing account.
-
-</Update>
-
-
 <Update label="July 13, 2026">
 
 This week's updates include sticky replica routing over plain HTTPS, custom billing period start dates, and new initial-load controls for object storage ClickPipes.
 
 ### Sticky replica routing over HTTPS (private preview)
-You can now pin queries to a specific replica over standard HTTPS by adding a `?session_id=` parameter to your normal service URL, with no special hostnames or DNS changes required. This keeps session-scoped objects such as temporary tables available across queries, and helps repeated queries hit warm replica-local caches. It's rolling out in private preview to all Enterprise customers, and to Scale customers on request. The existing subdomain-based routing keeps working but will eventually migrate to this approach. See the [replica-aware routing](/products/cloud/features/infrastructure/replica-aware-routing) docs.
+You can now pin queries to a specific replica over standard HTTPS by adding a `?session_id=` parameter to your normal service URL, with no special hostnames or DNS changes required. This keeps session-scoped objects such as temporary tables available across queries, and helps repeated queries hit warm replica-local caches. It's rolling out in private preview to all Enterprise customers, and to Scale customers on request. The existing subdomain-based routing keeps working but will eventually migrate to this approach. See the [replica-aware routing](/manage/replica-aware-routing) docs.
 
 ### Custom billing period start dates
 You can now request a change to your organization's billing date, the day of the month each billing period starts, for example to align invoices with the calendar month. Open a support ticket with your requested date. Billing dates apply in UTC, and each invoice covers usage from the billing date up to (but not including) the same date the following month.
 
 ### Skip initial load for object storage ClickPipes
-Object storage [ClickPipes](/integrations/clickpipes/home) (S3, GCS, and Azure Blob Storage) now offer two ways to control the initial load when you create a pipe: **Start after**, which skips files up to and including a given object key, and **Skip initial load**, which skips pre-existing files entirely and processes only new object notifications. Previously a new pipe always backfilled every file in the path. The two options are mutually exclusive and permanent for a given pipe: a skipped backfill can't be triggered later. Available in the UI, the Cloud API, and Terraform v3.18.0 and later.
+Object storage [ClickPipes](/integrations/clickpipes) (S3, GCS, and Azure Blob Storage) now offer two ways to control the initial load when you create a pipe: **Start after**, which skips files up to and including a given object key, and **Skip initial load**, which skips pre-existing files entirely and processes only new object notifications. Previously a new pipe always backfilled every file in the path. The two options are mutually exclusive and permanent for a given pipe: a skipped backfill can't be triggered later. Available in the UI, the Cloud API, and Terraform v3.18.0 and later.
 
 </Update>
 
@@ -89,7 +61,7 @@ Open House 2026 week brought a wave of launches centered on running ClickHouse w
 ### ClickPipes now runs natively on GCP with Private Service Connect
 ClickPipes infrastructure now runs in the same GCP region as your ClickHouse Cloud service for all new GCP services created after May 26, including support for Private Service Connect (PSC). This removes cross-cloud egress costs, reduces latency, keeps data local, and lets you connect to GCP sources over GCP-native private networking instead of workarounds like SSH tunneling. Existing services can be migrated with help from our team.
 
-For more details, see the [ClickPipes static IP list](/integrations/clickpipes/networking/static-ips).
+For more details, see the [ClickPipes static IP list](/integrations/clickpipes/home#list-of-static-ips).
 
 ### ClickPipes for GCP Pub/Sub (private preview)
 ClickPipes can now stream data from GCP Pub/Sub topics directly into ClickHouse Cloud, giving GCP-native teams a direct path for analytics on data from Cloud Logging, Cloud Monitoring, GKE, and more. Available via the ClickPipes UI, OpenAPI, and Terraform; [sign-up](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview) is required during private preview.
@@ -101,8 +73,8 @@ ClickHouse Agents is now in public beta at [ai.clickhouse.cloud](http://ai.click
 
 Learn more in the [ClickHouse Agents documentation](/products/cloud/features/ai-ml/agents/index).
 
-### ClickHouse Managed Postgres (public beta)
-ClickHouse Managed Postgres, fully managed Postgres on local NVMe storage, is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
+### ClickHouse Postgres (public beta)
+Fully managed Postgres on local NVMe storage is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
 
 Read more in [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
 
@@ -188,7 +160,7 @@ See [supported regions](/products/cloud/reference/supported-regions) for the ful
 <Update label="May 8, 2026">
 
 ### Postgres query insights (private preview)
-A new **Query insights** tab is now available in [ClickHouse Managed Postgres](/products/managed-postgres/overview) (Private Preview). It ranks every query pattern by impact and shows why each one is slow across three surfaces:
+A new **Query insights** tab is now available in [ClickHouse Cloud Managed Postgres](/products/managed-postgres/overview) (Private Preview). It ranks every query pattern by impact and shows why each one is slow across three surfaces:
 
 * **Overview** — one-screen database health
 * **Patterns** — table sortable by runtime, CPU, errors, and P95
@@ -231,7 +203,7 @@ Customers can now see all refunds directly in the Cloud console billing UI. Refu
 Organization spend alerts are now available in Private Preview. Get notified at 50%, 75%, and 100% of your configured organization spend per billing period. Choose from Email, Cloud console, and/or Slack notification channels. Alerts are based on organization gross usage, fire hourly, and reset automatically each billing period. Requires Org Admin or Billing Admin role.
 
 ### ClickPipes region parity on AWS
-ClickPipes is now available in all AWS regions (public and private) supported by ClickHouse Cloud, expanding from 6 regions to 18. This includes strategic regions like Singapore (ap-southeast-1), Seoul (ap-northeast-2), and Tokyo (ap-northeast-1). The new regions are available for services created after April 14, 2026. See the [documentation](/integrations/clickpipes/networking/static-ips) for more details.
+ClickPipes is now available in all AWS regions (public and private) supported by ClickHouse Cloud, expanding from 6 regions to 18. This includes strategic regions like Singapore (ap-southeast-1), Seoul (ap-northeast-2), and Tokyo (ap-northeast-1). The new regions are available for services created after April 14, 2026. See the [documentation](/integrations/clickpipes/home#list-of-static-ips) for more details.
 
 </Update>
 
@@ -276,7 +248,7 @@ curl https://clickhouse.com/cli | sh
 
 <Update label="February 20, 2026">
 
-- **ClickPipes:** Reverse private endpoints in an inactive state will now be automatically removed after a defined grace period. This ensures unused or misconfigured endpoints are not persisted indefinitely in the backend. See the automatic clean up [documentation](/integrations/clickpipes/networking/aws-privatelink#automatic-cleanup) for more details.
+- **ClickPipes:** Reverse private endpoints in an inactive state will now be automatically removed after a defined grace period. This ensures unused or misconfigured endpoints are not persisted indefinitely in the backend. See the automatic clean up [documentation](/integrations/clickpipes/aws-privatelink#automatic-cleanup) for more details.
 
 </Update>
 
@@ -295,7 +267,7 @@ curl https://clickhouse.com/cli | sh
 
 <Update label="January 23, 2026">
 
-- ClickPipes is now available in AWS `eu-west-1`. For new ClickHouse Cloud services created from January 20 in that region, the matching region will be used for ClickPipes. For older services, ClickPipes defaults to `eu-central-1`. See the [documentation](/integrations/clickpipes/networking/static-ips) for more details.
+- ClickPipes is now available in AWS `eu-west-1`. For new ClickHouse Cloud services created from January 20 in that region, the matching region will be used for ClickPipes. For older services, ClickPipes defaults to `eu-central-1`. See the [documentation](/integrations/clickpipes/home#list-of-static-ips) for more details.
 
 </Update>
 

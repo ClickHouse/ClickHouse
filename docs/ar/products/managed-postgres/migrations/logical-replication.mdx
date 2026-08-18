@@ -1,13 +1,13 @@
 ---
 slug: /cloud/managed-postgres/migrations/logical-replication
 sidebarTitle: 'النسخ المتماثل المنطقي'
-title: 'الترحيل إلى ClickHouse Managed Postgres باستخدام النسخ المتماثل المنطقي'
+title: 'الترحيل إلى Managed Postgres باستخدام النسخ المتماثل المنطقي'
 description: 'تعرّف على كيفية ترحيل بيانات PostgreSQL إلى ClickHouse Managed Postgres باستخدام النسخ المتماثل المنطقي'
 keywords: ['postgres', 'postgresql', 'النسخ المتماثل المنطقي', 'الترحيل', 'نقل البيانات', 'Managed Postgres']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوفّر هذا الدليل إرشادات خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام ميزة النسخ المتماثل المنطقي المدمجة في Postgres.
@@ -18,9 +18,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## المتطلبات الأساسية
 </div>
 
-* إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدر.
-* تثبيت `psql`,`pg_dump` و`pg_restore` على جهازك المحلي. يُستخدم ذلك لإنشاء جداول فارغة في قاعدة البيانات الهدف. وعادةً ما تكون هذه الأدوات مضمنة مع تثيتات PostgreSQL. وإذا لم تكن كذلك، يمكنك تنزيلها من [الموقع الرسمي لـ PostgreSQL](https://www.postgresql.org/download/).
-* يجب أن تكون قاعدة البيانات المصدر قابلة للوصول من ClickHouse Managed Postgres. تأكد من أن أي قواعد مطلوبة في جدار الحماية أو إعدادات مجموعة الأمان تسمح بهذا الاتصال. ويمكنك الحصول على عنوان IP الصادر لمثيل ClickHouse Managed Postgres الخاص بك بتنفيذ ما يلي:
+* إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدرية.
+* تثبيت `psql`,`pg_dump` و`pg_restore` على جهازك المحلي. يُستخدم ذلك لإنشاء جداول فارغة في قاعدة البيانات الهدف. وعادةً ما تكون هذه الأدوات مضمنة مع تثبيتات PostgreSQL. وإذا لم تكن كذلك، يمكنك تنزيلها من [الموقع الرسمي لـ PostgreSQL](https://www.postgresql.org/download/).
+* يجب أن تكون قاعدة البيانات المصدرية قابلة للوصول من ClickHouse Managed Postgres. تأكد من أن أي قواعد مطلوبة في جدار الحماية أو إعدادات مجموعة الأمان تسمح بهذا الاتصال. ويمكنك الحصول على عنوان IP الصادر لمثيل Managed Postgres الخاص بك بتنفيذ ما يلي:
 
 ```shell
 dig +short <your-managed-postgres-hostname>
@@ -79,10 +79,10 @@ pg_dump \
 <Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="إعداد جداول PostgreSQL المصدر" size="xl" border />
 
 <div id="migration-pgdump-pg-restore-create-pg">
-  ### أنشئ مثيل ClickHouse Managed Postgres
+  ### أنشئ مثيلًا من Managed Postgres
 </div>
 
-أولًا، تأكد من إعداد مثيل ClickHouse Managed Postgres، ويُفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع الدليل السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سنُنشئه في هذا الدليل:
+أولًا، تأكد من إعداد مثيل Managed Postgres، ويُفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع دليل البدء السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سنُنشئه في هذا الدليل:
 
 <Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="إنشاء مثيل ClickHouse Managed Postgres" size="md" border />
 
@@ -130,10 +130,10 @@ CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
 </Info>
 
 <div id="migration-logical-replication-create-subscription">
-  ### أنشئ اشتراك على قاعدة بيانات ClickHouse Managed Postgres المستهدفة
+  ### أنشئ subscription على قاعدة بيانات ClickHouse Managed Postgres المستهدفة
 </div>
 
-بعد ذلك، اتصل بقاعدة بيانات ClickHouse Managed Postgres المستهدفة وأنشئ اشتراك يتصل بالـ منشور على قاعدة البيانات المصدر.
+بعد ذلك، اتصل بقاعدة بيانات ClickHouse Managed Postgres المستهدفة وأنشئ subscription يتصل بالـ publication على قاعدة البيانات المصدر.
 
 ```sql
 CREATE SUBSCRIPTION demo_rds_subscription
@@ -141,7 +141,7 @@ CONNECTION 'postgresql://<user>:<password>@<host>:<port>/<database>'
 PUBLICATION <pub_name_you_entered_above>;
 ```
 
-سيؤدي هذا تلقائيًا إلى إنشاء فتحة النسخ المتماثل على قاعدة البيانات المصدر وبدء نسخ البيانات من الجداول المحددة إلى قاعدة البيانات الهدف. وقد تستغرق هذه العملية بعض الوقت، بحسب حجم بياناتك.
+سيؤدي هذا تلقائيًا إلى إنشاء replication slot على قاعدة البيانات المصدر وبدء نسخ البيانات من الجداول المحددة إلى قاعدة البيانات الهدف. وقد تستغرق هذه العملية بعض الوقت، بحسب حجم بياناتك.
 
 في حالتنا، بعد إعداد الاشتراك، بدأت البيانات بالتدفق:
 
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## الخطوات التالية
 </div>
 
-تهانينا! لقد أكملت بنجاح ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأصبحت الآن جاهزًا لاستكشاف ميزات ClickHouse Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لتبدأ به:
+تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام pg&#95;dump وpg&#95;restore. وأصبحت الآن جاهزًا تمامًا لاستكشاف ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لتبدأ:
 
-* [دليل البدء السريع لـ ClickHouse Managed Postgres](/ar/products/managed-postgres/quickstart)
+* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)

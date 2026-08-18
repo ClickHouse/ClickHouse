@@ -11,18 +11,18 @@ doc_type: 'guide'
 本番環境用に ClickHouse をインストールする必要がない場合は、curl を使用してインストールスクリプトを実行できます。このスクリプトは、お使いの OS に適したバイナリを判別します。
 
 <Steps>
-  <Step title="curl を使用して ClickHouse をインストールする" id="install-clickhouse-using-curl">
+  <Step>
+    ## curl を使用して ClickHouse をインストールする
+
     次のコマンドを実行して、お使いのオペレーティングシステム向けの単一バイナリをダウンロードします。
 
     ```bash
     curl https://clickhouse.com/ | sh
     ```
 
-    Linux および macOS では、ClickHouse CLI の [`clickhousectl`](/ja/get-started/setup/self-managed/clickhousectl) も
-    `~/.local/bin` にインストールされます (`chctl` エイリアス付き) 。`clickhousectl` を使用すると、
-    複数のローカル ClickHouse バージョンのインストールと管理、バックグラウンドでのサーバー実行、
-    ClickHouse Cloud の管理を行えます。CLI ベースのワークフローについては、
-    [clickhousectl のインストールページ](/ja/get-started/setup/self-managed/clickhousectl)を参照してください。
+    Linux および macOS では、これにより [`clickhousectl`](https://github.com/ClickHouse/clickhousectl) も
+    `~/.local/bin` にインストールされ (`chctl` シンボリックリンク付き) 、
+    ローカルの ClickHouse のバージョンとサーバーを管理できるようになります。
 
     `clickhousectl` なしで `clickhouse` バイナリのみをインストールするには、
     `CLICKHOUSE_ONLY=1` を設定します。
@@ -36,7 +36,9 @@ doc_type: 'guide'
     </Note>
   </Step>
 
-  <Step title="clickhouse-local を起動する" id="start-clickhouse-local">
+  <Step>
+    ## clickhouse-local を起動する
+
     `clickhouse-local` を使用すると、設定なしで ClickHouse の
     強力な SQL 構文を使ってローカルおよびリモートのファイルを処理できます。テーブルデータは
     一時的な場所に保存されるため、`clickhouse-local` を再起動すると
@@ -49,7 +51,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="clickhouse-server を起動する" id="start-clickhouse-server">
+  <Step>
+    ## clickhouse-server を起動する
+
     データを永続化したい場合は、`clickhouse-server` を実行します。次のコマンドで
     ClickHouse サーバーを起動できます。
 
@@ -58,7 +62,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="clickhouse-client を起動する" id="start-clickhouse-client">
+  <Step>
+    ## clickhouse-client を起動する
+
     サーバーが起動したら、新しいターミナルウィンドウを開いて次のコマンドを実行し、
     `clickhouse-client` を起動します。
 

@@ -4,58 +4,40 @@ sidebarTitle: 'Limites de serviço'
 title: 'Limites de uso'
 description: 'Descreve os limites de uso recomendados no ClickHouse Cloud'
 doc_type: 'reference'
-keywords: ['limites de uso', 'cotas', 'melhores práticas', 'gerenciamento de recursos', 'recursos de nuvem']
+keywords: ['limites de uso', 'quotas', 'melhores práticas', 'gerenciamento de recursos', 'recursos do Cloud']
 ---
 
 Embora o ClickHouse seja conhecido por sua velocidade e confiabilidade, o desempenho ideal é
 alcançado dentro de determinados parâmetros operacionais. Por exemplo, ter tabelas,
-bancos de dados ou partes em excesso pode afetar negativamente o desempenho. Para evitar isso, o ClickHouse
-Cloud impõe limites em diversas dimensões operacionais.
-Os valores padrão desses limites de proteção estão listados abaixo. Salvo indicação em contrário,
-eles se aplicam ao nível do serviço.
+bancos de dados ou partes em excesso pode impactar negativamente o desempenho. Para evitar isso, o ClickHouse
+Cloud aplica limites em várias dimensões operacionais.
+Os detalhes dessas restrições estão listados abaixo.
 
 <Tip>
-  Se você se deparou com um desses limites de proteção, é possível que esteja
-  implementando seu caso de uso de forma não otimizada. Entre em contato com o [suporte](https://clickhouse.com/support/program), e
-  teremos prazer em ajudar você a aprimorar seu caso de uso para evitar exceder esses limites
-  ou avaliar como podemos aumentá-los de maneira controlada.
+  Se você esbarrou em uma dessas restrições, é possível que esteja
+  implementando seu caso de uso de uma forma não otimizada. Entre em contato com nossa equipe de suporte e
+  teremos prazer em ajudar você a refinar seu caso de uso para evitar exceder essas restrições
+  ou avaliar em conjunto como podemos aumentá-las de forma controlada.
 </Tip>
 
-| Dimensão                               | Limite                                                                                                                    |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| **Bancos de dados**                    | 1000                                                                                                                      |
-| **Tabelas**                            | 5000                                                                                                                      |
-| **Views**                              | 15000                                                                                                                     |
-| **Dicionários**                        | 5000                                                                                                                      |
-| **Coleções nomeadas** (prévia privada) | 1000                                                                                                                      |
-| **Colunas**                            | ~1000 (o formato wide é preferível ao compact)                                                                            |
-| **Partições**                          | 50k                                                                                                                       |
-| **Partes**                             | 10k (consulte a configuração [`max_parts_in_total`](/pt-BR/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
-| **Tamanho da parte**                   | 150 GB                                                                                                                    |
-| **Serviços por organização**           | 20 (flexível)                                                                                                             |
-| **Réplicas por serviço**               | 20 (flexível)                                                                                                             |
-| **Réplicas por warehouse**             | 50 (flexível)                                                                                                             |
-| **Baixa cardinalidade**                | 10k ou menos                                                                                                              |
-| **Chaves primárias em uma tabela**     | 4–5 que filtrem suficientemente os dados                                                                                  |
-| **Concorrência de consultas**          | 1000 (por réplica)                                                                                                        |
-| **Ingestão em lote**                   | Qualquer valor &gt; 1 milhão de linhas é dividido em blocos de 1 milhão de linhas                                         |
-
-Para limites de réplicas e escalonamento de warehouse, consulte [warehouses](/pt-BR/products/cloud/features/infrastructure/warehouses#scaling).
-
-Os valores acima são limites de proteção padrão. O limite aplicado a um serviço específico pode ser maior do que o valor mostrado aqui, pois serviços maiores são configurados com mais margem de capacidade. O limite efetivamente aplicável ao seu serviço é informado no aviso recebido quando você se aproxima dele. Para serviços que já excedem os limites de uso acima, os limites de tabelas/bancos de dados são definidos como a contagem atual de tabelas/bancos de dados do serviço mais 25%.
+| Dimensão                           | Limite                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Bancos de dados**                | 1000                                                                                                                      |
+| **Tabelas**                        | 5000                                                                                                                      |
+| **Colunas**                        | ∼1000 (wide format é preferível a compact)                                                                                |
+| **Partições**                      | 50k                                                                                                                       |
+| **Partes**                         | 10k (consulte a configuração [`max_parts_in_total`](/pt-BR/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
+| **Tamanho da parte**               | 150 GB                                                                                                                    |
+| **Serviços por organização**       | 20 (soft)                                                                                                                 |
+| **Serviços por warehouse**         | 5 (soft)                                                                                                                  |
+| **Réplicas por serviço**           | 20 (soft)                                                                                                                 |
+| **Baixa cardinalidade**            | 10k ou menos                                                                                                              |
+| **Chaves primárias em uma tabela** | 4-5 que filtrem os dados de forma suficiente                                                                              |
+| **Concorrência de consultas**      | 1000 (por réplica)                                                                                                        |
+| **Ingestão em lote**               | qualquer lote &gt; 1M será dividido pelo sistema em blocos de 1M linhas                                                   |
 
 <Note>
-  Para serviços de réplica única, o número máximo de bancos de dados é limitado a
-  100, e o número máximo de tabelas é limitado a 500. Além disso, o armazenamento
-  para serviços do tier Basic é limitado a 1 TB. Os limites de view, dicionário e
-  coleção nomeada acima correspondem a um único valor aplicável a todos os serviços,
-  incluindo serviços de réplica única.
+  Para serviços com réplica única, o número máximo de bancos de dados é restrito a
+  100, e o número máximo de tabelas é restrito a 500. Além disso, o armazenamento
+  para serviços do Basic Tier é limitado a 1 TB.
 </Note>
-
-Os limites específicos de aviso e erro do seu serviço podem ser verificados consultando system.server&#95;settings. Por exemplo,
-
-```
-SELECT * 
-FROM system.server_settings 
-WHERE name IN ('max_table_num_to_warn', 'max_table_num_to_throw', 'max_database_num_to_warn', 'max_database_num_to_throw', 'max_view_num_to_warn', 'max_view_num_to_throw', 'max_dictionary_num_to_warn', 'max_dictionary_num_to_throw', 'max_named_collection_num_to_warn', 'max_named_collection_num_to_throw')
-```

@@ -43,10 +43,10 @@ keywords: ['ネイティブプロトコル', 'tcp プロトコル', 'クライ�
 | version&#95;patch | UVarInt | `3`             | サーバーのパッチバージョン  |
 
 <div id="exception">
-  ## Exception
+  ## 例外
 </div>
 
-クエリ処理中のサーバーException。
+クエリ処理中のサーバー例外。
 
 | フィールド           | 型      | 値                                      | 説明                                 |
 | --------------- | ------ | -------------------------------------- | ---------------------------------- |
@@ -56,9 +56,9 @@ keywords: ['ネイティブプロトコル', 'tcp プロトコル', 'クライ�
 | stack&#95;trace | String | ~                                      | C++ のスタックトレース                      |
 | nested          | Bool   | `true`                                 | さらにエラーあり                           |
 
-`nested` が `false` になるまで、Exceptionが連続して並ぶ場合があります。
+`nested` が `false` になるまで、例外が連続して並ぶ場合があります。
 
-[codes]: https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/ErrorCodes.cpp "エラーコードの一覧"
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "エラーコードの一覧"
 
 <div id="progress">
   ## Progress

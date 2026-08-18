@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## Поддерживаемые версии Postgres
@@ -98,17 +97,7 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` определяет набор таблиц, события изменений в которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать все таблицы, поскольку включение лишних таблиц увеличивает объём WAL-трафика из Postgres в ClickPipes и снижает общую эффективность репликации.
-
-<div id="iam-authentication">
-  ### Использование IAM-аутентификации (необязательно)
-</div>
-
-<IAMAuthentication engine="postgres" service="rds">
-  <Note>
-    Для IAM-аутентификации при репликации необходимо, чтобы параметр `rds.iam_auth_for_replication` был установлен в `1`. Это поддерживается, начиная с PostgreSQL 11; в более ранних версиях можно запускать только ClickPipes в режиме `Initial Load Only`.
-  </Note>
-</IAMAuthentication>
+Публикация `clickpipes` будет содержать набор событий изменений для указанных таблиц и позже будет использоваться для приёма потока репликации.
 
 <div id="configure-network-access">
   ## Настройка сетевого доступа
@@ -118,7 +107,7 @@ postgres=> SHOW rds.logical_replication ;
   ### Управление доступом по IP-адресам
 </div>
 
-Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в раздел `Inbound rules` группы безопасности RDS.
+Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/home#list-of-static-ips) в раздел `Inbound rules` группы безопасности RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Где найти группу безопасности в RDS Postgres?" size="lg" border />
 

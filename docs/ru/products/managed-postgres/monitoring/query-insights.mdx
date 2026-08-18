@@ -2,19 +2,19 @@
 slug: /cloud/managed-postgres/monitoring/query-insights
 sidebarTitle: 'Query insights'
 title: 'Query insights для Postgres'
-description: 'Телеметрия по каждому оператору для ClickHouse Managed Postgres: все шаблоны регулярного выражения запросов, которые выполняет ваша база данных, ранжированы по влиянию и снабжены диагностическими счётчиками, объясняющими, почему каждый из них работает медленно'
+description: 'Телеметрия по каждому оператору для Managed Postgres: все шаблоны регулярного выражения запросов, которые выполняет ваша база данных, ранжированы по влиянию и снабжены диагностическими счётчиками, объясняющими, почему каждый из них работает медленно'
 keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'медленные запросы', 'задержка p99', 'шаблоны запросов', 'производительность Postgres', 'временные блоки', 'параллельные воркеры', 'wal']
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights собирает телеметрию по каждому
 оператору из вашего экземпляра
-[ClickHouse Managed Postgres](/ru/products/managed-postgres/overview) и ранжирует каждый шаблон регулярного выражения
+[Managed Postgres](/ru/products/managed-postgres/overview) и ранжирует каждый шаблон регулярного выражения
 запроса по степени влияния, чтобы вы могли перейти от &quot;p99 постепенно растет&quot; к &quot;этот шаблон регулярного выражения
 сбрасывает промежуточные данные на диск&quot;, не покидая облачную консоль.
 
@@ -28,16 +28,16 @@ ClickHouse Cloud. Телеметрия нормализуется внутри P
   ## Откройте Query insights
 </div>
 
-Откройте свой экземпляр ClickHouse Managed Postgres в облачной консоли и нажмите
+Откройте свой экземпляр Managed Postgres в облачной консоли и нажмите
 **Query insights** на левой боковой панели. Страница разделена на четыре
 области в том порядке, в котором вы, скорее всего, будете их использовать:
 
 * **обзор** — сводка, в которой проверка состояния базы данных помещается на одном экране.
-* Таблица **медленные шаблоны регулярного выражения**, где ранжируются все шаблоны регулярного выражения запросов, которые
+* Таблица **медленные шаблоны**, где ранжируются все шаблоны запросов, которые
   выполнялись в вашей базе данных, с сортировкой по любому интересующему вас признаку.
 * Панель **последние запросы**, в которой отдельные выполнения перечислены в обратном
   хронологическом порядке.
-* **Выдвижная панель сведений**, в которой собраны все счётчики для одного шаблона регулярного выражения.
+* **Выдвижная панель сведений**, в которой собраны все счётчики для одного шаблона.
 
 Используйте селектор **Time period** вверху, чтобы переключаться между последними 15
 минутами, часом, днём, неделей или месяцем. Размер бакета агрегации
@@ -197,10 +197,10 @@ CPU time.
 [ClickHouse Cloud OpenAPI](/ru/products/managed-postgres/openapi#query-insights).
 Таблица [медленные шаблоны](#slow-patterns) сопоставлена с
 конечной точкой
-[получения списка шаблонов медленных запросов](/ru/products/cloud/api-reference/postgres/slow-query-patterns-get-list),
+[получения списка шаблонов медленных запросов](/ru/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
 а [выдвижная панель сведений](#detail) — с
 конечной точкой
-[получения шаблона медленного запроса](/ru/products/cloud/api-reference/postgres/slow-query-pattern-get),
+[получения шаблона медленного запроса](/ru/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
 которая возвращает агрегированные метрики одного шаблона вместе с его
 последними выполнениями.
 
@@ -259,6 +259,6 @@ ClickHouse. Исходный код и баг-репорты — на
 
 * [Панель мониторинга](/ru/products/managed-postgres/monitoring/dashboard) — встроенные диаграммы ресурсов и активности
 * [Конечная точка Prometheus](/ru/products/managed-postgres/monitoring/prometheus) — собирайте метрики уровня хоста в собственный стек обсервабилити
-* [ClickHouse Managed Postgres OpenAPI](/ru/products/managed-postgres/openapi#query-insights) — программно запрашивайте медленные шаблоны и последние выполнения
-* [Расширения](/ru/products/managed-postgres/extensions) — расширения, доступные в экземплярах ClickHouse Managed Postgres
+* [Managed Postgres OpenAPI](/ru/products/managed-postgres/openapi#query-insights) — программно запрашивайте медленные шаблоны и недавние выполнения
+* [Расширения](/ru/products/managed-postgres/extensions) — расширения, доступные в экземплярах Managed Postgres
 * [`pg_stat_ch` on GitHub](https://github.com/clickhouse/pg_stat_ch) — расширение с открытым исходным кодом, лежащее в основе Query Insights

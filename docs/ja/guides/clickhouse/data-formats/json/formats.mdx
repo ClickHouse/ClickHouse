@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### 親オブジェクトのキー値を指定する
 </div>
 
-親オブジェクトのキーの値もテーブルに保存したいとします。この場合、キー値の保存先となるカラム名を指定するには、[次のオプション](/ja/reference/settings/formats/format#format_json_object_each_row_column_for_object_name)を使用できます。
+親オブジェクトのキーの値もテーブルに保存したいとします。この場合、キー値の保存先となるカラム名を指定するには、[次のオプション](/ja/reference/settings/formats#format_json_object_each_row_column_for_object_name)を使用できます。
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## ネストされたJSONオブジェクトへのアクセス
 </div>
 
-[以下の設定オプション](/ja/reference/settings/formats/input-format#input_format_import_nested_json)を有効にすると、[ネストされたJSONキー](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)を参照できます。
+[以下の設定オプション](/ja/reference/settings/formats#input_format_import_nested_json)を有効にすると、[ネストされたJSONキー](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)を参照できます。
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-ClickHouse はインポート時に不明なカラムを無視します。この動作は、設定オプション [input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats/input-format#input_format_skip_unknown_fields) で無効にできます。
+ClickHouse はインポート時に不明なカラムを無視します。この動作は、設定オプション [input&#95;format&#95;skip&#95;unknown&#95;fields](/ja/reference/settings/formats#input_format_skip_unknown_fields) で無効にできます。
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

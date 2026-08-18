@@ -325,13 +325,13 @@ Introduit dans : v1.1.0
 Renvoie la plus grande valeur parmi les arguments.
 Les arguments `NULL` sont ignorés.
 
-* Pour les tableaux, renvoie le tableau le plus grand dans l’ordre lexicographique.
-* Pour les types `DateTime`, le type de résultat est promu au type le plus large (par exemple, `DateTime64` en cas de mélange avec `DateTime32`).
+* Pour les tableaux, renvoie le plus grand tableau au sens lexicographique.
+* Pour les types `DateTime`, le type de résultat est promu au type le plus large (par ex. `DateTime64` en combinaison avec `DateTime32`).
 
 <Info>
   **Utilisez le paramètre `least_greatest_legacy_null_behavior` pour modifier le comportement de `NULL`**
 
-  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement non rétrocompatible : les valeurs `NULL` sont désormais ignorées, alors qu’auparavant la fonction renvoyait `NULL` si l’un des arguments était `NULL`.
+  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement non rétrocompatible : les valeurs `NULL` sont désormais ignorées, alors qu&#39;auparavant la fonction renvoyait `NULL` si l&#39;un des arguments était `NULL`.
   Pour conserver le comportement précédent, définissez le paramètre `least_greatest_legacy_null_behavior` (par défaut : `false`) sur `true`.
 </Info>
 
@@ -347,15 +347,15 @@ greatest(x1[, x2, ...])
 
 **Valeur renvoyée**
 
-Renvoie la plus grande valeur parmi les arguments, promue au type compatible le plus large. [`Any`](/fr/reference/data-types/index)
+Renvoie la plus grande valeur parmi les arguments, promue au plus grand type compatible. [`Any`](/fr/reference/data-types/index)
 
 **Exemples**
 
 **Types numériques**
 
 ```sql title=Query
--- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 ```
 
 ```response title=Response
@@ -379,13 +379,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **Types DateTime**
 
 ```sql title=Query
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
-SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
+┌─greatest(toD⋯(now(), 3))─┐
+│  2025-05-28 15:50:53.000 │
 └──────────────────────────┘
 ```
 
@@ -400,7 +400,7 @@ Effectue un branchement conditionnel.
 * Si la condition `cond` s&#39;évalue à une valeur non nulle, la fonction renvoie le résultat de l&#39;expression `then`.
 * Si `cond` s&#39;évalue à zéro ou à NULL, le résultat de l&#39;expression `else` est renvoyé.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) détermine si l&#39;évaluation en court-circuit est utilisée.
 
 S&#39;il est activé, l&#39;expression `then` n&#39;est évaluée que sur les lignes où `cond` est true, et l&#39;expression `else` sur celles où `cond` est false.
 
@@ -456,7 +456,7 @@ Les arguments `NULL` sont ignorés.
 <Info>
   **Utilisez le paramètre `least_greatest_legacy_null_behavior` pour modifier le comportement de `NULL`**
 
-  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement non rétrocompatible : les valeurs `NULL` sont désormais ignorées, alors qu’auparavant la fonction renvoyait `NULL` si l’un des arguments était `NULL`.
+  La version [24.12](/fr/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) a introduit un changement rétro-incompatible : les valeurs `NULL` sont désormais ignorées, alors qu’auparavant la fonction renvoyait `NULL` si l’un des arguments était `NULL`.
   Pour conserver le comportement précédent, définissez le paramètre `least_greatest_legacy_null_behavior` (par défaut : `false`) sur `true`.
 </Info>
 
@@ -479,8 +479,8 @@ Renvoie la plus petite valeur parmi les arguments, promue au type compatible le 
 **Types numériques**
 
 ```sql title=Query
--- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 ```
 
 ```response title=Response
@@ -504,13 +504,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **Types DateTime**
 
 ```sql title=Query
+SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
-SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
+┌─least(toDate⋯(now(), 3))─┐
+│  2025-05-27 15:55:20.000 │
 └──────────────────────────┘
 ```
 
@@ -524,7 +524,7 @@ Permet d&#39;écrire l&#39;opérateur [`CASE`](/fr/reference/operators/index#con
 Évalue chaque condition dans l&#39;ordre. Pour la première condition qui est vraie (non égale à zéro et différente de `NULL`), renvoie la valeur correspondante.
 Si aucune des conditions n&#39;est vraie, renvoie la valeur `else`.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) contrôle
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle
 si l&#39;évaluation en court-circuit est utilisée. S&#39;il est activé, l&#39;expression `then_i` est évaluée uniquement sur les lignes où
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` est vraie.
 

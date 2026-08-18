@@ -160,19 +160,39 @@ This shows the exact revision, build ID, and PID. Compare with what you expect �
 
 ### 8. Deep-dive: trace log profiling (flamegraphs)
 
-The perf job writes `right-trace-log.tsv` and `left-trace-log.tsv`, exports of `system.trace_log` from each server, containing CPU and real-time stack samples for every query.
+The `logs.tar.zst` archive contains `right-trace-log.tsv` and `left-trace-log.tsv` — these are exports of `system.trace_log` from each server, containing CPU and real-time stack samples for every query.
 
-Two limits to know before reaching for these files. They are NOT shipped in `logs.tar.zst` (the archive excludes `*-trace-log.tsv`), and the dump holds only the four columns the report reads: `query_id`, `trace`, `trace_type`, `size`. There is no `symbols` column; addresses are symbolized separately through `*-addresses.tsv`.
-
-**Use the report's collapsed stacks instead.** `report/stacks.$version.tsv` already carries symbolized, collapsed stacks per query, and it is what the report's own flamegraphs are built from. It has no header; its first three columns are `test`, `query_index` and `trace_type`, so select a query by those three fields (the `math.queryN` spelling is a query id and never appears in this file). Keep the trace types apart: `CPU` and `Real` count samples while `MemorySample` and `JemallocSample` sum bytes, so folding them together mixes units.
+**Extract trace logs:**
 
 ```bash
-tar -I zstd -xf tmp/perf_logs.tar.zst -C tmp/ ./report/stacks.right.tsv
-awk -F'\t' '$1 == "math" && $2 == 2 && $3 == "CPU"' tmp/report/stacks.right.tsv \
-  | cut -f 5- | sed 's/\t/ /g' > tmp/math2_right.collapsed
+tar -I zstd -xf tmp/perf_logs.tar.zst -C tmp/ ./right-trace-log.tsv ./left-trace-log.tsv
 ```
 
-The resulting `.collapsed` file can be processed with `flamegraph.pl`. Compare left (master) vs right (PR) to see what changed. Not with `analyze-assembly.py --perf-map`: that flag reads JSONL records keyed by instruction address, so every folded `symbol;...;symbol count` line is rejected as a JSON parse error and the weighting silently comes out empty.
+**Key columns** (TSV format, header in row 1, types in row 2, data from row 3):
+- Column 7: `trace_type` — `CPU` (sampled CPU time), `Real` (wall clock), `Memory`, etc.
+- Column 11: `query_id` — matches the `{test.queryN.runM}` pattern from server logs
+- Column 19: `symbols` — comma-separated list of function names (leaf first), wrapped in `['...']`
+
+**Find the hotspot for a specific query** — extract CPU traces and count leaf functions:
+
+```bash
+grep "math.query2" tmp/right-trace-log.tsv | awk -F'\t' '$7 == "CPU" {print $19}' | \
+  sed "s/\[//g; s/\]//g; s/'//g" | \
+  awk -F',' '{print $1}' | \
+  sort | uniq -c | sort -rn | head -20
+```
+
+This gives a flat profile of where CPU time is spent, similar to `perf report`. Compare left (master) vs right (PR) to see what changed.
+
+**Build collapsed stacks for flamegraph visualization:**
+
+```bash
+grep "math.query2" tmp/right-trace-log.tsv | awk -F'\t' '$7 == "CPU" {print $19}' | \
+  sed "s/\[//g; s/\]//g; s/','/;/g; s/'//g" | \
+  sort | uniq -c | awk '{print $2, $1}' > tmp/math2_right.collapsed
+```
+
+The resulting `.collapsed` file can be processed with `flamegraph.pl` or the `analyze-assembly.py --perf-map` tool.
 
 **This is the fastest way to identify the root cause of a regression.** Example: for a 31x `exp10` regression, the trace log immediately showed `modf` consuming 577/1200 CPU samples on the PR binary vs 28/60 on master — pinpointing the exact function responsible without needing to reproduce locally.
 

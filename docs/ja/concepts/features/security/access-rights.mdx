@@ -89,7 +89,7 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 1. ユーザーアカウントの設定。
 2. ユーザーアカウントのデフォルトロールの設定。ある設定が複数のロールで構成されている場合、その設定の適用順序は未定義です。
 3. ユーザーまたはそのデフォルトロールに割り当てられた設定プロファイルの設定。ある設定が複数のプロファイルで構成されている場合、その設定の適用順序は未定義です。
-4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings/default#default_profile) で適用される設定。
+4. サーバー全体に既定で適用される設定、または [default profile](/ja/reference/settings/server-settings/settings#default_profile) で適用される設定。
 
 <div id="role-management">
   ### ロール
@@ -120,8 +120,6 @@ ClickHouse を使い始めたばかりであれば、次の手順を検討して
 </div>
 
 ROW POLICY は、ユーザーまたはロールがアクセスできる行を定義するフィルターです。ROW POLICY には、特定のテーブルに対するフィルターに加えて、この ROW POLICY を適用するロールやユーザーの一覧が含まれます。
-
-ROW POLICY は、テーブルデータがローカルで読み取られる場合に適用されます。[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブル、または読み取りをリモートサーバーに委譲する別のテーブルの場合は、各サーバーの基になるテーブルにポリシーを定義してください。リモートサーバーをバックエンドとするテーブル自体に設定したポリシーは、送信されたクエリには適用できないため、そのテーブルを介した読み取りは拒否されます。イニシエーターが構築済みの読み取りプランを送信する場合、基になるテーブル上のこのようなポリシーは適用されないため、ROW POLICY を強制する必要があるユーザーでは [`serialize_query_plan = 0`](/ja/reference/settings/session-settings/serialize#serialize_query_plan) を維持してください ([issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891) を参照) 。
 
 <Note>
   ROW POLICY が有効なのは、readonly アクセス権限がある場合に限られます。テーブルを変更したり、テーブル間でパーティションをコピーしたりできる場合、ROW POLICY による制限は実質的に意味をなさなくなります。
@@ -172,7 +170,7 @@ QUOTA には、一定期間ごとの一連の制限と、この QUOTA を使用�
 
 * 設定の保存先となるディレクトリを用意します。
 
-  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings/access-control#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
+  ClickHouse は、[access&#95;control&#95;path](/ja/reference/settings/server-settings/settings#access_control_path) サーバー設定パラメーターで指定されたフォルダーに、アクセスエンティティの設定を保存します。
 
 * 少なくとも 1 つのユーザーアカウントで、SQL ベースのアクセス制御とアカウント管理を有効にします。
 

@@ -25,7 +25,7 @@ tabla equivocada o de una tabla en el clúster equivocado, y errores de software
 procesamiento incorrecto de los datos o a su corrupción.
 
 En muchos casos, errores como estos afectarán a todas las réplicas. ClickHouse incorpora mecanismos de protección
-para evitar algunos tipos de errores; por ejemplo, de forma [predeterminada](/es/reference/settings/session-settings/max#max_table_size_to_drop)
+para evitar algunos tipos de errores; por ejemplo, de forma [predeterminada](/es/reference/settings/session-settings#max_table_size_to_drop)
 no se pueden eliminar sin más tablas con un motor de la familia `MergeTree` que contengan más de
 50 Gb de datos. Sin embargo, estas protecciones no cubren todos los casos posibles y
 los problemas pueden seguir ocurriendo.
@@ -62,13 +62,13 @@ restauración disponibles en ClickHouse:
 
 Las copias de seguridad pueden:
 
-* ser [síncronas o asíncronas](#synchronous-vs-asynchronous)
-* ser [síncronas o asíncronas](#synchronous-vs-asynchronous)
+* ser [completas o incrementales](#backup-types)
+* ser [sincrónicas o asincrónicas](#synchronous-vs-asynchronous)
 * ser [concurrentes o no concurrentes](#concurrent-vs-non-concurrent)
 * estar [comprimidas o sin comprimir](#compressed-vs-uncompressed)
 * usar [colecciones con nombre](#using-named-collections)
 * estar protegidas con contraseña
-* hacerse de [tablas del sistema, tablas de registro o tablas de gestión de acceso](#system-backups)
+* hacerse de [system tables, log tables o tablas de gestión de acceso](#system-backups)
 
 <div id="backup-types">
   ## Tipos de copias de seguridad

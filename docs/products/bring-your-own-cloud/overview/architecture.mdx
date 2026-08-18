@@ -16,16 +16,16 @@ The diagram below illustrates how ClickHouse Cloud organizations, cloud accounts
 
 - **ClickHouse Cloud organization:** The top-level entity in ClickHouse Cloud that manages users, billing, and non-BYOC ClickHouse services. Users within an organization can access both standard Cloud services and BYOC services.
 - **ClickHouse BYOC organization:** A separate organization dedicated to managing BYOC deployments. It shares users with the Cloud organization but is linked to one or more cloud accounts where BYOC infrastructure is deployed.
-- **Cloud account/project/subscription:** The customer-owned AWS account, GCP project, or Azure subscription where BYOC infrastructure is provisioned. Each account/project/subscription can host BYOC deployments in one or more regions. A dedicated account/project/subscription per BYOC deployment is recommended for isolation.
-- **BYOC infrastructure:** The set of cloud resources deployed within a specific region of a cloud account, including a VPC/VNet, Kubernetes cluster (EKS/GKE/AKS), object storage buckets, IAM roles/service accounts/service principals, and supporting services. A single cloud account can contain multiple BYOC infrastructures across different regions.
+- **Cloud account / project:** The customer-owned AWS account or GCP project where BYOC infrastructure is provisioned. Each account or project can host BYOC deployments in one or more regions. A dedicated account or project per BYOC deployment is recommended for isolation.
+- **BYOC infrastructure:** The set of cloud resources deployed within a specific region of a cloud account, including a VPC, Kubernetes cluster (EKS/GKE), storage buckets, IAM roles, and supporting services. A single cloud account can contain multiple BYOC infrastructures across different regions.
 - **ClickHouse Service:** An individual ClickHouse cluster running within a BYOC infrastructure. Multiple services can run within the same BYOC infrastructure.
 
 <Note>
-Mixing of AWS accounts, GCP projects and Azure subscriptions under the same organization is only possible for customers who aren't set up through a [cloud service provider marketplace](/products/cloud/reference/billing/marketplace/overview).
+Mixing of AWS accounts and GCP projects under the same organization is only possible for customers who are not set up through a [cloud service provider marketplace](/products/cloud/reference/billing/marketplace/overview).
 </Note>
 
 ## Glossary {#glossary}
-- **ClickHouse VPC:** The VPC owned by ClickHouse Cloud.
+- **ClickHouse VPC:**  The VPC owned by ClickHouse Cloud.
 - **Customer BYOC VPC:** The VPC, owned by the customer's cloud account, is provisioned and managed by ClickHouse Cloud and dedicated to a ClickHouse Cloud BYOC deployment.
 - **Customer VPC:** Other VPCs owned by the customer cloud account used for applications that need to connect to the Customer BYOC VPC.
 
@@ -42,10 +42,10 @@ In your **Customer BYOC VPC**, ClickHouse provisions a Kubernetes cluster (for e
 
 The main cloud resources ClickHouse Cloud will deploy in your account are:
 
-- **VPC:** A Virtual Private Cloud dedicated to your ClickHouse deployment. This can be managed either by ClickHouse or by you, the customer, and is typically peered with your application VPCs.
-- **IAM roles and policies:** Roles and permissions necessary for Kubernetes, ClickHouse services, and the monitoring stack. These can be provisioned by ClickHouse or supplied by the customer.
-- **Storage buckets:** Used for storing data parts, backups, and (optionally) long-term metrics and log archives.
-- **Kubernetes cluster:** This can be Amazon EKS, Google GKE, or Azure AKS depending on your cloud provider. It hosts the ClickHouse servers and supporting services shown in the architecture diagram.
+* **VPC:** A Virtual Private Cloud dedicated to your ClickHouse deployment. This can be managed either by ClickHouse or by you, the customer, and is typically peered with your application VPCs.
+* **IAM roles and policies:** Roles and permissions necessary for Kubernetes, ClickHouse services, and the monitoring stack. These can be provisioned by ClickHouse or supplied by the customer.
+* **Storage buckets:** Used for storing data parts, backups, and (optionally) long-term metrics and log archives.
+* **Kubernetes cluster:** This can be Amazon EKS, Google GKE, or Azure AKS, depending on your cloud provider, and hosts the ClickHouse servers and supporting services shown in the architecture diagram.
 
 By default, ClickHouse Cloud provisions a new, dedicated VPC and sets up the necessary IAM roles to ensure secure operation of Kubernetes services. For organizations with advanced networking or security needs, there is also the option to manage the VPC and IAM roles independently. This approach allows for greater customization of network configurations and more precise control over permissions. However, choosing to self-manage these resources will increase your operational responsibilities.
 
@@ -62,12 +62,12 @@ The BYOC deployment model requires two essential components to ensure reliable o
 ClickHouse Cloud needs cross-account IAM permissions to provision and manage resources within your cloud account. This enables ClickHouse to:
 
 - **Provision infrastructure**: Create and configure VPCs, subnets, security groups, and other networking components
-- **Manage Kubernetes clusters**: Deploy and maintain EKS/GKE/AKS clusters, node groups, and cluster components
+- **Manage Kubernetes clusters**: Deploy and maintain EKS/GKE clusters, node groups, and cluster components
 - **Create storage resources**: Provision S3 buckets or equivalent object storage for data and backups
 - **Manage IAM roles**: Create and configure IAM roles for Kubernetes service accounts and supporting services
 - **Operate supporting services**: Deploy and manage monitoring stacks, ingress controllers, and other infrastructure components
 
-These permissions are granted through a cross-account IAM role (AWS), service account (GCP), or multi-tenant service principal (Azure) that you create during the initial onboarding process. The role follows the principle of least privilege, with permissions scoped to only what's necessary for BYOC operations.
+These permissions are granted through a cross-account IAM role (AWS) or service account (GCP) that you create during the initial onboarding process. The role follows the principle of least privilege, with permissions scoped to only what's necessary for BYOC operations.
 
 For detailed information about the specific permissions required, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
 
@@ -80,7 +80,6 @@ Tailscale provides a secure, zero-trust private network connection between Click
 - **Infrastructure management**: Management services can coordinate with your BYOC infrastructure for automated operations
 
 The Tailscale connection is **outbound-only** from your BYOC VPC—no inbound connections are required, reducing your security exposure. All access is:
-
 - **Approved and audited**: Engineers must request access through an internal approval system
 - **Time-bound**: Access automatically expires after a set period
 - **Restricted**: Engineers can only access system tables and infrastructure components, never customer data
@@ -99,8 +98,7 @@ Together, these two components enable ClickHouse Cloud to:
 All customer data remains within your cloud account and is never accessed or transmitted through these management channels.
 
 **Additional recommendations and considerations:**
-
-- Ensure that network CIDR ranges for your BYOC VPC don't overlap with any existing VPCs you plan to peer with.
+- Ensure that network CIDR ranges for your BYOC VPC doesn't overlap with any existing VPCs you plan to peer with.
 - Tag your resources clearly to simplify management and support.
 - Plan for adequate subnet sizing and distribution across availability zones for high availability.
 - Consult the [security playbook](/products/cloud/guides/security/audit-logging/byoc-security-playbook) to understand shared responsibility and best practices when ClickHouse Cloud operates within your environment.

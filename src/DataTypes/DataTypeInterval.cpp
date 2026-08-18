@@ -60,7 +60,7 @@ void registerDataTypeInterval(DataTypeFactory & factory)
     factory.registerSimpleDataType("IntervalDay", [] { return DataTypePtr(std::make_shared<DataTypeInterval>(IntervalKind::Kind::Day)); }, DataTypeFactory::Case::Sensitive,
         Documentation{
             .description = R"DOCS_MD(
-The family of data types representing time and date intervals. The resulting types of the [INTERVAL](/reference/operators#interval) operator.
+The family of data types representing time and date intervals. The resulting types of the [INTERVAL](/sql-reference/operators#interval) operator.
 
 Structure:
 
@@ -95,7 +95,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 
 ## Usage Remarks {#usage-remarks}
 
-You can use `Interval`-type values in arithmetical operations with [Date](/reference/data-types/date) and [DateTime](/reference/data-types/datetime)-type values. For example, you can add 4 days to the current time:
+You can use `Interval`-type values in arithmetical operations with [Date](../../../sql-reference/data-types/date.md) and [DateTime](../../../sql-reference/data-types/datetime.md)-type values. For example, you can add 4 days to the current time:
 
 ```sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY
@@ -176,8 +176,8 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 
 ## See Also {#see-also}
 
-- [INTERVAL](/reference/operators#interval) operator
-- [toInterval](/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) type conversion functions
+- [INTERVAL](/sql-reference/operators#interval) operator
+- [toInterval](/sql-reference/functions/type-conversion-functions#toIntervalYear) type conversion functions
 )DOCS_MD",
             .syntax = "IntervalDay",
             .related = {"IntervalSecond", "IntervalMonth"},

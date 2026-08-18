@@ -16,7 +16,7 @@ ClickHouse server 可以通过 XML 或 YAML 语法的配置文件进行配置。
 在大多数安装类型中，ClickHouse server 默认使用 `/etc/clickhouse-server/config.xml` 作为配置文件，但也可以在服务器启动时使用命令行选项 `--config-file` 或 `-C` 手动指定配置文件的位置。
 其他配置文件可以放在相对于主配置文件的 `config.d/` 目录中，例如 `/etc/clickhouse-server/config.d/` 目录。
 在这些目录中的文件和主配置会在配置应用到 ClickHouse server 之前，通过预处理步骤先合并。
-配置片段会按其完整路径的词典序合并。对于标准 `config.d/` 目录中的文件，这等同于按文件名排序。旧版 `conf.d/` 目录也会合并；由于 `conf.d` 排在 `config.d` 之前，因此当两个目录都存在时，其中的所有片段会先被处理。
+配置文件按字母顺序合并。
 为简化更新并提高模块化程度，最佳实践是保持默认的 `config.xml` 文件不作修改，并将额外的自定义配置放入 `config.d/` 中。
 ClickHouse Keeper 的配置位于 `/etc/clickhouse-keeper/keeper_config.xml`。
 同样，Keeper 的其他配置文件需要放在 `/etc/clickhouse-keeper/keeper_config.d/` 中。
@@ -174,22 +174,18 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 
 也可以用文件内容替换配置中的部分内容。这可以通过两种方式实现：
 
-* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。包含替换内容的文件路径由 server 配置中的 [`include_from`](/zh/reference/settings/server-settings/settings/other#include_from) 元素指定；没有默认路径，因此只有在指定后才会读取替换内容。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings/other#macros) 的设置) 。
-* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 Zookeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
-
-<Note>
-  在版本 26.8 中更改：在该版本之前，只要文件 `/etc/metrika.xml` 存在，即使未指定 `include_from`，也会隐式使用该文件。如果依赖该文件，请在 `include_from` 中显式指定其路径。请注意，`include_from` 会从每个配置文件中单独读取：从主 server 配置中单独加载的文件——用户配置 (例如，未包含在主文件中的 `users.xml`) 和 XML 字典配置——各自都需要自己的 `include_from` 元素；仅在主 server 配置中指定它不会应用于这些文件。
-</Note>
+* *替换值*：如果某个元素带有 `incl` 属性，其值将被替换为所引用文件的内容。默认情况下，包含替换内容的文件路径为 `/etc/metrika.xml`。这可以在 server 配置的 [`include_from`](/zh/reference/settings/server-settings/settings#include_from) 元素中修改。替换值在该文件的 `/clickhouse/substitution_name` 元素中指定。如果 `incl` 中指定的替换项不存在，则会记录到日志中。要防止 ClickHouse 记录缺失的替换项，请指定属性 `optional="true"` (例如，[macros](/zh/reference/settings/server-settings/settings#macros) 的设置) 。
+* *替换元素*：如果要用替换内容替换整个元素，请使用 `include` 作为元素名。元素名 `include` 可以与属性 `from_zk = "/path/to/node"` 结合使用。在这种情况下，元素值会被替换为 ZooKeeper 中 `/path/to/node` 节点的内容。如果将整个 XML 子树存储为 ZooKeeper 节点，这种方式同样适用，它会被完整插入到源元素中。
 
 下面给出一个示例：
 
 ```xml
 <clickhouse>
-    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <!-- 将 `/profiles-in-zookeeper` ZK 路径下的 XML 子树追加到 `<profiles>` 元素。 -->
     <profiles from_zk="/profiles-in-zookeeper" />
 
     <users>
-        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <!-- 将 `include` 元素替换为 `/users-in-zookeeper` ZK 路径下的子树。 -->
         <include from_zk="/users-in-zookeeper" />
         <include from_zk="/other-users-in-zookeeper" />
     </users>
@@ -203,9 +199,9 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 </div>
 
 你可以使用对称加密来加密配置元素，例如明文密码或私钥。
-为此，先配置[加密编解码器](/zh/reference/statements/create/table/codec#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
+为此，先配置[加密编解码器](/zh/reference/statements/create/table#encryption-codecs)，然后为要加密的元素添加属性 `encrypted_by`，并将其值设为加密编解码器的名称。
 
-与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理文件中不会进行替换 (即不会解密加密后的值) 。
+与属性 `from_zk`、`from_env` 和 `incl` 以及元素 `include` 不同，预处理后的文件中不会进行替换 (即不会解密加密后的值) 。
 解密只会在服务器进程运行时发生。
 
 例如：
@@ -329,7 +325,6 @@ XML 配置文件应使用 `<clickhouse>...</clickhouse>` 作为顶层标签。
 与 `config.xml` 和 `config.d/` 类似，用户配置也可以拆分到多个单独的文件中。
 目录名称定义为：将 `users_config` 设置去掉 `.xml` 后缀后，再拼接 `.d``。
 默认使用 `users.d`目录，因为`users&#95;config`的默认值为`users.xml&#96;。
-用户配置片段会按其完整路径的词典序进行合并。对于标准 `users.d/` 目录中的文件，这等同于按文件名排序。旧版 `conf.d/` 目录也会被合并；由于 `conf.d` 排在 `users.d` 之前，当两个目录都存在时，会先处理其中的所有片段。
 
 请注意，配置文件会先在考虑相关设置的情况下进行[合并](#merging)，之后才会处理 include。
 

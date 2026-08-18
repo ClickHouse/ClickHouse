@@ -1,29 +1,24 @@
 ---
-description: 'توثيق حول التعامل مع القيود'
+description: 'وثائق إدارة القيود'
 sidebarTitle: 'CONSTRAINT'
 slug: /sql-reference/statements/alter/constraint
-title: 'التعامل مع القيود'
+title: 'إدارة القيود'
 doc_type: 'reference'
 ---
 
-يمكن إضافة القيود أو تعديلها أو حذفها باستخدام البنية التالية:
+يمكن إضافة القيود أو حذفها باستخدام الصيغة التالية:
 
 ```sql
-ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression;
-ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression;
+ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name CHECK expression;
 ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constraint_name;
 ```
 
-كما هو الحال عند إنشاء الجدول، يمكن تعريف قيد إما باعتباره `CHECK` (يُطبَّق عند `INSERT`) أو باعتباره `ASSUME` (يثق به المُحسِّن من دون التحقق منه). اطّلع على [القيود](/ar/reference/statements/create/table#constraints) لمعرفة الفرق بينهما.
+اطّلع على المزيد حول [القيود](/ar/reference/statements/create/table#constraints).
 
-يستبدل `MODIFY CONSTRAINT` تعريف قيد موجود مع الإبقاء على موضعه في تعريف الجدول. ويمكنه أيضًا تغيير نوع القيد (على سبيل المثال، من `CHECK` إلى `ASSUME`). وهو مكافئ لحذف القيد ثم إضافته مجددًا بالتصريح الجديد. وإذا لم يكن القيد موجودًا، فسيُرجع الاستعلام خطأ ما لم يتم تحديد `IF EXISTS`.
-
-اطّلع على مزيد من المعلومات حول [القيود](/ar/reference/statements/create/table#constraints).
-
-تضيف الاستعلامات البيانات الوصفية الخاصة بالقيود إلى الجدول أو تغيّرها أو تزيلها، لذا تُعالَج فورًا.
+تضيف الاستعلامات البيانات الوصفية الخاصة بالقيود إلى الجدول أو تزيلها منه، لذا تُعالَج على الفور.
 
 <Tip>
-  **لن يتم تنفيذ** التحقق من القيد على البيانات الموجودة إذا تمت إضافته أو تعديله.
+  لن يتم التحقق من القيد على البيانات الموجودة عند إضافته.
 </Tip>
 
-تُبث جميع التغييرات على الجداول المكررة إلى ZooKeeper، وتُطبَّق على النسخ المتماثلة الأخرى أيضًا.
+تُنشر جميع التغييرات على الجداول المتماثلة إلى ZooKeeper، وتُطبَّق على النسخ المتماثلة الأخرى أيضًا.

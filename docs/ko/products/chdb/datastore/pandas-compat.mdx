@@ -1,0 +1,520 @@
+---
+title: 'DataStore Pandas 호환성'
+sidebarTitle: 'Pandas 호환성'
+slug: /chdb/datastore/pandas-compat
+description: 'DataStore에서 지원하는 pandas 호환 메서드 전체 목록(209개의 DataFrame 메서드)'
+keywords: ['chdb', 'datastore', 'pandas', 'compatibility', 'dataframe', 'methods']
+doc_type: 'reference'
+---
+
+DataStore는 완전한 API 호환성을 위해 **209개의 pandas DataFrame 메서드**를 구현합니다. 기존 pandas 코드는 최소한의 수정만으로 사용할 수 있습니다.
+
+<div id="approach">
+  ## 호환성 접근 방식
+</div>
+
+```python
+# 일반적인 마이그레이션 - import 구문만 변경하세요
+- import pandas as pd
++ from chdb import datastore as pd
+
+# 기존 코드를 그대로 사용할 수 있습니다
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+**핵심 원칙:**
+
+* pandas DataFrame 메서드 209개 모두 구현
+* SQL 최적화를 위한 지연 평가
+* 자동 타입 래핑(DataFrame → DataStore, Series → ColumnExpr)
+* 불변 연산(`inplace=True` 없음)
+
+***
+
+<div id="attributes">
+  ## 속성 및 프로퍼티
+</div>
+
+| 속성        | 설명                   | 실행 트리거 |
+| --------- | -------------------- | ------ |
+| `shape`   | (행, 컬럼) 튜플           | 예      |
+| `columns` | 컬럼 이름(Index)         | 예      |
+| `dtypes`  | 컬럼 데이터 타입            | 예      |
+| `values`  | NumPy 배열             | 예      |
+| `index`   | 행 인덱스                | 예      |
+| `size`    | 요소 개수                | 예      |
+| `ndim`    | 차원 수                 | 아니요    |
+| `empty`   | DataFrame이 비어 있는지 여부 | 예      |
+| `T`       | 전치                   | 예      |
+| `axes`    | 축 목록                 | 예      |
+
+**예시:**
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("data.csv")
+
+print(ds.shape)      # (1000, 5)
+print(ds.columns)    # Index(['name', 'age', 'city', 'salary', 'dept'])
+print(ds.dtypes)     # name: object, age: int64, ...
+print(ds.empty)      # False
+```
+
+***
+
+<div id="indexing">
+  ## 인덱싱 및 선택
+</div>
+
+| 메서드                    | 설명          | 예시                                   |
+| ---------------------- | ----------- | ------------------------------------ |
+| `df['col']`            | 컬럼 선택       | `ds['age']`                          |
+| `df[['col1', 'col2']]` | 여러 컬럼 선택    | `ds[['name', 'age']]`                |
+| `df[condition]`        | 불리언 인덱싱     | `ds[ds['age'] > 25]`                 |
+| `df.loc[...]`          | 레이블 기반 접근   | `ds.loc[0:10, 'name']`               |
+| `df.iloc[...]`         | 정수 기반 접근    | `ds.iloc[0:10, 0:3]`                 |
+| `df.at[...]`           | 레이블 기준 단일 값 | `ds.at[0, 'name']`                   |
+| `df.iat[...]`          | 위치 기준 단일 값  | `ds.iat[0, 0]`                       |
+| `df.head(n)`           | 처음 n개 행     | `ds.head(10)`                        |
+| `df.tail(n)`           | 마지막 n개 행    | `ds.tail(10)`                        |
+| `df.sample(n)`         | 무작위 샘플      | `ds.sample(100)`                     |
+| `df.select_dtypes()`   | Dtype 기준 선택 | `ds.select_dtypes(include='number')` |
+| `df.query()`           | 쿼리 표현식      | `ds.query('age > 25')`               |
+| `df.where()`           | 조건부 대체      | `ds.where(ds['age'] > 0, 0)`         |
+| `df.mask()`            | where의 반대   | `ds.mask(ds['age'] < 0, 0)`          |
+| `df.isin()`            | 값 포함 여부     | `ds['city'].isin(['NYC', 'LA'])`     |
+| `df.get()`             | 안전한 컬럼 접근   | `ds.get('col', default=None)`        |
+| `df.xs()`              | 교차 단면       | `ds.xs('key')`                       |
+| `df.pop()`             | 컬럼 제거       | `ds.pop('col')`                      |
+
+***
+
+<div id="statistical">
+  ## 통계 메서드
+</div>
+
+| Method           | Description | SQL Equivalent |
+| ---------------- | ----------- | -------------- |
+| `mean()`         | 평균값         | `AVG()`        |
+| `median()`       | 중앙값         | `MEDIAN()`     |
+| `mode()`         | 최빈값         | -              |
+| `std()`          | 표준 편차       | `STDDEV()`     |
+| `var()`          | 분산          | `VAR()`        |
+| `min()`          | 최솟값         | `MIN()`        |
+| `max()`          | 최댓값         | `MAX()`        |
+| `sum()`          | 합계          | `SUM()`        |
+| `prod()`         | 곱           | -              |
+| `count()`        | NULL이 아닌 개수 | `COUNT()`      |
+| `nunique()`      | 고유값 개수      | `UNIQ()`       |
+| `value_counts()` | 값별 빈도       | `GROUP BY`     |
+| `quantile()`     | 분위수         | `QUANTILE()`   |
+| `describe()`     | 요약 통계       | -              |
+| `corr()`         | 상관 행렬       | `CORR()`       |
+| `cov()`          | 공분산 행렬      | `COV()`        |
+| `corrwith()`     | 쌍별 상관관계     | -              |
+| `rank()`         | 순위          | `RANK()`       |
+| `abs()`          | 절댓값         | `ABS()`        |
+| `round()`        | 반올림         | `ROUND()`      |
+| `clip()`         | 값 제한        | -              |
+| `cumsum()`       | 누적합         | 윈도 함수          |
+| `cumprod()`      | 누적 곱        | 윈도 함수          |
+| `cummin()`       | 누적 최솟값      | 윈도 함수          |
+| `cummax()`       | 누적 최댓값      | 윈도 함수          |
+| `diff()`         | 차이          | 윈도 함수          |
+| `pct_change()`   | 백분율 변화      | 윈도 함수          |
+| `skew()`         | 왜도          | `SKEW()`       |
+| `kurt()`         | 첨도          | `KURT()`       |
+| `sem()`          | 표준 오차       | -              |
+| `all()`          | 모두 true     | -              |
+| `any()`          | 하나라도 true   | -              |
+| `idxmin()`       | 최솟값의 인덱스    | -              |
+| `idxmax()`       | 최댓값의 인덱스    | -              |
+
+**예시:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# 기본 통계
+print(ds['salary'].mean())
+print(ds['age'].std())
+print(ds.describe())
+
+# 그룹 통계
+print(ds.groupby('department')['salary'].mean())
+print(ds.groupby('city').agg({'salary': ['mean', 'std'], 'age': 'count'}))
+```
+
+***
+
+<div id="manipulation">
+  ## 데이터 조작
+</div>
+
+| Method              | Description  |
+| ------------------- | ------------ |
+| `drop()`            | 행/컬럼 삭제      |
+| `drop_duplicates()` | 중복 제거        |
+| `duplicated()`      | 중복 여부 표시     |
+| `dropna()`          | 결측값 제거       |
+| `fillna()`          | 결측값 채우기      |
+| `ffill()`           | 앞의 값으로 채우기   |
+| `bfill()`           | 뒤의 값으로 채우기   |
+| `interpolate()`     | 값 보간         |
+| `replace()`         | 값 대체         |
+| `rename()`          | 컬럼/인덱스 이름 변경 |
+| `rename_axis()`     | 축 이름 변경      |
+| `assign()`          | 새 컬럼 추가      |
+| `astype()`          | 타입 변환        |
+| `convert_dtypes()`  | 타입 추론        |
+| `copy()`            | DataFrame 복사 |
+
+**예시:**
+
+```python
+ds = pd.read_csv("data.csv")
+
+# 삭제 연산
+result = ds.drop(columns=['unused_col'])
+result = ds.drop_duplicates(subset=['user_id'])
+result = ds.dropna(subset=['email'])
+
+# 채우기 연산
+result = ds.fillna(0)
+result = ds.fillna({'age': 0, 'name': 'Unknown'})
+
+# 변환 연산
+result = ds.rename(columns={'old_name': 'new_name'})
+result = ds.assign(
+    full_name=lambda x: x['first_name'] + ' ' + x['last_name'],
+    age_group=lambda x: pd.cut(x['age'], bins=[0, 25, 50, 100])
+)
+```
+
+***
+
+<div id="sorting">
+  ## 정렬 및 순위
+</div>
+
+| 메서드             | 설명           |
+| --------------- | ------------ |
+| `sort_values()` | 값을 기준으로 정렬   |
+| `sort_index()`  | 인덱스를 기준으로 정렬 |
+| `nlargest()`    | 가장 큰 값 N개    |
+| `nsmallest()`   | 가장 작은 값 N개   |
+
+**예시:**
+
+```python
+# 단일 컬럼으로 정렬
+result = ds.sort_values('salary', ascending=False)
+
+# 여러 컬럼으로 정렬
+result = ds.sort_values(['department', 'salary'], ascending=[True, False])
+
+# 상위/하위 N개 가져오기
+result = ds.nlargest(10, 'salary')
+result = ds.nsmallest(5, 'age')
+```
+
+***
+
+<div id="reshaping">
+  ## 형태 변환
+</div>
+
+| Method              | Description   |
+| ------------------- | ------------- |
+| `pivot()`           | 피벗 테이블        |
+| `pivot_table()`     | 집계를 포함한 피벗    |
+| `melt()`            | 언피벗           |
+| `stack()`           | 컬럼을 인덱스로 쌓기   |
+| `unstack()`         | 인덱스를 컬럼으로 펼치기 |
+| `transpose()` / `T` | 전치            |
+| `explode()`         | 리스트를 행으로 펼치기  |
+| `squeeze()`         | 차원 축소         |
+| `droplevel()`       | 인덱스 수준 삭제     |
+| `swaplevel()`       | 인덱스 수준 스왑     |
+| `reorder_levels()`  | 수준 재정렬        |
+
+**예시:**
+
+```python
+# 피벗 테이블
+result = ds.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+
+# Melt (언피벗)
+result = ds.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+
+# 배열 분해
+result = ds.explode('tags')
+```
+
+***
+
+<div id="combining">
+  ## 결합 / 조인
+</div>
+
+| 메서드               | 설명           |
+| ----------------- | ------------ |
+| `merge()`         | SQL 스타일 머지   |
+| `join()`          | 인덱스를 기준으로 조인 |
+| `concat()`        | 연결           |
+| `append()`        | 행 추가         |
+| `combine()`       | 함수를 사용해 결합   |
+| `combine_first()` | 우선순위에 따라 결합  |
+| `update()`        | 값 업데이트       |
+| `compare()`       | 차이점 표시       |
+
+**예시:**
+
+```python
+# 머지 (join)
+result = pd.merge(df1, df2, on='id', how='left')
+result = df1.join(df2, on='id')
+
+# 연결
+result = pd.concat([df1, df2, df3])
+result = pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="binary">
+  ## 이항 연산
+</div>
+
+| 메서드                          | 설명     |
+| ---------------------------- | ------ |
+| `add()` / `radd()`           | 덧셈     |
+| `sub()` / `rsub()`           | 뺄셈     |
+| `mul()` / `rmul()`           | 곱셈     |
+| `div()` / `rdiv()`           | 나눗셈    |
+| `truediv()` / `rtruediv()`   | 실수 나눗셈 |
+| `floordiv()` / `rfloordiv()` | 내림 나눗셈 |
+| `mod()` / `rmod()`           | 나머지 연산 |
+| `pow()` / `rpow()`           | 거듭제곱   |
+| `dot()`                      | 행렬 곱셈  |
+
+**예시:**
+
+```python
+# 산술 연산
+result = ds['col1'].add(ds['col2'])
+result = ds['price'].mul(ds['quantity'])
+
+# 누락된 데이터에 fill_value 사용
+result = ds['col1'].add(ds['col2'], fill_value=0)
+```
+
+***
+
+<div id="comparison">
+  ## 비교 연산
+</div>
+
+| 메서드         | 설명     |
+| ----------- | ------ |
+| `eq()`      | 같음     |
+| `ne()`      | 다름     |
+| `lt()`      | 미만     |
+| `le()`      | 이하     |
+| `gt()`      | 초과     |
+| `ge()`      | 이상     |
+| `equals()`  | 동일성 검사 |
+| `compare()` | 차이 표시  |
+
+***
+
+<div id="application">
+  ## 함수 적용
+</div>
+
+| 메서드                     | 설명     |
+| ----------------------- | ------ |
+| `apply()`               | 함수 적용  |
+| `applymap()`            | 요소별 적용 |
+| `map()`                 | 값 매핑   |
+| `agg()` / `aggregate()` | 집계     |
+| `transform()`           | 변환     |
+| `pipe()`                | 함수 연결  |
+| `groupby()`             | 그룹화    |
+
+**예시:**
+
+```python
+# 함수 적용
+result = ds['name'].apply(lambda x: x.upper())
+result = ds.apply(lambda row: row['a'] + row['b'], axis=1)
+
+# 집계
+result = ds.agg({'col1': 'sum', 'col2': 'mean'})
+result = ds.agg(['sum', 'mean', 'std'])
+
+# 파이프
+result = (ds
+    .pipe(filter_active)
+    .pipe(calculate_metrics)
+    .pipe(format_output)
+)
+```
+
+***
+
+<div id="timeseries">
+  ## 시계열
+</div>
+
+| 메서드                  | 설명            |
+| -------------------- | ------------- |
+| `rolling()`          | 롤링 윈도우        |
+| `expanding()`        | 확장 윈도우        |
+| `ewm()`              | 지수 가중         |
+| `resample()`         | 시계열 리샘플링      |
+| `shift()`            | 값 이동          |
+| `asfreq()`           | 빈도 변환         |
+| `asof()`             | 특정 시점 기준 최신 값 |
+| `at_time()`          | 특정 시간 선택      |
+| `between_time()`     | 시간 범위 선택      |
+| `first()` / `last()` | 첫/마지막 주기      |
+| `to_period()`        | 주기로 변환        |
+| `to_timestamp()`     | 타임스탬프로 변환     |
+| `tz_convert()`       | 시간대 변환        |
+| `tz_localize()`      | 시간대 지정        |
+
+**예시:**
+
+```python
+# 롤링 윈도우
+result = ds['value'].rolling(window=7).mean()
+
+# 확장 윈도우
+result = ds['value'].expanding().sum()
+
+# 이동
+result = ds['value'].shift(1)  # 지연(Lag)
+result = ds['value'].shift(-1)  # 선행(Lead)
+```
+
+***
+
+<div id="missing">
+  ## 결측 데이터
+</div>
+
+| 메서드                     | 설명         |
+| ----------------------- | ---------- |
+| `isna()` / `isnull()`   | 결측값 감지     |
+| `notna()` / `notnull()` | 비결측값 감지    |
+| `dropna()`              | 결측값 삭제     |
+| `fillna()`              | 결측값 채우기    |
+| `ffill()`               | 이전 값으로 채우기 |
+| `bfill()`               | 다음 값으로 채우기 |
+| `interpolate()`         | 보간         |
+| `replace()`             | 값 대체       |
+
+***
+
+<div id="io">
+  ## I/O 메서드
+</div>
+
+| 메서드              | 설명               |
+| ---------------- | ---------------- |
+| `to_csv()`       | CSV로 내보내기        |
+| `to_json()`      | JSON으로 내보내기      |
+| `to_excel()`     | Excel로 내보내기      |
+| `to_parquet()`   | Parquet로 내보내기    |
+| `to_feather()`   | Feather로 내보내기    |
+| `to_sql()`       | SQL 데이터베이스로 내보내기 |
+| `to_pickle()`    | Pickle로 내보내기     |
+| `to_html()`      | HTML 테이블         |
+| `to_latex()`     | LaTeX 테이블        |
+| `to_markdown()`  | Markdown 테이블     |
+| `to_string()`    | 문자열 표현           |
+| `to_dict()`      | 딕셔너리             |
+| `to_records()`   | 레코드              |
+| `to_numpy()`     | NumPy 배열         |
+| `to_clipboard()` | 클립보드로 복사         |
+
+자세한 내용은 [I/O 작업](/ko/products/chdb/datastore/io)을 참조하십시오.
+
+***
+
+<div id="iteration">
+  ## 반복
+</div>
+
+| 메서드            | 설명                    |
+| -------------- | --------------------- |
+| `items()`      | `(컬럼, Series)` 쌍을 순회  |
+| `iterrows()`   | `(인덱스, Series)` 쌍을 순회 |
+| `itertuples()` | 이름이 지정된 Tuple로 순회     |
+
+***
+
+<div id="differences">
+  ## Pandas와의 주요 차이점
+</div>
+
+<div id="return-types">
+  ### 1. 반환 타입
+</div>
+
+```python
+# Pandas는 Series를 반환합니다
+pdf['col']  # → pd.Series
+
+# DataStore는 ColumnExpr를 반환합니다 (지연 실행)
+ds['col']   # → ColumnExpr
+```
+
+<div id="lazy-execution">
+  ### 2. 지연 실행
+</div>
+
+```python
+# DataStore 작업은 지연 실행됩니다
+result = ds.filter(ds['age'] > 25)  # 아직 실행되지 않음
+df = result.to_df()  # 여기서 실행됨
+```
+
+<div id="no-inplace-parameter">
+  ### 3. inplace 매개변수 없음
+</div>
+
+```python
+# Pandas
+df.drop(columns=['col'], inplace=True)
+
+# DataStore (항상 새 객체를 반환)
+ds = ds.drop(columns=['col'])
+```
+
+<div id="comparing-results">
+  ### 4. 결과 비교하기
+</div>
+
+```python
+# 비교를 위해 to_pandas()를 사용합니다
+pd.testing.assert_frame_equal(
+    ds.to_pandas(),
+    expected_df
+)
+```
+
+[주요 차이점](/ko/products/chdb/guides/pandas-differences)에서 자세한 내용을 확인하십시오.

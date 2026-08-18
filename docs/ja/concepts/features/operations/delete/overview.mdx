@@ -24,7 +24,7 @@ ClickHouseでデータを削除する方法はいくつかあり、それぞれ�
 論理削除では、行は直ちに削除済みとしてマークされ、以降のすべての `SELECT` クエリで自動的に除外されます。これらの削除済み行はその後、通常のマージサイクルの中で削除されるため、I/O の負荷を抑えられます。そのため、一定期間は、データが実際にストレージから削除されず、削除済みとしてマークされているだけの場合があります。データが確実に削除される必要がある場合は、上記の ミューテーション コマンドを検討してください。
 
 ```sql
--- 論理削除を使用して2018年のすべてのデータを削除する。非推奨。
+-- delete all data from 2018 with a lightweight delete. Not recommended.
 DELETE FROM posts WHERE toYear(CreationDate) = 2018
 ```
 
@@ -43,11 +43,11 @@ DELETE FROM posts WHERE toYear(CreationDate) = 2018
 削除ミューテーションは、たとえば `ALTER TABLE ... DELETE` コマンドを使用して発行できます。
 
 ```sql
--- delete all data from 2018 with a mutation. Not recommended.
+-- ミューテーションを使用して2018年のデータをすべて削除する。非推奨。
 ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
 ```
 
-これらは、同期的に (non-replicated の場合はデフォルト) または非同期的に ([mutations&#95;sync](/ja/reference/settings/session-settings/mutations#mutations_sync) 設定で決まります) 実行できます。これらは非常に I/O 負荷が高く、`WHERE` 式に一致するすべてのパーツを書き換えます。この処理にはアトミック性がありません。ミューテーション後のパーツは準備ができ次第すぐに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでにミューテーション済みのパーツのデータと、まだミューテーションされていないパーツのデータの両方が見えることになります。ユーザーは [system.mutations](/ja/reference/system-tables/mutations#monitoring-mutations) テーブルで進行状況を追跡できます。これらは I/O 負荷の高い操作であり、クラスターの `SELECT` パフォーマンスに影響する可能性があるため、使用は最小限にとどめるべきです。
+これらは、同期的に (non-replicated の場合はデフォルト) または非同期的に ([mutations&#95;sync](/ja/reference/settings/session-settings#mutations_sync) 設定で決まります) 実行できます。これらは非常に I/O 負荷が高く、`WHERE` 式に一致するすべてのパーツを書き換えます。この処理にはアトミック性がありません。変異後のパーツは準備ができ次第すぐに置き換えられるため、ミューテーションの実行中に開始された `SELECT` クエリでは、すでに変異済みのパーツのデータと、まだ変異されていないパーツのデータの両方が見えることになります。ユーザーは [system.mutations](/ja/reference/system-tables/mutations#monitoring-mutations) テーブルで進行状況を追跡できます。これらは I/O 負荷の高い操作であり、クラスターの `SELECT` パフォーマンスに影響する可能性があるため、使用は最小限にとどめるべきです。
 
 [削除ミューテーション](/ja/reference/statements/alter/delete) の詳細を参照してください。
 

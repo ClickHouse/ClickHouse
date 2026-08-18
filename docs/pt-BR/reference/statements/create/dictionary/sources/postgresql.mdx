@@ -50,32 +50,23 @@ Exemplo de configurações:
 
 Campos de configuração:
 
-| Configuração                       | Descrição                                                                                                                                                                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host`                             | O host do servidor PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                                                                        |
-| `port`                             | A porta do servidor PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                                                                       |
-| `user`                             | Nome do usuário do PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                                                                        |
-| `password`                         | Senha do usuário do PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                                                                       |
-| `replica`                          | Seção de configurações de réplica. Pode haver várias seções.                                                                                                                                                                   |
-| `replica/host`                     | O host do PostgreSQL.                                                                                                                                                                                                          |
-| `replica/port`                     | A porta do PostgreSQL.                                                                                                                                                                                                         |
-| `replica/priority`                 | A prioridade da réplica. Ao tentar se conectar, o ClickHouse percorre as réplicas em ordem de prioridade. Quanto menor o número, maior a prioridade.                                                                           |
-| `db`                               | Nome do banco de dados.                                                                                                                                                                                                        |
-| `table`                            | Nome da tabela.                                                                                                                                                                                                                |
-| `where`                            | Critério de seleção. A sintaxe das condições é a mesma da cláusula `WHERE` no PostgreSQL. Por exemplo, `id > 10 AND id < 20`. Opcional.                                                                                        |
-| `invalidate_query`                 | Consulta para verificar o status do dicionário. Opcional. Leia mais na seção [Atualização de dados do dicionário usando LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime).                                           |
-| `background_reconnect`             | Reconecta à réplica em segundo plano se a conexão falhar. Opcional.                                                                                                                                                            |
-| `query`                            | A consulta personalizada. Opcional.                                                                                                                                                                                            |
-| `sslmode`                          | Modo TLS/SSL passado para `libpq`: `disable`, `allow`, `prefer`, `require`, `verify-ca` ou `verify-full`. Quando não definido, aplica-se o padrão `prefer` do `libpq`. Opcional.                                               |
-| `sslrootcert_pem`                  | Conteúdo do certificado da CA usado para verificar o certificado do servidor PostgreSQL. Opcional.                                                                                                                             |
-| `sslcert_pem`                      | Conteúdo do certificado do cliente, para autenticação baseada em certificado. Opcional.                                                                                                                                        |
-| `sslkey_pem`                       | Conteúdo da chave privada associada a `sslcert_pem`. Opcional.                                                                                                                                                                 |
-| `sslrootcert`, `sslcert`, `sslkey` | As mesmas credenciais como caminhos para arquivos no servidor. Permitido apenas para um dicionário definido em um arquivo de configuração do servidor ou por meio de uma coleção nomeada definida nele; veja abaixo. Opcional. |
+| Configuração           | Descrição                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `host`                 | O host do servidor PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                              |
+| `port`                 | A porta do servidor PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                             |
+| `user`                 | Nome do usuário do PostgreSQL. Você pode especificá-lo para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                              |
+| `password`             | Senha do usuário do PostgreSQL. Você pode especificá-la para todas as réplicas ou para cada uma individualmente (dentro de `<replica>`).                                             |
+| `replica`              | Seção de configurações de réplica. Pode haver várias seções.                                                                                                                         |
+| `replica/host`         | O host do PostgreSQL.                                                                                                                                                                |
+| `replica/port`         | A porta do PostgreSQL.                                                                                                                                                               |
+| `replica/priority`     | A prioridade da réplica. Ao tentar se conectar, o ClickHouse percorre as réplicas em ordem de prioridade. Quanto menor o número, maior a prioridade.                                 |
+| `db`                   | Nome do banco de dados.                                                                                                                                                              |
+| `table`                | Nome da tabela.                                                                                                                                                                      |
+| `where`                | Critério de seleção. A sintaxe das condições é a mesma da cláusula `WHERE` no PostgreSQL. Por exemplo, `id > 10 AND id < 20`. Opcional.                                              |
+| `invalidate_query`     | Consulta para verificar o status do dicionário. Opcional. Leia mais na seção [Atualização de dados do dicionário usando LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime). |
+| `background_reconnect` | Reconecta à réplica em segundo plano se a conexão falhar. Opcional.                                                                                                                  |
+| `query`                | A consulta personalizada. Opcional.                                                                                                                                                  |
 
 <Note>
   Os campos `table` ou `where` não podem ser usados junto com o campo `query`. Além disso, um dos campos `table` ou `query` deve ser declarado.
-</Note>
-
-<Note>
-  `sslrootcert`, `sslcert` e `sslkey` especificam arquivos que o servidor abre com seus próprios privilégios; portanto, são aceitos apenas para um Dicionário definido em um arquivo de configuração do servidor ou por meio de uma coleção nomeada definida nele. Um Dicionário criado com uma consulta `CREATE DICTIONARY` deve fornecer o conteúdo desses arquivos em `sslrootcert_pem`, `sslcert_pem` e `sslkey_pem`. Esses valores são mascarados nos logs e nas consultas `SHOW`, assim como as senhas.
 </Note>

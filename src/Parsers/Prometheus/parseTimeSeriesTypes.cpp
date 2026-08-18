@@ -1,6 +1,5 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
-#include <Common/DateLUT.h>
 #include <Common/IntervalKind.h>
 #include <Common/quoteString.h>
 #include <Core/DecimalFunctions.h>
@@ -168,11 +167,8 @@ namespace
             if (PrometheusQueryParsingUtil::tryParseTimestamp(str, scale, result, &error_message, &error_pos))
                 return result;
 
-            /// Parse without saturation so that invalid calendar dates like '1970-13-01' are rejected instead of clamped.
             ReadBufferFromString buf{str};
-            if (tryReadDateTime64Text(result, scale, buf, DateLUT::instance(),
-                    /* allowed_date_delimiters = */ nullptr, /* allowed_time_delimiters = */ nullptr, /* saturate_on_overflow = */ false)
-                && buf.eof())
+            if (tryReadDateTime64Text(result, scale, buf))
                 return result;
         }
         else
@@ -199,14 +195,7 @@ namespace
             }
             case Field::Types::UInt64:
             {
-                UInt64 uint_value = field.safeGet<UInt64>();
-                if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-                {
-                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                                    "Cannot convert {} to {}: Overflow, the number is too big",
-                                    uint_value, getTypeName<T>());
-                }
-                return getFromInt<T>(static_cast<Int64>(uint_value), scale);
+                return getFromInt<T>(field.safeGet<UInt64>(), scale);
             }
             case Field::Types::Float64:
             {

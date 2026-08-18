@@ -188,26 +188,13 @@ GCS および Azure Blob Storage のバックアップを取得する場合も�
 
   <Tab title="復元">
     ```sql
-    RESTORE ALL
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
     FROM S3(
         'https://testchbackups.s3.amazonaws.com/<uuid>',
         '<key id>',
         '<key secret>'
     )
-    SETTINGS restore_access_entities_with_current_grants = 1
     ```
-
-    `restore_access_entities_with_current_grants` 設定は、ClickHouse Cloud バージョン **26.4** (ビルド **26.4.1.1942** 以降) から利用できます。
-    サービスで実行中のバージョンは、以下で確認できます。
-
-    ```sql
-    SELECT version()
-    ```
-
-    `restore_access_entities_with_current_grants` を有効にすると、復元されたユーザーとロールに付与される権限は、復元を実行するユーザーが付与できる権限に制限されます
-    ([`GRANT CURRENT GRANTS`](/ja/reference/statements/grant) と同じセマンティクス) 。これにより、バックアップに復元を実行するユーザーが付与できる権限を超える権限が含まれていても、`RESTORE` が `ACCESS_DENIED` で失敗することはありません。
-
-    26.4 より前のバージョンでは、この設定を省略してください。
   </Tab>
 </Tabs>
 

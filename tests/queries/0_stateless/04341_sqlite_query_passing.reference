@@ -30,6 +30,3 @@ val	Nullable(Float64)
 3	c	0
 4	d	0
 -- type mismatch: a text value read into a declared Date is a query error, not a crash
--- subquery form: special-character string literals are escaped for SQLite
-1
-2

@@ -7,8 +7,7 @@ doc_type: 'guide'
 ---
 
 ClickHouse Cloud prend en charge l’export de sauvegardes vers votre propre compte auprès d’un fournisseur de services cloud (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
-Pour en savoir plus sur le fonctionnement des sauvegardes dans ClickHouse Cloud, y compris les sauvegardes « complètes » et « incrémentielles », consultez la documentation sur les [sauvegardes](/fr/products/cloud/guides/backups/review-and-restore-backups). Notez que
-les sauvegardes vers votre propre compte cloud se distinguent des sauvegardes Cloud sur place sur un point important : elles ne peuvent pas utiliser la copie native (voir la note ci-dessous).
+Pour en savoir plus sur le fonctionnement des sauvegardes dans ClickHouse Cloud, y compris les sauvegardes « complètes » et « incrémentielles », consultez la documentation sur les [sauvegardes](/fr/products/cloud/guides/backups/review-and-restore-backups).
 
 Dans ce guide, nous montrons des exemples de création de sauvegardes complètes et incrémentielles vers le stockage objet AWS, GCP et Azure, ainsi que la procédure de restauration à partir de ces sauvegardes.
 
@@ -18,20 +17,9 @@ Dans ce guide, nous montrons des exemples de création de sauvegardes complètes
   Les sauvegardes inter-cloud ne sont prises en charge que via les commandes de sauvegarde/restauration décrites sur cette page, et non via l’UI.
 </Note>
 
-<Warning>
-  **Impact sur les performances par rapport aux sauvegardes sur place**
-  Les sauvegardes vers votre propre bucket ne peuvent pas utiliser la copie native (côté serveur). La copie native exige que la source et la destination partagent les mêmes identifiants, ce qui n’est pas
-  le cas ici : la source est un bucket géré par ClickHouse et la destination est votre propre bucket, authentifié avec des identifiants distincts.
-
-  Comme la copie native n’est pas disponible, les données sont téléchargées depuis la source puis retéléversées vers votre bucket (« copie via des buffers »). Par conséquent, l’export de
-  sauvegardes vers votre propre bucket est plus lent et consomme davantage de ressources que les sauvegardes Cloud standard sur place.
-</Warning>
-
 <div id="requirements">
   ## Prérequis
 </div>
-
-Avant d&#39;exécuter une commande `BACKUP`, assurez-vous que votre utilisateur ClickHouse dispose du privilège `BACKUP`. Le `default_role` de ClickHouse Cloud n&#39;inclut pas ce privilège. Contactez [ClickHouse Support](https://clickhouse.com/support/program) pour en faire la demande avant d&#39;exporter des sauvegardes.
 
 Vous aurez besoin des informations suivantes pour exporter/restaurer des sauvegardes vers le bucket de stockage de votre propre CSP.
 

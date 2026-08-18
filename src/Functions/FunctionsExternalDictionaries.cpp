@@ -1193,7 +1193,7 @@ R"(
     /// dictGetAll
     {
         FunctionDocumentation::Description description = R"(
-Retrieves the attribute values of all the nodes that matched each key in a [regular expression tree dictionary](/reference/statements/create/dictionary/layouts/regexp-tree).
+Retrieves the attribute values of all the nodes that matched each key in a [regular expression tree dictionary](/docs/sql-reference/statements/create/dictionary/layouts/regexp-tree).
 
 Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictGet).
 )";
@@ -1247,7 +1247,7 @@ R"(
     {
         FunctionDocumentation::Description description =
 R"(
-Creates an array, containing all the parents of a key in the [hierarchical dictionary](/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+Creates an array, containing all the parents of a key in the [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 )";
         FunctionDocumentation::Syntax syntax = "dictGetHierarchy(dict_name, key)";
         FunctionDocumentation::Arguments arguments = {
@@ -1279,7 +1279,7 @@ R"(
     {
         FunctionDocumentation::Description description =
 R"(
-Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+Returns the topmost ancestor (the root) of a key in a [hierarchical dictionary](/docs/sql-reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 
 This is a convenient equivalent of taking the last element of the array returned by [dictGetHierarchy](#dictGetHierarchy), i.e. `dictGetHierarchy(dict_name, key)[-1]`.
 

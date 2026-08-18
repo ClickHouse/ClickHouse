@@ -7,7 +7,7 @@ doc_type: 'guide'
 keywords: ['clickstack', 'observabilidade', 'logs', 'desempenho', 'otimização']
 ---
 
-import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/pt-BR/clickstack/_schema_otel_logs.mdx';
 import OtelTracesSchema from '/snippets/pt-BR/clickstack/_schema_otel_traces.mdx';
@@ -682,7 +682,9 @@ Se você conhece bem seus padrões de acesso antes da ingestão de dados, basta 
 O exemplo abaixo mostra uma forma simples de criar uma nova tabela de logs com o esquema existente, mas com uma nova chave primária que inclui a coluna `SeverityText` antes de `ServiceName`.
 
 <Steps>
-  <Step title="Criar nova tabela" id="create-new-table-with-key">
+  <Step>
+    #### Criar nova tabela
+
     ```sql
     CREATE TABLE otel_logs_temp AS otel_logs
     PRIMARY KEY (SeverityText, ServiceName, Timestamp)
@@ -699,7 +701,9 @@ O exemplo abaixo mostra uma forma simples de criar uma nova tabela de logs com o
     </Info>
   </Step>
 
-  <Step title="Fazer EXCHANGE e excluir a tabela" id="exhange-and-drop-table">
+  <Step>
+    #### Fazer EXCHANGE e excluir a tabela
+
     A instrução `EXCHANGE` é usada para trocar os nomes das tabelas [de forma atômica](/pt-BR/concepts/core-concepts/glossary#atomicity). A tabela temporária (agora a antiga tabela padrão) pode então ser excluída.
 
     ```sql
@@ -720,7 +724,9 @@ O processo a seguir pode ser usado para garantir que os dados antigos sejam mant
 O mesmo exemplo de introduzir `SeverityText` como a primeira coluna da chave primária é usado abaixo. Nesse caso, uma tabela é criada para novos dados, mantendo a tabela antiga para análise histórica.
 
 <Steps>
-  <Step title="Criar nova tabela" id="create-new-table-with-key-2">
+  <Step>
+    #### Criar nova tabela
+
     Crie a nova tabela com a chave primária desejada. Observe o sufixo `_23_01_2025` — adapte-o para a data atual. Por exemplo:
 
     ```sql
@@ -730,7 +736,9 @@ O mesmo exemplo de introduzir `SeverityText` como a primeira coluna da chave pri
     ```
   </Step>
 
-  <Step title="Criar uma tabela Merge" id="create-merge-table">
+  <Step>
+    #### Criar uma tabela Merge
+
     O [motor Merge](/pt-BR/reference/engines/table-engines/special/merge) (não confundir com MergeTree) não armazena dados por conta própria, mas permite ler de qualquer quantidade de outras tabelas simultaneamente.
 
     ```sql
@@ -746,7 +754,9 @@ O mesmo exemplo de introduzir `SeverityText` como a primeira coluna da chave pri
     Agora você pode consultar essa tabela para confirmar que ela retorna dados de `otel_logs`.
   </Step>
 
-  <Step title="Atualizar a ClickStack UI para ler da tabela merge" id="update-clickstack-ui-to-read-from-merge-tree">
+  <Step>
+    #### Atualizar a ClickStack UI para ler da tabela merge
+
     Configure a ClickStack UI para usar `otel_logs_merge` como tabela da fonte de dados de logs.
 
     <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Selecionar tabela Merge" />
@@ -754,7 +764,9 @@ O mesmo exemplo de introduzir `SeverityText` como a primeira coluna da chave pri
     Neste ponto, as gravações continuam em `otel_logs` com a chave primária original, enquanto as leituras usam a tabela merge. Não há nenhuma mudança visível para os usuários nem impacto na ingestão.
   </Step>
 
-  <Step title="Trocar as tabelas" id="exchange-the-tables">
+  <Step>
+    #### Trocar as tabelas
+
     Agora, uma instrução `EXCHANGE` é usada para trocar atomicamente os nomes das tabelas `otel_logs` e `otel_logs_23_01_2025`.
 
     ```sql
@@ -770,7 +782,9 @@ O mesmo exemplo de introduzir `SeverityText` como a primeira coluna da chave pri
 Esse processo pode ser adaptado caso sejam necessárias novas alterações nas chaves primárias. Por exemplo, se uma semana depois você decidir que `SeverityNumber` deve fazer parte da chave primária, em vez de `SeverityText`. O processo a seguir pode ser adaptado quantas vezes forem necessárias alterações na chave primária.
 
 <Steps>
-  <Step title="Criar nova tabela" id="create-new-table-with-key-3">
+  <Step>
+    #### Criar nova tabela
+
     Crie a nova tabela com a chave primária desejada.
     No exemplo abaixo, `30_01_2025` é usado como sufixo para indicar a data da tabela. Por exemplo:
 
@@ -781,7 +795,9 @@ Esse processo pode ser adaptado caso sejam necessárias novas alterações nas c
     ```
   </Step>
 
-  <Step title="Trocar as tabelas" id="exchange-the-tables-v2">
+  <Step>
+    #### Trocar as tabelas
+
     Agora, uma instrução `EXCHANGE` é usada para trocar atomicamente os nomes das tabelas `otel_logs` e `otel_logs_30_01_2025`.
 
     ```sql
@@ -976,7 +992,7 @@ As versões mais recentes do ClickHouse também oferecem suporte a projeções a
   ### Alternativas
 </div>
 
-Se você precisar de várias chaves de ordenação, as projeções não são a única opção. Dependendo das restrições operacionais e de como você quer que o ClickStack direcione as consultas, considere:
+Se você precisar de várias chaves de ordenação, as projeções não são a única opção. Dependendo das restrições operacionais e de como você quer que o ClickStack encaminhe as consultas, considere:
 
-* Configurar seu coletor do OpenTelemetry para gravar em duas tabelas com chaves `ORDER BY` diferentes e criar fontes separadas no ClickStack para cada tabela.
+* Configurar o OpenTelemetry Collector para gravar em duas tabelas com chaves `ORDER BY` diferentes e criar fontes separadas no ClickStack para cada tabela.
 * Criar uma visão materializada como um pipeline de cópia, ou seja, anexar uma visão materializada à tabela principal que selecione linhas brutas para uma tabela secundária com uma chave de ordenação diferente (um padrão de desnormalização ou roteamento). Crie uma fonte para essa tabela de destino. Exemplos podem ser encontrados [aqui](/pt-BR/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

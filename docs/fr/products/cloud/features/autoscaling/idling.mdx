@@ -25,7 +25,7 @@ Dans la page **Paramètres**, vous pouvez également choisir d’autoriser ou no
 
 ClickHouse Cloud met en œuvre la mise en veille adaptative pour éviter les interruptions tout en optimisant les coûts. Le système évalue plusieurs conditions avant de mettre un service en veille. La mise en veille adaptative remplace le paramètre de durée de mise en veille lorsque l’une des conditions ci-dessous est remplie :
 
-* Lorsque le nombre de parts dépasse le seuil maximal de parts actives (par défaut : 10 000), le service n’est pas mis en veille afin que la maintenance en arrière-plan puisse se poursuivre
+* Lorsque le nombre de parts dépasse le seuil maximal de parts pour la mise en veille (par défaut : 10 000), le service n’est pas mis en veille afin que la maintenance en arrière-plan puisse se poursuivre
 * Lorsqu’il y a des opérations de fusion en cours, le service n’est pas mis en veille tant qu’elles ne sont pas terminées, afin d’éviter d’interrompre une consolidation critique des données
 * En outre, le service adapte également les délais d’inactivité en fonction du temps d’initialisation du serveur :
   * Si le temps d’initialisation du serveur est inférieur à 15 minutes, aucun délai adaptatif n’est appliqué et le délai d’inactivité par défaut configuré par le client est utilisé

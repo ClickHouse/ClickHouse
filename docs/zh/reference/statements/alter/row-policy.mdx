@@ -1,74 +1,20 @@
 ---
-description: 'ALTER ROW POLICY 文档'
+description: 'ALTER ROW POLICY 参考文档'
 sidebarTitle: 'ROW POLICY'
 slug: /sql-reference/statements/alter/row-policy
 title: 'ALTER ROW POLICY'
 doc_type: 'reference'
 ---
 
-修改行策略。
+更改 ROW POLICY。
 
 语法：
 
 ```sql
--- Rename: exactly one fully qualified policy (one name on one target).
--- RENAME TO may be combined with the same optional alteration clauses as below.
-ALTER [ROW] POLICY [IF EXISTS] name
-    ON { [database.]table | database.* }
-    RENAME TO new_name
-    [ON CLUSTER cluster_name]
+ALTER [ROW] POLICY [IF EXISTS] name1 [ON CLUSTER cluster_name1] ON [database1.]table1 [RENAME TO new_name1]
+        [, name2 [ON CLUSTER cluster_name2] ON [database2.]table2 [RENAME TO new_name2] ...]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- Multiple names on one table target (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS] name [, ...]
-    [ON CLUSTER cluster_name]
-    ON { [database.]table | database.* }
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- One name on multiple table targets (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS] name
-    [ON CLUSTER cluster_name]
-    ON { [database.]table | database.* } [, ...]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-
--- Mixed packing: each name paired with its own table target (no RENAME)
-ALTER [ROW] POLICY [IF EXISTS]
-    name ON { [database.]table | database.* } [, name ON { [database.]table | database.* } ...]
-    [ON CLUSTER cluster_name]
-    [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR SELECT]
-    [USING {condition | NONE}][,...]
-    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
-```
-
-仅当语句在**一个**表目标上指定**恰好一个**策略时，才接受 `RENAME TO`。打包的多名称或多表列表不能包含 `RENAME TO`——请在不同语句中分别重命名这些策略。在这种单策略形式中，`RENAME TO` 仍可与 `AS`、`USING` 和 `TO` 等其他修改在同一语句中组合使用。
-
-不使用 `RENAME TO` 时，打包规则与 `ParserRowPolicyNames` 一致：**一个**目标上的多个名称、**多个**目标上的一个名称，或混合的 `name ON target` 对。不接受多名称 × 多表的形式 (`p1, p2 ON t1, t2`) 。可选的 `ON CLUSTER` 仅对整个语句应用一次；如果需要指定不同的集群，请分别运行 `ALTER ROW POLICY` 语句。
-
-示例：
-
-```sql
--- Single-policy rename
-ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
-
--- Rename plus other alterations on the same single policy
-ALTER POLICY old_name ON db.table RENAME TO new_name USING id > 10;
-
--- Multiple names, one table
-ALTER POLICY p1, p2 ON db.table TO ALL;
-
--- One name, multiple tables
-ALTER POLICY p1 ON db.table, db.table2 USING NONE;
-
--- Mixed targets without rename
-ALTER POLICY p1 ON db.table, p2 ON db2.table2 TO ALL;
 ```

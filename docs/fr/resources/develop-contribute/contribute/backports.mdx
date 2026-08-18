@@ -47,7 +47,7 @@ La politique de backport décrite ci-dessus est mise en œuvre par l’outil aut
 
 L’objectif à long terme est d’extraire cette implémentation dans un outil Python open source autonome que d’autres projets pourront adopter. La conception visée est la suivante :
 
-* **Configurable** — tous les paramètres de la politique (labels éligibles, fenêtre de délai, seuils de PR stale, etc.) sont définis dans un fichier de configuration afin que l’outil puisse être adapté aux exigences de backport de n’importe quel projet sans modification du code.
+* **Configurable** — tous les paramètres de la politique (labels éligibles, fenêtre de délai, seuils de PR stale, comportement pendant le rolling-out, etc.) sont définis dans un fichier de configuration afin que l’outil puisse être adapté aux exigences de backport de n’importe quel projet sans modification du code.
 * **Distribuable** — empaqueté sous la forme d’une wheel Python autonome installable depuis PyPI, sans dépendre de l’infrastructure CI de ClickHouse.
 * **Programmable** — expose un modèle objet clair pour les pull requests, les labels et les branches de release afin que les utilisateurs puissent créer des workflows personnalisés par script au-dessus du moteur principal.
 
@@ -59,15 +59,17 @@ Une composante prévue de l’outil autonome est une suite de tests dédiée, ac
 
 * un ensemble configurable de branches représentant les lignes de release,
 * des pull requests portant différentes combinaisons de labels de backport,
-* des release PR avec le label `release` pointant vers les branches de release.
+* des PR de release avec le label `release` pointant vers les branches de release.
 
-Cela permet aux tests de couvrir l’ensemble de la boucle d’automatisation — détection des labels, création de branches de cherry-pick, gestion des conflits, création de PR de backport, logique d’assignation et politique de délai — sur un dépôt réel mais jetable, sans toucher à l’état de production. La même infrastructure peut aussi être réutilisée pour effectuer des tests de régression sur les changements de policy avant leur déploiement.
+Cela permet aux tests de couvrir l’ensemble de la boucle d’automatisation — détection des labels, création de branches de cherry-pick, gestion des conflits, création de PR de backport, logique d’assignation, ignorance du statut rolling-out et politique de délai — sur un dépôt réel mais jetable, sans toucher à l’état de production. La même infrastructure peut aussi être réutilisée pour effectuer des tests de régression sur les changements de policy avant leur déploiement.
 
 <div id="active-release-branches">
   ## Branches de release actives
 </div>
 
 Une branche de release active est toute branche dont la release PR correspondante (portant le label `release`) est encore ouverte sur GitHub. L’automatisation des backports les détecte dynamiquement à chaque exécution ; aucune modification de configuration n’est donc nécessaire lorsqu’une nouvelle release est publiée ou qu’une ancienne atteint sa fin de vie.
+
+Une branche de release peut être dans l’état **rolling-out** (sa release PR porte le label `rolling-out`) pendant la période de déploiement d’une nouvelle release. Les backports généraux sont alors mis en pause pour les branches en rolling-out afin de ne pas compliquer le rollout. Les labels spécifiques à une version (par ex. `v25.3-must-backport`) priment toutefois sur ce comportement et forcent le backport même pendant un rollout.
 
 Un label spécifique à une version définit la release la plus *ancienne* que la PR doit atteindre : elle est backportée vers cette release **ainsi que vers chaque branche de release active plus récente**, et pas uniquement vers celle qui est nommée. Par exemple, `v25.3-must-backport` sur une PR fusionnée dans la branche de développement est backportée vers `25.3` ainsi que vers chaque release active ultérieure (`25.4`, `25.5`, …). Si plusieurs labels spécifiques à une version sont présents, c’est la version la plus basse qui l’emporte, puisqu’elle couvre déjà les plus récentes.
 
@@ -94,16 +96,17 @@ Le processus se déroule en deux étapes pour chaque paire (PR d’origine, bran
 
 Les labels de la PR d&#39;origine déterminent si le backport a lieu et, le cas échéant, vers quelles branches.
 
-| Label                                               | Effet                                                                                                                                                                                                                                                                                                                                   |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pr-must-backport`                                  | Backport vers toutes les branches de release actives                                                                                                                                                                                                                                                                                    |
-| `pr-must-backport-force`                            | Backport vers toutes les branches de release actives (équivalent à `pr-must-backport`)                                                                                                                                                                                                                                                  |
-| `pr-critical-bugfix`                                | Déclenche automatiquement `pr-must-backport` (via `AUTO_BACKPORT` dans `pr_labels_and_category.py`)                                                                                                                                                                                                                                     |
-| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport vers cette branche de release **et toutes les branches de release actives plus récentes** — la version indique la release *la plus ancienne* que la PR doit atteindre, même si la release nommée est elle-même en fin de vie. En présence de plusieurs labels de ce type, c&#39;est la version la plus basse qui l&#39;emporte |
-| `pr-backports-created`                              | Défini par le bot lorsque toutes les PR de backport requises ont été créées ; supprimé si une PR de cherry-pick est rouverte                                                                                                                                                                                                            |
-| `pr-cherrypick`                                     | Appliqué aux PR de cherry-pick créées par le bot                                                                                                                                                                                                                                                                                        |
-| `pr-backport`                                       | Appliqué aux PR de backport créées par le bot                                                                                                                                                                                                                                                                                           |
-| `do not test`                                       | Appliqué aux PR de cherry-pick afin que la CI ne s&#39;exécute pas sur celles-ci                                                                                                                                                                                                                                                        |
+| Label                                               | Effet                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-must-backport`                                  | Backport vers toutes les branches de release actives (en excluant les branches marquées `rolling-out`)                                                                                                                                                                                                                                                                                                  |
+| `pr-must-backport-force`                            | Backport vers toutes les branches de release actives, sans tenir compte des restrictions liées à `rolling-out`                                                                                                                                                                                                                                                                                          |
+| `pr-critical-bugfix`                                | Déclenche automatiquement `pr-must-backport` (via `AUTO_BACKPORT` dans `pr_labels_and_category.py`)                                                                                                                                                                                                                                                                                                     |
+| `v{VER}-must-backport` (e.g. `v25.3-must-backport`) | Backport vers cette branche de release **et toutes les branches de release actives plus récentes** — la version indique la release *la plus ancienne* que la PR doit atteindre, même si la release nommée est elle-même en fin de vie. En présence de plusieurs labels de ce type, c&#39;est la version la plus basse qui l&#39;emporte. Remplace l&#39;exclusion `rolling-out` pour ces branches |
+| `pr-backports-created`                              | Défini par le bot lorsque toutes les PR de backport requises ont été créées ; supprimé si une PR de cherry-pick est rouverte                                                                                                                                                                                                                                                                           |
+| `pr-cherrypick`                                     | Appliqué aux PR de cherry-pick créées par le bot                                                                                                                                                                                                                                                                                                                                                        |
+| `pr-backport`                                       | Appliqué aux PR de backport créées par le bot                                                                                                                                                                                                                                                                                                                                                           |
+| `do not test`                                       | Appliqué aux PR de cherry-pick afin que la CI ne s&#39;exécute pas sur celles-ci                                                                                                                                                                                                                                                                                                                        |
+| `rolling-out`                                       | Défini sur une **PR de release** pour indiquer que sa branche est en cours de déploiement ; les backports généraux ne la ciblent pas                                                                                                                                                                                                                                                                   |
 
 <div id="branch-and-pr-naming">
   ### Nommage des branches et des PR
@@ -137,8 +140,14 @@ Pour chaque numéro de PR d’origine `N` et chaque branche de release `release/
 * ont été fusionnées après la date du commit le plus ancien trouvé sur l’une des branches de release, et
 * ont été mises à jour au cours des 90 derniers jours (afin de conserver l’efficacité de la requête de recherche).
 
+<div id="rolling-out-branch-handling">
+  #### 3. Gestion des branches de release `rolling-out`
+</div>
+
+Lorsqu’une release PR porte le label `rolling-out`, les labels de backport généraux (`pr-must-backport`, `pr-critical-bugfix`) ignorent cette branche. Le bot ferme toutes les PR de cherry-pick ou de backport précédemment créées pour cette branche en y ajoutant un commentaire explicatif. Un label spécifique à une version (par ex. `v25.3-must-backport`) prévaut toujours sur cette règle — pour la release indiquée ainsi que pour chaque branche de release active plus récente à laquelle il s’applique. `pr-must-backport-force` contourne la vérification `rolling-out` pour toutes les branches.
+
 <div id="cherry-pick-stage">
-  #### 3. Étape de cherry-pick (`ReleaseBranch.create_cherrypick`)
+  #### 4. Étape de cherry-pick (`ReleaseBranch.create_cherrypick`)
 </div>
 
 Pour chaque paire (PR d’origine, branche de release) pour laquelle aucune PR de cherry-pick n’existe encore :
@@ -151,39 +160,39 @@ Pour chaque paire (PR d’origine, branche de release) pour laquelle aucune PR d
    * Sinon (avec ou sans conflits), réinitialisez et poussez les deux branches.
 5. Créez la PR de cherry-pick ciblant `backport/release/X.Y/N` depuis `cherrypick/release/X.Y/N`, avec les labels `pr-cherrypick` et `do not test`.
 6. Propagez `pr-bugfix` ou `pr-critical-bugfix` depuis la PR d’origine, le cas échéant.
-7. Les personnes assignées ne sont **pas** définies à ce stade ; elles ne sont ajoutées qu’en cas de conflits détectés.
+7. Les assignés ne sont **pas** définis à ce stade ; ils ne sont ajoutés qu’en cas de conflits détectés.
 
 <div id="auto-merge-conflict-free-cherry-pick-prs">
-  #### 4. Fusion automatique des PR de cherry-pick sans conflit
+  #### 5. Fusion automatique des PR de cherry-pick sans conflit
 </div>
 
-Si la PR de cherry-pick est fusionnable (sans conflits), le bot la fusionne automatiquement via l’API GitHub et passe immédiatement à l’étape de backport.
+Si la PR de cherry-pick est fusionnable (sans conflit), le bot la fusionne automatiquement via l’API GitHub et passe immédiatement à l’étape de backport.
 
 <div id="backport-stage">
-  #### 5. Étape de backport (`ReleaseBranch.create_backport`)
+  #### 6. Étape de backport (`ReleaseBranch.create_backport`)
 </div>
 
 Après la fusion de la PR de cherry-pick :
 
-1. Placez-vous sur la branche de backport et récupérez les dernières modifications.
-2. Trouvez la base de fusion entre la branche de release et la branche de backport.
-3. Exécutez `git reset --soft` jusqu’à la base de fusion afin de regrouper tous les commits cherry-pickés en un seul.
-4. Effectuez un commit en utilisant le titre de la PR de backport comme message.
-5. Force-poussez la branche de backport et ouvrez une PR de backport ciblant la branche de release réelle.
-6. Ajoutez à la PR le label `pr-backport` (ainsi que `pr-bugfix` / `pr-critical-bugfix`, le cas échéant).
-7. Assignez la PR à l’auteur de la PR d’origine, à la personne qui l’a fusionnée et aux personnes assignées existantes (hors comptes robotisés).
+1. Basculez sur la branche de backport et récupérez les dernières modifications.
+2. Déterminez le merge-base entre la branche de release et la branche de backport.
+3. Effectuez un `git reset --soft` jusqu&#39;au merge-base afin de regrouper tous les commits cherry-pickés en un seul.
+4. Créez un commit en utilisant le titre de la PR de backport comme message.
+5. Force-pushez la branche de backport et ouvrez une PR de backport vers la véritable branche de release.
+6. Ajoutez à la PR le label `pr-backport` (ainsi que `pr-bugfix` / `pr-critical-bugfix` le cas échéant).
+7. Assignez la PR à l&#39;auteur de la PR d&#39;origine, à la personne qui l&#39;a fusionnée et aux assignees existants (hors comptes robot).
 
 <div id="completion">
-  #### 6. Finalisation
+  #### 7. Finalisation
 </div>
 
-Lorsque toutes les branches de release associées à une PR d’origine donnée ont fait l’objet d’un backport, le bot ajoute `pr-backports-created` à la PR d’origine.
+Lorsque toutes les branches de release associées à une PR d’origine donnée ont été backportées, le bot ajoute `pr-backports-created` à la PR d’origine.
 
 <div id="pre-check">
-  #### 7. Vérification préalable
+  #### 8. Vérification préalable
 </div>
 
-Avant d’entamer tout travail sur une PR, `ReleaseBranch.pre_check` exécute `git merge-base --is-ancestor` afin de vérifier que le commit de fusion n’est pas déjà présent dans l’historique de la branche de release. Si c’est le cas, la PR est considérée comme déjà backportée et ignorée.
+Avant d’entamer tout travail sur une PR, `ReleaseBranch.pre_check` exécute `git merge-base --is-ancestor` pour vérifier que le commit de fusion n’est pas déjà atteignable depuis la branche de release. Si c’est le cas, la PR est considérée comme déjà backportée et est ignorée.
 
 <div id="stale-cherry-pick-pr-handling">
   ### Gestion des cherry-pick PR obsolètes

@@ -27,7 +27,9 @@ doc_type: 'guide'
 以下の手順は、Python REPL またはスクリプトから実行できます。
 
 <Steps>
-  <Step title="ライブラリをインストールする" id="install-libraries">
+  <Step>
+    ## ライブラリをインストールする
+
     以下のコマンドを実行して、必要なライブラリをインストールします。
 
     ```python
@@ -36,7 +38,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="認証情報の設定" id="setup-credentials">
+  <Step>
+    ## 認証情報の設定
+
     次に、Anthropic API key を指定します。
 
     ```python
@@ -56,7 +60,9 @@ doc_type: 'guide'
     </Info>
   </Step>
 
-  <Step title="MCPサーバーを初期化する" id="initialize-mcp-and-agent">
+  <Step>
+    ## MCPサーバーを初期化する
+
     次に、ClickHouse MCP serverがClickHouse SQL playgroundを参照するように設定します。
     これらをPython関数からLlama Indexツールに変換する必要があります。
 
@@ -88,7 +94,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="エージェントを作成する" id="create-agent">
+  <Step>
+    ## エージェントを作成する
+
     これで、それらのツールにアクセスできるエージェントを作成する準備が整いました。1 回の実行でのツール呼び出し回数の上限を 10 に設定します。必要に応じて、このパラメーターは変更できます。
 
     ```python
@@ -102,7 +110,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="LLM を初期化する" id="initialize-llm">
+  <Step>
+    ## LLM を初期化する
+
     次のコードで Claude Sonnet 4.0 モデルを初期化します。
 
     ```python
@@ -111,7 +121,9 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step title="エージェントを実行する" id="run-agent">
+  <Step>
+    ## エージェントを実行する
+
     最後に、エージェントに質問してみましょう。
 
     ```python
@@ -124,13 +136,13 @@ doc_type: 'guide'
     ```response title="Response"
     Added user message to memory: What's the most popular repository?
     === LLM Response ===
-    I'll help you find the most popular repository. Let me first explore the available databases and tables to understand the data structure.
+    最も人気のあるリポジトリを探します。まず、利用可能なデータベースとテーブルを調べてデータ構造を把握します。
     === Calling Function ===
     Calling function: list_databases with args: {}
     === Function Output ===
     meta=None content=[TextContent(type='text', text='amazon\nbluesky\ncountry\ncovid\ndefault\ndns\nenvironmental\nfood\nforex\ngeo\ngit\ngithub\nhackernews\nimdb\nlogs\nmetrica\nmgbench\nmta\nnoaa\nnyc_taxi\nnypd\nontime\nopensky\notel\notel_v2\npypi\nrandom\nreddit\nrubygems\nstackoverflow\nstar_schema\nstock\nsystem\ntw_weather\ntwitter\nuk\nwiki\nwords\nyoutube', annotations=None)] isError=False
     === LLM Response ===
-    I can see there's a `github` database which likely contains repository data. Let me explore the tables in that database.
+    リポジトリデータが含まれていると思われる `github` データベースが見つかりました。そのデータベース内のテーブルを調べてみます。
     === Calling Function ===
     Calling function: list_tables with args: {"database": "github"}
     === Function Output ===
@@ -138,9 +150,9 @@ doc_type: 'guide'
     ...
     ...
     === LLM Response ===
-    Based on the GitHub data, **the most popular repository is `sindresorhus/awesome`** with **402,292 stars**.
+    GitHub のデータによると、**最も人気のあるリポジトリは `sindresorhus/awesome`** で、**402,292 スター**を獲得しています。
 
-    Here are the top 10 most popular repositories by star count:
+    スター数による上位 10 件の人気リポジトリは以下のとおりです：
 
     1. **sindresorhus/awesome** - 402,292 stars
     2. **996icu/996.ICU** - 388,413 stars  
@@ -153,7 +165,7 @@ doc_type: 'guide'
     9. **vinta/awesome-python** - 269,320 stars
     10. **freeCodeCamp/freeCodeCamp** - 261,824 stars
 
-    The `sindresorhus/awesome` repository is a curated list of awesome lists, which explains its popularity as it serves as a comprehensive directory of resources across many different topics in software development.
+    `sindresorhus/awesome` リポジトリは厳選されたリストをまとめたものです。ソフトウェア開発のさまざまなトピックにわたるリソースの包括的なまとめとして機能しており、それがこのリポジトリの人気の理由となっています。
     ```
   </Step>
 </Steps>

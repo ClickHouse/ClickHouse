@@ -60,7 +60,7 @@ struct MultiplyDecimalsImpl
 REGISTER_FUNCTION(MultiplyDecimals)
 {
     FunctionDocumentation::Description description = R"(
-Performs multiplication on two decimals. Result value will be of type [Decimal256](/reference/data-types/decimal).
+Performs multiplication on two decimals. Result value will be of type [Decimal256](/sql-reference/data-types/decimal).
 Result scale can be explicitly specified by `result_scale` argument (const Integer in range `[0, 76]`). If not specified, the result scale is the max scale of given arguments.
 
 :::note

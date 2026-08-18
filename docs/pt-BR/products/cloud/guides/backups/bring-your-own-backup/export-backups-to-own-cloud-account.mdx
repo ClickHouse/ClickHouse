@@ -7,8 +7,7 @@ doc_type: 'guide'
 ---
 
 O ClickHouse Cloud oferece suporte a fazer backups na sua própria conta do provedor de serviços de nuvem (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
-Para saber mais sobre como funcionam os backups do ClickHouse Cloud, incluindo backups &quot;completos&quot; e &quot;incrementais&quot;, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups). Observe que
-backups na sua própria conta de Cloud se comportam de forma diferente dos backups do Cloud no local em um aspecto importante: eles não podem usar cópia nativa (veja a observação abaixo).
+Para saber mais sobre como funcionam os backups do ClickHouse Cloud, incluindo backups &quot;completos&quot; e &quot;incrementais&quot;, consulte a documentação de [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups).
 
 Neste guia, mostramos exemplos de como fazer backups completos e backups incrementais na AWS, no GCP e no armazenamento de objetos do Azure, assim como restaurar a partir desses backups.
 
@@ -18,20 +17,9 @@ Neste guia, mostramos exemplos de como fazer backups completos e backups increme
   Backups entre Clouds diferentes são compatíveis apenas por meio dos comandos de backup e restauração descritos nesta página, e não pela UI.
 </Note>
 
-<Warning>
-  **Impacto no desempenho em comparação com backups no local**
-  Backups para o seu próprio bucket não podem usar cópia nativa (do lado do servidor). A cópia nativa exige que a origem e o destino compartilhem as mesmas credenciais, o que não
-  é o caso aqui: a origem é um bucket gerenciado pelo ClickHouse e o destino é o seu próprio bucket, autenticado com credenciais separadas.
-
-  Como a cópia nativa não está disponível, os dados são baixados da origem e reenviados para o seu bucket (&quot;copy-through-buffers&quot;). Como resultado, exportar
-  backups para o seu próprio bucket é mais lento e consome mais recursos do que os backups padrão do Cloud no local.
-</Warning>
-
 <div id="requirements">
   ## Requisitos
 </div>
-
-Antes de executar um comando `BACKUP`, certifique-se de que seu usuário do ClickHouse tenha o privilégio `BACKUP`. O `default_role` no ClickHouse Cloud não inclui esse privilégio. Entre em contato com o [suporte do ClickHouse](https://clickhouse.com/support/program) para solicitá-lo antes de exportar backups.
 
 Você precisará dos seguintes detalhes para exportar/restaurar backups no bucket de armazenamento do seu próprio CSP.
 

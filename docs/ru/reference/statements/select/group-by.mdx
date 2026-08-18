@@ -12,7 +12,7 @@ doc_type: 'reference'
 * Все выражения в предложениях [SELECT](/ru/reference/statements/select/index), [HAVING](/ru/reference/statements/select/having), и [ORDER BY](/ru/reference/statements/select/order-by) **должны** вычисляться на основе ключевых выражений **или** [агрегатных функций](/ru/reference/functions/aggregate-functions/index) над неключевыми выражениями (включая обычные столбцы). Иными словами, каждый столбец, выбранный из таблицы, должен использоваться либо в ключевом выражении, либо внутри агрегатной функции, но не одновременно в обоих вариантах.
 * Результат агрегации запроса `SELECT` будет содержать столько строк, сколько уникальных значений «ключа группировки» было в исходной таблице. Обычно это значительно уменьшает количество строк, нередко на несколько порядков, но не всегда: количество строк остается прежним, если все значения «ключа группировки» различны.
 
-Если вы хотите группировать данные в таблице по номерам столбцов, а не по их именам, включите настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
+Если вы хотите группировать данные в таблице по номерам столбцов, а не по их именам, включите настройку [enable&#95;positional&#95;arguments](/ru/reference/settings/session-settings#enable_positional_arguments).
 
 <Note>
   Существует еще один способ выполнить агрегацию по таблице. Если запрос содержит столбцы таблицы только внутри агрегатных функций, `предложение GROUP BY` можно опустить — в этом случае предполагается агрегация по пустому множеству ключей. Такие запросы всегда возвращают ровно одну строку.
@@ -123,7 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 **См. также**
 
-* Настройка [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для обеспечения совместимости со стандартом SQL.
+* Настройка [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings#group_by_use_nulls) для обеспечения совместимости со стандартом SQL.
 
 <div id="cube-modifier">
   ## Модификатор CUBE
@@ -220,7 +220,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 **См. также**
 
-* настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для совместимости со стандартом SQL.
+* настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings#group_by_use_nulls) для совместимости со стандартом SQL.
 
 <div id="with-totals-modifier">
   ## Модификатор WITH TOTALS
@@ -362,10 +362,10 @@ GROUP BY domain
 Следующие два запроса эквивалентны.
 
 ```sql
--- Query 1
+-- Запрос 1
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
--- Query 2
+-- Запрос 2
 SELECT year, month, day, count(*) FROM t GROUP BY
 GROUPING SETS
 (
@@ -378,7 +378,7 @@ GROUPING SETS
 
 **См. также**
 
-* настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для совместимости со стандартом SQL.
+* настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings#group_by_use_nulls) для совместимости со стандартом SQL.
 
 <div id="implementation-details">
   ## Подробности реализации
@@ -390,19 +390,19 @@ GROUPING SETS
   ### Оптимизация GROUP BY в зависимости от ключа сортировки таблицы
 </div>
 
-Агрегацию можно выполнять эффективнее, если таблица отсортирована по некоторому ключу, а выражение `GROUP BY` содержит как минимум префикс ключа сортировки или инъективные функции. В этом случае, когда из таблицы считывается новый ключ, промежуточный результат агрегации можно завершить и отправить клиенту. Это поведение включается настройкой [optimize&#95;aggregation&#95;in&#95;order](/ru/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Такая оптимизация уменьшает использование памяти при агрегации, но в некоторых случаях может замедлить выполнение запроса.
+Агрегацию можно выполнять эффективнее, если таблица отсортирована по некоторому ключу, а выражение `GROUP BY` содержит как минимум префикс ключа сортировки или инъективные функции. В этом случае, когда из таблицы считывается новый ключ, промежуточный результат агрегации можно завершить и отправить клиенту. Это поведение включается настройкой [optimize&#95;aggregation&#95;in&#95;order](/ru/reference/settings/session-settings#optimize_aggregation_in_order). Такая оптимизация уменьшает использование памяти при агрегации, но в некоторых случаях может замедлить выполнение запроса.
 
 <div id="group-by-in-external-memory">
   ### GROUP BY во внешней памяти
 </div>
 
 Вы можете включить сброс временных данных на диск, чтобы ограничить использование памяти при `GROUP BY`.
-Параметр [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) задает порог потребления оперативной памяти, при достижении которого временные данные `GROUP BY` сбрасываются в файловую систему. Если установлено значение 0 (по умолчанию), эта возможность отключена.
-В качестве альтернативы можно задать [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/ru/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), который позволяет использовать `GROUP BY` во внешней памяти только после того, как запрос достигнет определенного порога по использованию памяти.
+Параметр [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ru/reference/settings/session-settings#max_bytes_before_external_group_by) задает порог потребления оперативной памяти, при достижении которого временные данные `GROUP BY` сбрасываются в файловую систему. Если установлено значение 0 (по умолчанию), эта возможность отключена.
+В качестве альтернативы можно задать [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/ru/reference/settings/session-settings#max_bytes_ratio_before_external_group_by), который позволяет использовать `GROUP BY` во внешней памяти только после того, как запрос достигнет определенного порога по использованию памяти.
 
 При использовании `max_bytes_before_external_group_by` мы рекомендуем установить `max_memory_usage` примерно в два раза выше (или `max_bytes_ratio_before_external_group_by=0.5`). Это необходимо, потому что агрегация состоит из двух этапов: чтения данных и формирования промежуточных данных (1), а затем слияния промежуточных данных (2). Сброс данных в файловую систему может происходить только на этапе 1. Если временные данные не были сброшены, то на этапе 2 может потребоваться до того же объема памяти, что и на этапе 1.
 
-Например, если [max&#95;memory&#95;usage](/ru/reference/settings/session-settings/max-memory-usage#max_memory_usage) было установлено в 10000000000 и вы хотите использовать внешнюю агрегацию, разумно установить `max_bytes_before_external_group_by` в 10000000000, а `max_memory_usage` — в 20000000000. Когда срабатывает внешняя агрегация (если был хотя бы один сброс временных данных), максимальное потребление оперативной памяти лишь немного превышает `max_bytes_before_external_group_by`.
+Например, если [max&#95;memory&#95;usage](/ru/reference/settings/session-settings#max_memory_usage) было установлено в 10000000000 и вы хотите использовать внешнюю агрегацию, разумно установить `max_bytes_before_external_group_by` в 10000000000, а `max_memory_usage` — в 20000000000. Когда срабатывает внешняя агрегация (если был хотя бы один сброс временных данных), максимальное потребление оперативной памяти лишь немного превышает `max_bytes_before_external_group_by`.
 
 При распределенной обработке запросов внешняя агрегация выполняется на удаленных серверах. Чтобы запрашивающий сервер использовал только небольшой объем оперативной памяти, установите `distributed_aggregation_memory_efficient` в 1.
 

@@ -11,7 +11,7 @@ integration:
   - website: 'https://apify.com/'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -35,11 +35,15 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 </div>
 
 <Steps>
-  <Step title="اجمع تفاصيل الاتصال بـ ClickHouse" id="1-gather-your-connection-details">
+  <Step>
+    ### اجمع تفاصيل الاتصال بـ ClickHouse
+
     <ConnectionDetails />
   </Step>
 
-  <Step title="المتطلبات الأساسية لـ Apify" id="2-apify-prerequisites">
+  <Step>
+    ### المتطلبات الأساسية لـ Apify
+
     ستحتاج أيضًا إلى:
 
     * [حساب Apify](https://console.apify.com/sign-up) (تتوفر فئة مجانية).
@@ -47,7 +51,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     * تثبيت Node.js 18+ محليًا (لأمثلة JavaScript).
   </Step>
 
-  <Step title="ثبّت التبعيات" id="3-install-dependencies">
+  <Step>
+    ### ثبّت التبعيات
+
     ثبّت عميل JavaScript من Apify وعميل JavaScript من ClickHouse:
 
     ```bash
@@ -59,7 +65,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     </Note>
   </Step>
 
-  <Step title="أنشئ جدولًا مستهدفًا في ClickHouse" id="4-create-a-target-table">
+  <Step>
+    ### أنشئ جدولًا مستهدفًا في ClickHouse
+
     أنشئ جدولًا لتخزين البيانات المستخرجة. يعتمد المخطط على الـ Actor الذي تستخدمه. يستخدم هذا المثال [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) مع Actor لاستخراج بيانات المنتجات:
 
     ```sql
@@ -76,7 +84,9 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     ```
   </Step>
 
-  <Step title="اجلب Dataset لـ Apify وحمّلها إلى ClickHouse" id="5-fetch-and-load">
+  <Step>
+    ### اجلب مجموعة بيانات Apify وحمّلها إلى ClickHouse
+
     يجلب البرنامج النصي التالي نتائج تشغيل Actor في Apify ويدرجها في ClickHouse:
 
     ```javascript
@@ -92,7 +102,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
         database: 'default',
     });
 
-    // جلب عناصر Dataset من آخر تشغيل لـ Actor
+    // جلب عناصر مجموعة البيانات من آخر تشغيل لـ Actor
     const run = await apify.actor('YOUR_ACTOR_ID').call();
     const { items } = await apify.dataset(run.defaultDatasetId).listItems();
 
@@ -110,11 +120,13 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
     ```
 
     <Tip>
-      بالنسبة إلى Dataset الكبيرة، استخدم تقسيم النتائج إلى صفحات عبر معاملي `limit` و`offset` في نقطة النهاية [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). يمكنك أيضًا تمرير `clean=true` لاسترجاع العناصر غير الفارغة فقط بعد إزالة التكرارات.
+      بالنسبة إلى مجموعات البيانات الكبيرة، استخدم تقسيم النتائج إلى صفحات عبر معاملي `limit` و`offset` في نقطة النهاية [List dataset items](https://docs.apify.com/api/v2#/reference/datasets/item-collection/list-items). يمكنك أيضًا تمرير `clean=true` لاسترجاع العناصر غير الفارغة فقط بعد إزالة التكرارات.
     </Tip>
   </Step>
 
-  <Step title="أتمتة العملية باستخدام webhooks" id="6-automate-with-webhooks">
+  <Step>
+    ### أتمتة العملية باستخدام webhooks
+
     بدلًا من تشغيل البرنامج النصي يدويًا، أتمت مسار المعالجة بحيث تُحمَّل البيانات إلى ClickHouse في كل مرة ينتهي فيها Actor:
 
     1. في [Apify Console](https://console.apify.com/)، انتقل إلى Actor الخاص بك وافتح علامة التبويب **Integrations**.
@@ -151,7 +163,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
   ### الأداء
 </div>
 
-لعمليات الإدراج عالية الإنتاجية من عميل JavaScript، اتبع [نصائح لتحسين الأداء](/ar/integrations/language-clients/js/index#tips-for-performance-optimizations). اجمع الصفوف في دفعات إدراج أكبر بدلًا من إدراج صف واحد في كل مرة، وفكّر في استخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) عندما لا يكون التجميع من جهة العميل عمليًا.
+لعمليات الإدراج عالية الإنتاجية من عميل JavaScript، اتبع [نصائح لتحسين الأداء](/ar/integrations/language-clients/js#tips-for-performance-optimizations). اجمع الصفوف في دفعات إدراج أكبر بدلًا من إدراج صف واحد في كل مرة، وفكّر في استخدام [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) عندما لا يكون التجميع من جهة العميل عمليًا.
 
 <div id="security">
   ### الأمان
@@ -169,4 +181,4 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 * [عميل بايثون الخاص بـ Apify](https://docs.apify.com/api/client/python)
 * [متجر Apify (Actors جاهزة للاستخدام)](https://apify.com/store)
 * [نظرة عامة على تكاملات Apify](https://docs.apify.com/platform/integrations)
-* [عميل JavaScript الخاص بـ ClickHouse](/ar/integrations/language-clients/js/index)
+* [عميل JavaScript الخاص بـ ClickHouse](/ar/integrations/language-clients/js)

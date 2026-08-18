@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "Actualizar ClickHouse Private"
+description: "Actualiza los componentes de ClickHouse Private — el operador y el clúster de ClickHouse (Keeper + server) — a una nueva versión."
+---
+
+Actualiza los componentes de ClickHouse Private — el operador y el clúster de ClickHouse (Keeper + server) — a una nueva versión.
+
+> **Práctica recomendada:** Ejecuta siempre la actualización primero en un clúster de staging o de prueba antes de aplicarla a producción. Se recomienda encarecidamente contar con un clúster de prueba dedicado que replique el entorno de producción como parte de tu proceso estándar de actualización.
+
+<div id="pre-upgrade-checklist">
+  ## Lista de comprobación previa a la actualización
+</div>
+
+Antes de comenzar la actualización:
+
+1. **Verifique que el clúster esté en buen estado** — confirme que todos los pods de Kubernetes del server y de Keeper estén en ejecución y listos, y que el estado del CR `ClickhouseCluster` no muestre errores:
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   No continúe si algún pod está en bucle de reinicio o si el clúster está degradado.
+
+2. **(Muy recomendable para producción) Haga un backup completo** de su clúster — consulte [Hacer backup y restaurar ClickHouse](/es/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual). Verifique que el backup se complete correctamente (`status = BACKUP_DONE` en `system.backups`) antes de continuar.
+
+3. **Asegúrese de que la versión anterior esté disponible para una reversión** — verifique que las versiones anteriores de los artefactos sigan estando accesibles en su ECR interno. Tener disponibles las imágenes y los charts es suficiente para poder revertir rápidamente si es necesario.
+
+4. **Copie todas las imágenes de la nueva versión en su ECR interno**. Use la [referencia de versiones de componentes](/es/products/clickhouse-private/reference/component-versions) para la versión de destino.
+
+5. **Ejecute las comprobaciones previas**. Las comprobaciones previas validan requisitos adicionales y comprueban si hay feature flags obsoletos. Para más detalles, consulte la página [Cómo ejecutar las comprobaciones previas](/es/products/clickhouse-private/guides/run-preflight-checks).
+
+<div id="upgrade-procedure">
+  ## Procedimiento de actualización
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Actualizar el gráfico de Helm del operador
+
+    Mantén los `values` de helm existentes sin cambios y actualiza únicamente las versiones del operador a las nuevas versiones de destino.
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **Nota:** Actualizar el operador puede desencadenar un reinicio progresivo de todos los clústeres de ClickHouse que administra. Si tienes varios clústeres y quieres validar la actualización en uno antes de permitir que el operador reconcilie los demás, consulta [Protección de los clústeres durante la actualización](#protecting-clusters-during-upgrade) más abajo.
+  </Step>
+
+  <Step>
+    ### 2. Validar el operador actualizado
+
+    Confirma que la implementación del operador esté en ejecución y en buen estado:
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    Comprueba que no haya errores en los logs y que todos los clústeres administrados se hayan reconciliado correctamente:
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Actualizar el gráfico de Helm de onprem-clickhouse-cluster
+
+    Actualiza el gráfico de Helm `onprem-clickhouse-cluster` para cada clúster. Mantén los `values` de helm existentes sin cambios y actualiza únicamente las versiones de las imágenes de ClickHouse server y Keeper a las nuevas versiones de destino.
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    Esto desencadena un **reinicio progresivo de los pods de Keeper y server** (un pod a la vez). Repite este proceso para cada clúster.
+  </Step>
+
+  <Step>
+    ### 4. Validar el clúster actualizado
+
+    Una vez completado el reinicio progresivo, confirma que el clúster esté en buen estado:
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    Todos los pods deben estar en estado `Running` y el CR `ClickhouseCluster` no debe mostrar errores. Para validar aún más la conectividad, realiza un reenvío de puertos del servicio de ClickHouse (consulta la sección Port-forward en el [tutorial](/es/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) correspondiente) y ejecuta una consulta de prueba.
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## Proteger los clústeres durante la actualización
+</div>
+
+Si administra varios clústeres con un único operador y quiere validar la actualización del operador en un clúster antes de permitir que reconciliе los demás (por ejemplo, probar en un clúster de staging antes de hacerlo en producción), pause la reconciliación en clústeres específicos mediante la anotación `clickhouse.com/skip-reconcile`.
+
+Agregue la anotación a cualquier clúster que quiera proteger antes de actualizar el operador:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+El operador omite por completo la reconciliación de los clústeres anotados: no se aplican ni reinicios ni cambios de configuración. Una vez que hayas validado la actualización en tu clúster de prueba, elimina la anotación para que el operador reanude la reconciliación normal:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+Confirme que el operador haya advertido la anotación revisando sus logs para:
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## Reversión
+</div>
+
+Si se detectan problemas después de la actualización:
+
+* **Reversión del operador:** vuelva a desplegar la versión anterior del gráfico de Helm del operador.
+* **Reversión del clúster:** vuelva a desplegar la versión anterior del gráfico de Helm de `onprem-clickhouse-cluster` con las versiones anteriores de las imágenes de server y Keeper.
+* **Recuperación de datos:** si sospecha que hay problemas con los datos, restaure a partir de la copia de seguridad realizada en la lista de comprobación previa a la actualización; consulte [Back Up and Restore ClickHouse](/es/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).

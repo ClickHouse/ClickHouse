@@ -2,12 +2,12 @@
 slug: /cloud/managed-postgres/local-development
 sidebarTitle: 'التطوير المحلي'
 title: 'بيئات التطوير المحلية'
-description: 'شغّل PostgreSQL محليًا باستخدام Docker لتطوير سريع مع ClickHouse Managed Postgres'
+description: 'شغّل PostgreSQL محليًا باستخدام Docker لتطوير سريع مع Managed Postgres'
 keywords: ['managed postgres', 'التطوير المحلي', 'docker', 'postgresql', 'بيانات تهيئة', 'ترحيل']
 doc_type: 'guide'
 ---
 
-يعتمد ClickHouse Managed Postgres على PostgreSQL القياسي، ويتكامل مع منظومة PostgreSQL الحالية. وبالنسبة إلى معظم مهام التطوير، يمكنك التطوير والاختبار بالاعتماد على مثيل PostgreSQL محلي يعمل داخل Docker بدلًا من النشر على السحابة.
+يعتمد Managed Postgres على PostgreSQL القياسي، ويتكامل مع منظومة PostgreSQL الحالية. وبالنسبة إلى معظم مهام التطوير، يمكنك التطوير والاختبار بالاعتماد على مثيل PostgreSQL محلي يعمل داخل Docker بدلًا من النشر على السحابة.
 
 يوفّر هذا النهج دورة ملاحظات سريعة، ويُبسّط عملية الإعداد، ويقلّل الاعتماد على البنية التحتية المشتركة، ويتيح لك التجربة بأمان من دون التأثير في أنظمة الإنتاج.
 
@@ -18,7 +18,7 @@ doc_type: 'guide'
 * تحتوي على بيانات تطوير ممثّلة.
 * تدعم سير عمل تطوير التطبيقات واختبارها بشكل طبيعي.
 
-وبما أن ClickHouse Managed Postgres يستند إلى PostgreSQL القياسي، فإن أطر الترحيل الحالية، وأدوات إدارة المخطط، وأساليب تهيئة البيانات تعمل من دون أي تعديل.
+وبما أن Managed Postgres يستند إلى PostgreSQL القياسي، فإن أطر الترحيل الحالية، وأدوات إدارة المخطط، وأساليب تهيئة البيانات تعمل من دون أي تعديل.
 
 <div id="example-development-flow">
   ## مثال على سير العمل في التطوير
@@ -36,7 +36,7 @@ graph LR
     A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
 ```
 
-ينسجم ClickHouse Managed Postgres مع سير عمل تطوير PostgreSQL الحالية. ومن خلال التطوير باستخدام مثيل PostgreSQL محلي، يمكن للفرق إجراء التعديلات بسرعة، والحفاظ على بيئات قابلة لإعادة الإنشاء، واكتساب الثقة بأن التطبيقات ستعمل بشكل متسق عند نشرها على ClickHouse Managed Postgres.
+ينسجم Managed Postgres مع سير عمل تطوير PostgreSQL الحالية. ومن خلال التطوير باستخدام مثيل PostgreSQL محلي، يمكن للفرق إجراء التعديلات بسرعة، والحفاظ على بيئات قابلة لإعادة الإنشاء، واكتساب الثقة بأن التطبيقات ستعمل بشكل متسق عند نشرها على Managed Postgres.
 
 <div id="run-postgresql-locally-with-docker">
   ## شغّل PostgreSQL محليًا باستخدام Docker
@@ -44,7 +44,7 @@ graph LR
 
 أسهل طريقة لإنشاء بيئة تطوير محلية هي تشغيل PostgreSQL داخل Docker.
 
-اختر إصدار PostgreSQL الذي يطابق نشر ClickHouse Managed Postgres لديك:
+اختر إصدار PostgreSQL الذي يطابق نشر Managed Postgres لديك:
 
 ```yaml title="docker-compose.yml"
 services:
@@ -80,7 +80,7 @@ docker compose up -d
 psql -h localhost -U postgres -p 15432 -d app
 ```
 
-في هذه المرحلة، يعمل PostgreSQL محليًا، لكنه لا يتضمن بعد مخطط بيانات التطبيق أو أي بيانات خاصة ببيئة التطوير.
+في هذه المرحلة، يعمل PostgreSQL محليًا، لكنه لا يتضمن بعد مخطط التطبيق أو أي بيانات خاصة ببيئة التطوير.
 
 <div id="apply-the-application-schema">
   ## تطبيق مخطط بيانات التطبيق

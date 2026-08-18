@@ -61,7 +61,7 @@
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/FunctionSecretArgumentsFinderTreeNode.h>
-#include <Analyzer/TableFunctionNode.h>
+#include <Analyzer/Utils.h>
 
 
 namespace ProfileEvents
@@ -460,7 +460,6 @@ struct QueryPlanSettings
             {"column_structure", query_plan_options.column_structure},
             {"compact", query_plan_options.compact},
             {"pretty", query_plan_options.pretty},
-            {"estimates", query_plan_options.estimates},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -509,7 +508,6 @@ struct QueryAnalyzeSettings
         {"input_headers", query_plan_options.input_headers},
         {"column_structure", query_plan_options.column_structure},
         {"processors", query_plan_options.processors_profile},
-        {"matches", query_plan_options.matches},
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
@@ -755,6 +753,22 @@ static void formatHeaderExplainAnalyze(
     out << "\n";
 }
 
+static void rejectStreamingForExplainAnalyze(const QueryTreeNodePtr & query_tree)
+{
+    for (const auto & node : extractTableExpressions(query_tree, /*add_array_join*/ false, /*recursive*/ true))
+    {
+        std::optional<TableExpressionModifiers> modifiers;
+        if (const auto * table_node = node->as<TableNode>())
+            modifiers = table_node->getTableExpressionModifiers();
+        else if (const auto * table_function_node = node->as<TableFunctionNode>())
+            modifiers = table_function_node->getTableExpressionModifiers();
+
+        if (modifiers && modifiers->hasStream())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "EXPLAIN ANALYZE is not supported for streaming (FROM ... STREAM) queries");
+    }
+}
+
 struct InterpreterExplainQuery::AnalyzedInnerQuery
 {
     QueryPlan plan;
@@ -813,15 +827,12 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
 
     result->query_plan_options = checkAndGetSettings<QueryAnalyzeSettings>(ast.getSettings()).query_plan_options;
 
-    /// This is the only place that turns join statistics on, and it must happen before any interpreter
-    /// is built. Every join of the query reads the mode from the context, so joins in nested plans get it as well.
-    planning_context->setJoinAnalyzeMode(
-        result->query_plan_options.matches ? JoinAnalyzeMode::Exact : JoinAnalyzeMode::Derived);
-
     Stopwatch watch;
+    QueryTreeNodePtr query_tree;
     if (planning_context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
         InterpreterSelectQueryAnalyzer interpreter(ast.getExplainedQuery(), planning_context, inner_options);
+        query_tree = interpreter.getQueryTree();
         result->context = interpreter.getContext();
         result->parallel_replicas_builder = interpreter.getQueryPlanWithParallelReplicasBuilder();
         /// Force planning so the effective ignore flags settle before we read them.
@@ -838,6 +849,9 @@ InterpreterExplainQuery::AnalyzedInnerQuery & InterpreterExplainQuery::getAnalyz
         result->ignore_quota = interpreter.ignoreQuota();
         result->ignore_limits = interpreter.ignoreLimits();
     }
+
+    if (query_tree)
+        rejectStreamingForExplainAnalyze(query_tree);
 
     result->planning_ns = watch.elapsed();
 
@@ -1263,7 +1277,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
             if (!outer_thread_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "EXPLAIN ANALYZE: current thread is not attached to a thread group");
 
-            auto analyze_thread_group = ThreadGroup::createForExplainAnalyze(outer_thread_group);
+            auto analyze_thread_group = std::make_shared<ThreadGroup>(outer_thread_group);
             analyze_thread_group->memory_tracker.setDescription("EXPLAIN ANALYZE");
 
             watch.restart();

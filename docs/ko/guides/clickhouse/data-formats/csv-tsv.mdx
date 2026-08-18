@@ -79,7 +79,7 @@ clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_he
   ### 사용자 지정 구분 기호가 있는 CSV 파일
 </div>
 
-CSV 파일에서 쉼표가 아닌 구분 기호를 사용하는 경우, 해당 기호를 설정하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats/format-csv#format_csv_delimiter) 옵션을 사용할 수 있습니다:
+CSV 파일에서 쉼표가 아닌 구분 기호를 사용하는 경우, 해당 기호를 설정하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats#format_csv_delimiter) 옵션을 사용할 수 있습니다:
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ SET format_csv_delimiter = ';'
   ### CSV 파일에서 줄 건너뛰기
 </div>
 
-경우에 따라 CSV 파일에서 데이터를 가져올 때 처음 몇 줄을 건너뛸 수 있습니다. 이는 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats/input-format#input_format_csv_skip_first_lines) 옵션을 사용해 설정할 수 있습니다:
+경우에 따라 CSV 파일에서 데이터를 가져올 때 처음 몇 줄을 건너뛸 수 있습니다. 이는 [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats#input_format_csv_skip_first_lines) 옵션을 사용해 설정할 수 있습니다:
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ SELECT count(*) FROM file('data-small.csv', CSV)
   ### CSV 파일에서 NULL 값 다루기
 </div>
 
-NULL 값은 파일을 생성한 애플리케이션에 따라 서로 다르게 인코딩될 수 있습니다. 기본적으로 ClickHouse는 CSV에서 NULL 값으로 `\N`을 사용합니다. 하지만 [format&#95;csv&#95;null&#95;representation](/ko/reference/settings/formats/format-csv#format_csv_null_representation) 옵션을 사용하면 이를 변경할 수 있습니다.
+NULL 값은 파일을 생성한 애플리케이션에 따라 서로 다르게 인코딩될 수 있습니다. 기본적으로 ClickHouse는 CSV에서 NULL 값으로 `\N`을 사용합니다. 하지만 [format&#95;csv&#95;null&#95;representation](/ko/reference/settings/formats#format_tsv_null_representation) 옵션을 사용하면 이를 변경할 수 있습니다.
 
 다음과 같은 CSV 파일이 있다고 가정하겠습니다:
 
@@ -174,7 +174,7 @@ SELECT * FROM file('nulls.csv')
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-헤더가 포함된 TSV 파일을 처리할 수 있도록 [TabSeparatedWithNames](/ko/reference/formats/TabSeparated/TabSeparatedWithNames) 포맷도 지원합니다. 또한 CSV와 마찬가지로 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats/input-format#input_format_tsv_skip_first_lines) 옵션을 사용해 처음 X줄을 건너뛸 수 있습니다.
+헤더가 포함된 TSV 파일을 처리할 수 있도록 [TabSeparatedWithNames](/ko/reference/formats/TabSeparated/TabSeparatedWithNames) 포맷도 지원합니다. 또한 CSV와 마찬가지로 [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ko/reference/settings/formats#input_format_tsv_skip_first_lines) 옵션을 사용해 처음 X줄을 건너뛸 수 있습니다.
 
 <div id="raw-tsv">
   ### Raw TSV
@@ -244,13 +244,13 @@ ClickHouse가 3,600만 행을 CSV 파일로 저장하는 데 **~1**초밖에 걸
   ### 사용자 지정 구분 기호로 CSV 내보내기
 </div>
 
-쉼표가 아닌 다른 구분 기호를 사용하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats/format-csv#format_csv_delimiter) 설정 옵션을 사용할 수 있습니다:
+쉼표가 아닌 다른 구분 기호를 사용하려면 [format&#95;csv&#95;delimiter](/ko/reference/settings/formats#format_csv_delimiter) 설정 옵션을 사용할 수 있습니다:
 
 ```sql
 SET format_csv_delimiter = '|'
 ```
 
-이제 ClickHouse는 CSV 포맷에서 구분자로 `|`를 사용합니다:
+이제 ClickHouse는 CSV 형식에서 구분자로 `|`를 사용합니다:
 
 ```sql
 SELECT *
@@ -271,7 +271,7 @@ FORMAT CSV
   ### Windows용 CSV 내보내기
 </div>
 
-Windows 환경에서 CSV 파일이 문제없이 작동하도록 하려면 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ko/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line) 옵션을 활성화하는 것이 좋습니다. 이렇게 하면 줄바꿈에 `\n` 대신 `\r\n`을 사용합니다:
+Windows 환경에서 CSV 파일이 문제없이 작동하도록 하려면 [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ko/reference/settings/formats#output_format_csv_crlf_end_of_line) 옵션을 활성화하는 것이 좋습니다. 이렇게 하면 줄바꿈에 `\n` 대신 `\r\n`을 사용합니다:
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;

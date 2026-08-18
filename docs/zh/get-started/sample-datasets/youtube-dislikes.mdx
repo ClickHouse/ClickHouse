@@ -26,7 +26,9 @@ keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩
 </div>
 
 <Steps>
-  <Step title="数据探索" id="data-exploration">
+  <Step>
+    ### 数据探索
+
     让我们看看这些数据的样子。`s3cluster` 表函数会返回一个表，因此我们可以对结果执行 `DESCRIBE`：
 
     ```sql
@@ -65,7 +67,9 @@ keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩
     ```
   </Step>
 
-  <Step title="创建表" id="create-the-table">
+  <Step>
+    ### 创建表
+
     根据推断出的 schema，我们对数据类型进行了整理，并添加了主键。
     定义如下表：
 
@@ -99,7 +103,9 @@ keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩
     ```
   </Step>
 
-  <Step title="插入数据" id="insert-data">
+  <Step>
+    ### 插入数据
+
     以下命令会将 S3 文件中的记录流式写入 `youtube` 表。
 
     <Warning>
@@ -144,7 +150,9 @@ keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩
     * 我们使用 `ifNull` 来避免表中出现 `NULL` 值。如果传入的值是 `NULL`，`ifNull` 函数会将其设为空字符串
   </Step>
 
-  <Step title="统计行数" id="count-row-numbers">
+  <Step>
+    ### 统计行数
+
     在 ClickHouse Cloud 的 SQL 控制台中打开一个新标签页 (或新开一个 `clickhouse-client` 窗口) ，观察计数持续增加。
     插入 45.6 亿行需要一些时间，具体取决于服务器资源。 (如果不调整任何设置，大约需要 4.5 小时。)
 
@@ -160,7 +168,9 @@ keywords: ['示例数据集', 'youtube', '示例数据', '视频分析', '点踩
     ```
   </Step>
 
-  <Step title="探索数据" id="explore-the-data">
+  <Step>
+    ### 探索数据
+
     数据插入后，不妨统计一下你喜欢的视频或频道被点踩的次数。让我们看看 ClickHouse 上传了多少个视频：
 
     ```sql

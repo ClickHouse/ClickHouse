@@ -69,8 +69,6 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
-    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
-
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(
@@ -80,7 +78,7 @@ public:
         Poco::JSON::Object::Ptr new_schema,
         Int32 previous_schema_id) const override;
 
-    void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
+    void dropTable(const String & namespace_name, const String & table_name) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured
     /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
@@ -97,6 +95,8 @@ public:
         const String & glue_column_type);
 
 private:
+    void createNamespaceIfNotExists(const String & namespace_name) const;
+
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

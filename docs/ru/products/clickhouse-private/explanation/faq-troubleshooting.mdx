@@ -1,0 +1,111 @@
+---
+noindex: true
+title: "FAQ / Устранение неполадок"
+sidebarTitle: "FAQ"
+description: "Если эта ошибка появляется в журналах оператора ClickHouse, это означает, что ему не удаётся завершить реконсиляцию кластера ClickHouse, поскольку оператор"
+---
+
+<div id="zone-details-couldnt-be-found-for-any-pv">
+  ## не удалось найти сведения о зоне ни для одного PV?
+</div>
+
+Если эта ошибка появляется в журналах оператора ClickHouse, это означает, что он не может завершить реконсиляцию кластера ClickHouse, поскольку оператор ожидает, что для PersistentVolume будут автоматически заданы node affinity с учётом топологии. В частности, оператор ищет node affinity на основе метки `topology.kubernetes.io/zone`. Обычно это обеспечивают средства выделения томов с учётом топологии (например, при использовании провиженера томов AWS EBS).
+
+Однако у некоторых облачных провайдеров (например, IBM) или в средах в собственной инфраструктуре это поле не заполняется автоматически либо используются нестандартные метки. Чтобы оператор всё же мог продолжать работу, рекомендуется добавить node affinity в storage class, например так:
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: local-nvme-sc
+allowVolumeExpansion: true
+parameters:
+  path: /nvme/disk
+provisioner: rancher.io/local-path
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: topology.kubernetes.io/zone
+        values:
+          - <your_cluster_name>-keeper
+          - <your_host_1>
+          - <your_host_2>
+          - <your_host_3>
+          - <your_host_4>
+          - <your_host_5>
+          - <your_host_6>
+      - key: directpv.min.io/zone
+        values:
+          - default
+```
+
+Это гарантирует, что тома хранилища будут созданы с корректной привязкой к узлам. Например:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  ...
+spec:
+  accessModes:
+    - ReadWriteOnce
+  ...
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: directpv.min.io/zone
+              operator: In
+              values:
+                - default
+  ...
+```
+
+Если для управления топологией используются нестандартные метки, оператор предоставляет свойство `additionalZoneLabelRegexes`. Например, если вы используете Helm-чарт для установки оператора, можно задать helm-значение `operator.additionalZoneLabelRegexes` равным `directpv.*zone`, чтобы оно соответствовало указанному выше PersistentVolume.
+
+<div id="what-does-the-loadbalancertype-field-on-the-clickhousecluster-crd-do">
+  ## Что делает поле `loadBalancerType` в CRD ClickHouseCluster?
+</div>
+
+`loadBalancerType` фактически не добавляет аннотации балансировщика нагрузки к Service кластера ClickHouse. В настоящее время оператор ClickHouse не поддерживает создание балансировщика нагрузки для кластера ClickHouse. Это поле используется только в ClickHouse Cloud, где оно помогает создавать пользователей для Cloud SQL Console.
+
+<div id="do-i-have-to-use-a-nvme-attached-instance-what-purpose-does-the-nvme-disk-serve">
+  ## Обязательно ли использовать инстанс с подключённым NVMe-диском? Для чего нужен диск NVMe?
+</div>
+
+Диск NVMe используется оператором ClickHouse для монтирования тома кеша в подах сервера ClickHouse. Этот том кеша служит кешем для данных, поступающих из S3 (или аналогичных объектных хранилищ). Оператор автоматически настраивает диски в конфигурации сервера ClickHouse:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+Обратите внимание: при использовании SharedMergeTree ClickHouse фактически не хранит данные локально. Локальное хранилище здесь нужно только для оптимизации производительности запросов, выполняемых к SharedMergeTree.
+
+Можно использовать и другие устройства хранилища, например AWS EBS при использовании экземпляров EC2. В этом случае несколько шагов в руководстве по онбордингу изменятся:
+
+* Нужно убедиться, что диски подключены к экземплярам, на которых планируется размещение Kubernetes-подов ClickHouse server
+* Шаблон запуска следует изменить с учётом новой дисковой архитектуры. По-прежнему можно создать RAID-диск &amp; отформатировать его в ext4 или xfs, но, разумеется, устройства нужно перечислять с помощью другого инструмента (например, lsblk).
+* Если диски смонтированы не в `/nvme/disk`, как в примере шаблона запуска, параметр `hostPathBaseDirectory` в Helm-чарте ClickHouseCluster должен быть установлен в фактическую точку монтирования.
+
+Обратите внимание, что в зависимости от выбранной конфигурации это может повлиять на производительность запросов.
+
+<div id="can-i-deploy-multiple-clickhouseclusters-in-the-same-namespace">
+  ## Можно ли развернуть несколько ClickHouseCluster в одном пространстве имен?
+</div>
+
+Нет. Оператор предполагает, что в каждом пространстве имен есть ровно один `ClickHouseCluster`. Развертывание нескольких экземпляров в одном и том же пространстве имен приведет к конфликтам реконсиляции. Helm-чарт `onprem-clickhouse-cluster` по умолчанию обеспечивает это с помощью `ResourceQuota`, которая ограничивает пространство имен одним ресурсом `ClickHouseCluster`. Если вам нужно несколько кластеров, разверните каждый в отдельном пространстве имен.
+
+<div id="i-use-s3-compatible-storage-but-region-information-isnt-required-or-causes-issues">
+  ## Я использую S3-совместимое хранилище, но информация о регионе не требуется (или вызывает проблемы)
+</div>
+
+По умолчанию оператор требует указывать информацию о регионе в подключении к S3. Это предпочтительный вариант для облачного объектного хранилища, но если вы используете объектное хранилище в собственной инфраструктуре (например, MinIO), информация о регионе может вызывать проблемы.
+
+Оператор может отключить обязательное указание региона для каждого кластера отдельно, установив `spec.isOnPremiseInstance` в `true` в пользовательском ресурсе `ClickHouseCluster`. Если этот параметр задан, оператор делает информацию о регионе в подключении к S3 необязательной -- если регион не передан, поле региона полностью удаляется из конфигурации.

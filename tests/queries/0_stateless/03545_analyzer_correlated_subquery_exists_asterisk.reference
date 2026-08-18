@@ -44,19 +44,14 @@ Positions: 1
               Expression (Left Pre Join Actions)
               Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
               Positions: 0
-                Distinct
-                Columns: __table1.i1
-                  Expression (Project only used columns)
-                  Actions: INPUT :: 0 -> __table1.i1 Int64 : 0
-                  Positions: 0
-                    Expression (Change column names to column identifiers)
-                    Actions: INPUT : 0 -> i1 Int64 : 0
-                             ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
-                    Positions: 1
-                      ReadFromMergeTree (default.test)
-                      ReadType: Default
-                      Parts: 1
-                      Granules: 1
+                Expression (Change column names to column identifiers)
+                Actions: INPUT : 0 -> i1 Int64 : 0
+                         ALIAS i1 :: 0 -> __table1.i1 Int64 : 1
+                Positions: 1
+                  ReadFromMergeTree (default.test)
+                  ReadType: Default
+                  Parts: 1
+                  Granules: 1
               Expression (Right Pre Join Actions)
               Actions: INPUT :: 0 -> __table4.i2 Int64 : 0
                        INPUT :: 1 -> __table4.i1 Int64 : 1

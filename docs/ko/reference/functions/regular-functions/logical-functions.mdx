@@ -27,7 +27,7 @@ doc_type: 'reference'
 
 두 개 이상의 값에 대한 논리곱을 계산합니다.
 
-설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation)은 단락 평가 사용 여부를 제어합니다.
+설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings#short_circuit_function_evaluation)은 단락 평가 사용 여부를 제어합니다.
 이 설정을 활성화하면 `(val_1 AND val_2 AND ... AND val_{i-1})`가 `true`일 때만 `val_i`를 평가합니다.
 
 예를 들어, 단락 평가를 사용하면 쿼리 `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`를 실행할 때 0으로 나누기 예외가 발생하지 않습니다.
@@ -122,7 +122,7 @@ SELECT NOT(1);
 
 2개 이상의 값에 대한 논리합을 계산합니다.
 
-설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation)은 단락 평가 사용 여부를 제어합니다.
+설정 [`short_circuit_function_evaluation`](/ko/reference/settings/session-settings#short_circuit_function_evaluation)은 단락 평가 사용 여부를 제어합니다.
 활성화되면 `val_i`는 `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))`가 `true`일 때만 평가됩니다.
 
 예를 들어, 단락 평가를 사용하면 쿼리 `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`를 실행할 때 0으로 나누기 예외가 발생하지 않습니다.

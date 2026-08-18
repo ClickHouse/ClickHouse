@@ -72,7 +72,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
       <td />
 
       <td>✓ 自動スケーリング</td>
-      <td>✓ 標準プロファイルでは自動、カスタムプロファイルではサポートによる支援</td>
+      <td>✓ 標準プロファイルでは自動、カスタムプロファイルでは手動</td>
     </tr>
 
     <tr>
@@ -87,6 +87,15 @@ ClickHouse Cloud では、複数のティアを利用できます。
     <tr>
       <td>ClickPipes</td>
       <td>✓</td>
+      <td>✓</td>
+      <td>✓</td>
+    </tr>
+
+    <tr>
+      <td>早期アップグレード</td>
+
+      <td />
+
       <td>✓</td>
       <td>✓</td>
     </tr>
@@ -165,7 +174,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
     </tr>
 
     <tr>
-      <td>プライベートネットワーキング</td>
+      <td>プライベートネットワーク接続</td>
 
       <td />
 
@@ -244,7 +253,7 @@ ClickHouse Cloud では、複数のティアを利用できます。
 * [HIPAA](/ja/products/cloud/reference/security/compliance-overview#hipaa-since-2024) および PCI コンプライアンスに対応しています。
 
 <Note>
-  Scale および Enterprise ティアは、[大規模なシングルレプリカサービス](/ja/products/cloud/features/large-single-replica-services)をサポートしています。標準の `1:4` プロファイルを使用する Scale サービスおよび Enterprise サービスでは、セルフサービスの垂直オートスケーリングを利用できます。一方、カスタムプロファイルを使用する Enterprise サービスでは、サポート支援による垂直リサイズが必要です。Basic ティアのシングルレプリカサービスは、引き続き固定サイズ (`8 GiB` または `12 GiB`) です。
+  3 つのティアすべてにおいて、シングルレプリカのサービスは固定サイズ (`8 GiB`, `12 GiB`) を前提としています
 </Note>
 
 <div id="upgrading-to-a-different-tier">

@@ -189,7 +189,7 @@ def test_drop_database_replica(started_cluster, with_tables: bool):
         f"CREATE DATABASE db ENGINE = Replicated('{zk_path}'"
         + r", '{shard}', '{replica}')"
     )
-    node4.query("DETACH DATABASE db SYNC")
+    node4.query("DETACH DATABASE db")
     node4.query(
         f"INSERT INTO system.zookeeper(name, path, value) VALUES ('active', '{zk_path}/replicas/s2|r2', '{node4_uuid}')",
     )

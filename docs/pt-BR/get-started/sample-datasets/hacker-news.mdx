@@ -15,7 +15,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
 </div>
 
 <Steps>
-  <Step title="Baixar CSV" id="download">
+  <Step>
+    ### Baixar CSV
+
     Uma versão CSV do conjunto de dados pode ser baixada do nosso [bucket do S3](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) público ou com a execução deste comando:
 
     ```bash
@@ -25,7 +27,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     Com 4,6 GB e 28 milhões de linhas, este arquivo comprimido deve levar de 5 a 10 minutos para baixar.
   </Step>
 
-  <Step title="Faça uma amostragem dos dados" id="sampling">
+  <Step>
+    ### Faça uma amostragem dos dados
+
     [`clickhouse-local`](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) permite processar arquivos locais rapidamente sem
     precisar implantar e configurar o servidor ClickHouse.
 
@@ -91,7 +95,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     O formato `Vertical` é usado para facilitar a visualização dos dados de cada coluna.
   </Step>
 
-  <Step title="Carregue os dados com inferência de esquema" id="loading-the-data">
+  <Step>
+    ### Carregue os dados com inferência de esquema
+
     A ferramenta mais simples e poderosa para carregar dados é o `clickhouse-client`: um cliente nativo de linha de comando completo.
     Para carregar dados, você pode mais uma vez usar a inferência de esquema, deixando que o ClickHouse determine os tipos das colunas.
 
@@ -142,7 +148,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     Você inseriu 28 milhões de linhas no ClickHouse com um único comando!
   </Step>
 
-  <Step title="Explore os dados" id="explore">
+  <Step>
+    ### Explore os dados
+
     Obtenha uma amostra das histórias do Hacker News e de colunas específicas executando a consulta a seguir:
 
     ```sql title="Query"
@@ -161,7 +169,7 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     ```
 
     ```response title="Response"
-    Row 1:
+    Linha 1:
     ──────
     id:    2596866
     title:
@@ -171,7 +179,7 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     url:
     score: 0
 
-    Row 2:
+    Linha 2:
     ──────
     id:    2596870
     title: WordPress capture users last login date and time
@@ -181,7 +189,7 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     url:   http://wpsnipp.com/index.php/date/capture-users-last-login-date-and-time/
     score: 1
 
-    Row 3:
+    Linha 3:
     ──────
     id:    2596872
     title: Recent college graduates get some startup wisdom
@@ -195,7 +203,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     Embora a inferência de esquema seja uma ótima ferramenta para a exploração inicial dos dados, ela funciona com base no melhor esforço e não substitui, no longo prazo, a definição de um esquema ideal para seus dados.
   </Step>
 
-  <Step title="Defina um esquema" id="define-a-schema">
+  <Step>
+    ### Defina um esquema
+
     Uma otimização imediata e óbvia é definir um tipo para cada campo.
     Além de declarar o campo de tempo como do tipo `DateTime`, definimos um tipo apropriado para cada um dos campos abaixo após remover o conjunto de dados existente.
     No ClickHouse, o id da chave primária dos dados é definido por meio da cláusula `ORDER BY`.
@@ -238,7 +248,9 @@ keywords: ['conjunto de dados de exemplo', 'hacker news', 'dados de exemplo', 'a
     ```
   </Step>
 
-  <Step title="Executar consultas de exemplo" id="run-sample-queries">
+  <Step>
+    ### Executar consultas de exemplo
+
     Algumas consultas de exemplo são apresentadas abaixo para inspirar você a escrever
     suas próprias consultas.
 
@@ -452,7 +464,9 @@ O Parquet tem um conjunto mínimo de tipos, que o ClickHouse precisa respeitar, 
 A inferência de tipos em um arquivo Parquet invariavelmente resultará em um esquema ligeiramente diferente do arquivo CSV.
 
 <Steps>
-  <Step title="Inserir os dados" id="insert-the-data">
+  <Step>
+    ### Inserir os dados
+
     Execute a consulta a seguir para ler os mesmos dados no formato Parquet, novamente usando a função url para acessar os dados remotos:
 
     ```sql
@@ -544,7 +558,9 @@ A inferência de tipos em um arquivo Parquet invariavelmente resultará em um es
     ```
   </Step>
 
-  <Step title="Adicione um índice de salto para acelerar as consultas" id="add-skipping-index">
+  <Step>
+    ### Adicione um índice de salto para acelerar as consultas
+
     Para descobrir quantos comentários mencionam &quot;ClickHouse&quot;, execute a seguinte consulta:
 
     ```sql title="Query"

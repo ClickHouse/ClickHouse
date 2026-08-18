@@ -31,7 +31,7 @@ SELECT CounterID, 2 AS table, sum(Sign) AS c
 
 Запросы, являющиеся частями `UNION`, могут быть заключены в `()`. [ORDER BY](/ru/reference/statements/select/order-by) и [LIMIT](/ru/reference/statements/select/limit) применяются к отдельным запросам, а не к итоговому результату. Если вам нужно применить преобразование к итоговому результату, вы можете поместить все запросы с `UNION` в подзапрос в предложении [FROM](/ru/reference/statements/select/from).
 
-Если вы используете `UNION` без явного указания `UNION ALL` или `UNION DISTINCT`, вы можете задать режим union с помощью настройки [union&#95;default&#95;mode](/ru/reference/settings/session-settings/other#union_default_mode). Значениями настройки могут быть `ALL`, `DISTINCT` или пустая строка. Однако если использовать `UNION`, когда для настройки `union_default_mode` задана пустая строка, будет сгенерировано исключение. Следующие примеры демонстрируют результаты запросов при разных значениях этой настройки.
+Если вы используете `UNION` без явного указания `UNION ALL` или `UNION DISTINCT`, вы можете задать режим union с помощью настройки [union&#95;default&#95;mode](/ru/reference/settings/session-settings#union_default_mode). Значениями настройки могут быть `ALL`, `DISTINCT` или пустая строка. Однако если использовать `UNION`, когда для настройки `union_default_mode` задана пустая строка, будет сгенерировано исключение. Следующие примеры демонстрируют результаты запросов при разных значениях этой настройки.
 
 ```sql title="Query"
 SET union_default_mode = 'DISTINCT';
@@ -74,5 +74,5 @@ SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
 
 **См. также**
 
-* настройка [insert&#95;null&#95;as&#95;default](/ru/reference/settings/session-settings/insert#insert_null_as_default).
-* настройка [union&#95;default&#95;mode](/ru/reference/settings/session-settings/other#union_default_mode).
+* настройка [insert&#95;null&#95;as&#95;default](/ru/reference/settings/session-settings#insert_null_as_default).
+* настройка [union&#95;default&#95;mode](/ru/reference/settings/session-settings#union_default_mode).

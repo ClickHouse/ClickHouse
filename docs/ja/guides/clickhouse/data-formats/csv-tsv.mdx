@@ -79,7 +79,7 @@ clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_he
   ### カスタム区切り文字を使用したCSVファイル
 </div>
 
-CSVファイルでコンマ以外の区切り文字を使用している場合は、[format&#95;csv&#95;delimiter](/ja/reference/settings/formats/format-csv#format_csv_delimiter) オプションを使って、該当する記号を設定できます。
+CSVファイルでコンマ以外の区切り文字を使用している場合は、[format&#95;csv&#95;delimiter](/ja/reference/settings/formats#format_csv_delimiter) オプションを使って、該当する記号を設定できます。
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ SET format_csv_delimiter = ';'
   ### CSVファイル内の行をスキップする
 </div>
 
-CSVファイルからデータをインポートする際、先頭の数行をスキップしたい場合があります。これは、[input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ja/reference/settings/formats/input-format#input_format_csv_skip_first_lines) オプションを使用して行えます。
+CSVファイルからデータをインポートする際、先頭の数行をスキップしたい場合があります。これは、[input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ja/reference/settings/formats#input_format_csv_skip_first_lines) オプションを使用して行えます。
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ SELECT count(*) FROM file('data-small.csv', CSV)
   ### CSV ファイルでの NULL 値の扱い
 </div>
 
-NULL 値の表現方法は、そのファイルを生成したアプリケーションによって異なる場合があります。デフォルトでは、ClickHouse は CSV で NULL 値として `\N` を使用します。ただし、これは [format&#95;csv&#95;null&#95;representation](/ja/reference/settings/formats/format-csv#format_csv_null_representation) オプションで変更できます。
+NULL 値の表現方法は、そのファイルを生成したアプリケーションによって異なる場合があります。デフォルトでは、ClickHouse は CSV で NULL 値として `\N` を使用します。ただし、これは [format&#95;csv&#95;null&#95;representation](/ja/reference/settings/formats#format_tsv_null_representation) オプションで変更できます。
 
 次のような CSV ファイルがあるとします。
 
@@ -174,7 +174,7 @@ SELECT * FROM file('nulls.csv')
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-ヘッダー付きの TSV ファイルを扱うための [TabSeparatedWithNames](/ja/reference/formats/TabSeparated/TabSeparatedWithNames) フォーマットもあります。また、CSV と同様に、[input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ja/reference/settings/formats/input-format#input_format_tsv_skip_first_lines) オプションを使って先頭の X 行をスキップできます。
+ヘッダー付きの TSV ファイルを扱うための [TabSeparatedWithNames](/ja/reference/formats/TabSeparated/TabSeparatedWithNames) フォーマットもあります。また、CSV と同様に、[input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ja/reference/settings/formats#input_format_tsv_skip_first_lines) オプションを使って先頭の X 行をスキップできます。
 
 <div id="raw-tsv">
   ### Raw TSV
@@ -244,7 +244,7 @@ ClickHouse が 36m 行を CSVファイルに保存するのに **約1** 秒し�
   ### カスタム区切り文字を使用したCSVのエクスポート
 </div>
 
-コンマ以外の区切り文字を使用する場合は、[format&#95;csv&#95;delimiter](/ja/reference/settings/formats/format-csv#format_csv_delimiter) 設定オプションを使用できます:
+コンマ以外の区切り文字を使用する場合は、[format&#95;csv&#95;delimiter](/ja/reference/settings/formats#format_csv_delimiter) 設定オプションを使用できます。
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -271,7 +271,7 @@ FORMAT CSV
   ### Windows向けのCSVのエクスポート
 </div>
 
-CSVファイルをWindows環境で問題なく使えるようにするには、[output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ja/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line) オプションを有効にすることを検討してください。これにより、改行コードとして `\n` ではなく `\r\n` が使用されます。
+CSVファイルをWindows環境で問題なく使えるようにするには、[output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ja/reference/settings/formats#output_format_csv_crlf_end_of_line) オプションを有効にすることを検討してください。これにより、改行コードとして `\n` ではなく `\r\n` が使用されます。
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;
@@ -326,7 +326,7 @@ FORMAT CSVWithNamesAndTypes
 "2016_Greater_Western_Sydney_Giants_season","2017-05-01",86
 ```
 
-このフォーマットには、2 つのヘッダー行が含まれます。1 つはカラム名、もう 1 つはカラム型です。これにより、ClickHouse (および他のアプリケーション) は、[このようなファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv) からデータを読み込む際にカラム型を識別できます。
+このフォーマットには、2 つのヘッダー行が含まれます。1 つはカラム名、もう 1 つはカラムの型です。これにより、ClickHouse (および他のアプリケーション) は、[このようなファイル](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data_csv_types.csv) からデータを読み込む際にカラムの型を識別できます。
 
 ```sql
 DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
@@ -340,7 +340,7 @@ DESCRIBE file('data_csv_types.csv', CSVWithNamesAndTypes)
 └───────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
 ```
 
-これにより ClickHouse は、推測する代わりに (2 行目の) ヘッダー行に基づいてカラム型を判別するようになりました。
+これにより ClickHouse は、推測する代わりに (2 行目の) ヘッダー行に基づいてカラムの型を判別するようになりました。
 
 <div id="custom-delimiters-separators-and-escaping-rules">
   ## カスタムの区切り文字、セパレーター、エスケープルール

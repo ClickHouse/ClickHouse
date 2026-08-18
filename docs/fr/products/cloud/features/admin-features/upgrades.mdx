@@ -8,13 +8,10 @@ keywords: ['mises à niveau', 'gestion des versions', 'fonctionnalités cloud', 
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
-import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
-import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/fr/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application des correctifs ni des mises à niveau. Nous déployons régulièrement des mises à niveau qui incluent des correctifs, de nouvelles fonctionnalités et des améliorations de performances.
-
-* Pour obtenir la liste complète des nouveautés de ClickHouse, consultez notre [Cloud changelog](/fr/resources/changelogs/cloud/2026)
-* Pour le calendrier de publication des versions, consultez la page [release status](/fr/resources/changelogs/cloud/release-status)
+Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application des correctifs ni des mises à niveau. Nous déployons régulièrement des mises à niveau qui incluent des correctifs, de nouvelles fonctionnalités et des améliorations de performances. Pour obtenir la liste complète des nouveautés de ClickHouse, consultez notre [Cloud changelog](/fr/resources/changelogs/cloud/2026).
 
 <Note>
   Nous introduisons un nouveau mécanisme de mise à niveau, un concept que nous appelons « make before break » (ou MBB). Avec cette nouvelle approche, nous ajoutons des répliques mises à jour avant de supprimer les anciennes pendant l’opération de mise à niveau. Cela permet des mises à niveau plus transparentes et moins perturbatrices pour les workloads en cours d’exécution.
@@ -26,7 +23,7 @@ Avec ClickHouse Cloud, vous n’avez jamais à vous soucier de l’application d
   ## Compatibilité des versions
 </div>
 
-Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings/compatibility#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
+Lorsque vous créez un service, le paramètre [`compatibility`](/fr/reference/settings/session-settings#compatibility) est défini sur la version de ClickHouse la plus récente proposée dans ClickHouse Cloud au moment du provisionnement initial de votre service.
 
 Le paramètre `compatibility` vous permet d&#39;utiliser les valeurs par défaut des paramètres des versions précédentes. Lorsque votre service est mis à niveau vers une nouvelle version, la version spécifiée pour le paramètre `compatibility` ne change pas. Cela signifie que les valeurs par défaut des paramètres qui existaient lorsque vous avez créé votre service ne changeront pas (sauf si vous avez déjà redéfini ces valeurs par défaut, auquel cas elles seront conservées après la mise à niveau).
 
@@ -62,7 +59,7 @@ Les trois canaux de mise à niveau sont les suivants :
 
 <ScalePlanFeatureBadge feature="Le canal de mise à niveau rapide" />
 
-En plus du calendrier de mise à niveau habituel, nous proposons un **canal de mise à niveau rapide** si vous souhaitez que vos services reçoivent des mises à jour avant le calendrier de release habituel.
+En plus du calendrier de mise à niveau habituel, nous proposons un canal **Fast release** si vous souhaitez que vos services reçoivent des mises à jour avant le calendrier de release habituel.
 
 Concrètement, les services :
 
@@ -72,12 +69,12 @@ Concrètement, les services :
 Vous pouvez modifier le calendrier de release du service dans la console Cloud, comme indiqué ci-dessous :
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Sélectionner le type de canal de mise à niveau" border />
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="Sélectionner le type de canal de release" border />
 </div>
 
 <br />
 
-Ce **canal de mise à niveau rapide** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
+Ce canal **Fast release** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
 
 <div id="regular-release-channel">
   ### Canal de mise à niveau standard

@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "ClickHouse 알림 설정"
+sidebarTitle: "알림 설정"
+description: "ClickHouse 서버, Keeper, 연산자에 대한 Prometheus 스크레이프 대상과 알림을 설정합니다."
+---
+
+ClickHouse 서버, Keeper, 연산자에 대한 Prometheus 스크레이프 대상과 알림을 설정합니다.
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## ClickHouse 서버용 Prometheus 스크레이프 대상 설정
+</div>
+
+ClickHouse 서버 파드에는 기본 메트릭을 노출하는 `prometheus.io/*` 어노테이션이 포함되어 있습니다. 전체 메트릭(`ClickHouse_CustomMetrics_*` 포함)을 수집하려면 각 서버 파드의 `:8123/metrics` 엔드포인트를 PodMonitor 또는 이에 준하는 방식으로 Prometheus 스크레이프 대상으로 구성하십시오.
+
+이 엔드포인트는 **인증이 필요합니다**. 읽기 전용 권한이 있는 전용 사용자로 인증하십시오.
+
+<div id="set-up-podmonitor-for-keeper">
+  ## Keeper용 PodMonitor 설정
+</div>
+
+Keeper 파드의 `:8001/metrics` 엔드포인트를 대상으로 PodMonitor를 생성하여 Keeper 메트릭을 수집합니다.
+
+<div id="alert-rules">
+  ## 알림 규칙
+</div>
+
+권장 알림 정의의 전체 목록(Prometheus 표현식, 임계값, 조치)은 [reference/metrics-and-alerts.md](/ko/products/clickhouse-private/reference/metrics-and-alerts-reference)에서 확인하십시오.
+
+주요 알림은 다음과 같습니다:
+
+| 알림                        | 메트릭                                                    | 목적                                        |
+| ------------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| 리컨실리에이션이 수행되지 않는 연산자 | `last_cluster_reconcile`                               | 예상 시간 범위 내에 연산자의 리컨실리에이션이 수행되지 않았습니다 |
+| 연산자 리컨실리에이션 오류       | `controller_runtime_reconcile_errors_total`            | 오류 비율이 리컨실리에이션 시도의 5%를 초과합니다              |
+| 손상된 분리된 파트                | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | 손상된 분리된 파트가 60분 이상 100개를 초과합니다            |
+| 데이터 손실                    | `ClickHouse_CustomMetric_LostPartCount`                | 손실된 파트가 감지되었습니다(잠재적 데이터 손실)               |
+| 종료 중 멈춘 서버                | `ClickHouseMetrics_IsServerShuttingDown`               | 서버가 1시간 이상 종료 중 상태입니다                     |
+| 읽기 전용 상태인 테이블 레플리카        | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | 테이블이 1시간 이상 읽기 전용 모드입니다                   |
+
+<div id="standard-kubernetes-alerts">
+  ## 표준 Kubernetes 알림
+</div>
+
+ClickHouse 전용 알림에 더해, 다음에 대한 표준 Kubernetes 알림도 추가하십시오.
+
+* 크래시 루프 상태인 파드
+* 스케줄링할 수 없는 파드
+* 환경별 기타 인프라 관련 문제

@@ -15,7 +15,7 @@ To understand what can affect your bill, and ways that you can manage your spend
 
 <Note>
 - Prices reflect AWS us-east-1 pricing.
-- Explore applicable data transfer charges [here](/products/cloud/reference/billing/network-data-transfer).
+- Explore applicable data transfer and ClickPipes charges [here](/products/cloud/reference/billing/network-data-transfer).
 </Note>
 
 ### Basic: from $66.52 per month {#basic-from-6652-per-month}
@@ -225,7 +225,7 @@ WHERE name = <your table name>
 ### What tools does ClickHouse offer to estimate the cost of running a service in the cloud if I have a self-managed deployment? {#what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment}
 
 The ClickHouse query log captures [key metrics](/reference/system-tables/query_log) that can be used to estimate the cost of running a workload in ClickHouse Cloud. 
-To migrate from self-managed ClickHouse to ClickHouse Cloud, use either [`remoteSecure`](/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) or [`BACKUP` and `RESTORE`](/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore). Contact [ClickHouse Cloud support](https://console.clickhouse.cloud/support) if you have further questions.
+For details on migrating from self-managed to ClickHouse Cloud please refer to the [migration documentation](/get-started/migrate/oss-to-cloud/clickhouse-to-cloud), and contact [ClickHouse Cloud support](https://console.clickhouse.cloud/support) if you have further questions.
 
 ### What billing options are available for ClickHouse Cloud? {#what-billing-options-are-available-for-clickhouse-cloud}
 
@@ -276,7 +276,8 @@ A consolidated invoice is generated for all services in a given organization for
 
 ### If I add my credit card and upgrade before my trial period and credits expire, will I be charged? {#if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged}
 
-When a user adds a credit card during their trial, we continue drawing down trial credits until they are depleted or expire, whichever comes first. Trial credits expire at the end of the 30-day trial period, even after a payment method has been added. Once the trial credits are depleted or expired, charges will be applied to the credit card on file. You can confirm your trial credit expiration date on the Billing page in the ClickHouse Cloud console.
+When a user converts from trial to paid before the 30-day trial period ends, but with credits remaining from the trial credit allowance,
+we continue to draw down from the trial credits during the initial 30-day trial period, and then charge the credit card.
 
 ### How can I keep track of my spending? {#how-can-i-keep-track-of-my-spending}
 
@@ -393,4 +394,4 @@ However, combining two services in a warehouse and idling one of them helps you 
 
 ## ClickPipes pricing {#clickpipes-pricing}
 
-For information on ClickPipes billing, please see the dedicated ["ClickPipes" section](/products/cloud/reference/billing/clickpipes/index).
+For information on ClickPipes billing, please see the dedicated ["ClickPipes billing" section](/products/cloud/reference/billing/clickpipes/index).

@@ -15,7 +15,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ## 설명
 </div>
 
-`system.part_log` 테이블은 [part&#95;log](/ko/reference/settings/server-settings/settings/other#part_log) 서버 설정이 지정된 경우에만 생성됩니다.
+`system.part_log` 테이블은 [part&#95;log](/ko/reference/settings/server-settings/settings#part_log) 서버 설정이 지정된 경우에만 생성됩니다.
 
 이 테이블에는 데이터 추가나 머지와 같이 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 계열 테이블의 [데이터 파트](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)에서 발생한 이벤트 정보가 포함됩니다.
 
@@ -43,7 +43,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `partition_id` ([String](/ko/reference/data-types/string)) — 데이터 파트가 삽입된 파티션의 ID입니다. 파티셔닝 기준이 `tuple()`이면 이 컬럼의 값은 `all`이 됩니다.
 * `partition` ([String](/ko/reference/data-types/string)) — 파티션 이름입니다.
 * `part_type` ([String](/ko/reference/data-types/string)) — 파트 유형입니다. 가능한 값: Wide 및 Compact.
-* `part_storage_type` ([String](/ko/reference/data-types/string)) — `DataPartStorage`의 유형입니다. 가능한 값: `Packed` - 대부분의 파트 파일이 단일 아카이브에 저장되며(프로젝션과 `txn_version.txt` 같은 일부 서비스 파일은 별도로 기록됨), `Full` - 각 파일이 별도로 저장됩니다.
+* `part_storage_type` ([String](/ko/reference/data-types/string)) — DataPartStorage의 유형입니다. 가능한 값: Packed - 모든 파일이 하나의 blob에 저장됩니다. Full - 각 파일이 개별 blob에 저장됩니다.
 * `disk_name` ([String](/ko/reference/data-types/string)) — data part가 저장된 디스크 이름입니다.
 * `path_on_disk` ([String](/ko/reference/data-types/string)) — data part 파일이 저장된 폴더의 절대 경로입니다.
 * `rows` ([UInt64](/ko/reference/data-types/int-uint)) — 데이터 파트에 있는 행 수입니다.
@@ -97,16 +97,15 @@ part_name:               all_1_7_1
 partition_id:            all
 partition:               tuple()
 part_type:               Wide
-part_storage_type:       Full
 disk_name:               default
 path_on_disk:            ./data/store/1ad/1ad33424-f5f5-402b-ac03-ec82282634ab/all_1_7_1/
-rows:                    3285726 -- 3.29 million
-size_in_bytes:           438968542 -- 438.97 million
+rows:                    3285726 -- 329만
+size_in_bytes:           438968542 -- 4억 3897만
 merged_from:             ['all_1_1_0','all_2_2_0','all_3_3_0','all_4_4_0','all_5_5_0','all_6_6_0','all_7_7_0']
-bytes_uncompressed:      1373137767 -- 1.37 billion
-read_rows:               3285726 -- 3.29 million
-read_bytes:              1429206946 -- 1.43 billion
-peak_memory_usage:       303611887 -- 303.61 million
+bytes_uncompressed:      1373137767 -- 13억 7000만
+read_rows:               3285726 -- 329만
+read_bytes:              1429206946 -- 14억 3000만
+peak_memory_usage:       303611887 -- 3억 361만
 error:                   0
 exception:
 mutation_ids:

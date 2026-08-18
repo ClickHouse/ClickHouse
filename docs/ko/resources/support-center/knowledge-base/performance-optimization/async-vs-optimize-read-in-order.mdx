@@ -8,7 +8,7 @@ keywords: ['동기식', '비동기', '데이터 읽기']
 
 새로운 설정 `allow_asynchronous_read_from_io_pool_for_merge_tree`를 사용하면 읽기 스레드(스트림) 수를 나머지 쿼리 실행 파이프라인의 스레드 수보다 더 많게 할 수 있습니다.
 
-일반적으로 [max&#95;threads](/ko/reference/settings/session-settings/max-threads#max_threads) 설정은 병렬 읽기 스레드와 병렬 쿼리 처리 스레드 수를 [제어합니다](https://clickhouse.com/company/events/query-performance-introspection):
+일반적으로 [max&#95;threads](/ko/reference/settings/session-settings#max_threads) 설정은 병렬 읽기 스레드와 병렬 쿼리 처리 스레드 수를 [제어합니다](https://clickhouse.com/company/events/query-performance-introspection):
 
 <Image img={sync_read} size="md" alt="동기식 데이터 읽기 다이어그램" />
 

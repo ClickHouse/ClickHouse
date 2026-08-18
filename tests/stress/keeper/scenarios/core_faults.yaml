@@ -34,9 +34,6 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
   - type: p99_le
-    # Since #104351 the ZooKeeper client keeps netem-stalled requests alive instead of
-    # fast-failing them, so they complete in the latency tail (observed p99 up to ~12.6s).
-    max_ms: 15000
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -242,9 +239,6 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
   - type: p99_le
-    # Since #104351 the ZooKeeper client keeps netem-stalled requests alive instead of
-    # fast-failing them, so they complete in the latency tail (observed p99 up to ~11.6s).
-    max_ms: 15000
   - type: log_sanity_ok
   - type: print_summary
 - id: single-hot-get-fault

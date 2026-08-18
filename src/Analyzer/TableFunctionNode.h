@@ -38,7 +38,7 @@ using TableFunctionPtr = std::shared_ptr<ITableFunction>;
 class TableFunctionNode;
 using TableFunctionNodePtr = std::shared_ptr<TableFunctionNode>;
 
-class TableFunctionNode : public ITableExpressionNode
+class TableFunctionNode : public IQueryTreeNode
 {
 public:
     /// Construct table function node with table function name
@@ -77,7 +77,7 @@ public:
     /// Returns true, if table function is resolved, false otherwise
     bool isResolved() const
     {
-        return storage != nullptr;
+        return storage != nullptr && table_function != nullptr;
     }
 
     /// Get table function, returns nullptr if table function node is not resolved
@@ -145,8 +145,11 @@ public:
         settings_changes = std::move(settings_changes_);
     }
 
-    /// Set table expression modifiers and update the storage snapshot metadata accordingly
-    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value);
+    /// Set table expression modifiers
+    void setTableExpressionModifiers(TableExpressionModifiers table_expression_modifiers_value)
+    {
+        table_expression_modifiers = std::move(table_expression_modifiers_value);
+    }
 
     QueryTreeNodeType getNodeType() const override
     {

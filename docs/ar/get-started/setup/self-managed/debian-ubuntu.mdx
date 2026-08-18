@@ -13,11 +13,15 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
 > يُوصى باستخدام حزم `deb` الرسمية المُجمَّعة مسبقًا لـ **Debian** أو **Ubuntu**.
 
 <Steps>
-  <Step title="راجع التوصيات" id="review-recommendations">
+  <Step>
+    ## راجع التوصيات
+
     <Recommendations />
   </Step>
 
-  <Step title="إعداد مستودع Debian" id="setup-the-debian-repository">
+  <Step>
+    ## إعداد مستودع Debian
+
     لتثبيت ClickHouse، شغّل الأوامر التالية:
 
     ```bash
@@ -69,13 +73,17 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     </Accordion>
   </Step>
 
-  <Step title="تثبيت ClickHouse server وclient" id="install-clickhouse-server-and-client">
+  <Step>
+    ## تثبيت ClickHouse server وclient
+
     ```bash
     sudo apt-get install -y clickhouse-server clickhouse-client
     ```
   </Step>
 
-  <Step title="بدء تشغيل ClickHouse" id="start-clickhouse-server">
+  <Step>
+    ## بدء تشغيل ClickHouse
+
     لبدء ClickHouse server، شغّل:
 
     ```bash
@@ -95,7 +103,9 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="تثبيت standalone ClickHouse Keeper" id="install-standalone-clickhouse-keeper">
+  <Step>
+    ## تثبيت standalone ClickHouse Keeper
+
     <Tip>
       في بيئات production، نوصي بشدة بتشغيل ClickHouse Keeper على عُقد مخصصة.
       في بيئات الاختبار، إذا قررت تشغيل ClickHouse Server وClickHouse Keeper على الخادم نفسه،
@@ -109,7 +119,9 @@ import Recommendations from '/snippets/ar/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="تمكين ClickHouse Keeper وبدء تشغيله" id="enable-and-start-clickhouse-keeper">
+  <Step>
+    ## تمكين ClickHouse Keeper وبدء تشغيله
+
     ```bash
     sudo systemctl enable clickhouse-keeper
     sudo systemctl start clickhouse-keeper

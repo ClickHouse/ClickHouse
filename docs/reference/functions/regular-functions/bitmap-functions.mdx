@@ -155,7 +155,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 Introduced in: v20.1.0
 
-Builds a bitmap from an integer array. Supported element types are signed and unsigned integers of 8, 16, 32, or 64 bits. It is the opposite of function [`bitmapToArray`](/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
+Builds a bitmap from an unsigned integer array. It is the opposite of function [`bitmapToArray`](/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
 
 **Syntax**
 
@@ -165,7 +165,7 @@ bitmapBuild(array)
 
 **Arguments**
 
-- `array` — Integer array. [`Array((U)Int*)`](/reference/data-types/array)
+- `array` — Unsigned integer array. [`Array(UInt*)`](/reference/data-types/array)
 
 **Returned value**
 
@@ -183,18 +183,6 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
-```
-
-**Signed bitmap**
-
-```sql title=Query
-SELECT bitmapBuild([-128, -1]::Array(Int8)) AS res, toTypeName(res);
-```
-
-```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([-128, -1]::Array(Int8)))─┐
-│     │ AggregateFunction(groupBitmap, Int8)             │
-└─────┴──────────────────────────────────────────────────┘
 ```
 
 ## bitmapCardinality {#bitmapCardinality}
@@ -235,7 +223,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 Introduced in: v20.1.0
 
-Checks if the bitmap contains a specific element. The value is compared as an unsigned integer of the bitmap element type. For signed bitmaps, a negative element matches its unsigned counterpart (for example, `Int8` value `-1` matches `255`).
+Checks if the bitmap contains a specific element.
 
 **Syntax**
 
@@ -257,18 +245,6 @@ Returns `1` if the bitmap contains the specified value, otherwise `0` [`UInt8`](
 
 ```sql title=Query
 SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│  1  │
-└─────┘
-```
-
-**Signed bitmap**
-
-```sql title=Query
-SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
 ```
 
 ```response title=Response
@@ -349,7 +325,7 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 Introduced in: v20.1.0
 
-Returns the greatest element in a bitmap, interpreted as an unsigned integer of the bitmap element type. For signed bitmaps, negative values are treated as their unsigned counterparts (for example, `Int8` value `-1` is `255`). Returns `0` if the bitmap is empty.
+Returns the position of the greatest bit set in a bitmap, or `0` if the bitmap is empty.
 
 **Syntax**
 
@@ -363,7 +339,7 @@ bitmapMax(bitmap)
 
 **Returned value**
 
-Returns the greatest element as an unsigned value of the bitmap element type, or `0` if the bitmap is empty [`UInt64`](/reference/data-types/int-uint)
+Returns the position of the greatest bit set in the bitmap, otherwise `0` [`UInt64`](/reference/data-types/int-uint)
 
 **Examples**
 
@@ -379,23 +355,11 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
-**Signed bitmap**
-
-```sql title=Query
-SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 255 │
-└─────┘
-```
-
 ## bitmapMin {#bitmapMin}
 
 Introduced in: v20.1.0
 
-Returns the smallest element in a bitmap, interpreted as an unsigned integer of the bitmap element type. For signed bitmaps, negative values are treated as their unsigned counterparts (for example, `Int8` value `-128` is `128`). If the bitmap is empty, returns `UINT32_MAX` (`UINT64_MAX` if the bitmap element type is wider than 32 bits).
+Returns the position of the smallest bit set in a bitmap. If all bits are unset, or `UINT32_MAX` (`UINT64_MAX` if the bitmap contains more than `2^64` bits).
 
 **Syntax**
 
@@ -409,7 +373,7 @@ bitmapMin(bitmap)
 
 **Returned value**
 
-Returns the smallest element as an unsigned value of the bitmap element type, or `UINT32_MAX`/`UINT64_MAX` if the bitmap is empty [`UInt64`](/reference/data-types/int-uint)
+Returns the position of the smallest bit set in the bitmap, or `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/reference/data-types/int-uint)
 
 **Examples**
 
@@ -422,18 +386,6 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
-└─────┘
-```
-
-**Signed bitmap**
-
-```sql title=Query
-SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 128 │
 └─────┘
 ```
 
@@ -509,7 +461,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 Introduced in: v20.1.0
 
-Returns a subset of the bitmap containing elements in the value range `[start, end)`. Element values are compared as unsigned integers of the bitmap element type.
+Returns a subset of the bitmap, containing only the set bits in the specified range [start, end). Uses 1-based indexing.
 
 **Syntax**
 
@@ -523,7 +475,7 @@ bitmapSubsetInRange(bitmap, start, end)
 
 **Returned value**
 
-Returns a bitmap containing only the elements in the specified value range [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
+Returns a bitmap containing only the set bits in the specified range [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 
@@ -543,7 +495,7 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 Introduced in: v20.1.0
 
-Returns a subset of at most `cardinality_limit` elements whose values are greater than or equal to `range_start`, selecting the smallest such values in unsigned order.
+Returns a subset of a bitmap from position `range_start` with at most `cardinality_limit` set bits. Uses 1-based indexing.
 
 **Syntax**
 
@@ -557,19 +509,19 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Returned value**
 
-Returns a bitmap containing at most `cardinality_limit` elements with unsigned value at least `range_start` [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
+Returns a bitmap containing at most `cardinality_limit` set bits, starting from `range_start` [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 
 **Usage example**
 
 ```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
 ```
 
 ```response title=Response
 ┌─res────┐
-│ [3, 5] │
+│ [5, 3] │
 └────────┘
 ```
 
@@ -577,7 +529,7 @@ SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3
 
 Introduced in: v20.1.0
 
-Converts a bitmap to an array of its elements. The array element type matches the bitmap element type `T` (signed or unsigned integer). It is the opposite of function [`bitmapBuild`](/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
+Converts a bitmap to an array of unsigned integers. It is the opposite of function [`bitmapBuild`](/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
 
 **Syntax**
 
@@ -591,7 +543,7 @@ bitmapToArray(bitmap)
 
 **Returned value**
 
-Returns an array of the elements contained in the bitmap [`Array(T)`](/reference/data-types/array)
+Returns an array of unsigned integers contained in the bitmap [`Array(UInt*)`](/reference/data-types/array)
 
 **Examples**
 
@@ -607,27 +559,11 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────────────────┘
 ```
 
-**Signed bitmap**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
-```
-
-```response title=Response
-┌─res────────┐
-│ [-128, -1] │
-└────────────┘
-```
-
 ## bitmapTransform {#bitmapTransform}
 
 Introduced in: v20.1.0
 
-Replaces elements in a bitmap according to a mapping from `from_array` to `to_array`.
-Values are interpreted as unsigned integers of the bitmap element type (same domain as [`bitmapContains`](/reference/functions/regular-functions/bitmap-functions#bitmapContains)).
-For signed bitmaps, a negative element matches its unsigned counterpart (for example, `Int8` value `-1` matches `255`).
-A value in `to_array` that does not fit into the bitmap element type raises `BAD_ARGUMENTS`. A value in `from_array`
-that does not fit is simply not found, so the corresponding replacement does not apply.
+Changes up to N bits in a bitmap by swapping specific bit values in `from_array` with corresponding ones in `to_array`.
     
 
 **Syntax**
@@ -656,18 +592,6 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ┌─res───────────────┐
 │ [1, 3, 5, 20, 40] │
 └───────────────────┘
-```
-
-**Signed bitmap**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
-```
-
-```response title=Response
-┌─res─────┐
-│ [0, 10] │
-└─────────┘
 ```
 
 ## bitmapXor {#bitmapXor}
@@ -742,7 +666,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 Introduced in: v21.9.0
 
-Returns a subset of the bitmap after skipping `offset` elements in ascending unsigned value order. The maximum cardinality of the returned bitmap is `cardinality_limit`.
+Returns a subset of the bitmap, starting from position `offset`. The maximum cardinality of the returned bitmap is `cardinality_limit`.
 
 **Syntax**
 
@@ -756,7 +680,7 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **Returned value**
 
-Returns a bitmap containing at most `cardinality_limit` elements after skipping `offset` elements in ascending unsigned value order [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
+Returns a bitmap containing at most `limit` set bits, starting after skipping `offset` set bits in ascending order [`AggregateFunction(groupBitmap, T)`](/reference/data-types/aggregatefunction)
 
 **Examples**
 

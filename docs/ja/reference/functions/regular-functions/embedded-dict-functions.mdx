@@ -27,16 +27,16 @@ ClickHouse は、特定の地域がどの国に属するかについてのさま
 このファイルに加えて、同じ場所にあり、ファイル名に `_` 記号と任意の接尾辞が付いたファイル (拡張子の前) も検索されます。
 たとえば、`/opt/geo/regions_hierarchy_ua.txt` というファイルが存在すれば、それも検出されます。ここで `ua` は辞書キーと呼ばれます。接尾辞のない Dictionary では、キーは空文字列です。
 
-すべての Dictionary は実行時に再読み込みされます ([`builtin_dictionaries_reload_interval`](/ja/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval) 設定パラメータで定義された一定秒数ごと、またはデフォルトでは 1 時間ごと) 。ただし、利用可能な Dictionary の一覧は、サーバーの起動時に一度だけ定義されます。
+すべての Dictionary は実行時に再読み込みされます ([`builtin_dictionaries_reload_interval`](/ja/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval) 設定パラメータで定義された一定秒数ごと、またはデフォルトでは 1 時間ごと) 。ただし、利用可能な Dictionary の一覧は、サーバーの起動時に一度だけ定義されます。
 
 地域を扱うすべての関数には、末尾に省略可能な引数として辞書キーを指定できます。これを geobase と呼びます。
 
 例:
 
 ```sql
-regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+regionToCountry(RegionID) – デフォルトのDictionaryを使用: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, '') – デフォルトのDictionaryを使用: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, 'ua') – 'ua' キーのDictionaryを使用: /opt/geo/regions_hierarchy_ua.txt
 ```
 
 ### regionToName

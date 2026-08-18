@@ -111,11 +111,6 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
 
     if (auto * distinct = typeid_cast<DistinctStep *>(child.get()))
     {
-        /// The hint makes DISTINCT stop reading early, which would break `rows_before_limit_at_least`
-        /// and the WITH TOTALS row that such a LIMIT reads the whole input for.
-        if (limit->alwaysReadTillEnd())
-            return 0;
-
         distinct->updateLimitHint(limit->getLimitForSorting());
         return 0;
     }

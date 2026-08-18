@@ -15,11 +15,11 @@ Os funcionários da ClickHouse não têm acesso aos seus dados por padrão. Seus
 
 O plano de controle do ClickHouse Cloud opera sua implantação BYOC sem acessar dados de clientes. Os componentes que enviam dados para fora da sua VPC transportam apenas metadados operacionais:
 
-| Component       | O que sai da sua VPC                                                                                                                                    |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State exporter  | Estado do serviço e do backup (integridade, status — eventos operacionais, não conteúdo do backup) para uma fila `SQS` pertencente ao ClickHouse Cloud. |
-| Billing scraper | Métricas de CPU e memória para um bucket de armazenamento de objetos pertencente ao ClickHouse Cloud.                                                   |
-| AlertManager    | Alertas de integridade do cluster para o ClickHouse Cloud.                                                                                              |
+| Component       | O que sai da sua VPC                                                                         |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| State exporter  | Estado do serviço (integridade, status) para uma fila `SQS` pertencente ao ClickHouse Cloud. |
+| Billing scraper | Métricas de CPU e memória para um bucket do S3 pertencente ao ClickHouse Cloud.              |
+| AlertManager    | Alertas de integridade do cluster para o ClickHouse Cloud.                                   |
 
 O tráfego de consultas, o conteúdo das tabelas e os esquemas nunca passam por esses canais. Logs e métricas permanecem dentro da sua VPC BYOC.
 

@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "Обновление ClickHouse Private"
+description: "Обновите компоненты ClickHouse Private — оператор и кластер ClickHouse (Keeper + сервер) — до нового релиза."
+---
+
+Обновите компоненты ClickHouse Private — оператор и кластер ClickHouse (Keeper + сервер) — до нового релиза.
+
+> **Рекомендуемая практика:** Всегда сначала выполняйте обновление на стейджинговом или тестовом кластере, прежде чем применять его в продакшн. В рамках стандартного процесса обновления настоятельно рекомендуется использовать выделенный тестовый кластер, зеркально повторяющий продакшн.
+
+<div id="pre-upgrade-checklist">
+  ## Контрольный список перед обновлением
+</div>
+
+Перед началом обновления:
+
+1. **Проверьте, что кластер в исправном состоянии** — убедитесь, что все поды сервер и Keeper запущены и готовы, а в статусе CR `ClickhouseCluster` нет ошибок:
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   Не продолжайте, если какие-либо поды находятся в состоянии CrashLoopBackOff или кластер деградирован.
+
+2. **(Настоятельно рекомендуется для продакшна) Создайте полную резервную копию** кластера — см. [Резервное копирование и восстановление ClickHouse](/ru/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual). Перед продолжением убедитесь, что резервное копирование успешно завершилось (`status = BACKUP_DONE` в `system.backups`).
+
+3. **Убедитесь, что предыдущая версия доступна для отката** — проверьте, что предыдущие версии артефактов по-прежнему доступны во внутреннем ECR. Для быстрого отката при необходимости достаточно, чтобы образы и чарты были доступны.
+
+4. **Скопируйте все образы новой версии во внутренний ECR**. Для целевого релиза используйте справочник [Component Versions](/ru/products/clickhouse-private/reference/component-versions).
+
+5. **Запустите проверки Preflight**. Проверки Preflight позволяют проверить дополнительные требования и наличие устаревших фичефлагов. Подробнее см. на странице [How To: Run Preflight Checks](/ru/products/clickhouse-private/guides/run-preflight-checks).
+
+<div id="upgrade-procedure">
+  ## Процедура обновления
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Обновите Helm-чарт оператора
+
+    Сохраните все текущие значения Helm без изменений, обновив только версии оператора до новых целевых версий.
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **Note:** Обновление оператора может вызвать поочередный перезапуск всех кластеров ClickHouse, которыми он управляет. Если у вас несколько кластеров и вы хотите сначала проверить обновление на одном из них, прежде чем оператор начнет согласовывать остальные, см. ниже раздел [Защита кластеров во время обновления](#protecting-clusters-during-upgrade).
+  </Step>
+
+  <Step>
+    ### 2. Проверьте обновленный оператор
+
+    Убедитесь, что развертывание оператора запущено и работает исправно:
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    Проверьте, что в журналах нет ошибок и что оператор успешно согласовал состояние всех управляемых кластеров:
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Обновите Helm-чарт `onprem-clickhouse-cluster`
+
+    Обновите Helm-чарт `onprem-clickhouse-cluster` для каждого кластера. Сохраните все текущие значения Helm без изменений, обновив только версии образов ClickHouse сервер и Keeper до новых целевых версий.
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    Это вызовет **поочередный перезапуск подов Keeper и сервера** (по одному поду за раз). Повторите для каждого кластера.
+  </Step>
+
+  <Step>
+    ### 4. Проверьте обновленный кластер
+
+    После завершения поочередного перезапуска убедитесь, что кластер работает исправно:
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    Все поды должны находиться в состоянии `Running`, а CR `ClickhouseCluster` не должен показывать ошибок. Чтобы дополнительно проверить подключение, выполните проброс порта для сервиса ClickHouse (см. раздел Port-forward в соответствующем [руководстве](/ru/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)) и выполните тестовый запрос.
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## Защита кластеров во время обновления
+</div>
+
+Если вы управляете несколькими кластерами через один оператор и хотите проверить обновление оператора на одном кластере, прежде чем разрешить ему выполнять реконсиляцию остальных (например, протестировать на тестовом кластере перед выкаткой в продакшн), приостановите реконсиляцию для нужных кластеров с помощью аннотации `clickhouse.com/skip-reconcile`.
+
+Перед обновлением оператора добавьте аннотацию в любой кластер, который хотите защитить:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+Оператор полностью пропускает реконсиляцию для кластеров с этой аннотацией — ни перезапусков, ни изменений конфигурации не выполняется. После того как вы проверите обновление на тестовом кластере, удалите аннотацию, чтобы оператор возобновил обычную реконсиляцию:
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+Убедитесь, что оператор заметил аннотацию, проверив наличие следующего в его журнале:
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## Откат
+</div>
+
+Если после обновления выявлены проблемы:
+
+* **Откат оператора:** повторно разверните предыдущую версию Helm-чарта оператора.
+* **Откат кластера:** повторно разверните предыдущую версию Helm-чарта `onprem-clickhouse-cluster` с предыдущими версиями образов сервер и Keeper.
+* **Восстановление данных:** если есть подозрения на проблемы с данными, восстановите их из резервной копии, созданной при выполнении контрольного списка перед обновлением — см. [Резервное копирование и восстановление ClickHouse](/ru/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).

@@ -1,10 +1,14 @@
 ---
-title: 如何使用 clickhouse-client 将 send_logs_level 的 trace 输出到文件
-description: "如何使用 clickhouse-client 将 send_logs_level 的 trace 输出到文件"
+title: 如何使用 ClickHouse 客户端 将 send_logs_level 的 trace 输出到文件
+description: "如何使用 ClickHouse 客户端 将 send_logs_level 的 trace 输出到文件"
 date: 2024-11-21
 tags: ['数据导出']
 keywords: ['send_logs_level trace', 'clickhouse-client']
 ---
+
+{frontMatter.description}
+
+{/* truncate */}
 
 <div id="question">
   ## 问题
@@ -58,4 +62,5 @@ cat send_logs_level_example.sql | ./clickhouse client -n -m --host abc123.us-wes
 [c-azure-gk-72-server-tojnalg-0] 2024.08.13 21:31:28.510663 [ 1247 ] {3406aa56-20e8-44e0-b5de-8cb7715861f3} <Debug> TCPHandler: Processed in 0.002984367 sec.
 ```
 
-[参考链接](/zh/reference/settings/session-settings/send-logs#send_logs_level)
+参考链接：
+https://clickhouse.com/docs/operations/settings/settings#send&#95;logs&#95;level

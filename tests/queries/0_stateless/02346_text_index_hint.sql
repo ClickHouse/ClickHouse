@@ -8,7 +8,6 @@ SET use_statistics = 0;
 SET use_text_index_like_evaluation_by_dictionary_scan = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_count_from_text_index = 0;
 
 -- Tests text search setting 'query_plan_text_index_add_hint' with different tokenizers
 

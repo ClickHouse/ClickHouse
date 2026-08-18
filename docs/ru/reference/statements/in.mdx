@@ -64,7 +64,7 @@ ClickHouse допускает различие типов в левой и пр�
 В этом случае значение правой части приводится к типу левой части, как если бы к правой части была применена функция [accurateCastOrNull](/ru/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull).
 
 Это означает, что тип данных становится [Nullable](/ru/reference/data-types/nullable), и если преобразование
-невозможно, возвращается [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default).
+невозможно, возвращается [NULL](/ru/reference/settings/formats#input_format_null_as_default).
 
 **Пример**
 
@@ -82,7 +82,7 @@ SELECT '1' IN (SELECT 1);
 
 Если правая часть оператора — это имя таблицы с движком Set (подготовленный набор данных, который всегда хранится в оперативной памяти), набор данных не будет создаваться заново при каждом запросе.
 
-Подзапрос может задавать более одного столбца для фильтрации кортежей.
+Подзапрос может задавать более одного столбца для фильтрации Tuple.
 
 Пример:
 
@@ -128,7 +128,7 @@ ORDER BY EventDate ASC
   ## Обработка NULL
 </div>
 
-При обработке запроса оператор `IN` считает, что результат операции с [NULL](/ru/reference/settings/formats/input-format#input_format_null_as_default) всегда равен `0`, независимо от того, находится `NULL` справа или слева от оператора. Значения `NULL` не включаются ни в один набор данных, не считаются равными друг другу и не могут сравниваться, если [transform&#95;null&#95;in = 0](/ru/reference/settings/session-settings/other#transform_null_in).
+При обработке запроса оператор `IN` считает, что результат операции с [NULL](/ru/reference/settings/formats#input_format_null_as_default) всегда равен `0`, независимо от того, находится `NULL` справа или слева от оператора. Значения `NULL` не включаются ни в один набор данных, не считаются равными друг другу и не могут сравниваться, если [transform&#95;null&#95;in = 0](/ru/reference/settings/session-settings#transform_null_in).
 
 Вот пример с таблицей `t_null`:
 
@@ -271,7 +271,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
   ### Распределённые подзапросы и max_rows_in_set
 </div>
 
-Вы можете использовать [`max_rows_in_set`](/ru/reference/settings/session-settings/max-rows#max_rows_in_set) и [`max_bytes_in_set`](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_set), чтобы управлять объёмом данных, передаваемых при распределённых запросах.
+Вы можете использовать [`max_rows_in_set`](/ru/reference/settings/session-settings#max_rows_in_set) и [`max_bytes_in_set`](/ru/reference/settings/session-settings#max_bytes_in_set), чтобы управлять объёмом данных, передаваемых при распределённых запросах.
 
 Это особенно важно, если запрос `GLOBAL IN` возвращает большой объём данных. Рассмотрим следующий SQL:
 
@@ -279,7 +279,7 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-Если `some_predicate` недостаточно селективен, он вернет большой объем данных, что приведет к проблемам с производительностью. В таких случаях стоит ограничить передачу данных по сети. Также обратите внимание, что [`set_overflow_mode`](/ru/reference/settings/session-settings/other#set_overflow_mode) имеет значение `throw` (по умолчанию), то есть при достижении этих пороговых значений генерируется исключение.
+Если `some_predicate` недостаточно селективен, он вернет большой объем данных, что приведет к проблемам с производительностью. В таких случаях стоит ограничить передачу данных по сети. Также обратите внимание, что [`set_overflow_mode`](/ru/reference/settings/session-settings#set_overflow_mode) имеет значение `throw` (по умолчанию), то есть при достижении этих пороговых значений генерируется исключение.
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### Распределённые подзапросы и max_parallel_replicas
@@ -309,4 +309,4 @@ SETTINGS parallel_replicas_count=3, parallel_replicas_offset=M
 
 Один из способов обойти это ограничение, если `local_table_2` не удовлетворяет этим требованиям, — использовать `GLOBAL IN` или `GLOBAL JOIN`.
 
-Если у таблицы нет ключа выборки, можно использовать более гибкие варианты [parallel&#95;replicas&#95;custom&#95;key](/ru/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key), которые могут давать иное и более оптимальное поведение.
+Если у таблицы нет ключа выборки, можно использовать более гибкие варианты [parallel&#95;replicas&#95;custom&#95;key](/ru/reference/settings/session-settings#parallel_replicas_custom_key), которые могут давать иное и более оптимальное поведение.

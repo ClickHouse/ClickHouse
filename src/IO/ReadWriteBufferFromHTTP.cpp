@@ -2,7 +2,6 @@
 
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
-#include <IO/parseHTTPDate.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -800,7 +799,13 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     }
 
     if (response.has("Last-Modified"))
-        res.last_modified = tryParseHTTPDate(response.get("Last-Modified"));
+    {
+        String date_str = response.get("Last-Modified");
+        struct tm info{};
+        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+        if (end == date_str.data() + date_str.size())
+            res.last_modified = timegm(&info);
+    }
 
     return res;
 }

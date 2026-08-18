@@ -6,6 +6,10 @@ tags: ['Segurança e Autenticação']
 keywords: ['Nível de linha', 'Nível de coluna', 'Segurança']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
   ## ClickHouse e ClickHouse Cloud oferecem suporte a restrições de acesso em nível de linha e de coluna
 </div>
@@ -13,7 +17,5 @@ keywords: ['Nível de linha', 'Nível de coluna', 'Segurança']
 O ClickHouse e o ClickHouse Cloud oferecem suporte a restrições de acesso em nível de linha e de coluna para usuários com acesso somente leitura, necessárias para implementar um modelo de Controle de Acesso Baseado em Funções (RBAC).
 
 As [Políticas de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) podem ser usadas para especificar quais linhas serão retornadas a um usuário com acesso somente leitura quando ele consultar uma tabela. O ClickHouse Cloud vem configurado para habilitar esse fluxo de trabalho orientado por SQL por padrão. Para usar esse fluxo de trabalho, [CREATE](/pt-BR/reference/statements/create/user) um usuário, [GRANT](/pt-BR/reference/statements/grant) privilégios ao usuário em uma tabela e, em seguida, defina a [ROW POLICY](/pt-BR/concepts/features/security/access-rights#row-policy-management) apropriada. Quando o usuário executa um `SELECT * FROM table`, apenas as linhas permitidas pela política serão exibidas.
-
-As políticas de linha filtram a tabela cujos dados são lidos naquele servidor. Para filtrar consultas que passam por uma tabela [Distributed](/pt-BR/reference/engines/table-engines/special/distributed), crie a política na tabela local subjacente em cada servidor do cluster: uma política na própria tabela `Distributed` não pode ser aplicada à consulta enviada aos servidores remotos, e essas leituras são rejeitadas em vez de retornarem silenciosamente linhas não filtradas. A política na tabela local não é aplicada quando o iniciador envia um plano de leitura já criado, portanto, mantenha [`serialize_query_plan = 0`](/pt-BR/reference/settings/session-settings/serialize#serialize_query_plan) para usuários cujas políticas de linha devem ser aplicadas (consulte a [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)).
 
 As restrições em nível de coluna podem ser especificadas diretamente com a [instrução GRANT](/pt-BR/reference/statements/grant) para habilitar acesso em nível de tabela para usuários e funções. Os usuários *só podem* incluir, em uma consulta, colunas às quais tenham acesso. Selecionar colunas restritas de uma tabela à qual o usuário não tem acesso a todas as colunas especificadas, como na consulta `SELECT * FROM table`, retornará um erro informando que o usuário não tem permissões suficientes.
