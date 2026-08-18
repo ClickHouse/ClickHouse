@@ -27,8 +27,9 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle GROUP BY k
       SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
--- Virtual rows are consumed by the ordinary in-order merge. The reshuffle must not discard their metadata.
-SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') = 0
+-- The setting enables virtual rows only when the read-in-order plan can produce them. This query has no
+-- virtual-row transform, so the reshuffle is safe and must be planned based on the actual pipeline state.
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT k, sum(v) FROM t_aio_shuffle GROUP BY k
       SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1,
           read_in_order_use_virtual_row = 1);
