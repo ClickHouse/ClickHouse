@@ -3,16 +3,16 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
-#include <atomic>
+#include <mutex>
 
 namespace DB
 {
 
 /// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
 /// call in the query context (owned by the query `Context`) and updated concurrently from the
-/// pipeline threads, so the counters are `atomic`. It is per query-execution context: a distributed
-/// query has one per shard/fragment (each makes its own `Context`), so the limits bound each server
-/// independently rather than the query globally.
+/// pipeline threads, so the counters are guarded by `mutex`. It is per query-execution context: a
+/// distributed query has one per shard/fragment (each makes its own `Context`), so the limits bound
+/// each server independently rather than the query globally.
 ///
 /// The API-call limit is a hard cap within a context, while token limits are best effort (we only
 /// know the usage after the call returns).
@@ -33,8 +33,8 @@ public:
     /// enforced separately by `recordApiCall`.
     bool checkQuotas();
 
-    /// Count one outbound API call against the request quota, atomically and only while under the
-    /// limit. Should be called before each provider request (including retries), so a misbehaving
+    /// Count one outbound API call against the request quota, only while under the limit. Should be
+    /// called before each provider request (including retries), so a misbehaving
     /// endpoint can't bypass `ai_function_max_api_calls_per_query`. Returns true if the call is within
     /// the limit (the caller may dispatch), false once the per-query limit is reached; throws when
     /// `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
@@ -51,10 +51,11 @@ private:
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
 
-    std::atomic<bool> quota_exceeded = false;
-    std::atomic<UInt64> input_tokens = 0;
-    std::atomic<UInt64> output_tokens = 0;
-    std::atomic<UInt64> api_calls = 0;
+    std::mutex mutex;
+    bool quota_exceeded TSA_GUARDED_BY(mutex) = false;
+    UInt64 input_tokens TSA_GUARDED_BY(mutex) = 0;
+    UInt64 output_tokens TSA_GUARDED_BY(mutex) = 0;
+    UInt64 api_calls TSA_GUARDED_BY(mutex) = 0;
 };
 
 }
