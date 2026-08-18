@@ -446,18 +446,6 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
-namespace JSONPathValues
-{
-class PathMatcher;
-}
-
-struct JSONPathValuesBuildInfo
-{
-    String source_column_name;
-    UInt64 max_token_bytes;
-    std::shared_ptr<const JSONPathValues::PathMatcher> path_matcher;
-};
-
 class MergeTreeIndexTextPostprocessor;
 struct MergeTreeIndexTextInlineFilter;
 
@@ -518,8 +506,7 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
-        MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        std::optional<JSONPathValuesBuildInfo> json_path_values_);
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -545,7 +532,6 @@ private:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
     bool use_postprocessor_drop_fast_path = false;
-    std::optional<JSONPathValuesBuildInfo> json_path_values;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -562,8 +548,6 @@ public:
 
     MergeTreeIndexTextParams getParams() const { return params; }
     bool isTextIndex() const override { return true; }
-    bool requiresExpressionEvaluationForBuild() const override { return !json_path_values; }
-    Names getColumnsRequiredForBuild() const override;
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     MergeTreeIndexFormat getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
@@ -582,7 +566,6 @@ public:
     MergeTreeIndexTextPostprocessorPtr postprocessor;
     /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
     std::optional<String> normalized_index_column_name;
-    std::optional<JSONPathValuesBuildInfo> json_path_values;
 };
 
 }

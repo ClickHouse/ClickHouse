@@ -1,9 +1,15 @@
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromString.h>
 
 #include <algorithm>
 #include <fmt/format.h>
@@ -16,15 +22,61 @@ namespace DB
 ///   "a.b"            -> "a.b"
 ///   "a.b.:`Int64`"   -> "a.b"
 ///   "a.b.:`Array(Int64)`"  -> "a.b"
-static String extractPathFromSubcolumn(std::string_view subcolumn_name)
+static std::optional<String> extractPathFromSubcolumn(std::string_view subcolumn_name, size_t & array_json_levels)
 {
-    /// Dynamic type subcolumn looks like "some.path.:`TypeName`..."
-    /// Find the ".:`" pattern that marks the start of the type specifier.
-    auto pos = subcolumn_name.find(".:`");
-    if (pos == std::string_view::npos)
-        return String(subcolumn_name);
+    if (subcolumn_name.empty()
+        || subcolumn_name.starts_with("^")
+        || subcolumn_name.starts_with("@`")
+        || subcolumn_name.find(".^`") != std::string_view::npos
+        || subcolumn_name.find(".@`") != std::string_view::npos)
+        return std::nullopt;
 
-    return String(subcolumn_name.substr(0, pos));
+    String path;
+    std::string_view remaining = subcolumn_name;
+    while (!remaining.empty())
+    {
+        const size_t type_hint_position = remaining.find(".:`");
+        if (type_hint_position == std::string_view::npos)
+        {
+            path += remaining;
+            break;
+        }
+
+        path += remaining.substr(0, type_hint_position);
+        ReadBufferFromMemory buffer(remaining.substr(type_hint_position + 2));
+        String type_hint;
+        if (!tryReadBackQuotedString(type_hint, buffer))
+            return std::nullopt;
+
+        auto type = DataTypeFactory::instance().get(type_hint);
+        size_t levels = 0;
+        while (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        {
+            ++levels;
+            type = removeNullableOrLowCardinalityNullable(array_type->getNestedType());
+        }
+
+        std::string_view tail(buffer.position(), buffer.available());
+        if (levels == 0 || removeLowCardinality(type)->getTypeId() != TypeIndex::Object)
+        {
+            if (!tail.empty())
+                return std::nullopt;
+            break;
+        }
+
+        array_json_levels += levels;
+        for (size_t level = 0; level != levels; ++level)
+            path += "[]";
+        if (tail.starts_with('.'))
+            tail.remove_prefix(1);
+        if (!tail.empty())
+            path += '.';
+        remaining = tail;
+    }
+
+    if (path.empty())
+        return std::nullopt;
+    return path;
 }
 
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
@@ -37,17 +89,16 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
         if (candidate_col != json_column_name)
             continue;
 
-        if (subcolumn_part.starts_with("^"))
-            return std::nullopt;
-
-        String path = extractPathFromSubcolumn(subcolumn_part);
-        if (path.empty())
+        size_t array_json_levels = 0;
+        auto path = extractPathFromSubcolumn(subcolumn_part, array_json_levels);
+        if (!path)
             return std::nullopt;
 
         return JSONSubcolumnIndexInfo{
             .json_column_name = String(candidate_col),
-            .path = std::move(path),
+            .path = std::move(*path),
             .header_position = header_position,
+            .array_json_levels = array_json_levels,
         };
     }
 
@@ -77,20 +128,18 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         if (it == index_columns.end())
             continue;
 
-        /// Sub-object access (^ prefix) is not supported for index filtering
-        if (subcolumn_part.starts_with("^"))
-            return std::nullopt;
-
-        String path = extractPathFromSubcolumn(subcolumn_part);
-        if (path.empty())
+        size_t array_json_levels = 0;
+        auto path = extractPathFromSubcolumn(subcolumn_part, array_json_levels);
+        if (!path)
             return std::nullopt;
 
         size_t position = static_cast<size_t>(std::distance(index_columns.begin(), it));
 
         return JSONSubcolumnIndexInfo{
             .json_column_name = String(candidate_col),
-            .path = std::move(path),
+            .path = std::move(*path),
             .header_position = position,
+            .array_json_levels = array_json_levels,
         };
     }
 
@@ -142,6 +191,15 @@ bool isJSONPathFilterSafe(
         return false;
 
     return true;
+}
+
+String serializeFieldAsText(const Field & value, const DataTypePtr & type)
+{
+    auto column = type->createColumn();
+    column->insert(value);
+    WriteBufferFromOwnString buffer;
+    type->getDefaultSerialization()->serializeText(*column, 0, buffer, {});
+    return buffer.str();
 }
 
 }

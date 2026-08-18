@@ -1424,11 +1424,8 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     ASTPtr combined_expr_list = key.expression_list_ast->clone();
 
     for (const auto & index : indices)
-    {
-        if (index->requiresExpressionEvaluationForBuild())
-            for (const auto & index_expr : index->index.expression_list_ast->children)
-                combined_expr_list->children.push_back(index_expr->clone());
-    }
+        for (const auto & index_expr : index->index.expression_list_ast->children)
+            combined_expr_list->children.push_back(index_expr->clone());
 
     auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
     return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);

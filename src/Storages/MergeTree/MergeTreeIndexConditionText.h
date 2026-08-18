@@ -44,11 +44,10 @@ enum class TextIndexDirectReadMode : uint8_t
 
 struct JSONTextQueryPayload
 {
-    bool missing_tokens_are_absent = false;
-    std::vector<String> pattern_token_prefixes;
+    std::vector<String> pattern_token_prefixes{};
     bool match_patterns_by_prefix = false;
-    VectorWithMemoryTracking<String> validation_tokens;
-    std::vector<String> validation_pattern_prefixes;
+    VectorWithMemoryTracking<String> validation_tokens{};
+    std::vector<String> validation_pattern_prefixes{};
 
     bool matchesPatternToken(std::string_view token) const;
     bool requiresValidation(std::string_view token) const;
@@ -63,7 +62,8 @@ struct TextSearchQuery
         TextIndexDirectReadMode direct_read_mode_,
         VectorWithMemoryTracking<String> tokens_,
         std::vector<OptimizedRegularExpression> patterns_ = {},
-        VectorWithMemoryTracking<String> phrase_tokens_ = {});
+        VectorWithMemoryTracking<String> phrase_tokens_ = {},
+        std::optional<JSONTextQueryPayload> json_payload_ = std::nullopt);
     TextSearchQuery(
         String function_name_,
         TextSearchMode search_mode_,

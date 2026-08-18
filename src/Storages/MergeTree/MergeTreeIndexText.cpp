@@ -1686,31 +1686,13 @@ void MergeTreeIndexTextGranuleBuilder::reset()
         position_map.reset();
 }
 
-static std::optional<JSONPathValuesBuildInfo> getJSONPathValuesBuildInfo(
-    const IndexDescription & index, const ITokenizer & tokenizer)
-{
-    if (tokenizer.getType() != ITokenizer::Type::JSONPathValues)
-        return std::nullopt;
-
-    const auto required_columns = index.expression->getRequiredColumns();
-    if (required_columns.size() != 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tokenizer `jsonPathValues` requires exactly one source column");
-
-    const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(tokenizer);
-    return JSONPathValuesBuildInfo{
-        required_columns.front(),
-        json_tokenizer.getMaxTokenBytes(),
-        json_tokenizer.getPathMatcher()};
-}
-
 MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     String index_column_name_,
     MergeTreeIndexTextParams params_,
     TokenizerPtr tokenizer_,
     const IPostingListCodec * posting_list_codec_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
-    MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    std::optional<JSONPathValuesBuildInfo> json_path_values_)
+    MergeTreeIndexTextPostprocessorPtr postprocessor_)
     : index_column_name(std::move(index_column_name_))
     , params(std::move(params_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
@@ -1718,7 +1700,6 @@ MergeTreeIndexAggregatorText::MergeTreeIndexAggregatorText(
     , granule_builder(params, tokenizer, posting_list_codec_)
     , preprocessor(preprocessor_)
     , postprocessor(postprocessor_)
-    , json_path_values(std::move(json_path_values_))
 {
     /// Fast path for IN/NOT IN filter-only postprocessors only: drops are decided per distinct token in
     /// addToken so dropped tokens never build postings. Positions must be disabled (phrase search needs
@@ -1784,16 +1765,17 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     if (rows_read == 0)
         return;
 
-    if (json_path_values)
+    if (tokenizer->getType() == ITokenizer::Type::JSONPathValues)
     {
-        const auto source = block.getColumnOrSubcolumnByName(json_path_values->source_column_name);
+        const auto & json_tokenizer = assert_cast<const JSONPathValuesTokenizer &>(*tokenizer);
+        const auto source = block.getColumnOrSubcolumnByName(index_column_name);
         const auto source_column = source.column->convertToFullColumnIfConst();
         const auto & column_object = assert_cast<const ColumnObject &>(*source_column);
         const auto & type_object = assert_cast<const DataTypeObject &>(*source.type);
         JSONPathValuesTextIndexConsumer consumer(granule_builder);
         JSONPathValues::Extractor<JSONPathValuesTextIndexConsumer> extractor(
-            json_path_values->max_token_bytes,
-            *json_path_values->path_matcher,
+            json_tokenizer.getMaxTokenBytes(),
+            *json_tokenizer.getPathMatcher(),
             consumer);
         enumerateJSONValues(column_object, type_object, extractor, *pos, rows_read);
         ProfileEvents::increment(ProfileEvents::JSONPathValuesTextIndexInputRows, rows_read);
@@ -1932,15 +1914,7 @@ MergeTreeIndexText::MergeTreeIndexText(
     , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
     , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
     , normalized_index_column_name(getNormalizedIndexColumnName(index_))
-    , json_path_values(getJSONPathValuesBuildInfo(index_, *tokenizer))
 {
-}
-
-Names MergeTreeIndexText::getColumnsRequiredForBuild() const
-{
-    if (json_path_values)
-        return {json_path_values->source_column_name};
-    return index.column_names;
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
@@ -1992,7 +1966,7 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
     return std::make_shared<MergeTreeIndexAggregatorText>(
-        index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor, json_path_values);
+        index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const

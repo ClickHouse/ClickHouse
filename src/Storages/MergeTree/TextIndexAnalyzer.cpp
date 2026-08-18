@@ -350,7 +350,7 @@ std::vector<size_t> TextIndexAnalyzer::addTokensToPatterns(const ColumnString & 
         for (size_t token_index = 0; token_index < size; ++token_index)
         {
             const std::string_view token = tokens.getDataAt(token_index);
-            std::optional<JSONPathValues::DecodedToken> decoded_json_token;
+            std::optional<std::string_view> decoded_json_value;
             bool decoded_json_token_initialized = false;
             for (const auto & [pattern, query_hashes] : queries_by_pattern)
             {
@@ -364,12 +364,12 @@ std::vector<size_t> TextIndexAnalyzer::addTokensToPatterns(const ColumnString & 
                             continue;
                         if (!decoded_json_token_initialized)
                         {
-                            decoded_json_token = JSONPathValues::tryDecodeToken(token);
+                            decoded_json_value = JSONPathValues::tryGetCompleteScalarValue(token);
                             decoded_json_token_initialized = true;
                         }
-                        if (!decoded_json_token || decoded_json_token->kind != JSONPathValues::Kind::ScalarComplete)
+                        if (!decoded_json_value)
                             continue;
-                        subject = decoded_json_token->value;
+                        subject = *decoded_json_value;
                     }
 
                     if (!pattern->match(subject.data(), subject.size()))
@@ -486,7 +486,7 @@ double TextIndexAnalyzer::estimateQueryCardinality(const QueryBuilder & query_bu
                 /// sparse index was filtered as too common at build time ⟹ treat it as covering
                 /// all rows, which makes the union saturate at n.
                 double token_cardinality = (it == query_builder.tokens.end())
-                    ? (query.getJSONPayload() && query.getJSONPayload()->missing_tokens_are_absent ? 0.0 : n)
+                    ? (query.getJSONPayload() ? 0.0 : n)
                     : static_cast<double>(it->second->cardinality);
 
                 not_in_any *= (1.0 - token_cardinality / n);

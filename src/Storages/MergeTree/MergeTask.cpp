@@ -3061,8 +3061,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         /// Build index if it is not materialized in the data part.
         if (global_ctx->merge_may_reduce_rows || !index_ptr->getDeserializedFormat(data_part, index_ptr->getFileName()))
         {
-            if (index_ptr->requiresExpressionEvaluationForBuild())
-                description_to_build.push_back(index);
+            description_to_build.push_back(index);
             indexes_to_build.push_back(std::move(index_ptr));
         }
     }
@@ -3076,8 +3075,7 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
         global_ctx->temporary_text_index_storage = createTemporaryTextIndexStorage(global_ctx->disk, new_part_path);
     }
 
-    if (!description_to_build.empty())
-        addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);
+    addSkipIndexesExpressionSteps(plan, description_to_build, global_ctx);
 
     MergeTreeWriterSettings writer_settings(
         global_ctx->data->getContext()->getSettingsRef(),

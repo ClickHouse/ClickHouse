@@ -17,7 +17,6 @@
 #include <Functions/MultiSearchImpl.h>
 #include <Functions/checkHyperscanRegexp.h>
 #include <Functions/hasAnyAllTokens.h>
-#include <IO/WriteBufferFromString.h>
 #include <Functions/Regexps.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -70,15 +69,23 @@ TextSearchQuery::TextSearchQuery(
     TextIndexDirectReadMode direct_read_mode_,
     VectorWithMemoryTracking<String> tokens_,
     std::vector<OptimizedRegularExpression> patterns_,
-    VectorWithMemoryTracking<String> phrase_tokens_)
+    VectorWithMemoryTracking<String> phrase_tokens_,
+    std::optional<JSONTextQueryPayload> json_payload_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
     , direct_read_mode(direct_read_mode_)
     , tokens(std::move(tokens_))
     , patterns(std::move(patterns_))
+    , json_payload(std::move(json_payload_))
     , phrase_tokens(std::move(phrase_tokens_))
 {
     std::sort(tokens.begin(), tokens.end());
+    if (json_payload)
+    {
+        std::ranges::sort(json_payload->pattern_token_prefixes);
+        std::ranges::sort(json_payload->validation_tokens);
+        std::ranges::sort(json_payload->validation_pattern_prefixes);
+    }
     initializeHash();
 }
 
@@ -94,16 +101,10 @@ TextSearchQuery::TextSearchQuery(
         search_mode_,
         direct_read_mode_,
         std::move(tokens_),
-        std::move(patterns_))
+        std::move(patterns_),
+        {},
+        std::move(json_payload_))
 {
-    json_payload = std::move(json_payload_);
-    if (json_payload)
-    {
-        std::ranges::sort(json_payload->pattern_token_prefixes);
-        std::ranges::sort(json_payload->validation_tokens);
-        std::ranges::sort(json_payload->validation_pattern_prefixes);
-    }
-    initializeHash();
 }
 
 bool JSONTextQueryPayload::matchesPatternToken(std::string_view token) const
@@ -167,7 +168,6 @@ void TextSearchQuery::initializeHash()
     if (json_payload)
     {
         hash_state.update("JSONPathValues");
-        hash_state.update(json_payload->missing_tokens_are_absent);
         hash_state.update(json_payload->match_patterns_by_prefix);
 
         auto hash_strings = [&](const auto & strings)
@@ -1068,17 +1068,6 @@ std::vector<OptimizedRegularExpression> MergeTreeIndexConditionText::stringLikeT
     else
         patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
     return patterns;
-}
-
-/// Converts a Field value to its text representation using `serializeText`,
-/// matching the format produced by `JSONAllValues`.
-static String serializeFieldAsText(const Field & value, const DataTypePtr & type)
-{
-    auto column = type->createColumn();
-    column->insert(value);
-    WriteBufferFromOwnString buf;
-    type->getDefaultSerialization()->serializeText(*column, 0, buf, {});
-    return buf.str();
 }
 
 static void validateRegexpPatterns(const Array & patterns, const Settings & settings)

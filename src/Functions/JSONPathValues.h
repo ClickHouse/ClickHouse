@@ -255,101 +255,42 @@ inline String encodePathTypePrefix(std::string_view path, const DataTypePtr & ty
     return result;
 }
 
-struct DecodedToken
-{
-    std::string_view encoded_path;
-    std::string_view encoded_binary_type;
-    Kind kind;
-    std::optional<std::string_view> encoded_map_key;
-    std::string_view value;
-};
-
-inline std::optional<DecodedToken> tryDecodeToken(std::string_view token)
+inline std::optional<std::string_view> tryGetCompleteScalarValue(std::string_view token)
 {
     size_t position = 0;
-    auto readComponent = [&]() -> std::optional<std::string_view>
+    auto skipComponent = [&]()
     {
-        const size_t begin = position;
         while (position < token.size())
         {
             if (token[position++] != 0)
                 continue;
             if (position >= token.size())
-                return std::nullopt;
+                return false;
             const char escaped = token[position++];
             if (escaped == 0)
-            {
-                return token.substr(begin, position - begin - 2);
-            }
+                return true;
             if (escaped != 1)
-                return std::nullopt;
+                return false;
         }
-        return std::nullopt;
+        return false;
     };
 
-    const auto path = readComponent();
-    const auto binary_type = readComponent();
-    if (!path || !binary_type || position >= token.size())
+    if (!skipComponent() || !skipComponent() || position >= token.size())
         return std::nullopt;
-
-    const UInt8 kind = static_cast<UInt8>(token[position++]);
-    if (kind < static_cast<UInt8>(Kind::ScalarComplete)
-        || kind > static_cast<UInt8>(Kind::DynamicValidation))
+    if (static_cast<Kind>(token[position++]) != Kind::ScalarComplete)
         return std::nullopt;
-
-    const auto decoded_kind = static_cast<Kind>(kind);
-    std::optional<std::string_view> map_key;
-    if (decoded_kind == Kind::MapEntryComplete || decoded_kind == Kind::MapEntryTruncated)
-    {
-        map_key = readComponent();
-        if (!map_key)
-            return std::nullopt;
-    }
-
-    const auto value = token.substr(position);
-    if ((decoded_kind == Kind::ScalarTruncated
-            || decoded_kind == Kind::ArrayElementTruncated
-            || decoded_kind == Kind::MapEntryTruncated)
-        && value.size() < VALUE_HASH_BYTES)
-        return std::nullopt;
-    if (decoded_kind == Kind::DynamicValidation && !value.empty())
-        return std::nullopt;
-    if (decoded_kind == Kind::DynamicValidation && !binary_type->empty())
-        return std::nullopt;
-
-    return DecodedToken{*path, *binary_type, decoded_kind, map_key, value};
-}
-
-inline std::optional<String> tryDecodeComponent(std::string_view encoded)
-{
-    String result;
-    result.reserve(encoded.size());
-    for (size_t position = 0; position < encoded.size(); ++position)
-    {
-        const char byte = encoded[position];
-        if (byte != 0)
-        {
-            result.push_back(byte);
-            continue;
-        }
-        if (++position >= encoded.size() || encoded[position] != 1)
-            return std::nullopt;
-        result.push_back(0);
-    }
-    return result;
+    return token.substr(position);
 }
 
 struct EncodedValue
 {
     String token;
     bool complete;
-    size_t value_prefix_size;
 };
 
 struct EncodedValueInfo
 {
     bool complete;
-    size_t value_prefix_size;
 };
 
 inline std::optional<EncodedValueInfo> encodeValueTo(
@@ -383,7 +324,7 @@ inline std::optional<EncodedValueInfo> encodeValueTo(
         result.append(value_hash->data(), value_hash->size());
     }
 
-    return EncodedValueInfo{complete, value_prefix_size};
+    return EncodedValueInfo{complete};
 }
 
 inline std::optional<EncodedValue> encodeValue(
@@ -407,7 +348,7 @@ inline std::optional<EncodedValue> encodeValue(
         std::move(value_hash));
     if (!info)
         return std::nullopt;
-    return EncodedValue{std::move(result), info->complete, info->value_prefix_size};
+    return EncodedValue{std::move(result), info->complete};
 }
 
 inline std::optional<EncodedValue> encodeValue(
@@ -463,7 +404,7 @@ inline std::optional<EncodedValueInfo> encodeMapEntryTo(
             value_hash = hashValue(value);
         result.append(value_hash->data(), value_hash->size());
     }
-    return EncodedValueInfo{complete, value_prefix_size};
+    return EncodedValueInfo{complete};
 }
 
 inline std::optional<EncodedValue> encodeMapEntry(
@@ -479,7 +420,7 @@ inline std::optional<EncodedValue> encodeMapEntry(
         result, prefix, key, value, max_token_bytes, value_is_complete, std::move(value_hash));
     if (!info)
         return std::nullopt;
-    return EncodedValue{std::move(result), info->complete, info->value_prefix_size};
+    return EncodedValue{std::move(result), info->complete};
 }
 
 inline std::optional<String> encodeMapEntryPrefix(

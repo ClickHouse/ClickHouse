@@ -16,6 +16,7 @@ struct JSONSubcolumnIndexInfo
     String json_column_name;       /// e.g., "json"
     String path;                   /// e.g., "a.b"
     size_t header_position;        /// position of JSONAllPaths column in the index header
+    size_t array_json_levels = 0;  /// number of Array(JSON) levels represented by [] in path
 };
 
 /// Match a JSON subcolumn name against a known JSON base column.
@@ -72,5 +73,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field);
+
+String serializeFieldAsText(const Field & value, const DataTypePtr & type);
 
 }

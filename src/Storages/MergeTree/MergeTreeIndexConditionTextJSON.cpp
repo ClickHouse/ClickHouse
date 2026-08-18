@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/JSONPathValues.h>
 #include <Functions/MultiSearchImpl.h>
@@ -21,9 +20,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/convertFieldToType.h>
-#include <IO/ReadBufferFromMemory.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 
@@ -37,15 +33,6 @@ namespace Setting
     extern const SettingsUInt64 text_index_like_min_pattern_length;
     extern const SettingsBool use_text_index_like_evaluation_by_dictionary_scan;
     extern const SettingsBool dynamic_throw_on_type_mismatch;
-}
-
-static String serializeJSONPathValuesField(const Field & value, const DataTypePtr & type)
-{
-    auto column = type->createColumn();
-    column->insert(value);
-    WriteBufferFromOwnString buffer;
-    type->getDefaultSerialization()->serializeText(*column, 0, buffer, {});
-    return buffer.str();
 }
 
 static bool containsFloat(const IDataType & type)
@@ -131,84 +118,6 @@ static bool isSupportedJSONPathValuesMap(const DataTypePtr & type)
         || !WhichDataType(removeLowCardinality(map_type->getValueType())).isString())
         return false;
     return true;
-}
-
-struct JSONPathValuesSubcolumnInfo
-{
-    JSONSubcolumnIndexInfo subcolumn;
-    size_t array_json_levels = 0;
-};
-
-static std::optional<JSONPathValuesSubcolumnInfo> tryMatchJSONPathValuesSubcolumn(
-    const String & column_name,
-    const String & json_column_name)
-{
-    for (auto [candidate_column, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(column_name))
-    {
-        if (candidate_column != json_column_name)
-            continue;
-        if (subcolumn.empty()
-            || subcolumn.starts_with("^")
-            || subcolumn.starts_with("@`")
-            || subcolumn.find(".^`") != std::string_view::npos
-            || subcolumn.find(".@`") != std::string_view::npos)
-            return std::nullopt;
-
-        String path;
-        size_t array_json_levels = 0;
-        std::string_view remaining = subcolumn;
-        while (!remaining.empty())
-        {
-            const size_t type_hint_position = remaining.find(".:`");
-            if (type_hint_position == std::string_view::npos)
-            {
-                path += remaining;
-                break;
-            }
-
-            path += remaining.substr(0, type_hint_position);
-            ReadBufferFromMemory buffer(remaining.substr(type_hint_position + 2));
-            String type_hint;
-            if (!tryReadBackQuotedString(type_hint, buffer))
-                return std::nullopt;
-
-            auto type = DataTypeFactory::instance().get(type_hint);
-            size_t levels = 0;
-            while (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-            {
-                ++levels;
-                type = removeNullableOrLowCardinalityNullable(array_type->getNestedType());
-            }
-
-            std::string_view tail(buffer.position(), buffer.available());
-            if (levels == 0 || removeLowCardinality(type)->getTypeId() != TypeIndex::Object)
-            {
-                if (!tail.empty())
-                    return std::nullopt;
-                break;
-            }
-
-            array_json_levels += levels;
-            for (size_t level = 0; level != levels; ++level)
-                path += "[]";
-            if (tail.starts_with('.'))
-                tail.remove_prefix(1);
-            if (!tail.empty())
-                path += '.';
-            remaining = tail;
-        }
-
-        if (path.empty())
-            return std::nullopt;
-        return JSONPathValuesSubcolumnInfo{
-            .subcolumn = JSONSubcolumnIndexInfo{
-                .json_column_name = String(candidate_column),
-                .path = std::move(path),
-                .header_position = 0},
-            .array_json_levels = array_json_levels};
-    }
-
-    return std::nullopt;
 }
 
 static bool hasUnindexedJSONPathValuesTypedAncestor(const DataTypeObject & object_type, std::string_view path)
@@ -298,7 +207,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
             if (converted.isNull())
                 continue;
 
-            const String converted_text = serializeJSONPathValuesField(converted, target_type);
+            const String converted_text = serializeFieldAsText(converted, target_type);
             if (converted_text != value)
                 return false;
 
@@ -307,7 +216,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
                 return append_encoded(JSONPathValues::encodeValue(
                     path,
                     target_type,
-                    serializeJSONPathValuesField(converted_value, target_type),
+                    serializeFieldAsText(converted_value, target_type),
                     max_token_bytes));
             };
 
@@ -326,7 +235,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
     if (!which_literal.isNativeNumber() && !isBool(literal_type))
         return false;
 
-    const String literal_text = serializeJSONPathValuesField(literal, literal_type);
+    const String literal_text = serializeFieldAsText(literal, literal_type);
     for (const auto & target_type : getJSONPathValuesDynamicNumberTypes())
     {
         if (isBool(target_type))
@@ -356,7 +265,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
             && literal.safeGet<Float64>() == 0
             && round_trip.safeGet<Float64>() == 0;
         if (!is_signed_zero_round_trip
-            && serializeJSONPathValuesField(round_trip, literal_type) != literal_text)
+            && serializeFieldAsText(round_trip, literal_type) != literal_text)
             continue;
 
         auto append_converted = [&](const Field & value)
@@ -364,7 +273,7 @@ static bool appendJSONPathValuesDynamicEqualityTokens(
             auto encoded = JSONPathValues::encodeValue(
                 path,
                 target_type,
-                serializeJSONPathValuesField(value, target_type),
+                serializeFieldAsText(value, target_type),
                 max_token_bytes);
             return append_encoded(std::move(encoded));
         };
@@ -455,11 +364,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         std::optional<JSONTextQueryPayload> payload;
         if (!encoded->complete)
             payload = JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
-                .pattern_token_prefixes = {},
-                .match_patterns_by_prefix = false,
-                .validation_tokens = VectorWithMemoryTracking<String>{encoded->token},
-                .validation_pattern_prefixes = {}};
+                .validation_tokens = VectorWithMemoryTracking<String>{encoded->token}};
 
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
@@ -495,11 +400,8 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             VectorWithMemoryTracking<String>{},
             std::vector<OptimizedRegularExpression>{},
             JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {std::move(*complete_prefix), std::move(*truncated_prefix)},
-                .match_patterns_by_prefix = true,
-                .validation_tokens = {},
-                .validation_pattern_prefixes = {}}));
+                .match_patterns_by_prefix = true}));
         return true;
     }
 
@@ -558,7 +460,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         {
             const String value = WhichDataType(nested_value_type).isStringOrFixedString()
                 ? field.safeGet<String>()
-                : serializeJSONPathValuesField(field, array_nested_type);
+                : serializeFieldAsText(field, array_nested_type);
             if (value.empty()
                 && WhichDataType(nested_value_type).isStringOrFixedString())
                 return false;
@@ -599,7 +501,6 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         if (!validation_tokens.empty())
         {
             payload.emplace();
-            payload->missing_tokens_are_absent = true;
             payload->validation_tokens = std::move(validation_tokens);
         }
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
@@ -665,11 +566,8 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             return false;
 
         JSONTextQueryPayload payload{
-            .missing_tokens_are_absent = true,
-            .pattern_token_prefixes = {},
             .match_patterns_by_prefix = true,
-            .validation_tokens = std::move(validation_tokens),
-            .validation_pattern_prefixes = {}};
+            .validation_tokens = std::move(validation_tokens)};
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
@@ -702,7 +600,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             for (const auto value : {0.0, -0.0})
             {
                 auto encoded = JSONPathValues::encodeValue(
-                    json_info.path, type, serializeJSONPathValuesField(Field(value), type), max_token_bytes);
+                    json_info.path, type, serializeFieldAsText(Field(value), type), max_token_bytes);
                 if (!encoded)
                     return false;
                 if (!encoded->complete)
@@ -720,11 +618,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
                 validation_tokens.empty()
                     ? std::nullopt
                     : std::optional<JSONTextQueryPayload>(JSONTextQueryPayload{
-                        .missing_tokens_are_absent = true,
-                        .pattern_token_prefixes = {},
-                        .match_patterns_by_prefix = false,
-                        .validation_tokens = std::move(validation_tokens),
-                        .validation_pattern_prefixes = {}})));
+                        .validation_tokens = std::move(validation_tokens)})));
             return true;
         }
     }
@@ -733,7 +627,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         ? String{}
         : WhichDataType(removeLowCardinalityAndNullable(type)).isStringOrFixedString()
             ? value_field.safeGet<String>()
-            : serializeJSONPathValuesField(value_field, type);
+            : serializeFieldAsText(value_field, type);
 
     const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
     if ((function_name == "startsWith" || function_name == "endsWith")
@@ -753,11 +647,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
         std::optional<JSONTextQueryPayload> payload;
         if (!encoded->complete)
             payload = JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
-                .pattern_token_prefixes = {},
-                .match_patterns_by_prefix = false,
-                .validation_tokens = VectorWithMemoryTracking<String>{encoded->token},
-                .validation_pattern_prefixes = {}};
+                .validation_tokens = VectorWithMemoryTracking<String>{encoded->token}};
         out.function = RPNElement::FUNCTION_EQUALS;
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
@@ -795,10 +685,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             std::move(tokens),
             std::move(patterns),
             JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {complete_prefix, truncated_prefix},
-                .match_patterns_by_prefix = false,
-                .validation_tokens = {},
                 .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
@@ -823,10 +710,8 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             std::move(tokens),
             std::vector<OptimizedRegularExpression>{},
             JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = std::move(token_prefixes),
                 .match_patterns_by_prefix = true,
-                .validation_tokens = {},
                 .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
@@ -847,10 +732,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
             std::move(tokens),
             std::move(patterns),
             JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
                 .pattern_token_prefixes = {complete_prefix, truncated_prefix},
-                .match_patterns_by_prefix = false,
-                .validation_tokens = {},
                 .validation_pattern_prefixes = {truncated_prefix}}));
         return true;
     };
@@ -1029,15 +911,15 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         return std::nullopt;
     }
 
-    auto json_info = tryMatchJSONPathValuesSubcolumn(
+    auto json_info = tryMatchJSONSubcolumn(
         node.getColumnName(), json_path_values_configuration->column_name);
     if (json_info)
     {
-        if (!json_path_values_configuration->path_matcher->shouldIndex(json_info->subcolumn.path)
-            || hasUnindexedJSONPathValuesTypedAncestor(object_type, json_info->subcolumn.path))
+        if (!json_path_values_configuration->path_matcher->shouldIndex(json_info->path)
+            || hasUnindexedJSONPathValuesTypedAncestor(object_type, json_info->path))
             return std::nullopt;
         return JSONPathValuesNodeInfo{
-            .subcolumn = std::move(json_info->subcolumn),
+            .subcolumn = std::move(*json_info),
             .source_type = node.getDAGNode() ? node.getDAGNode()->result_type : nullptr,
             .map_key = std::nullopt,
             .array_json_levels = json_info->array_json_levels,
@@ -1087,11 +969,8 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
         }
 
         JSONTextQueryPayload payload{
-            .missing_tokens_are_absent = true,
-            .pattern_token_prefixes = {},
             .match_patterns_by_prefix = true,
-            .validation_tokens = std::move(validation_tokens),
-            .validation_pattern_prefixes = {}};
+            .validation_tokens = std::move(validation_tokens)};
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
             function_name,
             TextSearchMode::Any,
@@ -1133,11 +1012,7 @@ bool MergeTreeIndexConditionText::tryPrepareJSONPathValuesSet(
         validation_tokens.empty()
             ? std::nullopt
             : std::optional<JSONTextQueryPayload>(JSONTextQueryPayload{
-                .missing_tokens_are_absent = true,
-                .pattern_token_prefixes = {},
-                .match_patterns_by_prefix = false,
-                .validation_tokens = std::move(validation_tokens),
-                .validation_pattern_prefixes = {}})));
+                .validation_tokens = std::move(validation_tokens)})));
     return true;
 }
 

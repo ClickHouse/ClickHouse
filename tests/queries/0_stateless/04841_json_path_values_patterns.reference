@@ -1,0 +1,55 @@
+multiSearchAny empty needle ground truth
+0	1
+ILIKE path is case-sensitive
+[1]
+typed CAST is not indexed
+[1,3]
+1
+Dynamic CAST to String
+[1,2,3]
+[4]
+1
+Dynamic CAST patterns are not indexed
+[1,2,3,4]
+1
+long equality
+[1]
+exact bounded prefixes
+[1,2]
+[1,2]
+[1,2,3]
+validated prefixes beyond retained bytes
+[1,2]
+[1,2,3]
+case-insensitive prefix direct read
+1
+sparse typed paths
+[2]
+1
+[1]
+[1]
+[1]
+direct read with hint
+['https://posthog.com/project/123/web']
+1
+direct read without hint
+['https://posthog.com/project/123/web']
+direct read disabled
+['https://posthog.com/project/123/web']
+right-side wrappers
+[1]
+[1]
+[1]
+[1]
+[1]
+commutative equality
+[1]
+dictionary scan setting
+[1]
+[1]
+minimum pattern length
+[1]
+[1,2]
+[]
+[1,2]
+[1,2]
