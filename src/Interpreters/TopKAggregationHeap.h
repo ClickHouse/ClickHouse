@@ -324,7 +324,13 @@ private:
         return *key_arena;
     }
 
-    /// The 8-byte padding on both sides keeps the hash table's word-sized reads in bounds.
+    /// The string hash table dispatches on keys by reading whole 8-byte words,
+    /// touching up to 7 bytes past either end of the key: for a 1..8-byte key
+    /// it may read the word that ends at the key's last byte, i.e. before
+    /// `data()`, where a plain `Arena::insert` at the head of a chunk has
+    /// nothing readable. The leading pad keeps that read in bounds; the
+    /// trailing pad covers the forward reads without relying on the arena
+    /// chunk's tail padding.
     static const char * copyKeyBytes(std::string_view bytes, Arena & arena)
     {
         char * buf = arena.alloc(bytes.size() + 16);
