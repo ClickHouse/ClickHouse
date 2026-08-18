@@ -30,6 +30,7 @@ import argparse
 import ast
 import itertools
 import json
+import math
 import os
 import platform
 import random
@@ -324,6 +325,10 @@ class ChangedQuery:
     # Its numbers come from report.html, since compare.sh retracts demoted
     # queries from all-query-metrics.tsv.
     ci_unconfirmed: bool = False
+    # Set when the per-query threshold CI used could not be recovered. Such a
+    # query gets no verdict: judging it by the bare floor would apply a weaker
+    # gate than CI's and could call a noisy query CONFIRMED.
+    threshold_unknown: bool = False
     # Filled in later, after we've collected all changes across arches:
     # which arches CI flagged this same (test, query_index) on. Useful so
     # the report can say "flagged on ARM only" vs "flagged on both".
@@ -605,6 +610,11 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
     # config drop-ins, the base server config, and the TLD files.
     paths = [
         "tests/performance",
+        # tpch.xml, tpcds.xml and the tpch-join_algorithm-* tests read their
+        # SQL bodies and settings from here via <query file="..."/> and
+        # <settings file="..."/>, so the extracted tree is unusable for them
+        # without it.
+        "tests/benchmarks",
         "programs/server",
         "tests/config/top_level_domains",
     ]
@@ -716,6 +726,95 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
 # ---------------------------------------------------------------------------
 # Reference SHA discovery (the "left" binary)
 # ---------------------------------------------------------------------------
+
+
+# The same query ci/jobs/performance_tests.py sends to CIDB before a perf run,
+# with `today()` left as a parameter: the window is anchored on the day the run
+# happened, not on today, so the numbers are the ones that run actually used.
+HISTORICAL_THRESHOLDS_QUERY = """\
+SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff
+FROM query_metrics_v2
+WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
+        AND toDate('{day}') - INTERVAL 1 WEEK
+    AND metric = 'client_time'
+    AND pr_number = 0
+GROUP BY test, query_index
+HAVING count() > 100
+FORMAT TSV"""
+
+
+def play_query(query: str, what: str) -> Optional[str]:
+    """Run a query against play.clickhouse.com. Returns None on failure -- the
+    caller decides what an unavailable answer means."""
+    try:
+        return subprocess.check_output(
+            ["clickhouse", "client", "--host", "play.clickhouse.com",
+             "--user", "explorer", "--secure", "--query", query],
+            text=True, timeout=120, stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        log(f"clickhouse client not on PATH, cannot {what}")
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        err = getattr(e, "stderr", b"") or b""
+        if isinstance(err, bytes):
+            err = err.decode(errors="replace")
+        log(f"play.clickhouse.com query failed ({what}): {str(err).strip()[:200]}")
+    return None
+
+
+def fetch_historical_thresholds(run_day: str) -> Optional[dict[tuple[str, int], float]]:
+    """The `max_diff` per query that CI's own threshold computation used.
+
+    Only needed for queries CI demoted: compare.sh retracts those from the TSV,
+    taking the exported `changed_threshold` with them, and judging them by the
+    bare 0.15 floor instead would apply a weaker gate than the one CI used to
+    flag them in the first place."""
+    out = play_query(
+        HISTORICAL_THRESHOLDS_QUERY.format(day=run_day), "fetch historical thresholds"
+    )
+    if out is None:
+        return None
+    thresholds: dict[tuple[str, int], float] = {}
+    for line in out.splitlines():
+        cols = line.split("\t")
+        if len(cols) < 3:
+            continue
+        try:
+            thresholds[(cols[0], int(cols[1]))] = float(cols[2])
+        except ValueError:
+            continue
+    return thresholds
+
+
+def test_report_threshold(xml_path: Path) -> float:
+    """The test's own `max_ignored_relative_change`, the third input to
+    compare.sh's per-query threshold."""
+    try:
+        root = ET.fromstring(xml_path.read_text())
+    except (OSError, ET.ParseError):
+        return 0.0
+    try:
+        return float(root.attrib.get("max_ignored_relative_change", 0.0))
+    except ValueError:
+        return 0.0
+
+
+def ci_changed_threshold(historical: float, per_test: float) -> float:
+    """compare.sh: ceil(greatest(0.15, historical_max_diff, report_threshold), 2)."""
+    return math.ceil(max(CHANGED_THRESHOLD_FLOOR, historical, per_test) * 100) / 100
+
+
+def fetch_run_day(pr_sha: str, perf_arch: str) -> Optional[str]:
+    """The date CI ran this comparison, which anchors the historical window."""
+    out = play_query(
+        "SELECT toString(toDate(max(event_time))) FROM query_metrics_v2 "
+        f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' FORMAT TSV",
+        "find the run date",
+    )
+    if not out:
+        return None
+    day = out.strip()
+    return day if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) else None
 
 
 def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
@@ -1771,6 +1870,7 @@ def print_report(
     confirmed = 0
     not_reproduced = 0
     failed = 0
+    unverifiable = 0
     for cq in sorted(changed, key=lambda c: (c.test, c.query_index, c.arch)):
         key = (cq.test, cq.query_index)
         local = local_results.get(key)
@@ -1784,11 +1884,11 @@ def print_report(
             ci_at = local_arch
         elif local_arch in archs:
             ci_at = "+".join(archs)
-        if cq.ci_unconfirmed:
-            ci_at += "*"
         else:
             # local arch did NOT flag this; CI saw it elsewhere
             ci_at = "/".join(archs) + "-only"
+        if cq.ci_unconfirmed:
+            ci_at += "*"
 
         if local is None and (failed_tests or {}).get(cq.test) is not None:
             verdict = (
@@ -1812,6 +1912,18 @@ def print_report(
             same_direction = (l_rel > 0 and ci_dir == "slower") or (
                 l_rel < 0 and ci_dir == "faster"
             )
+            if cq.threshold_unknown:
+                verdict = (
+                    "NO VERDICT — CI's per-query threshold for this demoted "
+                    "query could not be recovered"
+                )
+                unverifiable += 1
+                print(
+                    f"{cq.test[:32]:<32} {cq.query_index:>3}  {ci_at:<6}"
+                    f"{fmt_sec(cq.left):>8} {fmt_sec(cq.right):>8} "
+                    f"{fmt_diff(cq.diff):>8} | {local_str}  {verdict}"
+                )
+                continue
             bar = cq.changed_threshold or CHANGED_THRESHOLD_FLOOR
             l_stat = local.get("stat_threshold")
             confirmed_here = (
@@ -1859,6 +1971,7 @@ def print_report(
         f"{not_reproduced} not reproduced, "
         f"{len(changed) - confirmed - not_reproduced} not measured"
         + (f" (of which {failed} from failed perf.py runs)" if failed else "")
+        + (f", {unverifiable} without a verdict" if unverifiable else "")
     )
     if failed_tests:
         print(
@@ -2184,6 +2297,34 @@ def main() -> int:
                 "--populate: no hits dataset referenced by the affected XMLs; "
                 "nothing to rebuild (tests that build their own tables already "
                 "write them with each side's own binary)"
+            )
+
+    # Queries CI demoted come from report.html, which does not carry the
+    # per-query threshold CI applied. Recover it the way compare.sh builds it,
+    # anchoring the historical window on the day the run happened.
+    demoted = [cq for cq in changed if cq.changed_threshold is None]
+    if demoted:
+        run_day = fetch_run_day(pr_sha, perf_arch)
+        historical = fetch_historical_thresholds(run_day) if run_day else None
+        if historical is None:
+            log(
+                f"WARNING: could not recover the per-query threshold for "
+                f"{len(demoted)} demoted query(ies); they will be reported "
+                "without a verdict"
+            )
+        for cq in demoted:
+            xml = perf_root / "tests/performance" / f"{cq.test}.xml"
+            if historical is None:
+                cq.threshold_unknown = True
+                continue
+            cq.changed_threshold = ci_changed_threshold(
+                historical.get((cq.test, cq.query_index), 0.0),
+                test_report_threshold(xml),
+            )
+            log(
+                f"  {cq.test} #{cq.query_index}: CI threshold "
+                f"{cq.changed_threshold:.0%} (recovered from the run's "
+                f"historical window ending {run_day})"
             )
 
     # Find the reference SHA

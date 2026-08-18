@@ -147,7 +147,8 @@ The script prints a table. For each changed query show:
 
 - CI old / new / Δ (from the report)
 - Local old / new / Δ / p-value (from `perf.py`)
-- Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, `no local data`, or
+- Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, `no local data`,
+  `NO VERDICT` (CI's threshold for a demoted query is unavailable), or
   `perf.py FAILED ... NOT MEASURED`. The last one is not a verdict about the
   change: nothing was measured, the run itself broke, and `raw/<test>-err.log`
   says why. Any such failure also makes the script exit non-zero.
@@ -166,6 +167,16 @@ non-empty CI report into an all-clear, and they are exactly the ambiguous
 results a local rerun should settle. A flagged query readable from neither
 source is reported as unresolved, and if that leaves nothing to rerun the
 skill fails rather than calling the comparison clean.
+
+Retracting a demoted query from the TSV also takes its `changed_threshold`
+with it, and judging it by the bare 0.15 floor would be a weaker gate than
+the one CI used — enough to call a historically noisy query `CONFIRMED`. The
+threshold is therefore rebuilt the way `compare.sh` builds it,
+`ceil(greatest(0.15, historical p99 x 1.5, the test's
+max_ignored_relative_change), 2)`, running CI's own historical-thresholds
+query against `play.clickhouse.com` with the window anchored on the day that
+run happened rather than today. If it cannot be recovered the query is
+reported with **no verdict** instead of being judged under a weaker rule.
 
 `stat_threshold` is the q99 of the balanced-split null — the measurement
 precision this rerun actually reached. It is recomputed from the rerun's own
@@ -199,7 +210,9 @@ treated as CI noise.
   `ci/jobs/performance_tests.py`.
 - **The tests come from the commit under test, not from your checkout.**
   `tests/performance` (the XMLs, `perf.py`, the perf config drop-ins),
-  `programs/server` and `tests/config/top_level_domains` are extracted from
+  `tests/benchmarks` (the SQL and settings `tpch.xml` / `tpcds.xml` /
+  `tpch-join_algorithm-*` load through `file="..."`), `programs/server` and
+  `tests/config/top_level_domains` are extracted from
   the commit CI measured into `tmp/double_check_perf/perf-tree/<sha>` and
   everything runs from there, fetching the commit if the clone lacks it. This
   is not a nicety: query indices are positional and substitutions expand
