@@ -5705,7 +5705,7 @@ class ClickHouseInstance:
                 time.sleep(1)
                 continue
             else:
-                logging.debug("Clickhouse process running.")
+                logging.debug("ClickHouse process running.")
                 if expected_to_fail:
                     raise Exception("ClickHouse was expected not to be running.")
                 try:
