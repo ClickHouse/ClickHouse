@@ -11,4 +11,8 @@ namespace DB::PrometheusQueryToSQL
 ASTPtr makeValueSortKeyComponent(ASTPtr value);
 ASTPtr makeExactSortKeyComponent(ASTPtr value);
 
+/// A fallback `sort_key` for a query whose vector input preserves row identity (the same `group`)
+/// but has no explicit sort order: a stable tiebreak hashed from that group, as `or` uses per side.
+ASTPtr makeFallbackSortKey(ASTPtr group_ast);
+
 }

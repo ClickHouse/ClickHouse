@@ -5,6 +5,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 
 
 namespace DB::ErrorCodes
@@ -106,8 +107,15 @@ SQLQueryPiece applyUnaryOperator(
 
             builder.select_list.back()->setAlias(ColumnNames::Values);
 
-            if (res.has_sort_order)
-                builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+            if (argument.store_method == StoreMethod::VECTOR_GRID)
+            {
+                ASTPtr sort_key = argument.has_sort_order
+                    ? make_intrusive<ASTIdentifier>(ColumnNames::SortKey)
+                    : makeFallbackSortKey(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                sort_key->setAlias(ColumnNames::SortKey);
+                builder.select_list.push_back(std::move(sort_key));
+                res.has_sort_order = true;
+            }
 
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(argument.select_query), SQLSubqueryType::TABLE});
             builder.from_table = context.subqueries.back().name;

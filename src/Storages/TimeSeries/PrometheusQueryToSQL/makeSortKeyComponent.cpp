@@ -17,4 +17,9 @@ ASTPtr makeExactSortKeyComponent(ASTPtr value)
     return makeASTFunction("tuple", make_intrusive<ASTLiteral>(0.0), std::move(value));
 }
 
+ASTPtr makeFallbackSortKey(ASTPtr group_ast)
+{
+    return makeASTFunction("array", makeExactSortKeyComponent(makeASTFunction("timeSeriesGroupToSamplingKey", std::move(group_ast))));
+}
+
 }

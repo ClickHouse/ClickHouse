@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -173,11 +174,22 @@ namespace
                 new_values->setAlias(ColumnNames::Values);
                 builder.select_list.push_back(std::move(new_values));
 
-                bool keep_sort_order = expression.has_sort_order && node_range.start_time == node_range.end_time;
-                if (keep_sort_order)
-                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+                if (expression.store_method == StoreMethod::VECTOR_GRID)
+                {
+                    /// The real sort_key is only meaningful broadcast to a single point (otherwise
+                    /// its value-based order is stale); a group-hash fallback never goes stale.
+                    bool keep_real_sort_key = expression.has_sort_order && node_range.start_time == node_range.end_time;
+                    ASTPtr sort_key = keep_real_sort_key
+                        ? make_intrusive<ASTIdentifier>(ColumnNames::SortKey)
+                        : makeFallbackSortKey(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+                    sort_key->setAlias(ColumnNames::SortKey);
+                    builder.select_list.push_back(std::move(sort_key));
+                    expression.has_sort_order = true;
+                }
                 else
+                {
                     expression.has_sort_order = false;
+                }
 
                 auto & subqueries = context.subqueries;
                 subqueries.emplace_back(subqueries.size(), std::move(expression.select_query), SQLSubqueryType::TABLE);

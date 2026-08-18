@@ -85,10 +85,7 @@ namespace
         {
             if (side_has_sort_order)
                 return make_intrusive<ASTIdentifier>(ColumnNames::SortKey);
-            return makeASTFunction(
-                "array",
-                makeExactSortKeyComponent(
-                    makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))));
+            return makeFallbackSortKey(make_intrusive<ASTIdentifier>(ColumnNames::Group));
         };
 
         /// Step 1:

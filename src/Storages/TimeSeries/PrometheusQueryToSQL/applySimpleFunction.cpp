@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -45,6 +46,7 @@ SQLQueryPiece applySimpleFunction(
     ASTs array_map_source_arrays;
     ASTs array_map_lambda_args;
     String table_to_select_from;
+    bool vector_arg_has_sort_order = false;
 
     for (size_t i = 0; i != arguments.size(); ++i)
     {
@@ -124,7 +126,8 @@ SQLQueryPiece applySimpleFunction(
 
                 res.store_method = StoreMethod::VECTOR_GRID;
                 res.metric_name_dropped = argument.metric_name_dropped;
-                res.has_sort_order = argument.has_sort_order;
+                vector_arg_has_sort_order = argument.has_sort_order;
+                res.has_sort_order = true;
 
                 break;
             }
@@ -170,7 +173,13 @@ SQLQueryPiece applySimpleFunction(
     builder.select_list.back()->setAlias((res.store_method == StoreMethod::SINGLE_SCALAR) ? ColumnNames::Value : ColumnNames::Values);
 
     if (res.has_sort_order)
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortKey));
+    {
+        ASTPtr sort_key = vector_arg_has_sort_order
+            ? make_intrusive<ASTIdentifier>(ColumnNames::SortKey)
+            : makeFallbackSortKey(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        sort_key->setAlias(ColumnNames::SortKey);
+        builder.select_list.push_back(std::move(sort_key));
+    }
 
     builder.from_table = table_to_select_from;
 

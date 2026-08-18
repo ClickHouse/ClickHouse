@@ -6,6 +6,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyBinaryOperatorAnd.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/makeSortKeyComponent.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 
@@ -102,9 +103,10 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
-        if (left_argument.has_sort_order)
         {
-            auto sort_key = make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey});
+            ASTPtr sort_key = left_argument.has_sort_order
+                ? make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::SortKey})
+                : makeFallbackSortKey(make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}));
             sort_key->setAlias(ColumnNames::SortKey);
             builder.select_list.push_back(std::move(sort_key));
         }
@@ -135,7 +137,7 @@ SQLQueryPiece applyBinaryOperatorUnless(
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;
     res.step = left_argument.step;
-    res.has_sort_order = left_argument.has_sort_order;
+    res.has_sort_order = true;
 
     return res;
 }
