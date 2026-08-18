@@ -1473,9 +1473,13 @@ arrow::Status ArrowFlightServer::DoAction(
                 : std::string_view{};
             ARROW_RETURN_NOT_OK(arrow::flight::CloseSessionRequest::Deserialize(body_view));
 
-            arrow::flight::CloseSessionResult result{arrow::flight::CloseSessionStatus::kClosed};
+            const bool enable_close = server.config().getBool("enable_arrow_close_session", true);
+            arrow::flight::CloseSessionResult result{
+                enable_close
+                    ? arrow::flight::CloseSessionStatus::kClosed
+                    : arrow::flight::CloseSessionStatus::kNotClosable};
 
-            auth.closeSession(server.config().getBool("enable_arrow_close_session", true));
+            auth.closeSession(enable_close);
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
             ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
