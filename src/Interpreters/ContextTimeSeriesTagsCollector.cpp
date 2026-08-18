@@ -1410,50 +1410,53 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
     VectorWithMemoryTracking<Group> res;
     res.resize(groups_.size());
 
-    VectorWithMemoryTracking<Group> unique_groups;
-
-    auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
-    Group min_group = *min_group_it;
-    Group group_range = *max_group_it - min_group;
-
-    /// Groups are dense integer indices, and a block usually contains a compact range of them.
-    /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
-    constexpr size_t max_dense_range_to_input_size_ratio = 4;
-    bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
-
-    if (use_dense_mapping)
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> tags_vector;
     {
-        const size_t not_found = groups_.size();
-        VectorWithMemoryTracking<size_t> indices_by_group;
-        indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+        VectorWithMemoryTracking<Group> unique_groups;
 
-        for (size_t i = 0; i != groups_.size(); ++i)
+        auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
+        Group min_group = *min_group_it;
+        Group group_range = *max_group_it - min_group;
+
+        /// Groups are dense integer indices, and a block usually contains a compact range of them.
+        /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
+        constexpr size_t max_dense_range_to_input_size_ratio = 4;
+        bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
+
+        if (use_dense_mapping)
         {
-            size_t & index = indices_by_group[groups_[i] - min_group];
-            if (index == not_found)
+            const size_t not_found = groups_.size();
+            VectorWithMemoryTracking<size_t> indices_by_group;
+            indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+
+            for (size_t i = 0; i != groups_.size(); ++i)
             {
-                index = unique_groups.size();
-                unique_groups.push_back(groups_[i]);
+                size_t & index = indices_by_group[groups_[i] - min_group];
+                if (index == not_found)
+                {
+                    index = unique_groups.size();
+                    unique_groups.push_back(groups_[i]);
+                }
+                res[i] = index;
             }
-            res[i] = index;
         }
-    }
-    else
-    {
-        std::unordered_map<Group, size_t> indices_by_group;
-
-        for (size_t i = 0; i != groups_.size(); ++i)
+        else
         {
-            Group group = groups_[i];
-            auto [it, inserted] = indices_by_group.try_emplace(group, unique_groups.size());
-            if (inserted)
-                unique_groups.push_back(group);
-            res[i] = it->second;
-        }
-    }
+            std::unordered_map<Group, size_t> indices_by_group;
 
-    auto tags_vector = getTagsByGroup(unique_groups);
-    chassert(tags_vector.size() == unique_groups.size());
+            for (size_t i = 0; i != groups_.size(); ++i)
+            {
+                Group group = groups_[i];
+                auto [it, inserted] = indices_by_group.try_emplace(group, unique_groups.size());
+                if (inserted)
+                    unique_groups.push_back(group);
+                res[i] = it->second;
+            }
+        }
+
+        tags_vector = getTagsByGroup(unique_groups);
+        chassert(tags_vector.size() == unique_groups.size());
+    }
 
     for (auto & tags : tags_vector)
         tags = transform_func(tags);
