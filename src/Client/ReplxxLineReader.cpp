@@ -397,10 +397,18 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
         /// only way to complete them when the as-you-type hints are disabled. The whole typed prefix
         /// is replaced, including the leading `/` - replxx counts it as a word break character and
         /// would otherwise complete only the part after it.
-        if (enable_slash_commands && isCursorAtEndOfInput())
+        if (enable_slash_commands)
         {
             if (auto slash_commands = matchClientSlashCommandPrefix(context); !slash_commands.commands.empty())
             {
+                /// replxx passes the prefix through the cursor only. Do not fall back to the
+                /// regular completion source for a command being edited in the middle: it has no
+                /// visibility of the suffix, and completing it would insert another command name
+                /// before that suffix. In particular, this must not ask `Suggest` for completions
+                /// when suggestions are disabled.
+                if (!isCursorAtEndOfInput())
+                    return {};
+
                 context_size = static_cast<int>(slash_commands.prefix_length);
                 return replxx::Replxx::completions_t(slash_commands.commands.begin(), slash_commands.commands.end());
             }
