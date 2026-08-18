@@ -727,24 +727,45 @@ Block makeShardNumScalar(UInt32 shard_num, const String & shard_scope_identity)
         {DataTypeString().createColumnConst(1, shard_scope_identity), std::make_shared<DataTypeString>(), SHARD_NUM_CLUSTER_COLUMN}};
 }
 
+/// The `_shard_num` scalar shipped by the initiator of a distributed query, or `nullopt` when this query is
+/// not running inside one.
+static std::optional<Block> getShardNumScalar(const ContextPtr & context)
+{
+    if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
+        return {};
+
+    return context->getQueryContext()->getScalar("_shard_num");
+}
+
+/// The shard number the initiator shipped, or 0 when none was. Says nothing about which numbering it
+/// indexes, so it resolves no cluster and cannot fail.
+static UInt64 getShippedShardNum(const ContextPtr & context)
+{
+    const auto block = getShardNumScalar(context);
+    if (!block)
+        return 0;
+
+    return block->safeGetByPosition(0).column->getUInt(0);
+}
+
 /// The shipped `_shard_num` and the `cluster_for_parallel_replicas` setting are not necessarily about the
 /// same cluster, and a shard number from one cluster indexes an unrelated shard of another. Honour the
 /// shard scope only when the scalar demonstrably belongs to `cluster`.
 ShardScope getShardScopeForCluster(const ContextPtr & context, const Cluster & cluster)
 {
-    if (!context->hasQueryContext() || !context->getQueryContext()->hasScalar("_shard_num"))
+    const auto block = getShardNumScalar(context);
+    if (!block)
         return {};
 
-    const Block block = context->getQueryContext()->getScalar("_shard_num");
-    ShardScope scope{ShardScopeKind::Scoped, block.safeGetByPosition(0).column->getUInt(0)};
+    ShardScope scope{ShardScopeKind::Scoped, block->safeGetByPosition(0).column->getUInt(0)};
     if (scope.shard_num == 0)
         return {};
 
     /// An older initiator ships a single-column block; absent provenance means "trust the scalar".
-    if (!block.has(SHARD_NUM_CLUSTER_COLUMN))
+    if (!block->has(SHARD_NUM_CLUSTER_COLUMN))
         return scope;
 
-    const std::string_view provenance = block.getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
+    const std::string_view provenance = block->getByName(SHARD_NUM_CLUSTER_COLUMN).column->getDataAt(0);
     /// Compare the numbering, not the name: a derived cluster keeps the name and may renumber the shards.
     /// An empty identity authenticates nothing, so it must never compare equal.
     if (provenance.empty() || provenance != cluster.getShardScopeIdentity())
@@ -1491,8 +1512,11 @@ bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
         return false;
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
-    /// `executeQueryWithParallelReplicas`).
-    return getShardScopeForCluster(context, *context->getClusterForParallelReplicas()).shard_num == 0;
+    /// `executeQueryWithParallelReplicas`). Only whether a shard number was shipped matters here, which does
+    /// not depend on the numbering it indexes, so no cluster is resolved: this predicate is reached from
+    /// projection analysis on a follower (`ReadFromMergeTree::isParallelReplicasLocalPlanForFollower`), where
+    /// `getClusterForParallelReplicas` would turn an unset or unresolvable cluster name into an exception.
+    return getShippedShardNum(context) == 0;
 }
 
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context)

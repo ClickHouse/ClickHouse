@@ -178,6 +178,36 @@ TEST(ParallelReplicasShardScope, DerivedClusterIdentityIsNotForgeable)
     EXPECT_EQ(getShardScopeForCluster(context, *impostor).kind, ShardScopeKind::Foreign);
 }
 
+/// `canUseLocalPlanForParallelReplicas` asks only whether a shard number was shipped, which does not depend on
+/// the numbering it indexes. It must therefore resolve no cluster: it is reached from projection analysis on a
+/// follower, where `cluster_for_parallel_replicas` need not name a cluster this server can resolve, and turning
+/// that into an exception would fail a read that has nothing to do with the shard scope.
+TEST(ParallelReplicasShardScope, LocalPlanPredicateResolvesNoCluster)
+{
+    auto with_local_plan = [](const ContextMutablePtr & context)
+    {
+        context->setSetting("allow_experimental_analyzer", Field{true});
+        context->setSetting("parallel_replicas_local_plan", Field{true});
+        context->setSetting("parallel_replicas_prefer_local_replica", Field{true});
+        /// Deliberately unset, as it is on a server that cannot resolve the initiator's cluster.
+        context->setSetting("cluster_for_parallel_replicas", Field{""});
+        return context;
+    };
+
+    auto no_scalar = with_local_plan(Context::createCopy(getContext().context));
+    no_scalar->makeQueryContext();
+    EXPECT_TRUE(canUseLocalPlanForParallelReplicas(no_scalar));
+
+    auto shipped = with_local_plan(makeContextWithScalar(makeShardNumScalar(2, "some_cluster")));
+    EXPECT_FALSE(canUseLocalPlanForParallelReplicas(shipped));
+
+    /// An unresolvable name must be no different from an unset one: `Context::tryGetCluster` returns null
+    /// for a `Replicated` database whose Keeper state is momentarily unavailable, and this predicate runs
+    /// on a read that has nothing to do with the shard scope.
+    shipped->setSetting("cluster_for_parallel_replicas", Field{"no_such_cluster_04727"});
+    EXPECT_FALSE(canUseLocalPlanForParallelReplicas(shipped));
+}
+
 /// Taking a subset of shards preserves each shard's number, so a shard number keeps its meaning and the
 /// identity must carry over: `optimize_skip_unused_shards` reads through such a cluster.
 TEST(ParallelReplicasShardScope, ShardSubsetKeepsIdentity)
