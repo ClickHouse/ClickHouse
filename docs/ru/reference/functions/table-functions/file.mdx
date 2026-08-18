@@ -33,13 +33,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ## Аргументы
 </div>
 
-| Параметр          | Описание                                                                                                                                                                                                                                                                                                                                            |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings#user_files_path) или `Array(String)` путей в запросах `SELECT`. В режиме только для чтения поддерживаются следующие [глоб-шаблоны](#globs-in-path): `*`, `?`, `{abc,def}` (где `'abc'` и `'def'` — строки) и `{N..M}` (где `N` и `M` — числа). |
-| `path_to_archive` | Относительный путь к архиву zip/tar/7z. Поддерживает те же глоб-шаблоны, что и `path`.                                                                                                                                                                                                                                                              |
-| `format`          | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                           |
-| `structure`       | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                           |
-| `compression`     | Существующий тип сжатия при использовании в запросе `SELECT` или требуемый тип сжатия при использовании в запросе `INSERT`. Поддерживаемые типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                                                                                     |
+| Параметр          | Описание                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path) или `Array(String)` путей в запросах `SELECT`. В режиме только для чтения поддерживаются следующие [глоб-шаблоны](#globs-in-path): `*`, `?`, `{abc,def}` (где `'abc'` и `'def'` — строки) и `{N..M}` (где `N` и `M` — числа). |
+| `path_to_archive` | Относительный путь к архиву zip/tar/7z. Поддерживает те же глоб-шаблоны, что и `path`.                                                                                                                                                                                                                                                                   |
+| `format`          | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                |
+| `structure`       | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                |
+| `compression`     | Существующий тип сжатия при использовании в запросе `SELECT` или требуемый тип сжатия при использовании в запросе `INSERT`. Поддерживаемые типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                                                                                          |
 
 <Tip>
   Если аргумент `structure` опущен, ClickHouse определяет схему по самому формату.
@@ -59,7 +59,7 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned_value">
+<div id="returned-value">
   ## Возвращаемое значение
 </div>
 
@@ -281,19 +281,19 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
   ## Настройки
 </div>
 
-| Настройка                                                                                                                                   | Описание                                                                                                                                                                                                |
-| ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ru/reference/settings/session-settings#engine_file_empty_if_not_exists)                 | позволяет возвращать пустой набор данных из несуществующего файла. По умолчанию отключено.                                                                                                              |
-| [engine&#95;file&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings#engine_file_truncate_on_insert)                       | позволяет очищать файл перед вставкой данных в него. По умолчанию отключено.                                                                                                                            |
-| [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/ru/reference/settings/session-settings#engine_file_allow_create_multiple_files) | позволяет создавать новый файл при каждой вставке, если формат имеет суффикс. По умолчанию отключено.                                                                                                   |
-| [engine&#95;file&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings#engine_file_skip_empty_files)                           | позволяет пропускать пустые файлы при чтении. По умолчанию отключено.                                                                                                                                   |
-| [storage&#95;file&#95;read&#95;method](/ru/reference/settings/session-settings#engine_file_empty_if_not_exists)                                | метод чтения данных из файла хранилища; одно из следующих значений: read, pread, mmap (только для clickhouse-local). Значение по умолчанию: `pread` для clickhouse-server, `mmap` для clickhouse-local. |
+| Настройка                                                                                                                                               | Описание                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ru/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists)                 | позволяет возвращать пустой набор данных из несуществующего файла. По умолчанию отключено.                                                                                                              |
+| [engine&#95;file&#95;truncate&#95;on&#95;insert](/ru/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert)                       | позволяет очищать файл перед вставкой данных в него. По умолчанию отключено.                                                                                                                            |
+| [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/ru/reference/settings/session-settings/engine-file#engine_file_allow_create_multiple_files) | позволяет создавать новый файл при каждой вставке, если формат имеет суффикс. По умолчанию отключено.                                                                                                   |
+| [engine&#95;file&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | позволяет пропускать пустые файлы при чтении. По умолчанию отключено.                                                                                                                                   |
+| [storage&#95;file&#95;read&#95;method](/ru/reference/settings/session-settings/storage#storage_file_read_method)                                           | метод чтения данных из файла хранилища; одно из следующих значений: read, pread, mmap (только для clickhouse-local). Значение по умолчанию: `pread` для clickhouse-server, `mmap` для clickhouse-local. |
 
 <div id="related">
   ## См. также
 </div>
 
 * [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
-* [Переименование файлов после обработки](/ru/reference/settings/session-settings#rename_files_after_processing)
+* [Переименование файлов после обработки](/ru/reference/settings/session-settings/other#rename_files_after_processing)
 
 {/*AUTOGENERATED_END*/}
