@@ -685,11 +685,11 @@ def test_read_in_order(started_cluster, exchange_kind):
     assert distributed == baseline
 
 
-def test_read_in_order_without_distributed_read(started_cluster):
-    """Same ordered read, but with the table under distributed_plan_max_rows_to_broadcast, so the read is
-    never made distributed and the fragment deserializes with distributed_read_bucket_count == 0. The order
-    contract still has to be reapplied there; while it was applied only for bucketed reads, this fragment
-    fed scan-order rows into a gather that expects them sorted."""
+def test_distributed_order_by_without_distributed_read(started_cluster):
+    """With the table under distributed_plan_max_rows_to_broadcast the read is never made distributed, so
+    the scatter under the sorting has no gather to cancel it and survives. Nothing may rely on the read's
+    order across it, so this shape keeps its full sort - the point of the case is that the rows are right
+    anyway, since an ordered read wrongly assumed here returned rows from elsewhere in the table."""
     # Above the 100k rows of `big`, so tryMakeDistributedRead leaves the read alone. Last value wins over
     # the 0 in DISTRIBUTED_SETTINGS.
     no_distributed_read = "distributed_plan_max_rows_to_broadcast = 1000000"

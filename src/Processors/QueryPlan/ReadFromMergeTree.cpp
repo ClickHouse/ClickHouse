@@ -6454,27 +6454,23 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         enable_parallel_reading,
         /*extension*/ nullptr);
 
-    if (distributed_read_bucket_count || has_input_order_info)
+    if (distributed_read_bucket_count)
     {
         auto * read_from_merge_tree_step = dynamic_cast<ReadFromMergeTree *>(step.get());
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
-
-        if (distributed_read_bucket_count)
-            read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
 
         /// Inject the "read in order" the coordinator chose. This replica's ReadFromMergeTree step
         /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
-        /// A non-bucketed fragment carries the contract too: the plan above it was built for sorted
-        /// input, so dropping it here would feed scan-order rows into a sorted gather.
+        /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
+        /// exchange pair collapses, which means the read was made distributed.
         if (has_input_order_info
             && !read_from_merge_tree_step->requestReadingInOrder(
                 input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Coordinator asked for a read-in-order distributed read that this node refused");
-
-        if (distributed_read_bucket_count)
-            read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
+        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
