@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Interpreters/Context.h>
+#include <Columns/ColumnSparse.h>
+#include <Processors/ISimpleTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -93,8 +95,39 @@ void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
     group_by_sort_description = std::move(input_sort_description);
 }
 
+/// Adapts chunks of an operator that is not aggregation-aware for merging: attaches a default
+/// single-level `AggregatedChunkInfo` to chunks that carry no chunk info, and materializes
+/// special column representations (sparse, const, lazy), which the merge path does not expect.
+/// See `MergingAggregatedStep::allowInputWithoutAggregatedChunkInfo`.
+class AttachAggregatedChunkInfoTransform : public ISimpleTransform
+{
+public:
+    explicit AttachAggregatedChunkInfoTransform(SharedHeader header)
+        : ISimpleTransform(header, header, false)
+    {
+    }
+
+    String getName() const override { return "AttachAggregatedChunkInfo"; }
+
+    void transform(Chunk & chunk) override
+    {
+        const size_t num_rows = chunk.getNumRows();
+        auto columns = chunk.detachColumns();
+        for (auto & column : columns)
+            column = removeSpecialRepresentations(column)->convertToFullColumnIfConst();
+        chunk.setColumns(std::move(columns), num_rows);
+
+        if (chunk.getChunkInfos().empty())
+            chunk.getChunkInfos().add(std::make_shared<AggregatedChunkInfo>());
+    }
+};
+
 void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
+    if (allow_input_without_aggregated_chunk_info)
+        pipeline.addSimpleTransform(
+            [](const SharedHeader & header) { return std::make_shared<AttachAggregatedChunkInfoTransform>(header); });
+
     /// Update values from settings if plan was deserialized.
     /// An optimizer rewrite can build this step from the params of a deserialized `AggregatingStep`,
     /// which carries the "resolve locally later" sentinel 0 for both thread counts.
@@ -217,6 +250,7 @@ QueryPlanStepPtr MergingAggregatedStep::clone() const
         memory_bound_merging_max_block_bytes,
         memory_bound_merging_of_aggregation_results_enabled);
     cloned->group_by_sort_description = group_by_sort_description;
+    cloned->allow_input_without_aggregated_chunk_info = allow_input_without_aggregated_chunk_info;
     return cloned;
 }
 
@@ -278,6 +312,8 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         flags |= 16;
     if (memory_bound_merging_of_aggregation_results_enabled)
         flags |= 32;
+    if (allow_input_without_aggregated_chunk_info)
+        flags |= 64;
 
     writeIntBinary(flags, ctx.out);
 
@@ -319,6 +355,7 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
     const bool has_stats_key = bool(flags & 8);
     const bool should_produce_results_in_order_of_bucket_number = bool(flags & 16);
     const bool memory_bound_merging_of_aggregation_results_enabled = bool(flags & 32);
+    const bool allow_input_without_aggregated_chunk_info = bool(flags & 64);
 
     UInt64 num_keys = 0;
     readVarUInt(num_keys, ctx.in);
@@ -392,6 +429,8 @@ QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
         memory_bound_merging_of_aggregation_results_enabled);
 
     merging_aggregated_step->applyOrder(std::move(group_by_sort_description));
+    if (allow_input_without_aggregated_chunk_info)
+        merging_aggregated_step->allowInputWithoutAggregatedChunkInfo();
 
     return merging_aggregated_step;
 }

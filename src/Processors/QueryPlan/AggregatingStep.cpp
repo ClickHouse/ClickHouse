@@ -1373,6 +1373,13 @@ void AggregatingStep::setFinal(bool new_value)
     updateOutputHeader();
 }
 
+void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Names new_keys)
+{
+    params.keys = std::move(new_keys);
+    params.keys_size = params.keys.size();
+    updateInputHeader(new_input_header);
+}
+
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {

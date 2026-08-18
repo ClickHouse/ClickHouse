@@ -1,0 +1,123 @@
+-- 1. huge left side, few distinct keys: partial aggregation is pushed below the LEFT JOIN
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      JoinLogical (Broadcast HashJoin )
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 2. same with INNER JOIN
+Expression ((Project names + Projection))
+  MergingAggregated
+    JoinLogical (Local HashJoin  swapped)
+      BuildRuntimeFilter (Build runtime join filter on __table2.key)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (default.t_push_dims)
+      GatherExchange
+        Aggregating
+          Filter
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+-- 3. near-unique keys: pushdown does not pay off, classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 4. disabled by the setting: classic shape
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      Aggregating
+        Expression (Before GROUP BY)
+          JoinLogical (Broadcast HashJoin )
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ParallelRead default.t_push_facts)
+            Expression (Change column names to column identifiers)
+              ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 5a. aggregate with an argument: sum is pushed
+Expression ((Project names + Projection))
+  MergingAggregated
+    GatherExchange
+      JoinLogical (Broadcast HashJoin )
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+        Expression (Change column names to column identifiers)
+          ReadFromMergeTree (ReplicatedRead default.t_push_dims)
+-- 5b. additional GROUP BY key from the right side: still pushed
+Expression ((Project names + Projection))
+  MergingAggregated
+    JoinLogical (Local HashJoin )
+      GatherExchange
+        Aggregating
+          Expression (Change column names to column identifiers)
+            ReadFromMergeTree (ParallelRead default.t_push_facts)
+      Expression (Change column names to column identifiers)
+        ReadFromMergeTree (default.t_push_dims)
+-- 6. execution: count() per key over LEFT JOIN (keys 0-7 match, 8 and 9 do not)
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+8	100
+9	100
+-- 6b. execution: count() per key over INNER JOIN (keys 8 and 9 drop out)
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+-- 7. execution: sum(t1.value) per (t1.key, t2.name) over LEFT JOIN
+0	name_0	49500
+1	name_1	49600
+2	name_2	49700
+3	name_3	49800
+4	name_4	49900
+5	name_5	50000
+6	name_6	50100
+7	name_7	50200
+8		50300
+9		50400
+-- 8. the same executions without the distributed planner must match
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+8	100
+9	100
+0	100
+1	100
+2	100
+3	100
+4	100
+5	100
+6	100
+7	100
+0	name_0	49500
+1	name_1	49600
+2	name_2	49700
+3	name_3	49800
+4	name_4	49900
+5	name_5	50000
+6	name_6	50100
+7	name_7	50200
+8		50300
+9		50400

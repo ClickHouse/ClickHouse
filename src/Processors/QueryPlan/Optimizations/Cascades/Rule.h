@@ -81,6 +81,16 @@ protected:
     GroupExpressionPtr addTwoStageSplit(Memo & memo, const GroupExpressionPtr & source_expression,
         GroupExpressionPtr partial_expression, QueryPlanStepPtr final_step,
         ExpressionProperties final_input_required) const;
+
+    /// Registers an eager-aggregation split of `source_expression` (a final aggregation over
+    /// `join_expression`): the partial aggregation becomes its own group over the join's pushed
+    /// input, the rebuilt join becomes a group over (partial, other input), and `merge_step`
+    /// becomes a logical alternative in the source group. Returns the merge expression, marked
+    /// with this rule so the split is not re-applied to it.
+    GroupExpressionPtr addEagerAggregationSplit(Memo & memo, const GroupExpressionPtr & source_expression,
+        const GroupExpressionPtr & join_expression, size_t pushed_input_index,
+        GroupExpressionPtr partial_expression, GroupExpressionPtr join_alternative_expression,
+        QueryPlanStepPtr merge_step) const;
 };
 
 /// Clones a plan step and returns it as its concrete type; throws if the clone has another type.
