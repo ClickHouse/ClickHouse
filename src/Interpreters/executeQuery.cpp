@@ -1550,6 +1550,13 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (create.isView() && create.select && (create.isParameterizedView() || create.aliases_list))
         return true;
 
+    /// A fresh view definition with query-construction settings is rejected before its SELECT is
+    /// analyzed. `ATTACH` and secondary DDL replays deliberately retain those legacy definitions, but
+    /// the reattach hook only handles initial user queries, so suppress it for the same fresh-create
+    /// case instead of reattaching a source that the rejected statement never touches.
+    if (!create.attach && create.isView() && create.select && hasConstructionSettings(*create.select))
+        return true;
+
     /// `ATTACH ... FROM` validates that its path is inside `user_files` before it substitutes UDFs or
     /// analyzes an `AS` source / `AS SELECT`. Do not reattach a source before a path-rejected statement.
     if (create.attach && create.has_attach_from_path)
@@ -2170,6 +2177,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         /// support detaching tables, so resolving their tables is never needed here.
         const auto database = catalog.tryGetDatabase(table_id.getDatabaseName());
         if (!database || !database->supportsDetachingTables())
+            continue;
+
+        /// `SHOW CREATE DICTIONARY` for a dictionary-only user intentionally masks every failed
+        /// catalog lookup as a missing dictionary. Loading a same-named ordinary table here first
+        /// could expose its startup or metadata exception, even though dictionaries are never
+        /// reattach candidates. Skip the reference before the lookup to preserve that fail-closed
+        /// behavior.
+        if (collected.expected_kind == ExpectedObjectKind::Dictionary)
             continue;
 
         /// If table doesn't store data on disk, the data will be lost after detach.

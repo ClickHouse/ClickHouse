@@ -712,6 +712,10 @@ check_if_not_detached "CREATE VIEW t_reattach_parameterized_view AS SELECT * FRO
 ${CLICKHOUSE_CLIENT} -q "DROP VIEW t_reattach_parameterized_view"
 check_fails_kind_without_detach "CREATE VIEW t_reattach_alias_view (a) AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "BAD_ARGUMENTS"
 
+# Fresh view definitions reject query-construction settings before analyzing their SELECT, so a
+# rejected definition must leave its source attached.
+check_fails_kind_without_detach "CREATE VIEW t_reattach_construction_settings_view AS SELECT * FROM t_reattach_dest_src SETTINGS limit = 1" "t_reattach_dest_src" "NOT_IMPLEMENTED"
+
 # `ATTACH ... FROM` validates its data path before inspecting an `AS` source, so a rejected path must
 # leave that source attached.
 check_fails_kind_without_detach "ATTACH TABLE t_reattach_attach_from_dst FROM '/outside' ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "PATH_ACCESS_DENIED"
