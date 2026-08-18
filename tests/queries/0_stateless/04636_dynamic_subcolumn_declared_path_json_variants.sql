@@ -44,7 +44,7 @@ ORDER BY id
 FORMAT TSVRaw;
 
 -- An incompatible type on a shared declared path is not read as a compatible `JSON` value.
-SELECT id, dynamicElement(d, 'JSON(a UInt64)').a
+SELECT id, dynamicElement(d, 'JSON(a UInt64)')
 FROM test_declared_path_compat
 WHERE id = 6
 FORMAT TSVRaw;
