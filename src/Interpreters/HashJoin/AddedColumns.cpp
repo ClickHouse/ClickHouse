@@ -1,5 +1,7 @@
-#include <Interpreters/HashJoin/AddedColumns.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/NullableUtils.h>
+#include <Interpreters/HashJoin/AddedColumns.h>
 
 namespace DB
 {
@@ -234,11 +236,165 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 }
 
 
+namespace
+{
+
+/// Fills one fixed-width output column straight from the per-block source arrays
+/// `StoredColumnsIndex::resolveEmitColumns` resolved, reading the 8-byte ref words as they are
+/// instead of expanding them to `(StoredBlock *, row)` pairs, and prefetching ahead over the
+/// randomly-accessed source rows - the generic path issues two dependent random loads per row with
+/// no overlap, which measured as the second-largest probe cost. Returns false having written nothing
+/// when the column cannot take this path: a `ColumnReplicated` source, or a source block column of an
+/// unexpected concrete type.
+template <bool from_row_list, typename ColumnT>
+bool gatherColumnFromRefsDirect(
+    IColumn & dst_column,
+    const StoredColumnsIndex::DirectGatherColumn & source,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    size_t rows_to_add)
+{
+    auto * dst = typeid_cast<ColumnT *>(&dst_column);
+    if (!dst)
+        return false;
+
+    /// Prebuilt once per join, because re-resolving it here would cost `blocks x columns` cold
+    /// `typeid_cast` chains per output chunk. All stored blocks share the saved-block structure, so
+    /// one cast of the sample column validates the whole table.
+    if (!source.data_by_block || !source.sample_column || !typeid_cast<const ColumnT *>(source.sample_column))
+        return false;
+
+    using T = typename ColumnT::ValueType;
+    const void * const * sources = source.data_by_block;
+    const auto row_value = [sources](UInt64 ref_word)
+    { return static_cast<const T *>(sources[refWordBlockNo(ref_word)])[refWordRowNo(ref_word)]; };
+
+    auto & dst_data = dst->getData();
+    size_t out = dst_data.size();
+    dst_data.resize(out + rows_to_add);
+    T * __restrict out_data = dst_data.data();
+    const size_t num_refs = row_refs_end - row_refs_begin;
+    /// At 2-3 ns of loop body per row, 32 rows of lead cover a source row's DRAM latency.
+    static constexpr size_t look_ahead = 32;
+    for (size_t i = 0; i < num_refs; ++i)
+    {
+        if (i + look_ahead < num_refs)
+        {
+            const UInt64 ahead = row_refs_begin[i + look_ahead];
+            /// Only an inline word carries a (block, row) address.
+            if (refWordIsInline(ahead))
+                __builtin_prefetch(static_cast<const T *>(sources[refWordBlockNo(ahead)]) + refWordRowNo(ahead));
+        }
+        const UInt64 word = row_refs_begin[i];
+        if constexpr (from_row_list)
+        {
+            if (word == 0)
+                out_data[out++] = T{};
+            else if (refWordIsInline(word))
+                out_data[out++] = row_value(word);
+            else
+                for (const UInt64 ref_word : refsOf(word))
+                    out_data[out++] = row_value(ref_word);
+        }
+        else
+        {
+            chassert(word == 0 || refWordIsInline(word));
+            out_data[out] = word ? row_value(word) : T{};
+            ++out;
+        }
+    }
+    chassert(out == dst_data.size());
+    return true;
+}
+
+/// The admitted types are the fixed-width plain-data ones whose `insertDefaultInto` writes exactly
+/// the zero this gather writes for a zero ref word. A type that overrides it, `Enum*` for instance,
+/// or any non-plain column keeps the generic path.
+template <bool from_row_list>
+bool gatherColumnDirect(
+    const DataTypePtr & type,
+    IColumn & dst_column,
+    const StoredColumnsIndex::DirectGatherColumn & source,
+    const UInt64 * row_refs_begin,
+    const UInt64 * row_refs_end,
+    size_t rows_to_add)
+{
+    switch (type->getTypeId())
+    {
+#define M(TYPE_INDEX, COLUMN_TYPE) \
+    case TypeIndex::TYPE_INDEX: \
+        return gatherColumnFromRefsDirect<from_row_list, COLUMN_TYPE>( \
+            dst_column, source, row_refs_begin, row_refs_end, rows_to_add);
+        M(UInt8, ColumnVector<UInt8>)
+        M(UInt16, ColumnVector<UInt16>)
+        M(UInt32, ColumnVector<UInt32>)
+        M(UInt64, ColumnVector<UInt64>)
+        M(UInt128, ColumnVector<UInt128>)
+        M(UInt256, ColumnVector<UInt256>)
+        M(Int8, ColumnVector<Int8>)
+        M(Int16, ColumnVector<Int16>)
+        M(Int32, ColumnVector<Int32>)
+        M(Int64, ColumnVector<Int64>)
+        M(Int128, ColumnVector<Int128>)
+        M(Int256, ColumnVector<Int256>)
+        M(BFloat16, ColumnVector<BFloat16>)
+        M(Float32, ColumnVector<Float32>)
+        M(Float64, ColumnVector<Float64>)
+        M(Date, ColumnVector<UInt16>)
+        M(Date32, ColumnVector<Int32>)
+        M(DateTime, ColumnVector<UInt32>)
+        M(DateTime64, ColumnDecimal<DateTime64>)
+        M(UUID, ColumnVector<UUID>)
+        M(Decimal32, ColumnDecimal<Decimal32>)
+        M(Decimal64, ColumnDecimal<Decimal64>)
+        M(Decimal128, ColumnDecimal<Decimal128>)
+        M(Decimal256, ColumnDecimal<Decimal256>)
+#undef M
+        default: return false;
+    }
+}
+
+}
+
 template<bool from_row_list>
 void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const
 {
     if (columns.empty())
         return;
+
+    /// A column the fast path cannot take falls through to the generic path below.
+    std::vector<UInt8> gathered_directly;
+    if (use_direct_typed_gather && emit_direct_gather.size() == columns.size())
+    {
+        const size_t rows_to_add = [&]
+        {
+            if constexpr (from_row_list)
+            {
+                size_t rows = 0;
+                for (const UInt64 * w = row_refs_begin; w != row_refs_end; ++w)
+                    rows += *w ? refWordRows(*w) : 1;
+                return rows;
+            }
+            else
+                return static_cast<size_t>(row_refs_end - row_refs_begin);
+        }();
+
+        gathered_directly.resize(columns.size());
+        size_t num_gathered = 0;
+        for (size_t i = 0; i < columns.size(); ++i)
+        {
+            gathered_directly[i] = gatherColumnDirect<from_row_list>(
+                type_name[i].type,
+                *columns[i],
+                emit_direct_gather[i],
+                row_refs_begin,
+                row_refs_end,
+                rows_to_add);
+            num_gathered += gathered_directly[i];
+        }
+        if (num_gathered == columns.size())
+            return;
+    }
 
     ColumnsWithRowNumbers columns_with_row_numbers;
     auto & many_columns = columns_with_row_numbers.columns;
@@ -273,7 +429,8 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     }
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
+        if (gathered_directly.empty() || !gathered_directly[i])
+            columns[i]->fillFromBlocksAndRowNumbers(type_name[i].type, right_indexes[i], columns_with_row_numbers);
     }
 }
 
