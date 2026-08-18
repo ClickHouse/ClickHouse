@@ -33,6 +33,7 @@ cleanup() {
 trap cleanup EXIT
 
 initial_tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask'")
+initial_merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges")
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT merge_task_projection_stage_pause"
 $CLICKHOUSE_CLIENT --query "OPTIMIZE TABLE t_optimize_explicit_partition_slot PARTITION ID 'all' FINAL" &
 optimize_pid=$!
@@ -40,8 +41,9 @@ optimize_pid=$!
 reserved=no
 for _ in {1..300}; do
     merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges WHERE database = currentDatabase() AND table = 't_optimize_explicit_partition_slot'")
+    total_merges=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.merges")
     tasks=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'BackgroundMergesAndMutationsPoolTask'")
-    if [[ "$merges" -eq 1 && "$tasks" -ge $((initial_tasks + 1)) ]]; then
+    if [[ "$merges" -eq 1 && "$tasks" -ge $((initial_tasks + total_merges - initial_merges)) ]]; then
         reserved=yes
         break
     fi
