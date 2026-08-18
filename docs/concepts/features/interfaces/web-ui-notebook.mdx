@@ -22,7 +22,7 @@ Adding the second cell is what activates notebook mode for that tab.
 
 ## Cell headers {#cell-headers}
 
-From two cells on, every cell gets a header showing its position, its kind (`Query` or `Text`), and — for query cells — a status dot: blue while running, green when the query finished, red when it failed.
+From two cells on, every cell gets a header showing its position and its kind, as `1. Query` or `2. Text`. Query cells also carry a status dot while a run is in flight, and a red one if it failed; a finished cell is not marked at all, since its result is right below it.
 
 The header's actions appear when the cell is hovered or focused:
 
@@ -42,9 +42,9 @@ There is only ever one query editor on the page — the full editor with syntax 
 
 A collapsed query cell shows its query on a single line: syntax highlighted, with runs of whitespace (including indentation and line breaks) reduced to one space, and with the tail faded out on the right when it does not fit. It has no background of its own, so a collapsed cell reads as text on the page rather than as another input box.
 
-The `Run` button, the progress line and the copy/download actions move out of the page header and dock under the active cell's query, between it and its result — where the run they describe belongs, and where it is obvious how to run that cell. The row stays in place when the cell collapses, so a running cell keeps showing its progress and a collapsed one can still be re-run.
+The `Run` button, the progress line and the copy/download actions move out of the page header and dock under the query being edited, between it and its result — where the run they describe belongs, and where it is obvious how to run that cell. They belong to the editor, so they appear and disappear with it as the cell is focused and left.
 
-Results are shown more compactly in notebook mode: a smaller font, and a table of at most a quarter of the viewport height. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. Because the header is then at the very top of the table, a column's type hangs just below it, over the first rows, instead of above it as it does on a page-scrolled table.
+Results are shown more compactly in notebook mode: a smaller font, with the cell padding scaled to match, and a table of at most a quarter of the viewport height. Drag the bottom edge of a result to give it more or less room, exactly as the query editor is resized; a text cell's Markdown editor has the same handle. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. Because the header is then at the very top of the table, a column's type hangs just below it, over the first rows, instead of above it as it does on a page-scrolled table.
 
 Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
 

@@ -1798,7 +1798,9 @@
 
         /* Cell chrome only exists once the tab actually became a notebook. */
         .tab-panel:not(.notebook-mode) .cell-header,
-        .tab-panel:not(.notebook-mode) .cell-gutter
+        .tab-panel:not(.notebook-mode) .cell-gutter,
+        /* Only a notebook bounds the result height, so only there is there anything to drag. */
+        .tab-panel:not(.notebook-mode) .cell-result > .textarea-resizer
         {
             display: none;
         }
@@ -1826,8 +1828,6 @@
         .cell-label
         {
             white-space: nowrap;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
             opacity: 0.7;
         }
 
@@ -1843,7 +1843,6 @@
         }
 
         .cell-status.cell-status-running { background-color: var(--link-color); animation: cell-pulse 1s ease-in-out infinite; }
-        .cell-status.cell-status-done    { background-color: var(--element-color-ok); }
         .cell-status.cell-status-error   { background-color: var(--syntax-error); }
 
         @keyframes cell-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
@@ -1895,19 +1894,19 @@
 
         /* In notebook mode the Run / progress / download row is docked under the active cell's
            query, which is both where you would look for it and what separates the query from its
-           result. It stays visible when the cell collapses, so a running cell keeps showing its
-           progress and a collapsed cell can still be re-run. */
+           result. */
         .tab-panel.notebook-mode .cell-run #run_div
         {
             margin-top: 0.25rem;
         }
 
-        /* While the editor is docked in a cell but not focused, it is hidden and the cell shows
-           its collapsed preview instead. The editor keeps its place in the DOM rather than being
-           re-parented on every focus change, so its scroll offset, selection and the completion
-           overlay all survive. */
-        .cell-editor-collapsed > #query_div,
-        .cell-editor-collapsed > #query-params
+        /* A cell whose editor is docked but not focused shows its collapsed preview instead. The
+           editor keeps its place in the DOM rather than being re-parented on every focus change, so
+           its scroll offset, selection and the completion overlay all survive. The Run row goes with
+           it: it belongs to the query being edited, and a notebook being read shows neither. */
+        .cell-collapsed .cell-editor > #query_div,
+        .cell-collapsed .cell-editor > #query-params,
+        .cell-collapsed .cell-run
         {
             display: none;
         }
@@ -1980,12 +1979,11 @@
             --result-max-height: 25vh;
             --result-max-width: 100%;
             --result-overflow: auto;
-            /* -1px, not 0: with `border-collapse: collapse` a cell's borders are painted by the
-               table, not by the cell, so a stuck header does not carry its own top border and the
-               row scrolling underneath shows through that one-pixel line. Pulling the header up by
-               the border width covers it. (The page-scrolled default uses a bigger negative offset
-               for the same reason.) */
-            --result-header-top: -1px;
+            /* The header sticks flush with the table's top edge, keeping its top border in view:
+               the border is drawn on the header cells themselves (see th::before), so it travels
+               with them and there is no need to hide it under a negative offset. */
+            --result-header-top: 0;
+            --result-header-border: var(--border-color);
             /* A column's type hangs below the header rather than above it, where this table's own
                top edge would clip it; the header itself keeps its ordinary height. */
             --result-hint-top: 100%;
@@ -2167,7 +2165,14 @@
         {
             font-size: 180%;
             line-height: 1;
-            padding: 0.1em 2em;
+            /* Square, not a wide bar: a big target that still reads as one button. */
+            box-sizing: border-box;
+            width: 1.8em;
+            height: 1.8em;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .notebook-add-option
@@ -2945,8 +2950,15 @@ class QueryResultElement extends HTMLElement
                     width: fit-content;
                     background-color: var(--element-background-color);
                     margin-top: 0rem;
-                    padding: 0.25rem 0.5rem;
+                    padding: 0.25em 0.5em;   /* scales with the font; see .cell-content */
                     display: none;
+                    /* Bounded and scrolled inside itself in a notebook cell, exactly like a table
+                       (see #data_div), so a cell's height applies whatever the result's format is. */
+                    max-height: var(--result-max-height, none);
+                    max-width: var(--result-max-width, none);
+                    overflow: var(--result-overflow, visible);
+                    scrollbar-width: thin;
+                    scrollbar-color: var(--border-color) transparent;
                 }
 
                 #image
@@ -2977,7 +2989,10 @@ class QueryResultElement extends HTMLElement
                 /* Inner div limits cell height to 3 lines; expands on selection */
                 .cell-content
                 {
-                    padding: 0.25rem 0.5rem;
+                    /* em, not rem: the padding scales with the table's font, so a result shown at a
+                       smaller size (a notebook cell) tightens instead of keeping the padding of a
+                       full-size table. Identical to the old 0.25rem/0.5rem at the default size. */
+                    padding: 0.25em 0.5em;
                     max-height: 3lh;
                     overflow: hidden;
                 }
@@ -3007,14 +3022,39 @@ class QueryResultElement extends HTMLElement
                     text-align: right;
                 }
 
+                /* With border-collapse the TABLE paints the cell borders, and a stuck (sticky)
+                   header does not carry them along: its top border stays behind with the table and
+                   the row scrolling underneath shows through that one-pixel line. Draw the top
+                   border on the cell itself, so it travels with the header and covers the line —
+                   the same reason td.pinned-column draws its side edges with a shadow. Only a
+                   bounded table needs it (its header sticks to the table's own top edge, with
+                   nothing above); elsewhere this strip is transparent and the table's own border
+                   shows as usual. */
+                th::before
+                {
+                    content: '';
+                    position: absolute;
+                    top: -1px;
+                    /* Reaches 1px to the left to cover the vertical border shared with the previous
+                       cell, so the strips of adjacent headers tile into one line. It must NOT reach
+                       past the right edge: that pixel lands outside the table and a bounded table
+                       counts it as scrollable overflow, offering a one-pixel horizontal scroll on a
+                       table that otherwise fits exactly. */
+                    left: -1px;
+                    right: 0;
+                    height: 1px;
+                    background-color: var(--result-header-border, transparent);
+                }
+
                 th
                 {
                     position: sticky;
                     /* Slightly above the scrollport by default, so the table's top border does not
-                       leave a seam against the page. A bounded table sets this to 0 instead: there
-                       the offset would eat into the type-hint clearance above the header. */
+                       leave a seam against the page. A bounded table sets this to 0 instead: it
+                       sticks flush with its own top edge and carries its border along (th::before),
+                       so there is nothing to hide. */
                     top: var(--result-header-top, -0.5rem);
-                    padding: 0.25rem 0.5rem;
+                    padding: 0.25em 0.5em;   /* scales with the font; see .cell-content */
                     text-align: center;
                     background-color: var(--table-header-color);
                     border: 1px solid var(--border-color);
@@ -3360,7 +3400,7 @@ class QueryResultElement extends HTMLElement
                 {
                     width: 1%;
                     text-align: right;
-                    padding: 0.25rem 0.5rem;
+                    padding: 0.25em 0.5em;   /* scales with the font; see .cell-content */
                     background-color: var(--table-header-color);
                     color: var(--misc-text-color);
                 }
@@ -11620,6 +11660,7 @@ function cellRuntimeDefaults() {
         runSlot: null,          /// where the docked Run / progress / download row goes
         resultSlot: null,       /// wrapper holding `multiContainer` and `resultEl`
         resultEl: null,         /// this cell's <query-result>
+        resultHeight: null,     /// height the user dragged this cell's result to, in px, or null
         multiContainer: null,   /// this cell's multi-query results container (created on demand)
         materialized: false,    /// this cell's stored result has been rendered into its slot
         failed: false,          /// the finished query errored (red cross on the tab title, red dot here)
@@ -11683,6 +11724,7 @@ function makeTextCell(text) {
         tab: null,
         text: text || '',
         editing: !text,
+        textHeight: null,      /// height the user dragged this cell's editor to, in px, or null
         el: null,
         headerEl: null,
         bodyEl: null,
@@ -11839,6 +11881,26 @@ function getOrCreateCellDom(tab, cell) {
         resultSlot.className = 'cell-result';
         el.appendChild(resultSlot);
         cell.resultSlot = resultSlot;
+        /// Drag the bottom of the result to give this cell's table more (or less) room, exactly as
+        /// the query editor is resized. The height is this cell's own: `--result-max-height` is what
+        /// bounds the table (see the notebook block in the stylesheet), so overriding it inline on
+        /// the result element both applies and remembers the choice for as long as the cell lives.
+        appendResizer(resultSlot, {
+            measure: () => {
+                for (const el of resultSlot.querySelectorAll('query-result')) {
+                    for (const id of ['data_div', 'data-unparsed']) {
+                        const box = el.shadowRoot && el.shadowRoot.getElementById(id);
+                        if (box && box.offsetParent !== null && box.offsetHeight) return box.offsetHeight;
+                    }
+                }
+                return resultSlot.getBoundingClientRect().height;
+            },
+            apply: (px) => {
+                cell.resultHeight = px;
+                for (const el of resultSlot.querySelectorAll('query-result'))
+                    el.style.setProperty('--result-max-height', px + 'px');
+            },
+        });
 
         const result = document.createElement('query-result');
         result._colorModes = cell.colorModes;
@@ -12015,6 +12077,7 @@ function renderNotebook(tab) {
 
 function renderCell(tab, cell, index) {
     const el = getOrCreateCellDom(tab, cell);
+    applyCellResultHeight(cell);
     el.classList.toggle('cell-active', cell.type === 'query' && activeCell(tab) === cell);
     renderCellHeader(tab, cell, index);
     if (cell.type === 'query') renderQueryCellEditor(tab, cell);
@@ -12029,7 +12092,7 @@ function renderCellHeader(tab, cell, index) {
 
     const label = document.createElement('span');
     label.className = 'cell-label';
-    label.textContent = (index + 1) + ' · ' + (cell.type === 'query' ? 'Query' : 'Text');
+    label.textContent = (index + 1) + '. ' + (cell.type === 'query' ? 'Query' : 'Text');
     header.appendChild(label);
 
     if (cell.type === 'query') {
@@ -12067,15 +12130,22 @@ function renderCellHeader(tab, cell, index) {
            () => deleteCell(tab, cell), last_query_cell);
 }
 
-/// Reflect a query cell's own run state on its status dot.
+/// Re-apply a height the user dragged this cell's result to. A run, a restored snapshot or a
+/// multi-query layout builds fresh result elements in the slot, and each needs the same bound.
+function applyCellResultHeight(cell) {
+    if (!cell.resultHeight || !cell.resultSlot) return;
+    for (const el of cell.resultSlot.querySelectorAll('query-result'))
+        el.style.setProperty('--result-max-height', cell.resultHeight + 'px');
+}
+
+/// Reflect a query cell's own run state on its status dot. A finished cell is marked by nothing at
+/// all — its result is right there below it — so the dot only shows a run in flight or a failure.
 function updateCellStatus(cell) {
     if (!cell.statusEl) return;
     const running = cell.tab && cell.tab.inFlight && cell.tab.runCell === cell;
-    const state = running ? 'running'
-        : cell.progressPhase === 'error' ? 'error'
-        : (cell.result && cell.result.ran) ? 'done' : '';
+    const state = running ? 'running' : cell.progressPhase === 'error' ? 'error' : '';
     cell.statusEl.className = 'cell-status' + (state ? ' cell-status-' + state : '');
-    cell.statusEl.title = running ? 'Running' : state === 'error' ? 'Failed' : state === 'done' ? 'Finished' : '';
+    cell.statusEl.title = running ? 'Running' : state === 'error' ? 'Failed' : '';
 }
 
 /// The active query cell hosts the real editor; the rest show their query collapsed to one
@@ -12087,7 +12157,7 @@ function renderQueryCellEditor(tab, cell) {
     /// one once focus has left it, shows the collapsed query. Outside notebook mode the editor is
     /// never collapsed — a lone cell has nothing to collapse into.
     const expanded = is_active && (!notebookMode(tab) || tab.editorExpanded);
-    slot.classList.toggle('cell-editor-collapsed', is_active && !expanded);
+    cell.el.classList.toggle('cell-collapsed', is_active && !expanded);
     let preview = slot.querySelector('.query-preview');
     if (expanded) {
         if (preview) preview.remove();
@@ -12170,11 +12240,21 @@ function renderTextCell(tab, cell) {
         cell.backdrop = backdrop;
 
         /// The text area grows with its content: a notebook cell should be exactly as tall as
-        /// the text in it, with no inner scrollbar of its own.
+        /// the text in it, with no inner scrollbar of its own. Once the user has dragged it to a
+        /// height of their own, that wins and the box scrolls instead.
         const autoGrow = () => {
+            if (cell.textHeight) {
+                textarea.style.height = cell.textHeight + 'px';
+                textarea.style.overflowY = 'auto';
+                return;
+            }
             textarea.style.height = 'auto';
             textarea.style.height = textarea.scrollHeight + 'px';
         };
+        appendResizer(wrapper, {
+            measure: () => textarea.offsetHeight,
+            apply: (px) => { cell.textHeight = px; autoGrow(); },
+        });
         const repaint = () => {
             backdrop.innerHTML = highlightMarkdown(textarea.value);
             autoGrow();
@@ -14731,10 +14811,11 @@ document.addEventListener('click', e => {
 });
 
 
-function appendTextareaResizer() {
-    const queryDiv = document.getElementById('query_div');
-    const textarea = document.getElementById('query');
-
+/// Append a drag handle to the bottom of `host` that resizes something by height. `measure`
+/// returns the current height in pixels when the drag starts, `apply` is given the new one; a
+/// `min` keeps the target from being dragged shut. Used by the query editor, a notebook text
+/// cell's Markdown editor and a notebook cell's result table, so all three resize the same way.
+function appendResizer(host, { measure, apply, min = 24 }) {
     let drag_state = {
         elem: null,
         is_dragging: false,
@@ -14745,12 +14826,12 @@ function appendTextareaResizer() {
     const start = (e) => {
         if (e.button !== 0) { return; }
         /// Keep the focus where it is. The grip is a plain div, so pressing it would otherwise
-        /// blur the text area to `<body>` — and in notebook mode losing focus collapses the cell
-        /// (see `collapseEditor`), which would swallow the editor mid-drag.
+        /// blur the focused element to `<body>` — and in notebook mode the editor losing focus
+        /// collapses the cell (see `collapseEditor`), which would swallow the grip mid-drag.
         e.preventDefault();
 
         drag_state.offset_y = e.clientY;
-        drag_state.offset_height = textarea.offsetHeight;
+        drag_state.offset_height = measure();
         drag_state.is_dragging = true;
         drag_state.elem = e.target;
         drag_state.elem.classList.add('textarea-resizer-dragging');
@@ -14764,9 +14845,7 @@ function appendTextareaResizer() {
         if (!drag_state.is_dragging) { return; }
 
         const dy = e.clientY - drag_state.offset_y;
-        const newHeight = drag_state.offset_height + dy;
-
-        textarea.style.height = `${newHeight}px`;
+        apply(Math.max(min, drag_state.offset_height + dy));
     }
 
     const stop = (e) => {
@@ -14783,7 +14862,16 @@ function appendTextareaResizer() {
     resizer.addEventListener('pointerdown', start);
     resizer.addEventListener('touchstart', (e) => e.preventDefault());
 
-    queryDiv.appendChild(resizer);
+    host.appendChild(resizer);
+    return resizer;
+}
+
+function appendTextareaResizer() {
+    const textarea = document.getElementById('query');
+    appendResizer(document.getElementById('query_div'), {
+        measure: () => textarea.offsetHeight,
+        apply: (px) => { textarea.style.height = px + 'px'; },
+    });
 }
 
 function resizeQueryAreaIfSlightlyOverflowing()
