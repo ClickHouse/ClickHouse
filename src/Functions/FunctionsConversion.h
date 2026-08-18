@@ -4502,6 +4502,12 @@ struct ToDateMonotonicity
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
         auto which = WhichDataType(type);
+        /// Converting Time/Time64 to Date drops at zero. Negative values are converted through
+        /// a signed day number and wrap when represented as Date, so this conversion is not
+        /// monotonic with the default date_time_overflow_behavior = 'ignore'.
+        if (std::is_same_v<T, DataTypeDate> && which.isTimeOrTime64())
+            return {};
+
         if (which.isDateOrDate32() || which.isTime() || which.isTime64() || which.isDateTime() || which.isDateTime64() || which.isInt8() || which.isInt16() || which.isUInt8()
             || which.isUInt16())
         {
