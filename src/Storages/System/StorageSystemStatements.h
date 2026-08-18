@@ -5,7 +5,6 @@
 namespace DB
 {
 
-/// Exposes the embedded documentation of all SQL statements of ClickHouse, see `StatementFactory`.
 class StorageSystemStatements final : public IStorageSystemOneBlock
 {
 protected:

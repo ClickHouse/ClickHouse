@@ -32,8 +32,8 @@ SELECT count() = 0
 FROM system.statements
 WHERE parent_statement != '' AND parent_statement NOT IN (SELECT name FROM system.statements);
 
--- Related information is exposed as an array of statement names.
-SELECT related_information
+-- The related statements are exposed as an array of statement names.
+SELECT related
 FROM system.statements
 WHERE name = 'UNDROP';
 
@@ -41,7 +41,7 @@ WHERE name = 'UNDROP';
 SELECT count() = 0
 FROM
 (
-    SELECT arrayJoin(related_information) AS related_statement
+    SELECT arrayJoin(related) AS related_statement
     FROM system.statements
 )
 WHERE related_statement NOT IN (SELECT name FROM system.statements);
