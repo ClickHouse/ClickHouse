@@ -2974,19 +2974,24 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
+
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
     /// array-of-indices result: the result itself is an Array and cannot be wrapped in
-    /// Nullable. Handle nullable scalar indices here as well, so disabling that default
-    /// implementation does not change the established Array and Map semantics.
-    if (arguments[1].type->isNullable())
+    /// Nullable. It is therefore handled by executeQBit below. For the established Array
+    /// and Map paths, retain the default convention for a non-nullable result: evaluate
+    /// the function on the nested index without turning the result into Nullable.
+    if (!is_qbit && arguments[1].type->isNullable())
     {
         auto nested_arguments = arguments;
         nested_arguments[1] = columnGetNested(arguments[1]);
-        return wrapInNullable(executeImpl(nested_arguments, removeNullable(result_type), input_rows_count),
-                              arguments, result_type, input_rows_count);
+        auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
+        return result_type->isNullable()
+            ? wrapInNullable(result, arguments, result_type, input_rows_count)
+            : result;
     }
 
-    if (checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get()))
+    if (is_qbit)
         return executeQBit(arguments, input_rows_count);
 
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
