@@ -8,6 +8,7 @@
 #include <Parsers/ParserCreateIndexQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -123,7 +124,7 @@ bool ParserHypotheticalIndexQuery::parseImpl(Pos & pos, ASTPtr & node, Expected 
 namespace DB
 {
 
-REGISTER_STATEMENTS(HypotheticalIndex)
+void registerStatementHypotheticalIndex(StatementFactory & factory)
 {
     factory.registerStatement("HYPOTHETICAL INDEX",
     {

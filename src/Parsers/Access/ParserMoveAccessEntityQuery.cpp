@@ -7,6 +7,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/range.h>
 
 
@@ -97,7 +98,7 @@ bool ParserMoveAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 namespace DB
 {
 
-REGISTER_STATEMENTS(MoveAccessEntity)
+void registerStatementMoveAccessEntity(StatementFactory & factory)
 {
     factory.registerStatement("MOVE",
     {

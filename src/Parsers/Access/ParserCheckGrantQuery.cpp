@@ -5,6 +5,7 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -33,7 +34,7 @@ bool ParserCheckGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-REGISTER_STATEMENTS(CheckGrant)
+void registerStatementCheckGrant(StatementFactory & factory)
 {
     factory.registerStatement("CHECK GRANT",
     {

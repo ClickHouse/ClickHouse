@@ -21,6 +21,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -817,7 +818,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Select)
+void registerStatementSelect(StatementFactory & factory)
 {
     factory.registerStatement("SELECT",
     {

@@ -12,6 +12,7 @@
 #include <Parsers/ParserDataType.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -391,7 +392,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 namespace DB
 {
 
-REGISTER_STATEMENTS(CreateFunction)
+void registerStatementCreateFunction(StatementFactory & factory)
 {
     factory.registerStatement("CREATE FUNCTION",
     {

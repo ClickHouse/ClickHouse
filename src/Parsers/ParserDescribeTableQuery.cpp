@@ -9,6 +9,7 @@
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -169,7 +170,7 @@ bool ParserDescribeTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 namespace DB
 {
 
-REGISTER_STATEMENTS(DescribeTable)
+void registerStatementDescribeTable(StatementFactory & factory)
 {
     factory.registerStatement("DESCRIBE TABLE",
     {

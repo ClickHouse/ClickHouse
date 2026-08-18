@@ -27,6 +27,7 @@
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -2088,7 +2089,7 @@ bool ParserCreateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Create)
+void registerStatementCreate(StatementFactory & factory)
 {
     factory.registerStatement("CREATE",
     {

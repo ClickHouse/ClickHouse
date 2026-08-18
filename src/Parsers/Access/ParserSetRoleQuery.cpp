@@ -4,6 +4,7 @@
 #include <Parsers/Access/ParserRolesOrUsersSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -89,7 +90,7 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 namespace DB
 {
 
-REGISTER_STATEMENTS(SetRole)
+void registerStatementSetRole(StatementFactory & factory)
 {
     factory.registerStatement("SET ROLE",
     {

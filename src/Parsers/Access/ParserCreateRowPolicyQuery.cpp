@@ -10,6 +10,7 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Access/Common/RowPolicyDefs.h>
 #include <base/range.h>
 #include <boost/container/flat_set.hpp>
@@ -320,7 +321,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 namespace DB
 {
 
-REGISTER_STATEMENTS(RowPolicy)
+void registerStatementRowPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE ROW POLICY",
     {

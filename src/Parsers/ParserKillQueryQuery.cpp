@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -65,7 +66,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 namespace DB
 {
 
-REGISTER_STATEMENTS(KillQuery)
+void registerStatementKillQuery(StatementFactory & factory)
 {
     factory.registerStatement("KILL",
     {

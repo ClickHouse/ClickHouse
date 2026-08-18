@@ -46,6 +46,7 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -2806,7 +2807,7 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(ColumnsTransformers)
+void registerStatementColumnsTransformers(StatementFactory & factory)
 {
     factory.registerStatement("APPLY modifier",
     {

@@ -17,6 +17,7 @@
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ParserUnionQueryElement.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <optional>
 
@@ -580,7 +581,7 @@ bool parsePipeOperators(IParser::Pos & pos, ASTPtr & query, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(PipeOperators)
+void registerStatementPipeOperators(StatementFactory & factory)
 {
     factory.registerStatement("PIPE OPERATORS",
     {

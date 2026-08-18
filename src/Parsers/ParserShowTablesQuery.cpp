@@ -8,6 +8,7 @@
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -214,7 +215,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-REGISTER_STATEMENTS(Show)
+void registerStatementShow(StatementFactory & factory)
 {
     factory.registerStatement("SHOW",
     {

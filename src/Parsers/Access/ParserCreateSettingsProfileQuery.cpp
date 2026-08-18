@@ -10,6 +10,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -194,7 +195,7 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 namespace DB
 {
 
-REGISTER_STATEMENTS(SettingsProfile)
+void registerStatementSettingsProfile(StatementFactory & factory)
 {
     factory.registerStatement("CREATE SETTINGS PROFILE",
     {

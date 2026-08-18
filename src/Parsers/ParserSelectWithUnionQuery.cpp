@@ -4,6 +4,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -49,7 +50,7 @@ bool ParserSelectWithUnionQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 namespace DB
 {
 
-REGISTER_STATEMENTS(Union)
+void registerStatementUnion(StatementFactory & factory)
 {
     factory.registerStatement("UNION",
     {

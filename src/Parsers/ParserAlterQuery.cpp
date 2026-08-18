@@ -14,6 +14,7 @@
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 
 
@@ -1259,7 +1260,7 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Alter)
+void registerStatementAlter(StatementFactory & factory)
 {
     factory.registerStatement("ALTER",
     {

@@ -13,6 +13,7 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/range.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
@@ -411,7 +412,7 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 namespace DB
 {
 
-REGISTER_STATEMENTS(Quota)
+void registerStatementQuota(StatementFactory & factory)
 {
     factory.registerStatement("CREATE QUOTA",
     {

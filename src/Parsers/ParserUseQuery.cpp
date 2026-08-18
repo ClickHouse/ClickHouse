@@ -4,6 +4,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -56,7 +57,7 @@ bool ParserUseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Use)
+void registerStatementUse(StatementFactory & factory)
 {
     factory.registerStatement("USE",
     {

@@ -37,6 +37,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionOperatorPrettyLookup.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <fmt/core.h>
 
@@ -4092,7 +4093,7 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
 namespace DB
 {
 
-REGISTER_STATEMENTS(In)
+void registerStatementIn(StatementFactory & factory)
 {
     factory.registerStatement("IN",
     {

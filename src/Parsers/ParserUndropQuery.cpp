@@ -4,6 +4,7 @@
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Core/UUID.h>
 
 
@@ -84,7 +85,7 @@ bool ParserUndropQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Undrop)
+void registerStatementUndrop(StatementFactory & factory)
 {
     factory.registerStatement("UNDROP",
     {

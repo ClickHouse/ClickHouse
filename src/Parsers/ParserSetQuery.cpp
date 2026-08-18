@@ -9,6 +9,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/FieldFromAST.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Core/Names.h>
 #include <IO/ReadBufferFromString.h>
@@ -417,7 +418,7 @@ bool ParserSetQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Set)
+void registerStatementSet(StatementFactory & factory)
 {
     factory.registerStatement("SET",
     {

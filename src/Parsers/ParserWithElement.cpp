@@ -8,6 +8,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ParserWithElement.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -93,7 +94,7 @@ bool ParserWithElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(With)
+void registerStatementWith(StatementFactory & factory)
 {
     factory.registerStatement("WITH",
     {

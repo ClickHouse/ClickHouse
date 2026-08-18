@@ -7,6 +7,7 @@
 #include <Parsers/ParserPartition.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -97,7 +98,7 @@ bool ParserCheckQuery::parseCheckDatabase(Pos & pos, ASTPtr & node, Expected & e
 namespace DB
 {
 
-REGISTER_STATEMENTS(Check)
+void registerStatementCheck(StatementFactory & factory)
 {
     factory.registerStatement("CHECK TABLE",
     {

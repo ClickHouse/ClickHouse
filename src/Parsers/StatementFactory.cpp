@@ -39,18 +39,4 @@ Documentation StatementFactory::getDocumentation(const String & name) const
     return {};
 }
 
-StatementRegisterMap & StatementRegisterMap::instance()
-{
-    static StatementRegisterMap map;
-    return map;
-}
-
-void registerStatements()
-{
-    auto & factory = StatementFactory::instance();
-
-    for (const auto & [_, reg] : StatementRegisterMap::instance())
-        reg(factory);
-}
-
 }

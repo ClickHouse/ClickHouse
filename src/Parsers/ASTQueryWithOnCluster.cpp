@@ -3,6 +3,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
@@ -40,7 +41,7 @@ void ASTQueryWithOnCluster::formatOnCluster(WriteBuffer & ostr, const IAST::Form
 namespace DB
 {
 
-REGISTER_STATEMENTS(OnCluster)
+void registerStatementOnCluster(StatementFactory & factory)
 {
     factory.registerStatement("ON CLUSTER",
     {

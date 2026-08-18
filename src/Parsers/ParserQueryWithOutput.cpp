@@ -32,6 +32,7 @@
 #include <Parsers/Access/ParserShowGrantsQuery.h>
 #include <Parsers/Access/ParserShowPrivilegesQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 
@@ -266,7 +267,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-REGISTER_STATEMENTS(QueryWithOutput)
+void registerStatementQueryWithOutput(StatementFactory & factory)
 {
     factory.registerStatement("FORMAT",
     {

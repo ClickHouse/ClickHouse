@@ -6,6 +6,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserPartition.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -101,7 +102,7 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Update)
+void registerStatementUpdate(StatementFactory & factory)
 {
     factory.registerStatement("UPDATE",
     {

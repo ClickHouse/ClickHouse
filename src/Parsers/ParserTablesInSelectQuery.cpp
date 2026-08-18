@@ -14,6 +14,7 @@
 #include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Core/Joins.h>
 
 
@@ -396,7 +397,7 @@ bool ParserTablesInSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 namespace DB
 {
 
-REGISTER_STATEMENTS(TablesInSelect)
+void registerStatementTablesInSelect(StatementFactory & factory)
 {
     factory.registerStatement("FROM",
     {

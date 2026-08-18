@@ -3,6 +3,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -148,7 +149,7 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 namespace DB
 {
 
-REGISTER_STATEMENTS(Exists)
+void registerStatementExists(StatementFactory & factory)
 {
     factory.registerStatement("EXISTS",
     {

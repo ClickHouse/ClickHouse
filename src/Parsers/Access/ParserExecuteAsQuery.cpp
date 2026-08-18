@@ -6,6 +6,7 @@
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -81,7 +82,7 @@ bool ParserExecuteAsQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
 namespace DB
 {
 
-REGISTER_STATEMENTS(ExecuteAs)
+void registerStatementExecuteAs(StatementFactory & factory)
 {
     factory.registerStatement("EXECUTE AS",
     {

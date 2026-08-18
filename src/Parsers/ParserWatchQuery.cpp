@@ -14,6 +14,7 @@ limitations under the License. */
 #include <Parsers/ParserWatchQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -81,7 +82,7 @@ bool ParserWatchQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Watch)
+void registerStatementWatch(StatementFactory & factory)
 {
     factory.registerStatement("WATCH",
     {

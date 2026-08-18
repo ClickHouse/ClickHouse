@@ -9,6 +9,7 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -213,7 +214,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 namespace DB
 {
 
-REGISTER_STATEMENTS(Grant)
+void registerStatementGrant(StatementFactory & factory)
 {
     factory.registerStatement("GRANT",
     {

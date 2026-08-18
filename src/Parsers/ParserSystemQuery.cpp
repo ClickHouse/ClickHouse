@@ -9,6 +9,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <Poco/String.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
@@ -1137,7 +1138,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
 namespace DB
 {
 
-REGISTER_STATEMENTS(System)
+void registerStatementSystem(StatementFactory & factory)
 {
     factory.registerStatement("SYSTEM",
     {

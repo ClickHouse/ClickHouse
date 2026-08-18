@@ -6,6 +6,7 @@
 #include <Parsers/ASTAlterNamedCollectionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 namespace DB
 {
@@ -102,7 +103,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 namespace DB
 {
 
-REGISTER_STATEMENTS(AlterNamedCollection)
+void registerStatementAlterNamedCollection(StatementFactory & factory)
 {
     factory.registerStatement("ALTER NAMED COLLECTION",
     {

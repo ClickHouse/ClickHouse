@@ -18,6 +18,7 @@
 #include <Parsers/ParserStringAndSubstitution.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -769,7 +770,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 namespace DB
 {
 
-REGISTER_STATEMENTS(User)
+void registerStatementUser(StatementFactory & factory)
 {
     factory.registerStatement("CREATE USER",
     {
