@@ -291,6 +291,9 @@ class ChangedQuery:
     stat_threshold: float
     direction: str
     query_display_name: str
+    # Per-query bar CI used to flag this query; None on shards predating the
+    # column, where CHANGED_THRESHOLD_FLOOR applies.
+    changed_threshold: Optional[float] = None
     # Filled in later, after we've collected all changes across arches:
     # which arches CI flagged this same (test, query_index) on. Useful so
     # the report can say "flagged on ARM only" vs "flagged on both".
@@ -302,7 +305,15 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
 
     Layout (compare.sh report()):
         metric_name, left, right, diff, times_change, stat_threshold,
-        test, query_index, query_display_name
+        test, query_index, query_display_name,
+        changed_threshold, unstable_threshold
+
+    The two trailing threshold columns are the per-query thresholds compare.sh
+    computes in `report_thresholds` (the 0.15/0.25 floors raised by the
+    historical p99 and the per-test `<max_ignored_relative_change>`), exported
+    so consumers can classify with the same effective bar as the CI gate
+    instead of a floor constant. They are appended at the end, so older shards
+    that predate them simply have fewer columns.
     """
     for line in text.splitlines():
         if not line:
@@ -320,6 +331,10 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
             qi = int(cols[7])
         except ValueError:
             continue
+        try:
+            changed_thr = float(cols[9]) if len(cols) > 9 else None
+        except ValueError:
+            changed_thr = None
         yield {
             "metric": cols[0],
             "left": left_v,
@@ -330,6 +345,7 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
             "test": cols[6],
             "query_index": qi,
             "query_display_name": cols[8] if len(cols) > 8 else "",
+            "changed_threshold": changed_thr,
         }
 
 
@@ -404,6 +420,7 @@ def find_changed_queries(shards: list[PerfShard]) -> list[ChangedQuery]:
                     stat_threshold=row["stat_threshold"],
                     direction=direction,
                     query_display_name=row["query_display_name"],
+                    changed_threshold=row.get("changed_threshold"),
                 )
             )
     return changed
@@ -834,6 +851,28 @@ def seed_user_files(repo_root: Path, side_db: Path) -> None:
         if link.is_symlink() or link.exists():
             link.unlink()
         link.symlink_to(f.resolve())
+
+
+def cleanup_user_files(side_dbs: list[Path]) -> None:
+    """Remove everything a test wrote into user_files, keeping the seeded
+    fixture symlinks.
+
+    Tests write there with `INSERT INTO FUNCTION file(...)` (parquet_read,
+    json_type_parsing, insert_values_with_expressions, ...) and `drop_query`
+    only drops tables, so without this a later XML can read a file an earlier
+    one left behind and the results become order-dependent. CI runs the same
+    cleanup after every test."""
+    for side_db in side_dbs:
+        user_files = side_db / "user_files"
+        if not user_files.is_dir():
+            continue
+        for entry in user_files.iterdir():
+            if entry.is_symlink():
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink()
 
 
 def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
@@ -1381,6 +1420,19 @@ def parse_perf_diffs(raw_path: Path) -> dict[int, dict]:
 # ---------------------------------------------------------------------------
 
 
+# compare.sh flags a query when `abs(diff) > changed_threshold and abs(diff) >=
+# stat_threshold`, where changed_threshold is per query: the 0.15 floor raised
+# by the historical p99 and the per-test threshold. The floor is deliberately
+# above run-to-run noise - micro benchmarks swing 10-15% between two binaries
+# from machine noise and code-layout artifacts alone - so a local rerun must
+# clear the same bar before it can claim to have reproduced anything.
+CHANGED_THRESHOLD_FLOOR = 0.15
+# Stands in for CI's `abs(diff) >= stat_threshold`: perf.py reports a p-value
+# rather than the randomization threshold compare.sh computes downstream, and
+# 0.05 is the cutoff perf.py itself uses to decide a difference is real.
+LOCAL_PVALUE_CUTOFF = 0.05
+
+
 def fmt_diff(diff: float) -> str:
     sign = "+" if diff > 0 else ""
     return f"{sign}{diff * 100:.1f}%"
@@ -1444,7 +1496,12 @@ def print_report(
             same_direction = (l_rel > 0 and ci_dir == "slower") or (
                 l_rel < 0 and ci_dir == "faster"
             )
-            confirmed_here = same_direction and abs(l_rel) > 0.10
+            bar = cq.changed_threshold or CHANGED_THRESHOLD_FLOOR
+            confirmed_here = (
+                same_direction
+                and abs(l_rel) > bar
+                and l_pv <= LOCAL_PVALUE_CUTOFF
+            )
             if confirmed_here:
                 if local_arch in archs:
                     verdict = f"CONFIRMED {ci_dir}"
@@ -1457,12 +1514,18 @@ def print_report(
                     )
                 confirmed += 1
             else:
+                if not same_direction:
+                    why = "opposite direction"
+                elif abs(l_rel) <= bar:
+                    why = f"|Δ| {abs(l_rel):.1%} <= threshold {bar:.0%}"
+                else:
+                    why = f"p={l_pv:.3f} > {LOCAL_PVALUE_CUTOFF}"
                 if local_arch in archs:
-                    verdict = f"NOT REPRODUCED ({ci_dir} in CI)"
+                    verdict = f"NOT REPRODUCED ({ci_dir} in CI; {why})"
                 else:
                     verdict = (
                         f"NOT REPRODUCED on {local_arch} "
-                        f"({ci_dir} on {'/'.join(archs)} in CI)"
+                        f"({ci_dir} on {'/'.join(archs)} in CI; {why})"
                     )
                 not_reproduced += 1
         print(
@@ -1846,10 +1909,12 @@ def main() -> int:
             wait_for_merges([left_h, right_h])
 
         # Run perf.py per test
+        side_dbs = [work_dir / side / "db" for side in ("left", "right")]
         for test, qs in sorted(by_test.items()):
             if test not in test_files:
                 continue
             run_perf_test(repo_root, work_dir, test_files[test], sorted(qs), args.runs)
+            cleanup_user_files(side_dbs)
 
         # Collect results
         local_results: dict[tuple[str, int], dict] = {}

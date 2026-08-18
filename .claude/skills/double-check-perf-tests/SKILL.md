@@ -131,9 +131,21 @@ The script prints a table. For each changed query show:
 - Local old / new / Δ / p-value (from `perf.py`)
 - Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, or `no local data`
 
-A query counts as `CONFIRMED` when the local rerun shows the same direction
-*and* the magnitude is > 10%. Anything else is `NOT REPRODUCED` — typically
-flaky CI measurements or queries whose variance straddles the threshold.
+A query counts as `CONFIRMED` when the local rerun shows the same direction,
+clears the **same per-query threshold CI used to flag it**, and is
+statistically significant (`p <= 0.05`, the cutoff `perf.py` itself uses).
+Anything else is `NOT REPRODUCED`, and the verdict says which of the three
+conditions failed.
+
+The threshold is not a fixed number: `compare.sh` computes it per query as
+the 0.15 floor raised by the query's historical p99 and the test's
+`<max_ignored_relative_change>`, and exports it as the `changed_threshold`
+column of `all-query-metrics.tsv`. A historically noisy query therefore has
+to clear a much larger bar than a stable one. Using a flat bar instead would
+let the rerun call a change `CONFIRMED` that CI's own gate would not have
+flagged — the floor alone is deliberately above the 10–15% that micro
+benchmarks swing between two binaries from machine noise and code layout.
+Shards predating the column fall back to the 0.15 floor.
 
 When summarising back to the user, separate the confirmed regressions /
 improvements from the not-reproduced cases. Confirmed regressions are the
@@ -202,6 +214,13 @@ treated as CI noise.
   gives up the hardlink disk saving for those tables. When a confirmed CI
   regression does not reproduce and the PR touches anything on the write
   path, rerun with `--populate` before calling it noise.
+- Between test XMLs, everything a test wrote into `user_files` is removed
+  from both sides while the seeded fixture symlinks are kept — the same
+  cleanup CI runs after every test. Tests write there with `INSERT INTO
+  FUNCTION file(...)` (`parquet_read`, `json_type_parsing`,
+  `insert_values_with_expressions`, ...) and `drop_query` only drops tables,
+  so without it a later XML can read what an earlier one left behind and a
+  multi-test rerun becomes order-dependent.
 - The skill does **not** attempt to reproduce flamegraphs or profiling —
   for that, use the `perf-report` skill on the same PR.
 - Architecture mismatch is partial: if a PR has only ARM shards and you're
