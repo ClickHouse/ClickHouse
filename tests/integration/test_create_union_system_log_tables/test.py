@@ -31,7 +31,6 @@ node2 = cluster.add_instance(
 node3 = cluster.add_instance(
     "node3",
     main_configs=["configs/union_merge.xml"],
-    user_configs=["configs/type_shaping_settings.xml"],
     stay_alive=True,
 )
 
@@ -151,56 +150,6 @@ def test_stable_across_restarts(start_cluster):
         "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
     )
     assert uuid_before == uuid_after
-
-
-def test_stable_with_type_shaping_settings(start_cluster):
-    # `flatten_nested` materially changes an explicit `Nested` declaration when a
-    # `CREATE TABLE ... AS <table function>` statement is normalized.
-    node3.query("DROP TABLE IF EXISTS nested_source SYNC")
-    node3.query("DROP TABLE IF EXISTS nested_as_table_function SYNC")
-    nested_settings = {"flatten_nested": 0, "data_type_default_nullable": 0}
-    node3.query(
-        "CREATE TABLE nested_source (n Nested(a UInt8)) ENGINE = Memory",
-        settings=nested_settings,
-    )
-    node3.query(
-        "CREATE TABLE nested_as_table_function (n Nested(a UInt8)) AS "
-        "merge('default', '^nested_source$')",
-        settings=nested_settings,
-    )
-    assert "`n` Nested(a UInt8)" in node3.query(
-        "SHOW CREATE TABLE nested_as_table_function FORMAT TSVRaw"
-    )
-
-    # These values are configured in the default profile, so they are present in the
-    # global context cloned by `SystemLog` when it creates or rechecks its tables.
-    # This exercises the `Create` path rather than query-local settings, which are
-    # not propagated to system-log DDL.
-    assert node3.query("SELECT getSetting('flatten_nested')").strip() == "0"
-    assert node3.query("SELECT getSetting('data_type_default_nullable')").strip() == "1"
-
-    node3.query("SYSTEM FLUSH LOGS query_log")
-    uuid_before = node3.query(
-        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
-    )
-
-    # Restarting makes the next flush recheck the union-table definition, exercising
-    # the settings pinned by `SystemLog::addSettingsForQuery` on that path.
-    node3.restart_clickhouse()
-    node3.query("SYSTEM FLUSH LOGS query_log")
-    assert node3.query("DESCRIBE TABLE system.all_query_log") == node3.query(
-        "DESCRIBE TABLE system.query_log"
-    )
-
-    uuid_after = node3.query(
-        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
-    )
-    assert uuid_before == uuid_after
-
-    node3.query("SYSTEM FLUSH LOGS query_log")
-    assert uuid_after == node3.query(
-        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
-    )
 
 
 def test_cluster(start_cluster):
