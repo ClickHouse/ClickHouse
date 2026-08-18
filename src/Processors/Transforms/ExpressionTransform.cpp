@@ -66,6 +66,17 @@ ConvertingTransform::ConvertingTransform(SharedHeader header_, ExpressionActions
 {
 }
 
+void ConvertingTransform::onCancel() noexcept
+{
+    ExceptionKeepingTransform::onCancel();
+    const auto & nodes = expression->getNodes();
+    for (const auto & node : nodes)
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+            node.function->cancelExecution();
+    }
+}
+
 void ConvertingTransform::onConsume(Chunk chunk)
 {
     size_t num_rows = chunk.getNumRows();
