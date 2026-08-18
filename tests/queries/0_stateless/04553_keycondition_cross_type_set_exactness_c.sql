@@ -127,14 +127,14 @@ SELECT 'H1 cross-signedness has declines', count() > 0 FROM (EXPLAIN indexes = 1
 -- boundary: identical types keep pruning
 SELECT 'H1 same-type has result',
     (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b)));
-SELECT 'H1 same-type has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'H1 same-type has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE NOT has([tuple(toUInt32(1), toUInt32(1))], (a, b))) WHERE explain ILIKE '%Granules: 1/2%';
 -- boundary: width-only pair is correct at runtime (Field collapses widths); it loses pruning here
 SELECT 'H1 width-only has result',
     (SELECT count() FROM h1 WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b))) = (SELECT count() FROM h1o WHERE NOT has([tuple(toUInt8(1), toUInt8(1))], (a, b)));
 -- boundary: composite NOT IN over the same pair stays exact, because runtime `IN` casts the key
 SELECT 'H1 composite IN result',
     (SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) = (SELECT count() FROM h1o WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1))));
-SELECT 'H1 composite IN prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) WHERE explain ILIKE '%element set%';
+SELECT 'H1 composite IN prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1 WHERE (a, b) NOT IN (SELECT (toInt32(1), toInt32(1)))) WHERE explain ILIKE '%Granules: 1/2%';
 -- boundary: SCALAR has() is unaffected and must keep pruning
 
 DROP TABLE IF EXISTS h1s; DROP TABLE IF EXISTS h1so;
@@ -146,7 +146,7 @@ SELECT 'H1 scalar has result',
     (SELECT count() FROM h1s WHERE has([toInt32(1)], k)) = (SELECT count() FROM h1so WHERE has([toInt32(1)], k)),
     (SELECT count() FROM h1s WHERE NOT has([toInt32(1)], k)) = (SELECT count() FROM h1so WHERE NOT has([toInt32(1)], k));
 SELECT 'H1 scalar has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1s WHERE has([toInt32(1)], k)) WHERE explain ILIKE '%element set%';
-SELECT 'H1 scalar NOT has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1s WHERE NOT has([toInt32(1)], k)) WHERE explain ILIKE '%element set%';
+SELECT 'H1 scalar NOT has prunes', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM h1s WHERE NOT has([toInt32(1)], k)) WHERE explain ILIKE '%Parts: 2/3%';
 -- boundary: a composite KEY EXPRESSION under a SCALAR has() is not a composite comparison at all
 DROP TABLE IF EXISTS h1x;
 CREATE TABLE h1x (p String) ENGINE = MergeTree ORDER BY reverse(tuple(reverse(p), hex(p))) SETTINGS index_granularity = 1;
