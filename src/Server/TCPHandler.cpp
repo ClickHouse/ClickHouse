@@ -804,7 +804,7 @@ void TCPHandler::runImpl()
                     CurrentMetrics::Increment callback_metric_increment(CurrentMetrics::MergeTreeAllRangesAnnouncementsSent);
 
                     /// Stands in for a follower that is still planning while the initiator gives up on it.
-                    fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(5000); });
+                    fiu_do_on(FailPoints::parallel_replicas_delay_announcement, { sleepForMilliseconds(3000); });
 
                     std::lock_guard lock(*callback_mutex);
 
