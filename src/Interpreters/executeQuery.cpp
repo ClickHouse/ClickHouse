@@ -2210,6 +2210,9 @@ static BlockIO executeQueryImpl(
     /// Don't limit the size of internal queries or distributed subquery.
     if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
+    size_t max_query_size_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : max_query_size;
+    size_t max_parser_depth_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : settings[Setting::max_parser_depth];
+    size_t max_parser_backtracks_for_query_text = flags.parse_server_owned_query_without_limits ? 0 : settings[Setting::max_parser_backtracks];
 
     String query;
     String query_for_logging;
@@ -2233,21 +2236,21 @@ static BlockIO executeQueryImpl(
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for Kusto Query Engine (KQL) is disabled (turn on setting 'allow_experimental_kusto_dialect')");
             ParserKQLStatement parser(end, settings[Setting::allow_settings_after_format_in_insert]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseKQLQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::prql && !internal)
         {
             if (!settings[Setting::allow_experimental_prql_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
-            ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            ParserPRQLQuery parser(max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::promql && !internal)
         {
             if (!settings[Setting::allow_experimental_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'allow_experimental_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
         {
@@ -2256,13 +2259,13 @@ static BlockIO executeQueryImpl(
             /// is off.  This lets users recover from misconfigured profiles
             /// (e.g. `SET dialect = 'clickhouse'`) without being locked out.
             ParserPolyglotQuery parser(
-                max_query_size,
-                settings[Setting::max_parser_depth],
-                settings[Setting::max_parser_backtracks],
+                max_query_size_for_query_text,
+                max_parser_depth_for_query_text,
+                max_parser_backtracks_for_query_text,
                 settings[Setting::polyglot_dialect],
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
         {
@@ -2271,10 +2274,10 @@ static BlockIO executeQueryImpl(
             /// applied only to the JSON-deserialization branch — otherwise a session with
             /// `dialect = clickhouse_json` and `enable_json_ast_dialect = 0`
             /// cannot execute `SET dialect = 'clickhouse'` to recover.
-            if (isClickHouseJSONSetEscape(begin, end, settings[Setting::max_query_size]))
+            if (isClickHouseJSONSetEscape(begin, end, max_query_size_for_query_text))
             {
                 ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
-                out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
             }
             else
             {
@@ -2283,7 +2286,7 @@ static BlockIO executeQueryImpl(
                         "Support for clickhouse_json dialect is disabled "
                         "(turn on setting 'enable_json_ast_dialect')");
 
-                if (max_query_size != 0 && static_cast<size_t>(end - begin) > max_query_size)
+                if (max_query_size_for_query_text != 0 && static_cast<size_t>(end - begin) > max_query_size_for_query_text)
                     throw Exception(ErrorCodes::SYNTAX_ERROR,
                         "Max query size exceeded (can be increased with the `max_query_size` setting)");
 
@@ -2312,7 +2315,7 @@ static BlockIO executeQueryImpl(
         {
             ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
             /// TODO: parser should fail early when max_query_size limit is reached.
-            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size_for_query_text, max_parser_depth_for_query_text, max_parser_backtracks_for_query_text);
 
 #ifndef NDEBUG
             try

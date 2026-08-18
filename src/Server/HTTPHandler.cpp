@@ -439,22 +439,6 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
-    if (has_server_owned_query)
-    {
-        /// A predefined handler executes server-owned stored text. Parse it with unlimited depth and backtracks
-        /// (`0` disables the limit), so it stays invokable when request settings lower `max_parser_depth` or
-        /// `max_parser_backtracks`.
-        /// The client controls only the typed query parameters, never the query text, and could raise
-        /// these settings per-request anyway (they are changeable under `readonly = 2`); `parseQuery`
-        /// still guards against stack overflow via `checkStackSize`.
-        ///
-        /// This runs after the request settings above on purpose: the request names settings freely, so
-        /// applying it earlier would let `?max_parser_depth=1` lower the limit again and break a handler
-        /// the server itself accepted.
-        context->setSetting("max_parser_depth", Field(0));
-        context->setSetting("max_parser_backtracks", Field(0));
-    }
-
     const auto & settings = context->getSettingsRef();
 
     /// === URL path parsing happens after settings are applied ===
@@ -962,13 +946,6 @@ void HTTPHandler::processQuery(
     const String & query = final_query;
     std::unique_ptr<ReadBuffer> in_param = std::make_unique<ReadBufferFromString>(query);
 
-    /// The same reasoning as for the parser limits above: server-owned stored text must not be cut short by the
-    /// default `max_query_size` or by a request setting. Raise the limit to fit the text instead of disabling it:
-    /// `executeQuery` also uses `max_query_size` to decide how much of the request stream to read ahead in search
-    /// of the query text, where `0` would make it read a single byte.
-    if (has_server_owned_query && settings[Setting::max_query_size] <= query.size())
-        context->setSetting("max_query_size", Field(query.size() + 1));
-
     used_output.out_holder->setSendProgress(settings[Setting::send_progress_in_http_headers]);
     used_output.out_holder->setSendProgressInterval(settings[Setting::http_headers_progress_interval_ms]);
 
@@ -1344,6 +1321,7 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    query_flags.parse_server_owned_query_without_limits = has_server_owned_query;
 
     executeQuery(
         std::move(in),

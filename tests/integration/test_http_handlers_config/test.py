@@ -271,6 +271,15 @@ def test_predefined_query_handler():
         assert response.status_code == 200, response.content
         assert response.content == b"1\n"
 
+        # The stored query is parsed without limits, but request-controlled construction settings still use the
+        # caller's limits. Otherwise a predefined handler could let a request bypass parser restrictions.
+        response = cluster.instance.http_request(
+            "test_predefined_handler_request_parser_limits?max_parser_depth=1&filter=(((((1)))))",
+            method="GET",
+        )
+        assert response.status_code == 500
+        assert b"Maximum parse depth" in response.content
+
         # The handler is parsed while the server starts and when its configuration is reloaded. Its stored
         # query exceeds the default parser depth, so both paths must keep accepting it.
         cluster.instance.query("SYSTEM RELOAD CONFIG")
