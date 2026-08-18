@@ -8,10 +8,20 @@
 namespace DB
 {
 
-void Group::addLogicalExpression(GroupExpressionPtr group_expression)
+bool Group::addLogicalExpression(GroupExpressionPtr group_expression)
 {
+    /// Drop only a structurally-equal duplicate; a mere fingerprint hash collision keeps both.
+    auto & same_fingerprint = logical_expressions_by_fingerprint[group_expression->fingerprint()];
+    for (const auto * existing : same_fingerprint)
+    {
+        if (existing->structurallyEqualTo(*group_expression))
+            return false;
+    }
+
     group_expression->group_id = group_id;
+    same_fingerprint.push_back(group_expression.get());
     logical_expressions.push_back(std::move(group_expression));
+    return true;
 }
 
 bool Group::addPhysicalExpression(GroupExpressionPtr group_expression)

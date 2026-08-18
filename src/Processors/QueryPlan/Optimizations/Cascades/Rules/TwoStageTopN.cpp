@@ -76,6 +76,8 @@ std::vector<GroupExpressionPtr> TwoStageTopN::applyImpl(GroupExpressionPtr expre
     merge_input_required.distribution.node_count = 1;
     auto final_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(limit_step), std::move(merge_input_required));
 
+    if (!final_expr)
+        return {};
     return {final_expr};
 }
 

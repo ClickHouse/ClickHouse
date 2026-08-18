@@ -344,6 +344,8 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
     auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});
 
+    if (!merge_expr)
+        return {};
     return {merge_expr};
 }
 

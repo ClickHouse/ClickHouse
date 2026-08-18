@@ -20,7 +20,11 @@ GroupExpressionPtr IOptimizationRule::addTwoStageSplit(Memo & memo, const GroupE
     auto final_expression = std::make_shared<GroupExpression>(std::move(final_step));
     final_expression->inputs = {{partial_group_id, std::move(final_input_required)}};
     final_expression->setApplied(*this, {});
-    memo.getGroup(source_expression->group_id)->addLogicalExpression(final_expression);
+    /// The partial group is new, so the final expression is a duplicate only when the same
+    /// split was already registered. Return nothing then, so the dropped expression is not
+    /// explored.
+    if (!memo.getGroup(source_expression->group_id)->addLogicalExpression(final_expression))
+        return nullptr;
     return final_expression;
 }
 
