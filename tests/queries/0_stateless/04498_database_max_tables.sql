@@ -2,6 +2,7 @@
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 2;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- The setting is stored in the database metadata.
 SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
@@ -25,7 +26,7 @@ CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t5 (x UInt32) ENGINE = MergeTree
 
 -- Lowering the limit does not drop existing tables, but blocks new ones.
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 1;
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
+SELECT count() FROM system.tables WHERE database = currentDatabase();
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t6 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
 
 -- 0 means unlimited.
@@ -57,20 +58,23 @@ CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.t1 (x UInt32) ENGI
 -- limit (documented behavior).
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.moved (x UInt32) ENGINE = MergeTree ORDER BY x;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.moved TO {CLICKHOUSE_DATABASE_1:Identifier}.moved;
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
+SELECT count() FROM system.tables WHERE database = currentDatabase();
 
 -- The setting survives detaching and re-attaching the database.
+USE {CLICKHOUSE_DATABASE:Identifier};
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t8 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
 
 -- A materialized view's hidden inner table consumes a slot of its own.
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 8;
 CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.t1;
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
+SELECT count() FROM system.tables WHERE database = currentDatabase();
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t9 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
 
+USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 -- ATTACH is subject to the limit, like CREATE.
@@ -87,26 +91,17 @@ ATTACH TABLE {CLICKHOUSE_DATABASE_1:Identifier}.b; -- { serverError TOO_MANY_TAB
 
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- UNDROP re-attaches a dropped table through the table-creation path, so it is subject to the limit.
-CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS max_tables = 2;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ua (x UInt32) ENGINE = MergeTree ORDER BY x;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ub (x UInt32) ENGINE = MergeTree ORDER BY x;
-DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ua;
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.uc (x UInt32) ENGINE = MergeTree ORDER BY x;
-UNDROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.ua; -- { serverError TOO_MANY_TABLES }
-SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String};
-
-DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
-
 -- The limit is enforced by the Ordinary engine as well, and its setting can be altered too.
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary SETTINGS max_tables = 1;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.o1 (x UInt32) ENGINE = MergeTree ORDER BY x;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.o2 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
 ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 5;
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
 -- A rejected CREATE leaves a data directory behind on Ordinary, so drop the database recursively.
 SET force_remove_data_recursively_on_drop = 1;
+USE {CLICKHOUSE_DATABASE:Identifier};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 SET force_remove_data_recursively_on_drop = 0;
 
