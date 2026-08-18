@@ -22,7 +22,7 @@ SELECT 'udf', sorting_key FROM system.tables WHERE database = currentDatabase() 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.t_qualified_key (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 SELECT 'qualified', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_qualified_key';
 
--- `AS` materializes the source definition during CREATE normalization. Rewrite that copied key too.
+-- AS materializes the source definition during CREATE normalization. Rewrite that copied key too.
 CREATE TABLE t_as_source (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 CREATE TABLE t_as_key AS t_as_source;
 SELECT 'as', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_as_key';
