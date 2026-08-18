@@ -535,6 +535,21 @@ ReadFromMergeTree::ReadFromMergeTree(
     setStepDescription(description, context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
+
+    /// The query can arrive with `input_order_info` already set by the initial planner. In
+    /// particular, `optimizeUseNormalProjection` constructs a replacement read step after
+    /// selecting an ordered projection. Disable row limits at construction time as well as in
+    /// `requestReadingInOrder`, so this step cannot retain limits prepared before the ordered
+    /// read was established.
+    if (reader_settings.read_in_order && query_info.storage_limits)
+    {
+        auto in_order_storage_limits = std::const_pointer_cast<StorageLimitsList>(query_info.storage_limits);
+        for (auto & limits : *in_order_storage_limits)
+        {
+            limits.local_limits.size_limits.max_rows = 0;
+            limits.leaf_limits.max_rows = 0;
+        }
+    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
