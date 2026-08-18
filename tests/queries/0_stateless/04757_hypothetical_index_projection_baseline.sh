@@ -49,4 +49,10 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS force_data_skipping_indices = 'hi_b';
 " 2>&1 | grep -m1 -oE 'INDEX_NOT_USED'
 
+echo "--- but not when skip indexes are off, since a real read ignores the setting ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS use_skip_indexes = 0, force_data_skipping_indices = 'hi_b';
+" > /dev/null 2>&1 && echo "no exception" || echo "FAILED"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_baseline;"

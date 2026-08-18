@@ -14,3 +14,5 @@ reason: The query is answered without reading the table\'s parts, so an index on
 NOT_IMPLEMENTED
 --- a forced index still fails when nothing is read ---
 INDEX_NOT_USED
+--- but not when skip indexes are off, since a real read ignores the setting ---
+no exception

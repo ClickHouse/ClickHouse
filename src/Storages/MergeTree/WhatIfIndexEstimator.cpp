@@ -347,15 +347,20 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             /// The plan answers the query without reading the table's parts at all: a trivial
             /// count, a minmax_count or exact-count projection, or a projection that selected no
             /// ranges. No index on those parts would be read
-            /// Nothing can satisfy a forced name here, so throw like a real read would
-            for (const auto & forced_string : forced_strings)
+            /// a forced name can never be satisfied here, so throw like a real read would, but
+            /// only when skip indexes are on, matching the scanning path below
+            const auto & effective_settings = plan_context->getSettingsRef();
+            if (effective_settings[Setting::use_skip_indexes])
             {
-                auto forced = parseIdentifiersOrStringLiteralsToSet(forced_string, local_context->getSettingsRef());
-                if (!forced.empty())
-                    throw Exception(
-                        ErrorCodes::INDEX_NOT_USED,
-                        "Index {} is not used and setting 'force_data_skipping_indices' contains it",
-                        backQuoteIfNeed(*forced.begin()));
+                for (const auto & forced_string : forced_strings)
+                {
+                    auto forced = parseIdentifiersOrStringLiteralsToSet(forced_string, effective_settings);
+                    if (!forced.empty())
+                        throw Exception(
+                            ErrorCodes::INDEX_NOT_USED,
+                            "Index {} is not used and setting 'force_data_skipping_indices' contains it",
+                            backQuoteIfNeed(*forced.begin()));
+                }
             }
 
             return buildResultWithoutScan(
