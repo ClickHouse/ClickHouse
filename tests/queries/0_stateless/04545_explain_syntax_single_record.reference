@@ -1,0 +1,3 @@
+1	1
+1	0
+SELECT number\nFROM numbers(10)\nWHERE greater(number, 1)\nGROUP BY number\nORDER BY number ASC
