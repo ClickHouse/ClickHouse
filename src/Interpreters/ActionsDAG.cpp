@@ -10,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/validateColumnType.h>
+#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/materialize.h>
@@ -469,8 +470,7 @@ const ActionsDAG::Node & ActionsDAG::addArrayJoin(const Node & child, std::strin
 const ActionsDAG::Node & ActionsDAG::addFunction(
     const FunctionOverloadResolverPtr & function,
     NodeRawConstPtrs children,
-    std::string result_name,
-    bool is_planner_only_filter)
+    std::string result_name)
 {
     auto [arguments, all_const] = getFunctionArguments(children);
 
@@ -499,8 +499,7 @@ const ActionsDAG::Node & ActionsDAG::addFunction(
         std::move(arguments),
         std::move(result_name),
         function_base->getResultType(),
-        all_const,
-        is_planner_only_filter);
+        all_const);
 }
 
 const ActionsDAG::Node & ActionsDAG::addFunction(
@@ -556,15 +555,13 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     ColumnsWithTypeAndName arguments,
     std::string result_name,
     DataTypePtr result_type,
-    bool all_const,
-    bool is_planner_only_filter)
+    bool all_const)
 {
     size_t num_arguments = children.size();
 
     Node node;
     node.type = ActionType::FUNCTION;
     node.children = std::move(children);
-    node.is_planner_only_filter = is_planner_only_filter;
 
     node.function_base = function_base;
     node.result_type = result_type;
@@ -790,7 +787,7 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
 bool ActionsDAG::hasPlannerOnlyFilters() const
 {
     for (const auto & node : nodes)
-        if (node.is_planner_only_filter)
+        if (node.type == ActionType::FUNCTION && node.function_base && isPlannerOnlyFilterFunction(*node.function_base))
             return true;
 
     return false;

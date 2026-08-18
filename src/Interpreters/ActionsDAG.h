@@ -113,8 +113,6 @@ public:
         /// `column` so the query still executes, but plan dumps must render `[HIDDEN]` instead of it.
         /// Not part of the node identity, so it is intentionally excluded from `updateHash`.
         bool is_masked_secret = false;
-        /// Marks a planner-only filter (added by `deriveNotNullFiltersFromJoin`).
-        bool is_planner_only_filter = false;
         /// For COLUMN node and propagated constants. Always ColumnConst of size 0.
         ColumnConstPtr column;
 
@@ -187,8 +185,7 @@ public:
     const Node & addFunction(
             const FunctionOverloadResolverPtr & function,
             NodeRawConstPtrs children,
-            std::string result_name,
-            bool is_planner_only_filter = false);
+            std::string result_name);
     const Node & addFunction(
         const FunctionNode & function,
         NodeRawConstPtrs children,
@@ -572,8 +569,7 @@ private:
         ColumnsWithTypeAndName arguments,
         std::string result_name,
         DataTypePtr result_type,
-        bool all_const,
-        bool is_planner_only_filter = false);
+        bool all_const);
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});

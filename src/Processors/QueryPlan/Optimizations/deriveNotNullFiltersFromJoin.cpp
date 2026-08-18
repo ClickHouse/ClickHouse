@@ -81,7 +81,7 @@ bool tryAddDerivedNotNullFilter(QueryPlan::Node & join_node, size_t child_index,
             continue;
 
         const auto & is_not_null_node = dag.addFunction(is_not_null, {input}, {});
-        conjuncts.push_back(&dag.addFunction(derived_filter_marker, {&is_not_null_node}, {}, /*is_planner_only_filter=*/true));
+        conjuncts.push_back(&dag.addFunction(derived_filter_marker, {&is_not_null_node}, {}));
     }
 
     if (conjuncts.empty())

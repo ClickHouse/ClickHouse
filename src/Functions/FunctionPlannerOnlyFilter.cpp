@@ -42,4 +42,10 @@ FunctionOverloadResolverPtr createInternalFunctionPlannerOnlyFilterResolver()
     return std::make_shared<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionPlannerOnlyFilter>());
 }
 
+bool isPlannerOnlyFilterFunction(const IFunctionBase & function)
+{
+    const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(&function);
+    return adaptor && typeid_cast<const FunctionPlannerOnlyFilter *>(adaptor->getFunction().get());
+}
+
 }
