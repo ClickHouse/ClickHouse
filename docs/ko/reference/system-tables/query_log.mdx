@@ -26,8 +26,31 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 
 `system.query_log` 테이블은 두 종류의 쿼리를 기록합니다.
 
-1. 클라이언트가 직접 실행한 초기 쿼리입니다.
-2. 다른 쿼리에 의해 시작된 자식 쿼리입니다(분산 쿼리 실행용). 이러한 쿼리 유형에서는 부모 쿼리에 대한 정보가 `initial_*` 컬럼에 표시됩니다.
+1. 초기(최상위) 쿼리입니다.
+2. 분산 실행용 쿼리와 뷰 평가 등의 내부 서브쿼리를 포함하여 다른 쿼리에서 시작된 자식 쿼리입니다. 이러한 쿼리의 원래 초기 쿼리 정보는 `initial_*` 컬럼에 표시됩니다.
+
+<Tip>
+  **기본적으로 초기 쿼리 필터링**
+
+  일반적으로 `system.query_log`를 쿼리할 때마다 `is_initial_query = 1`을 추가하십시오. 이렇게 하면 자식 쿼리가 제외되어 개별 처리 단계가 초기 쿼리와 별도로 계산되지 않습니다. 이 필터가 쿼리가 클라이언트에 의해 제출되었음을 의미하지는 않습니다. 서버 내부 작업도 초기 쿼리일 수 있기 때문입니다.
+
+  ID를 유지하는 자식 쿼리와 함께 초기 쿼리를 추적해야 할 경우에는 대신 `initial_query_id`를 사용하십시오. 초기 쿼리는 `initial_query_id`와 `query_id`에 동일한 값을 가지며, 같은 체인의 자식 쿼리는 초기 쿼리의 `initial_query_id`를 유지하면서 자체 `query_id`를 가집니다. 초기 쿼리에서 생성된 모든 작업이 이런 방식으로 연관되는 것은 아닙니다. 원격 [`QueryRunner`](/ko/reference/engines/table-engines/special/query-runner#cluster-mode) 디스패치처럼 서버에서 디스패치된 작업은 새 `initial_query_id`로 새 초기 쿼리 체인을 시작할 수 있습니다.
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  연관된 자식 쿼리가 다른 노드에서 실행될 수 있는 경우, 예를 들어 [`clusterAllReplicas`](/ko/reference/functions/table-functions/cluster)를 사용하여 모든 노드에서 `system.query_log`를 쿼리하십시오.
+</Tip>
 
 각 쿼리는 쿼리 상태(`type` 컬럼 참조)에 따라 `query_log` 테이블에 1개 또는 2개의 행을 생성합니다.
 
@@ -74,19 +97,19 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 * `exception_code` ([Int32](/ko/reference/data-types/int-uint)) — 예외 코드입니다.
 * `exception` ([String](/ko/reference/data-types/string)) — 예외 메시지.
 * `stack_trace` ([String](/ko/reference/data-types/string)) — 스택 트레이스. 쿼리가 성공적으로 완료되면 빈 문자열입니다.
-* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리 유형입니다. 가능한 값: 1 — 클라이언트가 시작한 쿼리입니다. 0 — 분산 쿼리 실행의 일부로 다른 쿼리가 시작한 쿼리입니다.
+* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 초기 쿼리인지 여부입니다. 가능한 값: 1 — 초기(최상위) 쿼리, 0 — 분산 실행용 쿼리와 내부 서브쿼리를 포함하여 다른 쿼리에서 시작된 자식 쿼리입니다.
 * `connection_address` ([IPv6](/ko/reference/data-types/ipv6)) — 연결이 이루어진 클라이언트의 IP 주소입니다. 프록시를 통해 연결한 경우, 이 값은 프록시의 주소입니다.
 * `connection_port` ([UInt16](/ko/reference/data-types/int-uint)) — 연결이 설정된 클라이언트 포트입니다. 프록시를 통해 연결된 경우에는 프록시의 포트입니다.
 * `user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 현재 쿼리를 실행한 사용자의 이름입니다.
 * `query_id` ([String](/ko/reference/data-types/string)) — 쿼리 ID.
 * `address` ([IPv6](/ko/reference/data-types/ipv6)) — 쿼리에 사용된 IP 주소입니다. 프록시를 통해 연결되었고 `auth_use_forwarded_address`가 설정된 경우, 이 값은 프록시 주소가 아니라 클라이언트 주소입니다.
 * `port` ([UInt16](/ko/reference/data-types/int-uint)) — 쿼리에 사용된 클라이언트 포트입니다. 프록시를 통해 연결되고 `auth_use_forwarded_address`가 설정된 경우, 이 값은 프록시 포트가 아니라 클라이언트 포트입니다.
-* `initial_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 초기 쿼리(분산 쿼리 실행 시)를 실행한 사용자의 이름입니다.
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 초기 쿼리 ID(분산 쿼리 실행 시 사용)입니다.
-* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 상위 쿼리가 실행된 IP 주소입니다.
-* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 상위 쿼리를 전송할 때 사용된 클라이언트 포트입니다.
-* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 초기 쿼리 시작 시각(분산 쿼리 실행 시).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 마이크로초 단위 정밀도의 초기 쿼리 시작 시간입니다(분산 쿼리 실행 시).
+* `initial_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 동일한 쿼리 체인에서 초기 쿼리를 실행한 사용자의 이름입니다.
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에 있는 초기 쿼리 ID입니다.
+* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 동일한 쿼리 체인에서 초기 쿼리가 시작된 IP 주소입니다.
+* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 동일한 쿼리 체인에서 초기 쿼리가 시작된 클라이언트 포트입니다.
+* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 동일한 쿼리 체인에 있는 초기 쿼리의 시작 시간입니다.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 동일한 쿼리 체인에 있는 초기 쿼리의 시작 시간이며, 마이크로초 정밀도를 가집니다.
 * `authenticated_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 세션에서 인증을 거친 사용자의 이름입니다.
 * `interface` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 시작된 접속 인터페이스입니다. 가능한 값: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 보안 인터페이스를 통해 실행되었는지를 나타내는 플래그
@@ -149,7 +172,13 @@ ClickHouse는 테이블의 데이터를 자동으로 삭제하지 않습니다. 
 **기본 예시**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text
