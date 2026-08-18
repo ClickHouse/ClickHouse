@@ -1,4 +1,4 @@
--- Tags: zookeeper, no-parallel, no-shared-merge-tree, no-flaky-check
+-- Tags: zookeeper, no-parallel, no-shared-merge-tree
 -- no-shared-merge-tree: doesn't support databases without UUID
 
 drop database if exists test_1164_memory;

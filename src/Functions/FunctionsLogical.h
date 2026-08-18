@@ -5,6 +5,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/IFunction.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
 
 
@@ -184,7 +185,7 @@ struct NotImpl
 };
 
 template <typename Impl, typename Name>
-class FunctionAnyArityLogical final : public IFunction
+class FunctionAnyArityLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -232,7 +233,7 @@ public:
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & values, const DataTypePtr & result_type) const override
     {
-        chassert(!values.empty());
+        assert(!values.empty());
 
         auto & b = static_cast<llvm::IRBuilder<> &>(builder);
         if constexpr (Impl::specialImplementationForNulls())
@@ -272,7 +273,7 @@ public:
 
 
 template <template <typename> class Impl, typename Name>
-class FunctionUnaryLogical final : public IFunction
+class FunctionUnaryLogical : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

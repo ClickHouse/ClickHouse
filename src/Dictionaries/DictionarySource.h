@@ -3,6 +3,7 @@
 #include <memory>
 #include <Columns/IColumn_fwd.h>
 #include <Core/Names.h>
+#include <Core/NamesAndTypes.h>
 #include <Core/Types.h>
 #include <Dictionaries/IDictionary.h>
 #include <boost/noncopyable.hpp>

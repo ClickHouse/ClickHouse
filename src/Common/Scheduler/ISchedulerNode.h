@@ -54,7 +54,7 @@ struct SchedulerNodeInfo
     union {
         size_t idx;
         void * ptr;
-    } parent{};
+    } parent;
 
     SchedulerNodeInfo() = default;
 

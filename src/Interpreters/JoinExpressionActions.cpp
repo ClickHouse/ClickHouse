@@ -13,7 +13,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
-#include <Functions/ComparisonNames.h>
+#include <Functions/FunctionsComparison.h>
 #include <Common/logger_useful.h>
 #include <fmt/ranges.h>
 
@@ -152,7 +152,7 @@ JoinExpressionActions::JoinExpressionActions(const Block & left_header, const Bl
 
 using NodeRawPtr = JoinExpressionActions::NodeRawPtr;
 
-static BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
+BitSet getExpressionSourcesImpl(std::unordered_map<NodeRawPtr, BitSet> & expression_sources, const JoinActionRef & action)
 {
     const auto * node = action.getNode();
     if (auto it = expression_sources.find(node); it != expression_sources.end())
@@ -347,7 +347,7 @@ void JoinActionRef::setSourceRelations(const BitSet & source_relations) const
     }
 }
 
-static std::string operatorToFunctionName(JoinConditionOperator op)
+std::string operatorToFunctionName(JoinConditionOperator op)
 {
     switch (op)
     {
@@ -364,7 +364,7 @@ static std::string operatorToFunctionName(JoinConditionOperator op)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Illegal value for JoinConditionOperator: {}", static_cast<Int32>(op));
 }
 
-static JoinConditionOperator functionNameToOperator(std::string_view name)
+JoinConditionOperator functionNameToOperator(std::string_view name)
 {
     using UnderlyingType = std::underlying_type_t<JoinConditionOperator>;
     for (UnderlyingType i = 0; i < static_cast<UnderlyingType>(JoinConditionOperator::Unknown); ++i)
@@ -434,14 +434,6 @@ std::vector<JoinActionRef> JoinActionRef::getArguments(bool recursive) const
     for (const auto & child : node->children)
         arguments.emplace_back(child, data_ptr);
     return arguments;
-}
-
-JoinActionRef JoinActionRef::resolveAliases() const
-{
-    const auto * node = getNode();
-    while (node->type == ActionsDAG::ActionType::ALIAS)
-        node = node->children.at(0);
-    return JoinActionRef(node, getData());
 }
 
 std::shared_ptr<JoinExpressionActions::Data> JoinActionRef::getData() const

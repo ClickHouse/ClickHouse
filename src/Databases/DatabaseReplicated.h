@@ -33,10 +33,10 @@ using ZooKeeperMetadataTransactionPtr = std::shared_ptr<ZooKeeperMetadataTransac
 
 struct ReplicaInfo
 {
-    bool is_active{};
-    bool unsynced_after_recovery{};
+    bool is_active;
+    bool unsynced_after_recovery;
     std::optional<UInt32> replication_lag;
-    UInt64 recovery_time{};
+    UInt64 recovery_time;
 };
 
 struct ReplicasInfo
@@ -56,15 +56,15 @@ public:
     /** For the system table database replicas. */
     struct ReplicatedStatus
     {
-        bool is_readonly{};
-        bool is_session_expired{};
-        UInt32 max_log_ptr{};
+        bool is_readonly;
+        bool is_session_expired;
+        UInt32 max_log_ptr;
         String replica_name;
         String replica_path;
         String zookeeper_path;
         String shard_name;
-        UInt32 log_ptr{};
-        UInt32 total_replicas{};
+        UInt32 log_ptr;
+        UInt32 total_replicas;
         String zookeeper_exception;
     };
 
@@ -105,11 +105,6 @@ public:
     private:
         DatabaseReplicated & db;
     };
-
-    /// Called when SYSTEM RESTART REPLICA fails after detaching a table.
-    /// Adjusts tables_metadata_digest to account for the table being absent
-    /// from the in-memory tables map, preventing false "Digest does not match" assertions.
-    void adjustDigestOnTableLostFromRestart(const String & table_name);
 
     bool hasReplicationThread() const override { return true; }
 

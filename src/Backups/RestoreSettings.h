@@ -171,14 +171,6 @@ struct RestoreSettings
 
     static RestoreSettings fromRestoreQuery(const ASTBackupQuery & query);
     void copySettingsToQuery(ASTBackupQuery & query) const;
-
-    /// Returns only the non-restore-specific settings from a `RESTORE` query.
-    /// In contrast to `fromRestoreQuery`, this helper does not touch the
-    /// `base_backup_name` AST node, so it is safe to call before
-    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
-    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
-    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
 };
 
 }

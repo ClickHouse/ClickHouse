@@ -2,7 +2,6 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Common/ThreadStatus.h>
 #include <Common/setThreadName.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Common/Stopwatch.h>
 #include <base/scope_guard.h>
 

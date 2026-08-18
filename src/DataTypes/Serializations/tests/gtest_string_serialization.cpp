@@ -1,6 +1,6 @@
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
-#include <DataTypes/DataTypeString.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadStatus.h>
@@ -28,10 +28,8 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
     auto src_column = ColumnString::create();
     src_column->insertMany("foobar", rows);
 
-    auto type_string = std::make_shared<DataTypeString>();
-
     {
-        auto serialization = type_string->getDefaultSerialization();
+        auto serialization = std::make_shared<SerializationString>();
         ISerialization::SerializeBinaryBulkSettings settings;
         ISerialization::SerializeBinaryBulkStatePtr state;
         settings.position_independent_encoding = false;
@@ -58,6 +56,7 @@ TEST(StringSerialization, IncorrectStateAfterMemoryLimitExceeded)
         total_memory_tracker.setFaultProbability(0);
     };
 
+    auto type_string = std::make_shared<DataTypeString>();
     size_t non_empty_result = 0;
     while (memory_limit_exceeded_errors < 10 || non_empty_result < 10)
     {

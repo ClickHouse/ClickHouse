@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnIndex.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 class Collator;
 
@@ -157,7 +156,7 @@ public:
     void protect() override;
     ColumnPtr replicate(const Offsets & offsets) const override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
-    void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const override;
+    WeakHash32 getWeakHash32() const override;
     void updateHashFast(SipHash & hash) const override;
     void getExtremes(Field & min, Field & max, size_t start, size_t end) const override;
 
@@ -185,10 +184,10 @@ public:
 
     bool hasDynamicStructure() const override { return nested_column->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
-    void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
+    void chooseDynamicStructureForMerge(const Columns & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const Columns & source_columns) override;
 
     const ColumnIndex & getIndexes() const { return indexes; }
     ColumnIndex & getIndexes() { return indexes; }
@@ -212,7 +211,7 @@ private:
     /// we create empty ColumnReplicated and do insertFrom/insertRangeFrom/insertManyFrom from
     /// source columns.
     /// Mapping is the following: id -> (source_index -> inserted_index).
-    UnorderedMapWithMemoryTracking<UInt64, UnorderedMapWithMemoryTracking<size_t, size_t>> insertion_cache;
+    std::unordered_map<UInt64, std::unordered_map<size_t, size_t>> insertion_cache;
 
     /// Global counter used to create a unique id for each ColumnReplicated instance.
     static std::atomic<UInt64> global_id_counter;

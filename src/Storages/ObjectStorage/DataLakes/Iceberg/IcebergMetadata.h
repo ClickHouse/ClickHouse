@@ -32,29 +32,10 @@
 namespace DB
 {
 
-struct IcebergFileRecord
-{
-    Int64 snapshot_id = 0;
-    Iceberg::FileContentType content{};
-    String file_path;
-    String file_format;
-    Int64 record_count = 0;
-    Int64 file_size_in_bytes = 0;
-    String partition;
-    Int32 schema_id = 0;
-    Int64 sequence_number = 0;
-    std::optional<Int32> sort_order_id;
-    std::map<Int32, Int64> null_value_counts;
-    std::map<Int32, Int64> column_sizes;
-    std::map<Int32, Int64> value_counts;
-    std::vector<Int32> equality_ids;
-};
-
 class IcebergMetadata : public IDataLakeMetadata
 {
 public:
     using IcebergHistory = std::vector<Iceberg::IcebergHistoryRecord>;
-    using IcebergFiles = std::vector<IcebergFileRecord>;
 
     static constexpr auto name = "Iceberg";
 
@@ -63,8 +44,8 @@ public:
     IcebergMetadata(
         ObjectStoragePtr object_storage_,
         StorageObjectStorageConfigurationPtr configuration_,
-        Iceberg::PersistentTableComponents && persistent_components_,
-        ContextPtr context_);
+        const ContextPtr & context_,
+        IcebergMetadataFilesCachePtr cache_ptr);
 
     ~IcebergMetadata() override;
 
@@ -97,25 +78,13 @@ public:
     std::shared_ptr<const ActionsDAG> getSchemaTransformer(ContextPtr local_context, ObjectInfoPtr object_info) const override;
 
     static Int32 parseTableSchema(
-        const Poco::JSON::Object::Ptr & metadata_object,
-        Iceberg::IcebergSchemaProcessor & schema_processor,
-        LoggerPtr metadata_logger);
+        const Poco::JSON::Object::Ptr & metadata_object, Iceberg::IcebergSchemaProcessor & schema_processor, LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 
     IcebergHistory getHistory(ContextPtr local_context) const;
-
-    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot>
-    getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
-
-    /// Returns file records contributed by a single manifest list entry of `data_snapshot`.
-    IcebergFiles getFilesForManifest(
-        const Iceberg::IcebergDataSnapshotPtr & data_snapshot,
-        const Iceberg::TableStateSnapshot & table_state,
-        size_t manifest_index,
-        ContextPtr local_context) const;
 
     static bool supportsTotalRows(ContextPtr, ObjectStorageType) { return true; }
     std::optional<size_t> totalRows(ContextPtr Local_context) const override;
@@ -143,7 +112,7 @@ public:
     bool supportsDelete() const override { return true; }
     void mutate(
         const MutationCommands & commands,
-        StoragePtr storage_ptr,
+        StorageObjectStorageConfigurationPtr configuration,
         ContextPtr context,
         const StorageID & storage_id,
         StorageMetadataPtr metadata_snapshot,
@@ -155,11 +124,7 @@ public:
     void modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const override;
     void addDeleteTransformers(ObjectInfoPtr object_info, QueryPipelineBuilder & builder, const std::optional<FormatSettings> & format_settings, FormatParserSharedResourcesPtr parser_shared_resources, ContextPtr local_context) const override;
     void checkAlterIsPossible(const AlterCommands & commands) override;
-    void alter(
-        const AlterCommands & params,
-        ContextPtr context,
-        const StorageID & storage_id,
-        std::shared_ptr<DataLake::ICatalog> catalog) override;
+    void alter(const AlterCommands & params, ContextPtr context) override;
 
     Pipe executeCommand(
         const String & command_name,
@@ -180,12 +145,8 @@ public:
     void drop(ContextPtr context) override;
 
 private:
-    static Iceberg::PersistentTableComponents initializePersistentTableComponents(
-        ObjectStoragePtr object_storage,
-        StorageObjectStorageConfigurationPtr configuration,
-        IcebergMetadataFilesCachePtr cache_ptr,
-        ContextPtr context_,
-        LoggerPtr log);
+    Iceberg::PersistentTableComponents initializePersistentTableComponents(
+        StorageObjectStorageConfigurationPtr configuration, IcebergMetadataFilesCachePtr cache_ptr, ContextPtr context_);
 
     Iceberg::IcebergDataSnapshotPtr
     getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object, Int64 snapshot_id, ContextPtr local_context) const;
@@ -197,10 +158,11 @@ private:
     getState(const ContextPtr & local_context, const String & metadata_path, Int32 metadata_version) const;
     Iceberg::IcebergDataSnapshotPtr
     getRelevantDataSnapshotFromTableStateSnapshot(Iceberg::TableStateSnapshot table_state_snapshot, ContextPtr local_context) const;
+    std::pair<Iceberg::IcebergDataSnapshotPtr, Iceberg::TableStateSnapshot> getRelevantState(const ContextPtr & context, bool force_fetch_latest_metadata = false) const;
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    const DB::Iceberg::PersistentTableComponents persistent_components;
+    DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
     BackgroundSchedulePoolTaskHolder background_metadata_prefetch_task;

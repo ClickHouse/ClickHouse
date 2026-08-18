@@ -3,7 +3,6 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserUndropQuery.h>
 #include <Parsers/ASTLiteral.h>
-#include <Core/UUID.h>
 
 
 namespace DB

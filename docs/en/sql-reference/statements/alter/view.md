@@ -7,6 +7,8 @@ title: 'ALTER TABLE ... MODIFY QUERY Statement'
 doc_type: 'reference'
 ---
 
+# ALTER TABLE ... MODIFY QUERY Statement
+
 You can modify `SELECT` query that was specified when a [materialized view](/sql-reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
@@ -193,35 +195,4 @@ SELECT * FROM mv;
 
 ## ALTER TABLE ... MODIFY REFRESH Statement {#alter-table--modify-refresh-statement}
 
-`ALTER TABLE ... MODIFY REFRESH` changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view), including the schedule, dependencies, randomization, and [refresh settings](../create/view.md#refresh-settings).
-
-```sql
-ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
-```
-
-The schedule (`EVERY` or `AFTER`) is mandatory: the statement replaces *all* refresh parameters at once. Any clause not specified — `RANDOMIZE FOR`, `DEPENDS ON`, or `SETTINGS` — is removed or reset to defaults. To change only refresh settings, repeat the current schedule.
-
-```sql
--- Change the schedule.
-ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
-
--- Change retry settings (schedule must be repeated).
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
-SETTINGS refresh_retries = 5,
-         refresh_retry_initial_backoff_ms = 500,
-         refresh_retry_max_backoff_ms = 60000;
-
--- Add or keep a dependency.
-ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
-
--- Drop the dependency by omitting `DEPENDS ON`.
-ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
-```
-
-Limitations:
-
-- `ALTER TABLE ... MODIFY SETTING` is not supported on materialized views; refresh settings can only be changed via `MODIFY REFRESH`.
-- Adding or removing `APPEND` is not supported.
-- The `all_replicas` refresh setting cannot be changed after the view is created.
-
-The full list of refresh settings is documented in [Refresh Settings](../create/view.md#refresh-settings). Refresh status, including the currently applied settings, is visible in [`system.view_refreshes`](../../../operations/system-tables/view_refreshes.md).
+`ALTER TABLE ... MODIFY REFRESH` statement changes refresh parameters of a [Refreshable Materialized View](../create/view.md#refreshable-materialized-view). See [Changing Refresh Parameters](../create/view.md#changing-refresh-parameters).

@@ -26,7 +26,7 @@ namespace
 /// Implements the function coalesce which takes a set of arguments and
 /// returns the value of the leftmost non-null argument. If no such value is
 /// found, coalesce() returns NULL.
-class FunctionCoalesce final : public IFunction
+class FunctionCoalesce : public IFunction
 {
 public:
     static constexpr auto name = "coalesce";

@@ -110,7 +110,7 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
     {
         ostr
             << (not_like ? " NOT" : "")
-            << (case_insensitive_like ? " ILIKE " : " LIKE ")
+            << (case_insensitive_like ? " ILIKE " : " LIKE")
             << quoteString(like);
     }
 

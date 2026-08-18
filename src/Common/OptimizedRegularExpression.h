@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <Common/re2.h>
+#include "config.h"
 
 namespace DB
 {
@@ -116,7 +117,7 @@ public:
 private:
     std::string required_substring;
     bool is_trivial;
-    bool has_capture{};
+    bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
     std::unique_ptr<ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;

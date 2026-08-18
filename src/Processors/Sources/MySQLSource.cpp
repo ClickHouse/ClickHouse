@@ -362,16 +362,16 @@ namespace
                 ReadBufferFromMemory payload(value.data(), value.size());
                 payload.ignore(4);
 
-                UInt8 endian = 0;
+                UInt8 endian;
                 readBinary(endian, payload);
 
-                Int32 point_type = 0;
+                Int32 point_type;
                 readBinary(point_type, payload);
                 if (point_type != 1)
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only Point data type is supported");
 
-                Float64 x = 0;
-                Float64 y = 0;
+                Float64 x;
+                Float64 y;
                 if (endian == 1)
                 {
                     readBinaryLittleEndian(x, payload);

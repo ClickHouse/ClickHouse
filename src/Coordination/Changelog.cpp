@@ -207,8 +207,6 @@ public:
                             current_file_description->from_log_index,
                             *last_index_written,
                             current_file_description->extension);
-
-                        current_file_description->to_log_index = *last_index_written;
                     }
 
                     if (move_changelog_cb)
@@ -245,8 +243,6 @@ public:
 
     /// There is bug when compressed_buffer has value, file_buf's ownership transfer to compressed_buffer
     bool isFileSet() const { return compressed_buffer != nullptr || file_buf != nullptr; }
-
-    ChangelogFileDescriptionPtr getCurrentFileDescription() const { return current_file_description; }
 
     bool appendRecord(ChangelogRecord && record)
     {
@@ -570,7 +566,7 @@ struct ChangelogReadResult
 ChangelogRecord readChangelogRecord(ReadBuffer & read_buf, const std::string & filepath)
 {
     /// Read checksum
-    Checksum record_checksum = 0;
+    Checksum record_checksum;
     readIntBinary(record_checksum, read_buf);
 
     /// Read header
@@ -1988,7 +1984,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
             last_log_read_result->log_start_index = changelog_description.from_log_index;
 
             if (last_log_read_result->last_read_index != 0)
-                max_log_id.store(last_log_read_result->last_read_index, std::memory_order_relaxed);
+                max_log_id = last_log_read_result->last_read_index;
 
             /// How many entries we have in the last changelog
             uint64_t log_count = changelog_description.expectedEntriesCountInLog();
@@ -2016,18 +2012,18 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     {
         /// Just to be sure they don't exist
         removeAllLogs();
-        max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
+        max_log_id = last_commited_log_index;
     }
-    else if (max_log_id.load(std::memory_order_relaxed) < last_commited_log_index) /// If we have more fresh snapshot than our logs
+    else if (max_log_id < last_commited_log_index) /// If we have more fresh snapshot than our logs
     {
         LOG_WARNING(
             log,
             "Our most fresh log_id {} is smaller than stored data in snapshot {}. It can indicate data loss. Removing outdated logs.",
-            max_log_id.load(std::memory_order_relaxed),
+            max_log_id,
             last_commited_log_index);
 
         removeAllLogs();
-        max_log_id.store(last_commited_log_index, std::memory_order_relaxed);
+        max_log_id = last_commited_log_index;
     }
     else if (last_log_is_not_complete) /// if it's complete just start new one
     {
@@ -2076,7 +2072,7 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
 
     /// Start new log if we don't initialize writer from previous log. All logs can be "complete".
     if (!current_writer->isFileSet())
-        current_writer->rotate(max_log_id.load(std::memory_order_relaxed) + 1);
+        current_writer->rotate(max_log_id + 1);
 
     /// Move files to correct disks
     auto latest_start_index = current_writer->getStartIndex();
@@ -2368,7 +2364,7 @@ void Changelog::appendEntry(uint64_t index, const LogEntryPtr & log_entry)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before appending records");
 
     entry_storage.addEntry(index, log_entry);
-    max_log_id.store(index, std::memory_order_relaxed);
+    max_log_id = index;
 
     if (!write_operations.push(AppendLog{index, log_entry}))
         LOG_WARNING(log, "Changelog is shut down");
@@ -2381,17 +2377,6 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// wait for all appends to finish before changing active changelog file
     flush();
-
-    {
-        /// After flush(), last_durable_idx == old max_log_id. But we are about to
-        /// truncate entries from 'index' onward and rewrite them. The new entries
-        /// are not durable until the write thread fsyncs them, so we must decrease
-        /// last_durable_idx to reflect that entries at 'index' and beyond are no
-        /// longer durably persisted. Without this, the NuRaft follower durability
-        /// loop would see the stale high value and skip waiting for the fsync.
-        std::lock_guard lock{durable_idx_mutex};
-        last_durable_idx = std::min(last_durable_idx, index - 1);
-    }
 
     {
         std::lock_guard lock(writer_mutex);
@@ -2452,14 +2437,14 @@ void Changelog::compact(uint64_t up_to_log_index)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before compacting records");
 
     std::lock_guard lock(writer_mutex);
-    LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id.load(std::memory_order_relaxed));
+    LOG_INFO(log, "Compact logs up to log index {}, our max log id is {}", up_to_log_index, max_log_id);
 
     bool remove_all_logs = false;
-    if (up_to_log_index > max_log_id.load(std::memory_order_relaxed))
+    if (up_to_log_index > max_log_id)
     {
         LOG_INFO(log, "Seems like this node recovers from leaders snapshot, removing all logs");
         /// If we received snapshot from leader we may compact up to more fresh log
-        max_log_id.store(up_to_log_index, std::memory_order_relaxed);
+        max_log_id = up_to_log_index;
         remove_all_logs = true;
     }
 
@@ -2495,17 +2480,17 @@ void Changelog::compact(uint64_t up_to_log_index)
     if (need_rotate)
         current_writer->rotate(up_to_log_index + 1);
 
-    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, getStartIndex(), max_log_id.load(std::memory_order_relaxed));
+    LOG_INFO(log, "Compaction up to {} finished new min index {}, new max index {}", up_to_log_index, getStartIndex(), max_log_id);
 }
 
 uint64_t Changelog::getNextEntryIndex() const
 {
-    return max_log_id.load(std::memory_order_relaxed) + 1;
+    return max_log_id + 1;
 }
 
 uint64_t Changelog::getStartIndex() const
 {
-    return entry_storage.empty() ? max_log_id.load(std::memory_order_relaxed) + 1 : entry_storage.getFirstIndex();
+    return entry_storage.empty() ? max_log_id + 1 : entry_storage.getFirstIndex();
 }
 
 LogEntryPtr Changelog::getLastEntry() const
@@ -2513,7 +2498,7 @@ LogEntryPtr Changelog::getLastEntry() const
     /// This entry treaded in special way by NuRaft
     static LogEntryPtr fake_entry = nuraft::cs_new<nuraft::log_entry>(0, nuraft::buffer::alloc(0));
 
-    auto entry = entry_storage.getEntry(max_log_id.load(std::memory_order_relaxed));
+    auto entry = entry_storage.getEntry(max_log_id);
     if (entry == nullptr)
         return fake_entry;
 
@@ -2578,7 +2563,7 @@ void Changelog::applyEntriesFromBuffer(uint64_t index, nuraft::buffer & buffer)
         buffer.get(buf_local);
 
         LogEntryPtr log_entry = nuraft::log_entry::deserialize(*buf_local);
-        if (i == 0 && cur_index >= entry_storage.getFirstIndex() && cur_index <= max_log_id.load(std::memory_order_relaxed))
+        if (i == 0 && cur_index >= entry_storage.getFirstIndex() && cur_index <= max_log_id)
             writeAt(cur_index, log_entry);
         else
             appendEntry(cur_index, log_entry);
@@ -2600,7 +2585,7 @@ bool Changelog::flush()
     if (auto failed_ptr = flushAsync())
     {
         std::unique_lock lock{durable_idx_mutex};
-        durable_idx_cv.wait(lock, [&] { return *failed_ptr || last_durable_idx == max_log_id.load(std::memory_order_relaxed); });
+        durable_idx_cv.wait(lock, [&] { return *failed_ptr || last_durable_idx == max_log_id; });
 
         return !*failed_ptr;
     }
@@ -2616,7 +2601,7 @@ std::shared_ptr<bool> Changelog::flushAsync()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Changelog must be initialized before flushing records");
 
     auto failed = std::make_shared<bool>(false);
-    bool pushed = write_operations.push(Flush{max_log_id.load(std::memory_order_relaxed), failed});
+    bool pushed = write_operations.push(Flush{max_log_id, failed});
 
     if (!pushed)
     {
@@ -2718,19 +2703,15 @@ void Changelog::backgroundChangelogOperationsThread()
             {
                 if (move_operation->new_path != changelog->path)
                 {
-                    changelog->withLock(
-                        [&]
-                        {
-                            try
-                            {
-                                changelog->disk->moveFile(changelog->path, move_operation->new_path);
-                            }
-                            catch (...)
-                            {
-                                tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
-                            }
-                            changelog->path = std::move(move_operation->new_path);
-                        });
+                    try
+                    {
+                        changelog->disk->moveFile(changelog->path, move_operation->new_path);
+                    }
+                    catch (...)
+                    {
+                        tryLogCurrentException(log, fmt::format("File rename failed on disk {}", changelog->disk->getName()));
+                    }
+                    changelog->path = std::move(move_operation->new_path);
                 }
             }
             else
@@ -2788,68 +2769,11 @@ void Changelog::getKeeperLogInfo(KeeperLogInfo & log_info) const
         log_info.first_log_idx = getStartIndex();
         log_info.first_log_term = termAt(log_info.first_log_idx);
 
-        log_info.last_log_idx = max_log_id.load(std::memory_order_relaxed);
+        log_info.last_log_idx = max_log_id;
         log_info.last_log_term = termAt(log_info.last_log_idx);
     }
 
     entry_storage.getKeeperLogInfo(log_info);
-}
-
-std::vector<KeeperChangelogStatus> Changelog::getChangelogsStatus() const
-{
-    std::lock_guard lock(writer_mutex);
-
-    std::vector<KeeperChangelogStatus> result;
-    result.reserve(existing_changelogs.size());
-
-    ChangelogFileDescriptionPtr active_description;
-    if (current_writer && current_writer->isFileSet())
-        active_description = current_writer->getCurrentFileDescription();
-
-    const uint64_t current_max_log_id = max_log_id.load(std::memory_order_relaxed);
-
-    for (const auto & [from_index, description] : existing_changelogs)
-    {
-        chassert(description);
-
-        const bool active = active_description && description == active_description;
-
-        DiskPtr disk;
-        String path;
-        description->withLock(
-            [&]
-            {
-                disk = description->disk;
-                path = description->path;
-            });
-        const uint64_t to_log_index = description->to_log_index;
-
-        std::optional<uint64_t> last_entry_index;
-        if (active)
-        {
-            if (current_max_log_id >= description->from_log_index)
-                last_entry_index = std::min(to_log_index, current_max_log_id);
-        }
-        else if (!description->broken_at_end)
-        {
-            last_entry_index = to_log_index;
-        }
-
-        const bool is_compressed = description->extension.ends_with("zstd");
-
-        result.push_back(KeeperChangelogStatus{
-            .from_log_index = description->from_log_index,
-            .to_log_index = to_log_index,
-            .last_entry_index = last_entry_index,
-            .path = std::move(path),
-            .disk = std::move(disk),
-            .is_compressed = is_compressed,
-            .active = active,
-            .is_broken = description->broken_at_end,
-        });
-    }
-
-    return result;
 }
 
 }

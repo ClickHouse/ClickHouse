@@ -19,7 +19,7 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
+ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
 {
     IQueryPlanStep * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
@@ -36,7 +36,7 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
     return nullptr;
 }
 
-static ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
+ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 {
     if (const auto & prewhere_info = source.getPrewhereInfo())
         return prewhere_info->prewhere_actions.clone();
@@ -45,7 +45,7 @@ static ActionsDAG makeSourceDAG(ReadFromMergeTree & source)
 }
 
 /// This function builds a common DAG which is a merge of DAGs from Filter and Expression steps chain.
-static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
+bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 {
     if (node.children.size() != 1)
         return false;
@@ -95,7 +95,7 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 /// which is also used in JOIN equality condition.
 ///
 /// Only the prefix size is needed, but here we additionally return names for debugging.
-static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
+JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)

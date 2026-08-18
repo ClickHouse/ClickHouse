@@ -1,3 +1,4 @@
+-- add_minmax_index_for_numeric_columns=0: Disable minmax index to not interfere with the indexHint tests. With it it would filter out more rows (correctly)
 -- { echo }
 
 drop table if exists tbl;

@@ -130,7 +130,6 @@ StoragePtr TableFunctionHive::executeImpl(
 }
 
 
-void registerTableFunctionHive(TableFunctionFactory & factory_);
 void registerTableFunctionHive(TableFunctionFactory & factory_) { factory_.registerFunction<TableFunctionHive>({}); }
 
 }

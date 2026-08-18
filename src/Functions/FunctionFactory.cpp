@@ -7,7 +7,6 @@
 
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Core/Settings.h>
 
 #include <Poco/String.h>
@@ -92,9 +91,9 @@ FunctionOverloadResolverPtr FunctionFactory::getImpl(
     return res;
 }
 
-Strings FunctionFactory::getAllNames() const
+std::vector<std::string> FunctionFactory::getAllNames() const
 {
-    Strings res;
+    std::vector<std::string> res;
     res.reserve(functions.size());
     for (const auto & func : functions)
         res.emplace_back(func.first);

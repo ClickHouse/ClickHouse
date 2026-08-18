@@ -97,13 +97,13 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
         static Float64 getNotNegativeFloat64(const String & name, const Field & field)
         {
             {
-                UInt64 val = 0;
+                UInt64 val;
                 if (field.tryGet(val))
                     return static_cast<Float64>(val); // We dont mind slight loss of precision
             }
 
             {
-                Int64 val = 0;
+                Int64 val;
                 if (field.tryGet(val))
                 {
                     if (val < 0)
@@ -112,16 +112,13 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
                 }
             }
 
-            Float64 val = field.safeGet<Float64>();
-            if (val < 0)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected negative Float64 value for workload setting '{}'", name);
-            return val;
+            return field.safeGet<Float64>();
         }
 
         static Int64 getNotNegativeInt64(const String & name, const Field & field)
         {
             {
-                UInt64 val = 0;
+                UInt64 val;
                 if (field.tryGet(val))
                 {
                     // Saturate on overflow
@@ -132,7 +129,7 @@ void WorkloadSettings::initFromChanges(CostUnit unit_, const ASTCreateWorkloadQu
             }
 
             {
-                Int64 val = 0;
+                Int64 val;
                 if (field.tryGet(val))
                 {
                     if (val < 0)

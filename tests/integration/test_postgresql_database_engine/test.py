@@ -69,17 +69,13 @@ def test_postgres_database_engine_with_postgres_ddl(started_cluster):
     assert "test_table" in node1.query("SHOW TABLES FROM postgres_database")
 
     cursor.execute("ALTER TABLE test_table ADD COLUMN data Text")
-    assert "data" in node1.query("SHOW COLUMNS FROM postgres_database.test_table")
-    assert "PRIMARY" in node1.query("SHOW INDEX FROM postgres_database.test_table")
     assert "data" in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
     )
 
     cursor.execute("ALTER TABLE test_table DROP COLUMN data")
     assert "data" not in node1.query(
-        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "SELECT name FROM system.columns WHERE table = 'test_table' AND database = 'postgres_database'"
     )
 
     node1.query("DROP DATABASE postgres_database")
@@ -289,8 +285,7 @@ def test_predefined_connection_configuration(started_cluster):
     node1.query("CREATE DATABASE postgres_database ENGINE = PostgreSQL(postgres1)")
 
     result = node1.query(
-        "select create_table_query from system.tables where database ='postgres_database'",
-        settings={"show_remote_databases_in_system_tables": 1},
+        "select create_table_query from system.tables where database ='postgres_database'"
     )
     print(f"kssenii: {result}")
     assert result.strip().endswith(
@@ -454,8 +449,7 @@ def test_numeric_detach_attach(started_cluster):
 
     def get_actual_clickhouse_column_types():
         res = node1.query(
-            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'",
-            settings={"show_remote_databases_in_system_tables": 1},
+            "SELECT name, type FROM system.columns WHERE database = 'postgres_database' AND table = 'test_table'"
         )
 
         return dict(line.split('\t') for line in res.splitlines())

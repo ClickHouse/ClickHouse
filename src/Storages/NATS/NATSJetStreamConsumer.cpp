@@ -79,7 +79,7 @@ NATSSubscriptionPtr NATSJetStreamConsumer::subscribeToSubject(const String & sub
     if (consumer_name.empty())
         throw Exception(ErrorCodes::INVALID_STATE, "To use NATS jet stream consumers, you must specify `nats_consumer_name` setting");
 
-    natsSubscription * subscription = nullptr;
+    natsSubscription * subscription;
     auto status = js_PullSubscribeAsync(
         &subscription,
         jet_stream_ctx.get(),

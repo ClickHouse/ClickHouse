@@ -28,6 +28,9 @@
 
 #include <Poco/Net/SocketAddress.h>
 
+#include <cassert>
+
+
 namespace
 {
 using namespace DB;

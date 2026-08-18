@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings, no-random-merge-tree-settings, no-parallel-replicas
-# no-parallel-replicas - because explain produced different plan
+# Tags: no-random-settings, no-random-merge-tree-settings
 
 set -e
 

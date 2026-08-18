@@ -12,9 +12,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <base/arithmeticOverflow.h>
-#include <Common/MapWithMemoryTracking.h>
-#include <Common/VectorWithMemoryTracking.h>
 
+#include <cassert>
 
 namespace DB
 {
@@ -36,7 +35,7 @@ struct TupArg
     const IColumn::Offsets & val_offsets;
     bool is_const;
 };
-using TupleMaps = VectorWithMemoryTracking<TupArg>;
+using TupleMaps = std::vector<TupArg>;
 
 enum class OpTypes : uint8_t
 {
@@ -44,7 +43,7 @@ enum class OpTypes : uint8_t
     SUBTRACT = 1
 };
 
-class FunctionMapOp final : public IFunction
+class FunctionMapOp : public IFunction
 {
 public:
     static FunctionPtr create(ContextPtr, OpTypes op_type_) { return std::make_shared<FunctionMapOp>(op_type_); }
@@ -89,8 +88,8 @@ private:
 
         for (const auto & arg : arguments)
         {
-            const DataTypeArray * k = nullptr;
-            const DataTypeArray * v = nullptr;
+            const DataTypeArray * k;
+            const DataTypeArray * v;
 
             const DataTypeTuple * tup = checkAndGetDataType<DataTypeTuple>(arg.get());
             if (!tup)
@@ -174,9 +173,9 @@ private:
     ColumnPtr execute2(size_t row_count, TupleMaps & args, const DataTypePtr res_type) const
     {
         MutableColumnPtr res_column = res_type->createColumn();
-        IColumn *to_keys_data = nullptr;
-        IColumn *to_vals_data = nullptr;
-        ColumnArray::Offsets * to_keys_offset = nullptr;
+        IColumn *to_keys_data;
+        IColumn *to_vals_data;
+        ColumnArray::Offsets * to_keys_offset;
         ColumnArray::Offsets * to_vals_offset = nullptr;
 
         // prepare output destinations
@@ -193,7 +192,7 @@ private:
         }
         else
         {
-            chassert(res_type->getTypeId() == TypeIndex::Map);
+            assert(res_type->getTypeId() == TypeIndex::Map);
 
             auto * to_map = assert_cast<ColumnMap *>(res_column.get());
             auto & to_wrapper_arr = to_map->getNestedColumn();
@@ -204,7 +203,7 @@ private:
             to_vals_data = &to_map_tuple.getColumn(1);
         }
 
-        MapWithMemoryTracking<KeyType, ValType> summing_map;
+        std::map<KeyType, ValType> summing_map;
 
         for (size_t i = 0; i < row_count; ++i)
         {
@@ -226,7 +225,7 @@ private:
                 Field temp_val;
                 for (size_t j = 0; j < len; ++j)
                 {
-                    KeyType key{};
+                    KeyType key;
                     if constexpr (std::is_same_v<KeyType, String>)
                     {
                         if (const auto * col_fixed = checkAndGetColumn<ColumnFixedString>(arg.key_column.get()))
@@ -313,7 +312,7 @@ private:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
         DataTypePtr key_type;
-        size_t row_count = 0;
+        size_t row_count;
         const DataTypeTuple * tup_type = checkAndGetDataType<DataTypeTuple>((arguments[0]).type.get());
         DataTypePtr res_type;
         DataTypePtr res_value_type;
@@ -333,7 +332,7 @@ private:
 
             for (const auto & col : arguments)
             {
-                const ColumnTuple * tup = nullptr;
+                const ColumnTuple * tup;
                 bool is_const = isColumnConst(*col.column);
                 if (is_const)
                 {
@@ -368,7 +367,7 @@ private:
 
                 for (const auto & col : arguments)
                 {
-                    const ColumnMap * map = nullptr;
+                    const ColumnMap * map;
                     bool is_const = isColumnConst(*col.column);
                     if (is_const)
                     {

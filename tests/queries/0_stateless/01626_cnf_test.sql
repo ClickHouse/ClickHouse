@@ -1,4 +1,3 @@
-SET enable_analyzer = 1;
 SET convert_query_to_cnf = 1;
 
 DROP TABLE IF EXISTS cnf_test;

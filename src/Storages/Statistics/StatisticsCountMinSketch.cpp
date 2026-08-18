@@ -43,15 +43,7 @@ Float64 StatisticsCountMinSketch::estimateEqual(const Field & val) const
         return 0;
 
     if (data_type->isValueRepresentedByNumber())
-    {
-        /// Cannot use &val_converted directly: Field stores small types in a wider NearestFieldType
-        /// (e.g. Float32 → Float64, Int8 → Int64), so the bit pattern differs from what the column
-        /// stores. Insert into a temporary column to get the same byte representation as build().
-        auto temp_col = data_type->createColumn();
-        temp_col->insert(val_converted);
-        auto data = temp_col->getDataAt(0);
-        return static_cast<Float64>(sketch.get_estimate(data.data(), data.size()));
-    }
+        return static_cast<Float64>(sketch.get_estimate(&val_converted, data_type->getSizeOfValueInMemory()));
 
     if (isStringOrFixedString(data_type))
         return static_cast<Float64>(sketch.get_estimate(val.safeGet<String>()));
@@ -83,9 +75,9 @@ void StatisticsCountMinSketch::serialize(WriteBuffer & buf)
     buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
 }
 
-void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
+void StatisticsCountMinSketch::deserialize(ReadBuffer & buf)
 {
-    UInt64 size = 0;
+    UInt64 size;
     readIntBinary(size, buf);
 
     Sketch::vector_bytes bytes;

@@ -37,11 +37,11 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
-ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{constant_column_, value_data_type_})
+ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
+    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
 {}
 
-ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
+ConstantNode::ConstantNode(ColumnPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 
@@ -95,19 +95,14 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
         buffer << ", alias: " << getAlias();
 
     buffer << ", constant_value: ";
-    if (mask_id)
-    {
-        if (mask_id == std::numeric_limits<decltype(mask_id)>::max())
-            buffer << "[HIDDEN]";
-        else
-            buffer << "[HIDDEN id: " << mask_id << "]";
-    }
+    if (isMasked())
+        buffer << getMaskString();
     else
         buffer << getValue().dump();
 
     buffer << ", constant_value_type: " << constant_value.getType()->getName();
 
-    if (!mask_id && getSourceExpression())
+    if (!isMasked() && getSourceExpression())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION" << '\n';
         getSourceExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
@@ -154,7 +149,9 @@ void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions com
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
 {
-    return std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    auto result = std::make_shared<ConstantNode>(constant_value, source_expression, is_deterministic);
+    result->mask_id = mask_id;
+    return result;
 }
 
 template <typename F>
@@ -179,9 +176,6 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
-
-    if (options.use_source_expression_for_constants && source_expression)
-        return source_expression->toAST(options);
 
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);

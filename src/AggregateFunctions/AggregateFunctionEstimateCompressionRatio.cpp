@@ -1,3 +1,4 @@
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
@@ -216,19 +217,6 @@ public:
     {
         auto [uncompressed_size, compressed_size] = finalizeAndGetSizes(place);
 
-        /// Persist finalized sizes so the next add()/resetBuffersIfNeeded() cycle
-        /// preserves all previously accumulated data. Without this, window functions
-        /// with growing frames (e.g. UNBOUNDED PRECEDING AND CURRENT ROW) lose all
-        /// prior data when the buffer is recreated after finalization.
-        data(place).merged_uncompressed_size = uncompressed_size;
-        data(place).merged_compressed_size = compressed_size;
-
-        /// Reset buffers so that a repeated insertResultInto without an
-        /// intervening add (unchanged window frame) does not re-count the
-        /// already-persisted finalized bytes.
-        data(place).compressed_buf.reset();
-        data(place).null_buf.reset();
-
         Float64 ratio = 0;
         if (compressed_size > 0)
             ratio = static_cast<Float64>(uncompressed_size) / static_cast<double>(compressed_size);
@@ -238,7 +226,7 @@ public:
 };
 }
 
-static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
+AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     const std::string & name, const DataTypes & arguments, const Array & parameters, const Settings *)
 {
     if (arguments.size() != 1)
@@ -269,15 +257,7 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
 
             UInt64 new_block_size_bytes = param.safeGet<UInt64>();
             if (new_block_size_bytes == 0)
-                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater than 0");
-
-            /// Limit to 256 MiB to prevent absurd memory allocations from fuzzed queries
-            static constexpr UInt64 max_block_size_bytes = 256 * 1024 * 1024;
-            if (new_block_size_bytes > max_block_size_bytes)
-                throw Exception(
-                    ErrorCodes::BAD_QUERY_PARAMETER,
-                    "block_size_bytes ({}) is too large, maximum is {}",
-                    new_block_size_bytes, max_block_size_bytes);
+                throw Exception(ErrorCodes::BAD_QUERY_PARAMETER, "block_size_bytes should be greater then 0");
 
             block_size_bytes = new_block_size_bytes;
         }
@@ -293,7 +273,6 @@ static AggregateFunctionPtr createAggregateFunctionEstimateCompressionRatio(
     return std::make_shared<AggregateFunctionEstimateCompressionRatio>(arguments, parameters, codec, block_size_bytes);
 }
 
-void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEstimateCompressionRatio(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -310,7 +289,7 @@ See [Column Compression Codecs](/sql-reference/statements/create/table#column_co
     };
     FunctionDocumentation::Parameters parameters = {
         {"codec", "String containing a compression codec or multiple comma-separated codecs in a single string.", {"String"}},
-        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes). Maximum allowed value is 256 MiB (268435456 bytes).", {"UInt64"}}
+        {"block_size_bytes", "Block size of compressed data. This is similar to setting both [`max_compress_block_size`](../../../operations/settings/merge-tree-settings.md#max_compress_block_size) and [`min_compress_block_size`](../../../operations/settings/merge-tree-settings.md#min_compress_block_size). The default value is 1 MiB (1048576 bytes).", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns an estimate compression ratio for the given column.", {"Float64"}};
     FunctionDocumentation::Examples examples = {

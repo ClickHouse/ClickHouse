@@ -11,7 +11,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryParameter.h>
-#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/Access/ASTCreateUserQuery.h>
 #include <Parsers/Access/ASTUserNameWithHost.h>
@@ -58,39 +57,17 @@ void ReplaceQueryParameterVisitor::visit(ASTPtr & ast)
             }
             visitChildren(ast);
         }
-        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get()))
+        else if (auto * create_query = dynamic_cast<ASTCreateQuery *>(ast.get());
+                 create_query && create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
         {
-            if (create_query->isParameterizedView())
-            {
-                /// For a parameterized view the SELECT body contains query parameters that
-                /// form the view's parameterizable interface; they are substituted at
-                /// view-call time and must be preserved here. Other parts of the query
-                /// (database name, table name, columns list, storage, view targets) are
-                /// still subject to parameter substitution at create time.
-                const IAST * select_node = create_query->select;
-                for (auto & child : create_query->children)
-                {
-                    if (child.get() == select_node)
-                        continue;
-                    IAST * old_ptr = child.get();
-                    visit(child);
-                    if (child.get() != old_ptr)
-                        create_query->updatePointerToChild(old_ptr, child);
-                }
-            }
-            else if (create_query->targets && create_query->targets->hasTableASTWithQueryParams(ViewTarget::To))
-            {
-                auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
+            auto to_table_ast = create_query->targets->getTableASTWithQueryParams(ViewTarget::To);
 
-                visit(to_table_ast);
+            visit(to_table_ast);
 
-                create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
-                create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
+            create_query->targets->setTableID(ViewTarget::To, to_table_ast->as<ASTTableIdentifier>()->getTableId());
+            create_query->targets->resetTableASTWithQueryParams(ViewTarget::To);
 
-                visitChildren(ast);
-            }
-            else
-                visitChildren(ast);
+            visitChildren(ast);
         }
         else
             visitChildren(ast);
@@ -166,7 +143,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     if (it == query_parameters.end())
     {
         /// If a parameter has Nullable type and is not specified, assume its value is NULL.
-        if (!isNullableOrLowCardinalityNullable(data_type))
+        if (!data_type->isNullable())
             throw Exception(ErrorCodes::UNKNOWN_QUERY_PARAMETER, "Substitution {} is not set", backQuote(ast_param.name));
 
         ast = makeASTForQueryParameter(Field(), type_name, data_type);

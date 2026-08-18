@@ -141,7 +141,7 @@ private:
                     / linear_growth_threshold) * linear_growth_threshold;
         }
 
-        chassert(size_after_grow >= min_next_size);
+        assert(size_after_grow >= min_next_size);
         return roundUpToPageSize(size_after_grow, page_size);
     }
 
@@ -251,7 +251,7 @@ public:
           * range might break the invariant that the range begins at least before
           * the current MemoryChunk end.
           */
-        chassert(additional_bytes > 0);
+        assert(additional_bytes > 0);
 
         if (!range_start)
         {
@@ -269,8 +269,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current MemoryChunk.
-        chassert(range_start >= head.begin);
-        chassert(range_start < head.end);
+        assert(range_start >= head.begin);
+        assert(range_start < head.end);
 
         if (head.pos + additional_bytes <= head.end)
         {

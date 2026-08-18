@@ -12,8 +12,6 @@
 #include <Columns/ColumnString.h>
 #include <Parsers/IAST_fwd.h>
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
 
 namespace DB
 {
@@ -329,7 +327,5 @@ SELECT
 }
 
 }
-
-#pragma clang diagnostic pop
 
 #endif

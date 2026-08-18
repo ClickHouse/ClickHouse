@@ -1,7 +1,6 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 
-#include <climits>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
@@ -11,7 +10,6 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 
 #if USE_AVRO
 
@@ -74,17 +72,12 @@ bool checkValidSchemaEvolution(Poco::Dynamic::Var old_type, Poco::Dynamic::Var n
 MetadataGenerator::MetadataGenerator(Poco::JSON::Object::Ptr metadata_object_)
     : metadata_object(metadata_object_)
     , gen(randomSeed())
-    , dis(1, std::numeric_limits<Int64>::max())
+    , dis(0, INT32_MAX)
 {
 }
 
 Int64 MetadataGenerator::getMaxSequenceNumber()
 {
-    /// Use the authoritative top-level field per Iceberg V2 spec.
-    /// Iterating snapshots is unreliable when catalogs prune snapshot history.
-    if (metadata_object->has(Iceberg::f_last_sequence_number))
-        return metadata_object->getValue<Int64>(Iceberg::f_last_sequence_number);
-
     auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
     Int64 max_seq_number = 0;
 
@@ -112,7 +105,7 @@ Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapsh
 
 MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     FileNamesGenerator & generator,
-    const Iceberg::IcebergPathFromMetadata & metadata_file_path,
+    const String & metadata_filename,
     Int64 parent_snapshot_id,
     Int64 added_files,
     Int64 added_records,
@@ -128,12 +121,12 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     if (format_version > 1)
     {
         auto sequence_number = getMaxSequenceNumber() + 1;
-        new_snapshot->set(Iceberg::f_metadata_sequence_number, sequence_number);
+        new_snapshot->set(Iceberg::f_metadata_sequence_number, getMaxSequenceNumber() + 1);
         metadata_object->set(Iceberg::f_last_sequence_number, sequence_number);
     }
     Int64 snapshot_id = user_defined_snapshot_id.value_or(static_cast<Int64>(dis(gen)));
 
-    auto manifest_list_path = generator.generateManifestListName(snapshot_id, format_version);
+    auto [manifest_list_name, storage_manifest_list_name] = generator.generateManifestListName(snapshot_id, format_version);
     new_snapshot->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
     new_snapshot->set(Iceberg::f_parent_snapshot_id, parent_snapshot_id);
 
@@ -178,17 +171,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     new_snapshot->set(Iceberg::f_summary, summary);
 
     new_snapshot->set(Iceberg::f_schema_id, metadata_object->getValue<Int32>(Iceberg::f_current_schema_id));
-    new_snapshot->set(Iceberg::f_manifest_list, manifest_list_path.serialize());
-
-    if (format_version >= 3)
-    {
-        Int64 next_row_id = metadata_object->has(Iceberg::f_next_row_id) && !metadata_object->isNull(Iceberg::f_next_row_id)
-            ? metadata_object->getValue<Int64>(Iceberg::f_next_row_id)
-            : 0;
-        new_snapshot->set(Iceberg::f_first_row_id, next_row_id);
-        new_snapshot->set(Iceberg::f_added_rows, added_records);
-        metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
-    }
+    new_snapshot->set(Iceberg::f_manifest_list, manifest_list_name);
 
     metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
@@ -209,7 +192,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
 
     {
         Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
-        new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
+        new_metadata_item->set(Iceberg::f_metadata_file, metadata_filename);
         new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
         metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
     }
@@ -233,7 +216,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         properties->set("write.merge.mode", "merge-on-read");
         properties->set("write.update.mode", "merge-on-read");
     }
-    return {new_snapshot, manifest_list_path};
+    return {new_snapshot, manifest_list_name, storage_manifest_list_name};
 }
 
 void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
@@ -294,14 +277,6 @@ void MetadataGenerator::generateAddColumnMetadata(const String & column_name, Da
     if (!current_schema)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found schema with id {}", current_schema_id);
     current_schema = deepCopy(current_schema);
-
-    auto existing_fields = current_schema->getArray(Iceberg::f_fields);
-    for (UInt32 i = 0; i < existing_fields->size(); ++i)
-    {
-        if (existing_fields->getObject(i)->getValue<String>(Iceberg::f_name) == column_name)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Column {} already exists", column_name);
-    }
-
     auto last_column_id = metadata_object->getValue<Int32>(Iceberg::f_last_column_id);
     metadata_object->set(Iceberg::f_last_column_id, last_column_id + 1);
 
@@ -341,7 +316,6 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
     auto new_type = Iceberg::getIcebergType(type, last_column_id);
     auto schema_fields = current_schema->getArray(Iceberg::f_fields);
 
-    bool found = false;
     for (UInt32 i = 0; i < schema_fields->size(); ++i)
     {
         auto current_field = schema_fields->getObject(i);
@@ -356,14 +330,9 @@ void MetadataGenerator::generateModifyColumnMetadata(const String & column_name,
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg spec doesn't allow change type from nullable to non-nullable {}", type->getPrettyName());
 
             current_field->set(Iceberg::f_required, new_type.second);
-            found = true;
             break;
         }
     }
-
-    if (!found)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Not found column {}", column_name);
-
     current_schema->set(Iceberg::f_schema_id, current_schema_id + 1);
     metadata_object->getArray(Iceberg::f_schemas)->add(current_schema);
 }

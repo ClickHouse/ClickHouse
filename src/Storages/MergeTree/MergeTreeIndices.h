@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -313,30 +312,25 @@ struct MergeTreeIndexWithCondition
     MergeTreeIndexWithCondition() = default;
 };
 
-struct MergeTreeSettings;
-
 class MergeTreeIndexFactory : private boost::noncopyable
 {
 public:
     static MergeTreeIndexFactory & instance();
 
-    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index, const MergeTreeSettings & settings)>;
+    using Creator = std::function<MergeTreeIndexPtr(const IndexDescription & index)>;
 
-    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
+    using Validator = std::function<void(const IndexDescription & index, bool attach)>;
 
-    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
+    void validate(const IndexDescription & index, bool attach) const;
 
-    MergeTreeIndexPtr get(const IndexDescription & index, const MergeTreeSettings & settings) const;
+    MergeTreeIndexPtr get(const IndexDescription & index) const;
 
-    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
+    MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
 
-    void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
+    void registerCreator(const std::string & index_type, Creator creator);
     void registerValidator(const std::string & index_type, Validator validator);
 
     std::vector<String> getAllRegisteredNames() const;
-
-    /// Returns the embedded documentation for a data skipping index type (empty if none was registered).
-    Documentation getDocumentation(const std::string & index_type) const;
 
 protected:
     MergeTreeIndexFactory();
@@ -344,34 +338,32 @@ protected:
 private:
     using Creators = std::unordered_map<std::string, Creator>;
     using Validators = std::unordered_map<std::string, Validator>;
-    using Documentations = std::unordered_map<std::string, Documentation>;
     Creators creators;
     Validators validators;
-    Documentations documentations;
 };
 
-MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);
+void minmaxIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr setIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr setIndexCreator(const IndexDescription & index);
+void setIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr bloomFilterIndexCreator(const IndexDescription & index);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach);
 
 #if USE_USEARCH
-MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr vectorSimilarityIndexCreator(const IndexDescription & index);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach);
 #endif
 
-MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr ginIndexCreator(const IndexDescription & index);
+void ginIndexValidator(const IndexDescription & index, bool attach);
 
-MergeTreeIndexPtr textIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
-void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexPtr textIndexCreator(const IndexDescription & index);
+void textIndexValidator(const IndexDescription & index, bool attach);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 
