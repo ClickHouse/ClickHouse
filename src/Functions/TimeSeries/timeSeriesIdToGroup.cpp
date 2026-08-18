@@ -60,8 +60,6 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
     {
-        /// The groups are written into the result column directly: this function runs on every
-        /// read sample row, so an intermediate buffer plus a copy is a measurable cost.
         auto res = ColumnUInt64::create();
         tags_collector->getGroupByID(arguments[0].column, res->getData());
         chassert(res->size() == input_rows_count);

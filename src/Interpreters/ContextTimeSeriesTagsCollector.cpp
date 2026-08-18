@@ -1264,20 +1264,20 @@ void ContextTimeSeriesTagsCollector::getGroupByIDTyped(
 
     /// Id columns arrive in long runs of equal values (samples are sorted by id), so reuse the previous row's group.
     IDType prev_id{};
-    bool has_prev = false;
     Group prev_group = INVALID_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
         IDType id = id_getter.get(i);
-        if (!has_prev || !(id == prev_id))
+        if ((id == prev_id) && (prev_group != INVALID_GROUP))
         {
-            const auto * it = id_map.find(id);
-            if (!it)
-                throwUnknownID(id_data, i);
-            prev_id = id;
-            has_prev = true;
-            prev_group = it->getMapped();
+            out[i] = prev_group;
+            continue;
         }
+        const auto * it = id_map.find(id);
+        if (!it)
+            throwUnknownID(id_data, i);
+        prev_id = id;
+        prev_group = it->getMapped();
         out[i] = prev_group;
     }
 }
@@ -1296,15 +1296,18 @@ void ContextTimeSeriesTagsCollector::getGroupByIDGeneric(const IColumn & id_data
     Group prev_group = INVALID_GROUP;
     for (size_t i = 0; i != num_rows; ++i)
     {
-        if ((i == 0) || id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) != 0)
+        if ((i > 0) && id_data.compareAt(i, i - 1, id_data, /* nan_direction_hint = */ 1) == 0)
         {
-            const char * begin = nullptr;
-            auto id = id_data.serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
-            const auto * it = generic_id_map.map.find(id);
-            if (!it)
-                throwUnknownID(id_data, i);
-            prev_group = it->getMapped();
+            chassert(prev_group != INVALID_GROUP);
+            out[i] = prev_group;
+            continue;
         }
+        const char * begin = nullptr;
+        auto id = id_data.serializeValueIntoArena(i, temp_arena, begin, /* settings = */ nullptr);
+        const auto * it = generic_id_map.map.find(id);
+        if (!it)
+            throwUnknownID(id_data, i);
+        prev_group = it->getMapped();
         out[i] = prev_group;
     }
 }
