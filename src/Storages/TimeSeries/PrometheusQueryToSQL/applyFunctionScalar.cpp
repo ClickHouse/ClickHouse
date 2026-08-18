@@ -53,6 +53,8 @@ SQLQueryPiece applyFunctionScalar(
     auto & argument = arguments[0];
 
     auto res = argument;
+    /// scalar() returns a single anonymous value, so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
     res.node = function_node;
     res.type = ResultType::SCALAR;
 

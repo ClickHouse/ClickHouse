@@ -63,6 +63,12 @@ promql_client -q "sort_by_label(mem, 'dc', 'host')"
 echo "-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above"
 promql_client -q "sort_by_label_desc(mem, 'dc', 'host')"
 
+echo "-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()"
+promql_client -q "abs(sort_by_label(mem, 'host'))"
+
+echo "-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order"
+promql_client -q "label_replace(sort_by_label_desc(up, 'instance'), 'zone', 'z', 'instance', '.*')"
+
 echo "-- error: sort_by_label requires at least 2 arguments"
 promql_client -q "sort_by_label(up)" 2>&1 | grep -o "expects at least 2 arguments" | head -n 1
 

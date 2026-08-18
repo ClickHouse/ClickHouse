@@ -4,6 +4,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -276,6 +277,23 @@ SQLQueryPiece applyLabelManipulationFunction(
             }
 
             res.select_query = std::move(column_renaming_query);
+
+            /// The series ids changed, so an order fixed by an inner sort*() call must be re-keyed the same way.
+            rekeySortRankSubquery(
+                res,
+                [&](ASTPtr group)
+                {
+                    ASTs group_function_args;
+                    group_function_args.push_back(std::move(group));
+                    size_t array_argument_index = impl_info->array_argument_index;
+                    insertAtEnd(group_function_args, collectStringArguments(arguments, 1, array_argument_index));
+                    if (array_argument_index != static_cast<size_t>(-1))
+                        group_function_args.push_back(collectStringArgumentsAsArray(arguments, array_argument_index));
+                    auto group_function = makeASTFunction(impl_info->ch_function_name);
+                    group_function->arguments->children = std::move(group_function_args);
+                    return group_function;
+                },
+                context);
 
             if (dest_label == kMetricName)
                 res.metric_name_dropped = false;

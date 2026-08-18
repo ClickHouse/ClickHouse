@@ -52,6 +52,15 @@ echo "-- sort_desc(sort_by_label(up, 'instance')): sort() must override the orde
 echo "-- so this is descending by value (30, 20, 10), not descending by the 'instance' label"
 promql_client -q "sort_desc(sort_by_label(up, 'instance'))"
 
+echo "-- -sort(up): unary minus keeps the order fixed by sort() (10, 20, 30 before negation)"
+promql_client -q "-sort(up)"
+
+echo "-- abs(sort(up - 25)): abs() keeps the order fixed by sort() (-15, -5, 5 before abs)"
+promql_client -q "abs(sort(up - 25))"
+
+echo "-- label_replace(sort_desc(up), ...): label changes keep the order fixed by sort_desc()"
+promql_client -q "label_replace(sort_desc(up), 'note', 'x', 'instance', '.*')"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

@@ -18,6 +18,16 @@
 [('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
 [('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
 [('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
+[('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('host','only')]	2023-11-14 22:13:20.000	14
+[('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order
+[('__name__','up'),('instance','host20'),('zone','z')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host10'),('zone','z')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2'),('zone','z')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host1'),('zone','z')]	2023-11-14 22:13:20.000	1
 -- error: sort_by_label requires at least 2 arguments
 expects at least 2 arguments
 -- error: label arguments must be strings
