@@ -206,8 +206,8 @@ private:
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
-    /// With force_sync the empty covering parts and the parent table directory are fsync'd after the
-    /// commit, so a destructive DDL (TRUNCATE / DROP PARTITION / DROP PART) survives a power loss (#111348).
+    /// `force_sync` fsyncs the covering parts and the parent table directory before returning, so the
+    /// commit is durable once the caller acknowledges.
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool force_sync = false);
 
     /// Make part state outdated and queue it to remove without timeout

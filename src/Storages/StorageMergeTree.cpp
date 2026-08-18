@@ -2685,10 +2685,8 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
     transaction.renameParts();
     transaction.commit();
 
-    /// Sync the parent table directory: renameParts() changed its entries, and only fsync'ing the
-    /// parent (not the child part dir) makes the renames durable. Done after commit() so a failed
-    /// DDL that rolled back does not get its partial renames force-synced during exception unwinding.
-    /// No-op on disks without directory sync support (e.g. object storage returns nullptr).
+    /// The renames above are durable only once the directory holding the entries is synced, which is
+    /// the parent table directory, not the part directories. Reached only after commit() succeeds.
     if (force_sync)
     {
         std::unordered_set<String> synced_disks;
@@ -2698,7 +2696,7 @@ void StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_pa
             const String & disk_name = part->getDataPartStorage().getDiskName();
             if (!synced_disks.insert(disk_name).second)
                 continue;
-            /// Opening and immediately dropping the guard fdatasyncs the parent table directory.
+            /// Destroying the guard is what fdatasyncs; a disk without directory sync returns nullptr.
             if (SyncGuardPtr guard = policy->getDiskByName(disk_name)->getDirectorySyncGuard(relative_data_path))
                 guard.reset();
         }
@@ -2827,9 +2825,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          fmt::join(getPartsNames(future_parts), ", "), fmt::join(getPartsNames({part}), ", "),
                          transaction.getTID());
 
-                /// For DROP (not DETACH) force the covering part durable so the deletion survives a
-                /// power loss; a DETACH must not, since the detached clone is not synced here and
-                /// making only the removal durable could lose the detached copy (#111348).
+                /// A DETACH must not sync: its detached clone is not synced here, so a durable removal
+                /// paired with a non-durable clone would lose the data outright.
                 const bool force_sync = !detach;
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn, force_sync);
                 renameAndCommitEmptyParts(new_data_parts, transaction, force_sync);
@@ -2951,7 +2948,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                      transaction.getTID());
 
 
-            /// See DROP PART above: force durability for DROP, not for DETACH (#111348).
+            /// Not for DETACH: see dropPart().
             const bool force_sync = !detach;
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn, force_sync);
             renameAndCommitEmptyParts(new_data_parts, transaction, force_sync);
