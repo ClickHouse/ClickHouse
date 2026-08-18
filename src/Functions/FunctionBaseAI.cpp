@@ -377,7 +377,7 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
     };
 }
 
-FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
+void FunctionBaseAI::embedTexts(
     IAIProvider & provider,
     const String & model,
     UInt64 dimensions,
@@ -388,9 +388,9 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
     UInt64 retry_delay_ms,
     bool throw_on_error,
     AIQuotaTracker & quota,
-    const ConnectionTimeouts & timeouts)
+    const ConnectionTimeouts & timeouts,
+    EmbeddingResult & result)
 {
-    EmbeddingResult result;
     result.embeddings.resize(inputs.size());
 
     UInt64 api_calls = 0;
@@ -470,8 +470,6 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
             ++result.texts_embedded;
         }
     }
-
-    return result;
 }
 
 ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const

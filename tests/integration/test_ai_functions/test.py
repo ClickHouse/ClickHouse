@@ -1052,6 +1052,30 @@ def test_embed_quota_throw_records_input_tokens(started_cluster):
     assert int(events["input_tokens"]) == 5  # "row_0"
 
 
+def test_embed_quota_throw_records_rows_processed(started_cluster):
+    """Same throw, seen through the row counters: `aiEmbed` embeds one text per row, so the rows the
+    first batch did embed must survive `embedTexts` throwing on the second."""
+    instance.query("TRUNCATE TABLE test_input")
+    instance.query(
+        "INSERT INTO test_input SELECT 'row_' || toString(number) FROM numbers(4)"
+    )
+    qid = unique_query_id("embed_quota_throw_rows")
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed')) FROM test_input",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_embedding_max_batch_size": 1,
+            "ai_function_max_input_tokens_per_query": 5,
+            "ai_function_throw_on_quota_exceeded": 1,
+        },
+        query_id=qid,
+    )
+    assert "LIMIT_EXCEEDED" in error
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["rows_processed"]) == 1  # "row_0" was embedded before the quota tripped
+    assert int(events["rows_skipped"]) == 0  # the quota raised instead of skipping
+
+
 def test_embed_error_throw_records_api_calls(started_cluster):
     """The provider was called and charged for it, so `embedTexts` must report the usage counters even
     though it rethrows. They used to be lost with the `EmbeddingResult` that never reached the caller."""

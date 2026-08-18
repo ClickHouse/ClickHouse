@@ -206,8 +206,10 @@ public:
             }
         }
 
-        auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+        FunctionBaseAI::EmbeddingResult embedding_result;
+        FunctionBaseAI::embedTexts(
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts,
+            embedding_result);
 
         const auto & embeddings = embedding_result.embeddings;
 

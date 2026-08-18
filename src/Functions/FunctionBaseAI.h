@@ -155,7 +155,8 @@ public:
 
     /// Embed a flat list of already-filtered (non-null, non-empty) texts, reusing the shared batching,
     /// retry/backoff, and quota logic. Inputs are grouped into batches of up to `max_batch_size` per HTTP call.
-    static EmbeddingResult embedTexts(
+    /// Accumulates into `result`, so the batches completed before a throw stay visible to the caller.
+    static void embedTexts(
         IAIProvider & provider,
         const String & model,
         UInt64 dimensions,
@@ -166,7 +167,8 @@ public:
         UInt64 retry_delay_ms,
         bool throw_on_error,
         AIQuotaTracker & quota,
-        const ConnectionTimeouts & timeouts);
+        const ConnectionTimeouts & timeouts,
+        EmbeddingResult & result);
 
 protected:
     ContextPtr context;
