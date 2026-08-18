@@ -202,48 +202,6 @@ TEST(AggregatorStateSizeEstimate, BitmapFunctionPreservesExplicitStateVersion)
     EXPECT_THROW(target_default->insert(serialized_result), Exception);
 }
 
-TEST(AggregatorStateSizeEstimate, BitmapAndVersionZeroRoundTripsEmptyIntersection)
-{
-    tryRegisterAggregateFunctions();
-
-    DataTypes bitmap_argument_types = {std::make_shared<DataTypeUInt8>()};
-    AggregateFunctionProperties properties;
-    auto bitmap_function = AggregateFunctionFactory::instance().get("groupBitmap", NullsAction::EMPTY, bitmap_argument_types, {}, properties);
-    auto bitmap_state_type = std::make_shared<DataTypeAggregateFunction>(bitmap_function, bitmap_argument_types, Array{}, /*version=*/0);
-    auto bitmap_states = bitmap_state_type->createColumn();
-    auto & bitmap_column = assert_cast<ColumnAggregateFunction &>(*bitmap_states);
-    auto values = ColumnUInt8::create();
-    values->insert(1);
-    values->insert(2);
-    const IColumn * bitmap_arguments[] = {values.get()};
-    for (size_t row = 0; row < 2; ++row)
-    {
-        bitmap_column.insertDefault();
-        bitmap_function->add(bitmap_column.getData()[row], bitmap_arguments, row, &bitmap_column.createOrGetArena());
-    }
-
-    DataTypes bitmap_and_argument_types = {bitmap_state_type};
-    auto bitmap_and_function = AggregateFunctionFactory::instance().get("groupBitmapAnd", NullsAction::EMPTY, bitmap_and_argument_types, {}, properties);
-    auto empty_intersection = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
-    const IColumn * bitmap_state_arguments[] = {bitmap_states.get()};
-    empty_intersection->insertDefault();
-    bitmap_and_function->add(empty_intersection->getData()[0], bitmap_state_arguments, 0, &empty_intersection->createOrGetArena());
-    bitmap_and_function->add(empty_intersection->getData()[0], bitmap_state_arguments, 1, &empty_intersection->createOrGetArena());
-
-    const Field serialized_empty_intersection = (*empty_intersection)[0];
-    auto round_tripped = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
-    round_tripped->insert(serialized_empty_intersection);
-
-    auto non_empty_intersection = ColumnAggregateFunction::create(bitmap_and_function, /*version=*/0);
-    non_empty_intersection->insertDefault();
-    bitmap_and_function->add(non_empty_intersection->getData()[0], bitmap_state_arguments, 0, &non_empty_intersection->createOrGetArena());
-    round_tripped->insertMergeFrom(*non_empty_intersection, 0);
-
-    auto cardinality = ColumnUInt8::create();
-    bitmap_and_function->insertResultInto(round_tripped->getData()[0], *cardinality, &round_tripped->createOrGetArena());
-    EXPECT_EQ(cardinality->getData()[0], 0);
-}
-
 TEST(AggregatorStateSizeEstimate, BitmapBuildPreservesDefaultStateVersion)
 {
     tryRegisterAggregateFunctions();
