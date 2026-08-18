@@ -20,3 +20,8 @@ safe cross-type array NOT has keeps pruning	1
 safe cross-type array NOT has	1
 safe nullable tuple keeps pruning	1
 safe nullable tuple	1
+--- a nested container under the key type: the target must be rejected, not thrown on ---
+nested Array narrowing	1	1	1
+nested Array same width keeps atom	1
+nested Array same width	1
+nested Map narrowing	1	1

@@ -152,3 +152,35 @@ SELECT 'safe nullable tuple keeps pruning', count() > 0 FROM (EXPLAIN indexes = 
 SELECT 'safe nullable tuple',
     (SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) = (SELECT count() FROM sptu_o WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1);
 DROP TABLE sptu_t; DROP TABLE sptu_o;
+
+SELECT '--- a nested container under the key type: the target must be rejected, not thrown on ---';
+
+-- `castColumnAccurateOrNull` validates its target RECURSIVELY and throws for a type that cannot carry
+-- a NULL, so testing only the outer type lets that throw escape to the user for a `Tuple`-wrapped
+-- `Array`/`Map`. Both shapes below must answer like the `Memory` oracle instead of failing the query.
+
+DROP TABLE IF EXISTS nc_a; DROP TABLE IF EXISTS nc_ao;
+CREATE TABLE nc_a (kt Tuple(Array(UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+CREATE TABLE nc_ao (kt Tuple(Array(UInt8))) ENGINE = Memory;
+INSERT INTO nc_a VALUES (tuple([1])), (tuple([2]));
+INSERT INTO nc_ao VALUES (tuple([1])), (tuple([2]));
+SELECT 'nested Array narrowing',
+    (SELECT count() FROM nc_a WHERE has([tuple([toUInt16(300)])], kt)) = (SELECT count() FROM nc_ao WHERE has([tuple([toUInt16(300)])], kt)),
+    (SELECT count() FROM nc_a WHERE NOT has([tuple([toUInt16(300)])], kt)) = (SELECT count() FROM nc_ao WHERE NOT has([tuple([toUInt16(300)])], kt)),
+    (SELECT count() FROM nc_a WHERE kt NOT IN (SELECT tuple([toUInt16(1)]))) = (SELECT count() FROM nc_ao WHERE kt NOT IN (SELECT tuple([toUInt16(1)])));
+-- The must-not-regress partner: a same-width nested container still resolves through the early
+-- `canBeSafelyCast` exit, so it must keep its atom.
+SELECT 'nested Array same width keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM nc_a WHERE has([tuple([toUInt8(1)])], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'nested Array same width',
+    (SELECT count() FROM nc_a WHERE has([tuple([toUInt8(1)])], kt)) = (SELECT count() FROM nc_ao WHERE has([tuple([toUInt8(1)])], kt));
+DROP TABLE nc_a; DROP TABLE nc_ao;
+
+DROP TABLE IF EXISTS nc_m; DROP TABLE IF EXISTS nc_mo;
+CREATE TABLE nc_m (kt Tuple(Map(UInt8, UInt8))) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1;
+CREATE TABLE nc_mo (kt Tuple(Map(UInt8, UInt8))) ENGINE = Memory;
+INSERT INTO nc_m VALUES (tuple(map(1, 1))), (tuple(map(2, 2)));
+INSERT INTO nc_mo VALUES (tuple(map(1, 1))), (tuple(map(2, 2)));
+SELECT 'nested Map narrowing',
+    (SELECT count() FROM nc_m WHERE has([tuple(map(toUInt16(300), toUInt16(300)))], kt)) = (SELECT count() FROM nc_mo WHERE has([tuple(map(toUInt16(300), toUInt16(300)))], kt)),
+    (SELECT count() FROM nc_m WHERE NOT has([tuple(map(toUInt16(300), toUInt16(300)))], kt)) = (SELECT count() FROM nc_mo WHERE NOT has([tuple(map(toUInt16(300), toUInt16(300)))], kt));
+DROP TABLE nc_m; DROP TABLE nc_mo;

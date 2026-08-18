@@ -2681,6 +2681,26 @@ static bool setIndexConversionPreservesEquality(
     return both_integers && !key->hasCustomName() && !set->hasCustomName();
 }
 
+/// Whether `castColumnAccurateOrNull` accepts this type as a target. Its resolver validates the target
+/// recursively and THROWS for a type that cannot carry a NULL, so an outer-only test lets the throw
+/// escape to the user for a `Tuple`-wrapped `Array`/`Map`. Mirrors
+/// `validateNestedTypesForAccurateCastOrNull` in `src/Functions/CastOverloadResolver.cpp`.
+static bool setIndexKeyTypeSupportsAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & element : tuple_type->getElements())
+            if (!setIndexKeyTypeSupportsAccurateCastOrNull(element))
+                return false;
+        return true;
+    }
+
+    if (type->isNullable())
+        return setIndexKeyTypeSupportsAccurateCastOrNull(removeNullable(type));
+
+    return type->canBeInsideNullable() || canContainNull(*type);
+}
+
 static bool tryPrepareSetColumnsForIndex(
     Columns & set_columns,
     DataTypes & set_types,
@@ -2774,7 +2794,7 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        if (!setIndexKeyTypeSupportsAccurateCastOrNull(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
