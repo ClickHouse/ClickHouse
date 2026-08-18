@@ -6231,6 +6231,8 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
+        bool has_primary_index_cache_been_enabled = getPrimaryIndexCache(*copy) && !getPrimaryIndexCache(*storage_settings.get());
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6259,6 +6261,10 @@ void MergeTreeData::changeSettings(
         {
             startStatisticsCache();
         }
+
+        /// Indexes loaded in parts while the cache was disabled would stay there, unevictable.
+        if (has_primary_index_cache_been_enabled)
+            unloadPrimaryKeys();
     }
 }
 

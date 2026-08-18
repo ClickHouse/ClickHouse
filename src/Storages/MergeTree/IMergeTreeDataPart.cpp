@@ -774,6 +774,9 @@ void IMergeTreeDataPart::unloadIndex()
 {
     std::scoped_lock lock(index_mutex);
     index.reset();
+
+    for (const auto & [_, projection] : projection_parts)
+        projection->unloadIndex();
 }
 
 bool IMergeTreeDataPart::isIndexLoaded() const
