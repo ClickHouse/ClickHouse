@@ -961,6 +961,7 @@ void FuzzConfig::loadServerConfigurations()
     ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
     ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
     ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
+    /// I am limiting the number of failpoints per run, so the WAIT and NOTIFY failpoint can suceed more
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
@@ -968,7 +969,7 @@ void FuzzConfig::loadServerConfigurations()
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
         "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
-        "'thread_group_switcher_post_attach_failure')");
+        "'thread_group_switcher_post_attach_failure') LIMIT 10");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     /// Probe which function_implementation values the server supports. They depend on how the binary
     /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
