@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -406,6 +407,12 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    /// Filters supplied out-of-band by the HTTP interface (URL path filters, repeated `?filter=`
+    /// parameters, unrecognized URL parameters as filters), already combined with `AND`. Kept
+    /// separate from the `filter` setting so it composes with — rather than being overwritten by —
+    /// an in-query `SETTINGS filter = ...` clause when query-construction settings are applied.
+    String http_combined_filter;
+
     TemporaryTablesMapping external_tables_mapping;
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
@@ -599,6 +606,10 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
+    /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
+    /// purpose: only Interpreter may turn it on, but it must reach every join of the
+    /// query, including joins in nested plans, which EXPLAIN also prints.
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -1182,6 +1193,9 @@ public:
 
     String getInsertFormat() const;
     void setInsertFormat(const String & name);
+
+    const String & getHTTPCombinedFilter() const;
+    void setHTTPCombinedFilter(const String & filter);
 
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
@@ -1804,6 +1818,9 @@ public:
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
 
+    JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
+    void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
     ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType : uint8_t
@@ -2008,6 +2025,10 @@ private:
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Keep the `database` setting in sync with an out-of-band change of the current database.
+    /// Must be called with the context mutex held.
+    void mirrorCurrentDatabaseIntoSetting(const String & name);
 
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 
