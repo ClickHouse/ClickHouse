@@ -116,8 +116,8 @@ def test_fatal_exception_is_read_before_an_earlier_handled_one(monkeypatch, tmp_
 def test_attached_traceback_is_bounded(monkeypatch, tmp_path):
     """An exception message can carry command output of any size.
 
-    The traceback is truncated from the top, so the exception type and the message it
-    names last are kept ahead of it - they are what such truncation drops first.
+    Top-truncation discards the leading lines that name the exception, so the type and
+    the first message line are re-stated ahead of the traceback.
     """
     message = "\n".join([f"line {i} " + "x" * 4000 for i in range(400)])
     result = _run_native_job(monkeypatch, tmp_path, message=message)

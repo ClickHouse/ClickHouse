@@ -1183,8 +1183,7 @@ if __name__ == "__main__":
             info=f"Failed with Exception:\n{error_traceback}",
         )
         # An exception message can embed command output of any size, so the traceback is
-        # truncated from the top. A traceback names the type and message last, so they are
-        # what truncation drops first - keep them ahead of it.
+        # truncated from the top, which discards the leading lines that name the exception.
         first_message_line = (str(e).splitlines() or [""])[0][:500]
         result.info = f"Failed with {type(e).__name__}: {first_message_line}\n" + (
             result.get_info_truncated(max_info_lines_cnt=100, max_line_length=1000)
