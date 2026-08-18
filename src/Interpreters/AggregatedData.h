@@ -127,6 +127,8 @@ using AggregatedDataWithNullableUInt32Key = AggregationDataWithNullKey<Aggregate
 
 
 using AggregatedDataWithNullableUInt64Key = AggregationDataWithNullKey<AggregatedDataWithUInt64Key>;
+/// The better-hash counterpart, for the external-aggregation merge (see the `*Hash64` block above).
+using AggregatedDataWithNullableUInt64KeyHash64 = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyHash64>;
 using AggregatedDataWithNullableStringKey = AggregationDataWithNullKey<AggregatedDataWithStringKey>;
 using AggregatedDataWithNullableShortStringKey = AggregationDataWithNullKey<AggregatedDataWithShortStringKey>;
 
