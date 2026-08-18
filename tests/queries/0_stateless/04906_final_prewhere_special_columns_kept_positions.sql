@@ -212,18 +212,18 @@ SETTINGS query_plan_remove_unused_columns = 1;
 SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '') ORDER BY key
 SETTINGS query_plan_remove_unused_columns = 0;
 
--- Pruning must stay live on the shape above: with `ver` no longer read out of the step, the
--- PREWHERE expression folds to a constant and no `ver` input is left in the step's actions. The
--- second arm is the control showing the oracle can be false.
-SELECT '--- pruning is still applied';
-SELECT count() = 0 AS prewhere_input_pruned
+-- The version column is now retained because `ReplacingMergeTree` FINAL needs it to select the
+-- winning row, even though the predicate itself folds to a constant. The second arm is the
+-- control showing that the input listing is emitted only when pruning is enabled.
+SELECT '--- merging column is retained for final';
+SELECT count() > 0 AS merging_column_retained
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '')
     SETTINGS explain_query_plan_default = 'legacy', query_plan_remove_unused_columns = 1
 )
 WHERE explain LIKE '%INPUT%ver%';
-SELECT count() = 0 AS prewhere_input_pruned
+SELECT count() = 0 AS prewhere_input_not_listed_without_pruning
 FROM (
     EXPLAIN PLAN actions = 1
     SELECT key, someCol FROM t_replacing_04906 FINAL PREWHERE (ver > 0) OR (database != '')

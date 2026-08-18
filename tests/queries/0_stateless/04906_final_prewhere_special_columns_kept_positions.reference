@@ -38,7 +38,7 @@ test2	test2
 2	test3
 1	test2
 2	test3
---- pruning is still applied
+--- merging column is retained for final
 1
 0
 --- merging column in the output header
