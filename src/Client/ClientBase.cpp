@@ -132,6 +132,7 @@ namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool async_insert;
+    extern const SettingsBool send_header_and_column_defaults_for_insert;
     extern const SettingsBool send_table_structure_on_insert_with_inline_data;
     extern const SettingsDialect dialect;
     extern const SettingsString format;
@@ -2365,6 +2366,16 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
     if (isEmbeeddedClient() && parsed_insert_query.infile)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Reading from INFILE is disabled when you are running client embedded into server.");
 
+    /// The client parses the INSERT data itself and needs the table structure from the server for that,
+    /// but with `send_header_and_column_defaults_for_insert = 0` the server will not send it.
+    /// INSERT queries with inline data don't reach this point: they are sent as-is and parsed by the server.
+    /// INSERT SELECT with the `input` function doesn't need this structure: the server sends the structure
+    /// of the `input` function separately, regardless of the setting.
+    if (!parsed_insert_query.select && !client_context->getSettingsRef()[Setting::send_header_and_column_defaults_for_insert])
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "INSERT without inline data requires receiving the table structure from the server, "
+            "which is disabled by the setting 'send_header_and_column_defaults_for_insert'");
+
     query_interrupt_handler.start();
     SCOPE_EXIT({ query_interrupt_handler.stop(); });
 
@@ -2939,11 +2950,16 @@ void ClientBase::processParsedSingleQuery(
         if (insert && insert->select)
             insert->tryFindInputFunction(input_function);
 
-        /// When the user explicitly requested inline insert data mode (via `--inline-insert-data` or
-        /// `send_table_structure_on_insert_with_inline_data = 0`), it takes precedence over `async_insert`
-        /// on the client side: both paths send the data inline with the query, and the explicit user choice
-        /// determines which client-side flow (and rejection message) applies.
-        bool is_inline_insert_data = (inline_insert_data || !client_context->getSettingsRef()[Setting::send_table_structure_on_insert_with_inline_data])
+        /// When the user explicitly requested inline insert data mode (via `--inline-insert-data`,
+        /// `send_table_structure_on_insert_with_inline_data = 0` or `send_header_and_column_defaults_for_insert = 0`),
+        /// it takes precedence over `async_insert` on the client side: both paths send the data inline
+        /// with the query, and the explicit user choice determines which client-side flow
+        /// (and rejection message) applies. With `send_header_and_column_defaults_for_insert = 0`
+        /// the server does not send the table structure, so the client cannot parse the data itself
+        /// and must send it inline for the server to parse.
+        bool is_inline_insert_data = (inline_insert_data
+            || !client_context->getSettingsRef()[Setting::send_table_structure_on_insert_with_inline_data]
+            || !client_context->getSettingsRef()[Setting::send_header_and_column_defaults_for_insert])
             && insert && insert->hasInlinedData() && !insert->select;
 
         /// Update async_insert after applying settings from server

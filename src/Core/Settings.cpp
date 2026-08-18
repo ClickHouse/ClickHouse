@@ -7038,6 +7038,11 @@ Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact 
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
 If disabled and the INSERT query contains inline data, the server will not send the table structure and column defaults back to the client over the native protocol. Instead, the server will parse the inline data itself. This can improve performance for many small inserts over the native protocol.
 )", 0) \
+    DECLARE(Bool, send_header_and_column_defaults_for_insert, true, R"(
+If disabled, the server will not send the header block and column defaults for the insertion table to the client over the native protocol before receiving the INSERT data. This saves a round-trip and egress traffic on every INSERT, which is significant for small inserts into tables with many columns.
+
+Disable it only from clients that already know the structure of the insertion table and send the data in that structure (for example, drivers using the `Native` format), because the server will not send anything for the client to wait for. `clickhouse-client` needs the structure from the server to parse the INSERT data on the client side, so with this setting disabled it only supports INSERT queries with inline data (which are sent as-is and parsed by the server).
+)", 0) \
     \
     DECLARE(Bool, async_insert, true, R"(
 If true, data from INSERT query is stored in queue and later flushed to table in background. If wait_for_async_insert is false, INSERT query is processed almost instantly, otherwise client will wait until data will be flushed to table

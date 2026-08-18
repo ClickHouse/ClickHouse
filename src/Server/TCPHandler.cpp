@@ -111,6 +111,7 @@ namespace Setting
     extern const SettingsBool partial_result_on_first_cancel;
     extern const SettingsUInt64 poll_interval;
     extern const SettingsSeconds receive_timeout;
+    extern const SettingsBool send_header_and_column_defaults_for_insert;
     extern const SettingsLogsLevel send_logs_level;
     extern const SettingsBool send_profile_events;
     extern const SettingsString send_logs_source_regexp;
@@ -1353,18 +1354,22 @@ void TCPHandler::startInsertQuery(QueryState & state)
 {
     std::lock_guard lock(*callback_mutex);
 
-    /// Send ColumnsDescription for insertion table
-    if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
+    if (state.query_context->getSettingsRef()[Setting::send_header_and_column_defaults_for_insert])
     {
-        if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
+        /// Send ColumnsDescription for insertion table
+        if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
         {
-            if (state.query_context->hasInsertionTableColumnsDescription())
-                sendTableColumns(state, *state.query_context->getInsertionTableColumnsDescription());
+            if (state.query_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields])
+            {
+                if (state.query_context->hasInsertionTableColumnsDescription())
+                    sendTableColumns(state, *state.query_context->getInsertionTableColumnsDescription());
+            }
         }
+
+        /// Send block to the client - table structure.
+        sendData(state, state.io.pipeline.getHeader());
     }
 
-    /// Send block to the client - table structure.
-    sendData(state, state.io.pipeline.getHeader());
     sendLogs(state);
 
     /// Update flag after reading external tables
