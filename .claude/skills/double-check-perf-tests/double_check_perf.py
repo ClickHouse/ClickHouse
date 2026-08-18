@@ -544,8 +544,6 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
         "tpch10": "tpch.lineitem",      # the value tpch.xml substitutes
     }
     for test_name, text in texts.items():
-        path = Path(test_name)
-
         for name in EXTERNAL_DATASETS:
             if re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text):
                 found[name].append(test_name)
