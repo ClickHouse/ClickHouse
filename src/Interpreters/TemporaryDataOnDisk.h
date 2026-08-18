@@ -235,6 +235,7 @@ public:
     String describeFilePath() const;
 
 private:
+    void preNext() override;
     void updateAllocAndCheck();
     void freeAlloc();
 

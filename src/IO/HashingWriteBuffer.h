@@ -52,6 +52,19 @@ class HashingWriteBuffer : public IHashingBuffer<WriteBuffer>
 private:
     WriteBuffer & out;
 
+    void preNext() override
+    {
+        try
+        {
+            out.checkBeforeWrite();
+        }
+        catch (...)
+        {
+            out.cancel();
+            throw;
+        }
+    }
+
     void nextImpl() override
     {
         size_t len = offset();

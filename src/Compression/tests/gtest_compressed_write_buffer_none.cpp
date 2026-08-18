@@ -6,6 +6,7 @@
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromVector.h>
 
@@ -221,7 +222,7 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeWriteIsDetected)
     out.next();
 
     EXPECT_THROW(compressed_out.write("!", 1), DB::Exception);
-    compressed_out.cancel();
+    EXPECT_TRUE(compressed_out.isCanceled());
 #endif
 }
 
@@ -241,7 +242,30 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeCharacterWriteIsDetecte
     out.next();
 
     EXPECT_THROW(compressed_out.write('!'), DB::Exception);
-    compressed_out.cancel();
+    EXPECT_TRUE(compressed_out.isCanceled());
+#endif
+}
+
+TEST(CompressedWriteBufferNone, ViolatedExclusivityThroughHashingBufferIsDetected)
+{
+    /// A wrapper that exposes the compressor's working buffer must validate the nested buffer
+    /// before `write` accesses that potentially aliased storage.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    auto tmp_file = createTemporaryFile("/tmp/");
+    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+    HashingWriteBuffer hashing_out(compressed_out);
+
+    hashing_out.write("hello", 5);
+    out.write("x", 1);
+    out.next();
+
+    EXPECT_THROW(hashing_out.write("!", 1), DB::Exception);
+    EXPECT_TRUE(hashing_out.isCanceled());
+    EXPECT_TRUE(compressed_out.isCanceled());
 #endif
 }
 

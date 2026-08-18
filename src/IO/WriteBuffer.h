@@ -98,7 +98,15 @@ public:
     {
         /// A derived buffer can temporarily alias storage owned by another buffer. Validate
         /// that storage before `hasPendingData` accesses its current window.
-        preNext();
+        try
+        {
+            preNext();
+        }
+        catch (...)
+        {
+            cancel();
+            throw;
+        }
 
         if (!hasPendingData())
             next();
@@ -126,6 +134,13 @@ public:
 
     /// Get number of times next() has been called (number of flushes)
     size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
+
+    /// Checks that the current buffer can still be safely accessed. Buffer wrappers that
+    /// expose a nested buffer's working window must call this before touching that window.
+    void checkBeforeWrite()
+    {
+        preNext();
+    }
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.

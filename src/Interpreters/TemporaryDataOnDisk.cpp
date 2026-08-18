@@ -413,6 +413,11 @@ TemporaryDataBuffer::TemporaryDataBuffer(std::shared_ptr<TemporaryDataOnDiskScop
     WriteBuffer::set(out_compressed_buf->buffer().begin(), out_compressed_buf->buffer().size());
 }
 
+void TemporaryDataBuffer::preNext()
+{
+    out_compressed_buf->checkBeforeWrite();
+}
+
 void TemporaryDataBuffer::nextImpl()
 {
     if (!out_compressed_buf)
