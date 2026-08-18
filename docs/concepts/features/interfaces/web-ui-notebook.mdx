@@ -38,11 +38,11 @@ A tab always keeps at least one query cell, because that is where the shared edi
 
 ## Query cells {#query-cells}
 
-There is only ever one query editor on the page — the full editor with syntax highlighting, autocompletion and query-parameter inputs. In notebook mode it is docked into whichever query cell is active. Clicking another cell's query moves the editor there.
+There is only ever one query editor on the page — the full editor with syntax highlighting, autocompletion and query-parameter inputs. In notebook mode it is docked into whichever query cell is active, and it is shown only while it has the focus: as soon as focus leaves it, that cell collapses too, so a notebook you are reading shows no open text areas at all. Clicking a collapsed query gives it the editor back (moving the editor there if it belonged to another cell). Focus moving inside the editor — to a query-parameter input, or to a completion candidate — does not collapse it.
 
-A query cell that does not hold the editor shows its query collapsed instead: syntax highlighted, on a single line with runs of whitespace (including indentation and line breaks) reduced to one space, and with the tail faded out on the right when it does not fit. It has no background of its own, so an inactive cell reads as text on the page rather than as another input box.
+A collapsed query cell shows its query on a single line: syntax highlighted, with runs of whitespace (including indentation and line breaks) reduced to one space, and with the tail faded out on the right when it does not fit. It has no background of its own, so a collapsed cell reads as text on the page rather than as another input box.
 
-Results are shown more compactly in notebook mode: a smaller font, and a pane of at most a quarter of the viewport height that scrolls internally, so a long result does not push the rest of the notebook off the page.
+Results are shown more compactly in notebook mode: a smaller font, and a table of at most a quarter of the viewport height. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. The header keeps just enough room above the column name for the column's type, which appears there when you hover the header.
 
 Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
 

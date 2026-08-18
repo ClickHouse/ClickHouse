@@ -1805,15 +1805,10 @@
 
         .tab-panel.notebook-mode .cell
         {
+            /* Cells are separated by whitespace alone: no rule, no indent, so a notebook reads as
+               one flowing document and the results line up with the editor above them. Which cell
+               holds the editor is already evident — it is the one that is not collapsed. */
             margin: 0.75rem 0;
-            /* A quiet frame around the cell; the active one is picked out by its left edge. */
-            border-left: 3px solid transparent;
-            padding-left: 0.5rem;
-        }
-
-        .tab-panel.notebook-mode .cell.cell-active
-        {
-            border-left-color: color-mix(in srgb, var(--link-color) 50%, transparent);
         }
 
         .cell-header
@@ -1898,6 +1893,16 @@
             background-color: transparent;
         }
 
+        /* While the editor is docked in a cell but not focused, it is hidden and the cell shows
+           its collapsed preview instead. The editor keeps its place in the DOM rather than being
+           re-parented on every focus change, so its scroll offset, selection and the completion
+           overlay all survive. */
+        .cell-editor-collapsed > #query_div,
+        .cell-editor-collapsed > #query-params
+        {
+            display: none;
+        }
+
         /* A query cell that is not the active one shows its query collapsed to a single line:
            runs of whitespace become one space and the tail fades out on the right. Unlike the
            editor and the Markdown text area it has no background of its own — an inactive cell
@@ -1947,21 +1952,39 @@
             min-height: 4.5em;
         }
 
-        /* In notebook mode a result is a small pane of its own: a quarter of the viewport,
-           scrolled internally rather than pushing the rest of the notebook down the page. */
+        /* In notebook mode a result is a small pane of its own: at most a quarter of the viewport,
+           scrolled internally rather than pushing the rest of the notebook down the page. The
+           scrolling happens INSIDE the table (see `--result-max-height`), so the scrollbar sits at
+           the table's own edge and the pane itself just holds it. */
         .tab-panel.notebook-mode .cell-result
         {
             font-size: 85%;
-            max-height: 25vh;
-            overflow: auto;
-            /* A new scroll container, so the table's sticky header sticks to the pane. */
             position: relative;
         }
 
-        /* The result element's own top margin doubles the gap under the editor here. */
         .tab-panel.notebook-mode .cell-result query-result
         {
-            --result-top-margin: 0.25rem;
+            /* A margin, so the gap under the editor shows the page through it rather than a strip
+               of the table's own background — and, being outside the scroll container, it stays put
+               instead of scrolling away with the rows. */
+            --result-top-margin: 0.35rem;
+            --result-max-height: 25vh;
+            --result-max-width: 100%;
+            --result-overflow: auto;
+            /* Just enough room for a column's type hint, reserved inside the header cell: 0.75em
+               of the table's font for the hint's own text, plus its line box. Paired with a sticky
+               offset of 0, or the header's default negative offset would slide the reserved strip
+               up out of the scroller. */
+            --result-header-clearance: 1em;
+            /* -1px, not 0: with `border-collapse: collapse` a cell's borders are painted by the
+               table, not by the cell, so a stuck header does not carry its own top border and the
+               row scrolling underneath shows through that one-pixel line. Pulling the header up by
+               the border width covers it. (The page-scrolled default uses a bigger negative offset
+               for the same reason.) */
+            --result-header-top: -1px;
+            --result-hint-top: 2px;
+            --result-hint-shift: none;
+            --result-last-resizer-right: 0px;
         }
 
         /* ----- Text cells ---------------------------------------------------------------- */
@@ -2871,6 +2894,23 @@ class QueryResultElement extends HTMLElement
                        there the result sits right under its own cell editor. */
                     margin-top: var(--result-top-margin, 1rem);
                     background-color: var(--element-background-color);
+                    /* Normally the PAGE scrolls the table. A notebook cell instead bounds the
+                       table itself (--result-max-height) and scrolls inside it, so the scrollbar
+                       belongs to the table rather than to a wrapper around it, and the sticky
+                       header sticks to the table's own top edge. */
+                    max-height: var(--result-max-height, none);
+                    /* A table wider than its cell is capped here rather than widening the page, so
+                       a bounded table scrolls on BOTH axes inside itself. #data_div.fixed sizes to
+                       the table (width: fit-content), which without this cap makes the whole page
+                       scroll sideways for one wide result. */
+                    max-width: var(--result-max-width, none);
+                    overflow: var(--result-overflow, visible);
+                    /* Thin scrollbars, matching the database panel and the expanded-cell view: a
+                       result pane is a quarter of the viewport tall, so a full-width scrollbar would
+                       take a noticeable bite out of it. No-op unless the table is bounded, which is
+                       the only case where it scrolls at all. */
+                    scrollbar-width: thin;
+                    scrollbar-color: var(--border-color) transparent;
                 }
 
                 #data_div.fixed
@@ -2962,8 +3002,18 @@ class QueryResultElement extends HTMLElement
                 th
                 {
                     position: sticky;
-                    top: -0.5rem;
+                    /* Slightly above the scrollport by default, so the table's top border does not
+                       leave a seam against the page. A bounded table sets this to 0 instead: there
+                       the offset would eat into the type-hint clearance above the header. */
+                    top: var(--result-header-top, -0.5rem);
                     padding: 0.25rem 0.5rem;
+                    /* A bounded table (see --result-max-height) scrolls inside itself, so its
+                       sticky header sits at the very top of the scroller and a type hint drawn
+                       ABOVE the header would be clipped away. Such a table asks for just enough
+                       extra padding here and draws the hint inside it instead: the space belongs
+                       to the opaque, sticky header, so no row scrolls through it and the type stays
+                       legible at any scroll position. */
+                    padding-top: calc(0.25rem + var(--result-header-clearance, 0px));
                     text-align: center;
                     background-color: var(--table-header-color);
                     border: 1px solid var(--border-color);
@@ -2991,9 +3041,14 @@ class QueryResultElement extends HTMLElement
                     white-space: pre;
                 }
 
+                /* By default the hint hangs above the header, over whatever is on the page there.
+                   A bounded table has no room above its header and reserves it inside the header
+                   instead (see the th padding), so it places the hint there: --result-hint-shift
+                   drops the upward shift and --result-hint-top puts it in the reserved strip. */
                 thead .type-hint
                 {
-                    transform: translateY(-100%);
+                    top: var(--result-hint-top, -1px);
+                    transform: var(--result-hint-shift, translateY(-100%));
                 }
 
                 th:hover .type-hint
@@ -3007,6 +3062,16 @@ class QueryResultElement extends HTMLElement
                     top: 0;
                     right: -0.3rem;
                     width: 0.5rem;
+                }
+
+                /* The grip straddles the column boundary, so the LAST column's grip sticks out past
+                   the table's right edge. Harmless while the page scrolls the table, but a bounded
+                   table (see --result-max-height) counts it as scrollable overflow and would offer a
+                   few pixels of horizontal scroll on a table that otherwise fits exactly. Such a
+                   table pulls the last grip inside; it stays the same width, just not overhanging. */
+                th:last-child .resizer
+                {
+                    right: var(--result-last-resizer-right, -0.3rem);
                     cursor: col-resize;
                     user-select: none;
                     height: 100%;
@@ -11663,6 +11728,10 @@ function tabRuntimeDefaults() {
         notebookEl: null,       /// the <div class="notebook"> inside the panel
         addEl: null,            /// the "add a cell" control under the last cell
         inlineAddEl: null,      /// the transient "insert a cell here" chooser, or null
+        /// In notebook mode the active cell shows the editor only while it has focus; losing focus
+        /// collapses it to the one-line preview (see `collapseEditor`). Outside notebook mode the
+        /// editor is always shown, so this flag only matters once a tab has more than one cell.
+        editorExpanded: false,
         controller: null,       /// AbortController of this tab's in-flight single query
         multiControllers: [],   /// AbortControllers of this tab's in-flight multi-query statements
         reqNum: 0,              /// per-tab run/render generation (see the token model at `activation_num`)
@@ -11868,6 +11937,36 @@ function dockEditor() {
     renderQueryBackdrop();
 }
 
+/// Reveal the docked editor in the active cell and put the caret in it. A hidden textarea cannot
+/// take focus, so every path that means "let the user type" goes through here rather than calling
+/// `query_area.focus()` directly.
+function focusEditor() {
+    const tab = getActiveTab();
+    if (tab && !tab.editorExpanded) {
+        tab.editorExpanded = true;
+        const cell = activeCell(tab);
+        if (cell && cell.editorSlot) renderQueryCellEditor(tab, cell);
+    }
+    query_area.focus();
+}
+
+/// Collapse the active cell's editor back to its one-line preview, in notebook mode only. Called
+/// when focus leaves the editor for good (see the deferred `blur` handler): a notebook shows one
+/// expanded cell at most, so scrolling through it reads as a document rather than a stack of
+/// text areas.
+function collapseEditor() {
+    const tab = getActiveTab();
+    if (!tab || !notebookMode(tab) || !tab.editorExpanded) return;
+    /// The preview is rendered from `cell.query`, so fold the live draft in first or it would show
+    /// the text as of the last capture.
+    captureActiveTab();
+    tab.editorExpanded = false;
+    closeCompletions();
+    const cell = activeCell(tab);
+    if (cell && cell.editorSlot) renderQueryCellEditor(tab, cell);
+    scheduleSave();
+}
+
 /// Bring the tab's notebook DOM in line with `tab.cells`: order the cell nodes, repaint their
 /// headers and bodies, dock the editor and refresh the trailing "add a cell" control. Cell
 /// nodes are reused, never rebuilt: a cell's rendered result — and a query streaming into it —
@@ -11961,8 +12060,14 @@ function updateCellStatus(cell) {
 /// line, syntax highlighted, fading out on the right. Clicking a collapsed query activates it.
 function renderQueryCellEditor(tab, cell) {
     const slot = cell.editorSlot;
+    const is_active = activeCell(tab) === cell;
+    /// The active cell keeps the editor only while it is focused; every other cell, and the active
+    /// one once focus has left it, shows the collapsed query. Outside notebook mode the editor is
+    /// never collapsed — a lone cell has nothing to collapse into.
+    const expanded = is_active && (!notebookMode(tab) || tab.editorExpanded);
+    slot.classList.toggle('cell-editor-collapsed', is_active && !expanded);
     let preview = slot.querySelector('.query-preview');
-    if (activeCell(tab) === cell) {
+    if (expanded) {
         if (preview) preview.remove();
         return;
     }
@@ -11972,6 +12077,8 @@ function renderQueryCellEditor(tab, cell) {
         preview.tabIndex = 0;
         preview.setAttribute('role', 'button');
         preview.title = 'Click to edit this query';
+        /// For the cell that already holds the editor this only has to reveal and focus it;
+        /// `setActiveCell` does exactly that when the cell is already active.
         preview.addEventListener('click', () => setActiveCell(tab, cell.id));
         preview.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveCell(tab, cell.id); }
@@ -12214,7 +12321,7 @@ function moveCell(tab, cell, delta) {
 function setActiveCell(tab, id) {
     const cell = tab.cells.find(c => c.id === id && c.type === 'query');
     if (!cell) return Promise.resolve();
-    if (activeCell(tab) === cell) { query_area.focus(); return Promise.resolve(); }
+    if (activeCell(tab) === cell) { focusEditor(); return Promise.resolve(); }
     markBootstrapDirty();
     captureActiveTab();
     /// Fold the captured editor state of the cell we are leaving back into its own history
@@ -12243,7 +12350,7 @@ async function activateCellState(tab, cell) {
     syncActiveTabChrome();
     document.documentElement.style.setProperty('--background-color-rotate', queryToColor(tab.query));
     renderTabBar();
-    query_area.focus();
+    focusEditor();
     scheduleSave();
 }
 
@@ -12263,7 +12370,7 @@ function runCell(tab, cell) {
 /// the shared editor; for a text cell it means switching from the rendered Markdown back to
 /// its source.
 function editCell(tab, cell) {
-    if (cell.type === 'query') { setActiveCell(tab, cell.id); query_area.focus(); return; }
+    if (cell.type === 'query') { setActiveCell(tab, cell.id); focusEditor(); return; }
     cell.editing = true;
     renderTextCell(tab, cell);
 }
@@ -12676,7 +12783,7 @@ async function activateTab(id, guard_paste = false) {
         clearTimeout(middleclick_paste_timeout);
         suppress_middleclick_paste = true;
     }
-    query_area.focus();
+    focusEditor();
     if (guard_paste) middleclick_paste_timeout = setTimeout(disarmMiddleclickPaste, 250);
 }
 
@@ -12908,7 +13015,7 @@ function renderTabBar() {
     /// resulting rerender, so hand focus to the query area — always visible — before hiding.
     const closeOthersHadFocus = document.activeElement === tab_close_others_elem;
     tab_close_others_elem.hidden = tabs.length < 2;
-    if (closeOthersHadFocus && tab_close_others_elem.hidden) query_area.focus();
+    if (closeOthersHadFocus && tab_close_others_elem.hidden) focusEditor();
     syncConnectionUI();
 
     tabs_elem.textContent = '';
@@ -16038,7 +16145,9 @@ function onReturnToEditor() {
 function focusEditorForRun() {
     suppressReturnToEditor = true;
     try {
-        query_area.focus();
+        /// A run selects the statement it launched in the editor, so the editor must be showing:
+        /// expand it if a click on Run collapsed it (see `collapseEditor`).
+        focusEditor();
     } finally {
         suppressReturnToEditor = false;
     }
@@ -16295,6 +16404,35 @@ query_area.addEventListener('focus', renderQueryBackdrop);
 query_area.addEventListener('blur', renderQueryBackdrop);
 /// Hide autocompletion when the textarea loses focus.
 query_area.addEventListener('blur', closeCompletions);
+
+/// In notebook mode the editor collapses to its one-line preview as soon as it stops being
+/// focused. The decision is deferred to the next task because `blur` fires BEFORE focus lands
+/// anywhere: focus may still be moving inside the editor itself (clicking a completion entry in
+/// the overlay, or one of the cell's own query-parameter inputs), and collapsing then would pull
+/// the target out from under the click. A pointer press on the notebook that lands nowhere
+/// focusable blurs to `<body>`, which does count as leaving.
+query_area.addEventListener('blur', () => {
+    setTimeout(() => {
+        const focused = document.activeElement;
+        if (focused && (editorDivEl.contains(focused) || editorParamsEl.contains(focused))) return;
+        /// Clicking Run blurs the editor, and the launched run focuses it right back to select the
+        /// statement it is executing (`focusEditorForRun`); collapsing in between would flash the
+        /// preview for a frame.
+        if (focused && (focused.id === 'run' || focused.id === 'run-all')) return;
+        collapseEditor();
+    }, 0);
+});
+
+/// Focusing the editor again is what expands it; `focusEditor` covers the programmatic paths,
+/// this covers a genuine click or Tab into the textarea while it is somehow already visible.
+query_area.addEventListener('focus', () => {
+    const tab = getActiveTab();
+    if (tab && !tab.editorExpanded) {
+        tab.editorExpanded = true;
+        const cell = activeCell(tab);
+        if (cell && cell.editorSlot) renderQueryCellEditor(tab, cell);
+    }
+});
 
 /// Clear the syntax-error highlight as soon as the user returns to the editor: refocusing it,
 /// typing, moving the cursor with the keyboard, or clicking inside it. `onReturnToEditor` also
