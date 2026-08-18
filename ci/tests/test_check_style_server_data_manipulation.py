@@ -145,6 +145,32 @@ def test_commented_out_mutation_is_not_flagged(tmp_path):
     assert not _run(tmp_path, FETCH_PART_PATH + 'true # rm -f "$path/data.bin"\n')
 
 
+def test_commented_out_fetch_does_not_arm_check(tmp_path):
+    commented_fetch = "# " + FETCH_PART_PATH
+    assert not _run(tmp_path, commented_fetch + 'tmp=$(mktemp)\nrm -f "$tmp"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'tmp=$(mktemp)\nrm -f "$tmp"\n')
+
+
+def test_clickhouse_disks_mutations_are_flagged(tmp_path):
+    fetch_metadata_path = (
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT metadata_path FROM system.tables'
+        " WHERE table = 't' AND database = 'default' LIMIT 1\")\n"
+    )
+    assert _run(
+        tmp_path,
+        fetch_metadata_path
+        + '/usr/bin/clickhouse disks --disk default --query "w --path-to ${path}"\n',
+    )
+    assert _run(
+        tmp_path,
+        fetch_metadata_path + 'clickhouse-disks -q "rm --path-to ${path}"\n',
+    )
+    assert not _run(
+        tmp_path,
+        fetch_metadata_path + 'clickhouse disks --query "list --recursive $path" | sed -n 1p\n',
+    )
+
+
 def test_mutation_in_case_branch_is_flagged(tmp_path):
     assert _run(
         tmp_path, FETCH_PART_PATH + 'case 1 in 1) rm -f "$path/data.bin";; esac\n'

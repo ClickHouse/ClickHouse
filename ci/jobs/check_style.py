@@ -301,7 +301,12 @@ SHELL_COMMAND_STRING_RE = re.compile(
     r"(?:sh|bash)\s+-c\b|\beval\s+"
 )
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
-    r"clickhouse-disks\b.*\b(?:write|remove|copy|move|mkdir|link|truncate)\b"
+    r"""(?x)
+    \bclickhouse(?:-|\s+)disks\b
+    [^|;&]*?
+    (?:--query|(?<![\w-])-q)\s*(?:=\s*)?[\"']?\s*
+    (?:write|w|remove|rm|delete|copy|cp|move|mv|mkdir|link|ln|touch|create|sed|packed-io|packed_io)\b
+    """
 )
 
 # Do not add new entries: tests that modify the server's data on disk must be integration
@@ -374,7 +379,11 @@ def check_no_server_data_manipulation(files):
             errors.append(f"Error checking {test_case}: {e}")
             continue
 
-        joined_content = " ".join(file_content.splitlines())
+        # Use the same comment handling as the mutation scan below. Otherwise a commented
+        # query could arm the file-level check but could not itself produce a violation.
+        joined_content = " ".join(
+            strip_shell_comment(line) for line in file_content.splitlines()
+        )
         if not FETCHES_SERVER_PATH_RE.search(
             joined_content
         ) and not FETCHES_SERVER_ROOT_RE.search(joined_content):
