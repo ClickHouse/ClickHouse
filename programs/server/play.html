@@ -1791,6 +1791,15 @@
            result renders exactly as before. Adding a second cell turns notebook mode on for
            that tab alone (`.tab-panel.notebook-mode`). */
 
+        /* A notebook's height changes constantly: cells expand and collapse as they take the
+           editor, results are resized, cells are added and removed. With `overflow: auto` the page
+           scrollbar would appear and disappear with it, shifting the whole layout sideways each
+           time, so reserve it for as long as the tab is a notebook. */
+        #main.notebook-mode
+        {
+            overflow-y: scroll;
+        }
+
         .cell
         {
             position: relative;
@@ -12001,6 +12010,9 @@ function dockEditor() {
     const tab = getActiveTab();
     const cell = tab ? activeCell(tab) : null;
     const notebook = !!(tab && notebookMode(tab) && cell && cell.editorSlot);
+    /// Before the early return below: this follows the ACTIVE tab, and must be updated even when
+    /// nothing needs re-parenting (switching between two notebook tabs, or to a plain one).
+    main_container.classList.toggle('notebook-mode', notebook);
     const host = notebook ? cell.editorSlot : editorHomeEl;
     const run_host = notebook ? cell.runSlot : controls_elem;
     if (editorDivEl.parentNode === host && editorParamsEl.parentNode === host
@@ -16519,24 +16531,29 @@ query_area.addEventListener('blur', renderQueryBackdrop);
 /// Hide autocompletion when the textarea loses focus.
 query_area.addEventListener('blur', closeCompletions);
 
+/// Everything that counts as the editor's own surface: the editor itself, its parameter inputs,
+/// the Run / progress / download row docked with it, and the download menu that row opens (which
+/// lives elsewhere in the DOM so it can be positioned freely). Using any of them is not "the user
+/// moved on", so the cell must not collapse — which would pull the very control being clicked out
+/// from under the pointer.
+const editorSurfaces = [editorDivEl, editorParamsEl, runDivEl, document.getElementById('download-dropdown')];
+
 /// In notebook mode the editor collapses to its one-line preview as soon as it stops being
 /// focused. The decision is deferred to the next task because `blur` fires BEFORE focus lands
-/// anywhere: focus may still be moving inside the editor itself (clicking a completion entry in
-/// the overlay, or one of the cell's own query-parameter inputs), and collapsing then would pull
-/// the target out from under the click. A pointer press on the notebook that lands nowhere
-/// focusable blurs to `<body>`, which does count as leaving.
+/// anywhere: focus may still be moving within the surface (a completion entry in the overlay, a
+/// query-parameter input, the Run button), and collapsing then would pull the target out from
+/// under the click. A pointer press on the notebook that lands nowhere focusable blurs to
+/// `<body>`, which does count as leaving.
 query_area.addEventListener('blur', () => {
     setTimeout(() => {
         const focused = document.activeElement;
-        if (focused && (editorDivEl.contains(focused) || editorParamsEl.contains(focused))) return;
-        /// A pointer still held down on a non-focusable part of the editor's own surface (the
-        /// resize grip) blurs to `<body>` without the user having left the editor. Stay expanded
-        /// and take the focus back, so "expanded" keeps meaning "focused".
+        if (focused && editorSurfaces.some(el => el && el.contains(focused))) return;
+        /// A pointer still held down on a non-focusable part of the surface — the resize grips, the
+        /// theme switch, the copy and download buttons, the Logs/Metrics toggles — blurs to
+        /// `<body>` without the user having left. Stay expanded and take the focus back, so
+        /// "expanded" keeps meaning "focused"; collapsing here would hide the control mid-click and
+        /// its `click` would never arrive.
         if (editorPointerDown) { query_area.focus(); return; }
-        /// Clicking Run blurs the editor, and the launched run focuses it right back to select the
-        /// statement it is executing (`focusEditorForRun`); collapsing in between would flash the
-        /// preview for a frame.
-        if (focused && (focused.id === 'run' || focused.id === 'run-all')) return;
         collapseEditor();
     }, 0);
 });
@@ -16544,8 +16561,8 @@ query_area.addEventListener('blur', () => {
 /// Set while a pointer is held down inside the editor's surface, so the deferred blur check above
 /// can tell a press on the editor's own chrome from the user moving on to something else.
 let editorPointerDown = false;
-for (const host of [editorDivEl, editorParamsEl]) {
-    host.addEventListener('pointerdown', () => { editorPointerDown = true; });
+for (const host of editorSurfaces) {
+    if (host) host.addEventListener('pointerdown', () => { editorPointerDown = true; });
 }
 window.addEventListener('pointerup', () => { editorPointerDown = false; });
 window.addEventListener('pointercancel', () => { editorPointerDown = false; });
