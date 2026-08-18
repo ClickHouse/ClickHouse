@@ -73,6 +73,8 @@ TEST(GCSCredentialSource, TransportKnobsArePartOfClientIdentity)
 {
     GCSObjectStorageSettings lhs;
     GCSObjectStorageSettings rhs;
+    lhs.no_sign_request = true;
+    rhs.no_sign_request = true;
     EXPECT_TRUE(lhs.describesSameClientAs(rhs));
 
     rhs.headers.emplace_back("x-custom", "value");
@@ -84,6 +86,13 @@ TEST(GCSCredentialSource, TransportKnobsArePartOfClientIdentity)
 
     rhs = lhs;
     rhs.request_timeout_ms = lhs.request_timeout_ms + 1;
+    EXPECT_FALSE(lhs.describesSameClientAs(rhs));
+}
+
+TEST(GCSCredentialSource, ApplicationDefaultCredentialsAreNotInterchangeable)
+{
+    GCSObjectStorageSettings lhs;
+    GCSObjectStorageSettings rhs;
     EXPECT_FALSE(lhs.describesSameClientAs(rhs));
 }
 

@@ -219,6 +219,13 @@ bool GCSObjectStorageSettings::describesSameClientAs(const GCSObjectStorageSetti
     if (!service_account_key_file.empty() || !other.service_account_key_file.empty())
         return false;
 
+    /// Application Default Credentials are also read from external mutable state when the client is
+    /// constructed. The same settings snapshot can therefore produce clients for different
+    /// identities after that state changes. Keep cross-storage copies on the read + write path.
+    if (chooseGCSCredentialSource(*this) == GCSCredentialSource::ApplicationDefault
+        || chooseGCSCredentialSource(other) == GCSCredentialSource::ApplicationDefault)
+        return false;
+
     /// Exactly the fields consumed by `getGCSClient` to build the client: the endpoint, the
     /// credentials, and the transport knobs. `bucket` / `key_prefix` are intentionally excluded: two
     /// storages sharing a client may point at different buckets (that is precisely the cross-bucket
