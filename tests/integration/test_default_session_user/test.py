@@ -166,9 +166,18 @@ def assert_anonymous_login_failure(interface, node=node1):
     connections without a user name, and the reject has to stay auditable: it must be
     recorded as a login failure rather than returned from the pre-authentication guard
     silently."""
-    count_before = session_log_count(node, "LoginFailure", "", interface)
+    def count_with_client_address():
+        node.query("SYSTEM FLUSH LOGS session_log")
+        if node.query("EXISTS TABLE system.session_log").strip() == "0":
+            return 0
+        return int(node.query(
+            f"SELECT count() FROM system.session_log "
+            f"WHERE type = 'LoginFailure' AND user = '' AND interface = '{interface}' "
+            f"AND client_address != toIPv6('::')"))
+
+    count_before = count_with_client_address()
     yield
-    assert session_log_count(node, "LoginFailure", "", interface) > count_before
+    assert count_with_client_address() > count_before
 
 
 def test_http_global_default_session_user():
@@ -418,8 +427,8 @@ def test_mysql_default_session_user():
 def test_mysql_anonymous_logins_disabled():
     # An empty `default_session_user` on a MySQL listener prohibits connections
     # without a user name: the empty user name is not substituted by anything, so
-    # authentication fails and the server answers with an error packet. The failure goes
-    # through the normal authentication path, so it is recorded in `system.session_log`.
+    # authentication fails and the server answers with an error packet. The failure is
+    # recorded in `system.session_log` with the client address.
     with assert_anonymous_login_failure("MySQL"):
         with pytest.raises(pymysql.err.Error):
             mysql_connect_without_user(9111)
@@ -440,8 +449,8 @@ def test_postgres_default_session_user():
 def test_postgres_anonymous_logins_disabled():
     # An empty `default_session_user` on a PostgreSQL listener prohibits connections
     # without a user name: the startup message with an empty user name is answered
-    # with an error response instead of an authentication request. The failure goes through
-    # the normal authentication path, so it is recorded in `system.session_log`.
+    # with an error response instead of an authentication request. The failure is recorded
+    # in `system.session_log` with the client address.
     with assert_anonymous_login_failure("PostgreSQL"):
         assert not postgres_login(9112, "")
 

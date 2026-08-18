@@ -69,6 +69,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int SYNTAX_ERROR;
@@ -445,6 +446,17 @@ bool PostgreSQLHandler::startup()
             : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
 
     const auto & user_name = start_up_msg->user;
+    if (user_name.empty())
+    {
+        auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from PostgreSQL startup message");
+        session->onAuthenticationFailure(user_name, socket().peerAddress(), exception);
+        message_transport->send(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "28P01", "Invalid user or password"),
+            true);
+        return false;
+    }
+
     authentication_manager.authenticate(user_name, *session, *message_transport, socket().peerAddress());
 
     try

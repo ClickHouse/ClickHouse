@@ -83,6 +83,7 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int AUTHENTICATION_FAILED;
     extern const int CANNOT_READ_ALL_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
@@ -589,6 +590,14 @@ void MySQLHandler::run()
             handshake_response.username = default_session_user
                 ? *default_session_user
                 : String(server.context()->getServerSettings()[ServerSetting::default_session_user]);
+
+        if (handshake_response.username.empty())
+        {
+            auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from MySQL handshake");
+            session->onAuthenticationFailure(handshake_response.username, socket().peerAddress(), exception);
+            packet_endpoint->sendPacket(ERRPacket(exception.code(), mysql_error_code, exception.message()));
+            return;
+        }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
