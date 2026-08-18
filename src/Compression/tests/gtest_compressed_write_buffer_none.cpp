@@ -7,6 +7,7 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromVector.h>
 
 #include <gtest/gtest.h>
 
@@ -179,23 +180,24 @@ TEST(CompressedWriteBufferNone, ChunkedWritesAcrossBlocks)
         roundTrip(data, /*block_size=*/ 16384, /*out_buf_size=*/ 65536, chunk);
 }
 
-TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
+TEST(CompressedWriteBufferNone, ViolatedExclusivityWithRelocatedOutputIsDetected)
 {
     /// The exclusivity declared by declareOutBufferExclusive is enforced, not just documented:
-    /// if something else moves the position of `out` while a zero-copy block is in flight,
-    /// flushing the block must throw instead of writing a corrupted block.
+    /// a foreign flush can relocate `out` while a zero-copy block is in flight. The compressed
+    /// writer must reject it before it reads its now-invalid aliased working buffer.
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
-    auto tmp_file = createTemporaryFile("/tmp/");
-    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    std::vector<char> output(2048);
+    WriteBufferFromVector out(output);
     CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
     compressed_out.declareOutBufferExclusive();
 
     compressed_out.write("hello", 5);
-    /// Someone else writes to and flushes `out` even though it was declared exclusive. The flush
-    /// restores the cursor to its original address, so the flush count must be checked too.
-    out.write("x", 1);
+    /// Someone else fills and flushes `out` even though it was declared exclusive. Growing the
+    /// vector can relocate the storage that the direct block aliases.
+    std::vector<char> foreign_data(2048, 'x');
+    out.write(foreign_data.data(), foreign_data.size());
     out.next();
 
     EXPECT_THROW(compressed_out.next(), DB::Exception);

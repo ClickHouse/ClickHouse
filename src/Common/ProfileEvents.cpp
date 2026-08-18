@@ -90,6 +90,10 @@
     M(IOBufferAllocBytes, "Number of bytes allocated for IO buffers (for ReadBuffer/WriteBuffer).", ValueType::Bytes) \
     M(ArenaAllocChunks, "Number of chunks allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Number) \
     M(ArenaAllocBytes, "Number of bytes allocated for memory Arena (used for GROUP BY and similar operations)", ValueType::Bytes) \
+    M(FiberStackAllocs, "Number of stacks allocated for fibers (fibers are used for asynchronous communication with remote replicas).", ValueType::Number) \
+    M(FiberStackAllocBytes, "Number of bytes allocated for fiber stacks, including guard pages (guard pages are only used in debug and sanitizer builds).", ValueType::Bytes) \
+    M(FiberStackAllocNanoseconds, "Amount of time spent allocating fiber stacks. Nanoseconds are used because a single allocation is normally faster than a microsecond, unless the allocator or the kernel is contended.", ValueType::Nanoseconds) \
+    M(FiberStackFreeNanoseconds, "Amount of time spent deallocating fiber stacks.", ValueType::Nanoseconds) \
     M(FunctionExecute, "Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).", ValueType::Number) \
     M(TableFunctionExecute, "Number of table function calls.", ValueType::Number) \
     M(DefaultImplementationForNullsRows, "Number of rows processed by default implementation for nulls in function execution", ValueType::Number) \
@@ -974,6 +978,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AdaptiveAggregationLocalFreezes, "How many local hash tables the adaptive aggregation froze at the freeze threshold.", ValueType::Number) \
     M(AdaptiveAggregationGiveUps, "How many threads gave up on freezing in the adaptive aggregation because their stream held few distinct keys.", ValueType::Number) \
+    M(AdaptiveAggregationPressureStandDowns, "How many threads in the adaptive aggregation left the learning phase for good because memory pressure crossed the external aggregation threshold, so their local tables spill through the ordinary external aggregation.", ValueType::Number) \
     M(AdaptiveAggregationThaws, "How many times the adaptive aggregation thawed the local tables because the staged stream proved repeat-dominated.", ValueType::Number) \
     M(AdaptiveAggregationProbeBypasses, "How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.", ValueType::Number) \
     M(AdaptiveAggregationStagedRecords, "How many delayed records the adaptive aggregation staged before deduplication.", ValueType::Number) \
