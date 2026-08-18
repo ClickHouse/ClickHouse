@@ -6,18 +6,12 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <Processors/QueryPlan/SortingStep.h>
-#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 #include <fmt/format.h>
 #include <memory>
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
 /// A top-N is a `SortingStep::Full` carrying a limit (a bounded sort).  The limit is owned by
 /// this operator, not by the sorting property.
