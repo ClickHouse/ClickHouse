@@ -1584,6 +1584,41 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
         return res;
     }
 
+    /// When only a small fraction of pairs are repeated, materializing all input tags is cheaper than
+    /// building the additional component maps below. Keep the pair deduplication result and transform
+    /// only the first row of each pair.
+    constexpr size_t max_duplicate_pair_ratio_denominator = 10;
+    const size_t num_duplicate_pairs = groups1.size() - num_unique_pairs;
+    if (num_duplicate_pairs <= groups1.size() / max_duplicate_pair_ratio_denominator)
+    {
+        auto tags_vector1 = getTagsByGroup(groups1);
+        auto tags_vector2 = getTagsByGroup(groups2);
+        chassert(tags_vector1.size() == groups1.size());
+        chassert(tags_vector2.size() == groups2.size());
+
+        VectorWithMemoryTracking<TagNamesAndValuesPtr> new_tags_vector;
+        new_tags_vector.reserve(num_unique_pairs);
+
+        size_t next_pair_index = 0;
+        for (size_t i = 0; i != groups1.size(); ++i)
+        {
+            if (res[i] == next_pair_index)
+            {
+                new_tags_vector.push_back(transform_func(tags_vector1[i], tags_vector2[i]));
+                ++next_pair_index;
+            }
+        }
+        chassert(new_tags_vector.size() == num_unique_pairs);
+
+        auto new_groups = getGroupForTags(new_tags_vector);
+        for (auto & index : res)
+            index = new_groups.at(index);
+
+        return res;
+    }
+
+    /// Pair indexes are assigned in first-seen order. This second scan recovers the first row of each
+    /// pair without keeping the pair hash map alive while constructing the component maps below.
     VectorWithMemoryTracking<std::pair<Group, Group>> unique_pairs;
     unique_pairs.reserve(num_unique_pairs);
 
