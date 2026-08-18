@@ -626,6 +626,28 @@ bool hasNonStrippableInlineSettings(const ASTPtr & ast)
     return false;
 }
 
+/// Nested SETTINGS clauses are preserved in oracle clones. In particular, a
+/// nested thread-count setting overrides the single-thread pin in
+/// `makeOracleContext`, reopening the nested-pipeline lifetime race which that
+/// pin is intended to avoid. The top-level clause is stripped uniformly, so it
+/// remains safe to allow there.
+bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settings)
+{
+    if (!ast)
+        return false;
+    if (ast != top_level_settings)
+    {
+        if (const auto * set_query = ast->as<ASTSetQuery>())
+            for (const auto & change : set_query->changes)
+                if (change.name == "max_threads" || change.name == "max_insert_threads" || change.name == "max_final_threads")
+                    return true;
+    }
+    for (const auto & child : ast->children)
+        if (hasNestedThreadSettings(child, top_level_settings))
+            return true;
+    return false;
+}
+
 /// True if `clause` defines an alias that is referenced anywhere else in the
 /// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
 /// that removes or replaces such a clause (TLP's reference query drops WHERE
@@ -973,9 +995,7 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     /// row-count equality the TLP oracles depend on.
     if (hasArrayJoin(select) || hasPasteJoin(select))
         return false;
-    if (select.select() && hasArrayJoinFunction(select.select()))
-        return false;
-    if (select.where() && hasArrayJoinFunction(select.where()))
+    if (hasArrayJoinFunction(select.clone()))
         return false;
     /// `system.*` / `INFORMATION_SCHEMA.*` views are non-deterministic.
     if (referencesNonDeterministicDatabase(select))
@@ -1153,6 +1173,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
                              "max_rows_to_transfer", "max_bytes_to_transfer",
                              "max_rows_in_join", "max_bytes_in_join",
                              "max_rows_in_set", "max_bytes_in_set",
+                             "max_estimated_execution_time",
                              /// `limit`/`offset` settings: a final LIMIT/OFFSET
                              /// on every result, non-distributive over rewrites.
                              "limit", "offset"})
@@ -1191,6 +1212,7 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     /// that race (worker tasks run inline, finish before the executor returns).
     oracle_context->setSetting("max_threads", Field(UInt64(1)));
     oracle_context->setSetting("max_insert_threads", Field(UInt64(1)));
+    oracle_context->setSetting("max_final_threads", Field(UInt64(1)));
     oracle_context->setSetting("output_format_parallel_formatting", Field(false));
 
     oracle_context->setCurrentQueryId("");
@@ -1509,9 +1531,7 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
     /// oracle relies on. `isSafeForOracle` rejects both — mirror that here.
     if (hasArrayJoin(select) || hasPasteJoin(select))
         return false;
-    if (select.select() && hasArrayJoinFunction(select.select()))
-        return false;
-    if (select.where() && hasArrayJoinFunction(select.where()))
+    if (hasArrayJoinFunction(select.clone()))
         return false;
     if (select.limitLength() || select.limitBy() || select.limitOffset() || select.prewhere() || select.qualify())
         return false;
@@ -1884,16 +1904,13 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
         if (!agg_func)
             return false;
         const auto & name = agg_func->name;
-        if (non_associative_aggregates.contains(Poco::toLower(name)))
+        const String base_name = stripAggregateCombinators(name);
+        if (non_associative_aggregates.contains(Poco::toLower(base_name)))
             return false;
-        /// Check for common combinator suffixes.
-        if (name.ends_with("If") || name.ends_with("Array") || name.ends_with("Map")
-            || name.ends_with("State") || name.ends_with("Merge")
-            || name.ends_with("ForEach") || name.ends_with("Distinct")
-            || name.ends_with("OrDefault") || name.ends_with("OrNull")
-            || name.ends_with("Resample") || name.ends_with("ArgMin")
-            || name.ends_with("ArgMax")
-            || name.ends_with("RespectNulls") || name.ends_with("IgnoreNulls"))
+        /// Existing combinators need special argument and State/Merge handling.
+        /// Use the shared complete suffix list, rather than duplicating a
+        /// partial denylist here.
+        if (base_name != name)
             return false;
     }
 
@@ -2312,6 +2329,12 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     if (hasWindowFunctionWithoutOrderByAnywhere(select))
         return false;
 
+    /// `stripOrderAndLimit` removes ORDER BY. Reject row-expanding functions
+    /// anywhere in the query before it can remove an `ORDER BY arrayJoin(...)`
+    /// expression and make the oracle validate a different query shape.
+    if (hasArrayJoin(select) || hasPasteJoin(select) || hasArrayJoinFunction(select.clone()))
+        return false;
+
     auto ref_ast = select.clone();
     stripOrderAndLimit(ref_ast->as<ASTSelectQuery &>());
     String ref_sql = formatAST(ref_ast);
@@ -2419,6 +2442,12 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (hasNonStrippableInlineSettings(query_ast))
     {
         LOG_TRACE(logger, "Oracle skip: query carries inline settings that cannot be stripped safely");
+        return false;
+    }
+
+    if (hasNestedThreadSettings(query_ast, select->settings()))
+    {
+        LOG_TRACE(logger, "Oracle skip: query carries nested thread-count settings");
         return false;
     }
 
