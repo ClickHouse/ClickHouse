@@ -1498,8 +1498,21 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
+What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
+
+- `throw` — reject the query;
+- `text` — the text representation of each value, as an Arrow `Utf8` column (what `CAST(col AS String)` would produce);
+- `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
+
+In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
+
+Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
+)", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+Output types having no conversion as raw binary data. If false - such types would raise an exception.
+
+Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
 )", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(

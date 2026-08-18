@@ -27,6 +27,7 @@
 #include <Parsers/parseQuery.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/ArrowFlightSource.h>
@@ -55,7 +56,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
     extern const SettingsUInt64 max_query_size;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
@@ -336,7 +336,7 @@ namespace
     {
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
-        arrow_settings.output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary];
+        arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef());
         auto ch_to_arrow_converter = std::make_shared<CHColumnToArrowColumn>(header, "Arrow", arrow_settings);
         ch_to_arrow_converter->initializeArrowSchema();
         return ch_to_arrow_converter;
@@ -591,7 +591,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             executor.getHeader().getColumnsWithTypeAndName(),
             "Arrow",
             nullptr,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
 
         if (schema_modifier)
         {
@@ -617,7 +617,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
                     tables.emplace_back(
                         CHColumnToArrowColumn::calculateArrowTable(
                             *header, "Arrow", chunks,
-                            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+                            {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())},
                             header->size(), schema));
                     chunks.clear();
                 }
@@ -630,7 +630,7 @@ static arrow::Result<std::tuple<std::shared_ptr<arrow::Schema>, std::vector<std:
             tables.emplace_back(
         CHColumnToArrowColumn::calculateArrowTable(
             *header, "Arrow", chunks,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+            {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())},
             header->size(), schema));
 
         query_finished = true;
@@ -805,7 +805,7 @@ arrow::Status ArrowFlightServer::GetSchema(
 
                     schema = CHColumnToArrowColumn::calculateArrowSchema(
                         executor.getHeader().getColumnsWithTypeAndName(), "Arrow", nullptr,
-                        {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                        {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
                     if (schema_modifier)
                     {
                         auto status = schema_modifier(schema);
@@ -1014,7 +1014,7 @@ arrow::Status ArrowFlightServer::evaluatePollDescriptor(const String & poll_desc
             chunks.emplace_back(Chunk{std::move(block).getColumns(), rows});
             std::shared_ptr<arrow::Table> table = CHColumnToArrowColumn::calculateArrowTable(
                 header, "Arrow", chunks,
-                {.output_string_as_string = true, .output_unsupported_types_as_binary = poll_session->queryContext()->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]},
+                {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(poll_session->queryContext()->getSettingsRef())},
                 header.size(), poll_session->getSchema());
             auto ticket_info = calls_data->createTicket(table);
             ticket = ticket_info->ticket;
@@ -1532,7 +1532,7 @@ arrow::Status ArrowFlightServer::DoAction(
                                 executor.getHeader().getColumnsWithTypeAndName(),
                                 "Arrow",
                                 nullptr,
-                                {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+                                {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
                         }
                         block_io.onCancelOrConnectionLoss();
                     }

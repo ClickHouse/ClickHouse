@@ -143,6 +143,11 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema);
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
 
+/// The Arrow extension name the writer puts on a column whose ClickHouse type has no first-class Arrow
+/// mapping and which `output_format_arrow_unsupported_types` wrote as an opaque `Utf8`/`Binary` column.
+/// The extension metadata holds the original ClickHouse type name.
+inline constexpr std::string_view OPAQUE_EXTENSION_NAME = "clickhouse.opaque";
+
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock
 {

@@ -26,6 +26,8 @@
 #include <DataTypes/DataTypeInterval.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Port.h>
@@ -181,23 +183,45 @@ namespace DB
         return bitmap;
     }
 
-    static void fillArrowArrayWithRawColumnData(
+    /// Writes a column whose type has no first-class Arrow mapping as one serialized value per row.
+    /// This goes through `ISerialization` rather than `IColumn::getDataAt`: `getDataAt` exposes a column's
+    /// contiguous in-memory bytes, which most of the types reaching this path do not have - `ColumnObject`,
+    /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
+    /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
+    /// addresses instead of aggregate states.
+    static void fillArrowArrayWithOpaqueColumnData(
         ColumnPtr write_column,
+        const DataTypePtr & column_type,
         const PaddedPODArray<UInt8> * null_bytemap,
         const String & format_name,
+        const CHColumnToArrowColumn::Settings & settings,
         arrow::ArrayBuilder* array_builder,
         size_t start,
         size_t end)
     {
+        /// `arrow::StringBuilder` derives from `arrow::BinaryBuilder`, so one cast covers both the `utf8`
+        /// builder used for text and the `binary` one used for binary.
         arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
+        const bool as_text = settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT;
+        const auto serialization = column_type->getDefaultSerialization();
+        const FormatSettings format_settings;
         arrow::Status status;
 
         for (size_t value_i = start; value_i < end; ++value_i)
         {
             if (null_bytemap && (*null_bytemap)[value_i])
+            {
                 status = builder.AppendNull();
+            }
             else
-                status = builder.Append(write_column->getDataAt(value_i));
+            {
+                WriteBufferFromOwnString value;
+                if (as_text)
+                    serialization->serializeText(*write_column, value_i, value, format_settings);
+                else
+                    serialization->serializeBinary(*write_column, value_i, value, format_settings);
+                status = builder.Append(value.stringView());
+            }
             checkStatus(status, write_column->getName(), format_name);
         }
     }
@@ -1449,9 +1473,9 @@ namespace DB
                 break;
             }
             default:
-                if (!settings.output_unsupported_types_as_binary)
+                if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
                     throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
-                fillArrowArrayWithRawColumnData(column, null_bytemap, format_name, array_builder, start, end);
+                fillArrowArrayWithOpaqueColumnData(column, column_type, null_bytemap, format_name, settings, array_builder, start, end);
         }
 
         if (!arrow_array)
@@ -1739,10 +1763,14 @@ namespace DB
             return arrow_type_it->second;
         }
 
-        if (!settings.output_unsupported_types_as_binary)
+        if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
                 "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
                 column_type->getName(), column_name, format_name);
+        /// One serialized value per row: `serializeText` into a `utf8` column, `serializeBinary` into a
+        /// `binary` one. See `fillArrowArrayWithOpaqueColumnData`.
+        if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT)
+            return arrow::utf8();
         return arrow::binary();
     }
 

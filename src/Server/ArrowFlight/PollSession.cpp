@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Formats/FormatFactory.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
 
 
@@ -17,11 +18,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_EXCEPTION;
-}
-
-namespace Setting
-{
-    extern const SettingsBool output_format_arrow_unsupported_types_as_binary;
 }
 
 namespace ArrowFlight
@@ -45,7 +41,7 @@ PollSession::PollSession(
             executor->getHeader().getColumnsWithTypeAndName(),
             "Arrow",
             nullptr,
-            {.output_string_as_string = true, .output_unsupported_types_as_binary = query_context->getSettingsRef()[Setting::output_format_arrow_unsupported_types_as_binary]});
+            {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
 
         if (schema_modifier)
         {

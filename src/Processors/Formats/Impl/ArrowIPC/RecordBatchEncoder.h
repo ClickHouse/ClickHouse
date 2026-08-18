@@ -50,11 +50,13 @@ private:
     /// Encodes a Variant column as an Arrow dense union (no validity buffer; a types and an offsets
     /// buffer, the variant children in global order, and a trailing single-element null child).
     void encodeVariant(const IColumn & column, const DataTypePtr & type, size_t num_rows);
-    /// Writes a column with no first-class Arrow mapping as an Arrow `Binary` column (an int32 offsets
-    /// buffer and the concatenated per-row `getDataAt` bytes), matching the Apache Arrow library writer's
-    /// `output_format_arrow_unsupported_types_as_binary` fallback. Read back as `String`. `null_map_column`
-    /// (when set) marks rows to emit as zero-length, so a NULL row's nested bytes are not written.
-    void encodeAsBinary(const IColumn & column, size_t num_rows, const IColumn * null_map_column = nullptr);
+    /// Writes a column with no first-class Arrow mapping as a variable-width Arrow column (an int32
+    /// offsets buffer and the concatenated per-row serialized values): `Utf8` holding `serializeText` for
+    /// `output_format_arrow_unsupported_types = 'text'`, `Binary` holding `serializeBinary` for `'binary'`.
+    /// Both read back as `String`. `null_map_column` (when set) marks rows to emit as zero-length, so a
+    /// NULL row's nested bytes are not written.
+    void encodeAsOpaque(
+        const IColumn & column, const DataTypePtr & type, size_t num_rows, const IColumn * null_map_column = nullptr);
 
     void appendEmptyBuffer();
     /// Emits the validity buffer: a packed LSB-first bitmap (1 = valid) for nullable columns, or an
