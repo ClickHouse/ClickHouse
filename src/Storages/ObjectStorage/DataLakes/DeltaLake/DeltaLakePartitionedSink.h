@@ -39,11 +39,13 @@ public:
         const String & write_format_,
         const String & write_compression_method_);
 
-    ~DeltaLakePartitionedSink() override = default;
+    ~DeltaLakePartitionedSink() override;
 
     String getName() const override { return "DeltaLakePartitionedSink"; }
 
     void consume(Chunk & chunk) override;
+
+    void onException(std::exception_ptr exception) override;
 
     void onFinish() override;
 
@@ -114,6 +116,9 @@ private:
 
     StorageSinkPtr createSinkForPartition(std::string_view partition_key);
     PartitionInfoPtr getPartitionDataForPartitionKey(std::string_view partition_key, const PartitionValues & partition_values);
+
+    /// Cancel every inner sink so its WriteBuffer is not left unfinalized on failure.
+    void cancelBuffers();
 };
 
 }

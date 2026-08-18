@@ -48,6 +48,7 @@
         "integrations/clickpipes/postgres/postgres-generated-columns",
         "integrations/clickpipes/postgres/parallel-initial-load",
         "integrations/clickpipes/postgres/lifecycle",
+        "integrations/clickpipes/postgres/auth",
         {
           "group": "Operations",
           "pages": [
@@ -190,10 +191,20 @@
       ]
     },
     {
+      "group": "Networking",
+      "icon": "network-wired",
+      "pages": [
+        "integrations/clickpipes/networking/index",
+        "integrations/clickpipes/networking/static-ips",
+        "integrations/clickpipes/networking/aws-privatelink",
+        "integrations/clickpipes/networking/gcp-psc",
+        "integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "Other",
       "icon": "ellipsis",
       "pages": [
-        "integrations/clickpipes/aws-privatelink",
         "integrations/clickpipes/dynamodb",
         "integrations/clickpipes/monitoring"
       ]

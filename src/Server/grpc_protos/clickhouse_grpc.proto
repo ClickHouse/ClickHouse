@@ -155,6 +155,7 @@ enum LogsLevel {
    LOG_INFORMATION = 6;
    LOG_DEBUG = 7;
    LOG_TRACE = 8;
+   LOG_TEST = 9;
 }
 
 message LogEntry {
