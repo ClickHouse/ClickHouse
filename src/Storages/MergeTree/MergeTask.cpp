@@ -2775,7 +2775,7 @@ public:
 
             case MergeTreeData::MergingParams::Coalescing:
                 merged_transform = std::make_shared<CoalescingSortedTransform>(
-                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation);
+                    header, input_streams_count, sort_description, merging_params.columns_to_sum, partition_and_sorting_required_columns, merge_block_size_rows, merge_block_size_bytes, max_dynamic_subcolumns, merging_params.allow_tuple_element_aggregation, global_ctx->context->getSettingsRef());
                 break;
 
             case MergeTreeData::MergingParams::Graphite:

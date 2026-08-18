@@ -15,3 +15,4 @@ partial merge	2
 1	\N	[]
 respect nulls	\N	2
 count	3
+coalescing merge	\N

@@ -63,4 +63,14 @@ SELECT 'respect nulls', anyRespectNulls(v), last_value_respect_nulls(v) FROM t_v
 -- interchangeable with plain count().
 SELECT 'count', count(v) FROM t_variant_skip_nulls;
 
+-- Background CoalescingMergeTree merges must use the settings from the OPTIMIZE query when resolving
+-- last_value. Without these settings the background merge uses the default NULL-skipping behavior.
+DROP TABLE IF EXISTS t_variant_skip_nulls_coalescing;
+CREATE TABLE t_variant_skip_nulls_coalescing (k UInt64, v Variant(String)) ENGINE = CoalescingMergeTree ORDER BY k SETTINGS optimize_on_insert = 0;
+INSERT INTO t_variant_skip_nulls_coalescing VALUES (1, 'x');
+INSERT INTO t_variant_skip_nulls_coalescing VALUES (1, NULL);
+OPTIMIZE TABLE t_variant_skip_nulls_coalescing FINAL SETTINGS aggregate_functions_skip_variant_nulls = 0;
+SELECT 'coalescing merge', v FROM t_variant_skip_nulls_coalescing;
+DROP TABLE t_variant_skip_nulls_coalescing;
+
 DROP TABLE t_variant_skip_nulls;
