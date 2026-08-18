@@ -78,9 +78,8 @@ SELECT '--- the lossy conversion path, not the element type, is what forfeits ex
 -- What forfeits exactness is the CONVERSION, not the element type: a `Nullable` element that can be
 -- cast with plain `castColumn` (`canBeSafelyCast`) keeps the prepared set a faithful image and must
 -- KEEP pruning, while a cross-type conversion that does not preserve equality must not be claimed
--- exact whatever the element type is. The shapes whose only fault is a source NULL surviving the
--- accurate cast belong to the separate `Nullable`-source root cause fixed by
--- https://github.com/ClickHouse/ClickHouse/pull/111418 and are asserted there, not here.
+-- exact whatever the element type is. The oracle columns are controls: both engines must return the
+-- same rows whether or not an atom is built.
 
 DROP TABLE IF EXISTS lp_t; DROP TABLE IF EXISTS lp_o;
 CREATE TABLE lp_t (k UInt8) ENGINE = MergeTree ORDER BY k PARTITION BY k;

@@ -8,9 +8,9 @@ null-elem identity keeps pruning	1
 null-elem identity	1	1
 --- the lossy conversion path, not the element type, is what forfeits exactness ---
 lossy mixed array NOT has declines	0
-lossy mixed array NOT has	0	1
+lossy mixed array NOT has	1	1
 lossy cross-type array NOT has declines	0
-lossy cross-type array NOT has	0	1
+lossy cross-type array NOT has	1	1
 safe identity actual NULL keeps pruning	1
 safe identity actual NULL IN keeps pruning	1
 safe identity actual NULL	1	1

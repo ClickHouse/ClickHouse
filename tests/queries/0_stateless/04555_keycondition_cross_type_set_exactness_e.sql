@@ -161,16 +161,15 @@ SELECT 'unpacked named tuple has',
 SELECT 'unpacked named tuple NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM unt WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) WHERE explain ILIKE '%Parts: 1/2%';
 SELECT 'unpacked named tuple NOT has',
     (SELECT count() FROM unt WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b))) = (SELECT count() FROM unto WHERE NOT has([CAST((1, 1), 'Tuple(c UInt8, d UInt8)')], (a, b)));
--- An outer CUSTOM name is reachable on this branch too: `Point` is a custom-named `Tuple(Float64,
--- Float64)`, so it hit the same over-decline. A float column cannot be a partition key, so this
--- fixture pins the atom's presence instead of a partition reduction.
+-- `Point` is a custom-named `Tuple(Float64, Float64)`. A float element gets no set atom, so the outer
+-- custom name is not what decides here; these cells pin that the decline costs no correctness.
 
 DROP TABLE IF EXISTS upt; DROP TABLE IF EXISTS upto;
 CREATE TABLE upt (a Float64, b Float64) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE upto (a Float64, b Float64) ENGINE = Memory;
 INSERT INTO upt SELECT toFloat64(number), toFloat64(number) FROM numbers(3);
 INSERT INTO upto SELECT toFloat64(number), toFloat64(number) FROM numbers(3);
-SELECT 'unpacked Point has keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM upt WHERE has([CAST((1.0, 1.0), 'Point')], (a, b))) WHERE explain ILIKE '%element set%';
+SELECT 'unpacked Point has declines on float', count() = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM upt WHERE has([CAST((1.0, 1.0), 'Point')], (a, b))) WHERE explain ILIKE '%element set%';
 SELECT 'unpacked Point has',
     (SELECT count() FROM upt WHERE has([CAST((1.0, 1.0), 'Point')], (a, b))) = (SELECT count() FROM upto WHERE has([CAST((1.0, 1.0), 'Point')], (a, b)));
 DROP TABLE upt; DROP TABLE upto;

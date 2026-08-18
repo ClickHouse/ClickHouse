@@ -23,7 +23,7 @@ unpacked named tuple has keeps pruning	1
 unpacked named tuple has	1
 unpacked named tuple NOT has keeps pruning	1
 unpacked named tuple NOT has	1
-unpacked Point has keeps atom	1
+unpacked Point has declines on float	1
 unpacked Point has	1
 unpacked nested name differs declines	0
 unpacked nested name differs	1
