@@ -47,11 +47,11 @@ Block PatchRangesCache::getOrRead(
     Key key{patch_name, columns_fingerprint};
     std::vector<Piece> pieces;
     MarkRanges missing_ranges;
-    bool has_cached_pieces = false;
     bool had_partial_coverage = false;
 
     {
         std::lock_guard lock(mutex);
+        bool has_cached_pieces = false;
         auto & entry_map = entries[key];
 
         auto it = entry_map.upper_bound(range.begin);
@@ -101,7 +101,6 @@ Block PatchRangesCache::getOrRead(
             pieces.clear();
             pieces.push_back(Piece{.covered = range, .block = {}, .offset = 0, .num_rows = 0, .cached = false});
             missing_ranges = MarkRanges{range};
-            has_cached_pieces = false;
             had_partial_coverage = true;
         }
         else

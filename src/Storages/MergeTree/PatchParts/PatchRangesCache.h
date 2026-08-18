@@ -64,14 +64,14 @@ private:
     struct LRUItem
     {
         Key key;
-        size_t begin_mark;
+        size_t begin_mark = 0;
     };
 
     using LRUList = std::list<LRUItem>;
 
     struct Entry
     {
-        MarkRange range;
+        MarkRange range{};
         /// The block may be wider than the range: it holds rows of the whole read that
         /// produced this entry, and the range's rows start at first_row. This makes the
         /// insertion zero-copy; bytes is charged for the whole block (a safe overestimate).
@@ -87,7 +87,7 @@ private:
     /// A part of the requested range: a view into a cached or newly read block.
     struct Piece
     {
-        MarkRange covered;
+        MarkRange covered{};
         Block block;
         size_t offset = 0;
         size_t num_rows = 0;
