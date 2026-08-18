@@ -405,10 +405,14 @@ clickhouse-local \
 
 Las opciones `--listen_host`, `--tcp_port` y `--http_port` configuran la dirección de enlace y los puertos. Los puertos predeterminados son `9000` para TCP y `8123` para HTTP.
 
+El listener HTTP responde a las solicitudes de comprobación previa de CORS con las mismas cabeceras permisivas que la configuración predeterminada de `clickhouse-server`, por lo que una aplicación web puede consultarlo directamente desde el navegador, incluida la interfaz web abierta desde una URL `file://`, cuyo origen es `null`. Para restringir esto, defina su propia sección `http_options_response` en un archivo de configuración pasado con `--config-file`; esta reemplaza por completo los valores predeterminados.
+
 <Warning>
   **Seguridad**
 
   De forma predeterminada, `clickhouse-local` se ejecuta con la configuración de usuarios temporales, por lo que cualquier puerto de escucha que abra no requiere autenticación. Vincúlelo a una dirección de loopback (`127.0.0.1` o `::1`), a menos que haya configurado explícitamente usuarios y access control haciendo que la opción `users_config` apunte a un archivo `users.xml` personalizado (por ejemplo, mediante `--config-file`). Escuchar en una dirección que no sea de loopback sin authentication expone los datos de la instancia local a cualquiera que pueda acceder al puerto elegido.
+
+  Tenga en cuenta que también se puede acceder a una dirección de loopback desde el navegador: mientras haya un listener HTTP abierto, cualquier página web que visite puede consultar la instancia local y, gracias a las cabeceras CORS predeterminadas, leer los resultados.
 </Warning>
 
 <div id="related-content-1">
