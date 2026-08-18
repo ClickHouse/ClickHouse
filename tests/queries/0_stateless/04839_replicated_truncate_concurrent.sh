@@ -12,11 +12,17 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 # A replicated truncate only schedules the removal, so truncates of the same table must tolerate each other.
+pids=()
 for _ in {1..4}
 do
     $CLICKHOUSE_CLIENT -q "TRUNCATE TABLE t PARALLEL WITH TRUNCATE TABLE t" &
+    pids+=($!)
 done
-wait
+
+for pid in "${pids[@]}"
+do
+    wait "$pid" || echo "concurrent truncate failed"
+done
 
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM t"
 
