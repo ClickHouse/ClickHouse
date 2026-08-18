@@ -13,45 +13,42 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 DATA_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.arrows"
 
+# Prints nothing on success, the error code otherwise, so that both outcomes stay in the reference.
 write() {
     ${CLICKHOUSE_LOCAL} --query "
         INSERT INTO FUNCTION file('${DATA_FILE}', 'ArrowStream') $1
         SETTINGS output_format_arrow_compression_method = 'none',
-                 engine_file_truncate_on_insert = 1
-                 ${2:+, $2}" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -1
+                 engine_file_truncate_on_insert = 1, $2" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -1
 }
 read_back() { ${CLICKHOUSE_LOCAL} --query "SELECT toTypeName(x), $1 FROM file('${DATA_FILE}', 'ArrowStream')"; }
 
-for query in "SELECT '{\"a\":1,\"b\":\"s\"}'::JSON AS x" \
-             "SELECT 42::Dynamic AS x" \
-             "SELECT [1,2]::Array(Dynamic) AS x" \
-             "SELECT sumState(number) AS x FROM numbers(3)"
-do
+# Every value is printed hex-encoded: an aggregate state and the binary encodings contain NUL bytes.
+check() {
+    local query="$1" display="$2"
     echo "=== ${query}"
+    for mode in text binary throw; do
+        echo "--- ${mode}"
+        write "${query}" "output_format_arrow_unsupported_types = '${mode}'"
+        [ "${mode}" = throw ] || read_back "${display}"
+    done
+}
 
-    echo "--- text ---"
-    write "${query}" "output_format_arrow_unsupported_types = 'text'"
-    read_back "x"
-
-    echo "--- binary: round-trips back into the original type ---"
-    write "${query}" "output_format_arrow_unsupported_types = 'binary'"
-    read_back "length(x) > 0"
-
-    echo "--- throw ---"
-    write "${query}" "output_format_arrow_unsupported_types = 'throw'"
-done
+check "SELECT '{\"a\":1,\"b\":\"s\"}'::JSON AS x" "hex(x)"
+check "SELECT 42::Dynamic AS x" "hex(x)"
+check "SELECT [1,2]::Array(Dynamic) AS x" "arrayMap(v -> hex(v), x)"
+check "SELECT sumState(number) AS x FROM numbers(3)" "hex(x)"
 
 # `binary` is the default and matches what the old boolean did, so an unset `output_format_arrow_unsupported_types`
-# keeps honouring `output_format_arrow_unsupported_types_as_binary`. An explicit mode wins over the boolean
-# whichever order the two are given in.
+# keeps honouring `output_format_arrow_unsupported_types_as_binary`.
 echo "=== old boolean still works ==="
 write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 0"
 write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 1"
-read_back "length(x) > 0"
+read_back "hex(x)"
 
+# An explicit mode wins over the boolean whichever order the two are given in.
 echo "=== explicit mode wins over the boolean ==="
 write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types_as_binary = 0, output_format_arrow_unsupported_types = 'text'"
-read_back "x"
+read_back "hex(x)"
 write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types = 'throw', output_format_arrow_unsupported_types_as_binary = 1"
 
 # An aggregate state written in `binary` mode is the same encoding `RowBinary` uses, so it deserializes back
@@ -60,7 +57,7 @@ write "SELECT 42::Dynamic AS x" "output_format_arrow_unsupported_types = 'throw'
 echo "=== AggregateFunction binary round-trip ==="
 write "SELECT sumState(number) AS x FROM numbers(11)" "output_format_arrow_unsupported_types = 'binary'"
 ${CLICKHOUSE_LOCAL} --query "
-    SELECT finalizeAggregation(CAST(unhex(hex(x)) AS AggregateFunction(sum, UInt64)))
+    SELECT finalizeAggregation(CAST(x AS AggregateFunction(sum, UInt64)))
     FROM file('${DATA_FILE}', 'ArrowStream')"
 
 # The opaque column is tagged as an Arrow extension type carrying the original ClickHouse type name, so a

@@ -1,0 +1,39 @@
+=== SELECT '{"a":1,"b":"s"}'::JSON AS x
+--- text
+String	7B2261223A312C2262223A2273227D
+--- binary
+String	02016215017301610A0100000000000000
+--- throw
+NOT_IMPLEMENTED
+=== SELECT 42::Dynamic AS x
+--- text
+String	3432
+--- binary
+String	15023432
+--- throw
+NOT_IMPLEMENTED
+=== SELECT [1,2]::Array(Dynamic) AS x
+--- text
+Array(String)	['31','32']
+--- binary
+Array(String)	['0A0100000000000000','0A0200000000000000']
+--- throw
+NOT_IMPLEMENTED
+=== SELECT sumState(number) AS x FROM numbers(3)
+--- text
+String	0300000000000000
+--- binary
+String	0300000000000000
+--- throw
+NOT_IMPLEMENTED
+=== old boolean still works ===
+NOT_IMPLEMENTED
+String	15023432
+=== explicit mode wins over the boolean ===
+String	3432
+NOT_IMPLEMENTED
+=== AggregateFunction binary round-trip ===
+55
+=== pyarrow: storage type and clickhouse.opaque tag ===
+text	string	clickhouse.opaque	JSON
+binary	binary	clickhouse.opaque	JSON
