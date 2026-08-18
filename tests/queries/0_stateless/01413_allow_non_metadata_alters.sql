@@ -103,6 +103,8 @@ UPDATE non_metadata_alters SET value7 = 2 WHERE key = 1;
 -- permitted even though the same statement is refused under the default 'heavy' mode above.
 ALTER TABLE non_metadata_alters UPDATE value7 = 4 WHERE key = 1 SETTINGS alter_update_mode = 'lightweight';
 
+ALTER TABLE non_metadata_alters UPDATE value7 = 5 WHERE key = 1 SETTINGS alter_update_mode = 'lightweight_force';
+
 -- The commands refused above run when the setting is enabled, which is the default. Two are not
 -- repeated here: the projection was dropped above so that `DELETE FROM` is permitted at all, and
 -- the `_row_exists` assignment is only interesting in the refused direction.

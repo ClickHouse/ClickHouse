@@ -5515,20 +5515,28 @@ When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejecte
 `ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
 scheduling a mutation (see `system.mutations`). This covers:
 
-- `MODIFY COLUMN` with a type change that rewrites the column, `DROP COLUMN` or `CLEAR COLUMN`
-  of a physical column, `RENAME COLUMN` of any column including an `ALIAS`, `DROP INDEX`,
-  `CLEAR INDEX`, `DROP PROJECTION`, `CLEAR PROJECTION`, `DROP STATISTICS`, `CLEAR STATISTICS`,
-  and `MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
-- `UPDATE` whenever it runs as a heavyweight mutation, which is the default
-  `alter_update_mode = 'heavy'` and every case the other modes fall back to, `DELETE WHERE`,
-  `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE STATISTICS`,
-  `MATERIALIZE COLUMN`, `MATERIALIZE TTL`, `APPLY DELETED MASK`, `APPLY PATCHES` and
-  `REWRITE PARTS`.
+- `ALTER TABLE ... MODIFY COLUMN` with a type change that rewrites the column,
+  `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
+  `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
+  `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
+  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
+  `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
+  `alter_update_mode = 'heavy'` and every case the other modes fall back to,
+  `ALTER TABLE ... DELETE WHERE`, `ALTER TABLE ... MATERIALIZE INDEX`,
+  `... MATERIALIZE PROJECTION`, `... MATERIALIZE STATISTICS`, `... MATERIALIZE COLUMN`,
+  `... MATERIALIZE TTL` (unconditionally, unlike `MODIFY TTL` above),
+  `... APPLY DELETED MASK`, `... APPLY PATCHES` and `... REWRITE PARTS`.
 
 Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
-`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column. The
-`DELETE FROM` and `UPDATE` statements are allowed in every mode they support: the setting
-governs `ALTER` DDL, not the dedicated delete and update statements.
+`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column.
+
+The dedicated `DELETE FROM ...` and `UPDATE ... SET ...` statements are a different thing from
+the `ALTER TABLE ... DELETE WHERE` and `ALTER TABLE ... UPDATE` commands above, and this setting
+never refuses them, in any mode they support. It governs `ALTER` DDL only. Use `GRANT` and
+`REVOKE` of `ALTER DELETE` and `ALTER UPDATE` to restrict data modification as a whole; note that
+those privileges cover the dedicated statements and the `ALTER` commands together, so they cannot
+separate the two forms.
 
 The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
 `Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
