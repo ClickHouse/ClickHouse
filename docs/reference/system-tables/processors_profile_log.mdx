@@ -28,7 +28,7 @@ This table contains profiling on processors level (that you can find in [`EXPLAI
 - `plan_step_name` ([String](/reference/data-types/string)) — Name of the query plan step which created this processor. The value is empty if the processor was not added from any step.
 - `plan_step_description` ([String](/reference/data-types/string)) — Description of the query plan step which created this processor. The value is empty if the processor was not added from any step.
 - `plan_group` ([UInt64](/reference/data-types/int-uint)) — Group of the processor if it was created by query plan step. A group is a logical partitioning of processors added from the same query plan step. Group is used only for beautifying the result of EXPLAIN PIPELINE result.
-- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query (for distributed query execution).
+- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query in the same query chain.
 - `query_id` ([String](/reference/data-types/string)) — ID of the query.
 - `name` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Name of the processor.
 - `elapsed_us` ([UInt64](/reference/data-types/int-uint)) — Number of microseconds this processor was executed.
