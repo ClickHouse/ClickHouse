@@ -1244,8 +1244,8 @@ The following table shows how Iceberg data types are mapped to ClickHouse data t
 
 The data type mappings above apply to reads. The following limitations apply when writing:
 
-- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation returns an `Unsupported type for iceberg` exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
-- ClickHouse cannot write to an Iceberg table that uses a `Decimal` column as a direct partition field. The operation returns an `Unsupported type for iceberg` exception.
+- ClickHouse cannot create an Iceberg schema containing `Bool`, `Decimal`, `FixedString`, `Int8`, `UInt8`, `Int16`, or `UInt16`, or add or modify a column to one of these types. The operation returns an `Unsupported type for Iceberg` exception. This does not prevent inserting `Bool` or `Decimal` values into existing Iceberg columns.
+- ClickHouse cannot write to an Iceberg table that uses a `Decimal` column as a direct partition field. The operation returns an `Unsupported type for Iceberg` exception.
 - For data files containing types whose bounds ClickHouse cannot serialize, including `Bool` and `Decimal`, ClickHouse omits all lower and upper column bounds from the Iceberg manifest entry. Column sizes and null counts are still included, and the data remains correct, but readers cannot use manifest-level min-max pruning for those files.
 
 ## Schema evolution {#schema-evolution}

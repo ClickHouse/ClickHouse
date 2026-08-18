@@ -646,10 +646,10 @@ std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & ite
         {
             if (type->getCustomName() && type->getCustomName()->getName() == "Geometry")
                 return {Iceberg::f_geometry, false};
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for Iceberg {}", type->getName());
         }
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for Iceberg {}", type->getName());
     }
 }
 
@@ -674,7 +674,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
         case TypeIndex::DateTime64:
         {
             if (getDecimalScale(*type) != 6)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for Iceberg {}", type->getName());
 
             Poco::JSON::Object::Ptr timestamp_type = new Poco::JSON::Object;
             timestamp_type->set("type", "long");
@@ -701,7 +701,7 @@ Poco::Dynamic::Var getAvroType(DataTypePtr type)
             return union_array;
         }
         default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for iceberg {}", type->getName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type for Iceberg {}", type->getName());
     }
 }
 
