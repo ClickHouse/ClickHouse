@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Block_fwd.h>
+#include <Core/Joins.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool_fwd.h>
@@ -373,6 +374,9 @@ protected:
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
     String current_database;
+    /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
+    /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
+    /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
     bool can_use_query_result_cache = false;
     std::unique_ptr<Settings> settings{};  /// Setting for query execution.
 
@@ -402,6 +406,12 @@ protected:
                             /// Thus, used in HTTP interface. If not specified - then some globally default format is used.
 
     String insert_format; /// Format, used in insert query.
+
+    /// Filters supplied out-of-band by the HTTP interface (URL path filters, repeated `?filter=`
+    /// parameters, unrecognized URL parameters as filters), already combined with `AND`. Kept
+    /// separate from the `filter` setting so it composes with — rather than being overwritten by —
+    /// an in-query `SETTINGS filter = ...` clause when query-construction settings are applied.
+    String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
@@ -596,6 +606,10 @@ protected:
     /// field and does not propagate through settings copies (e.g. getSQLSecurityOverriddenContext),
     /// so view-inner queries on the same node are unaffected.
     bool positional_arguments_already_resolved = false;
+    /// Which join statistics EXPLAIN ANALYZE needs. It is a context field rather than a setting on
+    /// purpose: only Interpreter may turn it on, but it must reach every join of the
+    /// query, including joins in nested plans, which EXPLAIN also prints.
+    JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     /// Defined out of line: a definition in the header gives every shared object its own copy.
     static ContextPtr global_context_instance;
@@ -1136,6 +1150,15 @@ public:
     String getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
+    /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPHandlerName() const { return client_info.http_handler_name; }
+    void setHTTPHandlerName(const String & name) { client_info.http_handler_name = name; }
+    /// The HTTP request URL (path and query string) that invoked the query, if any (see `currentRequestURL`).
+    /// Stored in `client_info` so it is serialized on distributed fan-out (visible on remote shards).
+    String getHTTPRequestURL() const { return client_info.http_request_url; }
+    void setHTTPRequestURL(const String & url) { client_info.http_request_url = url; }
+
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.
     String getInitialQueryId() const;
 
@@ -1170,6 +1193,9 @@ public:
 
     String getInsertFormat() const;
     void setInsertFormat(const String & name);
+
+    const String & getHTTPCombinedFilter() const;
+    void setHTTPCombinedFilter(const String & filter);
 
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
@@ -1792,6 +1818,9 @@ public:
     bool isPositionalArgumentsAlreadyResolved() const { return positional_arguments_already_resolved; }
     void setPositionalArgumentsAlreadyResolved(bool value) { positional_arguments_already_resolved = value; }
 
+    JoinAnalyzeMode getJoinAnalyzeMode() const { return join_analyze_mode; }
+    void setJoinAnalyzeMode(JoinAnalyzeMode value) { join_analyze_mode = value; }
+
     ActionLocksManagerPtr getActionLocksManager() const;
 
     enum class ApplicationType : uint8_t
@@ -1996,6 +2025,10 @@ private:
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Keep the `database` setting in sync with an out-of-band change of the current database.
+    /// Must be called with the context mutex held.
+    void mirrorCurrentDatabaseIntoSetting(const String & name);
 
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 

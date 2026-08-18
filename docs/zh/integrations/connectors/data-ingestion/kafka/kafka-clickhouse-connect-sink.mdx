@@ -25,15 +25,21 @@ Kafka Connector Sink 根据 [Apache 2.0 许可证](https://www.apache.org/licens
   ### 环境要求
 </div>
 
-环境中应已安装 v2.7 或更高版本的 [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) 框架。
+环境中应已安装 v2.7 或更高版本的 [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) 框架，并运行在 Java 11 或更高版本上。
 
 <div id="version-compatibility-matrix">
   ### 版本兼容性矩阵
 </div>
 
-| ClickHouse Kafka Connect 版本 | ClickHouse 版本 | Kafka Connect | Confluent Platform |
-| --------------------------- | ------------- | ------------- | ------------------ |
-| 1.0.0                       | &gt; 23.3     | &gt; 2.7      | &gt; 6.1           |
+| ClickHouse Kafka Connect 版本 | ClickHouse 版本 | Kafka Connect | Confluent Platform | ClickHouse Java Client |
+| --------------------------- | ------------- | ------------- | ------------------ | ---------------------- |
+| 1.4.x (最新)                  | 23.3+         | 2.7+          | 6.1+               | 0.9.5                  |
+| 1.3.x                       | 23.3+         | 2.7+          | 6.1+               | 0.8.0 至 0.9.5          |
+| 1.2.x                       | 23.3+         | 2.7+          | 6.1+               | 0.6.3 至 0.8.0          |
+| 1.1.x                       | 23.3+         | 2.7+          | 6.1+               | 0.6.0 至 0.6.1          |
+| 1.0.x                       | 23.3+         | 2.7+          | 6.1+               | 0.4.6 至 0.6.0          |
+
+该 connector 不支持在早于 23.3 的 ClickHouse 服务器上启动。除非需要固定使用旧版本，否则请始终使用[最新发行版](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest)。
 
 <div id="main-features">
   ### 主要特性
@@ -112,7 +118,7 @@ schemas.enable=false
 | `ssl`                                           | 启用与 ClickHouse 的 SSL 连接                                                                                                                                           | `true`                                                   |
 | `jdbcConnectionProperties`                      | 连接到 ClickHouse 时使用的连接属性。必须以 `?` 开头，并用 `&` 连接各个 `param=value`                                                                                                      | `""`                                                     |
 | `username`                                      | ClickHouse 数据库用户名                                                                                                                                                 | `default`                                                |
-| `password` (必填)                                 | ClickHouse 数据库密码                                                                                                                                                  | N/A                                                      |
+| `password` (必填)                                 | ClickHouse 数据库密码                                                                                                                                                  | 不适用                                                      |
 | `database`                                      | ClickHouse 数据库名称                                                                                                                                                  | `default`                                                |
 | `connector.class` (必填)                          | Connector 类 (需显式设置并保持默认值)                                                                                                                                         | `"com.clickhouse.kafka.connect.ClickHouseSinkConnector"` |
 | `tasks.max`                                     | Connector 任务数量                                                                                                                                                    | `"1"`                                                    |
@@ -136,6 +142,7 @@ schemas.enable=false
 | `bufferCount` (自 v1.3.6 起)                      | 在刷新到 ClickHouse 之前，先在内存中缓冲的记录数。`0` 表示禁用内部缓冲。`exactlyOnce=true` 时不支持缓冲。                                                                                            | `"0"`                                                    |
 | `bufferFlushTime` (自 v1.3.6 版本起)                | 当 `exactlyOnce=false` 时，执行 flush 前缓冲记录的最长时间 (毫秒) 。`0` 表示禁用基于时间的 flush。默认值为 `0`。仅在使用基于时间阈值时才需要。仅当 `bufferCount > 0` 时才生效。                                          | `"0"`                                                    |
 | `reportInsertedOffsets` (自 v1.3.6 起)            | 启用后，当 `exactlyOnce=false` 时，`preCommit` 将仅返回成功插入的偏移量，而非 `currentOffsets`。但在 `ignorePartitionsWhenBatching=true` 时，此设置不适用，仍会返回 `currentOffsets`。                   | `"false"`                                                |
+| `client_version` (自 v1.2.0 起)                   | 选择 connector 使用的 [ClickHouse Java client](/zh/integrations/language-clients/java/client)。有效值为 `"V1"` 和 `"V2"`。                                                       | `"V1"`                                                   |
 
 <div id="target-tables">
   ### 目标表
@@ -494,7 +501,7 @@ message TwoRecords {
 }
 ```
 
-从 CH 26.1 版本起，在 `allow_experimental_nullable_tuple_type=1` 时支持此 schema (参见[此文档页面](/zh/reference/settings/session-settings#allow_experimental_nullable_tuple_type)) 。
+从 CH 26.1 版本起，在 `allow_experimental_nullable_tuple_type=1` 时支持此 schema (参见[此文档页面](/zh/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)) 。
 
 <div id="json-schema-support">
   ### 支持 JSON schema
@@ -986,13 +993,31 @@ SETTINGS
 连接器 会维护与 ClickHouse 之间的 HTTP 连接。对于高延迟网络，请调整超时设置：
 
 ```json
-"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+"jdbcConnectionProperties": "?socket_timeout=300000,connection_timeout=30000"
 ```
 
 * **`socket_timeout`** (默认值：30000 毫秒) ：读取操作的最长等待时间
 * **`connection_timeout`** (默认值：10000 毫秒) ：建立连接的最长等待时间
 
 如果处理大批次时遇到超时错误，请适当增大这些值。
+
+<div id="client-network-buffer">
+  #### 客户端网络缓冲区
+</div>
+
+使用客户端 V2 (`"client_version": "V2"`) 时，数据会通过由 `client_network_buffer_size` (单位为字节) 控制的缓冲区，在套接字和应用内存之间复制。默认大小为 `300000` 字节。增大缓冲区可提高高延迟或高带宽链路上的吞吐量，但会增加每个连接任务的内存使用量。
+
+所有客户端选项都应通过 `jdbcConnectionProperties` 配置，而非 `clickhouseSettings`。例如：
+
+```json
+"jdbcConnectionProperties": "?client_network_buffer_size=1000000"
+```
+
+如果需要配置多个客户端属性，请用 `&` 将它们连接起来：
+
+```json
+"jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
+```
 
 <div id="monitoring-performance">
   #### 监控与性能问题排查
