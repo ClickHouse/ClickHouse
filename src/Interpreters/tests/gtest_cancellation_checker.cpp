@@ -5,6 +5,7 @@
 
 #include <base/scope_guard.h>
 
+#include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/tests/gtest_global_context.h>
