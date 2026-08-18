@@ -321,9 +321,8 @@ TEST(PageCacheBuffers, FirstWriterWins)
     EXPECT_EQ(flatten(chain, 0, block_size), std::string(block_size, 'F'));
 }
 
-/// (g) multi-block write + read-back per block: a range spanning >= 2 blocks, one
-/// openWriter, write all, complete() true, each block round-trips (mirrors
-/// DiskCache's WriteAcrossTwoSegments).
+/// (g) multi-block write + read-back per block: a range spanning >= 2 blocks resolves to one miss per
+/// block, write each, complete() true, each block round-trips (mirrors DiskCache's WriteAcrossTwoSegments).
 TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
 {
     auto cache = makeCache();

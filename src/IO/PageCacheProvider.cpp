@@ -259,8 +259,8 @@ PageCacheProvider::PageCacheProvider(
 /// creates a cell), contiguous cached blocks coalesce into one hit run - capped
 /// so a warm file does not pin unboundedly through a single reader - and an
 /// uncached block is one miss cell carrying its whole-block writer when the
-/// provider populates (bypass leaves it writer-less). The plan fills the misses
-/// through those writers.
+/// provider populates (bypass leaves it writer-less). The executor fetches
+/// consecutive misses together.
 VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::resolve(
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {

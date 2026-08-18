@@ -633,6 +633,32 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
         EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
 }
 
+TEST_F(ReaderExecutorTest, CoalescesConsecutiveMissesIntoOneSourceRead)
+{
+    /// Several consecutive cold blocks in one window are fetched in a SINGLE source request, not one
+    /// per block: `resolve` returns per-block misses and `readThroughCaches` gathers the contiguous run,
+    /// fetches it whole, and populates every block (later windows then hit the just-written cells).
+    const size_t block = 256;
+    StoredObjects objects{makeFile("a.bin", 4 * block)};
+
+    auto state = std::make_shared<MockCacheState>(/*file_size=*/4 * block);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(block, state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 4 * block, .block_size = block, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 4 * block);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u)
+        << "four cold blocks should be one source request, not one per block";
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 4 * block);
+}
+
 TEST_F(ReaderExecutorTest, BypassTierServesCachedCellAfterHeadMiss)
 {
     /// A read-only (bypass) tier - `resolve` returns writer-less misses, like `*_if_exists_otherwise_bypass = 1`

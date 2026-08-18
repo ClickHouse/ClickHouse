@@ -388,18 +388,22 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     for (auto & cache : cache_chain)
     {
         stats.add(Stats::CacheGetRequests);
-        /// `resolve` returns the window's residency in offset order; the first run reaching past
-        /// `window_offset` is the one covering it (coverage is contiguous from the ask start).
+        /// `resolve` returns the window's residency in offset order, coverage contiguous from the ask
+        /// start. The run covering `window_offset` decides the tier: a hit there serves the block from
+        /// cache. A miss is recorded, and we keep gathering the contiguous miss run behind it so the
+        /// fetch below reads the whole uncached extent in one source request; a later hit ends the run.
         auto resolutions = cache->resolve(object, object_offset, ByteRange{window_offset, max_serve});
         for (auto & resolution : resolutions)
         {
             if (resolution.range.end() <= window_offset)
                 continue;
-            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Hit && resolution.reader)
-                return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
-            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Miss)
-                miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
-            break;
+            if (resolution.kind == ICacheProvider::CacheResolution::Kind::Hit)
+            {
+                if (resolution.range.offset <= window_offset && resolution.reader)
+                    return resolution.reader->read(ByteRange{window_offset, serve_len(resolution.range.end())});
+                break;
+            }
+            miss_tiers.push_back(MissTier{std::move(resolution.writer), resolution.range, {}});
         }
     }
 
