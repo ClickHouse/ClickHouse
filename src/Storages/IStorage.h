@@ -139,6 +139,11 @@ public:
     /// Returns true if the storage supports queries with the TTL section.
     virtual bool supportsTTL() const { return false; }
 
+    /// Returns true if the storage supports column statistics. Storages that reject the dedicated
+    /// `ALTER TABLE ... ADD/DROP/MODIFY STATISTICS` commands must also reject the column-declaration
+    /// spelling `ALTER TABLE ... ADD/MODIFY COLUMN c UInt64 STATISTICS(...)`, which is gated on this.
+    virtual bool supportsStatistics() const { return false; }
+
     /// Returns true if the storage supports queries with the PREWHERE section.
     virtual bool supportsPrewhere() const { return false; }
 
@@ -183,6 +188,10 @@ public:
     virtual bool supportsSubcolumns() const { return false; }
     /// Returns true if storage supports optimizations of functions by reading subcolumns.
     virtual bool supportsOptimizationToSubcolumns() const { return supportsSubcolumns(); }
+    /// Same, but restricted to tuple element access (`tupleElement(t, 'x')` -> reading `t.x`).
+    /// A storage that cannot serve synthesised subcolumns such as `.null`/`.size0` as standalone
+    /// inputs may enable this while keeping supportsOptimizationToSubcolumns() false.
+    virtual bool supportsOptimizationToTupleElementSubcolumns() const { return supportsOptimizationToSubcolumns(); }
 
     /// Returns true if the storage supports transactions for SELECT, INSERT and ALTER queries.
     /// Storage may throw an exception later if some query kind is not fully supported.
@@ -216,9 +225,12 @@ public:
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     virtual ColumnSizeByName getColumnSizes() const { return {}; }
 
-    /// Same as parameterless overload but also includes sizes for requested subcolumns
+    /// Same as parameterless overload but also includes sizes for the requested subcolumns.
+    /// Computing exact subcolumn sizes can be expensive, so `calculate_subcolumn_sizes` (driven by
+    /// `allow_calculating_subcolumns_sizes_for_merge_tree_reading` at call sites) selects between the
+    /// exact size and the cheaper top-level column size as an approximation.
     /// The default implementation falls back to the parameterless version.
-    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/) const { return getColumnSizes(); }
+    virtual ColumnSizeByName getColumnSizes(const Names & /*columns*/, bool /*calculate_subcolumn_sizes*/) const { return getColumnSizes(); }
 
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
