@@ -58,6 +58,10 @@ SELECT 1 OR ((SELECT number FROM numbers(2)) > 0); -- { serverError INCORRECT_RE
 SELECT 1 OR ((SELECT count(*) FROM numbers(2) GROUP BY number) > 0); -- { serverError INCORRECT_RESULT_OF_SCALAR_SUBQUERY }
 SELECT 1 OR tupleElement((10, 20), assumeNotNull((SELECT 2)));
 WITH (SELECT 2) AS idx SELECT 1 OR tupleElement((10, 20), assumeNotNull(idx));
+DROP TABLE IF EXISTS test_03562_empty;
+CREATE TABLE test_03562_empty (x UInt8) ENGINE = Memory;
+SELECT 1 OR intDiv(1, (SELECT count() FROM test_03562_empty)); -- { serverError ILLEGAL_DIVISION }
+DROP TABLE test_03562_empty;
 
 SELECT 'Test nested scalars in count subqueries fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull((SELECT 3)))) > 0);
