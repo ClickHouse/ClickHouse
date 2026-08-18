@@ -27,6 +27,7 @@ protected:
 
 private:
     WriteBufferPtrs sources;
+    size_t secondary_buffer_offset = 0;
 };
 
 }

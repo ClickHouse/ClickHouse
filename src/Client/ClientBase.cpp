@@ -2397,6 +2397,23 @@ void ClientBase::onEndOfStream()
     const Int32 signals_before_teardown = query_interrupt_handler.receivedSignalCount();
     output_teardown_signal_baseline.store(signals_before_teardown);
 
+    /// The progress display is decorative, unlike the result footer below. If a stage-one
+    /// interrupt was already received, do not let clearing a stuck interactive terminal hold up
+    /// the cancellation just to preserve a progress escape sequence.
+    const bool bound_progress_clear = tty_buf && query_interrupt_handler.interruptedWhileRunning();
+    if (bound_progress_clear)
+    {
+        std::unique_lock lock(tty_mutex);
+        tty_buf->setBestEffortFlushBudget(1000);
+    }
+    SCOPE_EXIT({
+        if (bound_progress_clear)
+        {
+            std::unique_lock lock(tty_mutex);
+            tty_buf->setBestEffortFlushBudget(std::nullopt);
+        }
+    });
+
     if (need_render_progress && tty_buf)
     {
         std::unique_lock lock(tty_mutex);
