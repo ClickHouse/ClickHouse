@@ -11,8 +11,7 @@ namespace DB
 AnalyzedStepData analyzeJoinStep(const StepStatsContext & context, StepAnalysisReport report);
 
 /// Actual matched pairs, i.e. the output rows produced by real matches (excluding NULL-padded
-/// rows of the preserved sides of an outer join). `kind` must be in the same side orientation
-/// as the Left/Right groups of `report`. nullopt when the per-side counters are unavailable.
+/// rows of the preserved sides of an outer join)
 std::optional<UInt64> joinMatchedOutputRows(
     const StepAnalysisReport & report, UInt64 output_rows, JoinKind kind, JoinStrictness strictness);
 

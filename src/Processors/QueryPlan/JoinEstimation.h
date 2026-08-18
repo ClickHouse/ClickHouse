@@ -18,7 +18,7 @@ struct JoinEstimation
 };
 
 /// Formatting of the estimation values for EXPLAIN PLAN, aligned with the rendering of the
-/// EXPLAIN ANALYZE report metrics ("no stats" via `missingValueText` when the optimizer had none).
+/// EXPLAIN ANALYZE report metrics
 String rowsEstimateToString(const std::optional<UInt64> & value);
 String costEstimateToString(const std::optional<double> & value);
 String selectivityEstimateToString(const std::optional<double> & value);
