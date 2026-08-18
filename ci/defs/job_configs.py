@@ -467,12 +467,18 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
-            provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_AMD_DARWIN_BIN,
+                ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
-            provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_ARM_DARWIN_BIN,
+                ArtifactNames.CH_ARM_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -624,26 +630,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
-    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
-    # the merge group state (the PR merged with the current `master`), so a PR
-    # whose last CI run predates test-infrastructure changes on `master` (e.g.
-    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
-    # queue instead of breaking `master`. Runs on the `amd_binary` build the
-    # merge queue produces anyway; merge-queue runs use a reduced iteration
-    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
-    # latency bounded.
-    #
-    # The same job config also runs in PR CI (see `ci/workflows/pull_request.py`),
-    # so the configuration that can bounce a PR from the merge queue is seen in
-    # the PR first, with the full iteration count and time budget. One config
-    # for both workflows keeps the two lanes from drifting apart, and it does
-    # not merge their praktika cache records: `calc_job_digest` hashes the
-    # mangled job config, and the PR workflow mangles it differently - the
-    # `pr-` runner-label prefix from `runs_on_label_prefix` and its own
-    # `run_after` list - so each workflow keeps its own cache key. That is what
-    # preserves the drift guard: a green PR-side run cannot mark the
-    # merge-queue run as cached, so the merge group state is still rechecked.
-    # `ci/tests/test_flaky_check_pr_parity.py` pins both halves of this.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
@@ -1789,4 +1775,31 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+
+    sign_macos_binary_jobs = Job.Config(
+        name=JobNames.SIGN_MACOS,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/utils+--network=host+root",
+        timeout=3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=build_digest_config.include_paths
+            + [
+                "./ci/jobs/sign_macos_binary.py",
+                "./ci/jobs/scripts/sign_macos_binary",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            requires=[ArtifactNames.CH_AMD_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_AMD_DARWIN_SIGNED],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_DARWIN,
+            requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
+        ),
     )
