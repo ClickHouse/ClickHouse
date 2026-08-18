@@ -265,7 +265,7 @@ private:
         /// Numeric probes are intentionally allowed to use a different numeric type. The accurate
         /// cast below preserves correct values and turns non-representable values into NULL, which
         /// are then reported as definitely absent from the Bloom filter.
-        return (probe_which.isInteger() || probe_which.isFloat())
+        return probe_which.isNumber()
             && (bloom_value_which.isInteger() || bloom_value_which.isFloat());
     }
 
