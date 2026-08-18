@@ -768,6 +768,12 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.enable_fixed_key_prefetch = params.enable_prefetch;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
+    /// In-order aggregation constructs a fresh state for every run of equal order-key values.
+    /// Hashing the complete block for each such state would defeat that fast path, so retain
+    /// the normal prefetch setting but exclude the whole-block fixed-key precomputation there.
+    cache_settings.enable_fixed_key_prefetch = false;
+    aggregation_state_cache_for_in_order = AggregatedDataVariants::createCache(method_chosen_for_in_order, cache_settings);
+
 #if USE_EMBEDDED_COMPILER
     compileAggregateFunctionsIfNeeded();
 #endif
@@ -935,7 +941,16 @@ void Aggregator::executeOnBlockSmall(
         result.key_sizes = key_sizes;
     }
 
-    executeImpl(result, row_begin, row_end, key_columns, aggregate_instructions);
+    executeImpl(
+        result,
+        row_begin,
+        row_end,
+        key_columns,
+        aggregate_instructions,
+        /* no_more_keys= */ false,
+        /* all_keys_are_const= */ false,
+        /* overflow_row= */ nullptr,
+        aggregation_state_cache_for_in_order);
     CurrentMemoryTracker::check();
 }
 
@@ -969,12 +984,10 @@ void Aggregator::mergeOnBlockSmall(
     if (false) {} // NOLINT
 #define M(NAME, IS_TWO_LEVEL) \
     else if (result.type == AggregatedDataVariants::Type::NAME) \
-        mergeStreamsImpl(result.aggregates_pool, *result.NAME, result.NAME->data, \
-                         result.without_key, \
-                         result.consecutive_keys_cache_stats, \
-                         /* no_more_keys= */ false, \
-                         row_begin, row_end, \
-                         aggregate_columns_data, key_columns, is_cancelled, result.aggregates_pool);
+        mergeStreamsImpl( \
+            result.aggregates_pool, *result.NAME, result.NAME->data, result.without_key, result.consecutive_keys_cache_stats, \
+            /* no_more_keys= */ false, row_begin, row_end, aggregate_columns_data, key_columns, is_cancelled, \
+            result.aggregates_pool, aggregation_state_cache_for_in_order);
 
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
@@ -994,10 +1007,33 @@ void Aggregator::executeImpl(
     bool all_keys_are_const,
     AggregateDataPtr overflow_row) const
 {
+    executeImpl(
+        result,
+        row_begin,
+        row_end,
+        key_columns,
+        aggregate_instructions,
+        no_more_keys,
+        all_keys_are_const,
+        overflow_row,
+        aggregation_state_cache);
+}
+
+void Aggregator::executeImpl(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row,
+    const HashMethodContextPtr & state_cache) const
+{
     #define M(NAME, IS_TWO_LEVEL) \
         else if (result.type == AggregatedDataVariants::Type::NAME) \
             executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row, state_cache);
 
     if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
@@ -1015,7 +1051,8 @@ void NO_INLINE Aggregator::executeImpl(
     LastElementCacheStats & consecutive_keys_cache_stats,
     bool no_more_keys,
     bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
+    AggregateDataPtr overflow_row,
+    const HashMethodContextPtr & state_cache) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -1023,13 +1060,13 @@ void NO_INLINE Aggregator::executeImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, state_cache);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
         consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, state_cache);
         executeImpl(method, state, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
     }
 }
@@ -4131,7 +4168,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         aggregate_columns_data,
         key_columns,
         is_cancelled,
-        arena_for_keys);
+        arena_for_keys,
+        aggregation_state_cache);
 }
 
 template <typename Method, typename Table>
@@ -4147,7 +4185,8 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     const AggregateColumnsConstData & aggregate_columns_data,
     const ColumnRawPtrs & key_columns,
     std::atomic<bool> & is_cancelled,
-    Arena * arena_for_keys) const
+    Arena * arena_for_keys,
+    const HashMethodContextPtr & state_cache) const
 {
     UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
     double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
@@ -4190,7 +4229,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
 
     if (use_cache)
     {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::State state(key_columns, key_sizes, state_cache);
         if (is_simple_count)
         {
             merge_count_variant(state);
@@ -4214,7 +4253,7 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
     }
     else
     {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        typename Method::StateNoCache state(key_columns, key_sizes, state_cache);
         if (is_simple_count)
         {
             merge_count_variant(state);

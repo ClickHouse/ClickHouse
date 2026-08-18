@@ -492,6 +492,7 @@ private:
     Sizes key_sizes;
 
     HashMethodContextPtr aggregation_state_cache;
+    HashMethodContextPtr aggregation_state_cache_for_in_order;
 
     AggregateFunctionsPlainPtrs aggregate_functions;
 
@@ -565,6 +566,17 @@ private:
         bool all_keys_are_const = false,
         AggregateDataPtr overflow_row = nullptr) const;
 
+    void executeImpl(
+        AggregatedDataVariants & result,
+        size_t row_begin,
+        size_t row_end,
+        ColumnRawPtrs & key_columns,
+        AggregateFunctionInstruction * aggregate_instructions,
+        bool no_more_keys,
+        bool all_keys_are_const,
+        AggregateDataPtr overflow_row,
+        const HashMethodContextPtr & state_cache) const;
+
     /// Process one data block, aggregate the data into a hash table.
     template <typename Method>
     void executeImpl(
@@ -577,7 +589,8 @@ private:
         LastElementCacheStats & consecutive_keys_cache_stats,
         bool no_more_keys,
         bool all_keys_are_const,
-        AggregateDataPtr overflow_row) const;
+        AggregateDataPtr overflow_row,
+        const HashMethodContextPtr & state_cache) const;
 
     template <typename Method, typename State>
     void executeImpl(
@@ -960,7 +973,8 @@ private:
         const AggregateColumnsConstData & aggregate_columns_data,
         const ColumnRawPtrs & key_columns,
         std::atomic<bool> & is_cancelled,
-        Arena * arena_for_keys) const;
+        Arena * arena_for_keys,
+        const HashMethodContextPtr & state_cache) const;
 
     void mergeBlockWithoutKeyStreamsImpl(
         const Columns & columns,
