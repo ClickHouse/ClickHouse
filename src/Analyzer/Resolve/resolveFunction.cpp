@@ -235,6 +235,23 @@ bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
     return other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
 }
 
+bool hasUnsafeEarlyShortCircuitScalarUsage(const QueryTreeNodePtr & node, bool placeholder_is_allowed = false)
+{
+    if (isEarlyShortCircuitScalarPlaceholder(node))
+        return !placeholder_is_allowed;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        return hasUnsafeEarlyShortCircuitScalarUsage(constant->getSourceExpression());
+
+    const auto * function = node->as<FunctionNode>();
+    const bool is_safe_comparison = function && isComparisonOfEarlyShortCircuitScalar(*function);
+    for (const auto & child : node->getChildren())
+        if (child && hasUnsafeEarlyShortCircuitScalarUsage(child, is_safe_comparison))
+            return true;
+
+    return false;
+}
+
 bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
 {
     if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
@@ -1059,6 +1076,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (type_inference_succeeded
                 && !hasAggregateFunctionNodes(node_for_type_inference)
                 && !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
                 && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference))
             {
                 auto result_type = node_for_type_inference->getResultType();
