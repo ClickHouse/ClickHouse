@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},

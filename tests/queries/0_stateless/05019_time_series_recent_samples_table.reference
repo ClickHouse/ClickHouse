@@ -1,0 +1,27 @@
+-- the recent samples inner table and its materialized view exist
+1
+1
+-- the recent samples inner table is partitioned by day, has the TTL and ttl_only_drop_parts
+MergeTree PARTITION BY toDate(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(864000) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1
+-- the materialized view copies inserted samples into the recent samples table
+3	3
+-- a query fitting in the TTL window reads from the recent samples table and returns the same data
+1	0
+43
+100
+143
+-- a query outside the TTL window reads from the main samples table
+0	1
+-- disabling the preference reads from the main samples table
+0	1
+43
+100
+-- the table survives DETACH/ATTACH: the preference and the materialized view keep working
+1
+4	4
+-- custom partitioning and index granularity of the recent samples table
+MergeTree PARTITION BY toStartOfHour(timestamp) ORDER BY (id, timestamp) TTL toDateTime(timestamp) + toIntervalSecond(259200) SETTINGS index_granularity = 4096, ttl_only_drop_parts = 1
+-- settings of the recent samples table require recent_samples_ttl_seconds
+-- a RECENT SAMPLES clause requires recent_samples_ttl_seconds
+-- DROP TABLE drops the inner tables and the materialized view
+0

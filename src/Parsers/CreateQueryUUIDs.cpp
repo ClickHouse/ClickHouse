@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTSetQuery.h>
 
 
 namespace DB
@@ -52,6 +53,29 @@ namespace
         }
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected view target's kind {}", str);
+    }
+
+    /// Whether a CREATE TABLE ... ENGINE=TimeSeries query enables the optional "recent samples" inner table,
+    /// i.e. whether its SETTINGS clause sets `recent_samples_ttl_seconds` to a non-zero value.
+    /// The setting is checked here syntactically because the UUIDs are generated before the TimeSeries
+    /// storage (which owns the settings) is created.
+    bool hasTimeSeriesRecentSamplesTable(const ASTCreateQuery & query)
+    {
+        if (!query.storage || !query.storage->settings)
+            return false;
+        const auto * value = query.storage->settings->changes.tryGet("recent_samples_ttl_seconds");
+        if (!value)
+            return false;
+        switch (value->getType())
+        {
+            case Field::Types::UInt64:
+                return value->safeGet<UInt64>() != 0;
+            case Field::Types::Int64:
+                return value->safeGet<Int64>() != 0;
+            default:
+                /// Non-numeric values are rejected later when the setting is actually parsed.
+                return false;
+        }
     }
 }
 
@@ -109,6 +133,8 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Samples);
                 generate_target_uuid(ViewTarget::Tags);
                 generate_target_uuid(ViewTarget::Metrics);
+                if (hasTimeSeriesRecentSamplesTable(query))
+                    generate_target_uuid(ViewTarget::RecentSamples);
             }
         }
     }

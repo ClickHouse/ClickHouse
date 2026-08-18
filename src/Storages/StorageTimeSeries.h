@@ -52,11 +52,15 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Returns the three target kinds: Samples, Tags, Metrics.
-    static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
+    /// Returns all possible target kinds: Samples, Tags, Metrics, and the optional RecentSamples.
+    static constexpr std::array<ViewTarget::Kind, 4> getAllTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples};
     }
+
+    /// Returns the kinds of the targets of this table: Samples, Tags, Metrics,
+    /// and RecentSamples if the recent samples table is enabled.
+    std::vector<ViewTarget::Kind> getTargetKinds() const;
 
     void readImpl(
         QueryPlan & query_plan,
@@ -108,7 +112,7 @@ public:
 #endif
 
 private:
-    /// Represents one of the three target tables (Samples, Tags, Metrics).
+    /// Represents one of the target tables (Samples, Tags, Metrics, or the optional RecentSamples).
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
@@ -117,12 +121,15 @@ private:
         bool is_inner_table = false;
     };
 
-    /// Initializes information about three target tables (Samples, Tags, Metrics).
-    /// The function also creates inner tables (unless this is an ATTACH query).
+    /// Initializes information about the target tables (Samples, Tags, Metrics, and RecentSamples if enabled).
+    /// The function also creates inner tables and the recent samples materialized view (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
         const StorageID & table_id,
         const ContextPtr & local_context, LoadingStrictnessLevel mode);
+
+    /// Returns the target of the given kind or null if this table has no such target.
+    const Target * tryGetTarget(ViewTarget::Kind target_kind) const;
 
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;

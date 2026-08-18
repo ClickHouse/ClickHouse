@@ -25,4 +25,15 @@ void createTimeSeriesInnerTable(
 String getTimeSeriesInnerTableName(ViewTarget::Kind inner_table_kind, const StorageID & time_series_storage_id);
 String getTimeSeriesInnerTableName(std::string_view inner_table_kind, const StorageID & time_series_storage_id);
 
+/// Creates the inner materialized view which copies the `id`, `timestamp`, `value` columns as is
+/// from the samples table into the recent samples table.
+void createTimeSeriesRecentSamplesMV(
+    const StorageID & samples_table_id,
+    const StorageID & recent_samples_table_id,
+    const StorageID & time_series_storage_id,
+    ContextPtr context);
+
+/// Returns the name of the inner materialized view created by `createTimeSeriesRecentSamplesMV`.
+String getTimeSeriesRecentSamplesMVName(const StorageID & time_series_storage_id);
+
 }
