@@ -24,5 +24,6 @@ ${CLICKHOUSE_CLIENT} <<EOF
 SELECT count() FROM system.tables WHERE database = '$db' AND name = 'tbl';
 ATTACH TABLE $db.tbl;
 SELECT * FROM $db.tbl;
+DROP TABLE $db.tbl;
 DROP USER $user;
 EOF
