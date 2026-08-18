@@ -26,6 +26,8 @@ Output: json.a
 view
 Output: json.a
 Output: json.a
+Output: getSubcolumn(json, \'a\')
+Output: json
 1
 2
 Tuple and Array subcolumns

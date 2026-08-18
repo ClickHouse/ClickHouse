@@ -36,8 +36,11 @@ SELECT json.a FROM (SELECT * FROM (SELECT * FROM t_push_subcolumns)) ORDER BY id
 SELECT 'view';
 DROP TABLE IF EXISTS v_push_subcolumns;
 CREATE VIEW v_push_subcolumns AS SELECT * FROM t_push_subcolumns;
+SET analyzer_inline_views = 1;
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM v_push_subcolumns) WHERE explain LIKE '%Output%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT json.a FROM v_push_subcolumns SETTINGS optimize_push_subcolumns_into_subqueries = 0) WHERE explain LIKE '%Output%';
 SELECT json.a FROM v_push_subcolumns ORDER BY id;
+SET analyzer_inline_views = 0;
 DROP TABLE v_push_subcolumns;
 
 SELECT 'Tuple and Array subcolumns';
