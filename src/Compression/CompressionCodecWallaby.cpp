@@ -1913,6 +1913,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
     std::array<UInt16, WALLABY_VECTOR_VALUES> exception_positions{};
     std::array<T, WALLABY_VECTOR_VALUES> exception_values{};
     std::array<bool, WALLABY_VECTOR_VALUES> is_exception{};
+    std::array<SignedType, WALLABY_VECTOR_VALUES> exception_quantized{};
 
     /// Every mode streams its values straight into the destination through unaligned stores:
     /// no mode ever reads the output back, so no intermediate vector buffer is needed and each
@@ -1981,7 +1982,7 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                 /// continues through the quantized value. Load and validate the exception list
                 /// before reconstructing the decimal lanes, then patch the raw values after the
                 /// ordinary values have been emitted.
-                std::array<bool, WALLABY_VECTOR_VALUES> non_quantizable_exception{};
+                std::array<bool, WALLABY_VECTOR_VALUES> quantizable_exception{};
                 require(exception_count * (sizeof(UInt16) + sizeof(T)));
                 for (UInt32 i = 0; i < exception_count; ++i)
                 {
@@ -1997,11 +1998,15 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
 
                     if (mode == VectorMode::DecimalDelta)
                     {
-                        SignedType ignored_quantized = 0;
+                        SignedType quantized = 0;
                         T ignored_adjustment = 0;
                         const auto status = quantizeValueWithAdjustment<T>(
-                            std::bit_cast<typename Traits::FloatType>(raw), alpha, ignored_quantized, ignored_adjustment);
-                        non_quantizable_exception[position] = status != QuantizeStatus::Ok;
+                            std::bit_cast<typename Traits::FloatType>(raw), alpha, quantized, ignored_adjustment);
+                        if (status == QuantizeStatus::Ok)
+                        {
+                            quantizable_exception[position] = true;
+                            exception_quantized[position] = quantized;
+                        }
                     }
                 }
                 const bool negative_scale = alpha < 0;
@@ -2043,12 +2048,16 @@ UInt32 decompressImpl(const char * source, UInt32 source_size, char * dest, UInt
                     SignedType accumulator = base;
                     for (UInt32 i = 0; i < count; ++i)
                     {
-                        if (non_quantizable_exception[i] && unpacked[i] != 0)
+                        if (is_exception[i] && !quantizable_exception[i] && unpacked[i] != 0)
                             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, non-zero delta at a non-quantizable exception");
                         if (i > 0)
                         {
                             const SignedType delta = std::bit_cast<SignedType>(zigzagDecode(unpacked[i]));
-                            accumulator = checkedAdd(accumulator, delta);
+                            const SignedType next = checkedAdd(accumulator, delta);
+                            if (is_exception[i] && quantizable_exception[i] && unpacked[i] != 0 && next != exception_quantized[i])
+                                throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception");
+                            if (!is_exception[i] || unpacked[i] != 0)
+                                accumulator = next;
                         }
                         const T reconstructed = reconstruct(accumulator);
                         emit(i, adjustment_bits == 0 ? reconstructed : adjust(i, reconstructed));

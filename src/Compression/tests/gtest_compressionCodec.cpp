@@ -3129,6 +3129,31 @@ TEST_F(WallabyTest, DecompressMalformedInputNonZeroDeltaAtNonQuantizableExceptio
         constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, non-zero delta at a non-quantizable exception", 24);
 }
 
+TEST_F(WallabyTest, DecompressMalformedInputCorruptDeltaAtQuantizableException)
+{
+    /// A `DECIMAL_DELTA` exception that is quantizable at the vector scale is either a
+    /// delta-cap exception with a zero lane, or an adjustment-cap exception whose lane reaches
+    /// the raw value's quantized integer. This forged lane reaches one instead of the patched
+    /// value 1000, so accepting it would bias the accumulator used by the final value.
+    std::vector<UInt8> vectors = {
+        0x02,                                           // mode = DECIMAL_DELTA
+        0x20,                                           // biased scale 32: alpha = 0
+        0x02,                                           // bits = 2
+        0x00,                                           // adjustment_bits = 0
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // first_q = 0
+        0x01, 0x00                                      // exception_count = 1
+    };
+    /// Float64 FFOR packs the first 16 lanes in separate UInt64 words. The lane at position 1
+    /// is zigzag value two, which decodes to +1 instead of the raw exception's quantized 1000.
+    vectors.resize(vectors.size() + 256);
+    vectors[11 + sizeof(UInt64)] = 0x02;
+    vectors.insert(vectors.end(), {0x01, 0x00}); // exception position = 1
+    vectors.insert(vectors.end(), {0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x8F, 0x40}); // 1000.0
+
+    verifyDecompressExpectedException(
+        constructCodecPayload<Float64>(vectors, 3), "Cannot decompress Wallaby-encoded data, corrupt delta at a quantizable exception", 24);
+}
+
 TEST_F(WallabyTest, DecompressMalformedInputTruncatedXorPayload)
 {
     /// The declared XOR payload size is cut below the 72 bits the flags byte and the raw first
