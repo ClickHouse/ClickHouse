@@ -48,6 +48,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/FailPoint.h>
+#include <Common/scope_guard_safe.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -662,6 +663,18 @@ bool GlueCatalog::createTable(
     DB::ObjectStoragePtr written_metadata_storage;
     String written_metadata_file;
 
+    /// The initial metadata file staged below must not outlive a registration that did not happen: the
+    /// write is guarded by `If-None-Match: *`, so a leftover permanently blocks every retry, and when the
+    /// winner of an `IF NOT EXISTS` name race registered the table at another location (an explicit
+    /// Iceberg engine path, or a different `default_base_location`), the file is left behind in an orphan
+    /// directory the catalog does not point at. Only this call can have created that object - a writer
+    /// that lost the `If-None-Match` race returns before staging anything - so removing it is safe.
+    bool registered = false;
+    SCOPE_EXIT_SAFE({
+        if (!registered && written_metadata_storage)
+            written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
+    });
+
     if (effective_metadata_path.empty() && metadata_content && metadata_content->has("location"))
     {
         String table_location = metadata_content->getValue<String>("location");
@@ -702,58 +715,47 @@ bool GlueCatalog::createTable(
         effective_metadata_path = "s3://" + bucket_name + "/" + metadata_filename;
     }
 
-    try
+    Aws::Glue::Model::CreateTableRequest request;
+    request.SetDatabaseName(namespace_name);
+
+    Aws::Glue::Model::TableInput table_input;
+    table_input.SetName(table_name);
+
+    Aws::Glue::Model::StorageDescriptor sd;
+    if (!effective_metadata_path.empty())
     {
-        Aws::Glue::Model::CreateTableRequest request;
-        request.SetDatabaseName(namespace_name);
+        fs::path original_path = effective_metadata_path;
 
-        Aws::Glue::Model::TableInput table_input;
-        table_input.SetName(table_name);
+        fs::path parent = original_path.parent_path();
+        fs::path grandparent = parent.parent_path();
 
-        Aws::Glue::Model::StorageDescriptor sd;
-        if (!effective_metadata_path.empty())
-        {
-            fs::path original_path = effective_metadata_path;
-
-            fs::path parent = original_path.parent_path();
-            fs::path grandparent = parent.parent_path();
-
-            sd.SetLocation(grandparent.c_str());
-        }
-
-        table_input.SetStorageDescriptor(sd);
-        table_input.SetTableType("ICEBERG");
-
-        Aws::Map<Aws::String, Aws::String> parameters;
-        parameters["metadata_location"] = effective_metadata_path;
-        parameters["table_type"] = "ICEBERG";
-
-        table_input.SetParameters(parameters);
-
-        request.SetTableInput(table_input);
-
-        auto response = glue_client->CreateTable(request);
-
-        if (!response.IsSuccess())
-        {
-            /// `AlreadyExistsException` means someone else registered the table first.
-            if (if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS)
-                return false;
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
-        }
-    }
-    catch (...)
-    {
-        /// Registration in the catalog failed (or we failed while preparing the request). Remove the
-        /// metadata file staged above so a retry is not permanently blocked by the leftover.
-        if (written_metadata_storage)
-        {
-            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-            written_metadata_storage->removeObjectIfExists(DB::StoredObject(written_metadata_file));
-        }
-        throw;
+        sd.SetLocation(grandparent.c_str());
     }
 
+    table_input.SetStorageDescriptor(sd);
+    table_input.SetTableType("ICEBERG");
+
+    Aws::Map<Aws::String, Aws::String> parameters;
+    parameters["metadata_location"] = effective_metadata_path;
+    parameters["table_type"] = "ICEBERG";
+
+    table_input.SetParameters(parameters);
+
+    request.SetTableInput(table_input);
+
+    auto response = glue_client->CreateTable(request);
+
+    if (!response.IsSuccess())
+    {
+        /// `AlreadyExistsException` means someone else registered the table first. The staged metadata
+        /// file is removed by the scope guard, so `IF NOT EXISTS` leaves nothing behind.
+        if (if_not_exists && response.GetError().GetErrorType() == Aws::Glue::GlueErrors::ALREADY_EXISTS)
+            return false;
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
+    }
+
+    registered = true;
     return true;
 }
 
