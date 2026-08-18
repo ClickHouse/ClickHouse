@@ -13,6 +13,9 @@ Variant(Map(UInt8, String))	{1:'x',2:'y'}	0
 Variant(Map(UInt8, String))	\N	1
 Variant(Array(UInt8))	[1,2,1,2]	0
 Variant(Array(UInt8))	\N	1
+-- a bare Nothing alternative is present in both modes, so it is kept
+Variant(UInt8)
+Variant(UInt8)
 -- every alternative incompatible
 Nullable(Nothing)
 -- Dynamic is unaffected
@@ -23,8 +26,11 @@ Nullable(Point)
 -- INSERT with such an expression in the key writes both part types
 compact	3
 wide	3
-skip index	2
+skip index	4
 t_04927_compact	Compact
 t_04927_wide	Wide
+skip index prunes	1
+parts before merge	2
+parts after merge	1
 after merge	4
 after reattach	5

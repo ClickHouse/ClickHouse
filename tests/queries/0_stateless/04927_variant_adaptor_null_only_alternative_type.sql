@@ -32,6 +32,11 @@ FROM (SELECT CAST([1, 2], 'Variant(Array(UInt8), UInt8)') AS a UNION ALL SELECT 
 ORDER BY 3
 SETTINGS variant_throw_on_type_mismatch = 0;
 
+SELECT '-- a bare Nothing alternative is present in both modes, so it is kept';
+
+SELECT toTypeName(arrayElement(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 1;
+SELECT toTypeName(arrayElement(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 0;
+
 SELECT '-- every alternative incompatible';
 
 SELECT toTypeName(max2(v, v)) FROM (SELECT CAST('x', 'Variant(String, IPv4)') AS v) SETTINGS variant_throw_on_type_mismatch = 0;
@@ -64,13 +69,13 @@ SETTINGS index_granularity = 2, allow_nullable_key = 1, allow_suspicious_indices
 
 CREATE TABLE t_04927_skip (c0 Nullable(Int32), c2 Variant(UInt8, String), INDEX idx max2(c2, c2) TYPE minmax GRANULARITY 1)
 ENGINE = MergeTree ORDER BY c0
-SETTINGS allow_nullable_key = 1, allow_suspicious_indices = 1;
+SETTINGS allow_nullable_key = 1, allow_suspicious_indices = 1, index_granularity = 1;
 
 SET variant_throw_on_type_mismatch = 0;
 
 INSERT INTO t_04927_compact (c2, c0) VALUES (44, 1), (7, 2), (99, 3);
 INSERT INTO t_04927_wide (c2, c0) VALUES (44, 1), (7, 2), (99, 3);
-INSERT INTO t_04927_skip (c2, c0) VALUES (44, 1), (7, 2);
+INSERT INTO t_04927_skip (c2, c0) VALUES (44, 1), (7, 2), (99, 3), ('zz', 4);
 
 SELECT 'compact', count() FROM t_04927_compact;
 SELECT 'wide', count() FROM t_04927_wide;
@@ -79,8 +84,16 @@ SELECT table, part_type FROM system.parts
 WHERE database = currentDatabase() AND table IN ('t_04927_compact', 't_04927_wide') AND active
 ORDER BY table;
 
+SELECT 'skip index prunes', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04927_skip WHERE max2(c2, c2) = 44)
+WHERE explain ILIKE '%Granules: 1/4%';
+
 INSERT INTO t_04927_compact (c2, c0) VALUES (55, 4);
+SELECT 'parts before merge', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_04927_compact' AND active;
 OPTIMIZE TABLE t_04927_compact FINAL;
+SELECT 'parts after merge', count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_04927_compact' AND active;
 SELECT 'after merge', count() FROM t_04927_compact;
 
 DETACH TABLE t_04927_compact;

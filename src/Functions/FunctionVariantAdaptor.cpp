@@ -841,12 +841,14 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     }
 
     /// A NULL-only alternative contributes no type, because executeImpl inserts NULL for its rows
-    /// instead of a nested result, so it must not widen the declared type either.
+    /// instead of a nested result, so it must not widen the declared type either. Only Nullable(Nothing)
+    /// is dropped: a bare Nothing is produced without a type error, so it is present in both strictness
+    /// modes and dropping it would move the declared type of an already-accepted key or index.
     DataTypes real_result_types;
     real_result_types.reserve(result_types.size());
     for (const auto & type : result_types)
     {
-        if (!type->onlyNull() && !isNothing(type))
+        if (!type->onlyNull())
             real_result_types.push_back(type);
     }
     const bool has_null_only_alternative = real_result_types.size() != result_types.size();
