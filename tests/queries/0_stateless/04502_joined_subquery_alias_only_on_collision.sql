@@ -153,6 +153,12 @@ SELECT `a.x` FROM arr_tuple, (SELECT 2 AS `a.x`) ARRAY JOIN arr AS a; -- { serve
 WITH CAST(tuple(1), 'Tuple(x UInt8)') AS base, base AS n
 SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
+-- The same applies to a scalar-subquery `WITH` alias. It is registered before its query node is
+-- resolved, so probing it for a nested path would otherwise throw `UNSUPPORTED_METHOD` instead of
+-- keeping the strict `ALIAS_REQUIRED` behavior.
+WITH (SELECT CAST(tuple(1), 'Tuple(x UInt8)')) AS n
+SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
+
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
 -- exposes names that are only known after resolution, so the validation cannot prove the absence of a
 -- collision and keeps the strict behavior: the unaliased subquery is rejected even without a provable

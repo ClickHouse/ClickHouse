@@ -1154,11 +1154,15 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         if (dot_pos != String::npos)
         {
             /// Join-tree validation runs before the projection and `WITH` expressions are resolved.
-            /// In particular, an alias may be an unresolved function or a transitive unresolved
-            /// identifier alias. Probing either one for a nested path would throw
-            /// `UNSUPPORTED_METHOD`. Keep the strict behavior until the absence of a collision can
-            /// be proved.
+            /// In particular, an alias may be an unresolved function, subquery, union, or a
+            /// transitive unresolved identifier alias. Probing either one for a nested path would
+            /// throw `UNSUPPORTED_METHOD`. Keep the strict behavior until the absence of a collision
+            /// can be proved.
             if (const auto * function_node = it->second->as<FunctionNode>(); function_node && !function_node->isResolved())
+                return true;
+            if (const auto * alias_query_node = it->second->as<QueryNode>(); alias_query_node && !alias_query_node->isResolved())
+                return true;
+            if (const auto * alias_union_node = it->second->as<UnionNode>(); alias_union_node && !alias_union_node->isResolved())
                 return true;
             if (it->second->as<IdentifierNode>())
                 return true;
