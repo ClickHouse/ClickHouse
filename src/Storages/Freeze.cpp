@@ -169,22 +169,17 @@ BlockIO Unfreezer::systemUnfreeze(const String & backup_name)
                     /// `SYSTEM UNFREEZE` receives only the on-disk path, unlike `ALTER TABLE ...
                     /// UNFREEZE`. Resolve the UUID directory back to its storage before deleting
                     /// anything, so leader-election tables get the same admission-epoch fence.
-                    /// A missing UUID mapping can mean that a follower has dropped its local
-                    /// metadata while the shared table is still alive elsewhere; fail closed in
-                    /// that case rather than let this node delete another leader's snapshot.
+                    /// A missing UUID mapping means the table was dropped locally. Preserve the
+                    /// existing `SYSTEM UNFREEZE` behavior for that case: it is specifically
+                    /// needed to remove a snapshot after its table has been dropped. A live
+                    /// local leader-election table is always resolved and fenced below.
                     std::shared_ptr<MergeTreeData> merge_tree;
                     try
                     {
                         const UUID table_uuid = parseFromString<UUID>(table_it->name());
                         auto storage = DatabaseCatalog::instance().tryGetByUUID(table_uuid).second;
-                        if (!storage)
-                        {
-                            throw Exception(
-                                ErrorCodes::SUPPORT_IS_DISABLED,
-                                "Cannot safely SYSTEM UNFREEZE table UUID {} because its local metadata is unavailable",
-                                table_uuid);
-                        }
-                        merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
+                        if (storage)
+                            merge_tree = std::dynamic_pointer_cast<MergeTreeData>(storage);
                     }
                     catch (const Exception & e)
                     {
