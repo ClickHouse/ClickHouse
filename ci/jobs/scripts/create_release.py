@@ -400,38 +400,40 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        # Idempotent: a recovery finds the branch already pushed — nothing to do.
-        if Git.branch_exists(self.release_branch):
-            print(f"Release branch [{self.release_branch}] already exists — skipping")
-            return
-        version = CHVersion.get_current_version()
         new_release_branch = self.release_branch
-        version_after_release = copy(version)
-        version_after_release.bump_release()
-        assert version_after_release.string == self.version, (
-            f"Unexpected current version in git, must precede [{self.version}] by one step, "
-            f"actual [{version.string}]"
-        )
-        if dry_run:
-            Shell.check(
-                f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch}"
+        # Skip only the push if the branch exists; the labels below are recreated
+        # regardless, since a prior attempt may have pushed the branch but failed
+        # before creating them.
+        if Git.branch_exists(new_release_branch):
+            print(f"Release branch [{new_release_branch}] already exists — skipping push")
+        else:
+            version = CHVersion.get_current_version()
+            version_after_release = copy(version)
+            version_after_release.bump_release()
+            assert version_after_release.string == self.version, (
+                f"Unexpected current version in git, must precede [{self.version}] by one step, "
+                f"actual [{version.string}]"
             )
-        print(
-            f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
-        )
-        # Cut the branch from the exact released commit, not ambient master:
-        # the workflow may be dispatched with a SHA, and master can move between
-        # release selection and this step, which would otherwise point the tag
-        # and the branch at different commits.
-        with checkout(self.commit_sha):
-            with checkout_new(new_release_branch):
-                Git.push(
-                    GITHUB_REPOSITORY,
-                    f"HEAD:refs/heads/{new_release_branch}",
-                    dry_run=dry_run,
-                    strict=True,
-                    retries=3,  # transient workflow-scope timeout (see push_release_tag)
+            if dry_run:
+                Shell.check(
+                    f"{GIT_PREFIX} branch -l | grep -q {new_release_branch} && git branch -d {new_release_branch}"
                 )
+            print(
+                f"Create and push new release branch [{new_release_branch}], commit [{self.commit_sha}]"
+            )
+            # Cut the branch from the exact released commit, not ambient master:
+            # the workflow may be dispatched with a SHA, and master can move between
+            # release selection and this step, which would otherwise point the tag
+            # and the branch at different commits.
+            with checkout(self.commit_sha):
+                with checkout_new(new_release_branch):
+                    Git.push(
+                        GITHUB_REPOSITORY,
+                        f"HEAD:refs/heads/{new_release_branch}",
+                        dry_run=dry_run,
+                        strict=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                    )
 
         print("Create and push backport tags for new release branch")
         ReleaseInfo._create_gh_label(
@@ -642,10 +644,6 @@ class ReleaseInfo:
             return
         release_tag = self.release_tag
         pr_branch = self.get_change_log_branch()
-        # Idempotent: an already-merged PR needs no branch re-push.
-        if GH.get_pr_state_by_branch(pr_branch, GITHUB_REPOSITORY) == "MERGED":
-            print(f"ChangeLog PR for [{pr_branch}] already merged — skipping")
-            return
         commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
         pr_title = f"Update version_date.tsv and changelog after {release_tag}"
         pr_body = (

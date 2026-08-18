@@ -392,13 +392,13 @@ def main():
         )
 
     if args.release_type == "patch":
-        with open(RELEASE_INFO_FILE) as f:
-            release_tag = json.load(f)["release_tag"]
         uid = os.getuid()
         gid = os.getgid()
-        step(
-            name="Bump Docker Versions, Changelog, Security",
-            command=[
+
+        def bump_docker_changelog_security():
+            with open(RELEASE_INFO_FILE) as f:
+                release_tag = json.load(f)["release_tag"]
+            for cmd in [
                 "echo 'List versions'",
                 "./utils/list-versions/list-versions.sh"
                 " > ./utils/list-versions/version_date.tsv",
@@ -406,11 +406,7 @@ def main():
                 "./utils/list-versions/update-docker-version.sh",
                 "echo 'Generate ChangeLog'",
                 "docker pull clickhouse/style-test:latest",
-                # changelog.py runs inside the container, which cannot see the
-                # host gh session, so pass the robot token in via `-e GH_TOKEN`
-                # (inherited from the job-wide export) and `--gh-user-or-token`.
-                # The command string carries `$GH_TOKEN`, not its value, so
-                # verbose logging never prints the token.
+                # changelog.py in the container has no host gh session: pass the robot token via -e GH_TOKEN and --gh-user-or-token, as $GH_TOKEN so it is never logged.
                 f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
                 f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
@@ -423,7 +419,12 @@ def main():
                 "python3 ./utils/security-generator/generate_security.py"
                 " > SECURITY.md",
                 "git diff HEAD",
-            ],
+            ]:
+                Shell.check(cmd, strict=True)
+
+        step(
+            name="Bump Docker Versions, Changelog, Security",
+            command=bump_docker_changelog_security,
             workdir=REPO_PATH,
         )
 
