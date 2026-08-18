@@ -675,7 +675,7 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
     return false;
 }
 
-VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToDocumentTokens(const Field & field) const
 {
     VectorWithMemoryTracking<String> tokens;
     const String & raw = field.safeGet<String>();
@@ -688,11 +688,20 @@ VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(con
     {
         tokenizer->stringToTokens(raw.data(), raw.size(), tokens);
     }
+
+    if (has_postprocessor)
+        tokens = postprocessor->processTokens(std::move(tokens));
+
+    return tokens;
+}
+
+VectorWithMemoryTracking<String> MergeTreeIndexConditionText::stringToTokens(const Field & field) const
+{
+    auto tokens = stringToDocumentTokens(field);
     if (!has_postprocessor)
         return tokenizer->compactTokens(tokens);
 
     /// Containment compaction is unsound after a postprocessor (it maps tokens independently), so only dedup.
-    tokens = postprocessor->processTokens(std::move(tokens));
     std::unordered_set<String> unique_tokens(tokens.begin(), tokens.end());
     return VectorWithMemoryTracking<String>(unique_tokens.begin(), unique_tokens.end());
 }
@@ -905,7 +914,7 @@ bool MergeTreeIndexConditionText::textIndexConditionMayMatchDefaultString(const 
 {
     /// Mirror the atom-level checks in `mayBeTrueOnGranule` for a synthetic document
     /// containing the fully transformed tokens of a missing `String` path.
-    const auto default_tokens = stringToTokens(Field(String{}));
+    const auto default_tokens = stringToDocumentTokens(Field(String{}));
 
     auto has_any_token = [&](const TextSearchQuery & query)
     {

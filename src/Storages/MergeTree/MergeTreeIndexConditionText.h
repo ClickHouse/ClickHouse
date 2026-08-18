@@ -194,6 +194,9 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// Produces the complete token set stored for a document. Unlike query-token preparation,
+    /// this must not apply tokenizer-specific compaction.
+    VectorWithMemoryTracking<String> stringToDocumentTokens(const Field & field) const;
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
