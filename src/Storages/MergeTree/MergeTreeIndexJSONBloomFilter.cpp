@@ -1378,8 +1378,6 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         {
             Field value;
             set_column->get(row, value);
-            if (value.isNull())
-                continue;
             if (!isJSONPathFilterSafe(
                     key_node.getDAGNode()->result_type,
                     value,
