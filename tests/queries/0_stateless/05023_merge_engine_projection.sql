@@ -3,6 +3,10 @@ SET optimize_use_projections = 1;
 -- Under a Replicated database the DDL below would otherwise print a per-host status row.
 SET distributed_ddl_output_mode = 'none';
 
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+DROP TABLE IF EXISTS tm;
+
 CREATE TABLE t1 (a UInt32, b UInt32, c UInt32, PROJECTION p_c (SELECT * ORDER BY c))
 ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
 
@@ -25,3 +29,7 @@ WHERE current_database = currentDatabase() AND type = 'QueryFinish'
   AND log_comment = '05023_merge_engine_projection'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
+
+DROP TABLE tm;
+DROP TABLE t1;
+DROP TABLE t2;
