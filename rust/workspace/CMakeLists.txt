@@ -105,7 +105,7 @@ if (ENABLE_SKIM)
     add_library(ch_rust::skim ALIAS _ch_rust_skim_rust)
 endif()
 
-if (ENABLE_VORTEX)
+if (ENABLE_VORTEX AND TARGET ch_contrib::arrow)
     clickhouse_config_crate_flags(_ch_rust_vortex)
     target_include_directories(_ch_rust_vortex INTERFACE vortex/include)
     add_library(ch_rust::vortex ALIAS _ch_rust_vortex)

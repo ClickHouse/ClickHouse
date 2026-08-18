@@ -702,6 +702,10 @@ if (TARGET ch_contrib::pocketfft)
     target_link_libraries(clickhouse_common_io PUBLIC ch_contrib::pocketfft)
 endif ()
 
+if (TARGET ch_contrib::jieba)
+    target_link_libraries(dbms PUBLIC ch_contrib::jieba)
+endif()
+
 if (TARGET ch_contrib::icu)
     target_link_libraries(dbms PRIVATE ch_contrib::icu)
 endif ()
@@ -915,6 +919,8 @@ endif()
 if (TARGET ch_contrib::arrow_flight)
     target_link_libraries(dbms PUBLIC ch_contrib::arrow_flight)
 endif()
+
+
 
 if (ENABLE_BUZZHOUSE)
     target_link_libraries(dbms PRIVATE clickhouse_buzzhouse_proto)
