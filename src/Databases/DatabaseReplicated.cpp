@@ -722,6 +722,17 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
                     replica_host_id,
                     host_id);
 
+            if (current_zookeeper->exists(replica_path + "/active"))
+                throw Exception(
+                    ErrorCodes::REPLICA_ALREADY_EXISTS,
+                    "Replica {} of shard {} of replicated database at {} is active and has a different host ID. "
+                    "Replica host ID: '{}', current host ID: '{}'",
+                    replica_name,
+                    shard_name,
+                    zookeeper_path,
+                    replica_host_id,
+                    host_id);
+
             // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
             // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper
             LOG_INFO(
