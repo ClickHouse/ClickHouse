@@ -337,8 +337,8 @@ ALTER TABLE tf_rls_proj MATERIALIZE PROJECTION p SETTINGS mutations_sync = 2;
 CREATE ROW POLICY rp_tf_rls_proj ON _table_function.* FOR SELECT USING 0 TO ALL;
 CREATE ROW POLICY rp_tf_parent_rls_proj ON tf_rls_proj FOR SELECT USING dept = 'eng' TO ALL;
 
-SELECT '-- table-function row policy combined with a parent policy: read is refused';
-SELECT id FROM mergeTreeProjection(currentDatabase(), 'tf_rls_proj', 'p') ORDER BY id; -- { serverError ACCESS_DENIED }
+SELECT '-- table-function row policy combines with the parent policy, both applied (expect no rows)';
+SELECT id FROM mergeTreeProjection(currentDatabase(), 'tf_rls_proj', 'p') ORDER BY id;
 
 DROP ROW POLICY rp_tf_rls_proj ON _table_function.*;
 DROP ROW POLICY rp_tf_parent_rls_proj ON tf_rls_proj;
