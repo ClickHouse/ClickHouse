@@ -27,6 +27,10 @@ $CLICKHOUSE_CLIENT -q "
 "
 
 $CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT parallel_replicas_delay_announcement"
+# Without this the local plan can answer `LIMIT 1` before the query has even been sent to the
+# followers, leaving nothing to cancel and nothing to wait for - which an unfixed server passes
+# just as easily as a fixed one.
+$CLICKHOUSE_CLIENT -q "SYSTEM ENABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
 SETTINGS="enable_parallel_replicas = 1
         , max_parallel_replicas = 3
@@ -82,6 +86,7 @@ for async_socket in 0 1; do
 done
 
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT parallel_replicas_delay_announcement"
+$CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
 # The cancelled followers outlive the initiator - that is the whole point - so wait for them to be
 # gone before looking at what they logged. How many of them got as far as running at all depends on
