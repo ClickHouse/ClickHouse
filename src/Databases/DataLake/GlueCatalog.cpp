@@ -9,6 +9,7 @@
 #include <aws/glue/GlueClient.h>
 #include <aws/glue/model/GetTablesRequest.h>
 #include <aws/glue/model/GetTableRequest.h>
+#include <aws/glue/model/GetDatabaseRequest.h>
 #include <aws/glue/model/GetDatabasesRequest.h>
 #include <aws/glue/model/CreateTableRequest.h>
 #include <aws/glue/model/DeleteTableRequest.h>
@@ -635,6 +636,23 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
 
 void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
+    /// Check existence first: `CreateDatabase` may be denied to a principal that is still allowed to
+    /// create tables in a pre-provisioned namespace, so it must not be called when there is nothing to create.
+    Aws::Glue::Model::GetDatabaseRequest get_request;
+    get_request.SetName(namespace_name);
+
+    auto get_outcome = glue_client->GetDatabase(get_request);
+    if (get_outcome.IsSuccess())
+        return;
+
+    if (get_outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling GetDatabase for namespace {}: {}",
+            namespace_name, get_outcome.GetError().GetMessage());
+    }
+
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
     db_input.SetName(namespace_name);
