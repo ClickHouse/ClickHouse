@@ -20,13 +20,12 @@ StatementFactory & StatementFactory::instance()
 void StatementFactory::registerStatement(const String & name, Documentation documentation)
 {
     if (!statements.emplace(name, std::move(documentation)).second)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement {} is registered twice", name);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The statement name {} is not unique", name);
 }
 
-std::vector<String> StatementFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+std::vector<String> StatementFactory::getAllRegisteredNames() const
 {
-    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
-    result.reserve(statements.size());
+    std::vector<String> result;
     for (const auto & [name, _] : statements)
         result.push_back(name);
     return result;

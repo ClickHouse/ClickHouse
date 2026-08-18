@@ -42,7 +42,6 @@ void registerStatements()
     registerStatementUse(factory);
     registerStatementWatch(factory);
     registerStatementWith(factory);
-
     registerStatementCheckGrant(factory);
     registerStatementExecuteAs(factory);
     registerStatementGrant(factory);

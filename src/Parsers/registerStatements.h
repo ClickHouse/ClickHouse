@@ -3,12 +3,8 @@
 
 namespace DB
 {
-
 class StatementFactory;
 
-/// Every function below registers the documentation of the statements parsed by one parser, so that the
-/// documentation lives next to the code which implements the syntax it describes. Define the function in the `.cpp`
-/// file of the parser (at namespace scope, using the `factory` argument) and add the call to `registerStatements`.
 void registerStatementAlter(StatementFactory & factory);
 void registerStatementAlterNamedCollection(StatementFactory & factory);
 void registerStatementCheck(StatementFactory & factory);
@@ -41,8 +37,6 @@ void registerStatementUpdate(StatementFactory & factory);
 void registerStatementUse(StatementFactory & factory);
 void registerStatementWatch(StatementFactory & factory);
 void registerStatementWith(StatementFactory & factory);
-
-/// The statements of the access management, parsed by the parsers under `src/Parsers/Access`.
 void registerStatementCheckGrant(StatementFactory & factory);
 void registerStatementExecuteAs(StatementFactory & factory);
 void registerStatementGrant(StatementFactory & factory);
@@ -55,8 +49,6 @@ void registerStatementSetRole(StatementFactory & factory);
 void registerStatementSettingsProfile(StatementFactory & factory);
 void registerStatementUser(StatementFactory & factory);
 
-/// Calls every registration function above. Must be called once at startup, before `system.statements` or
-/// `system.documentation` is queried.
 void registerStatements();
 
 }
