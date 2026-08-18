@@ -576,6 +576,23 @@ def download_binaries(
     right_bin = work_dir / "right" / "clickhouse"
     left_bin = work_dir / "left" / "clickhouse"
 
+    # A cached binary is only reusable when it is the one we were asked for.
+    # The work dir defaults to a fixed path, so a second run for a different
+    # commit (or with a different --reference-sha) would otherwise silently
+    # benchmark the previous pair while the report prints the new SHAs. Each
+    # download records what it is; a mismatch re-downloads.
+    def cached_identity(binary: Path) -> Optional[str]:
+        marker = binary.with_suffix(".identity")
+        if not binary.is_file() or not marker.is_file():
+            return None
+        return marker.read_text().strip()
+
+    def record_identity(binary: Path, identity: str) -> None:
+        binary.with_suffix(".identity").write_text(identity + "\n")
+
+    right_identity = f"{pr_sha} {build_type}"
+    left_identity = f"{ref_sha} {build_type}"
+
     # Right binary (patched / PR)
     right_url = f"{BUILDS_BUCKET_PR}/PRs/{pr_number}/{pr_sha}/{build_type}/clickhouse"
     # Fallback for master-tip commits (no PR): same path under REFs/<branch>/<sha>
@@ -583,7 +600,9 @@ def download_binaries(
     candidate_right_urls.append(
         f"{BUILDS_BUCKET_MASTER}/REFs/master/{pr_sha}/{build_type}/clickhouse"
     )
-    if not right_bin.is_file():
+    if cached_identity(right_bin) == right_identity:
+        log(f"reusing cached patched binary for {pr_sha[:12]}")
+    else:
         for u in candidate_right_urls:
             if http_head_ok(u):
                 download(u, right_bin)
@@ -594,14 +613,18 @@ def download_binaries(
                 + ", ".join(candidate_right_urls)
             )
         right_bin.chmod(0o755)
+        record_identity(right_bin, right_identity)
 
     # Left binary (reference / baseline) — always built off master
     left_url = f"{BUILDS_BUCKET_MASTER}/REFs/master/{ref_sha}/{build_type}/clickhouse"
-    if not left_bin.is_file():
+    if cached_identity(left_bin) == left_identity:
+        log(f"reusing cached reference binary for {ref_sha[:12]}")
+    else:
         if not http_head_ok(left_url):
             die(f"reference binary not found at {left_url}")
         download(left_url, left_bin)
         left_bin.chmod(0o755)
+        record_identity(left_bin, left_identity)
 
     return left_bin, right_bin
 
@@ -676,6 +699,24 @@ def hardlink_db(db_source: Path, side_db: Path) -> None:
             shutil.rmtree(victim, ignore_errors=True)
         elif victim.exists():
             victim.unlink()
+
+
+def seed_user_files(repo_root: Path, side_db: Path) -> None:
+    """Symlink tests/performance/user_files/* into the server's user_files
+    directory, the way the Configure stage of ci/jobs/performance_tests.py
+    does. Tests such as json_file_query read `file('instances.json')`, which
+    resolves under user_files_path; without this they fail locally while CI
+    runs them fine."""
+    src = repo_root / "tests/performance/user_files"
+    dst = side_db / "user_files"
+    dst.mkdir(parents=True, exist_ok=True)
+    if not src.is_dir():
+        return
+    for f in sorted(src.iterdir()):
+        link = dst / f.name
+        if link.is_symlink() or link.exists():
+            link.unlink()
+        link.symlink_to(f.resolve())
 
 
 def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
@@ -1594,6 +1635,8 @@ def main() -> int:
     for side in ("left", "right"):
         side_dir = work_dir / side
         hardlink_db(db_source, side_dir / "db")
+        # After the hardlink copy: hardlink_db wipes the destination.
+        seed_user_files(repo_root, side_dir / "db")
 
     # Start servers
     ensure_ports_free({

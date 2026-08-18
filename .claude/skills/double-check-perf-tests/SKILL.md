@@ -110,7 +110,11 @@ python3 .claude/skills/double-check-perf-tests/double_check_perf.py <commit-sha>
 Working directory defaults to `tmp/double_check_perf/` in the cwd (per
 `CLAUDE.md`: don't use `/tmp`). It contains:
 
-- `left/clickhouse`, `right/clickhouse` — downloaded binaries
+- `left/clickhouse`, `right/clickhouse` — downloaded binaries, each with
+  a `.identity` file recording the SHA it was built from. The work dir is
+  shared across runs, so a cached binary is reused only when it is the one
+  the current invocation asked for; a different commit or
+  `--reference-sha` re-downloads.
 - `left/db/`, `right/db/` — hardlinked dataset copies
 - `left/server.log`, `right/server.log` — server logs
 - `raw/<test>-raw.tsv` — `perf.py` output per test
