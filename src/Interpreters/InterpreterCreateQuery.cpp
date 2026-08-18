@@ -1983,7 +1983,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
     /// definition (short attach, metadata load, backup restore) already records its spelling.
-    if (!create.attach_short_syntax && !is_restore_from_backup
+    if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         replaceLegacyToTimeInCreateQuery(query_ptr);
 
@@ -3535,7 +3535,17 @@ BlockIO InterpreterCreateQuery::execute()
             /// so a worker there would resolve `toTime` with its own default.
             if (!is_create_database && !create.attach_short_syntax && !is_restore_from_backup
                 && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+            {
+                if (!create.as_table.empty())
+                {
+                    throw Exception(
+                        ErrorCodes::NOT_IMPLEMENTED,
+                        "CREATE TABLE ... AS or CLONE AS ON CLUSTER with distributed_ddl_entry_format_version = {} "
+                        "and use_legacy_to_time = 1 is not supported",
+                        on_cluster_version);
+
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
+            }
 
             return executeQueryOnCluster(create);
         }
