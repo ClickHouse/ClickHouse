@@ -336,6 +336,41 @@ def test_the_composed_key_does_grant_reuse(monkeypatch):
     assert BPD in reusable
 
 
+def test_a_successful_run_publishes_a_record_under_the_composed_key(monkeypatch):
+    """The publication seam. The tests above inject records; this one pins that the job
+    really does publish, and under the same composed key it is looked up by.
+
+    Without this, they would all still pass if publication stopped or wrote a different
+    key, and the job would silently never be reused.
+    """
+    pushed = {}
+    arm = _fake_digests(_job(PROFILED_BUILD))
+    composed = arm + "-" + _fake_digests(_job(BPD))
+
+    monkeypatch.setattr(
+        "ci.praktika.hook_cache.Cache.push_success_record",
+        staticmethod(lambda name, digest, *a, **kw: pushed.__setitem__(name, digest)),
+    )
+    monkeypatch.setattr(
+        RunConfig,
+        "from_workflow_data",
+        classmethod(
+            lambda cls: replace(
+                _make_run_config(),
+                digest_jobs={BPD: composed, PROFILED_BUILD: arm},
+            )
+        ),
+    )
+    workflow = _pr_workflow()
+    with redirect_stdout(io.StringIO()):
+        CacheRunnerHooks.post_run(workflow, _job(BPD))
+        # An ordinary cacheable job as the control, so an assertion about the diff job's
+        # record cannot pass because publication is broken for everything.
+        CacheRunnerHooks.post_run(workflow, _job(PROFILED_BUILD))
+
+    assert pushed == {BPD: composed, PROFILED_BUILD: arm}
+
+
 def test_the_builds_digest_tracks_the_source_tree():
     """The other half of the reuse invariant, and what the stubbed tests above take on
     faith: the profiled build's own digest really does move when the sources move.
