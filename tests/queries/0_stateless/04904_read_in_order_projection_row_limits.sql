@@ -19,6 +19,6 @@ FROM read_in_order_projection_row_limits
 WHERE a >= 0
 ORDER BY b
 LIMIT 1
-SETTINGS optimize_use_projections = 1, max_rows_to_read = 1;
+SETTINGS optimize_use_projections = 1, max_rows_to_read = 1; -- { serverError TOO_MANY_ROWS }
 
 DROP TABLE read_in_order_projection_row_limits SYNC;
