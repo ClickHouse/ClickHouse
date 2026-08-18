@@ -1,7 +1,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
-#include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
