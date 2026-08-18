@@ -2305,6 +2305,20 @@ struct ConvertImpl
             return DateTimeTransformImpl<FromDataType, ToDataType, DateTimeTransform, false>::template execute<Additions>(
                 arguments, result_type, input_rows_count, DateTimeTransform(from_scale));
         }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
+            && std::is_same_v<ToDataType, DataTypeDate>)
+        {
+            /// Keep `Time` consistent with the scale-zero `Time64` path: both represent
+            /// timezone-unaware seconds since the epoch for this conversion.
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTransformFromTime64<date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
+        else if constexpr (std::is_same_v<FromDataType, DataTypeTime>
+            && std::is_same_v<ToDataType, DataTypeDate32>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToDate32TransformFromTime64, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count);
+        }
         else if constexpr (std::is_same_v<FromDataType, DataTypeTime64>
             && std::is_same_v<ToDataType, DataTypeDate>)
         {
