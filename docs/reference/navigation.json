@@ -108,6 +108,7 @@
                 },
                 "reference/statements/create/masking-policy",
                 "reference/statements/create/function",
+                "reference/statements/create/handler",
                 "reference/statements/create/named-collection",
                 "reference/statements/create/quota",
                 "reference/statements/create/role",
@@ -185,8 +186,7 @@
             "reference/statements/truncate",
             "reference/statements/undrop",
             "reference/statements/update",
-            "reference/statements/use",
-            "reference/statements/watch"
+            "reference/statements/use"
           ]
         },
         {
@@ -422,6 +422,7 @@
             "reference/engines/database-engines/materialized-postgresql",
             "reference/engines/database-engines/mysql",
             "reference/engines/database-engines/postgresql",
+            "reference/engines/database-engines/remote",
             "reference/engines/database-engines/replicated",
             "reference/engines/database-engines/shared",
             "reference/engines/database-engines/sqlite"
@@ -556,6 +557,7 @@
                 "reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "reference/functions/aggregate-functions/first_value",
                 "reference/functions/aggregate-functions/flame_graph",
+                "reference/functions/aggregate-functions/gini",
                 "reference/functions/aggregate-functions/groupArray",
                 "reference/functions/aggregate-functions/groupArrayArray",
                 "reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -882,6 +884,7 @@
             "reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "reference/formats/PNG",
         "reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -909,6 +912,14 @@
             "reference/formats/Protobuf/Protobuf",
             "reference/formats/Protobuf/ProtobufList",
             "reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "reference/formats/Puffin/Puffin",
+            "reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "reference/formats/RawBLOB",
@@ -954,6 +965,15 @@
     {
       "expandable": true,
       "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "reference/interfaces/specs/NativeProtocol",
+        "reference/interfaces/specs/NativeFormat"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
       "group": "Settings",
       "pages": [
         "reference/settings/index",
@@ -986,6 +1006,7 @@
         "reference/system-tables/asynchronous_metric_log",
         "reference/system-tables/asynchronous_metrics",
         "reference/system-tables/azure_queue_log",
+        "reference/system-tables/azure_queue_metadata",
         "reference/system-tables/azure_queue_metadata_cache",
         "reference/system-tables/azure_queue_settings",
         "reference/system-tables/backup_log",
@@ -1017,11 +1038,15 @@
         "reference/system-tables/detached_parts",
         "reference/system-tables/detached_tables",
         "reference/system-tables/dictionaries",
+        "reference/system-tables/dictionary_layouts",
+        "reference/system-tables/dictionary_sources",
         "reference/system-tables/dimensional_metrics",
         "reference/system-tables/disks",
+        "reference/system-tables/disk_types",
         "reference/system-tables/distributed_ddl_queue",
         "reference/system-tables/distribution_queue",
         "reference/system-tables/dns_cache",
+        "reference/system-tables/documentation",
         "reference/system-tables/dropped_tables",
         "reference/system-tables/dropped_tables_parts",
         "reference/system-tables/enabled_roles",
@@ -1037,9 +1062,11 @@
         "reference/system-tables/functions",
         "reference/system-tables/grants",
         "reference/system-tables/graphite_retentions",
+        "reference/system-tables/handlers",
         "reference/system-tables/histogram_metric_log",
         "reference/system-tables/histogram_metrics",
         "reference/system-tables/hypothetical_indexes",
+        "reference/system-tables/iceberg_files",
         "reference/system-tables/iceberg_history",
         "reference/system-tables/iceberg_metadata_log",
         "reference/system-tables/information_schema",
@@ -1048,6 +1075,9 @@
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
         "reference/system-tables/kafka_consumers",
+        "reference/system-tables/keeper_changelogs",
+        "reference/system-tables/keeper_cluster",
+        "reference/system-tables/keeper_snapshots",
         "reference/system-tables/keeper_storage",
         "reference/system-tables/keywords",
         "reference/system-tables/licenses",
@@ -1097,6 +1127,7 @@
         "reference/system-tables/role_grants",
         "reference/system-tables/roles",
         "reference/system-tables/row_policies",
+        "reference/system-tables/s3_queue_metadata",
         "reference/system-tables/s3_queue_settings",
         "reference/system-tables/s3queue_log",
         "reference/system-tables/s3queue_metadata_cache",
@@ -1109,6 +1140,7 @@
         "reference/system-tables/settings_profile_elements",
         "reference/system-tables/settings_profiles",
         "reference/system-tables/stack_trace",
+        "reference/system-tables/statements",
         "reference/system-tables/stemmers",
         "reference/system-tables/storage_policies",
         "reference/system-tables/symbols",

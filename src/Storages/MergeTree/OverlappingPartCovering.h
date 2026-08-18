@@ -47,13 +47,15 @@ public:
       * existing covering entry already implies coverage of the new one).
       *
       * `out_skipped_reason`, if non-null, receives the human-readable description from
-      * `ActiveDataPartSet::tryAddPart` when a part lands in the overlapping list. Empty when the
+      * `ActiveDataPartSet::tryAdd` when a part lands in the overlapping list. Empty when the
       * part is added to the primary set or when the part is already covered.
       */
     void add(const MergeTreePartInfo & part_info, const String & part_name, String * out_skipped_reason = nullptr)
     {
         String reason;
-        const auto outcome = set.tryAddPart(part_info, &reason);
+        /// A part name cannot be derived from a part info in the V0 (date-based) name format, so only
+        /// the name-taking overload is usable here.
+        const auto outcome = set.tryAdd(part_name, &reason);
         if (outcome == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
         {
             overlapping.emplace_back(part_info, part_name);

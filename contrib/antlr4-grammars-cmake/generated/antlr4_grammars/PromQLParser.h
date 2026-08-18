@@ -17,10 +17,10 @@ public:
     POW = 8, AND = 9, OR = 10, UNLESS = 11, ATAN2 = 12, EQ = 13, DEQ = 14, 
     NE = 15, GT = 16, LT = 17, GE = 18, LE = 19, RE = 20, NRE = 21, BY = 22, 
     WITHOUT = 23, ON = 24, IGNORING = 25, GROUP_LEFT = 26, GROUP_RIGHT = 27, 
-    OFFSET = 28, BOOL = 29, AGGREGATION_OPERATOR = 30, FUNCTION = 31, LEFT_BRACE = 32, 
-    RIGHT_BRACE = 33, LEFT_PAREN = 34, RIGHT_PAREN = 35, LEFT_BRACKET = 36, 
-    RIGHT_BRACKET = 37, COMMA = 38, AT = 39, SUBQUERY_RANGE = 40, SELECTOR_RANGE = 41, 
-    METRIC_NAME = 42, LABEL_NAME = 43, WS = 44, SL_COMMENT = 45
+    OFFSET = 28, BOOL = 29, START = 30, END = 31, AGGREGATION_OPERATOR = 32, 
+    FUNCTION = 33, LEFT_BRACE = 34, RIGHT_BRACE = 35, LEFT_PAREN = 36, RIGHT_PAREN = 37, 
+    LEFT_BRACKET = 38, RIGHT_BRACKET = 39, COMMA = 40, AT = 41, SUBQUERY_RANGE = 42, 
+    SELECTOR_RANGE = 43, METRIC_NAME = 44, LABEL_NAME = 45, WS = 46, SL_COMMENT = 47
   };
 
   enum {
@@ -335,6 +335,10 @@ public:
     antlr4::tree::TerminalNode *NUMBER();
     antlr4::tree::TerminalNode *ADD();
     antlr4::tree::TerminalNode *SUB();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *LEFT_PAREN();
+    antlr4::tree::TerminalNode *RIGHT_PAREN();
+    antlr4::tree::TerminalNode *END();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -677,6 +681,7 @@ public:
     KeywordContext *keyword();
     antlr4::tree::TerminalNode *METRIC_NAME();
     antlr4::tree::TerminalNode *LABEL_NAME();
+    antlr4::tree::TerminalNode *STRING();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -739,6 +744,8 @@ public:
     antlr4::tree::TerminalNode *GROUP_RIGHT();
     antlr4::tree::TerminalNode *OFFSET();
     antlr4::tree::TerminalNode *BOOL();
+    antlr4::tree::TerminalNode *START();
+    antlr4::tree::TerminalNode *END();
     antlr4::tree::TerminalNode *AGGREGATION_OPERATOR();
     antlr4::tree::TerminalNode *FUNCTION();
 

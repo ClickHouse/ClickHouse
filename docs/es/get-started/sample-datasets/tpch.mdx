@@ -1,15 +1,13 @@
 ---
-description: 'El conjunto de datos y las consultas del benchmark TPC-H.'
-sidebarTitle: 'TPC-H'
-slug: /getting-started/example-datasets/tpch
-title: 'TPC-H (1999)'
-doc_type: 'guide'
-keywords: ['conjunto de datos de ejemplo', 'tpch', 'benchmark', 'datos de muestra', 'pruebas de rendimiento']
+title: "TPC-H (1999)"
+description: "El conjunto de datos y las consultas del benchmark TPC-H."
+sidebarTitle: "TPC-H"
+slug: "/getting-started/example-datasets/tpch"
+doc_type: "guide"
+keywords: ["conjunto de datos de ejemplo", "tpch", "benchmark", "datos de muestra", "pruebas de rendimiento"]
 ---
 
-Un benchmark popular que modela el almacén de datos interno de un proveedor mayorista.
-Los datos se almacenan en una representación en tercera forma normal, lo que requiere numerosos joins al ejecutar las consultas.
-A pesar de su antigüedad y de la poco realista suposición de que los datos se distribuyen de manera uniforme e independiente, TPC-H sigue siendo el benchmark de OLAP más popular hasta la fecha.
+Un benchmark popular que modela el almacén de datos interno de un proveedor mayorista. Los datos se almacenan en una representación en tercera forma normal, lo que requiere numerosos joins al ejecutar las consultas. A pesar de su antigüedad y de la poco realista suposición de que los datos se distribuyen de manera uniforme e independiente, TPC-H sigue siendo el benchmark de OLAP más popular hasta la fecha.
 
 **Referencias**
 
@@ -76,11 +74,10 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 ```
 
 <Note>
-  En lugar de usar tpch-kit y generar las tablas por tu cuenta, también puedes importar los datos desde un bucket público de S3. Asegúrate de
-  crear primero tablas vacías con [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql).
+  En lugar de usar tpch-kit y generar las tablas por ti mismo, puedes alternativamente importar los datos desde un bucket público de S3. Asegúrate de crear primero tablas vacías usando [`init.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/init.sql).
 
   ```sql
-  -- Factor de escala 1
+  -- Scale factor 1
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/nation.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/region.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/part.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -90,7 +87,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/orders.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/1/lineitem.tbl', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- Factor de escala 10
+  -- Scale factor 10
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/nation.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/region.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/part.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -100,7 +97,7 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
   INSERT INTO orders SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/orders.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO lineitem SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/10/lineitem.tbl.zst', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
 
-  -- Factor de escala 100
+  -- Scale factor 100
   INSERT INTO nation SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/nation.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO region SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/region.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
   INSERT INTO part SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/h/100/part.tbl.gz', NOSIGN, CSV) SETTINGS format_csv_delimiter = '|', input_format_defaults_for_omitted_fields = 1, input_format_csv_empty_as_default = 1;
@@ -118,10 +115,14 @@ clickhouse-client --format_csv_delimiter '|' --query "INSERT INTO lineitem FORMA
 
 Las 22 consultas TPC-H se pueden encontrar [aquí](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/tpc-h/queries), en el repositorio de ClickHouse.
 
-Para obtener un comportamiento compatible con el estándar SQL y los resultados esperados, aplique la configuración definida en [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json).
-Consulte el [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) para conocer los problemas conocidos y las notas sobre consultas específicas.
+Para obtener un comportamiento compatible con el estándar SQL y los resultados esperados, aplique la configuración definida en [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/settings.json). Consulte el [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/tpc-h/README.md) para conocer los problemas conocidos y las notas sobre consultas específicas.
 
 **Corrección**
 
-El resultado de las consultas coincide con los resultados oficiales, salvo que se indique lo contrario. Para verificarlo, genere una base de datos TPC-H con un factor
-de escala = 1 (`dbgen`, vea más arriba) y compárela con los [resultados esperados en tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+El resultado de las consultas coincide con los resultados oficiales, salvo que se indique lo contrario. Para verificarlo, genere una base de datos TPC-H con un factor de escala = 1 (`dbgen`, vea más arriba) y compárela con los [resultados esperados en tpch-kit](https://github.com/gregrahn/tpch-kit/tree/master/dbgen/answers).
+
+<div id="performance-benchmark">
+  ## Benchmark de rendimiento
+</div>
+
+ClickHouse realiza un seguimiento del rendimiento de las consultas TPC-H en cada versión publicada. Puede consultar los tiempos de ejecución de las 22 consultas TPC-H (factor de escala 40) en la página de [benchmark de versiones de ClickHouse](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ph\&metric=hot\&queries=-) para ver cómo ha evolucionado el rendimiento con el tiempo.
