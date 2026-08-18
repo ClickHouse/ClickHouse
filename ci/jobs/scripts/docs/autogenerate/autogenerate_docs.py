@@ -1097,7 +1097,7 @@ def _navigation_entry(page):
 def _settings_explorer(family):
     return (
         f"## {family['browse_title']}\n\n"
-        f"<{family['component_name']} />\n"
+        f'<{family["component_name"]} href="{family["base_route"]}" />\n'
     )
 
 
@@ -1106,7 +1106,9 @@ def _strip_settings_explorer(preamble, family):
     pattern = re.compile(
         rf"^[ \t]*##[ \t]+{re.escape(family['browse_title'])}"
         rf"(?:[ \t]+\{{#[^}}\n]+\}})?[ \t]*\n+"
-        rf"[ \t]*<{re.escape(family['component_name'])}[ \t]*/>[ \t]*(?:\n+|$)",
+        rf"[ \t]*<{re.escape(family['component_name'])}"
+        rf"(?:[ \t]+href=(?:\"[^\"\n]+\"|'[^'\n]+'))?"
+        rf"[ \t]*/>[ \t]*(?:\n+|$)",
         re.MULTILINE,
     )
     return pattern.sub("", preamble).strip()
@@ -1144,9 +1146,15 @@ def _settings_explorer_component(pages, family=None):
         return len(page.sections) + sum(subtree_count(child) for child in page.children)
 
     def explorer_setting(section, page):
+        base_route = family["base_route"].rstrip("/")
+        relative_route = page.route.removeprefix(base_route)
+        if not relative_route.startswith("/"):
+            raise ValueError(
+                f"Explorer route {page.route!r} is outside {base_route!r}"
+            )
         entry = {
             "name": section.name,
-            "href": f"{page.route}#{section.anchor}",
+            "path": f"{relative_route}#{section.anchor}",
         }
         default_value = section.default_value
         if default_value is None and family["component_name"] != "ServerSettingsExplorer":
@@ -1171,7 +1179,7 @@ def _settings_explorer_component(pages, family=None):
 
     entries_json = json.dumps(
         [explorer_entry(page) for page in pages], separators=(",", ":"))
-    template = '''const __COMPONENT_NAME__ = () => {
+    template = '''const __COMPONENT_NAME__ = ({ href: baseRoute }) => {
   // Mintlify's production renderer evaluates the exported component without
   // preserving module-scope bindings. Lazy state keeps the generated data in
   // that evaluation scope while constructing it only once per mount.
@@ -1337,7 +1345,7 @@ def _settings_explorer_component(pages, family=None):
                 <span aria-hidden="true" className="w-4 shrink-0" />
                 {branch(branchPrefix(childContinuations, itemIsLast))}
                 <a
-                  href={item.value.href}
+                  href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`}
                   className="min-w-0 whitespace-normal no-underline hover:underline"
                   style={{ overflowWrap: "anywhere" }}
                 >
