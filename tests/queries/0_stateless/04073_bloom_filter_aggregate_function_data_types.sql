@@ -108,13 +108,18 @@ SELECT
     maybe_hits >= 1000,
     maybe_hits < 10000;
 
--- Implicit type casting: Int64 and Float64 filters with narrower expressions
+-- Implicit type casting: numeric filters with different numeric probe types
 WITH
     (SELECT groupBloomFilterState(1000)(toInt64(number - 50)) FROM numbers(100)) AS int64_bf,
     (SELECT groupBloomFilterState(1000)(toFloat64(number * 0.1)) FROM numbers(100)) AS float64_bf
 SELECT
     bloomFilterContains(int64_bf, toInt32(-10)),
-    bloomFilterContains(float64_bf, toFloat32(4.2));
+    bloomFilterContains(float64_bf, toFloat32(4.2)),
+    bloomFilterContains(int64_bf, toDecimal32(42, 0)),
+    bloomFilterContains(int64_bf, toDecimal64(42, 0)),
+    bloomFilterContains(int64_bf, toDecimal128(42, 0)),
+    bloomFilterContains(int64_bf, toDecimal256(42, 0)),
+    bloomFilterContains(float64_bf, toDecimal64(4.2, 1));
 
 -- Nullable, LowCardinality, narrowing, and lossy probes
 WITH
