@@ -147,6 +147,7 @@ public:
     struct MissingColumnInfo
     {
         String name;
+        String type_name; /// type whose default was frozen when the part was written
         enum class DefaultKind : uint8_t
         {
             TypeDefault,  /// fill with the type's zero value (0, "", NULL)
@@ -156,7 +157,7 @@ public:
         String expression; /// non-empty only when default_kind == Expression
 
         bool operator<(const MissingColumnInfo & rhs) const { return name < rhs.name; }
-        bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name; }
+        bool operator==(const MissingColumnInfo & rhs) const { return name == rhs.name && type_name == rhs.type_name; }
     };
     using MissingColumns = std::vector<MissingColumnInfo>;
 

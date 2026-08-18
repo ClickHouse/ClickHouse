@@ -42,6 +42,7 @@ constexpr auto KEY_MAP_SERIALIZATION_VERSION = "map";
 constexpr auto KEY_PROPAGATE_DATA_TYPES_SERIALIZATION_VERSIONS_TO_NESTED_TYPES = "propagate_types_serialization_versions_to_nested_types";
 constexpr auto KEY_MISSING_COLUMNS = "missing_columns";
 constexpr auto KEY_MISSING_COL_NAME = "name";
+constexpr auto KEY_MISSING_COL_TYPE = "type";
 constexpr auto KEY_MISSING_COL_DEFAULT = "default";
 constexpr auto KEY_MISSING_COL_EXPRESSION = "expression";
 constexpr auto VALUE_TYPE_DEFAULT = "type_default";
@@ -556,6 +557,8 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
             writeChar('{', out);
             writeJSONKeyValue(KEY_MISSING_COL_NAME, mc.name, out);
             writeChar(',', out);
+            writeJSONKeyValue(KEY_MISSING_COL_TYPE, mc.type_name, out);
+            writeChar(',', out);
             if (mc.default_kind == MissingColumnInfo::DefaultKind::TypeDefault)
             {
                 writeJSONKeyValue(KEY_MISSING_COL_DEFAULT, std::string_view(VALUE_TYPE_DEFAULT), out);
@@ -723,6 +726,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
             const auto & elem_object = elem.extract<Poco::JSON::Object::Ptr>();
             MissingColumnInfo mc;
             mc.name = elem_object->getValue<String>(KEY_MISSING_COL_NAME);
+            mc.type_name = elem_object->getValue<String>(KEY_MISSING_COL_TYPE);
             auto default_str = elem_object->getValue<String>(KEY_MISSING_COL_DEFAULT);
             if (default_str == VALUE_EXPRESSION)
             {

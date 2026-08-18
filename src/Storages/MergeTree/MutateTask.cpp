@@ -271,6 +271,12 @@ static void splitAndModifyMutationCommands(
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
+    auto markerNameInPart = [&](String name)
+    {
+        if (alter_conversions->isColumnRenamed(name))
+            name = alter_conversions->getColumnOldName(name);
+        return name;
+    };
 
     if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
         || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
@@ -285,13 +291,25 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
+                auto marker_name = markerNameInPart(command.column_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                {
+                    auto materialize_frozen = command;
+                    materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
+                    materialize_frozen.data_type = table_columns.getPhysical(command.column_name).type;
+                    for_interpreter.push_back(std::move(materialize_frozen));
+                    mutated_columns.emplace(command.column_name);
+                }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                else
                 {
-                    for_interpreter.push_back(command);
-                    mutated_columns.emplace(command.column_name);
+                    auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                    {
+                        for_interpreter.push_back(command);
+                        mutated_columns.emplace(command.column_name);
+                    }
                 }
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
@@ -301,7 +319,8 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::READ_COLUMN)
             {
-                bool has_column = part_columns.has(command.column_name) || part_columns.hasNested(command.column_name);
+                bool has_column = part_columns.has(command.column_name) || part_columns.hasNested(command.column_name)
+                    || part->getSerializationInfos().isMissingColumn(markerNameInPart(command.column_name));
                 if (has_column || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
@@ -415,7 +434,7 @@ static void splitAndModifyMutationCommands(
                     }
                 }
             }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+            else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
                 /// A column that exists only as a missing-columns marker has no
                 /// data files, but DROP COLUMN must still forget the marker;
@@ -608,11 +627,22 @@ static void splitAndModifyMutationCommands(
         {
             if (command.type == MutationCommand::Type::MATERIALIZE_COLUMN)
             {
+                auto marker_name = markerNameInPart(command.column_name);
+                if (part->getSerializationInfos().isMissingColumn(marker_name))
+                {
+                    auto materialize_frozen = command;
+                    materialize_frozen.type = MutationCommand::Type::READ_COLUMN;
+                    materialize_frozen.data_type = table_columns.getPhysical(command.column_name).type;
+                    for_interpreter.push_back(std::move(materialize_frozen));
+                }
                 /// For ordinary column with default or materialized expression, MATERIALIZE COLUMN should not override past values
                 /// So we only mutate column if `command.column_name` is a default/materialized column or if the part does not have physical column file
-                auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
-                if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
-                    for_interpreter.push_back(command);
+                else
+                {
+                    auto column_ordinary = table_columns.getOrdinary().tryGetByName(command.column_name);
+                    if (!column_ordinary || !part->tryGetColumn(command.column_name) || !part->hasColumnFiles(*column_ordinary))
+                        for_interpreter.push_back(command);
+                }
 
                 /// Materialize column in case of complex data types like tuple can remove some nested columns
                 /// Here we add it "for renames" because these set of commands also removes redundant files
@@ -647,7 +677,9 @@ static void splitAndModifyMutationCommands(
             }
             else if (command.type == MutationCommand::Type::READ_COLUMN)
             {
-                if (part_columns.has(command.column_name) || command.read_for_patch)
+                if (part_columns.has(command.column_name)
+                    || part->getSerializationInfos().isMissingColumn(markerNameInPart(command.column_name))
+                    || command.read_for_patch)
                 {
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
@@ -666,11 +698,10 @@ static void splitAndModifyMutationCommands(
 
                 for_file_renames.push_back(command);
             }
-            else if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear)
+            else if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                /// Same as in the branch above: DROP COLUMN of a column that exists
-                /// only as a missing-columns marker must be forwarded so that
-                /// getColumnsForNewDataPart forgets the marker.
+                /// A marker-only column has no files, but DROP and CLEAR still
+                /// remove its stored logical value from the resulting part.
                 String marker_name = command.column_name;
                 if (alter_conversions->isColumnRenamed(marker_name))
                     marker_name = alter_conversions->getColumnOldName(marker_name);
@@ -823,7 +854,7 @@ getColumnsForNewDataPart(
     /// is known, regardless of the relative order of the commands in the lists.
     for (const auto & command : all_commands)
     {
-        if (command.type != MutationCommand::DROP_COLUMN || command.clear || part_columns.has(command.column_name))
+        if (command.type != MutationCommand::DROP_COLUMN || part_columns.has(command.column_name))
             continue;
 
         auto it = renamed_columns_to_from.find(command.column_name);

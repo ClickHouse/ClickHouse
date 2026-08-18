@@ -210,7 +210,7 @@ DROP TABLE t_skip_empty_rename_merge_default;
 
 -- ============================================================================
 -- CASE 27: MATERIALIZE COLUMN on a missing column.
--- After materialization, the DEFAULT expression is evaluated and written.
+-- The marker represents a stored value, so materialization writes that value.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case27;
 
@@ -236,7 +236,7 @@ SELECT * FROM t_skip_empty_case27 ORDER BY key;
 ALTER TABLE t_skip_empty_case27 MODIFY COLUMN b UInt64 DEFAULT 999;
 ALTER TABLE t_skip_empty_case27 MATERIALIZE COLUMN b;
 
--- After materialization, b should be 999 (DEFAULT evaluated and written).
+-- After materialization, b remains the historical value 0.
 SELECT 'case27_post_materialize';
 SELECT * FROM t_skip_empty_case27 ORDER BY key;
 
@@ -244,8 +244,8 @@ DROP TABLE t_skip_empty_case27;
 
 -- ============================================================================
 -- CASE 28: CLEAR COLUMN on a missing column.
--- CLEAR is effectively a no-op since the column has no physical data.
--- The missing_columns marker remains; read still returns the frozen type-default.
+-- CLEAR discards the stored logical value represented by the marker, so reads
+-- use the current DEFAULT expression afterwards.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case28;
 
@@ -271,7 +271,7 @@ SELECT * FROM t_skip_empty_case28 ORDER BY key;
 ALTER TABLE t_skip_empty_case28 MODIFY COLUMN b UInt64 DEFAULT 999;
 ALTER TABLE t_skip_empty_case28 CLEAR COLUMN b;
 
--- After clear, b still has no data and marker remains → frozen type-default = 0.
+-- After clear, the marker is gone and b follows the current DEFAULT = 999.
 SELECT 'case28_post_clear';
 SELECT * FROM t_skip_empty_case28 ORDER BY key;
 
@@ -394,12 +394,10 @@ SELECT * FROM t_skip_empty_case41 ORDER BY key;
 DROP TABLE t_skip_empty_case41;
 
 -- ============================================================================
--- CASE 42: Type-changing ALTER MODIFY COLUMN on a missing column.
--- Regression for AI reviewer blocker #3: when a column was skipped (b UInt64 = 0),
--- then ALTER MODIFY COLUMN b Nullable(UInt64), the missing column is filled with
--- the NEW type's type-default (NULL for Nullable). This is by design: the marker
--- records "fill with type-default" which is type-specific, and a type change via
--- mutation materializes the column anyway.
+-- CASE 42: Type-changing ALTER MODIFY COLUMN converts the stored value.
+-- A missing-column marker represents the explicitly inserted UInt64 value 0.
+-- Changing the type to Nullable(UInt64) must therefore produce Nullable(0),
+-- not the new type-default NULL.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case42;
 
@@ -423,8 +421,7 @@ SELECT 'case42_pre_modify';
 SELECT * FROM t_skip_empty_case42 ORDER BY key;
 
 -- Type-changing mutation: UInt64 → Nullable(UInt64).
--- The mutation materializes the column, so the marker is removed.
--- MATERIALIZE happens via updated_header containing 'b'.
+-- The mutation materializes and converts the frozen value, then removes the marker.
 ALTER TABLE t_skip_empty_case42 MODIFY COLUMN b Nullable(UInt64);
 
 SELECT 'case42_post_modify';
@@ -472,10 +469,9 @@ SELECT key, a, c FROM t_skip_empty_case43 ORDER BY key;
 DROP TABLE t_skip_empty_case43;
 
 -- ============================================================================
--- CASE 44: MATERIALIZE COLUMN on a missing column writes current DEFAULT.
--- Regression for AI reviewer blocker #5: explicitly proving that MATERIALIZE
--- COLUMN computes the current DEFAULT and removes the marker, which is the
--- intended semantic (MATERIALIZE = "write physical data for this column").
+-- CASE 44: MATERIALIZE COLUMN writes the historical stored value.
+-- A missing-column marker represents physical data omitted as an optimization.
+-- MATERIALIZE COLUMN must materialize that value, not recompute the current DEFAULT.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case44;
 
@@ -499,7 +495,7 @@ INSERT INTO t_skip_empty_case44 (key, a, b) VALUES (1, 100, 0);
 SELECT 'case44_pre';
 SELECT * FROM t_skip_empty_case44 ORDER BY key;
 
--- Add DEFAULT, then MATERIALIZE. After materialize, b is physical data = 999.
+-- Add DEFAULT, then MATERIALIZE. The historical b=0 becomes physical data.
 ALTER TABLE t_skip_empty_case44 MODIFY COLUMN b UInt64 DEFAULT 999;
 ALTER TABLE t_skip_empty_case44 MATERIALIZE COLUMN b;
 
@@ -512,7 +508,7 @@ SELECT column FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_skip_empty_case44' AND active
 ORDER BY column;
 
--- Change DEFAULT again. Since b is physical data, value stays 999.
+-- Change DEFAULT again. Since b is physical data, value stays 0.
 ALTER TABLE t_skip_empty_case44 MODIFY COLUMN b UInt64 DEFAULT 777;
 
 SELECT 'case44_post_second_alter';
@@ -521,10 +517,9 @@ SELECT * FROM t_skip_empty_case44 ORDER BY key;
 DROP TABLE t_skip_empty_case44;
 
 -- ============================================================================
--- CASE 45: CLEAR COLUMN on a missing column is a no-op (marker preserved).
--- Regression for AI reviewer blocker #6: CLEAR COLUMN has nothing to clear
--- when the column has no physical data. The marker remains, and the frozen
--- type-default continues to be returned.
+-- CASE 45: CLEAR COLUMN discards a missing column's stored value.
+-- The marker represents historical data, so CLEAR must remove it. Reads then use
+-- the current DEFAULT expression, just as they do after clearing physical data.
 -- ============================================================================
 DROP TABLE IF EXISTS t_skip_empty_case45;
 
@@ -544,15 +539,15 @@ SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
 
 INSERT INTO t_skip_empty_case45 (key, a, b) VALUES (1, 100, 0);
 
--- Add DEFAULT, then CLEAR. Since b has no physical data, CLEAR is no-op.
+-- Add DEFAULT, then CLEAR. CLEAR removes the stored logical value and marker.
 ALTER TABLE t_skip_empty_case45 MODIFY COLUMN b UInt64 DEFAULT 999;
 ALTER TABLE t_skip_empty_case45 CLEAR COLUMN b;
 
--- Marker survives → still reads frozen type-default 0, NOT current DEFAULT 999.
+-- The cleared column now reads through the current DEFAULT expression.
 SELECT 'case45_post_clear';
 SELECT * FROM t_skip_empty_case45 ORDER BY key;
 
--- Unrelated mutation — marker must still survive.
+-- Unrelated mutation must preserve the cleared state.
 ALTER TABLE t_skip_empty_case45 UPDATE a = a + 1 WHERE key = 1;
 
 SELECT 'case45_post_mutate';
