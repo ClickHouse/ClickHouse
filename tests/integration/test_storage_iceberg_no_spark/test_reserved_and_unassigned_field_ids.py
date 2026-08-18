@@ -2,10 +2,10 @@
 
 Iceberg reserves field ids above 2147483447 for writer-internal columns such as `_row_id`, and
 readers must ignore reserved ids they do not recognize instead of failing
-(https://iceberg.apache.org/spec/#reserved-field-ids). An id the table has actually assigned but
+(https://iceberg.apache.org/spec/#reserved-field-ids). An id the table could have assigned but
 that the current schema no longer lists is likewise not projected
-(https://iceberg.apache.org/spec/#column-projection). Every other unmapped id is a genuine
-mismatch between the file and the metadata and must still be rejected.
+(https://iceberg.apache.org/spec/#column-projection). An unmapped id OUTSIDE that window cannot
+belong to the table at all, so it is a mismatch between the file and the metadata and is rejected.
 
 Reproduces https://github.com/ClickHouse/ClickHouse/issues/107343 and pins the accepted window of
 https://github.com/ClickHouse/ClickHouse/issues/113324.
@@ -158,7 +158,8 @@ def test_field_id_below_assigned_range_is_rejected(started_cluster_iceberg_no_sp
     """Id 0 is below the table's last assigned field id, yet Iceberg assigns ids from 1 up.
 
     So no table ever assigned it and it cannot be a column dropped from the schema. Pins the lower
-    bound of the accepted window.
+    bound of the accepted window; ids inside the window are accepted on the bound alone, since
+    `last-column-id` gives no way to tell an interior hole from a dropped column.
     """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_v3_zero_" + get_uuid_str()

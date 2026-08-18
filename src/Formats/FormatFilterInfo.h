@@ -55,7 +55,7 @@ public:
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
     /// Table-level high-water mark: the highest field id the table has ever assigned to any
-    /// column (Iceberg calls it `last-column-id`). Not per-column information.
+    /// column (Iceberg calls it `last-column-id`). An upper bound, not an assignment set.
     /// nullopt when the metadata did not report it.
     void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
     std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
