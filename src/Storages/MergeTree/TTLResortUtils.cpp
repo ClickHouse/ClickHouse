@@ -12,6 +12,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
@@ -437,7 +438,21 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     /// `evaluateMissingDefaults` resolves the dependency order between them).
     for (const auto & column : columns_desc.getAllPhysical())
         if (affected_materialized.contains(column.name))
+        {
+            const auto default_ast = column.default_desc.expression->clone();
+            const auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
+            const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, context}.getActions(true);
+
+            /// A `GROUP BY` TTL can aggregate some rows while passing other rows through unchanged.
+            /// The post-TTL repair is a whole-stream expression, so it cannot safely recompute a
+            /// non-deterministic MATERIALIZED default (such as `now()`) only for the rows the SET
+            /// actually rewrote. Preserve its stored value instead, as we do for defaults that read
+            /// EPHEMERAL columns, rather than writing a fresh unrelated value for untouched rows.
+            if (default_actions->getActionsDAG().hasNonDeterministic())
+                continue;
+
             affected.emplace_back(column.name, column.type);
+        }
 
     return affected;
 }

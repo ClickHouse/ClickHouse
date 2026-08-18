@@ -325,6 +325,29 @@ ALTER TABLE t_future_ttl_mut MATERIALIZE TTL SETTINGS mutations_sync = 2;
 SELECT 'future ttl leaves materialized', countIf(m = saved_m) = count() FROM t_future_ttl_mut;
 DROP TABLE t_future_ttl_mut;
 
+-- A part written before a future GROUP BY TTL is added has no corresponding ttl.txt entry.
+-- Materializing that new TTL must not recompute a non-deterministic MATERIALIZED default when
+-- the TTL keeps every row unchanged.
+DROP TABLE IF EXISTS t_future_ttl_after_modify;
+CREATE TABLE t_future_ttl_after_modify
+(
+    ts DateTime,
+    x UInt32,
+    m String MATERIALIZED concat(toString(x), '|', toString(generateUUIDv4()))
+)
+ENGINE = MergeTree ORDER BY x
+SETTINGS min_bytes_for_wide_part = 0;
+SYSTEM STOP TTL MERGES t_future_ttl_after_modify;
+INSERT INTO t_future_ttl_after_modify (ts, x) VALUES ('2020-01-15 00:00:00', 7), ('2020-02-15 00:00:00', 8);
+CREATE TABLE t_future_ttl_after_modify_saved ENGINE = Memory AS SELECT * FROM t_future_ttl_after_modify;
+SET materialize_ttl_after_modify = 0;
+ALTER TABLE t_future_ttl_after_modify MODIFY TTL ts + toIntervalYear(30) GROUP BY x SET x = max(x) + 1;
+SET materialize_ttl_after_modify = 1;
+ALTER TABLE t_future_ttl_after_modify MATERIALIZE TTL SETTINGS mutations_sync = 2;
+SELECT 'future ttl after modify leaves materialized', countIf(t.m = s.m) = count() FROM t_future_ttl_after_modify AS t INNER JOIN t_future_ttl_after_modify_saved AS s USING x;
+DROP TABLE t_future_ttl_after_modify_saved;
+DROP TABLE t_future_ttl_after_modify;
+
 -- `force_` in `MATERIALIZE TTL` evaluates every TTL expression, but it does not make a future
 -- GROUP BY TTL fire. In particular, its SET targets must not refresh a MATERIALIZED expiry input
 -- of a later column TTL: `m` contains `now()` and would visibly change even though `x` is unchanged.
