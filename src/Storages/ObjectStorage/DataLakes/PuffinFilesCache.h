@@ -96,7 +96,10 @@ struct PuffinFooterCacheKeyHash
 
 /// Cache for parsed content loaded from Puffin files (deletion vectors today, indexes later).
 /// Also memoizes parsed footers so coalesced multi-DV Puffins parse the footer once per file.
-/// Footer memo shares `puffin_files_cache_size` / max-entry limits (size 0 disables memoization).
+///
+/// Footer memo and DV LRU share one byte budget and one entry-count budget (`puffin_files_cache_size`
+/// / max entries). Memo weight is charged into `CurrentMetrics::PuffinFilesCacheBytes` /
+/// `PuffinFilesCacheFiles` so resident usage stays observable and cannot reach ~2× the configured max.
 class PuffinFilesCache : public CacheBase<PuffinFilesCacheKey, PuffinFilesCacheCell, PuffinFilesCacheKeyHash, PuffinFilesCacheWeightFunction>
 {
 public:
@@ -134,16 +137,16 @@ public:
     size_t footerMemoEntries() const;
     UInt64 footerMemoBytes() const;
 
-    /// Small memo (not a weighted LRU): shares byte/count limits with the DV cache.
+    /// Small memo (not a weighted LRU): shares the configured byte/count limits with the DV cache.
     /// Concurrent misses on the same key each run `load_fn` (no stampede / waiter token);
     /// only coalesced sequential slice loads share one parse. On insert, entries are dropped
-    /// one-by-one until the new entry fits — not a full memo clear.
+    /// one-by-one until the new entry fits beside current DV weight — not a full memo clear.
     template <typename LoadFunc>
     FooterBlobsPtr getOrSetFooter(const PuffinFooterCacheKey & key, LoadFunc && load_fn)
     {
         {
             std::lock_guard lock(footer_mutex);
-            if (footer_memo_max_bytes != 0)
+            if (shared_max_bytes != 0)
             {
                 if (auto it = footer_memo.find(key); it != footer_memo.end())
                     return it->second.blobs;
@@ -152,36 +155,36 @@ public:
 
         auto blobs = load_fn();
 
+        /// Snapshot DV occupancy outside `footer_mutex` to avoid Base↔memo lock-order inversion
+        /// with `clear()` / `setMax*` (those take Base first, then memo).
+        const size_t dv_bytes = Base::sizeInBytes();
+        const size_t dv_count = Base::count();
+
         std::lock_guard lock(footer_mutex);
-        if (footer_memo_max_bytes == 0)
+        if (shared_max_bytes == 0)
             return blobs;
 
         if (auto it = footer_memo.find(key); it != footer_memo.end())
             return it->second.blobs;
 
         const UInt64 entry_bytes = approximateFooterEntryBytes(key, blobs);
-        /// A single entry larger than the whole budget is not memoized (caller still gets blobs).
-        if (entry_bytes > footer_memo_max_bytes)
+        /// Must fit beside current DV weight under the single shared byte budget.
+        if (entry_bytes > shared_max_bytes || dv_bytes > shared_max_bytes - entry_bytes)
             return blobs;
 
-        while ((footer_memo_max_count > 0 && footer_memo.size() >= footer_memo_max_count)
-            || footer_memo_bytes > footer_memo_max_bytes - entry_bytes)
+        while (needsFooterEvictionForInsertUnlocked(dv_bytes, dv_count, entry_bytes))
         {
             if (footer_memo.empty())
                 break;
-
-            auto victim = footer_memo.begin();
-            const UInt64 victim_bytes = victim->second.memory_bytes;
-            footer_memo.erase(victim);
-            if (footer_memo_bytes >= victim_bytes)
-                footer_memo_bytes -= victim_bytes;
-            else
-                footer_memo_bytes = 0;
+            eraseFooterMemoVictimUnlocked();
         }
+
+        if (needsFooterEvictionForInsertUnlocked(dv_bytes, dv_count, entry_bytes))
+            return blobs;
 
         auto [it, inserted] = footer_memo.emplace(key, FooterMemoEntry{blobs, entry_bytes});
         if (inserted)
-            footer_memo_bytes += entry_bytes;
+            accountFooterMemoInsertUnlocked(entry_bytes);
         return it->second.blobs;
     }
 
@@ -224,6 +227,9 @@ public:
         };
 
         auto [cell, outcome] = Base::getOrSetWithOutcome(key, load_fn_wrapper);
+        /// DV weight may have grown; reclaim footer memo so DV + memo stay within one budget.
+        trimFooterMemoToSharedBudget();
+
         const bool served_from_cache = outcome == CacheGetOrSetOutcome::Hit;
         if (!served_from_cache)
         {
@@ -306,12 +312,18 @@ private:
     static UInt64 approximateFooterEntryBytes(const PuffinFooterCacheKey & key, const FooterBlobsPtr & blobs);
 
     void clearFooterMemoUnlocked();
+    void accountFooterMemoInsertUnlocked(UInt64 entry_bytes);
+    void eraseFooterMemoVictimUnlocked();
+    bool needsFooterEvictionForInsertUnlocked(size_t dv_bytes, size_t dv_count, UInt64 entry_bytes) const;
+    void trimFooterMemoToSharedBudget();
 
     LoggerPtr log;
     mutable std::mutex footer_mutex;
     std::unordered_map<PuffinFooterCacheKey, FooterMemoEntry, PuffinFooterCacheKeyHash> footer_memo;
-    size_t footer_memo_max_count = 0;
-    size_t footer_memo_max_bytes = 0;
+    /// Configured shared limits (same values passed to Base). Copied here so memo insert/trim can
+    /// decide without calling back into Base while holding `footer_mutex`.
+    size_t shared_max_count = 0;
+    size_t shared_max_bytes = 0;
     UInt64 footer_memo_bytes = 0;
 
     void onEntryRemoval(size_t weight_loss, const MappedPtr &) override;

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <AggregateFunctions/AggregateFunctionGroupBitmapData.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
@@ -11,6 +12,12 @@ using namespace DB;
 namespace ProfileEvents
 {
 extern const Event PuffinFilesRead;
+}
+
+namespace CurrentMetrics
+{
+extern const Metric PuffinFilesCacheBytes;
+extern const Metric PuffinFilesCacheFiles;
 }
 
 namespace
@@ -244,4 +251,45 @@ TEST(PuffinFooterMemo, CountLimitEvictsOneEntryNotAll)
     /// The retained entry must be key_b (key_a was the only victim).
     ASSERT_NE(cache.getOrSetFooter(*key_b, load_footer), nullptr);
     EXPECT_EQ(footer_loads, 2u);
+}
+
+TEST(PuffinFooterMemo, SharesBudgetAndMetricsWithDeletionVectors)
+{
+    /// Tiny shared budget: a resident DV must leave no room for a second full budget of footers.
+    PuffinFilesCache cache("SLRU", /*max_size_in_bytes=*/50'000, /*max_count=*/100, 0.5);
+
+    const auto footer_key = PuffinFilesCache::tryCreateFooterKey("Local:////test", "coalesced.puffin", "etag-1");
+    ASSERT_TRUE(footer_key.has_value());
+
+    const auto bytes_before = CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes);
+    const auto files_before = CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles);
+
+    ASSERT_NE(cache.getOrSetFooter(*footer_key, loadFixtureFooter), nullptr);
+    const UInt64 memo_bytes = cache.footerMemoBytes();
+    ASSERT_GT(memo_bytes, 0u);
+    EXPECT_EQ(cache.footerMemoEntries(), 1u);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), bytes_before + static_cast<Int64>(memo_bytes));
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles), files_before + 1);
+
+    /// Fill almost all remaining shared budget with a DV so the memo must be trimmed.
+    auto excluded = std::make_shared<DataLakeObjectMetadata::ExcludedRows>();
+    for (size_t i = 0; i < 2000; ++i)
+        excluded->add(i);
+
+    const auto dv_key = PuffinFilesCache::tryCreateKey(
+        "Local:////test", "coalesced.puffin", "etag-1", 4, 44, "/data/file_a.parquet", 2, 100);
+    ASSERT_TRUE(dv_key.has_value());
+
+    cache.getOrSetDeletionVector(*dv_key, [&]() { return excluded; });
+
+    /// After DV insert, footer memo is trimmed so DV + memo stay within configured max.
+    EXPECT_LE(
+        static_cast<size_t>(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes) - bytes_before),
+        50'000u);
+    EXPECT_LE(cache.footerMemoBytes() + cache.sizeInBytes(), 50'000u);
+
+    cache.clear();
+    EXPECT_EQ(cache.footerMemoEntries(), 0u);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheBytes), bytes_before);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::PuffinFilesCacheFiles), files_before);
 }

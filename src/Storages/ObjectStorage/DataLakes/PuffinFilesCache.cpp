@@ -165,8 +165,68 @@ UInt64 PuffinFilesCache::approximateFooterEntryBytes(const PuffinFooterCacheKey 
 
 void PuffinFilesCache::clearFooterMemoUnlocked()
 {
+    if (footer_memo_bytes != 0)
+        CurrentMetrics::sub(CurrentMetrics::PuffinFilesCacheBytes, static_cast<CurrentMetrics::Value>(footer_memo_bytes));
+    if (!footer_memo.empty())
+        CurrentMetrics::sub(CurrentMetrics::PuffinFilesCacheFiles, static_cast<CurrentMetrics::Value>(footer_memo.size()));
     footer_memo.clear();
     footer_memo_bytes = 0;
+}
+
+void PuffinFilesCache::accountFooterMemoInsertUnlocked(UInt64 entry_bytes)
+{
+    footer_memo_bytes += entry_bytes;
+    CurrentMetrics::add(CurrentMetrics::PuffinFilesCacheBytes, static_cast<CurrentMetrics::Value>(entry_bytes));
+    CurrentMetrics::add(CurrentMetrics::PuffinFilesCacheFiles);
+}
+
+void PuffinFilesCache::eraseFooterMemoVictimUnlocked()
+{
+    auto victim = footer_memo.begin();
+    const UInt64 victim_bytes = victim->second.memory_bytes;
+    footer_memo.erase(victim);
+    if (footer_memo_bytes >= victim_bytes)
+        footer_memo_bytes -= victim_bytes;
+    else
+        footer_memo_bytes = 0;
+    CurrentMetrics::sub(CurrentMetrics::PuffinFilesCacheBytes, static_cast<CurrentMetrics::Value>(victim_bytes));
+    CurrentMetrics::sub(CurrentMetrics::PuffinFilesCacheFiles);
+}
+
+bool PuffinFilesCache::needsFooterEvictionForInsertUnlocked(size_t dv_bytes, size_t dv_count, UInt64 entry_bytes) const
+{
+    if (shared_max_count > 0 && dv_count + footer_memo.size() >= shared_max_count)
+        return true;
+
+    /// Room left for memo under the shared byte budget after DV weight.
+    if (dv_bytes > shared_max_bytes)
+        return !footer_memo.empty();
+
+    const size_t room_for_memo = shared_max_bytes - dv_bytes;
+    return footer_memo_bytes > room_for_memo - entry_bytes;
+}
+
+void PuffinFilesCache::trimFooterMemoToSharedBudget()
+{
+    const size_t dv_bytes = Base::sizeInBytes();
+    const size_t dv_count = Base::count();
+
+    std::lock_guard lock(footer_mutex);
+    if (shared_max_bytes == 0)
+    {
+        clearFooterMemoUnlocked();
+        return;
+    }
+
+    while (!footer_memo.empty())
+    {
+        const bool over_bytes = dv_bytes > shared_max_bytes
+            || footer_memo_bytes > shared_max_bytes - dv_bytes;
+        const bool over_count = shared_max_count > 0 && dv_count + footer_memo.size() > shared_max_count;
+        if (!over_bytes && !over_count)
+            break;
+        eraseFooterMemoVictimUnlocked();
+    }
 }
 
 PuffinFilesCache::PuffinFilesCache(
@@ -182,8 +242,8 @@ PuffinFilesCache::PuffinFilesCache(
         max_count,
         size_ratio)
     , log(getLogger("PuffinFilesCache"))
-    , footer_memo_max_count(max_count)
-    , footer_memo_max_bytes(max_size_in_bytes)
+    , shared_max_count(max_count)
+    , shared_max_bytes(max_size_in_bytes)
 {
 }
 
@@ -197,19 +257,21 @@ void PuffinFilesCache::clear()
 void PuffinFilesCache::setMaxSizeInBytes(size_t max_size_in_bytes)
 {
     Base::setMaxSizeInBytes(max_size_in_bytes);
-    std::lock_guard lock(footer_mutex);
-    footer_memo_max_bytes = max_size_in_bytes;
-    if (footer_memo_max_bytes == 0 || footer_memo_bytes > footer_memo_max_bytes)
-        clearFooterMemoUnlocked();
+    {
+        std::lock_guard lock(footer_mutex);
+        shared_max_bytes = max_size_in_bytes;
+    }
+    trimFooterMemoToSharedBudget();
 }
 
 void PuffinFilesCache::setMaxCount(size_t max_count)
 {
     Base::setMaxCount(max_count);
-    std::lock_guard lock(footer_mutex);
-    footer_memo_max_count = max_count;
-    if (footer_memo_max_count > 0 && footer_memo.size() > footer_memo_max_count)
-        clearFooterMemoUnlocked();
+    {
+        std::lock_guard lock(footer_mutex);
+        shared_max_count = max_count;
+    }
+    trimFooterMemoToSharedBudget();
 }
 
 size_t PuffinFilesCache::footerMemoEntries() const
