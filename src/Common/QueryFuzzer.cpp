@@ -2589,9 +2589,9 @@ static const Strings tokenizer_chinese_granularities = {"coarse_grained", "fine_
 /// Build a value for the `tokenizer` parameter of a text index. The argument shapes are keyed by
 /// name, so a tokenizer added to the list above without one is simply emitted bare - which every
 /// tokenizer except `icu` accepts, since the parameter count is only an upper bound.
-ASTPtr QueryFuzzer::makeTextIndexTokenizer(const Strings * pool)
+ASTPtr QueryFuzzer::makeTextIndexTokenizer()
 {
-    const String name = pickRandomly(fuzz_rand, pool ? *pool : text_index_tokenizers);
+    const String name = pickRandomly(fuzz_rand, text_index_tokenizers);
 
     auto args = make_intrusive<ASTExpressionList>();
     if (name == "ngrams" || name == "ngrambf_v1")
@@ -2642,9 +2642,9 @@ ASTPtr QueryFuzzer::makeTextIndexTokenizer(const Strings * pool)
 /// The same specs, rendered into the single string argument the query-side functions take:
 /// `hasAnyTokens(s, ['a'], 'ngrams(3)')`, `tokens(s, 'icu(''ja'')')`. Every one of them accepts
 /// this nested form, so the flat `tokens(s, 'icu', 'ja')` spelling is not needed here.
-String QueryFuzzer::makeTextTokenizerArgument(const Strings * pool)
+String QueryFuzzer::makeTextTokenizerArgument()
 {
-    ASTPtr tokenizer = makeTextIndexTokenizer(pool);
+    ASTPtr tokenizer = makeTextIndexTokenizer();
     if (const auto * literal = tokenizer->as<ASTLiteral>())
         return literal->value.safeGet<String>();
     return tokenizer->formatWithSecretsOneLine();
@@ -6204,29 +6204,23 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
         }
 
-        /// Re-roll the trailing tokenizer argument: it must agree with the text index's own
-        /// tokenizer for the index to be used. The legacy `hasToken` family takes none.
         if (fn->arguments && fuzz_rand() % 20 == 0)
         {
-            static const std::unordered_map<String, size_t> tokenizer_argument_position
-                = {{"tokens", 1},
-                   {"hasAnyToken", 2},
-                   {"hasAnyTokens", 2},
-                   {"hasAllToken", 2},
-                   {"hasAllTokens", 2},
-                   {"hasPhrase", 2}};
-            /// hasPhrase needs token order preserved, so it rejects every tokenizer but these.
-            static const Strings has_phrase_tokenizers = {"asciiCJK", "icu", "ngrams", "splitByNonAlpha", "splitByString"};
+            /// `processTextIndexFunction` only rewrites text-search calls with exactly two arguments,
+            /// so drop their optional tokenizer rather than re-rolling it off the text-index path.
+            static const std::unordered_set<String> text_search_functions
+                = {"hasAnyToken", "hasAnyTokens", "hasAllToken", "hasAllTokens", "hasPhrase"};
 
-            if (auto it = tokenizer_argument_position.find(fn->name); it != tokenizer_argument_position.end()
-                && fn->arguments->children.size() >= it->second)
+            if (fn->name == "tokens" && !fn->arguments->children.empty())
             {
-                /// The nested spec carries its own parameters, so drop the flat trailing ones that
-                /// `tokens` also accepts (`tokens(s, 'icu', 'ja')`) rather than leaving them dangling.
-                fn->arguments->children.resize(it->second);
-                fn->arguments->children.push_back(make_intrusive<ASTLiteral>(
-                    makeTextTokenizerArgument(fn->name == "hasPhrase" ? &has_phrase_tokenizers : nullptr)));
+                /// The tokenizer must agree with the text index's own for the index to be used. The
+                /// nested spec carries its own parameters, so drop the flat trailing ones that `tokens`
+                /// also accepts (`tokens(s, 'icu', 'ja')`) rather than leaving them dangling.
+                fn->arguments->children.resize(1);
+                fn->arguments->children.push_back(make_intrusive<ASTLiteral>(makeTextTokenizerArgument()));
             }
+            else if (text_search_functions.contains(fn->name) && fn->arguments->children.size() > 2)
+                fn->arguments->children.resize(2);
         }
 
         /// ClickHouse HOFs accept a bare function name instead of a lambda, e.g. arrayMap(toUInt64, arr).
