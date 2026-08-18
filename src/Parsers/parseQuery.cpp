@@ -1,6 +1,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -318,9 +319,12 @@ ASTPtr tryParseQuery(
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
     IParser::Pos set_lookahead(token_iterator);
-    /// Such a parser tries plain `SET ...` first and only falls back to raw text if that fails, so
-    /// a malformed `SET` still wants the ordinary lexical check instead of becoming dialect text.
-    const bool consumes_raw_text = parser.consumesRawText() && !ParserKeyword(Keyword::SET).ignore(set_lookahead);
+    /// Such a parser tries a real `ParserSetQuery` first and only falls back to raw text if that
+    /// fails, so a genuine (if malformed) SET wants the ordinary lexical check, not dialect text.
+    ASTPtr set_trial_node;
+    Expected set_trial_expected;
+    const bool consumes_raw_text
+        = parser.consumesRawText() && !ParserSetQuery().parse(set_lookahead, set_trial_node, set_trial_expected);
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
