@@ -1435,6 +1435,15 @@ inline MutableColumnPtr readColumnFromDesc(
         // it's written via the ordinary buildColDescriptor path — so it needs the same
         // containment check as offsets_offset/data_offset, not an exemption.
         uint64_t region_end = desc.data_offset + desc.data_size;
+        // COL_IS_CONST on the dictionary descriptor is never emitted by the writer, and the
+        // ColumnConst that readColumnFromDesc would return for it is not a valid ColumnUnique
+        // holder: ColumnUnique rejects a nullable holder but not a const one, and its
+        // constructor immediately calls reverse_index.setColumn(getRawColumnPtr()), whose
+        // assert_cast is a plain static_cast in release builds. Reject the bit here rather
+        // than letting a malformed frame reach that cast.
+        if (dict_desc.type & COL_IS_CONST)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD dictionary descriptor must not set COL_IS_CONST");
         // The dictionary payload starts right after this header (the writer places it there),
         // so the addressable region begins at payload_start, not at desc.data_offset — otherwise
         // a malformed frame could point the dictionary back at the header bytes that describe it
@@ -1597,7 +1606,21 @@ inline MutableColumnPtr readColumnarOutput(
             "COLUMNAR_V1 output descriptor data_offset {} points inside the header/descriptor table (< {})",
             desc.data_offset, hdr_desc_size);
 
-    return readColumnFromDesc(buf, desc, num_rows, result_type);
+    // Confine the decode to this column's own declared region, mirroring
+    // ColumnBinaryInputFormat::read()'s per-column subspan. The checks above only reject
+    // offsets pointing back into the header/descriptor area; without an upper bound a guest
+    // could declare a 1-byte payload and still source its offsets array or null map from
+    // trailing bytes past data_offset + data_size, reading outside the blob it declared.
+    if (desc.data_size > std::numeric_limits<uint64_t>::max() - desc.data_offset)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1 output descriptor data_offset + data_size overflows: offset={}, size={}",
+            desc.data_offset, desc.data_size);
+    const uint64_t region_end = desc.data_offset + desc.data_size;
+    if (region_end > buf.size())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1 output descriptor data range [{}, {}) exceeds buffer size {}",
+            desc.data_offset, region_end, buf.size());
+    return readColumnFromDesc(buf.subspan(0, region_end), desc, num_rows, result_type);
 }
 
 }
