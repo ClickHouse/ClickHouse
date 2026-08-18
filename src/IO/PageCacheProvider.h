@@ -6,6 +6,8 @@
 #include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
+#include <mutex>
+
 namespace DB
 {
 
@@ -41,45 +43,50 @@ private:
     PageCache::MappedPtr cell;  /// the block's cell, kept alive by the shared_ptr
 };
 
-/// `CacheWriter` for one miss range. `write` creates each block's cell on demand
-/// (`PageCache::getOrSet`, first-writer-wins) and adopts it into `blocks`, which also lets the writer
-/// serve `read` for the blocks it populated.
+/// `CacheWriter` for one whole miss block, all-or-nothing. `write` creates the block's cell on demand
+/// (`PageCache::getOrSet`, first-writer-wins) and adopts it; the writer then serves `read` for it. The
+/// block is either committed (`cell` set) or not, so there is no committed-range set.
 class PageCacheWriter : public CacheWriter
 {
 public:
     PageCacheWriter(
         PageCachePtr cache_,
         PageCacheFile file_,
-        size_t block_size_,
-        size_t file_size_in_bytes_,
         bool inject_eviction_,
         bool bypass_if_missing_,
-        ByteRange aligned_range_in_file);
+        ByteRange block_range);
 
     ByteRange range() const override { return range_member; }
-    IntervalSet committed() const override { return committed_ranges; }
+    IntervalSet committed() const override
+    {
+        std::lock_guard lock(committed_mutex);
+        IntervalSet c;
+        if (cell)
+            c.add(range_member);
+        return c;
+    }
     size_t write(ChainedBuffers data, const Claim & claim) override;
     ChainedBuffers read(ByteRange sub) override;
-    /// Re-probe the cache: a block may have been populated by a concurrent query since `resolve`. Any
-    /// resident prefix is adopted and reported as `available` (already committed, served from cache),
-    /// so the executor does not re-read it from the source.
+    /// Re-probe the cache: the block may have been populated by a concurrent query since `resolve`. If
+    /// so, adopt its cell and report the whole block as `available` (already committed, served from
+    /// cache) with no claim; otherwise hold the claim to fill it.
     Lead claimLeadRole(ByteRange range) override;
 
 private:
     PageCachePtr cache;
     PageCacheFile file;
-    size_t block_size;
-    size_t file_size_in_bytes;
     bool inject_eviction;
     /// Mirrors `read_from_page_cache_if_exists_otherwise_bypass_cache`: a
     /// bypass tier populates nothing, so `write` returns 0 before any `getOrSet`.
     bool bypass_if_missing;
-    ByteRange range_member;
-    IntervalSet committed_ranges;
-    /// The whole-block cells this writer populated or adopted, in file order (same layout as the
-    /// reader's `cell`: each carries its own `cell->range` and size). One writer is driven by a single
-    /// thread, so no lock is needed.
-    VectorWithMemoryTracking<PageCache::MappedPtr> blocks;
+    ByteRange range_member;  /// the one block this writer covers
+    /// The block's cell once populated (by us) or adopted (a concurrent first-writer); null = not
+    /// committed.
+    PageCache::MappedPtr cell;
+    /// Guards `cell`. Per the `CacheWriter::committed` contract - and like the disk cache's
+    /// `committed_mutex` - a background prefetch and the foreground read may fill and read this writer
+    /// at the same time.
+    mutable std::mutex committed_mutex;
     LoggerPtr log = getLogger("PageCacheWriter");
 };
 

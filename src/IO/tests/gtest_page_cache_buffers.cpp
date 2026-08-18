@@ -247,8 +247,7 @@ TEST(PageCacheBuffers, BypassOpensNoWritersAndPopulatesNothing)
     /// A direct write on a bypass write buffer returns 0 and registers no cell.
     {
         PageCacheWriter writer(
-            cache, file, block_size, /*file_size_in_bytes=*/block_size,
-            /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
+            cache, file, /*inject_eviction=*/false, /*bypass_if_missing=*/true, ByteRange{0, block_size});
         size_t wrote = claimedWrite(writer, makeChain(0, block_size, 'X'));
         EXPECT_EQ(wrote, 0u);
         EXPECT_FALSE(writer.complete()) << "bypass write commits nothing";
