@@ -50,6 +50,14 @@ namespace DimensionalMetrics
         MetricType::Counter
     );
 
+    MetricFamily & ObjectStorageQueuePermanentlyFailedFiles = Factory::instance().registerMetric(
+        "object_storage_queue_permanently_failed_files_total",
+        "Number of ObjectStorageQueue (S3Queue/AzureQueue) files given up on for good after exhausting retries (or with retries disabled), labelled by database and table. Each of these represents a file whose data will never be processed.",
+        {"database", "table"},
+        {},
+        MetricType::Counter
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);

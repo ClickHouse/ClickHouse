@@ -48,6 +48,7 @@ namespace ProfileEvents
 namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueFailures;
+    extern MetricFamily & ObjectStorageQueuePermanentlyFailedFiles;
 }
 
 namespace DB
@@ -1513,7 +1514,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & [file_state, file_metadata_, exception_during_read_] : processed_files)
+        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_] : processed_files)
             if (file_state == FileState::Processed)
                 ++processed_count;
     }
@@ -1647,7 +1648,7 @@ void ObjectStorageQueueSource::finalizeCommit(
         return;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_] : processed_files)
     {
         try
         {
@@ -1671,6 +1672,12 @@ void ObjectStorageQueueSource::finalizeCommit(
                     {
                         file_metadata->finalizeFailed(exception_message);
                     }
+
+                    if (file_metadata->wasPermanentlyFailed())
+                        DimensionalMetrics::add(
+                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
+                            {storage_id.getDatabaseName(), storage_id.getTableName()});
+
                     break;
                 }
                 case FileState::Cancelled: [[fallthrough]];
@@ -1688,12 +1695,24 @@ void ObjectStorageQueueSource::finalizeCommit(
                         file_metadata->finalizeResetProcessing();
                     else
                         file_metadata->finalizeFailed(exception_message);
+
+                    if (file_metadata->wasPermanentlyFailed())
+                        DimensionalMetrics::add(
+                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
+                            {storage_id.getDatabaseName(), storage_id.getTableName()});
+
                     break;
                 }
                 case FileState::ErrorOnRead:
                 {
                     chassert(!exception_during_read.empty());
                     file_metadata->finalizeFailed(exception_during_read);
+
+                    if (file_metadata->wasPermanentlyFailed())
+                        DimensionalMetrics::add(
+                            DimensionalMetrics::ObjectStorageQueuePermanentlyFailedFiles,
+                            {storage_id.getDatabaseName(), storage_id.getTableName()});
+
                     break;
                 }
             }
