@@ -648,7 +648,7 @@ SourceColumnNames getSourceColumnNames(
     const String & table)
 {
     NameSet source_table_names{table, database + "." + table};
-    if (const auto * tables_ast = select.tables())
+    if (const auto & tables_ast = select.tables())
     {
         if (const auto * tables = tables_ast->as<ASTTablesInSelectQuery>())
         {
