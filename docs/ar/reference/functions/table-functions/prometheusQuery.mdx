@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - استعلام مكتوب [بصيغة PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 * `evaluation_time - الطابع الزمني للتقييم. لتقييم استعلام في الوقت الحالي، استخدم `now()`باعتباره`evaluation&#95;time&#96;.
 
-<div id="returned_value">
+<div id="returned-value">
   ## القيمة المُعادة
 </div>
 
@@ -58,7 +58,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 | الفئة          | الدوال                                                                                           |
 | -------------- | ------------------------------------------------------------------------------------------------ |
-| النطاق         | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| النطاق         | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | الرياضيات      | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | المثلثات       | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | DateTime       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

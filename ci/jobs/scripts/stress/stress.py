@@ -16,6 +16,9 @@ from pathlib import Path
 from subprocess import PIPE, STDOUT, Popen, call, check_output
 from typing import List, Optional
 
+# Failpoint that delays every background mutation by a bounded random amount.
+MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
+
 
 class ServerDied(Exception):
     pass
@@ -485,20 +488,94 @@ def install_thread_pool_fault_injection() -> None:
 
     logging.info("Installing thread-pool fault-injection config: %s -> %s", src, dst)
     subprocess.run(["ln", "-sf", src, dst], check=True)
-    call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5)
+    if not call_with_retry(make_query_command("SYSTEM RELOAD CONFIG"), timeout=30, retry_count=5):
+        # Fail-close before the verify query: a stale non-zero probability left
+        # over from an earlier reload would otherwise mask the reload failure.
+        raise RuntimeError(
+            "SYSTEM RELOAD CONFIG failed after all retries; "
+            "cannot activate thread-pool fault injection"
+        )
 
-    # Fail-close: `call_with_retry` is silent on persistent failure, so verify
-    # the injector probability is actually non-zero after reload.
+    # The reload succeeded, but still verify the injector probability is
+    # actually non-zero. The verify query gets the same retry treatment as the
+    # reload itself: right after `SYSTEM RELOAD CONFIG` a debug server under
+    # ThreadFuzzer can be slow enough to exceed the client's 15 s
+    # `receive_timeout`, and a single timeout here must not kill the whole
+    # stress job.
     verify_query = make_query_command(
         "SELECT value FROM system.server_settings "
         "WHERE name = 'cannot_allocate_thread_fault_injection_probability'"
     )
-    value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    retry_count = 5
+    value = ""
+    for i in range(retry_count):
+        try:
+            value = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+            break
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            if i + 1 == retry_count:
+                raise
+            logging.info("Verify query failed (%s), retrying", str(e))
+            time.sleep(i)
     if not value or float(value) <= 0:
         raise RuntimeError(
             f"cannot_allocate_thread_fault_injection_probability is {value!r} after reload"
         )
     logging.info("Thread-pool fault injection active: probability=%s", value)
+
+
+def enable_mutation_delay_failpoint() -> None:
+    """Enable `mutate_task_random_sleep_in_prepare`, so tests that `ALTER` without waiting
+    routinely read parts the mutation has not rewritten yet. Reads over such parts resolve
+    columns with the part's own (older) type, a state that mutations normally close too
+    quickly to test (see #113925).
+    Fail-close on persistent failure or if the failpoint is still off afterwards."""
+    call_with_retry(
+        make_query_command(f"SYSTEM ENABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+
+    # Fail-close: `call_with_retry` is silent when all its retries fail, so verify that the
+    # failpoint really became active instead of silently losing the coverage.
+    verify_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    enabled = check_output(verify_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "1":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is not enabled after "
+            f"SYSTEM ENABLE FAILPOINT: system.fail_points.enabled is {enabled!r}"
+        )
+    logging.info("Mutation-delay failpoint active: %s", MUTATION_DELAY_FAILPOINT)
+
+
+def disable_mutation_delay_failpoint() -> None:
+    """Disable `mutate_task_random_sleep_in_prepare` before the hung check, so the
+    mutations still pending drain at full speed. Fail-close, mirroring
+    `enable_mutation_delay_failpoint`: verify through `system.fail_points` that the
+    failpoint is really off instead of trusting best-effort `call_with_retry`. Binaries
+    that do not register the failpoint at all (e.g. the old binary in upgrade check,
+    where `SYSTEM DISABLE FAILPOINT` would throw on the unknown name) are skipped."""
+    probe_query = make_query_command(
+        f"SELECT enabled FROM system.fail_points WHERE name = '{MUTATION_DELAY_FAILPOINT}'"
+    )
+    registered = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if not registered:
+        logging.info(
+            "Failpoint %s is not registered by this binary, nothing to disable",
+            MUTATION_DELAY_FAILPOINT,
+        )
+        return
+    call_with_retry(
+        make_query_command(f"SYSTEM DISABLE FAILPOINT {MUTATION_DELAY_FAILPOINT}")
+    )
+    enabled = check_output(probe_query, shell=True, timeout=30, text=True).strip()
+    if enabled != "0":
+        raise RuntimeError(
+            f"Failpoint {MUTATION_DELAY_FAILPOINT} is still enabled after "
+            f"SYSTEM DISABLE FAILPOINT: system.fail_points.enabled is {enabled!r}; "
+            "the hung check would run with mutations still delayed"
+        )
+    logging.info("Mutation-delay failpoint disabled: %s", MUTATION_DELAY_FAILPOINT)
 
 
 def run_func_test(
@@ -582,6 +659,10 @@ def run_func_test(
     if not upgrade_check:
         install_thread_pool_fault_injection()
 
+        # Delay every background mutation by a bounded random amount.
+        # Not in upgrade check: the old binary may not know the failpoint.
+        enable_mutation_delay_failpoint()
+
     # Start the disruptor after smoke check completes, before actual stress test
     if disruptor is not None:
         disruptor.start()
@@ -619,7 +700,10 @@ def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
 
 def call_with_retry(
     query: str, timeout: int | float = 30, retry_count: int = 5
-) -> None:
+) -> bool:
+    """Return whether the command eventually succeeded, so that callers which
+    must not proceed after a persistent failure can fail close instead of
+    silently continuing."""
     logging.info("Running command: %s", str(query))
     for i in range(retry_count):
         try:
@@ -632,7 +716,8 @@ def call_with_retry(
             logging.info("Command returned %s, retrying", str(code))
             time.sleep(i)
         else:
-            break
+            return True
+    return False
 
 
 def execute_bash(full_command, timeout=120):
@@ -695,6 +780,10 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
 
     # ThreadFuzzer significantly slows down server and causes false-positive hung check failures
     call_with_retry(make_query_command("SYSTEM STOP THREAD FUZZER"))
+    # Stop delaying mutations, so the ones still pending drain at full speed. Fail-close:
+    # the hung check must not run with the delay still armed, and a binary that does not
+    # register the failpoint (e.g. the old binary in upgrade check) is skipped.
+    disable_mutation_delay_failpoint()
     # Some tests execute SYSTEM STOP MERGES or similar queries.
     # It may cause some ALTERs to hang.
     # Possibly we should fix tests and forbid to use such queries without specifying table.
