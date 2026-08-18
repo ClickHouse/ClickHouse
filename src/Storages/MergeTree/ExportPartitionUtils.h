@@ -89,6 +89,10 @@ namespace ExportPartitionUtils
         const std::string & exception_message,
         const LoggerPtr & log);
 
+    void assertPartitionKeyASTAreEqual(
+        const StorageMetadataPtr & source_metadata,
+        const StorageMetadataPtr & destination_metadata);
+
     /// Validates that source columns can be exported into the destination with the
     /// same positional CAST matching as `INSERT INTO dest SELECT * FROM src`. Lossy
     /// casts are rejected unless `export_merge_tree_part_allow_lossy_cast` is set.

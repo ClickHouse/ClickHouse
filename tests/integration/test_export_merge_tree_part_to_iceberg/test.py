@@ -13,10 +13,14 @@ Coverage:
     test_export_part_with_year_transform_partition        – toYearNumSinceEpoch() partition expression
     test_export_part_with_bucket_partition                – icebergBucket(N, col) partition expression
     test_export_part_partition_key_mismatch_is_rejected   – mismatched partition spec rejected synchronously
+    test_export_part_multi_column_partition_key_success                     – composite (a, b, c) partition key round-trips
+    test_export_part_partition_key_mismatch_variants_are_rejected (parametrized) – partition key column reordering,
+        cardinality mismatches, and transform-expression reordering between src/dst are all rejected synchronously
 """
 
 import logging
 import time
+from typing import NamedTuple
 
 import pytest
 
@@ -462,6 +466,145 @@ def test_export_part_partition_key_mismatch_is_rejected(cluster):
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
 
 
+class RejectedPartExportCase(NamedTuple):
+    src_columns: str
+    src_partition_by: str
+    dst_columns: str
+    dst_partition_by: str
+    insert_values: str
+    error_substrings: tuple = ()
+
+
+REJECTED_PART_EXPORT_CASES = [
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="a Int32, b Int32",
+            src_partition_by="a",
+            dst_columns="b Int32, a Int32",
+            dst_partition_by="a",
+            insert_values="(1, 1), (1, 2)",
+            error_substrings=("partition key column",),
+        ),
+        id="same_partition_key_different_column_order_single_column",
+    ),
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="a Int32, b Int32, c Int32, val String",
+            src_partition_by="(a, b, c)",
+            dst_columns="c Int32, b Int32, a Int32, val String",
+            dst_partition_by="(a, b, c)",
+            insert_values="(1, 1, 1, 'x'), (1, 1, 1, 'y')",
+            error_substrings=("partition key column",),
+        ),
+        id="same_partition_key_different_column_order_multi_column",
+    ),
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="a Int32, b Int32, c Int32, val String",
+            src_partition_by="(a, b, c)",
+            dst_columns="a Int32, b Int32, c Int32, val String",
+            dst_partition_by="(c, b, a)",
+            insert_values="(1, 2, 3, 'x')",
+            error_substrings=("partition field 0 mismatch",),
+        ),
+        id="multi_column_partition_key_order_mismatch",
+    ),
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="a Int32, b Int32, c Int32, val String",
+            src_partition_by="(a, b, c)",
+            dst_columns="a Int32, b Int32, c Int32, val String",
+            dst_partition_by="(a, b)",
+            insert_values="(1, 2, 3, 'x')",
+            error_substrings=("partition scheme mismatch",),
+        ),
+        id="multi_column_partition_key_fewer_in_destination",
+    ),
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="a Int32, b Int32, c Int32, val String",
+            src_partition_by="(a, b)",
+            dst_columns="a Int32, b Int32, c Int32, val String",
+            dst_partition_by="(a, b, c)",
+            insert_values="(1, 2, 3, 'x')",
+            error_substrings=("partition scheme mismatch",),
+        ),
+        id="multi_column_partition_key_more_in_destination",
+    ),
+    pytest.param(
+        RejectedPartExportCase(
+            src_columns="other_id Int64, user_id Int64",
+            src_partition_by="icebergBucket(8, user_id)",
+            dst_columns="user_id Int64, other_id Int64",
+            dst_partition_by="icebergBucket(8, user_id)",
+            insert_values="(1, 42)",
+            error_substrings=("partition key column",),
+        ),
+        id="transform_partition_key_different_column_order",
+    ),
+]
+
+
+@pytest.mark.parametrize("case", REJECTED_PART_EXPORT_CASES)
+def test_export_part_partition_key_mismatch_variants_are_rejected(cluster, case):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_rejected_{sfx}"
+    iceberg = f"iceberg_rejected_{sfx}"
+
+    make_mt(node, mt, case.src_columns, case.src_partition_by)
+    make_iceberg_s3(node, iceberg, case.dst_columns, case.dst_partition_by)
+
+    node.query(f"INSERT INTO {mt} VALUES {case.insert_values}")
+
+    pid = first_partition_id(node, mt)
+    part = get_part(node, mt, pid)
+
+    error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1"
+    )
+    assert "BAD_ARGUMENTS" in error, f"Expected BAD_ARGUMENTS, got: {error!r}"
+    for substring in case.error_substrings:
+        assert substring in error, f"Expected {substring!r} in error, got: {error!r}"
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_multi_column_partition_key_success(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_multi_pkey_ok_{sfx}"
+    iceberg = f"iceberg_multi_pkey_ok_{sfx}"
+
+    cols = "a Int32, b Int32, c Int32, val String"
+    make_mt(node, mt, cols, "(a, b, c)")
+    make_iceberg_s3(node, iceberg, cols, "(a, b, c)")
+
+    node.query(f"INSERT INTO {mt} VALUES (1, 2, 3, 'x'), (1, 2, 3, 'y')")
+
+    pid = first_partition_id(node, mt)
+    part = get_part(node, mt, pid)
+    export_part(node, mt, part, iceberg)
+    wait_for_export_part(node, mt, part)
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 2, f"Expected 2 rows in Iceberg table after export, got {count}"
+
+    result = node.query(f"SELECT a, b, c, val FROM {iceberg} ORDER BY val").strip()
+    assert result == "1\t2\t3\tx\n1\t2\t3\ty", f"Unexpected exported data:\n{result}"
+
+    assert_part_log(node, mt, part)
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
 def test_export_part_with_bucket_partition(cluster):
     """
     Export a part from a MergeTree table partitioned by icebergBucket(8, user_id)
@@ -750,6 +893,50 @@ def test_export_part_runtime_cast_failure_propagates_async(cluster):
     assert count == 0, (
         f"Expected 0 rows in Iceberg table after failed export, got {count}"
     )
+
+    node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {iceberg}")
+
+
+def test_export_part_tuple_subcolumn_partition_key_iceberg_rejected(cluster):
+    node = cluster.instances["node1"]
+    sfx = unique_suffix()
+    mt = f"mt_tuple_subcol_{sfx}"
+    iceberg = f"iceberg_tuple_subcol_{sfx}"
+    iceberg_partitioned = f"iceberg_tuple_subcol_part_{sfx}"
+
+    create_error = node.query_and_get_error(
+        f"CREATE TABLE {iceberg_partitioned} (t Tuple(b Int32, a Int32), val String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/root/data/{iceberg_partitioned}/', 'minio', 'ClickHouse_Minio_P@ssw0rd') "
+        f"PARTITION BY t.a"
+    )
+    assert "Unknown field to partition" in create_error, (
+        f"Expected Iceberg to reject the tuple subcolumn partition key at CREATE time, "
+        f"got: {create_error!r}"
+    )
+
+    make_mt(node, mt, "t Tuple(a Int32, b Int32), val String", "t.a")
+    make_iceberg_s3(node, iceberg, "t Tuple(b Int32, a Int32), val String", "val")
+
+    node.query(f"INSERT INTO {mt} VALUES ((1, 99), 'x')")
+
+    part = node.query(
+        f"SELECT name FROM system.parts WHERE database = currentDatabase() "
+        f"AND table = '{mt}' AND active ORDER BY name LIMIT 1"
+    ).strip()
+
+    export_error = node.query_and_get_error(
+        f"ALTER TABLE {mt} EXPORT PART '{part}' TO TABLE {iceberg} "
+        f"SETTINGS allow_experimental_export_merge_tree_part = 1, "
+        f"allow_experimental_insert_into_iceberg = 1"
+    )
+    assert "Unknown field to partition" in export_error, (
+        f"Expected export validation to reject the tuple subcolumn partition key of {mt}, "
+        f"got: {export_error!r}"
+    )
+
+    count = int(node.query(f"SELECT count() FROM {iceberg}").strip())
+    assert count == 0, f"Expected 0 rows in Iceberg table after rejected export, got {count}"
 
     node.query(f"DROP TABLE IF EXISTS {mt} SYNC")
     node.query(f"DROP TABLE IF EXISTS {iceberg}")
