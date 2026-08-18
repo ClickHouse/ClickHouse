@@ -744,7 +744,7 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             status = Result.Status.ERROR
             print(f"ERROR: Exception in workflow config hook: {e}")
             traceback.print_exc()
-            info = f"{traceback.print_exc()}"
+            info = traceback.format_exc()
         results.append(
             Result.create_from(
                 name="Filter Hooks", status=status, stopwatch=sw_, info=info

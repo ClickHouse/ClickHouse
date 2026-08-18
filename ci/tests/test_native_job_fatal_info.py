@@ -9,6 +9,9 @@ downstream recovers it.
 
 The handler is driven for real here (`runpy` with `run_name="__main__"`) with only the
 boundary that raises replaced, so the assertions read the `Result` the job dumps.
+
+A raising `workflow_filter_hook` is covered too: that exception is caught inside
+`_config_workflow`, so it never reaches the handler above and needs its own report.
 """
 
 import json
@@ -111,6 +114,74 @@ def test_fatal_exception_is_read_before_an_earlier_handled_one(monkeypatch, tmp_
 
     assert "JSONDecodeError" in result.info, "the handled traceback must still be kept"
     assert result.info.index(SENTINEL) < result.info.index("JSONDecodeError")
+
+
+def _run_config_workflow_with_raising_hook(monkeypatch, tmp_path, message):
+    """Run the real `_config_workflow` over a raising filter hook, return its result.
+
+    Every reporting phase of `_config_workflow` is opt-in per `Workflow.Config`, so a bare
+    config carrying only `workflow_filter_hooks` reaches the hook loop. The boundaries that
+    would leave the machine are stubbed: `GHAuth.auth` mints a token through an AWS Lambda,
+    `GH.get_pr_title_body_labels` calls the GitHub API, and `Shell` runs the `praktika` CLI
+    for the preceding `Check Workflows` phase, which a test process cannot import.
+    """
+    import ci.praktika.native_jobs as native_jobs
+
+    def _raise(_job_name):
+        raise RuntimeError(message)
+
+    monkeypatch.setattr(_Environment, "get", classmethod(lambda cls: _make_env(tmp_path)))
+    monkeypatch.setattr(Settings, "TEMP_DIR", str(tmp_path))
+    monkeypatch.setattr(native_jobs.GHAuth, "auth", staticmethod(lambda *a, **k: True))
+    monkeypatch.setattr(
+        native_jobs.GH, "get_pr_title_body_labels", staticmethod(lambda *a, **k: ("", "", []))
+    )
+    monkeypatch.setattr(native_jobs.Shell, "check", staticmethod(lambda *a, **k: True))
+    monkeypatch.setattr(native_jobs.Shell, "get_output", staticmethod(lambda *a, **k: ""))
+
+    job = Job.Config(name="X", runs_on=["x"], command="true")
+    workflow = Workflow.Config(
+        name="PR",
+        event=Workflow.Event.PULL_REQUEST,
+        jobs=[job],
+        workflow_filter_hooks=[_raise],
+    )
+    result = native_jobs._config_workflow(workflow, JOB_NAME)
+
+    hooks = [r for r in result.results if r.name == "Filter Hooks"]
+    assert hooks, f"no Filter Hooks result, got {[r.name for r in result.results]}"
+    assert hooks[0].status == Result.Status.ERROR
+    return hooks[0]
+
+
+def test_raising_filter_hook_reports_its_exception(monkeypatch, tmp_path):
+    """`traceback.print_exc()` returns None, so interpolating it yields the string "None".
+
+    A hook failure errors `Config Workflow` and voids the matrix, so "None" is the whole
+    description of the failure that the report and CI DB receive.
+    """
+    message = "hook exploded: no server is currently available"
+    hook_result = _run_config_workflow_with_raising_hook(monkeypatch, tmp_path, message)
+
+    assert hook_result.info != "None", "the traceback must not be dropped"
+    assert message in hook_result.info
+    assert "RuntimeError" in hook_result.info
+    assert "Traceback (most recent call last)" in hook_result.info
+
+
+def test_raising_filter_hook_survives_top_truncation(monkeypatch, tmp_path):
+    """`check_ci.py` renders an ERROR result truncated from the top, keeping the last
+    lines. `format_exc` puts `Type: message` after the frames, so it survives that
+    rendering for a message short enough to fit.
+    """
+    message = "hook exploded: no server is currently available"
+    hook_result = _run_config_workflow_with_raising_hook(monkeypatch, tmp_path, message)
+
+    truncated = hook_result.get_info_truncated(
+        truncate_from_top=True, max_info_lines_cnt=50, max_line_length=200
+    )
+    assert "RuntimeError" in truncated
+    assert message in truncated
 
 
 def test_attached_traceback_is_bounded(monkeypatch, tmp_path):
