@@ -28,7 +28,7 @@ En esta guía aprenderás a:
 
 Aquí tienes una vista previa del dashboard creado en esta guía:
 
-<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Dashboard de torre de telefonía móvil por tipo de radio en el MCC 204" />
+<Image img="/images/getting-started/example-datasets/superset-cell-tower-dashboard.webp" size="md" alt="Dashboard de torres de telefonía móvil por tipo de radio en el MCC 204" />
 
 <div id="get-the-dataset">
   ## Obtener el conjunto de datos
@@ -52,7 +52,7 @@ El proyecto OpenCelliD está licenciado bajo la licencia Creative Commons Attrib
 
     <Image img="/images/_snippets/cloud-load-data-sample.webp" size="md" alt="Cargar el conjunto de datos de torres de telefonía móvil" />
 
-    ### Examinar el esquema de la tabla cell_towers
+    ### Examinar el esquema de la tabla cell&#95;towers
 
     ```sql
     DESCRIBE TABLE cell_towers
@@ -340,7 +340,7 @@ En Superset, un **conjunto de datos** se corresponde con una tabla dentro de una
   ### Crea algunos **gráficos**
 </div>
 
-Al añadir un gráfico en Superset, debes especificar el conjunto de datos (`cell_towers`) y el tipo de gráfico. Dado que el conjunto de datos OpenCelliD proporciona coordenadas de longitud y latitud de torres de telefonía móvil, crearemos un gráfico de **mapa**. El tipo **deck.gL Scatterplot** es adecuado para este conjunto de datos, ya que funciona bien con puntos de datos densos sobre un mapa.
+Al añadir un gráfico en Superset, debes especificar el conjunto de datos (`cell_towers`) y el tipo de gráfico. Dado que el conjunto de datos OpenCelliD proporciona coordenadas de longitud y latitud de torres de telefonía móvil, crearemos un gráfico de **mapa**. El tipo **deck.gL Scatterplot** es adecuado para este conjunto de datos, ya que funciona bien con puntos de datos densos en un mapa.
 
 <Image img="/images/getting-started/example-datasets/superset-create-map.webp" size="md" alt="Crear un mapa en Superset" />
 

@@ -1,0 +1,306 @@
+---
+title: 'تهيئة DataStore'
+sidebarTitle: 'نظرة عامة'
+slug: /chdb/configuration
+description: 'هيّئ محرك التنفيذ لـ DataStore، وتسجيل الأحداث، والتخزين المؤقت، وتنميط، وتصحيح نوع البيانات'
+keywords: ['chdb', 'datastore', 'التهيئة', 'config', 'الإعدادات']
+doc_type: 'reference'
+---
+
+يوفّر DataStore خيارات تهيئة شاملة لاختيار محرك التنفيذ، ووضع التوافق، وتسجيل الأحداث، والتخزين المؤقت، وتنميط، وتصحيح نوع البيانات.
+
+<div id="quick-reference">
+  ## مرجع سريع
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Quick setup presets
+config.enable_debug()           # Enable verbose logging
+config.use_chdb()               # Force ClickHouse engine
+config.use_pandas()             # Force pandas engine
+config.use_auto()               # Auto-select engine (default)
+config.use_performance_mode()   # SQL-first, max throughput
+config.use_pandas_compat()      # Full pandas compatibility (default)
+config.enable_profiling()       # Enable performance profiling
+```
+
+<div id="all-options">
+  ## جميع خيارات التهيئة
+</div>
+
+| الفئة               | الخيار                   | القيم                                                  | الافتراضي          | الوصف                                            |
+| ------------------- | ------------------------ | ------------------------------------------------------ | ------------------ | ------------------------------------------------ |
+| **تسجيل الأحداث**   | `log_level`              | DEBUG/INFO/WARNING/ERROR                               | WARNING            | مستوى تفصيل السجل                                |
+|                     | `log_format`             | &quot;simple&quot;, &quot;verbose&quot;                | &quot;simple&quot; | تنسيق رسائل السجل                                |
+| **ذاكرة التخزين المؤقت** | `cache_enabled`          | True/False                                             | True               | تمكين تخزين النتائج مؤقتًا                       |
+|                     | `cache_ttl`              | float (ثوانٍ)                                          | 0.0                | مدة صلاحية ذاكرة التخزين المؤقت                       |
+| **المحرك**          | `execution_engine`       | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | محرك التنفيذ                                     |
+|                     | `cross_datastore_engine` | &quot;auto&quot;, &quot;chdb&quot;, &quot;pandas&quot; | &quot;auto&quot;   | عمليات Cross-DataStore                           |
+| **التوافق**         | `compat_mode`            | &quot;pandas&quot;, &quot;performance&quot;            | &quot;pandas&quot; | توافق Pandas مقابل إنتاجية تُعطي الأولوية لـ SQL |
+| **التنميط**         | `profiling_enabled`      | True/False                                             | False              | تمكين التنميط                                    |
+| **نوع البيانات**           | `correction_level`       | NONE/CRITICAL/HIGH/MEDIUM/ALL                          | HIGH               | مستوى تصحيح نوع البيانات                         |
+
+***
+
+<div id="methods">
+  ## أساليب التهيئة
+</div>
+
+<div id="logging">
+  ### إعدادات تسجيل الأحداث
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+# Set log level
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # Default
+config.set_log_level(logging.ERROR)
+
+# Set log format
+config.set_log_format("simple")   # Default
+config.set_log_format("verbose")  # More details
+
+# Quick enable debug mode
+config.enable_debug()  # Sets DEBUG level + verbose format
+```
+
+راجع [تسجيل الأحداث](/ar/chdb/debugging/logging) لمزيد من التفاصيل.
+
+<div id="cache">
+  ### إعداد ذاكرة التخزين المؤقت
+</div>
+
+```python
+# Enable/disable caching
+config.set_cache_enabled(True)   # Default
+config.set_cache_enabled(False)  # Disable caching
+
+# Set cache TTL (time-to-live)
+config.set_cache_ttl(60.0)  # Cache expires after 60 seconds
+config.set_cache_ttl(0.0)   # No expiration (default)
+
+# Check current settings
+print(config.cache_enabled)
+print(config.cache_ttl)
+```
+
+<div id="engine">
+  ### تهيئة المحرّك
+</div>
+
+```python
+# Set execution engine
+config.set_execution_engine('auto')    # Auto-select (default)
+config.set_execution_engine('chdb')    # Force ClickHouse
+config.set_execution_engine('pandas')  # Force pandas
+
+# Quick presets
+config.use_auto()     # Auto-select
+config.use_chdb()     # Force ClickHouse
+config.use_pandas()   # Force pandas
+
+# Cross-DataStore engine (for operations between different DataStores)
+config.set_cross_datastore_engine('auto')
+config.set_cross_datastore_engine('chdb')
+config.set_cross_datastore_engine('pandas')
+
+# Check current engine
+print(config.execution_engine)
+```
+
+راجع [محرك التنفيذ](/ar/chdb/configuration/execution-engine) لمزيد من التفاصيل.
+
+<div id="compat-mode">
+  ### وضع التوافق
+</div>
+
+```python
+# Performance mode: SQL-first, no pandas compatibility overhead
+config.use_performance_mode()
+# or: config.set_compat_mode('performance')
+
+# Pandas compatibility mode (default)
+config.use_pandas_compat()
+# or: config.set_compat_mode('pandas')
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+راجع [وضع الأداء](/ar/chdb/configuration/performance-mode) للاطلاع على التفاصيل.
+
+<div id="profiling">
+  ### إعدادات التنميط
+</div>
+
+```python
+# Enable profiling
+config.enable_profiling()
+config.set_profiling_enabled(True)
+
+# Disable profiling
+config.set_profiling_enabled(False)
+
+# Check if profiling is enabled
+print(config.profiling_enabled)
+```
+
+راجع [تنميط](/ar/chdb/debugging/profiling) لمزيد من التفاصيل.
+
+<div id="dtype">
+  ### تصحيح نوع البيانات
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+
+# Set correction level
+config.set_correction_level(CorrectionLevel.NONE)      # No correction
+config.set_correction_level(CorrectionLevel.CRITICAL)  # Critical types only
+config.set_correction_level(CorrectionLevel.HIGH)      # Default
+config.set_correction_level(CorrectionLevel.MEDIUM)    # More corrections
+config.set_correction_level(CorrectionLevel.ALL)       # All corrections
+```
+
+***
+
+<div id="config-object">
+  ## استخدام كائن config
+</div>
+
+كائن `config` هو كائن singleton يتولى إدارة جميع الإعدادات:
+
+```python
+from chdb.datastore.config import config
+
+# Read settings
+print(config.log_level)
+print(config.execution_engine)
+print(config.cache_enabled)
+print(config.profiling_enabled)
+
+# Modify settings
+config.set_log_level(logging.DEBUG)
+config.set_execution_engine('chdb')
+config.set_cache_enabled(False)
+config.enable_profiling()
+```
+
+***
+
+<div id="in-code">
+  ## التهيئة في الشيفرة
+</div>
+
+<div id="per-script">
+  ### إعدادات كل برنامج نصي
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# Configure at script start
+config.enable_debug()
+config.use_chdb()
+config.enable_profiling()
+
+# Your DataStore code
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').agg({'salary': 'mean'})
+```
+
+<div id="context-manager">
+  ### مدير السياق (لاحقًا)
+</div>
+
+```python
+# Planned feature: temporary configuration
+with config.override(execution_engine='pandas'):
+    result = ds.process()
+# Original settings restored
+```
+
+***
+
+<div id="scenarios">
+  ## سيناريوهات الإعداد الشائعة
+</div>
+
+<div id="dev-config">
+  ### التطوير/تصحيح الأخطاء
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.enable_debug()        # Verbose logging
+config.enable_profiling()    # Performance tracking
+config.set_cache_enabled(False)  # Disable caching for fresh results
+```
+
+<div id="prod-config">
+  ### بيئة الإنتاج
+</div>
+
+```python
+from chdb.datastore.config import config
+import logging
+
+config.set_log_level(logging.WARNING)  # Minimal logging
+config.set_execution_engine('auto')    # Optimal engine selection
+config.set_cache_enabled(True)         # Enable caching
+config.set_profiling_enabled(False)    # Disable profiling overhead
+```
+
+<div id="max-throughput-config">
+  ### الحد الأقصى لمعدل النقل
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()    # SQL-first, no pandas overhead
+config.set_cache_enabled(False)  # Disable cache for streaming
+```
+
+<div id="perf-config">
+  ### اختبار الأداء
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_chdb()            # Force ClickHouse for benchmarks
+config.enable_profiling()    # Track performance
+config.set_cache_enabled(False)  # Disable cache for accurate timing
+```
+
+<div id="compat-config">
+  ### اختبار توافق Pandas
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_pandas()          # Force pandas engine
+config.enable_debug()        # See what operations are used
+```
+
+***
+
+<div id="related">
+  ## الوثائق ذات الصلة
+</div>
+
+* [محرك التنفيذ](/ar/chdb/configuration/execution-engine) - تفاصيل اختيار المحرك
+* [وضع الأداء](/ar/chdb/configuration/performance-mode) - وضع يقدّم SQL أولًا لتحقيق أقصى إنتاجية
+* [إعدادات الدالة](/ar/chdb/configuration/function-config) - تهيئة المحرك لكل دالة
+* [تسجيل الأحداث](/ar/chdb/debugging/logging) - تهيئة تسجيل الأحداث
+* [التنميط](/ar/chdb/debugging/profiling) - تنميط الأداء

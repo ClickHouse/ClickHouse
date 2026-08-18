@@ -1,0 +1,11 @@
+3
+3
+3
+3
+3
+10
+SELECT 1 FROM system.one WINDOW w1 AS (), w2 AS (PARTITION BY p, \'abc\' ORDER BY p ASC)
+[('frame','UInt8')]
+1
+3
+12

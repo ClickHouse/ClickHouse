@@ -17,8 +17,10 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/DateTimeTransforms.h>
 #include <Processors/Formats/Impl/Parquet/Decoding.h>
 
+#include <array>
 #include <fmt/ranges.h>
 
 namespace DB::ErrorCodes
@@ -38,11 +40,13 @@ namespace DB::Parquet
 
 SchemaConverter::SchemaConverter(
     const parq::FileMetaData & file_metadata_, const ReadOptions & options_,
-    const Block * sample_block_)
+    const Block * sample_block_, std::optional<std::unordered_map<String, GeoColumnMetadata>> precomputed_geo_columns)
     : file_metadata(file_metadata_), options(options_), sample_block(sample_block_)
     , levels {LevelInfo {.def = 0, .rep = 0, .is_array = true}}
 {
-    if (options.format.parquet.allow_geoparquet_parser)
+    if (precomputed_geo_columns.has_value())
+        geo_columns = std::move(*precomputed_geo_columns);
+    else if (options.format.parquet.allow_geoparquet_parser)
     {
         for (const auto & kv : file_metadata.key_value_metadata)
         {
@@ -84,7 +88,11 @@ void SchemaConverter::prepareForReading()
             continue;
         size_t idx = col.idx_in_output_block.value();
         if (found_columns.at(idx))
-            throw Exception(ErrorCodes::DUPLICATE_COLUMN, "There are multiple columns with name `{}` in the parquet file", sample_block->getByPosition(idx).name);
+            throw Exception(
+                ErrorCodes::DUPLICATE_COLUMN,
+                "There are multiple columns with name `{}` in the parquet file. Note that a nested element is addressed by "
+                "its flattened path, so it collides with a top-level column that has a dot in its name",
+                sample_block->getByPosition(idx).name);
         found_columns[idx] = true;
 
         for (size_t i = col.primitive_start; i < col.primitive_end; ++i)
@@ -116,6 +124,7 @@ void SchemaConverter::prepareForReading()
         missing_output.output_type = missing_output.input_type;
         missing_output.is_missing_column = true;
     }
+
 }
 
 NamesAndTypesList SchemaConverter::inferSchema()
@@ -152,7 +161,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
     }
     auto it = map.find(element.field_id);
     if (it == map.end())
+    {
+        /// Iceberg reserves field ids greater than 2147483447 (Integer.MAX_VALUE - 200) for metadata
+        /// columns, e.g. the v3 row-lineage fields _row_id (2147483540) and
+        /// _last_updated_sequence_number (2147483539). Spec-compliant Iceberg writers physically
+        /// write these into data files, but they are not part of the table schema. Per the Iceberg
+        /// spec (https://iceberg.apache.org/spec/#reserved-field-ids), readers must ignore
+        /// reserved-range field ids they don't recognize rather than failing. Such a column is
+        /// never requested, so returning its physical name lets the existing "unrequested column"
+        /// path skip it.
+        static constexpr Int64 iceberg_max_user_field_id = 2147483447; /// Integer.MAX_VALUE - 200; ids above this are reserved
+        if (element.field_id > iceberg_max_user_field_id)
+            return element.name;
+
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);
+    }
 
     /// At top level (empty path), return the full mapped name. For nested
     /// elements, strip the parent path prefix to get the child name.
@@ -1032,7 +1055,7 @@ void SchemaConverter::processPrimitiveColumn(
 
     if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
     {
-        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
         out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
@@ -1206,6 +1229,19 @@ void SchemaConverter::processPrimitiveColumn(
             /// (As we want to make this backwards compatible, not break any workflows.)
             if (converter->date_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
                 converter->date_overflow_behavior = FormatSettings::DateTimeOverflowBehavior::Throw;
+
+            /// When the requested type is Date, enforce the narrower Date range [0, 65535]:
+            /// `formOutputColumn` later casts the decoded Date32 column to Date without checks,
+            /// narrowing the day number to UInt16, so an unchecked extended Date32 value would
+            /// wrap into an unrelated in-range Date. Similarly for a DateTime target, whose
+            /// context-less cast wraps day numbers whose midnight does not fit into DateTime.
+            /// A DateTime64 target needs the same treatment with a scale-dependent window, because the cast
+            /// clamps whole seconds that the target scale cannot represent.
+            converter->date_target_is_date = type_hint && WhichDataType(type_hint->getTypeId()).isDate();
+            converter->date_target_is_datetime = type_hint && WhichDataType(type_hint->getTypeId()).isDateTime();
+            if (const auto * dt64_hint = type_hint ? typeid_cast<const DataTypeDateTime64 *>(type_hint.get()) : nullptr)
+                converter->date_target_datetime64_day_range = getDateTime64DayNumRange(
+                    DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone());
         }
 
         out_decoder.allow_stats = dispatch_int_stats_converter(/*allow_datetime_and_ipv4=*/ false, *converter);
@@ -1219,6 +1255,99 @@ void SchemaConverter::processPrimitiveColumn(
         UInt32 scale = logical.__isset.DECIMAL ? logical.DECIMAL.scale : element.scale;
         precision = std::max(precision, scale);
 
+        if (type_hint && (type == parq::Type::FIXED_LEN_BYTE_ARRAY || type == parq::Type::BYTE_ARRAY))
+        {
+            const TypeIndex requested_type = type_hint->getTypeId();
+            const bool requested_wide_integer =
+                requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128
+                || requested_type == TypeIndex::Int256 || requested_type == TypeIndex::UInt256;
+            if (requested_wide_integer)
+            {
+                if (scale != 0)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal with nonzero scale {} cannot be read directly as {}",
+                        scale,
+                        type_hint->getName());
+
+                const bool requested_128 = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::UInt128;
+                const bool requested_signed = requested_type == TypeIndex::Int128 || requested_type == TypeIndex::Int256;
+                const UInt32 max_precision = requested_128 ? 39 : (requested_signed ? 77 : 78);
+
+                if (precision == 0 || precision > max_precision)
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Parquet Decimal precision {} cannot be represented as {}",
+                        precision,
+                        type_hint->getName());
+                size_t input_size = 0;
+                if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                {
+                    if (element.type_length <= 0)
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet Decimal width must be positive");
+                    input_size = size_t(element.type_length);
+
+                    /// Maximum precision for an n-byte signed fixed array is
+                    /// `floor(log10(2^(8n - 1) - 1))`. Widths above 33 bytes can represent every
+                    /// precision accepted by a ClickHouse wide integer.
+                    static constexpr std::array<UInt8, 33> max_decimal_precision_by_width{
+                        2, 4, 6, 9, 11, 14, 16, 18, 21, 23, 26,
+                        28, 31, 33, 35, 38, 40, 43, 45, 47, 50, 52,
+                        55, 57, 59, 62, 64, 67, 69, 71, 74, 76, 79};
+                    if (input_size <= max_decimal_precision_by_width.size()
+                        && precision > max_decimal_precision_by_width[input_size - 1])
+                        throw Exception(
+                            ErrorCodes::INCORRECT_DATA,
+                            "Parquet Decimal width {} is too small for precision {}",
+                            input_size,
+                            precision);
+                }
+
+                out_inferred_type = type_hint;
+                out_decoded_type = type_hint;
+                switch (requested_type)
+                {
+                    case TypeIndex::Int128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int128>>();
+                        break;
+                    case TypeIndex::UInt128:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt128>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt128>>();
+                        break;
+                    case TypeIndex::Int256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<Int256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<Int256>>();
+                        break;
+                    case TypeIndex::UInt256:
+                        if (type == parq::Type::FIXED_LEN_BYTE_ARRAY)
+                            out_decoder.fixed_size_converter = std::make_shared<BigEndianDecimalWideIntegerConverter<UInt256>>(input_size);
+                        else
+                            out_decoder.string_converter = std::make_shared<BigEndianDecimalWideIntegerStringConverter<UInt256>>();
+                        break;
+                    default:
+                        UNREACHABLE();
+                }
+                out_decoder.allow_stats = true;
+                return;
+            }
+        }
+
+        if (precision > 76)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Parquet Decimal precision {} exceeds the maximum supported ClickHouse Decimal precision 76; an explicit compatible wide-integer structure is required",
+                precision);
+
+        /// Precision of the Decimal type exactly as wide as one decoded value. Legal parquet can
+        /// make it exceed `precision` (e.g. INT64 with precision 9), so it, not `precision`,
+        /// determines the width of the column we decode into.
         UInt32 max_precision = 0;
         if (type == parq::Type::INT32 || type == parq::Type::INT64)
         {
@@ -1287,7 +1416,14 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet decimal type precision or scale is too big ({} digits) for physical type {}", precision, thriftToString(type));
 
         out_inferred_type = createDecimal<DataTypeDecimal>(precision, scale);
-        size_t decoded_size = out_inferred_type->getSizeOfValueInMemory();
+
+        /// Decode into a column as wide as the converter writes; castColumn then narrows it to the
+        /// declared precision, throwing DECIMAL_OVERFLOW for values that don't fit.
+        auto decoded_type = createDecimal<DataTypeDecimal>(max_precision, scale);
+        size_t decoded_size = decoded_type->getSizeOfValueInMemory();
+        if (decoded_size != out_inferred_type->getSizeOfValueInMemory())
+            out_decoded_type = std::move(decoded_type);
+
         allow_decimal_stats(decoded_size, scale);
 
         return;

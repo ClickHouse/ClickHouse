@@ -46,11 +46,64 @@ doc_type: 'reference'
   Эти функции могут работать медленнее, чем их регистрозависимые аналоги, поэтому по возможности используйте обычные функции JSONExtract.
 </Note>
 
+<div id="jsonpath-syntax">
+  ## Синтаксис JSONPath
+</div>
+
+Функции `JSON_EXISTS`, `JSON_VALUE` и `JSON_QUERY` принимают выражение JSONPath
+в качестве второго аргумента. ClickHouse реализует небольшое подмножество
+JSONPath, в общих чертах основанное на стандарте SQL/JSON (ISO/IEC TR 19075-6)
+и намеренно более ограниченное, чем [RFC 9535](https://www.rfc-editor.org/rfc/rfc9535)
+и другие популярные реализации. Поддерживаемые операторы перечислены ниже.
+
+Эталонная реализация находится в
+[`src/Functions/JSONPath/Parsers`](https://github.com/ClickHouse/ClickHouse/tree/master/src/Functions/JSONPath/Parsers).
+
+<div id="supported-operators">
+  ### Поддерживаемые операторы
+</div>
+
+| Синтаксис     | Описание                                                                                                                                                           | Пример                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `$`           | Корневой элемент. Каждый путь должен начинаться с него.                                                                                                            | `$`                               |
+| `.key`        | Доступ к элементу через точечную нотацию без кавычек. Ключ может начинаться с цифры или состоять только из цифр.                                                   | `$.store.book`, `$.1key`, `$.123` |
+| `."key"`      | Доступ к элементу через точечную нотацию в кавычках. Используйте для ключей, содержащих пробелы или специальные символы. Допускаются двойные или обратные кавычки. | `$."foo bar"`                     |
+| `[key]`       | Доступ к элементу через скобочную нотацию без кавычек.                                                                                                             | `$[hello]`                        |
+| `['key']`     | Доступ к элементу через скобочную нотацию в кавычках. Допускаются одинарные, двойные или обратные кавычки.                                                         | `$['foo bar']`                    |
+| `[n]`         | Доступ к элементу массива по индексу (отсчёт с 0).                                                                                                                 | `$.items[0]`                      |
+| `[n, m, ...]` | Доступ к нескольким элементам массива.                                                                                                                             | `$.items[0, 2, 4]`                |
+| `[n to m]`    | Диапазон элементов массива. Конечный индекс `m` не включается.                                                                                                     | `$.items[0 to 3]`                 |
+| `[*]`         | Подстановочный знак, соответствующий всем элементам массива.                                                                                                       | `$.items[*]`                      |
+
+Примечания:
+
+* Индексы и диапазоны можно комбинировать в одной паре скобок (например, `[0 to 2, 4]`).
+* Диапазоны индексов и подстановочный знак нельзя комбинировать в одной паре скобок (например, `[* , 0]` недопустимо).
+* В диапазоне `[n to m]` начальный индекс `n` должен быть строго меньше конечного индекса `m`, иначе возникает исключение.
+* Одиночный индекс `[n]` эквивалентен диапазону `[n to n+1]`.
+
+<div id="unsupported-operators">
+  ### Неподдерживаемые операторы
+</div>
+
+Следующие операторы JSONPath, доступные в RFC 9535 или других
+реализациях, **не** поддерживаются ClickHouse:
+
+| Синтаксис               | Описание                                                                    |
+| ----------------------- | --------------------------------------------------------------------------- |
+| `..`                    | Рекурсивный спуск.                                                          |
+| `?(@.expr)`             | Выражения фильтрации.                                                       |
+| `[start:end:step]`      | Нотация среза. Вместо неё используйте `[n to m]`.                           |
+| `@`                     | Ссылка на текущий узел.                                                     |
+| `[-n]`                  | Отрицательные индексы массива (с конца).                                    |
+| Скриптовые выражения    | Арифметические выражения или вызовы функций внутри пути.                    |
+| `ON ERROR` / `ON EMPTY` | Стандартные секции SQL/JSON для управления ошибками и пустыми результатами. |
+
 {/* 
-  Во время сборки документационного фреймворка внутреннее содержимое тегов ниже заменяется на 
-  документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
-  См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
-  */}
+    Во время сборки документационного фреймворка внутреннее содержимое тегов ниже заменяется на 
+    документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
+    См.: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+    */}
 
 {/*AUTOGENERATED_START*/}
 
@@ -744,13 +797,13 @@ JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)
 **Пример использования**
 
 ```sql title=Query
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'Int8', 'x') AS res;
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') AS res
 ```
 
 ```response title=Response
-┌─res────────────────────┐
+┌─res────────────────────────┐
 │ [('a',5),('b',7),('c',11)] │
-└────────────────────────┘
+└────────────────────────────┘
 ```
 
 <div id="JSONExtractKeysAndValuesCaseInsensitive">
@@ -822,7 +875,7 @@ SELECT JSONExtractKeysAndValuesRaw('{"a": [-100, 200.0], "b": "hello"}') AS res;
 
 ```response title=Response
 ┌─res──────────────────────────────────┐
-│ [('a','[-100,200.0]'),('b','"hello"')] │
+│ [('a','[-100,200]'),('b','"hello"')] │
 └──────────────────────────────────────┘
 ```
 
@@ -1354,10 +1407,10 @@ SELECT json, JSONSharedDataPathsWithTypes(json) FROM test;
 
 ```response title=Response
 ┌─json─────────────────────────────────┬─JSONSharedDataPathsWithTypes(json)─┐
-│ {"a":"42"}                           │ {}                                  │
-│ {"b":"Hello"}                        │ {'b':'String'}                      │
-│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                        │
-└──────────────────────────────────────┴─────────────────────────────────────┘
+│ {"a":"42"}                           │ {}                                 │
+│ {"b":"Hello"}                        │ {'b':'String'}                     │
+│ {"a":["1","2","3"],"c":"2020-01-01"} │ {'c':'Date'}                       │
+└──────────────────────────────────────┴────────────────────────────────────┘
 ```
 
 <div id="JSONType">
@@ -2165,14 +2218,14 @@ SELECT simpleJSONHas(json, 'bar') FROM jsons;
 Добавленный в: v21.7.0
 
 Сериализует значение в JSON-представление. Поддерживаются различные типы данных и вложенные структуры.
-64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers).
-Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals).
+64-битные [целые числа](/ru/reference/data-types/int-uint) и более крупные (например, `UInt64` или `Int128`) по умолчанию заключаются в кавычки. Это поведение контролируется параметром [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers).
+Специальные значения `NaN` и `inf` заменяются на `null`. Чтобы они отображались, включите настройку [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals).
 При сериализации значения [Enum](/ru/reference/data-types/enum) функция выводит его имя.
 
 См. также:
 
-* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats#output_format_json_quote_64bit_integers)
-* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats#output_format_json_quote_denormals)
+* [output&#95;format&#95;json&#95;quote&#95;64bit&#95;integers](/ru/reference/settings/formats/output-format#output_format_json_quote_64bit_integers)
+* [output&#95;format&#95;json&#95;quote&#95;denormals](/ru/reference/settings/formats/output-format#output_format_json_quote_denormals)
 
 **Синтаксис**
 
