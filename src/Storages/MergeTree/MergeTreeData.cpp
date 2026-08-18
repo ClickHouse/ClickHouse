@@ -6089,10 +6089,9 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         }
     }
 
-    /// Statistics of a non-physical column cannot be built, so a user naming one explicitly must be
-    /// told rather than get a silent no-op. Reject it here, synchronously, before the mutation is
-    /// queued -- throwing inside the background mutation instead would leave the mutation retrying
-    /// forever and wedge the table. `MATERIALIZE STATISTICS ALL` skips such a column instead.
+    /// Statistics of a non-physical column cannot be built. Reject an explicitly named one here,
+    /// synchronously, so it never reaches the background mutation, which can only retry.
+    /// `MATERIALIZE STATISTICS ALL` skips such a column instead.
     {
         const auto statistics_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
         const auto & columns = statistics_metadata_snapshot->getColumns();
@@ -6104,8 +6103,7 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             {
                 if (!columns.has(column_name))
                     continue;
-                const auto & column = columns.get(column_name);
-                if (!column.statistics.empty() && !column.isPhysical())
+                if (!columns.get(column_name).statistics.empty() && !columns.hasPhysical(column_name))
                     throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
                         "Cannot materialize statistics of column '{}': it is not physically stored. "
                         "Please drop the statistics",

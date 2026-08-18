@@ -119,13 +119,6 @@ struct ColumnDescription
     bool operator==(const ColumnDescription & other) const;
     bool operator!=(const ColumnDescription & other) const { return !(*this == other); }
 
-    /// Not stored on disk, so never present in a block written to a part: ALIAS is computed on
-    /// read, EPHEMERAL is an insert-only input.
-    bool isPhysical() const
-    {
-        return default_desc.kind != ColumnDefaultKind::Alias && default_desc.kind != ColumnDefaultKind::Ephemeral;
-    }
-
     void writeText(WriteBuffer & buf, IAST::FormatState & state, bool include_comment) const;
     void readText(ReadBuffer & buf);
 };

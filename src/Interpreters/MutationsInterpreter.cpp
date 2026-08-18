@@ -1314,7 +1314,7 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & column_desc : columns_desc)
                 {
-                    if (!column_desc.statistics.empty() && column_desc.isPhysical())
+                    if (!column_desc.statistics.empty() && columns_desc.hasPhysical(column_desc.name))
                     {
                         dependencies.emplace(column_desc.name, ColumnDependency::STATISTICS);
                         materialized_statistics.emplace(column_desc.name);
@@ -1324,9 +1324,8 @@ void MutationsInterpreter::prepare(bool dry_run)
             for (const auto & stat_column_name: command.statistics_columns)
             {
                 /// Skipped only while executing, so an already-queued mutation drains instead of
-                /// retrying forever. Validation still reaches the throw below, which is the only
-                /// diagnostic such a column has once it also carries no statistics.
-                if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.get(stat_column_name).isPhysical())
+                /// retrying forever. Validation still reaches the throw below.
+                if (!dry_run && columns_desc.has(stat_column_name) && !columns_desc.hasPhysical(stat_column_name))
                 {
                     LOG_WARNING(logger, "Column {} is not physically stored, skipping statistics materialization", stat_column_name);
                     continue;

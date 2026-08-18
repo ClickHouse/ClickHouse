@@ -1083,7 +1083,7 @@ static ColumnsStatistics getStatisticsToRecalculate(const StorageMetadataPtr & m
     for (const auto & col_desc : columns)
     {
         /// A mutation already in the queue must drain rather than retry forever.
-        if (!col_desc.statistics.empty() && col_desc.isPhysical() && materialized_stats.contains(col_desc.name))
+        if (!col_desc.statistics.empty() && columns.hasPhysical(col_desc.name) && materialized_stats.contains(col_desc.name))
             stats_to_recalc.emplace(col_desc.name, stats_factory.get(col_desc));
     }
     return stats_to_recalc;
