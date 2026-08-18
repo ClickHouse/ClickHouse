@@ -22,7 +22,9 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
@@ -139,6 +141,15 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 
     /// An "any" scatter (no keys) only splits the stream, so the read below it can still read in order.
     if (auto * scatter = typeid_cast<ScatterExchangeStep *>(step); scatter && scatter->getKeys().empty())
+        return findReadingStep(*node.children.front(), data);
+
+    /// `tryMakeDistributedRead` puts a plain gather directly over the read it just made distributed, and
+    /// `optimizeExchanges` later folds that scatter/gather pair into a single shuffle. It is not a real
+    /// boundary yet, so look through it; a gather that maintains a sort description, or one over anything
+    /// other than the read itself, is left alone.
+    if (auto * gather = typeid_cast<GatherExchangeStep *>(step);
+        gather && !gather->getMaintainSortDescription().has_value() && node.children.size() == 1
+        && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 
     if (auto * distinct = typeid_cast<DistinctStep *>(step); distinct && distinct->isPreliminary())
@@ -1803,7 +1814,7 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                     child->step->getOutputHeader(),
                     info->sort_description_for_merging,
                     *max_sort_descr,
-                    sorting->getSettings().max_block_size,
+                    sorting->getSettings(),
                     0); /// TODO: support limit with ties
             }
 
