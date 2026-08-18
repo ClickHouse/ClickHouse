@@ -1,4 +1,6 @@
 up_recall_no_hints: OK
 down_navigates_history: OK
+same_text_recall_down_navigates_history: OK
 edit_after_recall_shows_hints: OK
 paste_no_hints: OK
+unchanged_editor_down_navigates_history: OK

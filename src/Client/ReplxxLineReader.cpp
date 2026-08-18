@@ -517,6 +517,12 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::meta('p'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('n'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('<'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
+    rx.bind_key(Replxx::KEY::PAGE_UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
+    rx.bind_key(Replxx::KEY::meta('>'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
+    rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     if (options.ignore_shell_suspend)
