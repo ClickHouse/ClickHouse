@@ -776,6 +776,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
     /// For each alternative in the Variant, build the function and get the actual result type.
     DataTypes result_types;
     result_types.reserve(variant_alternatives.size());
+    bool skipped_null_for_every_row_alternative = false;
 
     const auto process_list_element = tryGetProcessListElement();
     const auto function_name = function_overload_resolver->getName();
@@ -797,6 +798,14 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         try
         {
             const auto func_base = function_overload_resolver->build(alt_columns_with_type);
+            /// Another argument may still be a Variant, so build() can return a nested adaptor. One that
+            /// matched no alternative is NULL for every row and carries no result type of its own.
+            const auto * nested_adaptor = typeid_cast<const FunctionBaseVariantAdaptor *>(func_base.get());
+            if (nested_adaptor && nested_adaptor->resolvedToNullForEveryRow())
+            {
+                skipped_null_for_every_row_alternative = true;
+                continue;
+            }
             /// Strip LowCardinality from result type for consistency with executeImpl,
             /// where we also strip LC from nested function results.
             result_types.push_back(removeLowCardinality(func_base->getResultType()));
@@ -823,6 +832,7 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         if (!shouldThrowOnVariantTypeMismatch())
         {
             return_type = makeNullable(std::make_shared<DataTypeNothing>());
+            resolved_to_null_for_every_row = true;
             return;
         }
 
@@ -840,29 +850,15 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
             function_overload_resolver->getName());
     }
 
-    /// A NULL-only alternative contributes no type, because executeImpl inserts NULL for its rows
-    /// instead of a nested result, so it must not widen the declared type either. Only Nullable(Nothing)
-    /// is dropped: a bare Nothing is produced without a type error, so it is present in both strictness
-    /// modes and dropping it would move the declared type of an already-accepted key or index.
-    DataTypes real_result_types;
-    real_result_types.reserve(result_types.size());
-    for (const auto & type : result_types)
-    {
-        if (!type->onlyNull())
-            real_result_types.push_back(type);
-    }
-    const bool has_null_only_alternative = real_result_types.size() != result_types.size();
-    const DataTypes & considered_types = real_result_types.empty() ? result_types : real_result_types;
-
     /// If all result types are the same (ignoring Nullable), return Nullable(common).
     /// Otherwise, return Variant(R0, R1, ...) in the same order.
     /// Compare by name to handle custom types correctly (like Geometry subtypes)
     bool all_same = true;
-    DataTypePtr common_type = removeNullable(considered_types[0]);
+    DataTypePtr common_type = removeNullable(result_types[0]);
 
-    for (size_t i = 1; i < considered_types.size(); ++i)
+    for (size_t i = 1; i < result_types.size(); ++i)
     {
-        DataTypePtr current_type = removeNullable(considered_types[i]);
+        DataTypePtr current_type = removeNullable(result_types[i]);
         if (common_type->getName() != current_type->getName())
         {
             all_same = false;
@@ -870,9 +866,9 @@ FunctionBaseVariantAdaptor::FunctionBaseVariantAdaptor(
         }
     }
 
-    /// Dropping a NULL-only alternative is only safe if the collapsed type can hold NULL: makeNullableSafe
-    /// returns the type bare when it cannot, which would turn those NULL rows into default values.
-    if (all_same && (!has_null_only_alternative || common_type->canBeInsideNullable()))
+    /// A skipped alternative still needs its rows to be NULL, and makeNullableSafe returns the type bare
+    /// when it cannot be inside Nullable, which would make those rows default values instead.
+    if (all_same && (!skipped_null_for_every_row_alternative || common_type->canBeInsideNullable()))
     {
         return_type = makeNullableSafe(common_type);
     }

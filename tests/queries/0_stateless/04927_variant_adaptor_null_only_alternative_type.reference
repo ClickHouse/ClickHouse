@@ -13,9 +13,13 @@ Variant(Map(UInt8, String))	{1:'x',2:'y'}	0
 Variant(Map(UInt8, String))	\N	1
 Variant(Array(UInt8))	[1,2,1,2]	0
 Variant(Array(UInt8))	\N	1
--- a bare Nothing alternative is present in both modes, so it is kept
+-- an alternative that resolves to Nothing without a type error is kept
 Variant(UInt8)
 Variant(UInt8)
+Variant(UInt8)
+Variant(UInt8)
+Variant(String)
+Variant(String)
 -- every alternative incompatible
 Nullable(Nothing)
 -- Dynamic is unaffected
@@ -34,3 +38,8 @@ parts before merge	2
 parts after merge	1
 after merge	4
 after reattach	5
+-- a set index over a kept Nothing alternative survives a reload
+nothing index type	Variant(UInt8)
+nothing index match	1
+nothing index values	[10,30,50]
+nothing index prunes	1

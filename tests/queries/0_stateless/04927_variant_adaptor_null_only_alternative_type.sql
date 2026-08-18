@@ -32,10 +32,16 @@ FROM (SELECT CAST([1, 2], 'Variant(Array(UInt8), UInt8)') AS a UNION ALL SELECT 
 ORDER BY 3
 SETTINGS variant_throw_on_type_mismatch = 0;
 
-SELECT '-- a bare Nothing alternative is present in both modes, so it is kept';
+SELECT '-- an alternative that resolves to Nothing without a type error is kept';
 
 SELECT toTypeName(arrayElement(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 1;
 SELECT toTypeName(arrayElement(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 0;
+
+SELECT toTypeName(arrayElementOrNull(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 1;
+SELECT toTypeName(arrayElementOrNull(v, 1)) FROM (SELECT CAST([1, 2], 'Variant(Array(Nothing), Array(UInt8))') AS v) SETTINGS variant_throw_on_type_mismatch = 0;
+
+SELECT toTypeName(arrayElementOrNull(v, 1)) FROM (SELECT CAST(map(1, 'x'), 'Variant(Map(UInt8, Nothing), Map(UInt8, String))') AS v) SETTINGS variant_throw_on_type_mismatch = 1;
+SELECT toTypeName(arrayElementOrNull(v, 1)) FROM (SELECT CAST(map(1, 'x'), 'Variant(Map(UInt8, Nothing), Map(UInt8, String))') AS v) SETTINGS variant_throw_on_type_mismatch = 0;
 
 SELECT '-- every alternative incompatible';
 
@@ -88,9 +94,11 @@ SELECT 'skip index prunes', count() > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04927_skip WHERE max2(c2, c2) = 44)
 WHERE explain ILIKE '%Granules: 1/4%';
 
+SYSTEM STOP MERGES t_04927_compact;
 INSERT INTO t_04927_compact (c2, c0) VALUES (55, 4);
 SELECT 'parts before merge', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_04927_compact' AND active;
+SYSTEM START MERGES t_04927_compact;
 OPTIMIZE TABLE t_04927_compact FINAL;
 SELECT 'parts after merge', count() FROM system.parts
 WHERE database = currentDatabase() AND table = 't_04927_compact' AND active;
@@ -101,6 +109,30 @@ ATTACH TABLE t_04927_compact;
 INSERT INTO t_04927_compact (c2, c0) VALUES (66, 5);
 SELECT 'after reattach', count() FROM t_04927_compact;
 
+SELECT '-- a set index over a kept Nothing alternative survives a reload';
+
+DROP TABLE IF EXISTS t_04927_nothing_idx;
+
+CREATE TABLE t_04927_nothing_idx (c0 Int32, v Variant(Array(Nothing), Array(UInt8)),
+    INDEX idx arrayElementOrNull(v, 1) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY c0
+SETTINGS index_granularity = 1, allow_suspicious_indices = 1;
+
+INSERT INTO t_04927_nothing_idx VALUES (1, CAST([10, 20], 'Variant(Array(Nothing), Array(UInt8))')),
+                                       (2, CAST([30, 40], 'Variant(Array(Nothing), Array(UInt8))')),
+                                       (3, CAST([50, 60], 'Variant(Array(Nothing), Array(UInt8))'));
+
+DETACH TABLE t_04927_nothing_idx;
+ATTACH TABLE t_04927_nothing_idx;
+
+SELECT 'nothing index type', toTypeName(arrayElementOrNull(v, 1)) FROM t_04927_nothing_idx LIMIT 1;
+SELECT 'nothing index match', count() FROM t_04927_nothing_idx WHERE arrayElementOrNull(v, 1) = 30;
+SELECT 'nothing index values', groupArray(arrayElementOrNull(v, 1)) FROM t_04927_nothing_idx;
+SELECT 'nothing index prunes', count() > 0
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_04927_nothing_idx WHERE arrayElementOrNull(v, 1) = 30)
+WHERE explain ILIKE '%Granules: 1/3%';
+
+DROP TABLE t_04927_nothing_idx;
 DROP TABLE t_04927_compact;
 DROP TABLE t_04927_wide;
 DROP TABLE t_04927_skip;
