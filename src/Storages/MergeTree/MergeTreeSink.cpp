@@ -421,12 +421,14 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
         auto block_holder = storage.fillNewPartName(part, lock);
 
         MergeTreeDeduplicationLog * deduplication_log = nullptr;
+        std::vector<std::string> published_block_ids;
         if (!deduplication_hashes.empty())
         {
             deduplication_log = storage.getDeduplicationLog();
             chassert(deduplication_log);
             auto block_ids = getDeduplicationBlockIds(deduplication_hashes);
-            auto result = deduplication_log->addPart(block_ids, part->info);
+            bool part_was_published = false;
+            auto result = deduplication_log->addPart(block_ids, part->info, &part_was_published);
 
             std::vector<std::string> conflict_block_ids;
             for (const auto & res : result)
@@ -437,6 +439,9 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
 
             if (!conflict_block_ids.empty())
                 return conflict_block_ids;
+
+            if (part_was_published)
+                published_block_ids = std::move(block_ids);
         }
 
         try
@@ -473,11 +478,11 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
             /// without allocating and fences off the on-disk log, whose ADD records now no longer
             /// match that map, so a restart discards the suspect history instead of replaying it.
             /// Neither must mask the original error.
-            if (deduplication_log)
+            if (deduplication_log && !published_block_ids.empty())
             {
                 try
                 {
-                    deduplication_log->dropPart(part->info);
+                    deduplication_log->dropPart(part->info, &published_block_ids);
                 }
                 catch (...)
                 {
@@ -485,7 +490,7 @@ std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr &
                         storage.log,
                         "Cannot roll back the deduplication log publication of a part that failed to commit; "
                         "unpublishing its block IDs and discarding the deduplication history instead");
-                    deduplication_log->unpublishFailedPart(part->info);
+                    deduplication_log->unpublishFailedPart(part->info, &published_block_ids);
                 }
             }
             throw;

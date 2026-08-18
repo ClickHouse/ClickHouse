@@ -3153,6 +3153,44 @@ TEST(MergeTreeDeduplicationLog, UnpublishFailedPartSurvivesRestart)
 
     std::filesystem::remove_all(work_dir);
 }
+
+/// A part commit can fail after an ALTER disables deduplication. The ALTER trims
+/// the in-memory map, but the ADD record that was already made durable must still
+/// be fenced off using the block IDs captured at publication time.
+TEST(MergeTreeDeduplicationLog, UnpublishFailedPartAfterDisablingDeduplication)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_unpublish_after_disable/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+
+        bool part_was_published = false;
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0"), &part_was_published).empty());
+        ASSERT_TRUE(part_was_published);
+
+        log.setDeduplicationWindowSize(0);
+        const std::vector<std::string> published_block_ids{"block1"};
+        log.unpublishFailedPart(part("all_1_1_0"), &published_block_ids);
+        log.shutdown();
+    }
+
+    {
+        auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+        log.load();
+        EXPECT_TRUE(log.addPart({"block1"}, part("all_2_2_0")).empty());
+        log.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
 #endif
 
 /// A stopped log must reject even otherwise no-op operations. In particular, they

@@ -1065,9 +1065,15 @@ void MergeTreeDeduplicationLog::prepareToWrite()
     compactIfNeeded();
 }
 
-std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(const std::vector<std::string> & block_ids, const MergeTreePartInfo & part_info)
+std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog::addPart(
+    const std::vector<std::string> & block_ids,
+    const MergeTreePartInfo & part_info,
+    bool * part_was_published)
 {
     std::lock_guard lock(state_mutex);
+
+    if (part_was_published)
+        *part_was_published = false;
 
     if (stopped)
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
@@ -1275,10 +1281,13 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
     /// failures cannot grow the retained log without bound.
     compactIfNeeded();
 
+    if (part_was_published)
+        *part_was_published = true;
+
     return {};
 }
 
-void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info)
+void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_info, const std::vector<std::string> * block_ids_to_drop)
 {
     std::lock_guard lock(state_mutex);
 
@@ -1294,7 +1303,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// ALTER MODIFY SETTING query. It's much more simpler to handle zero case
     /// here then destroy whole object, check for null pointer from different
     /// threads and so on.
-    if (deduplication_window == 0)
+    if (deduplication_window == 0 && !block_ids_to_drop)
         return;
 
     chassert(current_writer != nullptr);
@@ -1311,7 +1320,12 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     /// the part out of the active set and never retries the drop.
     std::vector<std::string> block_ids;
     std::vector<std::string> part_names;
-    for (const auto & node : deduplication_map)
+    if (block_ids_to_drop)
+    {
+        block_ids = *block_ids_to_drop;
+        part_names.assign(block_ids.size(), drop_part_info.getPartNameAndCheckFormat(format_version));
+    }
+    else for (const auto & node : deduplication_map)
     {
         /// Part is covered by the dropped part, so it must leave deduplication history.
         if (drop_part_info.contains(node.value))
@@ -1420,7 +1434,8 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     for (const auto & block_id : block_ids)
     {
         auto source_it = block_id_log_numbers.find(block_id);
-        chassert(source_it != block_id_log_numbers.end());
+        if (source_it == block_id_log_numbers.end())
+            continue;
         --existing_logs.at(source_it->second).live_entries_count;
         block_id_log_numbers.erase(source_it);
         deduplication_map.erase(block_id);
@@ -1431,13 +1446,15 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
     compactIfNeeded();
 }
 
-void MergeTreeDeduplicationLog::unpublishFailedPart(const MergeTreePartInfo & part_info) noexcept
+void MergeTreeDeduplicationLog::unpublishFailedPart(
+    const MergeTreePartInfo & part_info,
+    const std::vector<std::string> * block_ids_to_unpublish) noexcept
 {
     try
     {
         std::lock_guard lock(state_mutex);
 
-        if (deduplication_window == 0)
+        if (deduplication_window == 0 && !block_ids_to_unpublish)
             return;
 
         /// Erase without collecting the block ids into a container first: allocating
@@ -1452,6 +1469,10 @@ void MergeTreeDeduplicationLog::unpublishFailedPart(const MergeTreePartInfo & pa
             if (!part_info.contains(info))
                 return false;
 
+            if (block_ids_to_unpublish
+                && std::find(block_ids_to_unpublish->begin(), block_ids_to_unpublish->end(), block_id) == block_ids_to_unpublish->end())
+                return false;
+
             auto source_it = block_id_log_numbers.find(block_id);
             chassert(source_it != block_id_log_numbers.end());
             --existing_logs.at(source_it->second).live_entries_count;
@@ -1459,7 +1480,7 @@ void MergeTreeDeduplicationLog::unpublishFailedPart(const MergeTreePartInfo & pa
             return true;
         });
 
-        if (erased == 0)
+        if (erased == 0 && !block_ids_to_unpublish)
             return;
 
         /// The ADD records of the erased block ids are still on disk, so the history no
@@ -1647,7 +1668,14 @@ void MergeTreeDeduplicationLog::shutdown()
 
 MergeTreeDeduplicationLog::~MergeTreeDeduplicationLog()
 {
-    shutdown();
+    try
+    {
+        shutdown();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot shut down deduplication log during destruction");
+    }
 }
 
 }

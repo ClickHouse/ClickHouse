@@ -234,10 +234,13 @@ public:
     /// Add part into in-memory hash table and to disk
     /// Return empty block_id and part info if insertion was successful.
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
-    std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
+    std::vector<AddPartResult> addPart(
+        const std::vector<std::string> & block_id,
+        const MergeTreePartInfo & part,
+        bool * part_was_published = nullptr);
 
     /// Remove all covered parts from in memory table and add DROP records to the disk
-    void dropPart(const MergeTreePartInfo & drop_part_info);
+    void dropPart(const MergeTreePartInfo & drop_part_info, const std::vector<std::string> * block_ids = nullptr);
 
     /// Last-resort counterpart of `dropPart` for a part that was published by `addPart`
     /// but never became active, used when the ordinary `dropPart` rollback itself threw
@@ -247,7 +250,7 @@ public:
     /// (`LimitedOrderedHashMap::eraseIf`) and then fences off the on-disk history, which
     /// still holds their ADD records and therefore no longer replays to the live state
     /// (see fenceOffDivergedHistory). Never throws.
-    void unpublishFailedPart(const MergeTreePartInfo & part_info) noexcept;
+    void unpublishFailedPart(const MergeTreePartInfo & part_info, const std::vector<std::string> * block_ids = nullptr) noexcept;
 
     /// Load history from disk. Ignores broken logs.
     void load();

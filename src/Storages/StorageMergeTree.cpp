@@ -339,7 +339,14 @@ void StorageMergeTree::shutdown(bool)
 
 StorageMergeTree::~StorageMergeTree()
 {
-    shutdown(false);
+    try
+    {
+        shutdown(false);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot shut down `StorageMergeTree` during destruction");
+    }
 
     /// Stop assignees before derived member destruction in case shutdown did
     /// not (flushAndPrepareForShutdown early-returns on flush_called).
