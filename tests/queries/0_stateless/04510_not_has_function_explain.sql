@@ -78,3 +78,19 @@ SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST
 SELECT count() FROM test_nullable_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))'))) SETTINGS use_primary_key = 0;
 
 DROP TABLE test_nullable_null_set;
+
+-- A String element does not equal an Enum key under `has`, even though it can be cast to the Enum.
+-- Do not turn this into a primary-key set atom, or the `a` granule would be pruned incorrectly.
+DROP TABLE IF EXISTS test_not_has_enum;
+CREATE TABLE test_not_has_enum (x Enum8('a' = 1, 'b' = 2)) ENGINE = MergeTree
+ORDER BY x
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+
+INSERT INTO test_not_has_enum VALUES ('a'), ('b');
+
+SELECT count() FROM test_not_has_enum WHERE notHas(['a'], x) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() FROM test_not_has_enum WHERE notHas(['a'], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+SELECT count() FROM test_not_has_enum WHERE NOT has(['a'], x) SETTINGS optimize_rewrite_has_to_in = 0;
+SELECT count() FROM test_not_has_enum WHERE NOT has(['a'], x) SETTINGS optimize_rewrite_has_to_in = 0, use_primary_key = 0;
+
+DROP TABLE test_not_has_enum;
