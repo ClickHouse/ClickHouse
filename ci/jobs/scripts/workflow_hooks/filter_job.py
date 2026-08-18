@@ -250,7 +250,8 @@ def should_skip_job(job_name):
             _info_cache.add_workflow_note(
                 f"The PR has {unresolved_threads} unresolved review thread(s): only "
                 "builds and preliminary checks run, and merge is blocked. Resolve the "
-                "threads to re-run the full test suite automatically, or add the "
+                "threads before this run finishes to re-run the full test suite automatically; "
+                "otherwise re-run CI manually, or add the "
                 f"`{Labels.IGNORE_UNRESOLVED_THREADS}` label to bypass the gate."
             )
         return True, f"Skipped, {unresolved_threads} unresolved review thread(s)"

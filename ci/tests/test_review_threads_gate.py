@@ -134,10 +134,12 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'api_with_retries --method POST "repos/$GH_REPO/statuses/$head_sha"' in rerun_workflow
     assert 'review threads: $unresolved unresolved review thread(s)' in rerun_workflow
     assert 'last_pr_conclusion' in rerun_workflow
-    assert 'last_pr_run_id' in rerun_workflow
-    assert 'Failed: Workflow Post Hook' in rerun_workflow
-    assert 'failed_workflow_jobs' in rerun_workflow
-    assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in rerun_workflow
+    # `Finish Workflow` aggregates every post hook. It must never be used as
+    # proof that the review-thread hook was the only failure, because that
+    # would allow a resolved thread to clear another merge blocker.
+    assert 'Failed: Workflow Post Hook' not in rerun_workflow
+    assert 'failed_workflow_jobs' not in rerun_workflow
+    assert 'last_pr_run_id' not in rerun_workflow
     assert 'actions/runs/$run_id/rerun' in rerun_workflow
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
@@ -243,6 +245,8 @@ def test_limited_pipeline_adds_single_workflow_note(fake_info):
     filter_job.should_skip_job("Stress test (amd_debug)")
     assert len(fake_info.notes) == 1
     assert Labels.IGNORE_UNRESOLVED_THREADS in fake_info.notes[0]
+    assert "before this run finishes" in fake_info.notes[0]
+    assert "re-run CI manually" in fake_info.notes[0]
 
 
 def test_override_label_disables_the_gate(fake_info):

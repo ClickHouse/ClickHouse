@@ -206,25 +206,10 @@ jobs:
               last_pr_run=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
                 --jq '[.workflow_runs[] | select(.name == "PR" and .status == "completed")] | sort_by(.created_at) | last // {}')
               last_pr_conclusion=$(echo "$last_pr_run" | jq -r '.conclusion // ""')
-              last_pr_run_id=$(echo "$last_pr_run" | jq -r '.id // empty')
               if [ "$mergeable_state" = "failure" ] \
                  && [[ "$mergeable_description" =~ ^review\ threads:\ [0-9]+\ unresolved\ review\ thread\(s\)$ ]] \
                  && [ "$last_pr_conclusion" = "success" ]; then
                 post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
-              elif [ "$mergeable_state" = "failure" ] \
-                   && [ "$mergeable_description" = "Failed: Workflow Post Hook" ] \
-                   && [ "$last_pr_conclusion" = "failure" ] \
-                   && [ -n "$last_pr_run_id" ] \
-                   && [[ "$marker_description" =~ ^[0-9]+\ unresolved\ review\ thread\(s\)$ ]]; then
-                # A forced full pipeline can fail only in `Finish Workflow`
-                # because the review-thread post hook blocks the merge. Once
-                # the thread is resolved, clear that stale aggregate failure
-                # without replaying a full suite which already completed.
-                failed_workflow_jobs=$(api_with_retries "repos/$GH_REPO/actions/runs/$last_pr_run_id/jobs?per_page=100" \
-                  --paginate --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(",")')
-                if [ "$failed_workflow_jobs" = "Finish Workflow" ]; then
-                  post_status success "$MERGEABLE_CHECK_STATUS_NAME" "all review threads resolved"
-                fi
               fi
             fi
             post_status "$state" "$STATUS_NAME" "$description"
