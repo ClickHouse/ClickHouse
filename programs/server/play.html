@@ -1893,6 +1893,15 @@
             background-color: transparent;
         }
 
+        /* In notebook mode the Run / progress / download row is docked under the active cell's
+           query, which is both where you would look for it and what separates the query from its
+           result. It stays visible when the cell collapses, so a running cell keeps showing its
+           progress and a collapsed cell can still be re-run. */
+        .tab-panel.notebook-mode .cell-run #run_div
+        {
+            margin-top: 0.25rem;
+        }
+
         /* While the editor is docked in a cell but not focused, it is hidden and the cell shows
            its collapsed preview instead. The editor keeps its place in the DOM rather than being
            re-parented on every focus change, so its scroll offset, selection and the completion
@@ -1971,18 +1980,15 @@
             --result-max-height: 25vh;
             --result-max-width: 100%;
             --result-overflow: auto;
-            /* Just enough room for a column's type hint, reserved inside the header cell: 0.75em
-               of the table's font for the hint's own text, plus its line box. Paired with a sticky
-               offset of 0, or the header's default negative offset would slide the reserved strip
-               up out of the scroller. */
-            --result-header-clearance: 1em;
             /* -1px, not 0: with `border-collapse: collapse` a cell's borders are painted by the
                table, not by the cell, so a stuck header does not carry its own top border and the
                row scrolling underneath shows through that one-pixel line. Pulling the header up by
                the border width covers it. (The page-scrolled default uses a bigger negative offset
                for the same reason.) */
             --result-header-top: -1px;
-            --result-hint-top: 2px;
+            /* A column's type hangs below the header rather than above it, where this table's own
+               top edge would clip it; the header itself keeps its ordinary height. */
+            --result-hint-top: 100%;
             --result-hint-shift: none;
             --result-last-resizer-right: 0px;
         }
@@ -2231,7 +2237,9 @@
             <div id="editor-home"><div id="query_div"><div id="query-backdrop" class="q-syntax"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div></div>
             <div id="query-params"></div></div>
             <div id="run_div">
-                <button type="submit" class="shadow" id="run">Run</button>
+                <!-- `form=` keeps the implicit submission working in notebook mode, where this
+                     whole row is moved out of the form and into the active cell (see `dockEditor`). -->
+                <button type="submit" form="controls" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
                 <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
@@ -3007,13 +3015,6 @@ class QueryResultElement extends HTMLElement
                        the offset would eat into the type-hint clearance above the header. */
                     top: var(--result-header-top, -0.5rem);
                     padding: 0.25rem 0.5rem;
-                    /* A bounded table (see --result-max-height) scrolls inside itself, so its
-                       sticky header sits at the very top of the scroller and a type hint drawn
-                       ABOVE the header would be clipped away. Such a table asks for just enough
-                       extra padding here and draws the hint inside it instead: the space belongs
-                       to the opaque, sticky header, so no row scrolls through it and the type stays
-                       legible at any scroll position. */
-                    padding-top: calc(0.25rem + var(--result-header-clearance, 0px));
                     text-align: center;
                     background-color: var(--table-header-color);
                     border: 1px solid var(--border-color);
@@ -3042,9 +3043,12 @@ class QueryResultElement extends HTMLElement
                 }
 
                 /* By default the hint hangs above the header, over whatever is on the page there.
-                   A bounded table has no room above its header and reserves it inside the header
-                   instead (see the th padding), so it places the hint there: --result-hint-shift
-                   drops the upward shift and --result-hint-top puts it in the reserved strip. */
+                   A bounded table (see --result-max-height) scrolls inside itself, so its sticky
+                   header sits at the very top of the scroller and there is nothing above it but the
+                   clipping edge. Such a table hangs the hint the other way instead — just below the
+                   header, over the first rows, which it covers with its opaque background — so the
+                   header keeps its ordinary height: --result-hint-shift drops the upward shift and
+                   --result-hint-top moves the hint under the header cell. */
                 thead .type-hint
                 {
                     top: var(--result-hint-top, -1px);
@@ -11613,6 +11617,7 @@ function cellRuntimeDefaults() {
         headerEl: null,         /// its header row (cell actions), or null while notebook mode is off
         statusEl: null,         /// the status dot in the header
         editorSlot: null,       /// where the docked editor / the collapsed preview goes
+        runSlot: null,          /// where the docked Run / progress / download row goes
         resultSlot: null,       /// wrapper holding `multiContainer` and `resultEl`
         resultEl: null,         /// this cell's <query-result>
         multiContainer: null,   /// this cell's multi-query results container (created on demand)
@@ -11823,6 +11828,13 @@ function getOrCreateCellDom(tab, cell) {
         el.appendChild(editorSlot);
         cell.editorSlot = editorSlot;
 
+        /// The Run / progress / download row docks here in notebook mode, between this cell's
+        /// query and its result.
+        const runSlot = document.createElement('div');
+        runSlot.className = 'cell-run';
+        el.appendChild(runSlot);
+        cell.runSlot = runSlot;
+
         const resultSlot = document.createElement('div');
         resultSlot.className = 'cell-result';
         el.appendChild(resultSlot);
@@ -11890,6 +11902,7 @@ function removePanel(tab) {
         editorHomeEl.appendChild(editorDivEl);
         editorHomeEl.appendChild(editorParamsEl);
     }
+    if (tab.panel.contains(runDivEl)) controls_elem.appendChild(runDivEl);
     tab.panel.remove();
     tab.panel = null;
     tab.notebookEl = null;
@@ -11916,18 +11929,27 @@ function cellInFlight(cell) {
 const editorHomeEl = document.getElementById('editor-home');
 const editorDivEl = document.getElementById('query_div');
 const editorParamsEl = document.getElementById('query-params');
+/// The Run / Run all / progress / copy / download row. Like the editor there is one of it, and in
+/// notebook mode it is docked under the active cell's query: that is where the run it reports
+/// belongs, and it doubles as the separation between the query and its result. Its home is the end
+/// of `#controls` (it is that form's last child, so `appendChild` puts it back where it was).
+const runDivEl = document.getElementById('run_div');
 
 function dockEditor() {
     const tab = getActiveTab();
     const cell = tab ? activeCell(tab) : null;
-    const host = (tab && notebookMode(tab) && cell && cell.editorSlot) ? cell.editorSlot : editorHomeEl;
-    if (editorDivEl.parentNode === host && editorParamsEl.parentNode === host) return;
+    const notebook = !!(tab && notebookMode(tab) && cell && cell.editorSlot);
+    const host = notebook ? cell.editorSlot : editorHomeEl;
+    const run_host = notebook ? cell.runSlot : controls_elem;
+    if (editorDivEl.parentNode === host && editorParamsEl.parentNode === host
+        && runDivEl.parentNode === run_host) return;
     /// Re-parenting a focused textarea drops focus and (in some browsers) the selection.
     const had_focus = document.activeElement === query_area;
     const sel_start = query_area.selectionStart;
     const sel_end = query_area.selectionEnd;
     host.appendChild(editorDivEl);
     host.appendChild(editorParamsEl);
+    run_host.appendChild(runDivEl);
     if (had_focus) {
         query_area.focus();
         query_area.setSelectionRange(sel_start, sel_end);
@@ -18337,8 +18359,13 @@ document.getElementById('download-div').addEventListener('click', function(e) {
         const context_rect = context.getBoundingClientRect();
         const dropdown_rect = dropdown.getBoundingClientRect();
 
-        dropdown.style.top = (button_rect.top - context_rect.top) + 'px';
-        dropdown.style.left = (button_rect.left - context_rect.left + button_rect.width - dropdown_rect.width) + 'px';
+        /// `#main` is the scroll container AND the positioning ancestor, so the offsets have to be
+        /// in its scrolled coordinate space: client rects are viewport-relative, hence the scroll
+        /// offsets. This matters in notebook mode, where the button rides with the active cell's
+        /// Run row and is normally well down a scrolled page.
+        dropdown.style.top = (button_rect.top - context_rect.top + context.scrollTop) + 'px';
+        dropdown.style.left = (button_rect.left - context_rect.left + context.scrollLeft
+                               + button_rect.width - dropdown_rect.width) + 'px';
 
         // Move focus into the menu so keyboard users land on the format selection.
         document.getElementById('download-format').focus();

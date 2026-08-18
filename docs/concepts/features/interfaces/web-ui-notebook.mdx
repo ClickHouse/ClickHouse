@@ -42,7 +42,9 @@ There is only ever one query editor on the page — the full editor with syntax 
 
 A collapsed query cell shows its query on a single line: syntax highlighted, with runs of whitespace (including indentation and line breaks) reduced to one space, and with the tail faded out on the right when it does not fit. It has no background of its own, so a collapsed cell reads as text on the page rather than as another input box.
 
-Results are shown more compactly in notebook mode: a smaller font, and a table of at most a quarter of the viewport height. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. The header keeps just enough room above the column name for the column's type, which appears there when you hover the header.
+The `Run` button, the progress line and the copy/download actions move out of the page header and dock under the active cell's query, between it and its result — where the run they describe belongs, and where it is obvious how to run that cell. The row stays in place when the cell collapses, so a running cell keeps showing its progress and a collapsed one can still be re-run.
+
+Results are shown more compactly in notebook mode: a smaller font, and a table of at most a quarter of the viewport height. The table itself is the scroll container — vertically and horizontally — so its thin scrollbars sit at its own edges, a long or wide result neither pushes the rest of the notebook down the page nor widens it, and the column headers stay pinned to the top of the table while you scroll. Because the header is then at the very top of the table, a column's type hangs just below it, over the first rows, instead of above it as it does on a page-scrolled table.
 
 Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
 
