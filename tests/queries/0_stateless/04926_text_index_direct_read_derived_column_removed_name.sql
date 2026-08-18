@@ -15,6 +15,8 @@ SET enable_full_text_index = 1;
 SET enable_analyzer = 0;
 -- Pin the trigger setting; the runner randomizes it and would otherwise skip the crash path.
 SET query_plan_direct_read_from_text_index = 1;
+-- The old analyzer cannot resolve an ALIAS column in PREWHERE without alias substitution.
+SET optimize_respect_aliases = 1;
 
 -- 1. Text index on an ALIAS column whose expression is a lambda.
 DROP TABLE IF EXISTS t_text_index_alias;
@@ -38,6 +40,25 @@ SELECT count() FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinali
 SELECT id FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-world') ORDER BY id;
 -- ... and a WHERE that keeps nothing of what PREWHERE kept.
 SELECT count() FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('-hello')) WHERE has(arr_prefixed, '-bar');
+
+-- Direct read must stay engaged on the ALIAS shape too, which is the one the master fuzzer hit:
+-- the synthetic `__text_index_idx_prefixed` column is present in the plan with the setting on and
+-- absent with it off (discriminating oracle).
+SELECT count() > 0 FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('zzz')) WHERE has(arr_prefixed, '-hello')
+    SETTINGS query_plan_direct_read_from_text_index = 1
+)
+WHERE explain ILIKE '%__text_index_idx_prefixed%';
+
+SELECT count() > 0 FROM
+(
+    EXPLAIN actions = 1
+    SELECT id FROM t_text_index_alias PREWHERE has(arr_prefixed, toLowCardinality('zzz')) WHERE has(arr_prefixed, '-hello')
+    SETTINGS query_plan_direct_read_from_text_index = 0
+)
+WHERE explain ILIKE '%__text_index_idx_prefixed%';
 
 -- 2. Text index on an expression over a physical column (no ALIAS column involved).
 DROP TABLE IF EXISTS t_text_index_expression;
