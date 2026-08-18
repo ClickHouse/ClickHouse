@@ -12,8 +12,8 @@ SETTINGS index_granularity = 1;
 
 INSERT INTO read_in_order_projection_row_limits SELECT number, 10 - number FROM numbers(10);
 
--- Projection analysis precedes read-in-order planning. It must not preserve row-limit checks
--- after the projection supplies the order required by this query.
+-- `max_rows_to_read` remains enforced when a filter prevents the LIMIT from being pushed to
+-- the ordered read.
 SELECT a
 FROM read_in_order_projection_row_limits
 WHERE a >= 0

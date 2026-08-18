@@ -536,20 +536,6 @@ ReadFromMergeTree::ReadFromMergeTree(
     enable_vertical_final = query_info.isFinal() && context->getSettingsRef()[Setting::enable_vertical_final]
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 
-    /// The query can arrive with `input_order_info` already set by the initial planner. In
-    /// particular, `optimizeUseNormalProjection` constructs a replacement read step after
-    /// selecting an ordered projection. Disable row limits at construction time as well as in
-    /// `requestReadingInOrder`, so this step cannot retain limits prepared before the ordered
-    /// read was established.
-    if (reader_settings.read_in_order && query_info.storage_limits)
-    {
-        auto in_order_storage_limits = std::const_pointer_cast<StorageLimitsList>(query_info.storage_limits);
-        for (auto & limits : *in_order_storage_limits)
-        {
-            limits.local_limits.size_limits.max_rows = 0;
-            limits.leaf_limits.max_rows = 0;
-        }
-    }
 }
 
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
@@ -5288,7 +5274,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
     auto storage_limits = query_info.storage_limits;
-    if (reader_settings.read_in_order && storage_limits)
+    if (query_info.input_order_info && storage_limits)
     {
         /// The reader setting is the authoritative indication that this pipeline uses ordered
         /// reading. Projection rewrites can replace the cached range analysis after an
