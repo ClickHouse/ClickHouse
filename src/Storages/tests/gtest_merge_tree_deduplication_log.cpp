@@ -3065,6 +3065,51 @@ TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryIsFencedOnShutdown)
     }
 }
 
+/// Regression test: graceful shutdown must fail closed if the disk is still unable
+/// to persist the fence. Letting it complete would lose the process-local knowledge
+/// that the old ADD records must not be replayed after the disk recovers.
+TEST(MergeTreeDeduplicationLog, UnfenceableDivergedHistoryRejectsShutdown)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_fence_shutdown_rejected/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    const std::string marker_path = work_dir + "dedup_logs/deduplication_log_0.txt";
+
+    auto disk = std::make_shared<DiskFailingRotationSyncAndLogFlushes>(
+        "faulty", work_dir, /*fail_on_sync=*/ 1, /*fail_from_flush=*/ 5);
+    disk->marker_writable = false;
+
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    EXPECT_TRUE(log.addPart({"block1"}, part("all_1_1_0")).empty());
+    EXPECT_ANY_THROW(log.addPart({"block2", "block3", "block4"}, part("all_2_2_0")));
+    disk->fail_on_sync = std::numeric_limits<size_t>::max();
+    disk->fail_from_flush = std::numeric_limits<size_t>::max();
+
+    EXPECT_THROW(log.shutdown(), Exception);
+    EXPECT_FALSE(std::filesystem::exists(marker_path));
+
+    /// A rejected shutdown leaves the live map available for a retry. Once the disk
+    /// recovers, retrying it rewrites the safe live snapshot before the log is stopped.
+    disk->marker_writable = true;
+    EXPECT_NO_THROW(log.shutdown());
+    EXPECT_FALSE(std::filesystem::exists(marker_path));
+
+    {
+        auto healthy_disk = std::make_shared<DiskLocal>("healthy", work_dir);
+        MergeTreeDeduplicationLog restarted("dedup_logs", /*deduplication_window=*/ 2, format_version, healthy_disk);
+        restarted.load();
+        EXPECT_TRUE(restarted.addPart({"block3"}, part("all_3_3_0")).empty());
+        restarted.shutdown();
+    }
+
+    std::filesystem::remove_all(work_dir);
+}
+
 #ifdef MERGE_TREE_DEDUPLICATION_LOG_FIX_IS_PRESENT
 /// Regression test for the last-resort rollback the sink falls back to when `dropPart`
 /// itself throws (MergeTreeSink::commitPart): the block ids of a part that never became

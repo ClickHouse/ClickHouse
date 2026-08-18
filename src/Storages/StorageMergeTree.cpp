@@ -305,24 +305,35 @@ void StorageMergeTree::shutdown(bool)
     if (shutdown_called.exchange(true))
         return;
 
-    if (refresh_parts_task)
-        refresh_parts_task->deactivate();
-
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
-
-    stopOutdatedAndUnexpectedDataPartsLoadingTask();
-
-    /// Unlock all waiting mutations
+    try
     {
-        std::lock_guard lock(mutation_wait_mutex);
-        mutation_wait_event.notify_all();
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        /// Unlock all waiting mutations
+        {
+            std::lock_guard lock(mutation_wait_mutex);
+            mutation_wait_event.notify_all();
+        }
+
+        flushAndPrepareForShutdown();
+
+        if (deduplication_log)
+            deduplication_log->shutdown();
     }
-
-    flushAndPrepareForShutdown();
-
-    if (deduplication_log)
-        deduplication_log->shutdown();
+    catch (...)
+    {
+        /// A deduplication log can reject shutdown while the disk is unable to
+        /// persist the fence that protects its divergent history. Keep shutdown
+        /// retryable so that restoring the disk can make the next attempt safe.
+        shutdown_called.store(false);
+        throw;
+    }
 }
 
 

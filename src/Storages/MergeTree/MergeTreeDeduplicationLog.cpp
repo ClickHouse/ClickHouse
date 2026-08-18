@@ -767,7 +767,10 @@ void MergeTreeDeduplicationLog::fenceOffDivergedHistory() noexcept
         /// the abandoned records outright, so nothing is lost. `compact` never throws
         /// and reports whether it got that far.
         if (!stopped && compact())
+        {
+            history_fence_pending = false;
             return;
+        }
 
         /// The history could not be rewritten (or the log is already shutting down and
         /// must not open new log files), so make the next `load` throw it away instead.
@@ -1578,6 +1581,18 @@ void MergeTreeDeduplicationLog::shutdown()
     /// required before a clean server stop; the zero-window path has no writes at all.
     if (history_diverged || history_fence_pending)
         fenceOffDivergedHistory();
+
+    /// Do not complete a graceful shutdown while the only indication that the
+    /// durable history diverged still lives in this process. Completing it would
+    /// turn the next start into an unsafe replay after the disk recovers. Leave the
+    /// log running, so the caller can report the shutdown failure and retry after
+    /// restoring the disk; `shutdown` will retry fencing before it closes the writer.
+    if (history_fence_pending)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Cannot shut down the deduplication log because its on-disk history diverged from the in-memory state and the "
+            "marker that would make the next start discard it ({}) cannot be written",
+            getCompactionMarkerPath(logs_dir));
 
     /// A failed compaction can leave the history consistent while only the
     /// process-local cleanup of its marker or stale files is pending. If the disk
