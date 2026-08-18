@@ -3,8 +3,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/StreamChannel.h>
@@ -100,6 +103,17 @@ TEST(ClientInfoRead, PreservesInitiatorCoordinatorReplicasCount)
 
     info.read(in, DBMS_TCP_PROTOCOL_VERSION);
     EXPECT_EQ(info.obsolete_count_participating_replicas, 2);
+}
+
+TEST(ClientInfoRead, UsesInitiatorCoordinatorReplicasCountForRemoteReplica)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    context->getClientInfo().obsolete_count_participating_replicas = 2;
+
+    /// A remote replica must use the initiator's snapshot before consulting its own cluster liveness.
+    /// Passing no cluster makes this test fail if the override is removed and local liveness is recomputed.
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
 
 class LoggerStateGuard final
