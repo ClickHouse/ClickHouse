@@ -590,8 +590,6 @@ void HTTPHandler::processQuery(
     /// For admission queue disconnect detection.
     context->setConnectionAliveCheck([&request]() -> bool { return request.checkPeerConnected(); });
 
-    const auto & settings = context->getSettingsRef();
-
     /// This parameter is used to tune the behavior of output formats (such as Native) for compatibility.
     if (params.has("client_protocol_version"))
     {

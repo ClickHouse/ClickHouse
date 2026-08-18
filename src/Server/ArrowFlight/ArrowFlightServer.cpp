@@ -1448,6 +1448,8 @@ arrow::Status ArrowFlightServer::DoAction(
             auto execute_res = executeSQLtoTable(
                 session,
                 "SELECT name, value FROM system.settings",
+                nullptr,
+                nullptr,
                 [&context]() -> bool { return !context.is_cancelled(); });
             ARROW_RETURN_NOT_OK(execute_res);
             auto [_, table] = execute_res.ValueUnsafe();
