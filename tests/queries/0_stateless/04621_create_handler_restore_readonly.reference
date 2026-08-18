@@ -1,0 +1,17 @@
+=== a RESTORE handler with the default (GET) methods is rejected ===
+BAD_ARGUMENTS
+=== a BACKUP handler mixing GET with a mutating method is rejected ===
+BAD_ARGUMENTS
+=== a RESTORE handler with only mutating methods is accepted ===
+['POST']
+=== the RESTORE handler is not served over GET or HEAD ===
+404
+404
+=== the same URL over POST does reach query execution ===
+routed
+=== ALTER cannot add a safe method to a RESTORE handler ===
+BAD_ARGUMENTS
+=== ALTER cannot swap a safe-method handler's query to BACKUP ===
+BAD_ARGUMENTS
+=== a genuinely mutating query over GET-only methods is still rejected ===
+BAD_ARGUMENTS
