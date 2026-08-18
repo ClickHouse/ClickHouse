@@ -205,11 +205,25 @@ static bool isSupportedByAccurateCastOrNull(const DataTypePtr & type, bool is_ne
     return type->canBeInsideNullable() || canContainNull(*type);
 }
 
+static bool hasOnlyIntegerLeaves(const DataTypePtr & type)
+{
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        return std::ranges::all_of(tuple_type->getElements(), hasOnlyIntegerLeaves);
+    }
+
+    return isInteger(type);
+}
+
 DataTypePtr tryGetCommonSubtypeForJoinKeys(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
     DataTypes types{
         removeNullable(recursiveRemoveLowCardinality(left_type)),
         removeNullable(recursiveRemoveLowCardinality(right_type))};
+
+    /// Only integer keys need this fallback: a floating-point common subtype can change equality semantics.
+    if (!std::ranges::all_of(types, hasOnlyIntegerLeaves))
+        return nullptr;
 
     auto subtype = getMostSubtype(types, /* throw_if_result_is_nothing= */ false);
     /// `accurateCastOrNull` reports an inexact conversion by returning NULL, so the type has to be
