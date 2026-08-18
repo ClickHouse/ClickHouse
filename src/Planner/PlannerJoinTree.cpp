@@ -3025,9 +3025,9 @@ void tryMakeDirectJoinWithMergeTree(const JoinOperator & join_operator,
         return;
 
     const auto * children_step = root_node->children.front()->step.get();
+    /// Only steps that support clone(), because the lookup plan below is cloned per lookup batch.
     bool is_allowed_storage = typeid_cast<const ReadFromMergeTree *>(children_step)
-                           || typeid_cast<const ReadNothingStep *>(children_step)
-                           || typeid_cast<const ReadFromPreparedSource *>(children_step);
+                           || typeid_cast<const ReadNothingStep *>(children_step);
     if (!is_allowed_storage)
         return;
 
