@@ -6,17 +6,6 @@
 
 using namespace DB;
 
-TEST(KeeperPathNormalize, NormalizeKeeperPath)
-{
-    EXPECT_EQ(normalizeKeeperPath("/"), "/");
-    EXPECT_EQ(normalizeKeeperPath("/foo/../bar"), "/bar");
-    EXPECT_EQ(normalizeKeeperPath("/foo/./bar"), "/foo/bar");
-    EXPECT_EQ(normalizeKeeperPath("//foo///bar"), "/foo/bar");
-    EXPECT_EQ(normalizeKeeperPath("/.."), "/");
-    EXPECT_EQ(normalizeKeeperPath("/../foo"), "/foo");
-    EXPECT_EQ(normalizeKeeperPath("/proc/self/cwd/foo"), "/proc/self/cwd/foo");
-}
-
 TEST(KeeperPathNormalize, GetAbsolutePath)
 {
     std::ostringstream cout;
@@ -30,7 +19,15 @@ TEST(KeeperPathNormalize, GetAbsolutePath)
 
     client.cwd = "/";
     EXPECT_EQ(client.getAbsolutePath("foo").string(), "/foo");
+    EXPECT_EQ(client.getAbsolutePath("/foo/../bar").string(), "/bar");
+    EXPECT_EQ(client.getAbsolutePath("/foo/./bar").string(), "/foo/bar");
+    EXPECT_EQ(client.getAbsolutePath("//foo///bar").string(), "/foo/bar");
+    EXPECT_EQ(client.getAbsolutePath("/..").string(), "/");
+    EXPECT_EQ(client.getAbsolutePath("/../foo").string(), "/foo");
 
+    /// Keeper znode paths must not be resolved through the filesystem. A path segment
+    /// like /proc/self/cwd is a literal znode name, not a symlink to be canonicalized.
     client.cwd = "/proc/self/cwd";
     EXPECT_EQ(client.getAbsolutePath("foo").string(), "/proc/self/cwd/foo");
+    EXPECT_EQ(client.getAbsolutePath("/proc/self/cwd/foo").string(), "/proc/self/cwd/foo");
 }
