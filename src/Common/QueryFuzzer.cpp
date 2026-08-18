@@ -2527,16 +2527,16 @@ void QueryFuzzer::fuzzColumnDeclaration(ASTColumnDeclaration & column)
 }
 
 /// Reordering leaves the list no longer lined up positionally with whatever writes into it, and a
-/// dropped column leaves any key, index or constraint clause naming it dangling.
+/// dropped column leaves any key, index or constraint clause naming it dangling, so - unlike
+/// index/projection lists - this stays element-wise: no shuffle, no drop.
 void QueryFuzzer::fuzzColumnDeclarationList(ASTExpressionList & columns)
 {
-    fuzzDeclarationList<ASTColumnDeclaration>(
-        columns.children,
-        [&](ASTColumnDeclaration & column, ASTPtr & column_ast)
+    for (auto & column_ast : columns.children)
+        if (auto * column = column_ast->as<ASTColumnDeclaration>())
         {
-            fuzzColumnDeclaration(column);
+            fuzzColumnDeclaration(*column);
             fuzz(column_ast);
-        });
+        }
 }
 
 /// String case, validity and normalization functions (string → string or UInt8).
