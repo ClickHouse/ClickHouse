@@ -32,6 +32,8 @@ FROM (
 );
 
 -- Arrays long enough for pre-aggregation, spread over several rows and over several argument arrays.
+-- The block layout is pinned so all 4 rows reach the function in one block, i.e. with a non-zero row offset.
+SET max_block_size = 4, max_threads = 1;
 
 WITH arrayMap(x -> x + number * 1000, range(200)) AS arr
 SELECT number, arrayReduceInRanges('sum', [(1, 200), (33, 100), (129, 64)], arr)
