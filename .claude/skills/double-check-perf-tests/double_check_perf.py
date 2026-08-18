@@ -424,10 +424,14 @@ def parse_changed_rows_from_html(html: str) -> dict[tuple[str, int], dict]:
         re.DOTALL,
     ):
         test, qi = row_m.group(1), int(row_m.group(2))
-        cells = [
-            re.sub("<[^>]+>", "", c).strip()
-            for c in re.findall(r"<td[^>]*>(.*?)</td>", row_m.group(3), re.DOTALL)
-        ]
+        # report.py writes cell values into <td> raw -- it does not import
+        # `html`, let alone escape -- so a query containing `<` and `>` puts
+        # them straight into the markup. Stripping tags inside a cell would eat
+        # the text between them ("a < b AND c > d" becomes "a  d"), so only the
+        # numeric cells, which never contain markup, are stripped; the query
+        # text is taken verbatim.
+        raw_cells = re.findall(r"<td[^>]*>(.*?)</td>", row_m.group(3), re.DOTALL)
+        cells = [re.sub("<[^>]+>", "", c).strip() for c in raw_cells]
         if len(cells) < 8:
             continue
         try:
@@ -436,7 +440,7 @@ def parse_changed_rows_from_html(html: str) -> dict[tuple[str, int], dict]:
                 "right": float(cells[1]),
                 "diff": float(cells[3]),
                 "stat_threshold": float(cells[4]),
-                "query_display_name": cells[7],
+                "query_display_name": raw_cells[7].strip(),
                 "changed_threshold": None,
             }
         except ValueError:
@@ -569,6 +573,44 @@ EXTERNAL_DATASETS = {
 }
 
 
+def fetch_commit(repo: Path, sha: str, refs: list[str], depth: int = 0) -> bool:
+    """Fetch `sha` into `repo`, trying each ref in turn. True once it is there."""
+    for ref in refs:
+        cmd = ["git", "-C", str(repo), "fetch", "--quiet"]
+        if depth:
+            cmd += [f"--depth={depth}"]
+        cmd += ["origin", ref]
+        if subprocess.run(cmd, capture_output=True).returncode == 0 and subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-e", f"{sha}^{{commit}}"],
+            capture_output=True,
+        ).returncode == 0:
+            return True
+    return False
+
+
+def init_scratch_repo(repo_root: Path, scratch: Path) -> bool:
+    """An empty repository under the work dir pointed at the same origin, for
+    when the real clone's .git cannot be written to."""
+    url = subprocess.run(
+        ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+        capture_output=True, text=True,
+    )
+    if url.returncode != 0:
+        return False
+    scratch.mkdir(parents=True, exist_ok=True)
+    if not (scratch / ".git").is_dir():
+        if subprocess.run(
+            ["git", "init", "--quiet", str(scratch)], capture_output=True
+        ).returncode != 0:
+            return False
+        if subprocess.run(
+            ["git", "-C", str(scratch), "remote", "add", "origin", url.stdout.strip()],
+            capture_output=True,
+        ).returncode != 0:
+            return False
+    return True
+
+
 def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
                           work_dir: Path) -> Path:
     """Extract the test tree of the commit under test into the work dir.
@@ -589,25 +631,32 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
         ["git", "-C", str(repo_root), "cat-file", "-e", f"{sha}^{{commit}}"],
         capture_output=True,
     )
+    archive_from = repo_root
     if have.returncode != 0:
         log(f"commit {sha[:12]} not in the local clone, fetching it")
-        for ref in (f"refs/pull/{pr_number}/head", sha):
-            fetched = subprocess.run(
-                ["git", "-C", str(repo_root), "fetch", "--quiet", "origin", ref],
-                capture_output=True,
-            )
-            if fetched.returncode == 0 and subprocess.run(
-                ["git", "-C", str(repo_root), "cat-file", "-e", f"{sha}^{{commit}}"],
-                capture_output=True,
-            ).returncode == 0:
-                break
-        else:
-            die(
-                f"commit {sha} is not available locally and could not be "
-                f"fetched from origin (tried refs/pull/{pr_number}/head and the "
-                "SHA itself). Fetch it, or pass --use-working-tree-tests to "
-                "accept this checkout's tests instead."
-            )
+        refs = [f"refs/pull/{pr_number}/head", sha]
+        if not fetch_commit(repo_root, sha, refs):
+            # Fetching writes to .git (FETCH_HEAD at minimum), which some
+            # sandboxes mount read-only. A scratch repository under the work
+            # dir needs nothing from .git but the remote URL, and produces the
+            # same commit.
+            log("fetching into the clone failed; using a scratch repository "
+                "under the work dir")
+            scratch = work_dir / "perf-tree" / ".fetch"
+            if not init_scratch_repo(repo_root, scratch):
+                die(
+                    f"commit {sha} is not available locally, could not be "
+                    "fetched into this clone, and a scratch repository could "
+                    "not be created. Fetch the commit yourself, or pass "
+                    "--use-working-tree-tests to accept this checkout's tests."
+                )
+            if not fetch_commit(scratch, sha, refs, depth=1):
+                die(
+                    f"commit {sha} could not be fetched from origin (tried "
+                    f"refs/pull/{pr_number}/head and the SHA itself). Fetch it "
+                    "yourself, or pass --use-working-tree-tests."
+                )
+            archive_from = scratch
     if dst.exists():
         shutil.rmtree(dst)
     dst.mkdir(parents=True)
@@ -624,7 +673,7 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
         "tests/config/top_level_domains",
     ]
     archive = subprocess.run(
-        ["git", "-C", str(repo_root), "archive", sha, *paths],
+        ["git", "-C", str(archive_from), "archive", sha, *paths],
         capture_output=True,
     )
     if archive.returncode != 0:
@@ -663,6 +712,29 @@ def selected_query_text(repo_root: Path, xml_path: Path,
                                        stderr=subprocess.DEVNULL)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         die(f"perf.py --print-queries failed for {xml_path.name}: {e}")
+
+
+def query_display_name_from_tree(repo_root: Path, xml_path: Path,
+                                index: int) -> str:
+    """The `query_display_name` CI recorded for this query, derived from the
+    test tree rather than scraped from the report.
+
+    perf.py builds it as `query_display(item)` trimmed to 1000 characters, and
+    that is what it prints for `--print-queries` and what ends up in
+    `query_metrics_v2`. Taking it from the tree avoids the report's unescaped
+    markup entirely, which matters because this name is half the key of the
+    historical-threshold lookup."""
+    name = selected_query_text(repo_root, xml_path, [index])
+    # perf.py emits its `stage` progress lines before the queries. Drop those,
+    # then the single trailing newline `print` added -- and nothing else: the
+    # recorded name keeps the query's own leading and trailing whitespace.
+    while name.startswith("stage\t"):
+        name = name.split("\n", 1)[1] if "\n" in name else ""
+    if name.endswith("\n"):
+        name = name[:-1]
+    if len(name) > 1000:
+        name = f"{name[:1000]}...({index})"
+    return name
 
 
 def relevant_test_text(repo_root: Path, xml_path: Path,
@@ -2345,10 +2417,11 @@ def main() -> int:
             if historical is None:
                 cq.threshold_unknown = True
                 continue
+            display_name = query_display_name_from_tree(
+                perf_root, xml, cq.query_index
+            )
             cq.changed_threshold = ci_changed_threshold(
-                historical.get(
-                    (cq.test, cq.query_index, cq.query_display_name), 0.0
-                ),
+                historical.get((cq.test, cq.query_index, display_name), 0.0),
                 test_report_threshold(xml),
             )
             log(

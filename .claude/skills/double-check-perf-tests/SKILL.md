@@ -180,6 +180,10 @@ max_ignored_relative_change), 2)`, running CI's own historical-thresholds
 query against `play.clickhouse.com` with the window anchored on the day that
 run happened rather than today, and keyed by
 `(test, query_index, query_display_name)` — the join `compare.sh` performs,
+with the display name derived from the pinned test tree via
+`perf.py --print-queries` rather than scraped from the report (`report.py`
+writes query text into the table cell unescaped, so a query containing `<`
+and `>` cannot be recovered from the HTML) —
 so an edited query body at the same positional index falls back to the floor
 instead of inheriting the learned threshold of the query that used to be
 there. This applies only to rows read from `report.html`; a shard old enough
@@ -223,7 +227,9 @@ treated as CI noise.
   `tpch-join_algorithm-*` load through `file="..."`), `programs/server` and
   `tests/config/top_level_domains` are extracted from
   the commit CI measured into `tmp/double_check_perf/perf-tree/<sha>` and
-  everything runs from there, fetching the commit if the clone lacks it. This
+  everything runs from there, fetching the commit if the clone lacks it — and
+  if the clone's `.git` cannot be written to, as in some sandboxes, into a
+  scratch repository under the work dir instead. This
   is not a nicety: query indices are positional and substitutions expand
   them, so an XML that gained or lost a query means index *n* is a different
   query — on a checkout of this repo one commit behind,
