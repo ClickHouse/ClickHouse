@@ -254,8 +254,8 @@ static void dumpFlameGraphImpl(
 #if defined(__ELF__) && !defined(OS_FREEBSD)
             if (const auto * symbol = symbol_index.findSymbol(ptr))
             {
-                if (const char * symbol_name = symbol_index.getSymbolName(*symbol))
-                    writeString(demangle(symbol_name), out);
+                if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+                    writeString(demangle(symbol_name.data()), out);
                 else
                     writePointerHex(ptr, out);
             }

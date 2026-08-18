@@ -84,14 +84,21 @@ std::vector<char> compress(std::span<const char> input)
     return output;
 }
 
-std::vector<char> decompress(std::string_view input)
+size_t frameContentSize(std::string_view input)
 {
     unsigned long long decompressed_size = ZSTD_getFrameContentSize(input.data(), input.size());
     if (decompressed_size == ZSTD_CONTENTSIZE_ERROR)
         throw std::runtime_error("Invalid zstd frame in compact symbols");
     if (decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN)
         throw std::runtime_error("Compact symbols zstd frame has no content size");
-    std::vector<char> output(static_cast<size_t>(decompressed_size));
+    if (!std::in_range<size_t>(decompressed_size))
+        throw std::runtime_error("Compact symbols zstd frame is too large");
+    return static_cast<size_t>(decompressed_size);
+}
+
+std::vector<char> decompress(std::string_view input)
+{
+    std::vector<char> output(frameContentSize(input));
     size_t result = ZSTD_decompress(output.data(), output.size(), input.data(), input.size());
     if (ZSTD_isError(result))
         throw std::runtime_error(std::string("Cannot decompress compact symbols: ") + ZSTD_getErrorName(result));
@@ -109,6 +116,50 @@ size_t commonPrefixSize(std::string_view lhs, std::string_view rhs)
     return size;
 }
 
+}
+
+NameGranuleDecoder::NameGranuleDecoder(std::span<const char> data_, size_t name_count_)
+    : begin(data_.empty() ? "" : data_.data())
+    , position(begin)
+    , end(begin + data_.size())
+    , name_count(name_count_)
+    , remaining_names(name_count_)
+    , first_name(true)
+{
+}
+
+bool NameGranuleDecoder::next(std::string & name)
+{
+    if (remaining_names == 0)
+        return false;
+
+    uint64_t shared = readVarUInt(position, end);
+    uint64_t suffix_size = readVarUInt(position, end);
+    if ((first_name && shared != 0) || shared > name.size())
+        throw std::runtime_error("Invalid compact symbol shared name prefix");
+    if (suffix_size > static_cast<uint64_t>(end - position))
+        throw std::runtime_error("Truncated compact symbol name suffix");
+
+    /// Front coding guarantees that the shared part is already at the start of `name`.
+    /// Keep it in place and append only the suffix instead of materializing preceding names.
+    name.resize(static_cast<size_t>(shared));
+    name.append(position, static_cast<size_t>(suffix_size));
+    position += static_cast<size_t>(suffix_size);
+    if (name.empty())
+        throw std::runtime_error("Empty compact symbol name");
+
+    first_name = false;
+    --remaining_names;
+    if (remaining_names == 0 && position != end)
+        throw std::runtime_error("Trailing data in compact symbol names granule");
+    return true;
+}
+
+void NameGranuleDecoder::reset()
+{
+    position = begin;
+    remaining_names = name_count;
+    first_name = true;
 }
 
 std::vector<char> encode(std::span<const Symbol> symbols)
@@ -296,7 +347,7 @@ std::vector<AddressEntry> Reader::decodeAddresses() const
     return result;
 }
 
-std::vector<std::string> Reader::decodeNameGranule(uint32_t granule_index) const
+std::string_view Reader::compressedNameGranule(uint32_t granule_index) const
 {
     if (granule_index >= granule_count)
         throw std::runtime_error("Compact symbol name granule is out of bounds");
@@ -304,36 +355,45 @@ std::vector<std::string> Reader::decodeNameGranule(uint32_t granule_index) const
     uint64_t mark_offset = marks_offset + static_cast<uint64_t>(granule_index) * mark_size;
     uint64_t compressed_offset = readLittleEndian<uint64_t>(data, mark_offset);
     uint64_t compressed_size = readLittleEndian<uint64_t>(data, mark_offset + sizeof(uint64_t));
-    std::vector<char> decoded = decompress(data.substr(names_offset + compressed_offset, compressed_size));
+    return data.substr(names_offset + compressed_offset, compressed_size);
+}
+
+size_t Reader::maximumNameGranuleSize() const
+{
+    size_t result = 0;
+    for (uint32_t granule_index = 0; granule_index < granule_count; ++granule_index)
+    {
+        size_t granule_size = frameContentSize(compressedNameGranule(granule_index));
+        if (granule_size == 0)
+            throw std::runtime_error("Compact symbol name granule is empty");
+        result = std::max(result, granule_size);
+    }
+    return result;
+}
+
+NameGranuleDecoder Reader::decodeNameGranule(
+    uint32_t granule_index,
+    ZSTD_DCtx * decompression_context,
+    std::span<char> destination) const
+{
+    if (!decompression_context)
+        throw std::runtime_error("Compact symbol decompression context is missing");
+
+    std::string_view compressed = compressedNameGranule(granule_index);
+    size_t expected_size = frameContentSize(compressed);
+    if (destination.size() < expected_size)
+        throw std::runtime_error("Compact symbol name granule destination is too small");
+
+    size_t decoded_size = ZSTD_decompressDCtx(
+        decompression_context, destination.data(), destination.size(), compressed.data(), compressed.size());
+    if (ZSTD_isError(decoded_size))
+        throw std::runtime_error(std::string("Cannot decompress compact symbols: ") + ZSTD_getErrorName(decoded_size));
+    if (decoded_size != expected_size)
+        throw std::runtime_error("Compact symbols zstd frame size mismatch");
 
     uint64_t first_name_index = static_cast<uint64_t>(granule_index) * names_per_granule;
     size_t count = static_cast<size_t>(std::min<uint64_t>(names_per_granule, name_count - first_name_index));
-    std::vector<std::string> result;
-    result.reserve(count);
-
-    const char * position = decoded.empty() ? "" : decoded.data();
-    const char * end = position + decoded.size();
-    std::string previous;
-    for (size_t index = 0; index < count; ++index)
-    {
-        uint64_t shared = readVarUInt(position, end);
-        uint64_t suffix_size = readVarUInt(position, end);
-        if ((index == 0 && shared != 0) || shared > previous.size())
-            throw std::runtime_error("Invalid compact symbol shared name prefix");
-        if (suffix_size > static_cast<uint64_t>(end - position))
-            throw std::runtime_error("Truncated compact symbol name suffix");
-
-        std::string name(previous.data(), static_cast<size_t>(shared));
-        name.append(position, static_cast<size_t>(suffix_size));
-        position += suffix_size;
-        if (name.empty())
-            throw std::runtime_error("Empty compact symbol name");
-        result.push_back(name);
-        previous = std::move(name);
-    }
-    if (position != end)
-        throw std::runtime_error("Trailing data in compact symbol names granule");
-    return result;
+    return NameGranuleDecoder(std::span<const char>(destination.data(), decoded_size), count);
 }
 
 }

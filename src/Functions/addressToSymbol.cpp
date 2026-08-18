@@ -83,8 +83,8 @@ public:
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(data[i])))
             {
-                if (const char * symbol_name = symbol_index.getSymbolName(*symbol))
-                    result_column->insertData(symbol_name, strlen(symbol_name));
+                if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+                    result_column->insertData(symbol_name.data(), symbol_name.size());
                 else
                     result_column->insertDefault();
             }

@@ -274,12 +274,12 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
-                const char * symbol_name = symbol_index.getSymbolName(*symbol);
-                DemangleResult demangled = symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
-                if (symbol_name && demangled)
+                std::string_view symbol_name = symbol_index.getSymbolName(*symbol);
+                DemangleResult demangled = !symbol_name.empty() ? tryDemangle(symbol_name.data()) : DemangleResult{};
+                if (!symbol_name.empty() && demangled)
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
-                else if (symbol_name)
-                    column_symbols_inner.insertData(symbol_name, strlen(symbol_name));
+                else if (!symbol_name.empty())
+                    column_symbols_inner.insertData(symbol_name.data(), symbol_name.size());
                 else
                     column_symbols_inner.insertDefault();
 

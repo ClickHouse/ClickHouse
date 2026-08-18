@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include <zstd.h>
+
 namespace DB::CompactSymbols
 {
 
@@ -31,6 +33,24 @@ struct AddressEntry
 
 std::vector<char> encode(std::span<const Symbol> symbols);
 
+class NameGranuleDecoder
+{
+public:
+    bool next(std::string & name);
+    void reset();
+
+private:
+    friend class Reader;
+    NameGranuleDecoder(std::span<const char> data_, size_t name_count_);
+
+    const char * begin;
+    const char * position;
+    const char * end;
+    size_t name_count;
+    size_t remaining_names;
+    bool first_name;
+};
+
 class Reader
 {
 public:
@@ -41,9 +61,12 @@ public:
     uint32_t granuleCount() const { return granule_count; }
 
     std::vector<AddressEntry> decodeAddresses() const;
-    std::vector<std::string> decodeNameGranule(uint32_t granule_index) const;
+    size_t maximumNameGranuleSize() const;
+    NameGranuleDecoder decodeNameGranule(uint32_t granule_index, ZSTD_DCtx * decompression_context, std::span<char> destination) const;
 
 private:
+    std::string_view compressedNameGranule(uint32_t granule_index) const;
+
     std::string_view data;
     uint64_t name_count;
     uint64_t address_count;

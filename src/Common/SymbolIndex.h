@@ -4,11 +4,14 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 #include <boost/noncopyable.hpp>
+#include <Common/CompactSymbols.h>
 #include <Common/Elf.h>
+#include <IO/ZstdContext.h>
 
 namespace DB
 {
@@ -27,11 +30,9 @@ class MachO;
 class SymbolIndex : private boost::noncopyable
 {
 protected:
-    SymbolIndex();
+    SymbolIndex() { load(); }
 
 public:
-    ~SymbolIndex();
-
     static const SymbolIndex & instance();
 
     struct Symbol
@@ -65,21 +66,22 @@ public:
         SymbolIterator(const SymbolIterator &) = delete;
         SymbolIterator & operator=(const SymbolIterator &) = delete;
 
-        /// `name` remains valid until the next call to `next`.
+        /// `name` is NUL-terminated at `data()[size()]` and remains valid until the next call to `next`.
         bool next(const Symbol *& symbol, std::string_view & name);
 
     private:
         friend class SymbolIndex;
-        explicit SymbolIterator(const SymbolIndex & index_)
-            : index(index_)
-        {
-        }
+        explicit SymbolIterator(const SymbolIndex & index_);
 
         const SymbolIndex & index;
         size_t position = 0;
         uint32_t cached_source_index = std::numeric_limits<uint32_t>::max();
         uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
-        std::vector<std::string> cached_names;
+        uint32_t cached_entry_index = std::numeric_limits<uint32_t>::max();
+        ZstdDCtxPtr decompression_context;
+        std::vector<char> granule_buffer;
+        std::string name_buffer;
+        std::optional<CompactSymbols::NameGranuleDecoder> decoder;
     };
 
     struct Object
@@ -98,8 +100,11 @@ public:
     };
 
     const Symbol * findSymbol(const void * address) const;
-    /// Names returned for compact symbols remain valid for the process lifetime.
-    const char * getSymbolName(const Symbol & symbol) const;
+    /// The returned view is NUL-terminated at `data()[size()]` and remains valid only until
+    /// the next call to `getSymbolName` or an iterator method on the same thread. Copy it if needed longer.
+    std::string_view getSymbolName(const Symbol & symbol) const;
+    /// Preallocates the compact-name workspace for the current thread.
+    void warmUp() const;
     SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
     const Object * findObject(const void * address) const;
     const Object * thisObject() const;
@@ -122,10 +127,8 @@ public:
     };
 
 private:
-    struct NameStorage;
-
     Data data;
-    std::unique_ptr<NameStorage> name_storage;
+    size_t maximum_name_granule_size = 0;
 
     void load();
 };

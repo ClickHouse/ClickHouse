@@ -384,6 +384,10 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
+    if (daemon)
+        SymbolIndex::instance().warmUp();
+#endif
 
     if (daemon)
     {

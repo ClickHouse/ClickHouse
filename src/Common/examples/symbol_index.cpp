@@ -37,8 +37,8 @@ int mainEntryExampleSymbolIndex(int argc, char ** argv)
     const void * address = reinterpret_cast<void*>(std::stoull(argv[1], nullptr, 16));
 
     const auto * symbol = symbol_index.findSymbol(address);
-    const char * symbol_name = symbol ? symbol_index.getSymbolName(*symbol) : nullptr;
-    if (symbol_name)
+    std::string_view symbol_name = symbol ? symbol_index.getSymbolName(*symbol) : std::string_view("");
+    if (!symbol_name.empty())
         std::cerr << symbol_name << ": " << symbol->offset_begin << " ... " << symbol->offset_end << "\n";
     else
         std::cerr << "SymbolIndex: Not found\n";
