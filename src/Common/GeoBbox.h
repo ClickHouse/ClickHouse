@@ -198,6 +198,21 @@ static bool extractBboxFromFieldValue(const Field & field, BboxAccumulator & acc
     {
         const auto & array = field.safeGet<Array>();
 
+        /// An EMPTY piece poisons extraction. `isRingArray` requires a non-empty array, so a
+        /// `Polygon`/`MultiPolygon` carrying an empty ring or an empty polygon -- say
+        /// `[shell, []]` -- misses the assembled-geometry branches below and falls into the generic
+        /// recursion, which would keep the bbox of the non-empty pieces and silently skip the empty
+        /// one. `parseConstPolygon`/`parseConstMultiPolygon` assemble the very same literal and
+        /// reject it with `bg::is_valid`, so the query must raise rather than prune every disjoint
+        /// granule away. A top-level empty array -- `CAST([], 'Ring')` -- is the same value seen
+        /// from one level up, and must be reported as failed rather than as no information, or a
+        /// sibling conjunct can still hide the exception.
+        if (array.empty())
+        {
+            acc.valid = false;
+            return false;
+        }
+
         /// Ring / polygon (with holes) / multipolygon literals must be validated the same way
         /// `parseConstPolygon`/`parseConstMultiPolygon` validate them at execute time (assembled
         /// shell + holes, `bg::correct` + `bg::is_valid`), not ring-by-ring in isolation — a hole
