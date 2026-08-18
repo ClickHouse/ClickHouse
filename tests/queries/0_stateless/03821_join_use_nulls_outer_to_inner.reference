@@ -17,7 +17,7 @@ Prewhere filter column: isNotNull(__table2.val) (removed)
 a_2Nullable(UInt64)_4Nullable(Int64)
 a_3Nullable(UInt64)_4Nullable(Int64)
 Type: INNER
-Type: RIGHT
+Type: INNER
 Prewhere filter column: isNotNull(__table2.val) (removed)
 Prewhere filter column: and(isNotNull(__table2.val), equals(__table3.val2, 3_UInt8)) (removed)
 a_3Nullable(UInt64)_2Nullable(Int64)
