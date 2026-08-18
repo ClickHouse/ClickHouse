@@ -134,18 +134,20 @@ ASTPtr DatabaseCluster::getCreateTableQueryImpl(const String & table_name, Conte
         return nullptr;
     }
 
-    /// `StorageDistributed` uses an implicit `rand()` key for a multi-shard proxy only to route
-    /// INSERT rows. A standalone `Distributed` table would use the same key for read shard
-    /// pruning, which changes the behavior of settings such as
-    /// `force_optimize_skip_unused_shards`. The key cannot be marked insert-only in a CREATE
-    /// query, so no standalone table definition is equivalent to a `Cluster` proxy.
-    if (distributed && distributed->getCluster()->getShardsInfo().size() > 1)
+    /// A `Cluster` database follows configuration reloads, including changes to the number of
+    /// shards. A table emitted while the cluster has one shard would lack a sharding key, but
+    /// after a reload that adds shards the live proxy acquires an implicit insert-only `rand()`
+    /// key. Serializing that key unconditionally is not equivalent either: a standalone
+    /// `Distributed` table uses it for read shard pruning. The key cannot be marked insert-only
+    /// in a CREATE query, so no standalone table definition is equivalent to a `Cluster` proxy.
+    if (distributed)
     {
         if (throw_on_error)
             throw Exception(
                 ErrorCodes::THERE_IS_NO_QUERY,
-                "Table {}.{} is a multi-shard `Cluster` database proxy whose implicit `rand()` sharding key is used only for INSERT, "
-                "but a standalone `Distributed` table would also use it for read shard pruning, so there is no equivalent re-executable CREATE query for it",
+                "Table {}.{} belongs to a reloadable `Cluster` database: a configuration reload can add shards and give the live proxy an "
+                "implicit `rand()` sharding key used only for INSERT, but a standalone `Distributed` table would either lack that key or use it "
+                "for read shard pruning, so there is no equivalent re-executable CREATE query for it",
                 backQuoteIfNeed(remote_database),
                 backQuoteIfNeed(table_name));
         return nullptr;

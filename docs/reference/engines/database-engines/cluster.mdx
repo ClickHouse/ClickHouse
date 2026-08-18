@@ -44,17 +44,11 @@ When the cluster has several shards, each proxy table reads from all of them, bu
 
 In particular, a table that exists only on a non-resolving shard does not appear in `SHOW TABLES` or `EXISTS TABLE`, and resolving it by name reports `UNKNOWN_TABLE`; it has no proxy table to query. A table that exists on the resolving shard but is absent from another shard is visible, but proxy queries can fail on that other shard.
 
-For a single-shard database, `SHOW CREATE TABLE` prints each table as a [`Distributed`](/reference/engines/table-engines/special/distributed) table over the named cluster:
-
-```sql
-CREATE TABLE ... ENGINE = Distributed('cluster_name', 'database', 'table')
-```
-
-There are three cases where no equivalent re-executable definition exists and `SHOW CREATE TABLE` reports the `THERE_IS_NO_QUERY` error:
+No equivalent re-executable definition exists for a `Cluster` proxy table, so `SHOW CREATE TABLE` reports the `THERE_IS_NO_QUERY` error. This includes the following cases:
 
 - The table is currently served through the remote-replica fallback described above (the local replica of a shard does not have the database or the table). A `Distributed` table over the whole cluster performs no such fallback, and the fallback subset of the cluster has no name of its own.
 - The database cluster name contains macros. `Cluster` expands those macros on every access, while `Distributed` expands them only when the table is created, so either the macro expression or its current expansion would recreate different behavior after a configuration change.
-- The cluster has multiple shards. The proxy's implicit `rand()` key distributes `INSERT` rows only, but the same key in a standalone `Distributed` table also affects read shard pruning; `CREATE TABLE` has no way to express an insert-only sharding key.
+- A configuration reload can change a one-shard cluster to a multi-shard cluster. The live proxy then acquires an implicit `rand()` key to distribute `INSERT` rows, while a table serialized before the reload has no key. Serializing the key unconditionally is not equivalent either, because it would make a standalone `Distributed` table use it for read shard pruning; `CREATE TABLE` has no way to express an insert-only sharding key.
 
 ## Notes {#notes}
 

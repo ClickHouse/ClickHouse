@@ -270,6 +270,9 @@ def test_follows_config_reload(started_cluster):
         node1, "CREATE DATABASE rel_proxy ENGINE = Cluster('reloadable', 'rel_src')"
     )
     assert node1.query("SELECT sum(x) FROM rel_proxy.t") == "1\n"
+    # A definition created while this cluster has one shard would stop accepting INSERT after a
+    # reload adds a shard, whereas the live proxy gains an implicit insert-only `rand()` key.
+    assert "THERE_IS_NO_QUERY" in node1.query_and_get_error("SHOW CREATE TABLE rel_proxy.t")
 
     try:
         node1.replace_config(RELOADABLE_CLUSTER_CONFIG_PATH, RELOADABLE_TWO_SHARDS)
