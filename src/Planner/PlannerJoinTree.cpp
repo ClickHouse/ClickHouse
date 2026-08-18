@@ -129,10 +129,12 @@ namespace Setting
     extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble limit;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -535,6 +537,11 @@ bool applyTrivialCountIfPossible(
     if (!settings[Setting::optimize_trivial_count_query])
         return false;
 
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
+        return false;
+
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
@@ -649,6 +656,11 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
     /// disabling the parent setting also disables this variant.
     if (!settings[Setting::optimize_trivial_count_query]
         || !settings[Setting::optimize_trivial_count_with_sparsity_filter])
+        return false;
+
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
@@ -1429,7 +1441,7 @@ void pushOrderByIntoView(
         /// the alias-vs-source-column ambiguity that the outer-context guard already excludes.
         /// Check the effective context here and skip the pushdown when any of these is set.
         const auto & view_settings = view_context->getSettingsRef();
-        if (view_settings[Setting::limit] || view_settings[Setting::offset] || view_settings[Setting::prefer_column_name_to_alias])
+        if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
             return;
 
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());

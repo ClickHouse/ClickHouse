@@ -1,9 +1,9 @@
 ---
-sidebarTitle: 'C#'
+sidebarTitle: 'Descripción general'
 keywords: ['clickhouse', 'cs', 'c#', '.net', 'dotnet', 'csharp', 'client', 'driver', 'connect', 'integrate']
 slug: /integrations/csharp
-description: 'El cliente oficial de C# para conectarse a ClickHouse.'
-title: 'Cliente C# de ClickHouse'
+description: 'El Client oficial de C# para conectarse a ClickHouse.'
+title: 'Client C# de ClickHouse'
 doc_type: 'guide'
 integration:
   - support_level: 'core'
@@ -13,13 +13,13 @@ integration:
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-El cliente oficial de C# para conectarse a ClickHouse.
-El código fuente del cliente está disponible en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-cs).
+El Client oficial de C# para conectarse a ClickHouse.
+El código fuente del Client está disponible en el [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-cs).
 Desarrollado originalmente por [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
 
 La biblioteca ofrece dos API principales:
 
-* **`ClickHouseClient`** (recomendado): un cliente de alto nivel, seguro para subprocesos, diseñado para usarse como singleton. Ofrece una API asíncrona sencilla para consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
+* **`ClickHouseClient`** (recomendado): un Client de alto nivel, seguro para subprocesos, diseñado para usarse como singleton. Ofrece una API asíncrona sencilla para consultas e inserciones masivas. Es la mejor opción para la mayoría de las aplicaciones.
 
 * **ADO.NET** (`ClickHouseDataSource`, `ClickHouseConnection`, `ClickHouseCommand`): abstracciones estándar de base de datos de .NET. Son necesarias para la integración con ORM (Dapper, Linq2db) y cuando necesita compatibilidad con ADO.NET. `ClickHouseBulkCopy` es una clase auxiliar para insertar datos de forma eficiente mediante una conexión ADO.NET. `ClickHouseBulkCopy` está obsoleto y se eliminará en una versión futura; en su lugar, use `ClickHouseClient.InsertBinaryAsync`.
 

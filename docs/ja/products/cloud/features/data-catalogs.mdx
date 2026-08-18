@@ -24,14 +24,18 @@ UI を使用する場合:
 
 <Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="データカタログインテグレーションを表示した ClickHouse Cloud UI" />
 
-| 名前                   | 対応するオープンテーブル形式                       | 認証方式                         | サポート                                                                              | バージョン  |
-| -------------------- | ------------------------------------ | ---------------------------- | --------------------------------------------------------------------------------- | ------ |
-| AWS Glue Catalog     | Iceberg                              | IAM/アクセスキー                   | Cloud &amp; [Core](/ja/guides/use-cases/data-warehousing/glue-catalog)               | 25.10+ |
-| Lakekeeper           | Iceberg                              | OAuth クライアント認証情報             | [Core](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog)                     | 25.10+ |
-| Microsoft OneLake    | Iceberg                              | Azure Active Directory (AAD) | Cloud &amp; [Core](/ja/guides/use-cases/data-warehousing/onelake-catalog)            | 25.12+ |
-| Nessie               | Iceberg                              | OAuth クライアント認証情報             | [Core](/ja/guides/use-cases/data-warehousing/nessie-catalog)                         | 25.10+ |
-| Polaris/Open Catalog | Iceberg                              | OAuth クライアント認証情報             | [Core](/ja/guides/use-cases/data-warehousing/polaris-catalog)                        | 26.1+  |
-| REST カタログ            | Iceberg                              | OAuth クライアント認証情報、Bearer トークン | Cloud &amp; [Core](/ja/guides/use-cases/data-warehousing/rest-catalog)               | 25.10+ |
-| Unity Catalog        | Iceberg および Delta (外部ストレージロケーションのみ)  | OAuth クライアント認証情報             | Cloud (Iceberg のみ) &amp; [Core](/ja/guides/use-cases/data-warehousing/unity-catalog) | 25.10+ |
+Cloud UI の詳細な手順については、[ClickHouse Cloud でデータカタログに接続する](/ja/integrations/data-catalogs)を参照してください。
+
+| 名前                | オープンテーブル形式 | 認証方式                         | Cloud                                            | Core                                                         | バージョン  |
+| ----------------- | ---------- | ---------------------------- | ------------------------------------------------ | ------------------------------------------------------------ | ------ |
+| AWS Glue Catalog  | Iceberg    | IAM ロール (26.2+)、アクセスキー       | [ガイド](/ja/integrations/data-catalogs#aws-glue)      | [ガイド](/ja/guides/use-cases/data-warehousing/glue-catalog)       | 25.12+ |
+| BigLake Metastore | Iceberg    | Google ADC (OAuth)           | [ガイド](/ja/integrations/data-catalogs#biglake)       | [ガイド](/ja/guides/use-cases/data-warehousing/biglake-catalog)    | 26.2+  |
+| Lakekeeper        | Iceberg    | OAuth クライアント認証情報             | —                                                | [ガイド](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog) | 25.10+ |
+| Microsoft OneLake | Iceberg    | Azure Active Directory (AAD) | [ガイド](/ja/integrations/data-catalogs#onelake)       | [ガイド](/ja/guides/use-cases/data-warehousing/onelake-catalog)    | 25.12+ |
+| Nessie            | Iceberg    | OAuth クライアント認証情報             | —                                                | [ガイド](/ja/guides/use-cases/data-warehousing/nessie-catalog)     | 25.10+ |
+| Polaris           | Iceberg    | OAuth クライアント認証情報             | [ガイド](/ja/integrations/data-catalogs#polaris)       | [ガイド](/ja/guides/use-cases/data-warehousing/polaris-catalog)    | 26.2+  |
+| REST カタログ         | Iceberg    | OAuth クライアント認証情報、Bearer トークン | [ガイド](/ja/integrations/data-catalogs#rest)          | [ガイド](/ja/guides/use-cases/data-warehousing/rest-catalog)       | 25.12+ |
+| Unity Catalog     | Iceberg    | OAuth クライアント認証情報             | [ガイド](/ja/integrations/data-catalogs#unity-iceberg) | [ガイド](/ja/guides/use-cases/data-warehousing/unity-catalog)      | 25.12+ |
+| Unity Catalog     | Delta      | 個人用アクセストークン (PAT)            | [ガイド](/ja/integrations/data-catalogs#unity-delta)   | [ガイド](/ja/guides/use-cases/data-warehousing/unity-catalog)      | 25.12+ |
 
 Horizon や S3 tables REST endpoint など、さらに多くのカタログを追加する予定です。

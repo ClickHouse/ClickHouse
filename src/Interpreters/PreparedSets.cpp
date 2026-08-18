@@ -401,6 +401,13 @@ std::unique_ptr<QueryPlan> FutureSetFromSubquery::build(const SizeLimits & netwo
     if (set_and_key->set->isCreated())
         return nullptr;
 
+    /// A destructive in-place build consumed `source` and then threw, so this set can never be built.
+    /// Every caller treats a null plan as "nothing to build" and moves on, which leaves the set unready
+    /// and makes `FunctionIn` report "Not-ready Set is passed as the second argument" once the main
+    /// pipeline evaluates the condition. Report the real reason instead. See `buildOrderedSetInplace`.
+    if (in_place_build_failure)
+        std::rethrow_exception(in_place_build_failure);
+
     auto plan = std::move(source);
 
     if (!plan)
@@ -568,94 +575,112 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
     /// destructive fallback, which builds directly into the canonical `set_and_key->set`.
     SetPtr speculative_set;
 
-    if (source_preserved)
+    /// The destructive fallback below leaves the set unbuildable if anything throws after `build` has
+    /// consumed `source`: every `build` caller treats a null plan as "nothing to do", so the set stays
+    /// not-ready and `FunctionIn` reports "Not-ready Set is passed as the second argument" once the main
+    /// pipeline evaluates the condition. That is exactly what a caller which deliberately ignores an
+    /// in-place build failure produces — primary key, skip index, and statistics analysis all run this
+    /// build speculatively and continue without the set when it throws. Remember the failure so that
+    /// `build` can report the real reason instead. Nothing is remembered on the non-destructive path:
+    /// `source` is intact there and the deferred build simply runs the subquery again.
+    try
     {
-        /// Non-destructive path. Build into a *temporary* `Set` so the canonical `set_and_key->set` is
-        /// never mutated unless the build fully succeeds. With `overflow_mode = 'break'` the pipeline can
-        /// stop after `CreatingSetsTransform::consume` has inserted a prefix of rows but before
-        /// `generate` calls `Set::finishInsert`; building into a temporary set keeps those partial rows
-        /// out of the canonical set, which the deferred build reuses. Publishing only a created set means
-        /// a non-deterministic subquery (e.g. one using `rand`) is evaluated against a single result.
-        ///
-        /// Do not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
-        /// silently, the `CreatingSetsTransform` destructor stores an exception into the cache for this
-        /// key, and the later deferred build would rethrow it via `shared_future::get` instead of
-        /// rebuilding from the preserved `source`. The deferred build still uses the cache.
-        const auto & canonical_set = *set_and_key->set;
-        speculative_set = std::make_shared<Set>(canonical_set.limits, canonical_set.max_elements_to_fill, canonical_set.transform_null_in);
-        speculative_set->setHeader(plan->getCurrentHeader()->getColumnsWithTypeAndName());
-        speculative_set->fillSetElements();
-
-        /// The temporary `SetAndKey` has no external table (the non-destructive path is only taken when
-        /// `set_and_key->external_table` is null, see above), so the speculative `CreatingSetsTransform`
-        /// only builds the set and never touches a `GLOBAL IN` temporary table.
-        auto tmp_set_and_key = std::make_shared<SetAndKey>();
-        tmp_set_and_key->key = set_and_key->key;
-        tmp_set_and_key->set = speculative_set;
-
-        auto creating_set = std::make_unique<CreatingSetStep>(
-            plan->getCurrentHeader(),
-            tmp_set_and_key,
-            network_transfer_limits,
-            /*prepared_sets_cache=*/ nullptr);
-        creating_set->setStepDescription("Create set for subquery");
-        plan->addStep(std::move(creating_set));
-    }
-    else
-    {
-        /// Destructive fallback for non-clonable sources: `build` consumes `source` and binds the
-        /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
-        /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
-        /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
-        auto prepared_sets_cache = context->getPreparedSetsCache();
-        /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
-        if (settings[Setting::make_distributed_plan])
-            prepared_sets_cache = nullptr;
-        plan = build(network_transfer_limits, prepared_sets_cache);
-        if (!plan)
-            return nullptr;
-
-        /// `Set::fillSetElements` appends to `set_elements` without clearing, and this function may run
-        /// more than once for the same set; fill only once, mirroring `FutureSetFromTuple`.
-        if (!set_and_key->set->hasExplicitSetElements())
-            set_and_key->set->fillSetElements();
-    }
-
-    /// Run the speculative pipeline in its own scope so that `executor`, `pipeline`, and the pipeline
-    /// builder are destroyed before `source` is reset below. On the non-destructive path the cloned `plan`
-    /// carries an *empty* `QueryPlanResourceHolder` (`QueryPlan::clone` copies the plan nodes only, not the
-    /// resources), so the speculative pipeline relies on the original `source` plan to keep the interpreter
-    /// contexts, storage holders, and table locks alive: processors may use them implicitly, including in
-    /// their destructors — this is exactly what the resource holder normally guarantees for the lifetime of
-    /// the pipeline. Resetting `source` while the pipeline is still alive would release them too early. On
-    /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
-    /// ordering is safe there too.
-    {
-        auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
-        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
-        pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
-
-        CompletedPipelineExecutor executor(pipeline);
-        if (context->hasQueryContext())
+        if (source_preserved)
         {
-            if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
-                executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            /// Non-destructive path. Build into a *temporary* `Set` so the canonical `set_and_key->set` is
+            /// never mutated unless the build fully succeeds. With `overflow_mode = 'break'` the pipeline can
+            /// stop after `CreatingSetsTransform::consume` has inserted a prefix of rows but before
+            /// `generate` calls `Set::finishInsert`; building into a temporary set keeps those partial rows
+            /// out of the canonical set, which the deferred build reuses. Publishing only a created set means
+            /// a non-deterministic subquery (e.g. one using `rand`) is evaluated against a single result.
+            ///
+            /// Do not share this speculative build through `PreparedSetsCache`: if the in-place pipeline stops
+            /// silently, the `CreatingSetsTransform` destructor stores an exception into the cache for this
+            /// key, and the later deferred build would rethrow it via `shared_future::get` instead of
+            /// rebuilding from the preserved `source`. The deferred build still uses the cache.
+            const auto & canonical_set = *set_and_key->set;
+            speculative_set = std::make_shared<Set>(canonical_set.limits, canonical_set.max_elements_to_fill, canonical_set.transform_null_in);
+            speculative_set->setHeader(plan->getCurrentHeader()->getColumnsWithTypeAndName());
+            speculative_set->fillSetElements();
+
+            /// The temporary `SetAndKey` has no external table (the non-destructive path is only taken when
+            /// `set_and_key->external_table` is null, see above), so the speculative `CreatingSetsTransform`
+            /// only builds the set and never touches a `GLOBAL IN` temporary table.
+            auto tmp_set_and_key = std::make_shared<SetAndKey>();
+            tmp_set_and_key->key = set_and_key->key;
+            tmp_set_and_key->set = speculative_set;
+
+            auto creating_set = std::make_unique<CreatingSetStep>(
+                plan->getCurrentHeader(),
+                tmp_set_and_key,
+                network_transfer_limits,
+                /*prepared_sets_cache=*/ nullptr);
+            creating_set->setStepDescription("Create set for subquery");
+            plan->addStep(std::move(creating_set));
         }
-        executor.execute();
+        else
+        {
+            /// Destructive fallback for non-clonable sources: `build` consumes `source` and binds the
+            /// `CreatingSetStep` to the canonical `set_and_key` (as this code always did). On a silent failure
+            /// `source` is gone, so the deferred build cannot rebuild — exactly the previous behavior; the set
+            /// is never reused with partial rows, because the deferred build throws "Not-ready Set" instead.
+            /// A failure that *throws* is remembered by the `catch` below and reported as itself instead.
+            auto prepared_sets_cache = context->getPreparedSetsCache();
+            /// A distributed plan ships the set's values to worker tasks, and a cached set has none.
+            if (settings[Setting::make_distributed_plan])
+                prepared_sets_cache = nullptr;
+            plan = build(network_transfer_limits, prepared_sets_cache);
+            if (!plan)
+                return nullptr;
 
-        /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
-        /// `timeout_overflow_mode` set to `break`, no exception is thrown, and the executor just stops executing
-        /// the pipeline without setting `is_created` to true. On the non-destructive path the cloned source
-        /// above keeps `source` intact, so `DelayedCreatingSetsStep::makePlansForSets` can still build the set
-        /// later (on the destructive fallback `source` is already gone, as it always was).
-        Set & built_set = speculative_set ? *speculative_set : *set_and_key->set;
-        if (!built_set.isCreated())
-            return nullptr;
+            /// `Set::fillSetElements` appends to `set_elements` without clearing, and this function may run
+            /// more than once for the same set; fill only once, mirroring `FutureSetFromTuple`.
+            if (!set_and_key->set->hasExplicitSetElements())
+                set_and_key->set->fillSetElements();
+        }
 
-        logProcessorProfile(context, pipeline.getProcessors());
+        /// Run the speculative pipeline in its own scope so that `executor`, `pipeline`, and the pipeline
+        /// builder are destroyed before `source` is reset below. On the non-destructive path the cloned `plan`
+        /// carries an *empty* `QueryPlanResourceHolder` (`QueryPlan::clone` copies the plan nodes only, not the
+        /// resources), so the speculative pipeline relies on the original `source` plan to keep the interpreter
+        /// contexts, storage holders, and table locks alive: processors may use them implicitly, including in
+        /// their destructors — this is exactly what the resource holder normally guarantees for the lifetime of
+        /// the pipeline. Resetting `source` while the pipeline is still alive would release them too early. On
+        /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
+        /// ordering is safe there too.
+        {
+            auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
+            auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
+            pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
 
-        /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
-        pipeline.finalizeWriteInQueryResultCache();
+            CompletedPipelineExecutor executor(pipeline);
+            if (context->hasQueryContext())
+            {
+                if (auto cancel_callback = context->getQueryContext()->getInteractiveCancelCallback())
+                    executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            }
+            executor.execute();
+
+            /// SET may not be created successfully at this step because of the sub-query timeout, but if we have
+            /// `timeout_overflow_mode` set to `break`, no exception is thrown, and the executor just stops executing
+            /// the pipeline without setting `is_created` to true. On the non-destructive path the cloned source
+            /// above keeps `source` intact, so `DelayedCreatingSetsStep::makePlansForSets` can still build the set
+            /// later (on the destructive fallback `source` is already gone, as it always was).
+            Set & built_set = speculative_set ? *speculative_set : *set_and_key->set;
+            if (!built_set.isCreated())
+                return nullptr;
+
+            logProcessorProfile(context, pipeline.getProcessors());
+
+            /// Finalize write in query cache to save subquery result (no-op if no cache writers exist in the pipeline)
+            pipeline.finalizeWriteInQueryResultCache();
+        }
+    }
+    catch (...)
+    {
+        if (!source_preserved)
+            in_place_build_failure = std::current_exception();
+        throw;
     }
 
     /// In-place build succeeded. On the non-destructive path, publish the fully-created temporary set into

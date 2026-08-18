@@ -1,7 +1,9 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/isValidUTF8.h>
 
 #include "config.h"
 
@@ -229,6 +231,11 @@ namespace
             return convertCodePointPositionToByteOffset(promql_query, ctx->getSymbol()->getStartIndex());
         }
 
+        size_t getStartPos(const antlr4::Token * token) const
+        {
+            return convertCodePointPositionToByteOffset(promql_query, token->getStartIndex());
+        }
+
         bool parseStringLiteral(const antlr4::tree::TerminalNode * ctx, String & result)
         {
             String error_message;
@@ -347,6 +354,30 @@ namespace
         /// Extracts a label name.
         String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
 
+        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
+        {
+            if (auto * label_name_ctx = ctx->labelName())
+            {
+                identifier = getLabelName(label_name_ctx);
+                return true;
+            }
+
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
+
+            if (!parseStringLiteral(string_ctx, identifier))
+                return false;
+
+            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            return true;
+        }
+
         /// Extracts multiple label names separated by comma.
         Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
         {
@@ -362,13 +393,14 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * label_name_ctx = ctx->labelName();
+            auto * selector_identifier_ctx = ctx->selectorIdentifier();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!label_name_ctx || !label_value_ctx || !op_ctx)
+            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            res_matcher.label_name = getLabelName(label_name_ctx);
+            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
+                return false;
 
             MatcherType matcher_type = {};
             if (op_ctx->EQ())
@@ -393,6 +425,27 @@ namespace
             return true;
         }
 
+        bool getMatcherForQuotedMetricName(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
+        {
+            auto * string_ctx = ctx->STRING();
+            if (!string_ctx)
+                throwInconsistentSchema("LabelMatcher", ctx->getText());
+
+            res_matcher.label_name = "__name__";
+            if (!parseStringLiteral(string_ctx, res_matcher.label_value))
+                return false;
+
+            if (res_matcher.label_value.empty()
+                || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(res_matcher.label_value.data()), res_matcher.label_value.size()))
+            {
+                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                return false;
+            }
+
+            res_matcher.matcher_type = MatcherType::EQ;
+            return true;
+        }
+
         Matcher getMatcherForMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx)
         {
             Matcher matcher;
@@ -408,7 +461,8 @@ namespace
             auto new_node = std::make_unique<InstantSelector>();
 
             MatcherList matchers;
-            if (auto * metric_name_ctx = ctx->metricName())
+            auto * metric_name_ctx = ctx->metricName();
+            if (metric_name_ctx)
                 matchers.push_back(getMatcherForMetricName(metric_name_ctx));
 
             if (auto * label_matcher_list_ctx = ctx->labelMatcherList())
@@ -417,11 +471,22 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    if (!getMatcher(label_matcher_ctx, matcher))
+                    bool parsed = label_matcher_ctx->selectorIdentifier()
+                        ? getMatcher(label_matcher_ctx, matcher)
+                        : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
+                    if (!parsed)
                     {
                         chassert(error_listener.hasError());
                         return nullptr;
                     }
+
+                    if (metric_name_ctx && matcher.label_name == "__name__")
+                    {
+                        error_listener.setError(
+                            "metric name must not be set twice", getStartPos(label_matcher_ctx->getStart()));
+                        return nullptr;
+                    }
+
                     matchers.push_back(std::move(matcher));
                 }
             }
@@ -485,11 +550,22 @@ namespace
 
             if (auto * timestamp_ctx = ctx->timestamp())
             {
-                auto * number_ctx = timestamp_ctx->NUMBER();
-                if (!number_ctx)
+                if (auto * number_ctx = timestamp_ctx->NUMBER())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Timestamp;
+                    auto & timestamp = new_node->at_timestamp.emplace();
+                    ok &= parseTimestamp(number_ctx, timestamp);
+                }
+                else if (timestamp_ctx->START())
+                {
+                    new_node->at_modifier = Offset::AtModifier::Start;
+                }
+                else if (timestamp_ctx->END())
+                {
+                    new_node->at_modifier = Offset::AtModifier::End;
+                }
+                else
                     throwInconsistentSchema("OffsetOp", ctx->getText());
-                auto & timestamp = new_node->at_timestamp.emplace();
-                ok &= parseTimestamp(number_ctx, timestamp);
             }
 
             if (auto * offset_value_ctx = ctx->offsetValue())
@@ -740,6 +816,7 @@ namespace
                 throwInconsistentSchema("Aggregation", ctx->getText());
 
             auto operator_name = getText(operator_name_ctx);
+            toLowerASCII(operator_name);
             return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 

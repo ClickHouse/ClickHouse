@@ -1709,6 +1709,18 @@ void HashJoin::validateAdditionalFilterExpression(ExpressionActionsPtr additiona
             "Non equi condition '{}' from JOIN ON section is supported only for ALL INNER/LEFT/FULL/RIGHT JOINs",
             expression_sample_block.getByPosition(0).name);
     }
+
+    /// `arrayJoin` changes the number of rows, but `buildAdditionalFilter` evaluates this expression
+    /// per probe batch and `joinRightColumnsWithAdditionalFilter` indexes the result by row position,
+    /// so the expression must preserve the number of rows.
+    if (additional_filter_expression->hasArrayJoin())
+    {
+        throw Exception(
+            ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "Non equi condition '{}' from JOIN ON section contains 'arrayJoin', which changes the number of rows. "
+            "If the expansion depends on one side only, use ARRAY JOIN in a subquery before the JOIN",
+            expression_sample_block.getByPosition(0).name);
+    }
 }
 
 bool HashJoin::isUsed(size_t off) const

@@ -14,6 +14,7 @@
 #include <Common/LocalTime.h>
 #include <Common/transformEndianness.h>
 #include <base/find_symbols.h>
+#include <base/itoa.h>
 
 #include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
@@ -1290,35 +1291,38 @@ void writeDecimalFractional(const T & x, UInt32 scale, WriteBuffer & ostr, bool 
     constexpr size_t max_digits = std::numeric_limits<UInt256>::digits10;
     chassert(scale <= max_digits);
     chassert(fractional_length <= max_digits);
+    /// Rounding to a narrower field is the caller's job, because a carry out of the fractional part
+    /// belongs to the whole part, which has already been written by then.
+    chassert(!fixed_fractional_length || fractional_length >= scale);
 
     char buf[max_digits];
-    memset(buf, '0', std::max(scale, fractional_length));
+    if constexpr (sizeof(T) <= sizeof(UInt64))
+        writeFixedDigits(static_cast<UInt64>(x), scale, buf);
+    else if constexpr (sizeof(T) <= sizeof(UInt128))
+        writeFixedDigits(static_cast<UInt128>(x), scale, buf);
+    else
+        writeFixedDigits(static_cast<UInt256>(x), scale, buf);
 
-    T value = x;
-    Int32 last_nonzero_pos = 0;
-
-    if (fixed_fractional_length && fractional_length < scale)
+    size_t length = 0;
+    if (fixed_fractional_length)
     {
-        T new_value = static_cast<T>(value / DecimalUtils::scaleMultiplier<Int256>(scale - fractional_length - 1));
-        auto round_carry = new_value % 10;
-        value = new_value / 10;
-        if (round_carry >= 5)
-            value += 1;
+        if (fractional_length > scale)
+            memset(buf + scale, '0', fractional_length - scale);
+        length = fractional_length;
     }
-
-    for (Int32 pos = fixed_fractional_length ? std::min(scale - 1, fractional_length - 1) : scale - 1; pos >= 0; --pos)
+    else if (trailing_zeros)
     {
-        auto remainder = value % 10;
-        value /= 10;
-
-        if (remainder != 0 && last_nonzero_pos == 0)
-            last_nonzero_pos = pos;
-
-        buf[pos] += static_cast<char>(remainder);
+        length = scale;
+    }
+    else
+    {
+        length = scale;
+        while (length > 1 && buf[length - 1] == '0')
+            --length;
     }
 
     writeChar('.', ostr);
-    ostr.write(buf, fixed_fractional_length ? fractional_length : (trailing_zeros ? scale : last_nonzero_pos + 1));
+    ostr.write(buf, length);
 }
 
 template <typename T>
@@ -1326,7 +1330,32 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
                bool fixed_fractional_length = false, UInt32 fractional_length = 0,
                bool force_decimal_point = false)
 {
-    T part = DecimalUtils::getWholePart(x, scale);
+    /// A fixed fractional length narrower than the scale rounds the value away from zero. Round the whole value
+    /// before it is split, so that a carry out of the fractional part reaches the whole part: rounding the
+    /// fractional part alone turns 9.995 into 9.00 instead of 10.00.
+    Decimal<T> rounded = x;
+    UInt32 rounded_scale = scale;
+
+    if (fixed_fractional_length && fractional_length < scale)
+    {
+        /// Round half away from zero. The dropped digits reach half of the dropped field exactly when the first
+        /// of them is at least five, so this is the same rounding the fractional part alone used to do, and it
+        /// takes one division rather than two - which matters, because a division of a `wide::integer` is slow.
+        const T half = DecimalUtils::scaleMultiplier<T>(scale - fractional_length - 1) * 5;
+        const T divisor = half * 2;
+
+        T value = x.value / divisor;
+        const T dropped = x.value - value * divisor;
+        if (dropped >= half)
+            ++value;
+        else if (dropped <= -half)
+            --value;
+
+        rounded = Decimal<T>(value);
+        rounded_scale = fractional_length;
+    }
+
+    T part = DecimalUtils::getWholePart(rounded, rounded_scale);
 
     if (x.value < 0 && part == 0)
     {
@@ -1338,13 +1367,13 @@ void writeText(Decimal<T> x, UInt32 scale, WriteBuffer & ostr, bool trailing_zer
     bool fractional_written = false;
     if (scale || (fixed_fractional_length && fractional_length > 0))
     {
-        part = DecimalUtils::getFractionalPart(x, scale);
+        part = DecimalUtils::getFractionalPart(rounded, rounded_scale);
         if (part || trailing_zeros)
         {
             if (part < 0)
                 part *= T(-1);
 
-            writeDecimalFractional(part, scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
+            writeDecimalFractional(part, rounded_scale, ostr, trailing_zeros, fixed_fractional_length, fractional_length);
             fractional_written = true;
         }
     }

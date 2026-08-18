@@ -27,7 +27,9 @@
             "clickstack/example-datasets/remote-demo-data",
             "clickstack/example-datasets/session-replay",
             "clickstack/example-datasets/chrome-extension",
-            "clickstack/example-datasets/otelgen"
+            "clickstack/example-datasets/otelgen",
+            "clickstack/example-datasets/telemetrygen",
+            "clickstack/example-datasets/instrument-application"
           ]
         },
         "clickstack/architecture",

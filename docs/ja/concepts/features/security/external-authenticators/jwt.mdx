@@ -7,6 +7,9 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/ja/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
@@ -251,6 +254,29 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 この組み込み認証器の権限上限は、`default_role` ロールおよび `default` ユーザーに設定されています。つまり、JWT ユーザーの実効権限はこの 2 つが持つ権限との積集合になるため、トークンによって `default_role` と `default` に許可されている範囲を超えて権限を昇格させることはできません。
 
 この認証器を使用するために、追加の設定は必要ありません。サービスの作成時に自動的にプロビジョニングされます。
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## サービスで JWT 認証を有効にする
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="カスタム ID プロバイダーによる JWT 認証" support="true" />
+
+組み込みの 認証器 に加えて、独自の ID プロバイダー (Microsoft Entra や Okta など) が発行する JWT を受け入れるよう、ClickHouse Cloud サービスを設定できます。これはベータ機能であり、ClickHouse バージョン 26.4 以降を実行するサービスでは Enterprise プランで利用できます。有効にするには、以下の設定情報を添えて[サポートチケット](https://clickhouse.com/support/program)を作成してください。
+
+| パラメータ      | 説明                                                                                                                                                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| サービス ID    | JWT 認証を有効にする ClickHouse Cloud サービスの UUID。サービスを開くと、Cloud Console の URL で確認できます。                                                                                                                                               |
+| issuer        | ID プロバイダーが発行するトークンの `iss` クレームの値。通常はプロバイダーの URL です (例: `https://your-tenant.okta.com`) 。ClickHouse は、発行者がこの値と一致しないトークンを拒否します。                                                                                                |
+| audience    | ID プロバイダーがこのサービス向けのトークンに設定する `aud` クレームの値。ClickHouse は、異なるオーディエンス向けに発行されたトークンを拒否します。                                                                                                                                         |
+| JWKS URL   | ID プロバイダーが JSON Web Key Set を公開する HTTPS エンドポイント (例: `https://idp.example.com/.well-known/jwks.json`) 。ClickHouse はこのエンドポイントから公開鍵を取得してトークン署名を検証します。[必須クレーム](#required-claims)で説明しているとおり、JWKS 検証で使用できるのは RSA 鍵 (`RS256`) のみです。 |
+| ロールクレーム    | 一時ユーザーの ClickHouse ロールを格納するトークンクレームの名前 (デフォルトは `clickhouse:roles`) 。このクレームには、`["analyst", "reader"]` のようにロール名の JSON 配列を含める必要があります。                                                                                       |
+| grant クレーム | 一時ユーザーの SQL `GRANT` の断片を格納するトークンクレームの名前 (デフォルトは `clickhouse:grants`) 。このクレームには、`["SELECT ON analytics.*", "INSERT ON analytics.events"]` のように grant フラグメントの JSON 配列を含める必要があります。                                       |
+
+ロールクレームで指定するロールは、サービス内にあらかじめ存在している必要があります (`CREATE ROLE` で作成します) 。[アクセス権](#access-rights)で説明しているとおり、権限上限によって、ロールクレームと grant クレームの両方から得られる有効なアクセス権が制限されます。
 
 <div id="interserver-communication">
   ## サーバー間通信

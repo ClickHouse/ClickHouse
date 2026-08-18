@@ -17,11 +17,11 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 実行されたクエリに関するメタデータと統計情報 (開始時刻、所要時間、エラーメッセージ、リソース使用量、その他の実行詳細など) を保存します。クエリの結果は保存しません。
 
-クエリのログに関する設定は、サーバー設定の [query&#95;log](/ja/reference/settings/server-settings/settings#query_log) セクションで変更できます。
+クエリのログに関する設定は、サーバー設定の [query&#95;log](/ja/reference/settings/server-settings/settings/query#query_log) セクションで変更できます。
 
-[log&#95;queries = 0](/ja/reference/settings/session-settings#log_queries) を設定すると、クエリのログを無効にできます。問題の解決にはこのテーブルの情報が重要であるため、ログを無効にすることは推奨されません。
+[log&#95;queries = 0](/ja/reference/settings/session-settings/log-queries#log_queries) を設定すると、クエリのログを無効にできます。問題の解決にはこのテーブルの情報が重要であるため、ログを無効にすることは推奨されません。
 
-データのフラッシュ間隔は、サーバー設定の [query&#95;log](/ja/reference/settings/server-settings/settings#query_log) セクションにある `flush_interval_milliseconds` パラメータで設定します。強制的にフラッシュするには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
+データのフラッシュ間隔は、サーバー設定の [query&#95;log](/ja/reference/settings/server-settings/settings/query#query_log) セクションにある `flush_interval_milliseconds` パラメータで設定します。強制的にフラッシュするには、[SYSTEM FLUSH LOGS](/ja/reference/statements/system#flush-logs) クエリを使用します。
 
 ClickHouse はテーブルからデータを自動的に削除しません。詳しくは [Introduction](/ja/reference/system-tables/overview#system-tables-introduction) を参照してください。
 
@@ -36,9 +36,9 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 2. クエリ処理中にエラーが発生した場合は、`QueryStart` 型と `ExceptionWhileProcessing` 型の 2 つのイベントが作成されます。
 3. クエリの開始前にエラーが発生した場合は、`ExceptionBeforeStart` 型の単一イベントが作成されます。
 
-[log&#95;queries&#95;probability](/ja/reference/settings/session-settings#log_queries_probability) 設定を使用すると、`query_log` テーブルに記録されるクエリ数を減らせます。
+[log&#95;queries&#95;probability](/ja/reference/settings/session-settings/log-queries#log_queries_probability) 設定を使用すると、`query_log` テーブルに記録されるクエリ数を減らせます。
 
-[log&#95;formatted&#95;queries](/ja/reference/settings/session-settings#log_formatted_queries) 設定を使用すると、整形済みクエリを `formatted_query` カラムに記録できます。
+[log&#95;formatted&#95;queries](/ja/reference/settings/session-settings/log#log_formatted_queries) 設定を使用すると、整形済みクエリを `formatted_query` カラムに記録できます。
 
 <div id="columns">
   ## カラム
@@ -94,20 +94,22 @@ ClickHouse はテーブルからデータを自動的に削除しません。詳
 * `os_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — `clickhouse-client` を実行しているオペレーティングシステムのユーザー名。
 * `client_hostname` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client または別の TCP クライアントが実行されているクライアントマシンのホスト名。
 * `client_name` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — clickhouse-client または他の TCP クライアントの名前。
-* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — クライアントを呼び出した AI コーディングエージェント (`claude-code` や `cursor` など)。環境変数から検出されます。エージェントが検出されなかった場合は空です。
+* `client_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — クライアントを呼び出した AI コーディングエージェント (例: `claude-code`、`cursor`)。環境変数から検出されます。エージェントが検出されなかった場合は空です。
 * `client_revision` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのリビジョン。
 * `client_version_major` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのメジャーバージョン。
 * `client_version_minor` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client またはその他の TCP クライアントのマイナーバージョン。
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または他の TCP クライアントのバージョンにおけるパッチ部分。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client で、複数のクエリを含むスクリプト内のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client において、複数のクエリを含むスクリプトでクエリが開始される行番号です。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの実行を開始した HTTP メソッド。設定可能な値: 0 — クエリは TCP インターフェイス経由で実行された、1 — GET メソッドが使用された、2 — POST メソッドが使用された。
+* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの実行を開始した HTTP メソッド。設定可能な値: 0 - クエリは TCP インターフェイス経由で実行された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
 * `http_user_agent` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — HTTPクエリで送信されるHTTPヘッダー UserAgent。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTPクエリで渡されるHTTPヘッダーのReferer (クエリを行うページの絶対アドレスまたは部分的なアドレスを含みます) 。
 * `forwarded_for` ([文字列](/ja/reference/data-types/string)) — HTTPクエリで渡される X-Forwarded-For HTTPヘッダー。
 * `quota_key` ([String](/ja/reference/data-types/string)) — quotas 設定で指定するクォータキー (keyed を参照) 。
 * `distributed_depth` ([UInt64](/ja/reference/data-types/int-uint)) — クエリがサーバー間で何回転送されたか。
 * `revision` ([UInt32](/ja/reference/data-types/int-uint)) — ClickHouseのリビジョン番号。
+* `http_handler_name` ([String](/ja/reference/data-types/string)) — クエリを呼び出した SQL 定義の HTTP ハンドラー (CREATE HANDLER) の名前。このようなハンドラーを介してクエリが呼び出されなかった場合は空です。
+* `http_request_url` ([String](/ja/reference/data-types/string)) — クエリを呼び出した HTTP リクエストパス (クエリ文字列を除く)。機密性の高いリクエストパラメータが永続化されないよう、クエリ文字列は省略されます。HTTP 以外のクエリでは空です。
 * `log_comment` ([String](/ja/reference/data-types/string)) — ログコメント。max&#95;query&#95;size を超えない任意の文字列を設定できます。定義されていない場合は空文字列です。
 * `thread_ids` ([Array(UInt64)](/ja/reference/data-types/array)) — クエリの実行に関与しているスレッド ID。これらのスレッドが同時に実行されていたとは限りません。
 * `peak_threads_usage` ([UInt64](/ja/reference/data-types/int-uint)) — クエリの実行時に同時に使用されるスレッド数の最大値。

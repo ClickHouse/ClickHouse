@@ -16,7 +16,7 @@ doc_type: 'reference'
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
 
-* اضبط الإعداد [allow&#95;introspection&#95;functions](/ar/reference/settings/session-settings#allow_introspection_functions) على القيمة 1.
+* اضبط الإعداد [allow&#95;introspection&#95;functions](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على القيمة 1.
 
   لأسباب أمنية، تكون دوال الاستبطان معطّلة افتراضيًا.
 
@@ -45,7 +45,7 @@ doc_type: 'reference'
 لتمكين دالة الاستبطان هذه:
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
-* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions) على `1`.
+* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
 **البنية**
 
@@ -59,7 +59,7 @@ addressToLine(address_of_binary_instruction)
 
 **القيمة المعادة**
 
-تعيد اسم ملف الشيفرة المصدرية ورقم السطر، مفصولين بنقطتين، على سبيل المثال: `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. وتعيد اسم ملف تنفيذي إذا تعذر العثور على معلومات تصحيح الأخطاء، أو سلسلة فارغة إذا كان العنوان غير صالح. [`String`](/ar/reference/data-types/string)
+تعيد اسم ملف الشيفرة المصدرية ورقم السطر، مفصولين بنقطتين، على سبيل المثال: `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`. وتعيد اسم ملف تنفيذي إذا تعذر العثور على معلومات التصحيح، أو سلسلة فارغة إذا كان العنوان غير صالح. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -134,7 +134,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 لتمكين دالة الاستبطان هذه:
 
 * ثبّت الحزمة `clickhouse-common-static-dbg`.
-* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings#allow_introspection_functions) على `1`.
+* اضبط الإعداد [`allow_introspection_functions`](/ar/reference/settings/session-settings/allow#allow_introspection_functions) على `1`.
 
 **البنية**
 
@@ -142,7 +142,7 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 addressToLineWithInlines(address_of_binary_instruction)
 ```
 
-**الوسائط**
+**الوسيطات**
 
 * `address_of_binary_instruction` — عنوان تعليمة في عملية قيد التشغيل. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -460,7 +460,12 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 أُضيف في: v20.12.0
 
-يُصدر رسالة trace log في server log لكل [كتلة](/ar/resources/develop-contribute/introduction/architecture#block).
+يُصدر رسالة trace log في server log.
+
+لا تقبل الدالة سوى وسيطة ثابتة، لذا يُقيَّم الاستدعاء أثناء تحليل الاستعلام ويُستبدل
+بنتيجته. ولذلك تُصدر الرسالة مرة واحدة أثناء تحليل الاستعلام، وليس مرة لكل
+[كتلة](/ar/resources/develop-contribute/introduction/architecture#block) تتم معالجتها: لا يؤثر عدد الصفوف والإعداد `max_block_size`
+في عدد الرسائل التي تظهر في السجل.
 
 **البنية**
 
@@ -468,7 +473,7 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 logTrace(message)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `message` — الرسالة التي تُسجَّل في سجل الخادم. [`const String`](/ar/reference/data-types/string)
 

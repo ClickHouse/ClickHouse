@@ -29,12 +29,12 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 **Paramètres**
 
-| Paramètre       | Type | Par défaut | Description                                                                                                                                                                                                                                                                                                                                             |
-| --------------- | ---- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`           | str  | *requis*   | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                        |
+| Paramètre       | Type | Par défaut | Description                                                                                                                                                                                                                                                                                                                                              |
+| --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`           | str  | *requis*   | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
 | `output_format` | str  | `"CSV"`    | Format de sortie des résultats. Formats pris en charge :<br />• `"CSV"` - valeurs séparées par des virgules<br />• `"JSON"` - format JSON<br />• `"Arrow"` - format Apache Arrow<br />• `"Parquet"` - format Parquet<br />• `"DataFrame"` - DataFrame pandas<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - Active la journalisation détaillée |
-| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données en mémoire.<br />Peut être un chemin de fichier ou `":memory:"` pour une base de données en mémoire                                                                                                                                                                    |
-| `udf_path`      | str  | `""`       | Chemin vers le répertoire des fonctions définies par l&#39;utilisateur                                                                                                                                                                                                                                                                                  |
+| `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données en mémoire.<br />Peut être un chemin de fichier ou `":memory:"` pour une base de données en mémoire                                                                                                                                                                     |
+| `udf_path`      | str  | `""`       | Chemin vers le répertoire legacy des UDF basées sur des sous-processus. Non requis pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                      |
 
 **Renvoie**
 
@@ -76,11 +76,6 @@ Renvoie le résultat de la requête dans le format spécifié :
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
 ```
 
-```pycon
->>> # Query with UDF
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
-```
-
 ***
 
 <div id="chdb_sql">
@@ -104,9 +99,9 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | Paramètre       | Type | Par défaut | Description                                                                                                                                                                                                                                                                                                                                              |
 | --------------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *required* | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                         |
-| `output_format` | str  | `"CSV"`    | Format de sortie des résultats. Formats pris en charge :<br />• `"CSV"` - Valeurs séparées par des virgules<br />• `"JSON"` - Format JSON<br />• `"Arrow"` - Format Apache Arrow<br />• `"Parquet"` - Format Parquet<br />• `"DataFrame"` - DataFrame pandas<br />• `"ArrowTable"` - Table PyArrow<br />• `"Debug"` - Active la journalisation détaillée |
+| `output_format` | str  | `"CSV"`    | Format de sortie des résultats. Formats pris en charge :<br />• `"CSV"` - Valeurs séparées par des virgules<br />• `"JSON"` - Format JSON<br />• `"Arrow"` - Format Apache Arrow<br />• `"Parquet"` - Format Parquet<br />• `"DataFrame"` - DataFrame pandas<br />• `"ArrowTable"` - PyArrow Table<br />• `"Debug"` - Active la journalisation détaillée |
 | `path`          | str  | `""`       | Chemin du fichier de la base de données. Par défaut, utilise une base de données en mémoire.<br />Peut être un chemin de fichier ou `":memory:"` pour une base de données en mémoire                                                                                                                                                                     |
-| `udf_path`      | str  | `""`       | Chemin vers le répertoire des fonctions définies par l’utilisateur                                                                                                                                                                                                                                                                                       |
+| `udf_path`      | str  | `""`       | Chemin vers le répertoire legacy des UDF basées sur des sous-processus. Non nécessaire pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                  |
 
 **Renvoie**
 
@@ -146,11 +141,6 @@ Renvoie le résultat de la requête dans le format spécifié :
 ```pycon
 >>> # Query with file-based database
 >>> result = chdb.query("CREATE TABLE test (id INT) ENGINE = Memory", path="mydb.chdb")
-```
-
-```pycon
->>> # Query with UDF
->>> result = chdb.query("SELECT my_udf('test')", udf_path="/path/to/udfs")
 ```
 
 ***
@@ -511,7 +501,7 @@ query(sql, fmt='CSV', udf_path='')
 | ---------- | ---- | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str  | *obligatoire* | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                                           |
 | `fmt`      | str  | `"CSV"`       | Format de sortie des résultats. Formats disponibles :<br />• `"CSV"` - valeurs séparées par des virgules<br />• `"JSON"` - format JSON<br />• `"TabSeparated"` - valeurs séparées par des tabulations<br />• `"Pretty"` - format de tableau Pretty<br />• `"JSONCompact"` - format JSON compact<br />• `"Arrow"` - format Apache Arrow<br />• `"Parquet"` - format Parquet |
-| `udf_path` | str  | `""`          | Chemin vers les fonctions définies par l&#39;utilisateur. S&#39;il n&#39;est pas spécifié, le chemin UDF défini lors de l&#39;initialisation de la session est utilisé                                                                                                                                                                                                     |
+| `udf_path` | str  | `""`          | Chemin vers le répertoire des UDF legacy basées sur des sous-processus. Non requis pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function)). S&#39;il n&#39;est pas spécifié, le chemin UDF défini lors de l&#39;initialisation de la session est utilisé                                                                          |
 
 **Renvoie**
 
@@ -574,7 +564,7 @@ id,name
 
 **Voir aussi**
 
-* [`send_query()`](#chdb-session-session-send_query) - Pour exécuter des requêtes en flux
+* [`send_query()`](#chdb-session-session-send_query) - Pour l’exécution de requête en streaming
 * [`sql`](#chdb-session-session-sql) - Alias de cette méthode
 
 ***
@@ -678,7 +668,7 @@ sql(sql, fmt='CSV', udf_path='')
 | ---------- | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`      | str  | *required* | Chaîne de requête SQL à exécuter                                                                                                                                                                                                                                                                                                                                           |
 | `fmt`      | str  | `"CSV"`    | Format de sortie des résultats. Formats disponibles :<br />• `"CSV"` - Valeurs séparées par des virgules<br />• `"JSON"` - Format JSON<br />• `"TabSeparated"` - Valeurs séparées par des tabulations<br />• `"Pretty"` - Format de tableau Pretty<br />• `"JSONCompact"` - Format JSON compact<br />• `"Arrow"` - Format Apache Arrow<br />• `"Parquet"` - Format Parquet |
-| `udf_path` | str  | `""`       | Chemin vers les fonctions définies par l&#39;utilisateur. S&#39;il n&#39;est pas spécifié, le chemin UDF défini lors de l&#39;initialisation de la session est utilisé                                                                                                                                                                                                     |
+| `udf_path` | str  | `""`       | Chemin vers le répertoire des UDF legacy basées sur des sous-processus. Inutile pour les UDF Python natives ([`@func`](#func-decorator) / [`create_function`](#create-function)). S&#39;il n&#39;est pas spécifié, le chemin UDF défini lors de l&#39;initialisation de la session est utilisé                                                                             |
 
 **Retourne**
 
@@ -3504,17 +3494,294 @@ with dbapi.connect("test.chdb") as conn:
 </Warning>
 
 <div id="user-defined-functions">
-  ## Fonctions définies par l’utilisateur (UDF)
+  ## Fonctions Python définies par l’utilisateur (UDF)
 </div>
 
-Module de fonctions définies par l’utilisateur pour chDB.
+chDB prend en charge les UDF Python natives qui s’exécutent dans le processus, avec des arguments typés, une inférence de type automatique et une gestion configurable des valeurs NULL et des exceptions. Les fonctions Python enregistrées comme UDF peuvent être appelées directement depuis des requêtes SQL.
 
-Ce module permet de créer et de gérer des fonctions définies par l’utilisateur (UDF)
-dans chDB. Il vous permet d’étendre les possibilités de chDB en écrivant des fonctions Python personnalisées
-qui peuvent être appelées depuis des requêtes SQL.
+Les exemples ci-dessous utilisent le format de sortie CSV par défaut. Les commentaires intégrés indiquent les valeurs de résultat logiques ; la sortie brute affiche `NULL` sous la forme `\N` et applique les règles de mise entre guillemets du format CSV aux valeurs de chaîne et de date.
+
+<div id="create-function">
+  ### `chdb.create_function`
+</div>
+
+Enregistre une fonction Python en tant que fonction SQL chDB.
+
+**Syntaxe**
+
+```python
+chdb.create_function(name, func, arg_types=None, return_type=None, *, on_null=None, on_error=None)
+```
+
+**Paramètres**
+
+| Paramètre     | Type                               | Par défaut        | Description                                                                                                                                    |
+| ------------- | ---------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`        | str                                | *(obligatoire)*   | Nom de la fonction SQL à enregistrer                                                                                                           |
+| `func`        | callable                           | *(obligatoire)*   | Fonction Python à enregistrer                                                                                                                  |
+| `arg_types`   | list of ChdbType/str/type, or None | `None`            | Liste des types d’arguments. Si `None`, déduits des annotations de type                                                                        |
+| `return_type` | ChdbType/str/type, or None         | `None`            | Type de retour. Si `None`, déduit de l’annotation de retour de la fonction ; l’enregistrement échoue si cette annotation est également absente |
+| `on_null`     | str or NullHandling                | `None` (ignorer)  | Gestion des entrées NULL : `"skip"` ou `"pass"`. Mot-clé uniquement                                                                            |
+| `on_error`    | str or ExceptionHandling           | `None` (propager) | Gestion des exceptions : `"propagate"` ou `"ignore"`. Mot-clé uniquement                                                                       |
+
+Chaque paramètre de type (éléments de `arg_types` et `return_type`) accepte :
+
+* Une constante `ChdbType` : `INT64`, `STRING`, `FLOAT64`, etc.
+* Une chaîne de type ClickHouse : `"Int64"`, `"String"`, `"DateTime64(6)"`, `"DateTime('UTC')"`, etc.
+* Un type Python : `int`, `float`, `str`, `bool`, `bytes`, `datetime.date`, `datetime.datetime` — mappé conformément au [mappage automatique des types](#udf-automatic-type-mapping)
+
+L’enregistrement d’un nom déjà enregistré génère une erreur : les UDFs ne sont pas remplacées silencieusement. Appelez d’abord [`drop_function`](#drop-function) pour réenregistrer une fonction.
+
+**Exemple**
+
+```python
+from chdb import create_function, drop_function, query
+from chdb.sqltypes import INT64, STRING
+
+create_function("strlen", len, arg_types=[STRING], return_type=INT64)
+print(query("SELECT strlen('hello')"))  # 5
+
+drop_function("strlen")
+```
+
+***
+
+<div id="drop-function">
+  ### `chdb.drop_function`
+</div>
+
+Supprime une UDF Python enregistrée précédemment. Ne fait rien si la fonction n’est pas enregistrée ; il est donc possible de l’appeler sans condition.
+
+**Syntaxe**
+
+```python
+chdb.drop_function(name)
+```
+
+**Paramètres**
+
+| Paramètre | Type | Description                        |
+| --------- | ---- | ---------------------------------- |
+| `name`    | str  | Nom de la fonction SQL à supprimer |
+
+***
+
+<div id="func-decorator">
+  ### Décorateur `@func`
+</div>
+
+Décorateur permettant d’enregistrer une fonction Python comme fonction SQL chDB. La fonction reste appelable comme une fonction Python ordinaire tout en étant disponible dans les requêtes SQL sous son `__name__`.
+
+**Syntaxe**
+
+```python
+from chdb import func
+
+@func(arg_types=None, return_type=None, *, on_null=None, on_error=None)
+def my_function(...):
+    ...
+```
+
+**Paramètres**
+
+Les mêmes que pour [`create_function`](#create-function) (à l’exception de `name` et `func`, qui sont dérivés de la fonction décorée).
+
+**Examples**
+
+```python
+from chdb import func, query
+from chdb.sqltypes import INT64, STRING
+
+# Explicit types
+@func([INT64, INT64], INT64)
+def add(a, b):
+    return a + b
+
+# Types inferred from annotations
+@func()
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+# Explicit return_type, arg_types inferred from annotations
+@func(return_type=STRING)
+def greet(name: str):
+    return f"Hello, {name}!"
+
+print(query("SELECT add(12, 22)"))       # 34
+print(query("SELECT multiply(3, 7)"))    # 21
+print(query("SELECT greet('world')"))    # Hello, world!
+```
+
+***
+
+<div id="udf-type-system">
+  ### Système de types
+</div>
+
+<div id="udf-available-types">
+  #### Types disponibles
+</div>
+
+Importez les types depuis `chdb.sqltypes` :
+
+```python
+from chdb.sqltypes import (
+    BOOL,
+    INT8, INT16, INT32, INT64, INT128, INT256,
+    UINT8, UINT16, UINT32, UINT64, UINT128, UINT256,
+    FLOAT32, FLOAT64,
+    STRING,
+    DATE, DATE32, DATETIME, DATETIME64,
+)
+```
+
+<div id="udf-automatic-type-mapping">
+  #### Mappage automatique des types
+</div>
+
+Lorsque les types sont déduits des annotations Python, le mappage suivant est utilisé :
+
+| Type Python         | Type ClickHouse |
+| ------------------- | --------------- |
+| `bool`              | `Bool`          |
+| `int`               | `Int64`         |
+| `float`             | `Float64`       |
+| `str`               | `String`        |
+| `bytes`             | `String`        |
+| `bytearray`         | `String`        |
+| `datetime.date`     | `Date`          |
+| `datetime.datetime` | `DateTime64(6)` |
+
+<div id="udf-type-specification-methods">
+  #### Méthodes de définition des types
+</div>
+
+Les types peuvent être définis de plusieurs façons :
+
+```python
+from chdb import create_function, func
+from chdb.sqltypes import INT64
+
+# 1. ChdbType constants
+create_function("f1", lambda x: x, arg_types=[INT64], return_type=INT64)
+
+# 2. ClickHouse type strings
+create_function("f2", lambda x: x, arg_types=["Int64"], return_type="Int64")
+
+# 3. Parameterized type strings
+create_function("f3", lambda x: x, arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+
+# 4. Python types — passed directly or used as annotations
+create_function("f4", lambda x: x, arg_types=[int], return_type=int)
+
+@func()
+def f5(x: int) -> int:
+    return x
+```
+
+***
+
+<div id="udf-null-handling">
+  ### Gestion des valeurs NULL
+</div>
+
+Contrôlez le traitement des valeurs NULL à l’aide du paramètre `on_null`.
+
+| Valeur   | Enum                | Comportement                                       |
+| -------- | ------------------- | -------------------------------------------------- |
+| `"skip"` | `NullHandling.SKIP` | Renvoie NULL sans appeler la fonction (par défaut) |
+| `"pass"` | `NullHandling.PASS` | Convertit NULL en `None` et appelle la fonction    |
+
+```python
+from chdb import func, query, NullHandling
+
+# Default: NULL in → NULL out, function not called
+@func(return_type="Int64")
+def add_one(x: int) -> int:
+    return x + 1
+
+print(query("SELECT add_one(NULL)"))  # NULL
+
+# Pass NULL as None
+@func(return_type="Int64", on_null="pass")
+def null_safe(x):
+    return 0 if x is None else x + 1
+
+print(query("SELECT null_safe(NULL)"))  # 0
+```
+
+***
+
+<div id="udf-exception-handling">
+  ### Gestion des exceptions
+</div>
+
+Contrôlez la gestion des exceptions à l’aide du paramètre `on_error`.
+
+| Valeur        | Enum                          | Comportement                                            |
+| ------------- | ----------------------------- | ------------------------------------------------------- |
+| `"propagate"` | `ExceptionHandling.PROPAGATE` | Génère l’exception sous forme d’erreur SQL (par défaut) |
+| `"ignore"`    | `ExceptionHandling.IGNORE`    | Intercepte l’exception et renvoie NULL                  |
+
+```python
+from chdb import func, query
+
+# Default: exception propagates
+@func(arg_types=["Int64", "Int64"], return_type="Int64")
+def divide(a, b):
+    return a // b
+
+# print(query("SELECT divide(1, 0)"))  # Error: division by zero
+
+# Ignore: exception → NULL
+@func(arg_types=["Int64", "Int64"], return_type="Int64", on_error="ignore")
+def safe_divide(a, b):
+    return a // b
+
+print(query("SELECT safe_divide(1, 0)"))   # NULL
+print(query("SELECT safe_divide(10, 2)"))  # 5
+```
+
+***
+
+<div id="udf-datetime">
+  ### Prise en charge de DateTime et des fuseaux horaires
+</div>
+
+Les UDF prennent pleinement en charge les types `Date`, `Date32`, `DateTime` et `DateTime64` avec prise en compte des fuseaux horaires.
+
+```python
+from chdb import func, query
+from datetime import datetime, timedelta, date
+
+@func(arg_types=["DateTime('UTC')"], return_type="DateTime('UTC')")
+def add_one_hour(dt):
+    return dt + timedelta(hours=1)
+
+@func()
+def get_year(d: date) -> int:
+    return d.year
+
+print(query("SELECT add_one_hour(toDateTime('2024-01-01 12:00:00', 'UTC'))"))  # 2024-01-01 13:00:00
+print(query("SELECT get_year(toDate('2024-06-15'))"))  # 2024
+```
+
+* Les valeurs ClickHouse `DateTime`/`DateTime64` fournies en entrée sont converties en objets Python `datetime` contenant les informations de fuseau horaire
+* Les objets Python `datetime` renvoyés à ClickHouse conservent leurs informations de fuseau horaire
+* Le type `DATETIME64` de `chdb.sqltypes` utilise par défaut une échelle de 6 (microsecondes), ce qui équivaut à `DateTime64(6)`
+
+***
+
+<div id="legacy-udf">
+  ### API legacy
+</div>
+
+<Warning>
+  **Obsolète :** le décorateur `@chdb_udf` correspond à l’ancien mécanisme d’UDF basé sur des sous-processus : il exécute votre fonction dans un processus Python distinct et transmet tous les arguments sous forme de chaînes de caractères. Il reste disponible, mais l’API native des UDF Python ([`@func`](#func-decorator) / [`create_function`](#create-function)) est recommandée — les UDF natives s’exécutent in-process avec des arguments typés, la gestion des valeurs NULL et le contrôle des exceptions. Consultez le [guide des UDF Python](/fr/chdb/guides/python-udf) pour une présentation complète.
+</Warning>
 
 <div id="chdb-udf">
-  ### `chdb.udf.chdb_udf`
+  #### `chdb.udf.chdb_udf`
 </div>
 
 Décorateur pour les UDF Python de chDB (fonctions définies par l’utilisateur).
@@ -3556,7 +3823,7 @@ def func_use_json(arg):
 ***
 
 <div id="generate-udf">
-  ### `chdb.udf.generate_udf`
+  #### `chdb.udf.generate_udf`
 </div>
 
 Génère les fichiers de configuration UDF et les scripts exécutables.

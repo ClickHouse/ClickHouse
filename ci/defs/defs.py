@@ -132,6 +132,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
@@ -482,16 +488,10 @@ class ArtifactNames:
     UNITTEST_AMD_MSAN = "UNITTEST_AMD_MSAN"
     UNITTEST_LLVM_COVERAGE = "UNITTEST_LLVM_COVERAGE"
 
-    DEB_AMD_DEBUG = "DEB_AMD_DEBUG"
+    # Packages are built for the release builds only - they are what gets published, and
+    # everything else in CI runs from the `CH_*` binary.
     DEB_AMD_RELEASE = "DEB_AMD_RELEASE"
-    DEB_AMD_ASAN_UBSAN = "DEB_AMD_ASAN_UBSAN"
-    DEB_AMD_TSAN = "DEB_AMD_TSAN"
-    DEB_AMD_MSAN = "DEB_AMD_MSAN"
     DEB_ARM_RELEASE = "DEB_ARM_RELEASE"
-    DEB_ARM_DEBUG = "DEB_ARM_DEBUG"
-    DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
-    DEB_ARM_TSAN = "DEB_ARM_TSAN"
-    DEB_ARM_MSAN = "DEB_ARM_MSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -506,7 +506,6 @@ class ArtifactNames:
     TOOLCHAIN_PGO_BOLT_AMD = "TOOLCHAIN_PGO_BOLT_AMD"
     TOOLCHAIN_PGO_BOLT_ARM = "TOOLCHAIN_PGO_BOLT_ARM"
     CH_AMD_CFI = "CH_AMD_CFI"
-    DEB_AMD_CFI = "DEB_AMD_CFI"
 
     CLICKHOUSE_PGO_PROFILE_AMD = "CLICKHOUSE_PGO_PROFILE_AMD"
     CLICKHOUSE_PGO_PROFILE_ARM = "CLICKHOUSE_PGO_PROFILE_ARM"
@@ -642,16 +641,7 @@ class ArtifactConfigs:
     ).parametrize(
         names=[
             ArtifactNames.DEB_AMD_RELEASE,
-            ArtifactNames.DEB_AMD_DEBUG,
-            ArtifactNames.DEB_AMD_ASAN_UBSAN,
-            ArtifactNames.DEB_AMD_TSAN,
-            ArtifactNames.DEB_AMD_MSAN,
             ArtifactNames.DEB_ARM_RELEASE,
-            ArtifactNames.DEB_ARM_DEBUG,
-            ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ArtifactNames.DEB_ARM_TSAN,
-            ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_AMD_CFI,
         ]
     )
     clickhouse_rpms = Artifact.Config(

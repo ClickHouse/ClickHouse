@@ -193,8 +193,7 @@ E crie pg&#95;clickhouse:
 CREATE EXTENSION pg_clickhouse;
 ```
 
-Crie um servidor externo usando o nome do host, a porta e o banco de dados da sua
-instância do ClickHouse.
+Crie um servidor externo usando o nome do host, a porta e o banco de dados no ClickHouse.
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -202,6 +201,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 ```
 
 Aqui, optamos por usar o driver binário, que usa o protocolo binário do ClickHouse. Você também pode usar o driver &quot;http&quot;, que usa a interface HTTP.
+
+<Note>
+  Se você estiver usando o console do ClickHouse Cloud para executar SQL, conceda ao usuário administrador do console acesso ao servidor externo:
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 Em seguida, mapeie um usuário do PostgreSQL para um usuário do ClickHouse. A forma mais simples de fazer isso
 é mapear o usuário atual do PostgreSQL para um usuário remoto no
@@ -214,8 +221,7 @@ CREATE USER MAPPING FOR CURRENT_USER SERVER taxi_srv
 
 Você também pode especificar a opção `password`.
 
-Agora, adicione a tabela de táxi; basta importar todas as tabelas do banco de dados remoto
-ClickHouse para um schema do Postgres:
+Agora, adicione a tabela de táxi; basta importar todas as tabelas do banco de dados remoto no ClickHouse para um schema do Postgres:
 
 ```sql
 CREATE SCHEMA taxi;

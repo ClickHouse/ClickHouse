@@ -104,6 +104,16 @@ sección `named_collections_storage` del archivo de configuración. El siguiente
 
 De forma predeterminada, el parámetro de configuración opcional `update_timeout_ms` es igual a `5000`.
 
+Puede inspeccionar el tipo de almacenamiento activo mediante `system.server_settings` y `getServerSetting`:
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+Cambiar el tipo de almacenamiento requiere reiniciar el servidor; `SYSTEM RELOAD CONFIG` no cambia el backend activo.
+
 <div id="storing-named-collections-in-configuration-files">
   ## Guardar colecciones con nombre en archivos de configuración
 </div>

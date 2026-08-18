@@ -400,7 +400,7 @@ SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12
 * Если условие `cond` вычисляется в ненулевое значение, функция возвращает результат выражения `then`.
 * Если `cond` вычисляется в ноль или NULL, возвращается результат выражения `else`.
 
-Параметр [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings#short_circuit_function_evaluation) определяет, используется ли укороченное вычисление.
+Параметр [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) определяет, используется ли укороченное вычисление.
 
 Если он включен, выражение `then` вычисляется только для строк, где `cond` истинно, а выражение `else` — только там, где `cond` ложно.
 
@@ -524,7 +524,7 @@ SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00
 Вычисляет каждое условие по порядку. Для первого условия, которое истинно (ненулевое и не `NULL`), возвращает значение соответствующей ветви.
 Если ни одно из условий не истинно, возвращает значение `else`.
 
-Параметр [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings#short_circuit_function_evaluation) определяет,
+Параметр [`short_circuit_function_evaluation`](/ru/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) определяет,
 используется ли укороченное вычисление. Если оно включено, выражение `then_i` вычисляется только для строк, где
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` истинно.
 

@@ -3,6 +3,7 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <exception>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -213,6 +214,11 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
+    /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
+    /// plan, which its callers would silently take for "nothing left to build".
+    std::exception_ptr in_place_build_failure;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;

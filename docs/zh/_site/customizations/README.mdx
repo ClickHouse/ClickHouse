@@ -17,7 +17,7 @@ title: README
 
 * `ask-ai-button.js` — 调整 Ask-AI 按钮的样式和行为。
 * `custom-footer.js` — 渲染自定义站点页脚 (`#ch-custom-footer`) 。
-* `galaxy.js` — 初始化 ClickHouse Galaxy analytics，在 Mintlify SPA 导航过程中跟踪文档和知识库页面生命周期事件，将规范 `https://clickhouse.com/docs` 流量发送到生产 Galaxy API，并将 `.mintlify.app` 预览流量发送到开发 Galaxy API (在 localhost 和未知来源上禁用) ，且仅在规范生产文档中向 ClickHouse Cloud 链接添加归因信息和 Galaxy 访客 ID。
+* `galaxy.js` — 初始化 ClickHouse Galaxy analytics，对每个事件应用与营销网站相同的 30 天最后接触、非直接引荐来源和 UTM 归因模型，在 Mintlify SPA 导航过程中跟踪文档和知识库页面生命周期事件，将规范 `https://clickhouse.com/docs` 流量发送到生产 Galaxy API，并将 `.mintlify.app` 预览流量发送到开发 Galaxy API (在 localhost 和未知来源上禁用) ，且仅在规范生产文档中向 ClickHouse Cloud 链接添加已存储的营销活动参数和 Galaxy 访客 ID。
 * `inkeep-init.js` — 用 Inkeep 搜索模态框替换 Mintlify 的原生搜索 (⌘K / 导航栏搜索框) 。仅替换搜索；AI Chat 仍由 Kapa 提供。
 * `kapa-init.js` — 引导 Kapa.ai RAG 小组件。
 * `navbar-cta.js` — 在导航栏中添加“开始使用”CTA。

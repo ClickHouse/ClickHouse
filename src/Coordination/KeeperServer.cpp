@@ -26,6 +26,7 @@
 #include <libnuraft/peer.hxx>
 #include <libnuraft/raft_server.hxx>
 #include <libnuraft/snapshot_sync_ctx.hxx>
+#include <libnuraft/timer_task.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
 #include <Common/Exception.h>
@@ -261,6 +262,13 @@ std::string checkAndGetSuperdigest(const String & user_and_digest)
     return user_and_digest;
 }
 
+UInt64 getNowMonotonicMs()
+{
+    return static_cast<UInt64>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
+constexpr int32_t min_leader_metrics_poll_interval_ms = 100;
 }
 
 KeeperServer::KeeperServer(
@@ -725,6 +733,7 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     KeeperRaftServer::set_raft_limits(raft_limits);
 
     raft_instance->start_server(init_options.skip_initial_election_timeout_);
+    startLeaderMetricsPolling(params.heart_beat_interval_);
 
     nuraft::ptr<nuraft::raft_server> cast_raft_server = raft_instance;
 
@@ -767,6 +776,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
 void KeeperServer::shutdownRaftServer()
 {
     size_t timeout = keeper_context->getCoordinationSettings()[CoordinationSetting::shutdown_timeout].totalSeconds();
+
+    stopLeaderMetricsPolling();
 
     if (!raft_instance)
     {
@@ -875,8 +886,139 @@ KeeperServer::RespondingCounts KeeperServer::getRespondingCounts() const
     return raft_instance->getRespondingCounts();
 }
 
+void KeeperServer::startLeaderUptimeMetrics()
+{
+    leader_since_ms = getNowMonotonicMs();
+}
+
+void KeeperServer::stopLeaderUptimeMetrics()
+{
+    leader_since_ms = 0;
+}
+
+std::optional<uint64_t> KeeperServer::getLeaderUptimeMetrics() const
+{
+    const UInt64 leader_since = leader_since_ms.load();
+    if (leader_since == 0)
+        return {};
+
+    return getNowMonotonicMs() - leader_since;
+}
+
+void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
+{
+    nuraft::timer_task<void>::executor task_function = [this]
+    {
+        collectLeaderMetrics();
+    };
+
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        leader_unavailable_poll_interval_ms = std::max(poll_interval_ms, min_leader_metrics_poll_interval_ms);
+        leader_unavailable_polling_task.emplace(nuraft::cs_new<nuraft::timer_task<void>>(task_function));
+    }
+
+    collectLeaderMetrics();
+}
+
+void KeeperServer::stopLeaderMetricsPolling()
+{
+    nuraft::ptr<nuraft::delayed_task> polling_task;
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        if (!leader_unavailable_polling_task)
+            return;
+
+        polling_task = *leader_unavailable_polling_task;
+        leader_unavailable_polling_task.reset();
+    }
+
+    if (asio_service)
+        asio_service->cancel(polling_task);
+}
+
+void KeeperServer::collectLeaderMetrics()
+{
+    nuraft::ptr<nuraft::delayed_task> polling_task;
+    int32_t poll_interval_ms = 0;
+    {
+        std::lock_guard lock(leader_unavailable_metrics_mutex);
+        if (!leader_unavailable_polling_task)
+            return;
+
+        const UInt64 now_ms = getNowMonotonicMs();
+        if (!raft_instance->is_leader_alive())
+        {
+            if (leader_unavailable_since_ms == 0)
+                leader_unavailable_since_ms = now_ms;
+            if (election_since_ms == 0)
+                election_since_ms = now_ms;
+        }
+        else
+        {
+            const bool is_leader = raft_instance->is_leader();
+            if (leader_unavailable_since_ms != 0 && is_leader)
+            {
+                last_leader_unavailable_time_ms = now_ms - leader_unavailable_since_ms;
+                sum_leader_unavailable_time_ms += *last_leader_unavailable_time_ms;
+                ++cnt_leader_unavailable_time;
+            }
+            leader_unavailable_since_ms = 0;
+
+            /// NuRaft changes the local leader state before invoking the
+            /// BecomeLeader callback. Preserve a locally observed election
+            /// window for finishLeaderElectionMetrics to consume from that
+            /// callback; a live leader on another node ends the window here.
+            if (!is_leader)
+                election_since_ms = 0;
+        }
+
+        polling_task = *leader_unavailable_polling_task;
+        poll_interval_ms = leader_unavailable_poll_interval_ms;
+    }
+
+    /// The optional is the authoritative stopped state. If shutdown resets it
+    /// between releasing the lock and scheduling this task, its callback returns
+    /// without scheduling another poll.
+    asio_service->schedule(polling_task, poll_interval_ms);
+}
+
+void KeeperServer::finishLeaderElectionMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    if (election_since_ms == 0)
+        return;
+
+    const UInt64 now_ms = getNowMonotonicMs();
+    last_leader_election_time_ms = now_ms - election_since_ms;
+    sum_election_time_ms += *last_leader_election_time_ms;
+    ++cnt_election_time;
+    election_since_ms = 0;
+}
+
+void KeeperServer::resetLeaderMetrics()
+{
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_since_ms = 0;
+    election_since_ms = 0;
+    sum_leader_unavailable_time_ms = 0;
+    cnt_leader_unavailable_time = 0;
+    last_leader_unavailable_time_ms.reset();
+    sum_election_time_ms = 0;
+    cnt_election_time = 0;
+    last_leader_election_time_ms.reset();
+}
+
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    if (type == nuraft::cb_func::BecomeLeader)
+    {
+        startLeaderUptimeMetrics();
+        finishLeaderElectionMetrics();
+    }
+    else if (type == nuraft::cb_func::BecomeFollower)
+        stopLeaderUptimeMetrics();
+
     if (is_recovering)
     {
         const auto finish_recovering = [&]
@@ -1475,6 +1617,17 @@ Keeper4LWInfo KeeperServer::getPartiallyFilled4LWInfo() const
     result.synced_non_voting_follower_count = 0;
     if (result.is_leader)
     {
+        result.leader_uptime_ms = getLeaderUptimeMetrics();
+        {
+            std::lock_guard lock(leader_unavailable_metrics_mutex);
+            result.sum_leader_unavailable_time_ms = sum_leader_unavailable_time_ms;
+            result.cnt_leader_unavailable_time = cnt_leader_unavailable_time;
+            result.last_leader_unavailable_time_ms = last_leader_unavailable_time_ms;
+            result.sum_election_time_ms = sum_election_time_ms;
+            result.cnt_election_time = cnt_election_time;
+            result.last_leader_election_time_ms = last_leader_election_time_ms;
+        }
+
         auto counts = getRespondingCounts();
         result.learner_count = counts.learners;
         result.follower_count = counts.followers;

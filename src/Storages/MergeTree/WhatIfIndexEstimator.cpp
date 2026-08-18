@@ -194,7 +194,10 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexPtr index_helper;
     try
     {
-        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(),fresh_index_desc, *data.getSettings());
+        /// validate before get, same as CREATE: creators read their arguments unguarded
+        const auto & merge_tree_settings = *data.getSettings();
+        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
+        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);
     }
     catch (const Exception &)
     {
@@ -206,15 +209,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
     /// current grants, a grant revoked since CREATE should deny the estimate
     context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
-
-    /// TODO(yariks5s): text indexes need a tokenized block layout the empirical pipeline doesn't build
-    /// also, add a whitelist index types so the logic will not be broken by a new type
-    if (index_helper->isTextIndex())
-    {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        result.not_applicable_reason = "EXPLAIN WHATIF does not yet support empirical estimation for text indexes";
-        return result;
-    }
 
     const auto & filter_dag = read_step->getFilterActionsDAG();
     if (!filter_dag)

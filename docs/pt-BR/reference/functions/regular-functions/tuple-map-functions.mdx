@@ -29,7 +29,7 @@ Um par chave-valor consiste em uma chave seguida de um `key_value_delimiter` e u
 **Sintaxe**
 
 ```sql
-extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character])
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Argumentos**
@@ -38,7 +38,7 @@ extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_cha
 * `key_value_delimiter` - Caractere a ser usado como delimitador entre a chave e o valor. O padrão é `:`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
 * `pair_delimiters` - Conjunto de caracteres a ser usado como delimitadores entre pares. O padrão é `\space`, `,` e `;`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
 * `quoting_character` - Caractere a ser usado para delimitar aspas. O padrão é `"`. [String](/pt-BR/reference/data-types/string) ou [FixedString](/pt-BR/reference/data-types/fixedstring).
-* `unexpected_quoting_character_strategy` - Estratégia para lidar com caracteres de aspas em posições inesperadas durante a fase `read_key` e `read_value`. Valores possíveis: `invalid`, `accept` e `promote`. `invalid` descartará a chave ou o valor e fará a transição de volta para o estado `WAITING_KEY`. `accept` o tratará como um caractere normal. `promote` fará a transição para o estado `READ_QUOTED_{KEY/VALUE}` e começará a partir do próximo caractere. O valor padrão é `INVALID`
+* `unexpected_quoting_character_strategy` - Estratégia para lidar com caracteres de aspas em posições inesperadas durante a fase `read_key` e `read_value`. Valores possíveis: `invalid`, `accept` e `promote`. `invalid` descartará a chave ou o valor e fará a transição de volta para o estado `WAITING_KEY`. `accept` o tratará como um caractere normal. `promote` fará a transição para o estado `READ_QUOTED_{KEY/VALUE}` e começará a partir do próximo caractere. O valor padrão é `PROMOTE`
 
 **Valores retornados**
 
@@ -62,7 +62,7 @@ Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Aspas simples como caractere de aspas**
+**Aspas simples como caractere de citação**
 
 ```sql
 arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
@@ -144,7 +144,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 └──────────────┘
 ```
 
-**Sequências de escape sem suporte a escapes**
+**Sequências de escape sem suporte a sequências de escape**
 
 ```sql
 arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
@@ -161,7 +161,7 @@ Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
 **Sintaxe**
 
 ```sql
-extractKeyValuePairs(input)
+extractKeyValuePairs(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Aliases**: `str_to_map`, `mapFromString`
@@ -211,7 +211,7 @@ Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
 **Sintaxe**
 
 ```sql
-extractKeyValuePairsWithEscaping(input)
+extractKeyValuePairsWithEscaping(data, [key_value_delimiter], [pair_delimiter], [quoting_character], [unexpected_quoting_character_strategy])
 ```
 
 **Argumentos**
@@ -785,7 +785,7 @@ SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))
 Introduzido em: v21.2.0
 
 Retorna as chaves de um determinado map.
-Esta função pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Esta função pode ser otimizada ativando a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Com a configuração ativada, a função lê apenas a subcoluna `keys`, em vez do map inteiro.
 A consulta `SELECT mapKeys(m) FROM table` é transformada em `SELECT m.keys FROM table`.
 
@@ -801,7 +801,7 @@ mapKeys(map)
 
 **Valor retornado**
 
-Retorna um array com todas as chaves do mapa. [`Array(T)`](/pt-BR/reference/data-types/array)
+Retorna um array com todas as chaves do map. [`Array(T)`](/pt-BR/reference/data-types/array)
 
 **Exemplos**
 
@@ -1098,7 +1098,7 @@ SELECT mapUpdate(map('key1', 0, 'key3', 0), map('key1', 10, 'key2', 10))
 Introduzida em: v21.2.0
 
 Retorna os valores de um determinado map.
-Esta função pode ser otimizada ao ativar a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings#optimize_functions_to_subcolumns).
+Esta função pode ser otimizada ao ativar a configuração [`optimize_functions_to_subcolumns`](/pt-BR/reference/settings/session-settings/optimize#optimize_functions_to_subcolumns).
 Com a configuração ativada, a função lê apenas a subcoluna `values`, em vez do map inteiro.
 A consulta `SELECT mapValues(m) FROM table` é transformada em `SELECT m.values FROM table`.
 

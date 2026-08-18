@@ -292,8 +292,8 @@ spec:
 ```
 
 La combinación se realiza por clave: solo se reemplazan los valores que defines, y las claves generadas que
-omites (rutas de los certificados, configuración de la CA) se conservan. Consulta las
-[opciones de configuración del servidor para `openSSL`](/es/reference/settings/server-settings/settings#openssl)
+omites (rutas de los certificados, configuración de la CA) se conservan. Consulta la
+[configuración del servidor `openSSL`](/es/reference/settings/server-settings/settings/other#openssl)
 para ver las opciones disponibles, y
 [Configuración → Configuración adicional integrada](/es/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 para saber cómo se combina `extraConfig`.
@@ -331,4 +331,4 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
 * [Configuración → Configuración de TLS/SSL](/es/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — referencia de campos
 * [Configuración → `additionalPorts`](/es/products/kubernetes-operator/guides/configuration#additional-ports) — puertos reservados
 * [Referencia de la API → ClusterTLSSpec](/es/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [Configuración del servidor `openSSL`](/es/reference/settings/server-settings/settings#openssl) — opciones de TLS que se pueden sobrescribir mediante `extraConfig`
+* [Configuración del servidor `openSSL`](/es/reference/settings/server-settings/settings/other#openssl) — opciones de TLS que se pueden sobrescribir mediante `extraConfig`

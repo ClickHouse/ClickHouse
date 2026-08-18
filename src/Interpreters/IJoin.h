@@ -155,6 +155,14 @@ public:
     virtual IBlocksStreamPtr getDelayedBlocks() { return nullptr; }
     virtual bool hasDelayedBlocks() const { return false; }
 
+    /// Whether `keepLeftPipelineInOrder` can make this join preserve the left order. Asked before
+    /// committing to the optimisation, because committing is what pins the join. Delayed blocks
+    /// normally mean the rows get reordered, so the default answer follows `hasDelayedBlocks`.
+    /// A join that only reports delayed blocks because it *might* spill (`SpillingHashJoin`) can
+    /// still promise the order by giving up its ability to spill, so it overrides this to say yes
+    /// while `hasDelayedBlocks` is still true.
+    virtual bool canKeepLeftPipelineInOrder() const { return !hasDelayedBlocks(); }
+
     /// Whether the join emits left rows in the same order they arrive. HashJoin/DirectJoin/ConcurrentHashJoin
     /// stream the probe side, so they do. PartialMergeJoin re-sorts left blocks by the join key, so it does not;
     /// the read-in-order-through-join optimisation in optimizeReadInOrder.cpp must not propagate through such joins.

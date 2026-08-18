@@ -1,0 +1,111 @@
+---
+title: Неподдерживаемые возможности Cloud
+---
+
+В следующих таблицах перечислены возможности и процедуры для самоуправляемых развертываний, помеченные как неподдерживаемые в ClickHouse Cloud. В каждой записи указана конкретная неподдерживаемая возможность, даже если на исходной странице также описывается поддерживаемая функциональность.
+
+<div id="unsupported-managed-infrastructure-and-operations">
+  ### Управляемая инфраструктура и эксплуатация
+</div>
+
+| Неподдерживаемая возможность                                                    | Документация                                                                                                                                                     |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Самоуправляемое развертывание и настройка `ClickHouse Keeper`                   | [Руководство по Keeper](/ru/guides/oss/deployment-and-scaling/keeper), [Защищенные соединения с ZooKeeper](/ru/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper) |
+| Ручной выпуск сертификатов TLS и конфигурация сервера                           | [Настройка ACME](/ru/concepts/features/security/tls/configuring-tls-acme-client), [Настройка TLS](/ru/concepts/features/security/tls/configuring-tls)                  |
+| Ручная настройка уровней хранения hot/warm/cold с помощью `TTL`                 | [Руководство](/ru/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)                                                                  |
+| Проведение тестов производительности на самоуправляемом оборудовании            | [Руководство](/ru/concepts/features/performance/troubleshoot/performance-test)                                                                                      |
+| Применение рекомендаций по эксплуатации самоуправляемой системы                 | [Руководство](/ru/guides/oss/best-practices/tips)                                                                                                                   |
+
+<div id="unsupported-authentication-and-security">
+  ### Аутентификация и безопасность
+</div>
+
+| Неподдерживаемая возможность               | Документация                                                                                                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Внешняя HTTP-аутентификация                | [Справочник](/ru/concepts/features/security/external-authenticators/http)                                                                                            |
+| Внешняя аутентификация Kerberos            | [Справочник](/ru/concepts/features/security/external-authenticators/kerberos)                                                                                        |
+| Аутентификация LDAP и сопоставление ролей  | [Конфигурация](/ru/concepts/features/security/configuring-ldap), [Аутентификатор](/ru/concepts/features/security/external-authenticators/ldap)                          |
+| Аутентификация с помощью сертификата X.509 | [Аутентификация пользователей](/ru/concepts/features/security/ssl-user-auth), [Внешний аутентификатор](/ru/concepts/features/security/external-authenticators/ssl-x509) |
+
+<div id="unsupported-interfaces-and-integrations">
+  ### Интерфейсы и интеграции
+</div>
+
+| Неподдерживаемая возможность                            | Документация                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Интерфейс проводного протокола PostgreSQL               | [Справочник](/ru/concepts/features/interfaces/postgresql)                                                                                                                                                                                                                                                                                                                                            |
+| Интерфейс SSH с PTY                                     | [Справочник](/ru/concepts/features/interfaces/ssh)                                                                                                                                                                                                                                                                                                                                                   |
+| Движок репликации `MaterializedPostgreSQL`              | [Руководство по ClickPipes](/ru/integrations/clickpipes/postgres/connecting-to-postgresql#using-the-materializedpostgresql-database-engine), [Руководство по коннектору](/ru/integrations/connectors/data-sources/postgres), [Движок базы данных](/ru/reference/engines/database-engines/materialized-postgresql), [Движок таблицы](/ru/reference/engines/table-engines/integrations/materialized-postgresql) |
+| Интеграция с ODBC и движок таблицы `ODBC`               | [Руководство по интеграции](/ru/integrations/connectors/data-ingestion/odbc-with-clickhouse), [Движок таблицы](/ru/reference/engines/table-engines/integrations/odbc)                                                                                                                                                                                                                                   |
+| Интеграция с S3-совместимым объектным хранилищем MinIO  | [Руководство](/ru/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                                   |
+| Интеграция с S3-совместимым объектным хранилищем Tigris | [Руководство](/ru/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                                                  |
+
+<div id="unsupported-database-and-table-engines">
+  ### Движки баз данных и таблиц
+</div>
+
+| Неподдерживаемая возможность                                       | Документация                                                                                                                                                                                                                                                     |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Движок базы данных `MySQL`                                     | [Справочник](/ru/reference/engines/database-engines/mysql)                                                                                                                                                                                                          |
+| Движок таблицы `EmbeddedRocksDB`                               | [Справочник](/ru/reference/engines/table-engines/integrations/embedded-rocksdb)                                                                                                                                                                                     |
+| Движок таблицы `HDFS`                                          | [Справочник](/ru/reference/engines/table-engines/integrations/hdfs)                                                                                                                                                                                                 |
+| Движок таблицы `Hive`                                          | [Справочник](/ru/reference/engines/table-engines/integrations/hive)                                                                                                                                                                                                 |
+| Движок таблицы `JDBC`                                          | [Справочник](/ru/reference/engines/table-engines/integrations/jdbc)                                                                                                                                                                                                 |
+| Движок таблицы `Redis` для федеративных запросов               | [Справочник](/ru/reference/engines/table-engines/integrations/redis)                                                                                                                                                                                                |
+| Движок таблицы `SQLite`                                        | [Справочник](/ru/reference/engines/table-engines/integrations/sqlite)                                                                                                                                                                                               |
+| Движок таблицы `TimeSeries`                                    | [Справочник](/ru/reference/engines/table-engines/integrations/time-series)                                                                                                                                                                                          |
+| Движок таблицы `YTsaurus`                                      | [Справочник](/ru/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                             |
+| Движки таблиц семейства `Log` (`Log`, `StripeLog` и `TinyLog`) | [Обзор семейства](/ru/reference/engines/table-engines/log-family), [`Log`](/ru/reference/engines/table-engines/log-family/log), [`StripeLog`](/ru/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/ru/reference/engines/table-engines/log-family/tinylog) |
+
+<div id="unsupported-dictionaries-and-server-configuration">
+  ### Словари и конфигурация сервера
+</div>
+
+| Неподдерживаемая возможность                                                                  | Документация                                                                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Именованные коллекции, а также операторы `CREATE NAMED COLLECTION` и `ALTER NAMED COLLECTION` | [Обзор](/ru/concepts/features/configuration/server-config/named-collections), [Создание](/ru/reference/statements/create/named-collection), [Изменение](/ru/reference/statements/alter/named-collection)                                                    |
+| Конфигурация словаря на основе файла                                                          | [Справочник](/ru/reference/statements/create/dictionary#creating-a-dictionary-with-a-configuration-file)                                                                                                                                              |
+| Встроенные словари геобазы                                                                    | [Справочник](/ru/reference/statements/create/dictionary/embedded)                                                                                                                                                                                     |
+| Локальные источники словарей `YAMLRegExpTree`                                                 | [Руководство по структурам](/ru/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source), [Справочник источников](/ru/reference/statements/create/dictionary/sources/yamlregexptree) |
+| Источник словаря `YTsaurus`                                                                   | [Справочник](/ru/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                                             |
+| Словари японского токенизатора, настроенные на сервере                                        | [Справочник](/ru/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                                          |
+
+<div id="unsupported-data-formats-and-codecs">
+  ### Форматы данных и кодеки
+</div>
+
+| Неподдерживаемая возможность                                                            | Документация                                                                                                                                                                                       |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Формат `CapnProto` с файлами схем на стороне сервера                                    | [Справочник форматов](/ru/reference/formats/CapnProto), [Руководство](/ru/guides/clickhouse/data-formats/binary#capn-proto)                                                                              |
+| Форматы `Protobuf`, `ProtobufList` и `ProtobufSingle` с файлами схем на стороне сервера | [Руководство](/ru/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/ru/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/ru/reference/formats/Protobuf/ProtobufSingle) |
+| Устаревшие кодеки `ZSTD_QAT` и `DEFLATE_QPL`                                            | [`ZSTD_QAT`](/ru/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/ru/reference/statements/create/table#deflate_qpl)                                                                         |
+
+<div id="unsupported-functions-and-experimental-features">
+  ### Функции и экспериментальные возможности
+</div>
+
+| Неподдерживаемая возможность                                       | Документация                                                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Экспериментальные функции обработки естественного языка            | [Справочник](/ru/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                        |
+| Экспериментальные многооператорные транзакции с коммитом и откатом | [Руководство](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                         |
+| Экспериментальные функции интроспекции транзакций                  | [`transactionID`](/ru/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ru/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ru/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
+| Функции временных окон для `WindowView`                            | [Справочник](/ru/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                |
+| Экспериментальный `WindowView`                                     | [Справочник](/ru/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                               |
+| Пользовательские функции WebAssembly                               | [Обзор](/ru/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [Руководство](/ru/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                    |
+| Исполняемые пользовательские функции на основе драйверов           | [Справочник](/ru/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                   |
+| Табличная функция `filesystem` для файлов на локальном сервере     | [Справочник](/ru/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                             |
+
+<div id="unsupported-administration-and-access-control">
+  ### Администрирование и управление доступом
+</div>
+
+| Неподдерживаемая возможность                                       | Документация                                                                                                                                           |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Операции со статистикой столбцов с помощью `ALTER TABLE`           | [Справочник](/ru/reference/statements/alter/statistics)                                                                                                   |
+| Имперсонация пользователя с помощью `EXECUTE AS`                   | [Справочник](/ru/reference/statements/execute_as)                                                                                                         |
+| Привилегии для конкретных движков таблиц                           | [Grant](/ru/reference/statements/grant#table-engine), [Настройка сервера](/ru/reference/settings/server-settings/settings/other#table_engines_require_grant) |
+| Сокращённая форма привилегии `GRANT ALL`                           | [Справочник](/ru/reference/statements/grant#all)                                                                                                          |
+| Завершение работы сервера с помощью `SYSTEM SHUTDOWN`              | [Справочник](/ru/reference/statements/system#shutdown)                                                                                                    |
+| Запуск и остановка фоновых загрузок с помощью команд `SYSTEM`      | [`SYSTEM STOP FETCHES`](/ru/reference/statements/system#stop-fetches), [`SYSTEM START FETCHES`](/ru/reference/statements/system#start-fetches)               |
+| Запуск и остановка фоновых слияний с помощью команд `SYSTEM`       | [`SYSTEM STOP MERGES`](/ru/reference/statements/system#stop-merges), [`SYSTEM START MERGES`](/ru/reference/statements/system#start-merges)                   |
+| Запуск и остановка фоновых слияний `TTL` с помощью команд `SYSTEM` | [`SYSTEM STOP TTL MERGES`](/ru/reference/statements/system#stop-ttl-merges), [`SYSTEM START TTL MERGES`](/ru/reference/statements/system#start-ttl-merges)   |

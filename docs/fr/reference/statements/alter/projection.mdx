@@ -377,10 +377,10 @@ De plus, elles sont répliquées et synchronisent les métadonnées des projecti
 Lorsque vous exécutez une requête, ClickHouse choisit de lire soit dans la table d’origine, soit dans l’une de ses projections.
 Cette décision est prise individuellement pour chaque part de la table.
 ClickHouse cherche généralement à lire le moins de données possible et utilise plusieurs techniques pour identifier la meilleure part à lire, par exemple en échantillonnant la clé primaire d’une part.
-Dans certains cas, des parts de la table source n’ont pas de parties de projection correspondantes.
+Dans certains cas, des parts de la table source n’ont pas de parts de projection correspondantes.
 Cela peut se produire, par exemple, parce que la création d’une projection pour une table en SQL est « lazy » par défaut : elle ne s’applique qu’aux données nouvellement insérées et laisse les parts existantes inchangées.
 
-Comme l’une des projections contient déjà les valeurs d’agrégation précalculées, ClickHouse essaie de lire les parties de projection correspondantes pour éviter de refaire l’agrégation au moment de l’exécution de la requête. Si une part donnée ne possède pas de partie de projection correspondante, l’exécution de la requête revient à la part d’origine.
+Comme l’une des projections contient déjà les valeurs d’agrégation précalculées, ClickHouse essaie de lire les parts de projection correspondantes pour éviter de refaire l’agrégation au moment de l’exécution de la requête. Si une part donnée ne possède pas de part de projection correspondante, l’exécution de la requête revient à la part d’origine.
 
 Mais que se passe-t-il si les lignes de la table d’origine changent de manière non triviale à la suite de background merges non triviaux de data parts ?
 Par exemple, supposons que la table utilise le table engine `ReplacingMergeTree`.
@@ -388,17 +388,17 @@ Si la même row est détectée dans plusieurs parts d’entrée lors de la fusio
 
 De même, si la table utilise le table engine `AggregatingMergeTree`, l’opération de fusion peut regrouper des rows identiques dans les parts d’entrée (sur la base des primary key values) en une seule row afin de mettre à jour les partial aggregation states.
 
-Avant ClickHouse v24.8, les parties de projection se désynchronisaient silencieusement des données principales, ou bien certaines opérations comme les mises à jour et les suppressions ne pouvaient pas être exécutées du tout, car la database levait automatiquement une exception si la table avait des projections.
+Avant ClickHouse v24.8, les parts de projection se désynchronisaient silencieusement des données principales, ou bien certaines opérations comme les mises à jour et les suppressions ne pouvaient pas être exécutées du tout, car la database levait automatiquement une exception si la table avait des projections.
 
-Depuis la v24.8, un nouveau paramètre au niveau de la table [`deduplicate_merge_projection_mode`](/fr/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode) contrôle le comportement lorsque les background merge operations non triviales mentionnées ci-dessus se produisent dans les parts de la table d’origine.
+Depuis la v24.8, un nouveau paramètre au niveau de la table [`deduplicate_merge_projection_mode`](/fr/reference/settings/merge-tree-settings/other#deduplicate_merge_projection_mode) contrôle le comportement lorsque les background merge operations non triviales mentionnées ci-dessus se produisent dans les parts de la table d’origine.
 
-Les delete mutations sont un autre exemple de part merge operations qui suppriment des rows dans les parts de la table d’origine. Depuis la v24.7, nous disposons également d’un paramètre pour contrôler le comportement vis-à-vis des delete mutations déclenchées par les lightweight deletes : [`lightweight_mutation_projection_mode`](/fr/reference/settings/merge-tree-settings#deduplicate_merge_projection_mode).
+Les delete mutations sont un autre exemple de part merge operations qui suppriment des rows dans les parts de la table d’origine. Depuis la v24.7, nous disposons également d’un paramètre pour contrôler le comportement vis-à-vis des delete mutations déclenchées par les lightweight deletes : [`lightweight_mutation_projection_mode`](/fr/reference/settings/merge-tree-settings/other#lightweight_mutation_projection_mode).
 
 Voici les valeurs possibles pour `deduplicate_merge_projection_mode` et `lightweight_mutation_projection_mode` :
 
-* `throw` (par défaut) : une exception est levée, ce qui empêche les parties de projection de se désynchroniser.
-* `drop` : les parties de projection affectées sont supprimées. Les requêtes reviennent alors à la part de la table d’origine pour les projections affectées.
-* `rebuild` : la partie de projection affectée est reconstruite afin de rester cohérente avec les données de la part de la table d’origine.
+* `throw` (par défaut) : une exception est levée, ce qui empêche les parts de projection de se désynchroniser.
+* `drop` : les parts de projection affectées sont supprimées. Les requêtes reviennent alors à la part de la table d’origine pour les projections affectées.
+* `rebuild` : la part de projection affectée est reconstruite afin de rester cohérente avec les données de la part de la table d’origine.
 
 <div id="limitations">
   ## Limites

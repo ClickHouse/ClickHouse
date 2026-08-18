@@ -101,6 +101,9 @@ public:
     /// subcolumns as standalone inputs, so `isNotNull(x)` -> `not(x.null)` pushed into `PREWHERE`
     /// throws `NOT_FOUND_COLUMN_IN_BLOCK`. Disable the optimization, like `StorageFile`/`StorageURL`.
     bool supportsOptimizationToSubcolumns() const override { return false; }
+    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
+    /// `t.x` on its own and prune on it.
+    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 

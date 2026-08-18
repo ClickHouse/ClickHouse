@@ -16,7 +16,7 @@ Para o funcionamento correto das funções de introspecção:
 
 * Instale o pacote `clickhouse-common-static-dbg`.
 
-* Defina a configuração [allow&#95;introspection&#95;functions](/pt-BR/reference/settings/session-settings#allow_introspection_functions) como 1.
+* Defina a configuração [allow&#95;introspection&#95;functions](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como 1.
 
   Por motivos de segurança, as funções de introspecção ficam desabilitadas por padrão.
 
@@ -45,7 +45,7 @@ Converte um endereço de memória virtual dentro do processo do servidor ClickHo
 Para habilitar esta função de introspecção:
 
 * Instale o pacote `clickhouse-common-static-dbg`.
-* Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings#allow_introspection_functions) como `1`.
+* Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
 
 **Sintaxe**
 
@@ -134,7 +134,7 @@ Por isso, é mais lento que `addressToLine`.
 Para habilitar esta função de introspecção:
 
 * Instale o pacote `clickhouse-common-static-dbg`.
-* Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings#allow_introspection_functions) como `1`.
+* Defina a configuração [`allow_introspection_functions`](/pt-BR/reference/settings/session-settings/allow#allow_introspection_functions) como `1`.
 
 **Sintaxe**
 
@@ -170,7 +170,7 @@ SELECT addressToLineWithInlines(531055181::UInt64);
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- A função arrayJoin dividirá o array em linhas
+-- The arrayJoin function will split array to rows
 
 SELECT
     ta, addressToLineWithInlines(arrayJoin(trace) AS ta)
@@ -460,7 +460,11 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
 
 Introduzido em: v20.12.0
 
-Emite uma mensagem de log no nível trace no log do servidor para cada [Block](/pt-BR/resources/develop-contribute/introduction/architecture#block).
+Emite uma mensagem de log no nível trace no log do servidor.
+
+A função aceita apenas um argumento constante, portanto a chamada é avaliada durante a análise da consulta e substituída
+pelo resultado. Assim, a mensagem é emitida uma vez enquanto a consulta é analisada, e não uma vez para cada [Block](/pt-BR/resources/develop-contribute/introduction/architecture#block) processado:
+o número de linhas e a configuração `max_block_size` não afetam quantas mensagens aparecem no log.
 
 **Sintaxe**
 

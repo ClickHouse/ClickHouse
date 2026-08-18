@@ -124,6 +124,13 @@ public:
             }
         }
 
+        /// Bulk `add`, for the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
+        ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps_ptr, const ValueType * __restrict values_ptr, size_t count)
+        {
+            for (size_t i = 0; i < count; ++i)
+                add(timestamps_ptr[i], values_ptr[i]);
+        }
+
         void merge(const Data & rhs)
         {
             for (size_t i = 0; i < rhs.filled; ++i)

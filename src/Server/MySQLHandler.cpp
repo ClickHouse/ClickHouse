@@ -39,6 +39,8 @@
 #include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
@@ -578,7 +580,15 @@ void MySQLHandler::run()
             session->makeSessionContext();
             session->sessionContext()->setDefaultFormat("MySQLWire");
             if (!handshake_response.database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the handshake database
+                /// too, consistently with `USE`, `SET database = ...` and the HTTP `?database=...`
+                /// parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", handshake_response.database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(handshake_response.database);
+            }
         }
         catch (const Exception & exc)
         {
@@ -740,6 +750,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     LOG_DEBUG(log, "Setting current database to {}", database);
     /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
     session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// ... and its settings-constraint check on the `database` setting.
+    SettingsChanges database_change;
+    database_change.setSetting("database", database);
+    session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }

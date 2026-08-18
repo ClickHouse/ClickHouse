@@ -31,7 +31,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 * `end_time` - Время окончания интервала вычисления.
 * `step` - Шаг, с которым перебирается время вычисления от `start_time` до `end_time` (включительно).
 
-<div id="returned_value">
+<div id="returned-value">
   ## Возвращаемое значение
 </div>
 
@@ -60,7 +60,7 @@ prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, 
 
 | Категория          | Функции                                                                                          |
 | ------------------ | ------------------------------------------------------------------------------------------------ |
-| Диапазон           | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Диапазон           | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | Математические     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | Тригонометрические | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | Дата и время       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

@@ -96,7 +96,7 @@ Las fechas de uso y de la factura serán distintas si no coinciden. Dado que los
   ### ¿Dónde puedo encontrar información general sobre la facturación?
 </div>
 
-Consulta la [página de resumen de facturación](/es/products/cloud/reference/billing/index).
+Consulta la [página de resumen de facturación](/es/products/cloud/reference/billing/billing-overview).
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### ¿Hay alguna diferencia en el precio de ClickHouse Cloud al pagar a través del marketplace del proveedor de nube o directamente a ClickHouse?
@@ -109,6 +109,12 @@ No hay ninguna diferencia de precio entre la facturación del marketplace y la c
 </div>
 
 Sí. Se pueden configurar varias organizaciones de ClickHouse para facturar el uso a mes vencido en la misma cuenta de facturación de un marketplace en la nube (AWS, GCP o Azure). Sin embargo, los créditos prepagados no se comparten entre organizaciones de forma predeterminada. Si necesita compartir créditos entre organizaciones, póngase en contacto con [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
+  ### ¿Puedo facturar distintos servicios de la misma organización a diferentes suscripciones de marketplace?
+</div>
+
+No. La facturación se configura a nivel de la organización, por lo que todos los servicios de una misma organización de ClickHouse Cloud se facturan a la misma suscripción de marketplace. Si necesita facturar los servicios por separado, cree organizaciones independientes para cada esquema de facturación. Puede administrar varias organizaciones desde la misma cuenta de usuario de la consola de ClickHouse Cloud, cada una con su propia configuración de facturación.
 
 <div id="automatically-move-to-PAYG-when-running-out-of-credit">
   ### Si mi organización de ClickHouse se factura mediante un acuerdo de gasto comprometido en un marketplace en la nube, ¿pasaré automáticamente a la facturación PAYG cuando se me acaben los créditos?

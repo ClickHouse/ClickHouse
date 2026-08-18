@@ -2,8 +2,9 @@
 -- Tag no-replicated-database: the experimental TimeSeries table engine does not round-trip through DatabaseReplicated.
 
 -- Auto-created `timestamp` and `value` columns of the TimeSeries samples inner table
--- get time-series compression codecs; explicitly declared columns keep the user's codecs
--- (or none), and the normalized table round-trips through DETACH/ATTACH unchanged.
+-- get compression codecs (DoubleDelta + ZSTD for timestamps, plain ZSTD for values);
+-- explicitly declared columns keep the user's codecs (or none), and the normalized
+-- table round-trips through DETACH/ATTACH unchanged.
 
 SET allow_experimental_time_series_table = 1;
 

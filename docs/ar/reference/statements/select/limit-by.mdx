@@ -6,7 +6,7 @@ title: 'بند LIMIT BY'
 doc_type: 'reference'
 ---
 
-يحدِّد الاستعلام الذي يحتوي على البند `LIMIT n BY expressions` أول `n` صفوف لكل قيمة مميزة من `expressions`. ويمكن أن يحتوي المفتاح الخاص بـ `LIMIT BY` على أي عدد من [expressions](/ar/reference/syntax#expressions).
+يحدِّد الاستعلام الذي يحتوي على البند `LIMIT n BY expressions` أول `n` صفوف لكل قيمة مميزة من `expressions`. ويمكن أن يحتوي المفتاح الخاص بـ `LIMIT BY` على أي عدد من [تعبيرات](/ar/reference/syntax#expressions).
 
 يدعم ClickHouse صيغ البنية التالية:
 
@@ -19,7 +19,7 @@ doc_type: 'reference'
   لا يرتبط `LIMIT BY` بـ [LIMIT](/ar/reference/statements/select/limit). ويمكن استخدامهما معًا في الاستعلام نفسه.
 </Note>
 
-إذا أردت استخدام أرقام الأعمدة بدلًا من أسماء الأعمدة في البند `LIMIT BY`، ففعّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings#enable_positional_arguments).
+إذا أردت استخدام أرقام الأعمدة بدلًا من أسماء الأعمدة في البند `LIMIT BY`، ففعّل الإعداد [enable&#95;positional&#95;arguments](/ar/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
 
 <div id="examples">
   ## أمثلة

@@ -60,7 +60,9 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Logger.h>
 #include <Common/ProfileEvents.h>
+#include <Common/logger_useful.h>
 
 namespace CurrentMetrics
 {
@@ -79,6 +81,15 @@ namespace fs = std::filesystem;
 using namespace DB;
 
 static constexpr auto TEST_LOG_LEVEL = "debug";
+
+/// Diagnostics must go through this logger: the root channel is a `ConsoleChannel(std::cerr)` that
+/// serialises its writers under a static mutex, which a bare `std::cerr <<` would not take.
+/// Must stay lazy: a logger keeps whatever channel the root had when it was created, so one created
+/// before `SetUp` installs the channel silently drops every message.
+static LoggerPtr testLog()
+{
+    return getLogger("FileCacheTest");
+}
 
 /// For waits which must observe the concurrent download finishing, so they cannot use the
 /// (much smaller) timeout a query would pass.
@@ -113,9 +124,10 @@ namespace DB::FileCacheSetting
 
 void printRanges(const auto & segments)
 {
-    std::cerr << "\nHaving file segments: ";
+    String out;
     for (const auto & segment : segments)
-        std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
+        out += fmt::format("\n{} (state: {})", segment->range().toString(), DB::FileSegment::stateToString(segment->state()));
+    LOG_DEBUG(testLog(), "Having file segments: {}", out);
 }
 
 [[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
@@ -153,12 +165,15 @@ std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    std::cerr << "\nFile segments: ";
-    for (const auto & file_segment : *file_segments)
-        std::cerr << file_segment->range().toString() << ", ";
-    std::cerr << "\nExpected: ";
-    for (const auto & r : expected_ranges)
-        std::cerr << r.toString() << ", ";
+    {
+        String got;
+        for (const auto & file_segment : *file_segments)
+            got += file_segment->range().toString() + ", ";
+        String expected;
+        for (const auto & r : expected_ranges)
+            expected += r.toString() + ", ";
+        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected);
+    }
 
     ASSERT_EQ(file_segments->size(), expected_ranges.size());
 
@@ -184,12 +199,15 @@ static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Range
 
 static void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
-    std::cerr << "\nFile segments: ";
-    for (const auto & file_segment : file_segments)
-        std::cerr << FileSegment::Range(file_segment.range_left, file_segment.range_right).toString() << ", ";
-    std::cerr << "\nExpected: ";
-    for (const auto & r : expected_ranges)
-        std::cerr << r.toString() << ", ";
+    {
+        String got;
+        for (const auto & file_segment : file_segments)
+            got += FileSegment::Range(file_segment.range_left, file_segment.range_right).toString() + ", ";
+        String expected;
+        for (const auto & r : expected_ranges)
+            expected += r.toString() + ", ";
+        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected);
+    }
 
     ASSERT_EQ(file_segments.size(), expected_ranges.size());
 
@@ -227,7 +245,21 @@ static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const 
 
 static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
-    std::cerr << "\nFile segments: ";
+    /// Logged before the first assertion, so a failure still reports every segment.
+    {
+        String got;
+        for (const auto & f : file_segments)
+        {
+            auto range = FileSegment::Range(f.range_left, f.range_right);
+            bool is_protected = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Protected);
+            got += fmt::format("{} (protected: {}), ", range.toString(), is_protected);
+        }
+        String expected_str;
+        for (const auto & range : expected)
+            expected_str += range.toString() + ", ";
+        LOG_DEBUG(testLog(), "File segments: {}\nExpected: {}", got, expected_str);
+    }
+
     std::vector<Range> res;
     for (const auto & f : file_segments)
     {
@@ -236,17 +268,10 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
         bool is_probationary = (f.queue_entry_type == IFileCachePriority::QueueEntryType::SLRU_Probationary);
         ASSERT_TRUE(is_probationary || is_protected);
 
-        std::cerr << fmt::format("{} (protected: {})", range.toString(), is_protected) <<  ", ";
-
         if ((is_protected && assert_protected) || (!is_protected && !assert_protected))
         {
             res.push_back(range);
         }
-    }
-    std::cerr << "\nExpected: ";
-    for (const auto & range : expected)
-    {
-        std::cerr << range.toString() << ", ";
     }
 
     ASSERT_EQ(res.size(), expected.size());
@@ -258,13 +283,13 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
 
 static void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
-    std::cerr << "\nAssert protected";
+    LOG_DEBUG(testLog(), "Assert protected");
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
 static void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
-    std::cerr << "\nAssert probationary";
+    LOG_DEBUG(testLog(), "Assert probationary");
     assertProtectedOrProbationary(file_segments, expected, false);
 }
 
@@ -302,7 +327,7 @@ static FileSegmentPtr get(const HolderPtr & holder, int i)
 
 static void download(FileSegmentPtr file_segment, bool complete = true)
 {
-    std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
+    LOG_DEBUG(testLog(), "Downloading range {}", file_segment->range().toString());
 
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->state(), State::DOWNLOADING);
@@ -448,7 +473,6 @@ TEST_F(FileCacheTest, LRUPolicy)
 
     const auto & user = FileCache::getCommonOrigin();
     {
-        std::cerr << "Step 1\n";
         auto cache = DB::FileCache("1", settings);
         cache.initialize();
         auto key = DB::FileCacheKey::fromPath("key1");
@@ -474,8 +498,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 1);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
-        std::cerr << "Step 2\n";
-
         {
             /// Want range [5, 14], but [0, 9] already in cache, so only [10, 14] will be put in cache.
             auto holder = get_or_set(5, 10);
@@ -492,8 +514,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
-
-        std::cerr << "Step 3\n";
 
         /// Get [9, 9]
         {
@@ -517,8 +537,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.dumpQueue(), { Range(0, 9), Range(10, 14) });
         ASSERT_EQ(cache.getFileSegmentsNum(), 2);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
-
-        std::cerr << "Step 4\n";
 
         {
             auto holder = get_or_set(17, 4);
@@ -547,7 +565,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 23);
 
-        std::cerr << "Step 5\n";
         {
             auto holder = get_or_set(0, 26);
             assertEqual(holder,
@@ -590,8 +607,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 24);
 
-        std::cerr << "Step 6\n";
-
         {
             auto holder = get_or_set(12, 10);
             assertEqual(holder,
@@ -612,7 +627,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 15);
 
-        std::cerr << "Step 7\n";
         {
             auto holder = get_or_set(23, 5);
             assertEqual(holder,
@@ -631,7 +645,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_EQ(cache.getFileSegmentsNum(), 5);
         ASSERT_EQ(cache.getUsedCacheSize(), 10);
 
-        std::cerr << "Step 8\n";
         {
             auto holder = get_or_set(2, 3); /// Get [2, 4]
             assertEqual(holder, { Range(2, 4) }, { State::EMPTY });
@@ -674,8 +687,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ///                   2   4       23 24  26 27  30 31
         assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(2, 4), Range(23, 23), Range(24, 26), Range(27, 27), Range(30, 31) });
-
-        std::cerr << "Step 9\n";
 
         /// Get [2, 4]
         {
@@ -746,7 +757,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         assertEqual(cache.getFileSegmentInfos(key, user.user_id), { Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29), Range(30, 31) });
         assertEqual(cache.dumpQueue(), { Range(30, 31), Range(2, 4), Range(24, 26), Range(27, 27), Range(28, 29) });
 
-        std::cerr << "Step 10\n";
         {
             /// Now let's check the similar case but getting ERROR state after segment->wait(), when
             /// state is changed not manually via segment->completeWithState(state) but from destructor of holder
@@ -809,7 +819,6 @@ TEST_F(FileCacheTest, LRUPolicy)
     ///                   ^   ^^         ^   ^^  ^  ^
     ///                   2   45       24  2627 28 29
 
-    std::cerr << "Step 11\n";
     {
         /// Test LRUCache::restore().
 
@@ -824,7 +833,6 @@ TEST_F(FileCacheTest, LRUPolicy)
             {State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED, State::DOWNLOADED});
     }
 
-    std::cerr << "Step 12\n";
     {
         /// Test max file segment size
 
@@ -844,7 +852,6 @@ TEST_F(FileCacheTest, LRUPolicy)
             {State::EMPTY, State::EMPTY, State::EMPTY});
     }
 
-    std::cerr << "Step 13\n";
     {
         /// Test delayed cleanup
 
@@ -869,7 +876,6 @@ TEST_F(FileCacheTest, LRUPolicy)
         ASSERT_TRUE(!fs::exists(cache.getFileSegmentPath(key, 0, FileSegmentKind::Regular, user, /* size */10)));
     }
 
-    std::cerr << "Step 14\n";
     {
         /// Test background thread delated cleanup
 
@@ -969,7 +975,7 @@ TEST_F(FileCacheTest, writeBuffer)
             auto holder2 = write_to_cache("key2", {"22", "333", "4444", "55555", "1"}, true, &reader);
             file_segment_paths.emplace_back(holder2->front().getPath());
 
-            std::cerr << "\nFile segments: " << holder2->toString() << "\n";
+            LOG_DEBUG(testLog(), "File segments: {}", holder2->toString());
 
             ASSERT_EQ(fs::file_size(file_segment_paths.back()), 15);
             EXPECT_TRUE(reader);
@@ -1144,7 +1150,7 @@ try
 }
 catch (...)
 {
-    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
     throw;
 }
 
@@ -1200,7 +1206,7 @@ try
 }
 catch (...)
 {
-    std::cerr << getCurrentExceptionMessage(true) << std::endl;
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
     throw;
 }
 
@@ -1877,7 +1883,7 @@ try
 
         auto add_range = [&](size_t offset, size_t size)
         {
-            std::cerr << "Add [" << offset << ", " << offset + size - 1 << "]" << std::endl;
+            LOG_DEBUG(testLog(), "Add [{}, {}]", offset, offset + size - 1);
 
             auto holder = cache.getOrSet(key, offset, size, file_size, {}, 0, user);
             assertEqual(holder, { Range(offset, offset + size - 1) }, { State::EMPTY });
@@ -2049,7 +2055,7 @@ try
 }
 catch (...)
 {
-    std::cerr << getCurrentExceptionMessage(true) << "\n";
+    LOG_ERROR(testLog(), "{}", getCurrentExceptionMessage(true));
     throw;
 }
 

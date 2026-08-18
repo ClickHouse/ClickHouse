@@ -16,10 +16,10 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 </div>
 
 <div id="metrics-access">
-  ### Как получить доступ к метрикам моего экземпляра Managed Postgres?
+  ### Как получить доступ к метрикам моего экземпляра ClickHouse Managed Postgres?
 </div>
 
-Вы можете отслеживать использование CPU, памяти, IOPS и хранилища напрямую в консоли ClickHouse Cloud на вкладке **Мониторинг** вашего экземпляра Managed Postgres.
+Вы можете отслеживать использование CPU, памяти, IOPS и хранилища напрямую в консоли ClickHouse Cloud на вкладке **Мониторинг** вашего экземпляра ClickHouse Managed Postgres.
 
 Кроме того, вы можете ознакомиться с [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) для подробного анализа ваших запросов на вкладке **Query Insights**.
 
@@ -31,7 +31,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   ### Какие варианты резервного копирования доступны?
 </div>
 
-Managed Postgres включает автоматическое ежедневное резервное копирование с непрерывным архивированием WAL, что позволяет выполнять восстановление на определённый момент времени на любой момент в пределах 7-дневного периода хранения. Резервные копии хранятся в S3.
+ClickHouse Managed Postgres включает автоматическое ежедневное резервное копирование с непрерывным архивированием WAL, что позволяет выполнять восстановление на определённый момент времени на любой момент в пределах 7-дневного периода хранения. Резервные копии хранятся в S3.
 
 Подробные сведения о частоте резервного копирования, сроках хранения и выполнении восстановления на определённый момент времени см. в документации [Backup and restore](/ru/products/managed-postgres/backup-and-restore).
 
@@ -40,10 +40,10 @@ Managed Postgres включает автоматическое ежедневн�
 </div>
 
 <div id="terraform-support">
-  ### Доступна ли поддержка Terraform для Managed Postgres?
+  ### Доступна ли поддержка Terraform для ClickHouse Managed Postgres?
 </div>
 
-Поддержка Terraform для Managed Postgres в настоящее время недоступна. Мы рекомендуем использовать консоль ClickHouse Cloud или [OpenAPI](/ru/products/managed-postgres/openapi) для создания экземпляров и управления ими.
+Поддержка Terraform для ClickHouse Managed Postgres в настоящее время недоступна. Мы рекомендуем использовать консоль ClickHouse Cloud или [OpenAPI](/ru/products/managed-postgres/openapi) для создания экземпляров и управления ими.
 
 <div id="extensions-and-configuration">
   ## Расширения и конфигурация
@@ -53,7 +53,7 @@ Managed Postgres включает автоматическое ежедневн�
   ### Какие расширения поддерживаются?
 </div>
 
-Managed Postgres включает более 90 расширений PostgreSQL, в том числе популярные PostGIS, pgvector, pg&#95;cron и многие другие. Полный список доступных расширений и инструкции по установке см. в документации [Расширения](/ru/products/managed-postgres/extensions).
+ClickHouse Managed Postgres включает более 90 расширений PostgreSQL, в том числе популярные PostGIS, pgvector, pg&#95;cron и многие другие. Полный список доступных расширений и инструкции по установке см. в документации [Расширения](/ru/products/managed-postgres/extensions).
 
 <div id="config-customization">
   ### Можно ли настраивать параметры конфигурации PostgreSQL?
@@ -73,7 +73,7 @@ Managed Postgres включает более 90 расширений PostgreSQL,
   ### Почему через PgBouncer возникают ошибки `prepared statement does not exist`?
 </div>
 
-Managed Postgres использует PgBouncer в режиме **transaction pooling**. В этом режиме backend-соединение Postgres выделяется вашему клиенту только на время одной транзакции, а затем возвращается в пул — следующая транзакция того же клиента может попасть на другое backend-соединение.
+ClickHouse Managed Postgres использует PgBouncer в режиме **transaction pooling**. В этом режиме backend-соединение Postgres выделяется вашему клиенту только на время одной транзакции, а затем возвращается в пул — следующая транзакция того же клиента может попасть на другое backend-соединение.
 
 Из-за этого не работают **серверные подготовленные операторы**, привязанные к конкретному backend-соединению, на котором был выполнен `PREPARE` (или `Parse` в extended query). Если соответствующий `EXECUTE` попадает на другое backend-соединение, возникают ошибки вида:
 
@@ -109,7 +109,7 @@ ERROR:  unnamed prepared statement does not exist
 * **`max_connections` в Postgres** ограничивает число **backend-соединений** с самим PostgreSQL. Это затратный показатель — каждое backend-соединение потребляет память и занимает слот процесса.
 * **`max_client_conn` в PgBouncer** ограничивает число **клиентских** соединений, которые могут быть одновременно открыты в пулере. PgBouncer мультиплексирует множество таких клиентских соединений на значительно меньшее число backend-соединений.
 
-Типичный экземпляр Managed Postgres настроен так, что PgBouncer принимает примерно **в 10 раз больше клиентских соединений, чем есть backend-соединений Postgres** (например, 5000 клиентских / 500 backend-соединений). Если вы видите ошибки соединения на стороне пулера, гораздо вероятнее, что вы упираетесь в лимит backend-соединений для конкретного пула (`default_pool_size`), а не в основной лимит клиентских соединений.
+Типичный экземпляр ClickHouse Managed Postgres настроен так, что PgBouncer принимает примерно **в 10 раз больше клиентских соединений, чем есть backend-соединений Postgres** (например, 5000 клиентских / 500 backend-соединений). Если вы видите ошибки соединения на стороне пулера, гораздо вероятнее, что вы упираетесь в лимит backend-соединений для конкретного пула (`default_pool_size`), а не в основной лимит клиентских соединений.
 
 <div id="database-capabilities">
   ## Возможности базы данных
@@ -119,13 +119,13 @@ ERROR:  unnamed prepared statement does not exist
   ### Могу ли я создать несколько баз данных и схем?
 </div>
 
-Да. Managed Postgres предоставляет всю нативную функциональность PostgreSQL, включая поддержку нескольких баз данных и схем в рамках одного экземпляра. Вы можете создавать базы данных и схемы и управлять ими с помощью стандартных команд PostgreSQL.
+Да. ClickHouse Managed Postgres предоставляет всю нативную функциональность PostgreSQL, включая поддержку нескольких баз данных и схем в рамках одного экземпляра. Вы можете создавать базы данных и схемы и управлять ими с помощью стандартных команд PostgreSQL.
 
 <div id="rbac-support">
   ### Поддерживается ли ролевое управление доступом (RBAC)?
 </div>
 
-У вас есть полный доступ с правами superuser к вашему экземпляру Managed Postgres, что позволяет создавать роли и управлять разрешениями с помощью стандартных команд PostgreSQL.
+У вас есть полный доступ с правами superuser к вашему экземпляру ClickHouse Managed Postgres, что позволяет создавать роли и управлять разрешениями с помощью стандартных команд PostgreSQL.
 
 <Note>
   Расширенные возможности RBAC с интеграцией в консоль планируются в этом году.
@@ -146,10 +146,10 @@ ERROR:  unnamed prepared statement does not exist
 </div>
 
 <div id="migration-tools">
-  ### Какие инструменты доступны при миграции в Managed Postgres?
+  ### Какие инструменты доступны при миграции в ClickHouse Managed Postgres?
 </div>
 
-Managed Postgres поддерживает несколько подходов к миграции:
+ClickHouse Managed Postgres поддерживает несколько подходов к миграции:
 
 * **pg&#95;dump and pg&#95;restore**: Для небольших баз данных или разовых миграций. См. руководство [pg&#95;dump and pg&#95;restore](/ru/products/managed-postgres/migrations/pg_dump-pg_restore).
 * **Logical replication**: Для более крупных баз данных, где требуется минимальное время простоя. См. руководство [Логическая репликация](/ru/products/managed-postgres/migrations/logical-replication).

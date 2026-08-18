@@ -10,7 +10,7 @@ As inserções assíncronas no ClickHouse oferecem uma alternativa poderosa quan
 
 As inserções assíncronas transferem a responsabilidade pelo batching do cliente para o servidor, gravando os dados recebidos em um buffer na memória e depois descarregando-os para o armazenamento com base em limites configuráveis. Essa abordagem reduz significativamente a sobrecarga de criação de partes, diminui o uso de CPU e garante que a ingestão permaneça eficiente — mesmo sob alta concorrência.
 
-O comportamento principal é controlado pela configuração [`async_insert`](/pt-BR/reference/settings/session-settings#async_insert).
+O comportamento principal é controlado pela configuração [`async_insert`](/pt-BR/reference/settings/session-settings/async-insert#async_insert).
 
 <Frame>
   <img src="/images/bestpractices/async_inserts.webp" alt="Inserções assíncronas" />
@@ -20,9 +20,9 @@ As inserções assíncronas têm suporte nas interfaces HTTP e TCP nativo.
 
 Quando habilitadas (`async_insert = 1`), as inserções são mantidas em buffer e gravadas em disco somente quando uma das condições de flush é atendida:
 
-* O buffer atinge um tamanho de dados especificado ([`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size), padrão de 100 MiB).
-* Um limite de tempo é atingido ([`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud).
-* Um número máximo de consultas de inserção é acumulado ([`async_insert_max_query_number`](/pt-BR/reference/settings/session-settings#async_insert_max_query_number), padrão de 450).
+* O buffer atinge um tamanho de dados especificado ([`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_max_data_size), padrão de 100 MiB).
+* Um limite de tempo é atingido ([`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud).
+* Um número máximo de consultas de inserção é acumulado ([`async_insert_max_query_number`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_max_query_number), padrão de 450).
 
 O primeiro limite atingido aciona o flush.
 
@@ -32,7 +32,7 @@ Esse processo de batching é invisível para os clientes e ajuda o ClickHouse a 
   ### Escolhendo um modo de retorno
 </div>
 
-O comportamento das inserções assíncronas é refinado ainda mais com a configuração [`wait_for_async_insert`](/pt-BR/reference/settings/session-settings#wait_for_async_insert).
+O comportamento das inserções assíncronas é refinado ainda mais com a configuração [`wait_for_async_insert`](/pt-BR/reference/settings/session-settings/wait-for#wait_for_async_insert).
 
 Quando definida como 1 (o padrão), o ClickHouse só confirma a inserção depois que os dados são gravados com sucesso em disco. Isso garante fortes garantias de durabilidade e torna o tratamento de erros simples: se algo der errado durante o flush, o erro é retornado ao cliente. Esse modo é recomendado para a maioria dos cenários de produção, especialmente quando falhas de inserção precisam ser rastreadas com confiabilidade.
 
@@ -50,7 +50,7 @@ Nossa recomendação enfática é usar `async_insert=1,wait_for_async_insert=1` 
   ### Inserts assíncronos adaptativos
 </div>
 
-Desde a versão 24.2, o ClickHouse usa timeouts adaptativos de flush por padrão ([`async_insert_use_adaptive_busy_timeout`](/pt-BR/reference/settings/session-settings#async_insert_use_adaptive_busy_timeout)). Em vez de um intervalo de flush fixo, o timeout se ajusta dinamicamente entre um mínimo ([`async_insert_busy_timeout_min_ms`](/pt-BR/reference/settings/session-settings#async_insert_busy_timeout_min_ms), padrão de 50 ms) e um máximo ([`async_insert_busy_timeout_max_ms`](/pt-BR/reference/settings/session-settings#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud), com base na taxa de chegada dos dados.
+Desde a versão 24.2, o ClickHouse usa timeouts adaptativos de flush por padrão ([`async_insert_use_adaptive_busy_timeout`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_use_adaptive_busy_timeout)). Em vez de um intervalo de flush fixo, o timeout se ajusta dinamicamente entre um mínimo ([`async_insert_busy_timeout_min_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_min_ms), padrão de 50 ms) e um máximo ([`async_insert_busy_timeout_max_ms`](/pt-BR/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), padrão de 200 ms ou 1000 ms no Cloud), com base na taxa de chegada dos dados.
 
 Quando os dados chegam com frequência, o timeout fica mais próximo do mínimo para fazer o flush mais cedo e reduzir a latência de ponta a ponta. Quando os dados são esparsos, ele aumenta em direção ao máximo para acumular lotes maiores. Isso é especialmente útil no modo padrão (`wait_for_async_insert=1`), em que um timeout fixo alto faria os clientes ficarem bloqueados durante todo o intervalo, mesmo quando os dados já estivessem prontos para flush.
 
@@ -60,7 +60,7 @@ Quando os dados chegam com frequência, o timeout fica mais próximo do mínimo 
 
 A validação do schema e o parsing dos dados acontecem durante o flush do buffer, não quando o insert é recebido. Se qualquer linha em uma consulta de insert tiver erro de parsing ou de tipo, **nenhum dado dessa consulta é gravado** — todo o payload da consulta é rejeitado. No modo padrão (`wait_for_async_insert=1`), o erro é retornado ao cliente. No modo fire-and-forget, os erros são gravados nos logs do servidor e na tabela [`system.asynchronous_inserts`](/pt-BR/reference/system-tables/asynchronous_inserts).
 
-Cada flush cria pelo menos uma parte para cada valor distinto da chave de particionamento no buffer. Mesmo em tabelas sem chave de particionamento, um único flush pode produzir várias partes se os dados em buffer excederem [`max_insert_block_size`](/pt-BR/reference/settings/session-settings#max_insert_block_size) (padrão: ~1 milhão de linhas).
+Cada flush cria pelo menos uma parte para cada valor distinto da chave de particionamento no buffer. Mesmo em tabelas sem chave de particionamento, um único flush pode produzir várias partes se os dados em buffer excederem [`max_insert_block_size`](/pt-BR/reference/settings/session-settings/max-insert#max_insert_block_size) (padrão: ~1 milhão de linhas).
 
 <Note>
   Apesar de usar async inserts, você ainda pode encontrar erros de [&quot;too many parts&quot;](/pt-BR/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts) se a chave de particionamento tiver alta cardinalidade.

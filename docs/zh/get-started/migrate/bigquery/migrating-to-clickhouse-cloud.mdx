@@ -153,7 +153,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
   ## ClickHouse 主键有何不同？
 </div>
 
-如[此处](/zh/get-started/migrate/bigquery/index)所述，与 BigQuery 一样，ClickHouse 不会强制要求表中的主键列值保持唯一。
+如[此处](/zh/get-started/migrate/bigquery/overview)所述，与 BigQuery 一样，ClickHouse 不会强制要求表中的主键列值保持唯一。
 
 与 BigQuery 中的聚簇类似，ClickHouse 表中的数据会按主键列排序后存储在磁盘上。查询优化器会利用这种排序顺序来避免额外排序、减少 JOIN 的内存占用，并支持对 limit 子句进行短路处理。
 不同于 BigQuery，ClickHouse 会根据主键列值自动创建[ (稀疏) 主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。该索引用于加速所有包含主键列过滤条件的查询。具体来说：
@@ -267,7 +267,7 @@ Ok.
 
 重要提示：确保你的分区键表达式不会产生高基数集合，也就是说，应避免创建超过 100 个分区。例如，不要按客户端标识符或名称等高基数字段对数据进行分区。相反，应将客户端标识符或名称作为 `ORDER BY` 表达式中的第一列。
 
-> 在内部，ClickHouse 会为插入的数据[创建 parts](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。随着插入数据不断增多，parts 的数量也会增加。为防止 parts 数量过多而降低查询性能 (因为需要读取更多文件) ，系统会在后台通过异步过程将 parts 合并。如果 parts 的数量超过了[预先配置的限制](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert)，ClickHouse 就会在插入时抛出异常，并报出[“parts 过多”错误](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)。正常运行时不应出现这种情况；它通常只会在 ClickHouse 配置不当或使用方式不正确时发生，例如存在大量小批量插入。由于 parts 是按分区彼此独立创建的，分区数量增加也会导致 parts 的数量增加，也就是说，parts 数量会随分区数成倍增长。因此，高基数分区键可能会导致此错误，应尽量避免。
+> 在内部，ClickHouse 会为插入的数据[创建 parts](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。随着插入数据不断增多，parts 的数量也会增加。为防止 parts 数量过多而降低查询性能 (因为需要读取更多文件) ，系统会在后台通过异步过程将 parts 合并。如果 parts 的数量超过了[预先配置的限制](/zh/reference/settings/merge-tree-settings/parts-to#parts_to_throw_insert)，ClickHouse 就会在插入时抛出异常，并报出[“parts 过多”错误](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)。正常运行时不应出现这种情况；它通常只会在 ClickHouse 配置不当或使用方式不正确时发生，例如存在大量小批量插入。由于 parts 是按分区彼此独立创建的，分区数量增加也会导致 parts 的数量增加，也就是说，parts 数量会随分区数成倍增长。因此，高基数分区键可能会导致此错误，应尽量避免。
 
 <div id="materialized-views-vs-projections">
   ## materialized view 与投影

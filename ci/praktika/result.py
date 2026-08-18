@@ -192,8 +192,6 @@ class Result(MetaClasses.Serializable):
             files=files or [],
             links=links or [],
         )
-        for link in result.links:
-            result._record_link_size(link)
         if isinstance(labels, str):
             labels = [labels]
         for label in labels or []:
@@ -362,24 +360,10 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
-    def set_link(self, link, size=None) -> "Result":
+    def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._record_link_size(link, size)
         self._dump_if_persisted()
         return self
-
-    def _record_link_size(self, link, size=None):
-        """Remember the size in bytes of the object a link points to.
-
-        Stored in ``ext["link_sizes"]`` as a ``{link: bytes}`` map and rendered by
-        ``json.html`` next to the link, e.g. ``clickhouse-common-static.deb (1.2 GiB)``.
-        When ``size`` is not given it is taken from the uploads this process made,
-        so links to files uploaded by praktika get their size for free.
-        """
-        if size is None:
-            size = S3.get_uploaded_size(link)
-        if size is not None:
-            self.ext.setdefault("link_sizes", {})[link] = size
 
     def _add_job_summary_to_info(self):
         if not self.info:
@@ -635,6 +619,15 @@ class Result(MetaClasses.Serializable):
         result.results = failed_results
         return result
 
+    # ext keys dropped from a job's result when it is embedded as a sub-result of
+    # the workflow result. Only the heavy decimated host `metrics` timeline is
+    # dropped - it is not rendered at the workflow level and is only needed on the
+    # job's own report, which is uploaded separately with the full ext. Everything
+    # else (labels/hlabels badges, storage_usage link sizes, warnings/errors/notes,
+    # run_url) is lightweight and kept, so the workflow report and the embedded-node
+    # fallback path in json.html keep rendering the same content.
+    _WORKFLOW_SUB_RESULT_DROP_EXT_KEYS = ("metrics",)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -647,6 +640,11 @@ class Result(MetaClasses.Serializable):
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
+                    self.results[i].ext = {
+                        k: v
+                        for k, v in (self.results[i].ext or {}).items()
+                        if k not in self._WORKFLOW_SUB_RESULT_DROP_EXT_KEYS
+                    }
                 else:
                     self.results[i] = result
         self._update_status()
@@ -1339,7 +1337,6 @@ class _ResultS3:
                     _uploaded_file_link[file] = file_link
 
                 result.links.append(file_link)
-                result._record_link_size(file_link)
             except Exception as e:
                 traceback.print_exc()
                 print(f"ERROR: Failed to upload file [{file}] for result [{result.name}]")

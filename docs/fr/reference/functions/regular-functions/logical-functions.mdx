@@ -27,11 +27,11 @@ Introduit dans : v1.1.0
 
 Calcule la conjonction logique d’au moins deux valeurs.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle l’utilisation de l’évaluation en court-circuit.
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) contrôle l’utilisation de l’évaluation en court-circuit.
 S’il est activé, `val_i` n’est évalué que si `(val_1 AND val_2 AND ... AND val_{i-1})` est `true`.
 
 Par exemple, avec l’évaluation en court-circuit, aucune exception de division par zéro n’est levée lors de l’exécution de la requête `SELECT and(number = 2, intDiv(1, number)) FROM numbers(5)`.
-Un argument égal à zéro est considéré comme `false`, tandis que les valeurs non nulles sont considérées comme `true`.
+Un argument égal à zéro est considéré comme `false`, tandis que les valeurs différentes de zéro sont considérées comme `true`.
 
 **Syntaxe**
 
@@ -122,7 +122,7 @@ Introduit dans : v1.1.0
 
 Calcule la disjonction logique d’au moins deux valeurs.
 
-Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings#short_circuit_function_evaluation) contrôle l’utilisation de l’évaluation en court-circuit.
+Le paramètre [`short_circuit_function_evaluation`](/fr/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) contrôle l’utilisation de l’évaluation en court-circuit.
 S’il est activé, `val_i` n’est évalué que si `((NOT val_1) AND (NOT val_2) AND ... AND (NOT val_{i-1}))` vaut `true`.
 
 Par exemple, avec l’évaluation en court-circuit, aucune exception de division par zéro n’est levée lors de l’exécution de la requête `SELECT or(number = 0, intDiv(1, number) != 0) FROM numbers(5)`.

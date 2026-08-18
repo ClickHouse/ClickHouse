@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 도입 버전: v21.11.0
 
-주어진 벡터의 단위 벡터를 `L1` 공간([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry))에서 계산합니다. 튜플의 요소는 좌표입니다.
+주어진 벡터의 단위 벡터를 `L1` 공간([taxicab geometry](https://en.wikipedia.org/wiki/Taxicab_geometry))에서 계산합니다. 튜플 또는 배열의 원소는 좌표입니다.
 
 **구문**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **별칭**: `normalizeL1`
 
 **인수**
 
-* `tuple` — 숫자 값으로 구성된 튜플입니다. [`Tuple(T)`](/ko/reference/data-types/tuple)
+* `vector` — 숫자 값으로 구성된 튜플 또는 배열입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-단위 벡터를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple)
+단위 벡터를 반환합니다. `Array` 입력의 경우 요소 타입의 최소 공통 상위 타입이 `Float32` 또는 `BFloat16`이면 `Array(Float32)`를 반환하고, 그렇지 않으면 `Array(Float64)`를 반환합니다. `Tuple` 입력의 경우 항상 `Tuple(Float64)`를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 도입 버전: v21.11.0
 
-주어진 벡터의 단위 벡터를 계산합니다(튜플의 원소는 좌표임). [유클리드 거리](https://en.wikipedia.org/wiki/Euclidean_distance)를 사용해 유클리드 공간에서 계산합니다.
+유클리드 공간에서 주어진 벡터의 단위 벡터를 계산합니다(튜플 또는 배열의 원소가 좌표이며, [유클리드 거리](https://en.wikipedia.org/wiki/Euclidean_distance)를 사용).
 
 **구문**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **별칭**: `normalizeL2`
 
 **인수**
 
-* `tuple` — 숫자 값으로 구성된 튜플입니다. [`Tuple(T)`](/ko/reference/data-types/tuple)
+* `vector` — 숫자 값으로 이루어진 튜플 또는 배열입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-단위 벡터를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple)
+단위 벡터를 반환합니다. `Array` 입력에서는 요소 타입의 최소 공통 상위 타입이 `Float32` 또는 `BFloat16`인 경우 `Array(Float32)`를, 그 외에는 `Array(Float64)`를 반환합니다. `Tuple` 입력에서는 항상 `Tuple(Float64)`를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 도입 버전: v21.11.0
 
-주어진 벡터의 단위 벡터를 계산합니다(튜플의 원소는 좌표를 나타냅니다). `L_{inf}` 공간에서 [최대 노름](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))을 사용합니다.
+주어진 벡터의 단위 벡터를 계산합니다(튜플 또는 배열의 원소는 좌표를 나타냅니다). `L_{inf}` 공간에서 [최대 노름](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\))을 사용합니다.
 
 **구문**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **별칭**: `normalizeLinf`
 
 **인수**
 
-* `tuple` — 숫자형 값으로 이루어진 튜플입니다. [`Tuple(T)`](/ko/reference/data-types/tuple)
+* `vector` — 숫자형 값으로 이루어진 튜플 또는 배열입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
 
 **반환 값**
 
-단위 벡터를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple)
+단위 벡터를 반환합니다. `Array` 입력의 경우 원소 타입의 최소 공통 상위 타입이 `Float32` 또는 `BFloat16`이면 `Array(Float32)`를, 그렇지 않으면 `Array(Float64)`를 반환합니다. `Tuple` 입력의 경우 항상 `Tuple(Float64)`를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
 
 **예시**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — 첫 번째 벡터입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
 * `vector2` — 두 번째 벡터입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
-* `p` — 거듭제곱 값입니다. 가능한 값: `[1; inf)` 범위의 실수입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `p` — 거듭제곱 값입니다. 가능한 값: `[1; inf)` 범위의 실수입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
@@ -567,7 +567,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * p=1이면 L1Norm(맨해튼 거리)와 동일합니다.
 * p=2이면 L2Norm(유클리드 거리)와 동일합니다.
-* p=∞이면 LinfNorm(최대 노름)와 동일합니다.
+* `p` 값은 1 이상인 유한한 수여야 합니다. 최대 노름(p→∞일 때의 극한)에는 `LinfNorm`을 사용하십시오.
 
 **구문**
 
@@ -580,7 +580,7 @@ LpNorm(vector, p)
 **인수**
 
 * `vector` — 숫자 값으로 구성된 벡터 또는 튜플입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
-* `p` — 거듭제곱 값입니다. 가능한 값은 `[1; inf)` 범위의 실수입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `p` — 거듭제곱 값입니다. 가능한 값은 `[1; inf)` 범위의 실수입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
@@ -606,24 +606,24 @@ SELECT LpNorm((1, -2), 2)
 
 도입 버전: v21.11.0
 
-주어진 벡터의 단위 벡터를 `Lp` 공간에서 계산합니다(튜플의 각 요소는 좌표를 의미하며, [p-노름](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)을 사용합니다).
+`Lp` 공간에서([p-노름](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)을 사용) 주어진 벡터의 단위 벡터를 계산합니다. 튜플 또는 배열의 원소는 좌표를 나타냅니다.
 
 **구문**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **별칭**: `normalizeLp`
 
 **인수**
 
-* `tuple` — 숫자 값으로 이루어진 튜플입니다. [`Tuple(T)`](/ko/reference/data-types/tuple)
-* `p` — 거듭제곱 값입니다. 가능한 값은 `[1; inf)` 범위의 모든 숫자입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `vector` — 숫자 값으로 이루어진 튜플 또는 배열입니다. [`Tuple(T)`](/ko/reference/data-types/tuple) 또는 [`Array(T)`](/ko/reference/data-types/array)
+* `p` — 거듭제곱 값입니다. 가능한 값은 `[1; inf)` 범위의 실수입니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
-단위 벡터를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple)
+단위 벡터를 반환합니다. `Array` 입력에서는 요소 타입의 최소 공통 상위 타입이 `Float32` 또는 `BFloat16`이면 `Array(Float32)`를, 그렇지 않으면 `Array(Float64)`를 반환합니다. `Tuple` 입력에서는 항상 `Tuple(Float64)`를 반환합니다. [`Tuple(Float64)`](/ko/reference/data-types/tuple) 또는 [`Array(Float32)`](/ko/reference/data-types/array) 또는 [`Array(Float64)`](/ko/reference/data-types/array)
 
 **예시**
 

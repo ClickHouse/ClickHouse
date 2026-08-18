@@ -148,6 +148,15 @@ ISink::Status StreamingExchangeSink::prepare()
     if (!socket)
         return Status::Async;
 
+    /// The peer will not read this stream anymore (for example, its LIMIT is satisfied).
+    /// Close the input so the stop propagates to the upstream stages; without this they
+    /// would keep computing data that nobody reads.
+    if (no_more_data_needed)
+    {
+        input.close();
+        return Status::Finished;
+    }
+
     if (has_input)
         return canAddChunk() ? Status::Ready : Status::Async;
 
@@ -180,7 +189,15 @@ ISink::Status StreamingExchangeSink::prepare()
 
     input.setNeeded();
     if (!input.hasData())
+    {
+        /// There is no input right now, but some data waits in the buffers. Send it even if
+        /// there is less than `FLUSH_BUFFER_TO_SOCKET_THRESHOLD` of it; otherwise it would
+        /// sit here until the next chunk arrives, and that can take a long time.
+        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
+        if (unsent > 0 || out->count() > 0)
+            return Status::Async;
         return Status::NeedData;
+    }
 
     current_chunk = input.pull(true);
     has_input = true;
@@ -269,10 +286,8 @@ void StreamingExchangeSink::consume(Chunk chunk)
 {
     if (no_more_data_needed)
     {
-        /// We have to consume all chunks from input even if we have already received NoMoreDataNeeded packet.
-        /// This is needed to avoid stuck pipeline in case of some buckets of ShuffleExchange don't need data while others still do.
-        /// So we just drop the chunk and continue.
-        /// TODO: is there a better way to figure out when when all buckets don't need data and close the inputs in pipeline?
+        /// `prepare` stops the sink when it sees `no_more_data_needed`, but the sink can pull
+        /// a chunk before the packet arrives - drop it.
         LOG_TEST(log, "No more data needed for exchange stream {}, dropping chunk with {} rows", stream_name, chunk.getNumRows());
         return;
     }

@@ -178,16 +178,9 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    /// Reached when loading already-validated metadata, which stores no column list for this engine.
-    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
-    if (columns_.empty())
-    {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
-        storage_metadata.setColumns(dest_table_metadata->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by `registerStorageBuffer` under the user's context, so the
+    /// destination's structure is never read here under the long-lived context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -615,6 +608,44 @@ void StorageBuffer::read(
 
     auto result_header = buffers_plan.getCurrentHeader();
 
+    /// Reading the destination table can return a full column where the plan over the buffers keeps
+    /// it constant (e.g. constants come back materialized from a `Distributed` destination), and a
+    /// full column cannot be converted back to a constant. Materialize such constants in the buffers
+    /// branch and unite the branches on the materialized header.
+    {
+        const auto & destination_header = *query_plan.getCurrentHeader();
+        ColumnsWithTypeAndName materialized_columns;
+        materialized_columns.reserve(result_header->columns());
+        bool buffers_header_changed = false;
+        for (const auto & column : *result_header)
+        {
+            auto materialized_column = column;
+            if (column.column && isColumnConst(*column.column))
+            {
+                const auto * destination_column = destination_header.findByName(column.name);
+                if (destination_column && (!destination_column->column || !isColumnConst(*destination_column->column)))
+                {
+                    materialized_column.column = column.column->convertToFullColumnIfConst();
+                    buffers_header_changed = true;
+                }
+            }
+            materialized_columns.push_back(std::move(materialized_column));
+        }
+
+        if (buffers_header_changed)
+        {
+            auto materialize_actions_dag = ActionsDAG::makeConvertingActions(
+                    result_header->getColumnsWithTypeAndName(),
+                    materialized_columns,
+                    ActionsDAG::MatchColumnsMode::Name,
+                    local_context);
+
+            auto materializing = std::make_unique<ExpressionStep>(result_header, std::move(materialize_actions_dag));
+            buffers_plan.addStep(std::move(materializing));
+            result_header = buffers_plan.getCurrentHeader();
+        }
+    }
+
     /// Convert structure from table to structure from buffer.
     if (!blocksHaveEqualStructure(*query_plan.getCurrentHeader(), *result_header))
     {
@@ -1011,6 +1042,13 @@ bool StorageBuffer::supportsOptimizationToSubcolumns() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToTupleElementSubcolumns();
     return false;
 }
 
@@ -1494,16 +1532,19 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
-        /// a long-lived context and would read the destination's columns with no user at all. Loading
-        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        /// Infer an omitted structure here, so the constructor never reads the destination under
+        /// the long-lived context it holds. A definition restored from metadata (including a short
+        /// `ATTACH`) has no user, so it is neither access-checked nor resolved under one.
         ColumnsDescription columns = args.columns;
-        if (columns.empty() && !destination_id.empty()
-            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        if (columns.empty() && !destination_id.empty())
         {
-            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
-            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
-            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? args.getContext() : args.getLocalContext();
+            if (!from_existing_metadata)
+                args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+            auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
         }
 

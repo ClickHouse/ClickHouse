@@ -598,7 +598,7 @@ El operador vuelve a encolar la reconciliación mientras el Secret no sea válid
   ## Puertos adicionales
 </div>
 
-El operador expone un conjunto fijo de puertos en cada pod de Kubernetes de ClickHouse y en su Service headless: `8123` para HTTP, `9000` nativo, `9009` entre servidores, `9001` de administración, `9363` para métricas de Prometheus, y las variantes TLS `8443`/`9440` cuando TLS está habilitado. Para que ClickHouse escuche en protocolos adicionales —MySQL, PostgreSQL, gRPC o cualquier puerto personalizado—, declárelos en `spec.additionalPorts`:
+El operador expone un conjunto fijo de puertos en cada pod de Kubernetes de ClickHouse y en su Service headless público: `8123` para HTTP, `9000` nativo, `9009` entre servidores, `9001`/`9002` de administración, `9363` para métricas de Prometheus, y las variantes TLS `8443`/`9440` cuando TLS está habilitado. Los puertos `interserver` y de administración también se exponen a través de los Services internos por réplica, de modo que las réplicas y el operador puedan comunicarse antes de que una réplica esté lista. Para que ClickHouse escuche en protocolos adicionales —MySQL, PostgreSQL, gRPC o cualquier puerto personalizado—, declárelos en `spec.additionalPorts`:
 
 ```yaml
 spec:
@@ -611,7 +611,8 @@ spec:
       port: 9100
 ```
 
-El operador añade esos puertos a `containerPorts` del pod de Kubernetes y al Service headless. El ejemplo completo se encuentra en [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+El operador añade esos puertos a `containerPorts` del pod de Kubernetes y al Service headless público.
+El ejemplo completo se encuentra en [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
 
 <Warning>
   `additionalPorts` solo abre los puertos del lado de Kubernetes. **No** configura el ClickHouse server para que escuche en ellos. También tienes que habilitar el protocolo correspondiente en `spec.settings.extraConfig.protocols`. De lo contrario, el puerto está abierto en el Service, pero nada dentro del pod de Kubernetes responde.
@@ -978,6 +979,12 @@ spec:
 ```
 
 Cuando está activado, el operador sincroniza las tablas Replicated y de integración en las nuevas réplicas.
+
+Cada pod de réplica lleva la readiness gate `clickhouse.com/ReplicaInitialized`, de modo que una nueva réplica solo se publica a través del Service headless público una vez que el operador completa su inicialización: la base de datos `default` se convierte al motor Replicated y el esquema se sincroniza. Hasta entonces, el operador y las demás réplicas la alcanzan a través de su Service interno. Con `enableDatabaseSync: false`, el operador marca las réplicas como inicializadas de inmediato, por lo que la readiness depende únicamente de las probes del contenedor.
+
+El operador nunca elimina una base de datos `default` poblada que no sea Replicated. Una réplica en esta situación aun así empieza a atender el tráfico de clientes tras la preparación del esquema, pero el clúster reporta `SchemaInSync=False` con motivo `DefaultDatabaseNotReplicated` hasta que resuelvas esa base de datos por tu cuenta.
+
+Antes de eliminar una réplica al reducir la escala, el operador primero descarga el tráfico de clientes de esa réplica, espera hasta que deje de publicarse, replica sus datos restantes en las réplicas supervivientes, y solo entonces la elimina.
 
 <div id="server-logging">
   ### Registro del servidor

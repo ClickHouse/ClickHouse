@@ -36,7 +36,7 @@ doc_type: 'guide'
 
 **只有 `*MergeTree` 引擎支持插入时去重。**
 
-对于 `*ReplicatedMergeTree` 引擎，插入去重默认处于启用状态，由 [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window) 和 [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 设置控制。对于非复制表 `*MergeTree` 引擎，去重由 [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window) 设置控制。
+对于 `*ReplicatedMergeTree` 引擎，插入去重默认处于启用状态，由 [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) 和 [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 设置控制。对于非复制表 `*MergeTree` 引擎，去重由 [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 设置控制。
 
 上述设置决定了表的去重日志参数。去重日志会存储有限数量的 `block_id`，而这些 `block_id` 会决定去重的实现方式 (见下文) 。
 
@@ -69,11 +69,11 @@ doc_type: 'guide'
 
 你可以使用源表的以下设置来控制此过程：
 
-* [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/zh/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/zh/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-你还必须启用用户 profile 设置 [`deduplicate_blocks_in_dependent_materialized_views`](/zh/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views)。
+你还必须启用用户 profile 设置 [`deduplicate_blocks_in_dependent_materialized_views`](/zh/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views)。
 启用 `insert_deduplicate=1` 后，插入的数据会在源表中去重。设置 `deduplicate_blocks_in_dependent_materialized_views=1` 还会在依赖表中启用去重。如果希望实现完整去重，则必须同时启用这两项设置。
 
 当向 materialized view 下游的表中插入块时，ClickHouse 会通过对一个字符串进行哈希来计算 `block_id`，该字符串由源表中的 `block_id` 和其他附加标识符组合而成。这可确保 materialized view 中的去重准确无误，使系统能够根据数据的原始插入情况对其进行区分，而不受数据到达 materialized view 下游目标表之前所执行转换的影响。

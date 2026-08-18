@@ -37,10 +37,10 @@ Se admiten las siguientes acciones:
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
 ```
 
-Agrega una nueva columna a la tabla con los `name`, `type`, [`codec`](/es/reference/statements/create/table#column_compression_codec) y `default_expr` especificados (consulte la sección [Expresiones predeterminadas](/es/reference/statements/create/table#default_values)).
+Agrega una nueva columna a la tabla con los `name`, `type`, [`codec`](/es/reference/statements/create/table/codec) y `default_expr` especificados (consulte la sección [Expresiones predeterminadas](/es/reference/statements/create/table#default_values)). Los modificadores que siguen al tipo pueden escribirse en cualquier orden y cada uno de ellos como máximo una vez; consulte la [descripción de columna](/es/reference/statements/create/table#with-explicit-schema).
 
 Si se incluye la cláusula `IF NOT EXISTS`, la consulta no devolverá ningún error si la columna ya existe. Si especifica `AFTER name_after` (el nombre de otra columna), la columna se agrega después de la indicada en la lista de columnas de la tabla. Si quiere agregar una columna al principio de la tabla, use la cláusula `FIRST`. De lo contrario, la columna se agrega al final de la tabla. En una cadena de acciones, `name_after` puede ser el nombre de una columna que se agrega en una de las acciones anteriores.
 
@@ -154,12 +154,14 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
+
+Los modificadores que siguen al tipo pueden escribirse en cualquier orden, y cada uno de ellos como máximo una vez; consulte la [descripción de columna](/es/reference/statements/create/table#with-explicit-schema).
 
 Esta consulta cambia las propiedades de la columna `name`:
 
@@ -175,7 +177,7 @@ Esta consulta cambia las propiedades de la columna `name`:
 
 * Valores de enum para los tipos Enum/Enum8/Enum16
 
-Para ver ejemplos de cómo modificar los CODECS de compresión de las columnas, consulte [Column Compression Codecs](/es/reference/statements/create/table#column_compression_codec).
+Para ver ejemplos de cómo modificar los CODECS de compresión de las columnas, consulte [Column Compression Codecs](/es/reference/statements/create/table/codec).
 
 Para ver ejemplos de cómo modificar el TTL de las columnas, consulte [Column TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
 
@@ -377,9 +379,20 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
+<Note>
+  `MATERIALIZE COLUMN` siempre reescribe los **valores de las columnas**. Que también reconstruya los [índices de omisión de datos](/es/reference/statements/alter/skipping-index) (incluidos los índices de texto) depende del diseño de las partes y de cómo se almacene el índice:
+
+  * En las partes que son simultáneamente de **formato ancho + almacenamiento completo**, los archivos **independientes** de índices de omisión (y los índices de texto) **no** se reconstruyen automáticamente cuando solo se reescribe la columna. Después de modificar los datos de la columna subyacente de los que depende un índice, ejecute [`ALTER TABLE ... MATERIALIZE INDEX`](/es/reference/statements/alter/skipping-index#materialize-index) si necesita actualizar esos archivos de índice.
+  * **Excepción:** los índices de omisión ordinarios empaquetados en `skp_idx.packed` (subflujos pequeños de índices de omisión por debajo del valor predeterminado de [`packed_skip_index_max_bytes`](/es/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes); los índices de texto completo no se empaquetan de esta forma) se recalculan forzosamente incluso en partes de formato ancho + almacenamiento completo.
+  * En **cualquier parte que no sea de formato ancho + almacenamiento completo** (incluidas las **compactas + completas**, **compactas + empaquetadas** y **anchas + empaquetadas**), la mutación sigue una ruta de reescritura completa de la parte y recalcula forzosamente los índices secundarios preexistentes en ella. Las partes pequeñas suelen ser compactas y, de forma predeterminada, seguir usando almacenamiento completo, por lo que esta rama es el caso habitual para inserciones recientes.
+
+  Por otro lado, `ADD INDEX` solo actualiza los metadatos: **no** materializa inmediatamente el nuevo índice (incluidos los índices de texto) en las partes históricas. Las partes históricas se materializan mediante un [`MATERIALIZE INDEX`](/es/reference/statements/alter/skipping-index#materialize-index) explícito o una fusión posterior, cuando [`materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) está habilitado y el índice no figura en [`exclude_materialize_skip_indexes_on_merge`](/es/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge). `MATERIALIZE INDEX` explícito es la opción determinista cuando necesita crear el índice sin esperar a la configuración de fusión.
+</Note>
+
 **Véase también**
 
 * [MATERIALIZED](/es/reference/statements/create/view#materialized-view).
+* [MATERIALIZE INDEX](/es/reference/statements/alter/skipping-index#materialize-index).
 
 <div id="limitations">
   ## Limitaciones

@@ -2,7 +2,7 @@
 slug: /cloud/managed-postgres/pricing
 sidebarTitle: '料金'
 title: '料金'
-description: 'ClickHouse が管理する Postgres の料金体系、ティア、インスタンスタイプ、およびベータ期間中の料金の詳細'
+description: 'ClickHouse Managed Postgres の料金体系、ティア、インスタンスタイプ、およびベータ料金の詳細'
 keywords: ['postgres 料金', 'managed postgres 費用', 'postgres ベータ料金', 'postgres 料金計算ツール', 'nvme 料金', 'postgres ティア料金']
 doc_type: 'reference'
 ---
@@ -11,11 +11,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
 
-ClickHouse が管理する Postgres はローカル NVMe ストレージを基盤としており、従来のネットワーク接続型ストレージアーキテクチャに伴うコスト増なしで、本番運用に耐える性能とネイティブな ClickHouse 連携を提供します。このページでは、このサービスの料金モデル、利用可能なインスタンスタイプ、ティアごとの比較について説明します。
-
-ClickHouse が管理する Postgres は現在ベータで提供中です。2026 年 6 月 15 日に使用量の計測が始まるまで、サービスは無料で利用できるため、請求開始前にチームで適切なインスタンスサイズを見極めることができます。
-
-ベータ期間中は、初期導入のお客様へのコミットメントとして、すべてのプランに 50% の割引が適用されます。料金は、1 vCPU、8 GB RAM、59 GB の NVMe ストレージ構成で **月額約 30 ドル** からです。
+ClickHouse Managed Postgres はローカル NVMe ストレージを基盤としており、従来のネットワーク接続型ストレージアーキテクチャに伴うコスト増なしで、本番運用に耐える性能とネイティブな ClickHouse 連携を提供します。このページでは、ベータ提供中のこのサービスの料金モデル、利用可能なインスタンスタイプ、ティアごとの比較について説明します。
 
 <Tip>
   **料金計算ツール**
@@ -62,7 +58,7 @@ ClickHouse が管理する Postgres は現在ベータで提供中です。2026 
       <li><a href="/ja/products/managed-postgres/extensions">90 種類以上の Postgres 拡張機能</a></li>
       <li><a href="/ja/products/managed-postgres/clickhouse-integration">ClickHouse へのネイティブ CDC</a></li>
       <li><a href="/ja/products/managed-postgres/extensions"><code>pg&#95;clickhouse</code> 拡張機能</a></li>
-      <li><a href="/ja/products/managed-postgres/migrations/clickhouse-cloud">完全マネージド型のデータ移行</a></li>
+      <li><a href="/ja/products/managed-postgres/migrations/clickpipes">完全マネージド型のデータ移行</a></li>
       <li>1 営業日以内に応答するエキスパートサポート</li>
       <li>Google または Microsoft のソーシャルログインを使用する<a href="/ja/products/cloud/guides/security/cloud-access-management/manage-my-account">シングルサインオン認証 (SSO) </a></li>
       <li><a href="/ja/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">多要素認証</a></li>
@@ -96,7 +92,7 @@ ClickHouse が管理する Postgres は現在ベータで提供中です。2026 
       <li>プライベートリージョン</li>
       <li>担当リードサポートエンジニア</li>
       <li><a href="/ja/products/managed-postgres/extensions">カスタム拡張機能</a> (*承認待ち)</li>
-      <li><a href="/ja/products/managed-postgres/migrations/clickhouse-cloud">移行に関するコンサルティングガイド</a></li>
+      <li><a href="/ja/products/managed-postgres/migrations/clickpipes">移行に関するコンサルティングガイド</a></li>
       <li><a href="/ja/products/managed-postgres/upgrades">スケジュールされたアップグレード</a></li>
     </ul>
   </div>
@@ -106,11 +102,11 @@ ClickHouse が管理する Postgres は現在ベータで提供中です。2026 
   ### インスタンスタイプ
 </div>
 
-インスタンス構成は、ワークロードの特性に応じたインフラストラクチャの選定を簡素化するため、3 つのカテゴリに分類されています。
+インスタンス構成は、ワークロードの特性に応じたインフラストラクチャの選定を簡素化するため、3 つのカテゴリに分類されています。すべてのインスタンスタイプが、すべての AWS リージョンで利用できるわけではありません。
 
-* **メモリ最適化:** メモリ集約型ワークロード向けに設計されており、メモリ対 CPU の比率が高くなっています (1:8 や 1:4 など) 。AWS Graviton ベースの `r8gd`、`r6gd`、`m6gd`、`m8gd` ファミリーをサポートします。大規模なワーキングセット、高いキャッシュヒット率、メモリバウンドなデータベースワークロードに最適です。
-* **ストレージ最適化:** コンピュートを比例してスケーリングすることなく、大量のローカル NVMe ストレージを必要とするワークロード向けに設計されています。AWS Graviton ベースの `i8g`、`i8ge`、`i7i`、`i7ie` ファミリーをサポートし、構成によっては最大 60 TB のローカル NVMe ストレージを利用できます。大規模なデータセット、時系列ワークロード、ログやイベントの保存、ストレージ負荷の高い OLTP ワークロードに最適です。
-* **CPU 最適化:** コンピュート集約型ワークロード向けに設計されており、メモリ対 CPU の比率は低めです (通常は 1:2 前後) 。`c6gd` ファミリーをサポートし、高コンカレンシーのトランザクションワークロードや CPU バウンドなクエリに最適です。
+* **メモリ最適化:** メモリ集約型ワークロード向けに設計されており、メモリ対 CPU の比率は 1:8 です。x86 ベースの `r8id` および `r6id` ファミリー、ならびに AWS Graviton ベースの ARM64 `r8gd` および `r6gd` ファミリーをサポートします。大規模なワーキングセット、高いキャッシュヒット率、メモリバウンドなデータベースワークロードに最適です。
+* **ストレージ最適化:** コンピュートを比例してスケーリングすることなく、大量のローカル NVMe ストレージを必要とするワークロード向けに設計されています。AWS Graviton ベースの ARM64 `i8g` および `i8ge` ファミリー、ならびに x86 ベースの `i7i` および `i7ie` ファミリーをサポートし、構成によっては最大 60 TB のローカル NVMe ストレージを利用できます。大規模なデータセット、時系列ワークロード、ログやイベントの保存、ストレージ負荷の高い OLTP ワークロードに最適です。
+* **CPU 最適化:** コンピュート集約型ワークロード向けに設計されており、メモリ対 CPU の比率は 1:4 です。x86 ベースの `m8id` および `m6id` ファミリー、ならびに AWS Graviton ベースの ARM64 `m8gd` および `m6gd` ファミリーをサポートします。高コンカレンシーのトランザクションワークロードや CPU バウンドなクエリに最適です。
 
 <div id="pricing-calculator">
   ## 料金計算ツール

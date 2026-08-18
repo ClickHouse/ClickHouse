@@ -30,11 +30,11 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 論理削除 は、行を削除済みとしてマークするものの、ただちに物理的に削除はしない [ミューテーション](/ja/reference/statements/alter/index#mutations) として実装されています。
 
-デフォルトでは、`DELETE` 文は、行の削除済みマークが完了するまで待ってから戻ります。データ量が多い場合、これには時間がかかることがあります。代わりに、設定 [`lightweight_deletes_sync`](/ja/reference/settings/session-settings#lightweight_deletes_sync) を使って、バックグラウンドで非同期に実行できます。これを無効にすると、`DELETE` 文はすぐに戻りますが、バックグラウンドの ミューテーション が完了するまでは、データがクエリから見えたままになる場合があります。
+デフォルトでは、`DELETE` ステートメントは、行の削除済みマークが完了するまで待ってから戻ります。データ量が多い場合、これには時間がかかることがあります。代わりに、設定 [`lightweight_deletes_sync`](/ja/reference/settings/session-settings/lightweight#lightweight_deletes_sync) を使って、バックグラウンドで非同期に実行できます。これを無効にすると、`DELETE` ステートメントはすぐに戻りますが、バックグラウンドの ミューテーション が完了するまでは、データがクエリから見えたままになる場合があります。
 
-この ミューテーション は、削除済みとしてマークされた行を物理的には削除しません。実際に削除されるのは、次回の merge 時のみです。そのため、一定期間のあいだ、データは実際にはストレージから削除されず、削除済みとしてマークされているだけの状態になることがあります。
+この ミューテーション は、削除済みとしてマークされた行を物理的には削除しません。実際に削除されるのは、次回の マージ 時のみです。そのため、一定期間のあいだ、データは実際にはストレージから削除されず、削除済みとしてマークされているだけの状態になることがあります。
 
-データが予測可能な時間内にストレージから削除されることを確実にしたい場合は、テーブル設定 [`min_age_to_force_merge_seconds`](/ja/reference/settings/merge-tree-settings#min_age_to_force_merge_seconds) の使用を検討してください。あるいは、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドを使用することもできます。`ALTER TABLE ... DELETE` によるデータ削除では、影響を受けるすべてのパーツを再作成するため、大量のリソースを消費する可能性がある点に注意してください。
+データが予測可能な時間内にストレージから削除されることを確実にしたい場合は、テーブル設定 [`min_age_to_force_merge_seconds`](/ja/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds) の使用を検討してください。あるいは、[ALTER TABLE ... DELETE](/ja/reference/statements/alter/delete) コマンドを使用することもできます。`ALTER TABLE ... DELETE` によるデータ削除では、影響を受けるすべてのパーツを再作成するため、大量のリソースを消費する可能性がある点に注意してください。
 
 <div id="deleting-large-amounts-of-data">
   ## 大量のデータを削除する

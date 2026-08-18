@@ -225,7 +225,7 @@ SELECT * FROM sometable;
   ### تحديد قيم مفاتيح الكائن الأب
 </div>
 
-لنفترض أننا نريد أيضًا حفظ القيم الموجودة في مفاتيح الكائن الأب داخل الجدول. في هذه الحالة، يمكننا استخدام [الخيار التالي](/ar/reference/settings/formats#format_json_object_each_row_column_for_object_name) لتحديد اسم العمود الذي نريد حفظ قيم المفاتيح فيه:
+لنفترض أننا نريد أيضًا حفظ القيم الموجودة في مفاتيح الكائن الأب داخل الجدول. في هذه الحالة، يمكننا استخدام [الخيار التالي](/ar/reference/settings/formats/format#format_json_object_each_row_column_for_object_name) لتحديد اسم العمود الذي نريد حفظ قيم المفاتيح فيه:
 
 ```sql
 SET format_json_object_each_row_column_for_object_name = 'id'
@@ -401,7 +401,7 @@ LIMIT 1
   ## الوصول إلى كائنات JSON المتداخلة
 </div>
 
-يمكن الإشارة إلى [مفاتيح JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) عبر تفعيل [خيار الإعدادات التالي](/ar/reference/settings/formats#input_format_import_nested_json):
+يمكن الإشارة إلى [مفاتيح JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) عبر تفعيل [خيار الإعدادات التالي](/ar/reference/settings/formats/input-format#input_format_import_nested_json):
 
 ```sql
 SET input_format_import_nested_json = 1
@@ -454,7 +454,7 @@ SELECT * FROM shorttable
 └───────────────────────────┴──────┘
 ```
 
-سيتجاهل ClickHouse الأعمدة غير المعروفة أثناء الاستيراد. يمكن إيقاف هذا السلوك باستخدام خيار الإعدادات ‏[input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats#input_format_skip_unknown_fields):
+سيتجاهل ClickHouse الأعمدة غير المعروفة أثناء الاستيراد. يمكن إيقاف هذا السلوك باستخدام خيار الإعدادات ‏[input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats/input-format#input_format_skip_unknown_fields):
 
 ```sql
 SET input_format_skip_unknown_fields = 0;

@@ -623,18 +623,25 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     EXPECT_EQ(total_rows, 7u);
 }
 
-/// v1 for legacy-port-only sources (rolling-upgrade safe); v2 once a per-replica port appears.
+/// v1 only when every producer port matches the destination worker's exchange port (a v1
+/// consumer dials producers on its own port); v2 as soon as any producer differs.
 TEST(DistributedTaskSerializationVersion, LowersToV1ForLegacyPorts)
 {
-    const UInt64 server_exchange_port = 9000;
+    const UInt64 destination_exchange_port = 9000;
 
     ExchangeStreamSources sources;
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s1"] = {"host1", 9000};
     sources.stream_hosts["s2"] = {"host2", 9000};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(1));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(1));
 
     sources.stream_hosts["s3"] = {"host3", 9224};
-    EXPECT_EQ(chooseTaskSerializationVersion(sources, server_exchange_port), UInt64(2));
+    EXPECT_EQ(chooseTaskSerializationVersion(sources, destination_exchange_port), UInt64(2));
+
+    /// Producers agreeing among themselves is not enough: a destination whose own port
+    /// differs from the producers' port must still get a version-2 task.
+    ExchangeStreamSources uniform_sources;
+    uniform_sources.stream_hosts["s1"] = {"host1", 9000};
+    EXPECT_EQ(chooseTaskSerializationVersion(uniform_sources, /*destination_exchange_port=*/9224), UInt64(2));
 }

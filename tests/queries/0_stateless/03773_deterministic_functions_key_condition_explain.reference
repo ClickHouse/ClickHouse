@@ -203,7 +203,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               cityHash64(person_id)
-            Condition: not((cityHash64(person_id) in 2-element set))
+            Condition: (cityHash64(person_id) notIn 2-element set)
             Parts: 2/2
             Granules: 2/2
             Search Algorithm: generic exclusion search
@@ -325,7 +325,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: not((left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set))
+            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) notIn 2-element set)
             Parts: 1/1
             Granules: 100/100
             Search Algorithm: generic exclusion search
@@ -447,7 +447,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: not((left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set))
+            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) notIn 2-element set)
             Parts: 1/1
             Granules: 100/100
             Search Algorithm: generic exclusion search
@@ -533,7 +533,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               toUUID(p)
-            Condition: not((toUUID(p) in 1-element set))
+            Condition: (toUUID(p) notIn 1-element set)
             Parts: 2/2
             Granules: 2/2
             Search Algorithm: generic exclusion search
@@ -741,7 +741,7 @@ Expression ((Projection + Before ORDER BY))
           PrimaryKey
             Keys:
               cityHash64(person_id)
-            Condition: not((cityHash64(person_id) in 2-element set))
+            Condition: (cityHash64(person_id) notIn 2-element set)
             Parts: 2/2
             Granules: 2/2
             Search Algorithm: generic exclusion search
@@ -863,7 +863,7 @@ Expression ((Projection + Before ORDER BY))
           PrimaryKey
             Keys:
               left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1))
-            Condition: not((left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) in 2-element set))
+            Condition: (left(pod, minus(minus(length(pod), length(substringIndex(pod, \'-\', -1))), 1)) notIn 2-element set)
             Parts: 1/1
             Granules: 100/100
             Search Algorithm: generic exclusion search
@@ -985,7 +985,7 @@ Expression ((Projection + Before ORDER BY))
           PrimaryKey
             Keys:
               left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1))
-            Condition: not((left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) in 2-element set))
+            Condition: (left(lower(pod), minus(minus(length(lower(pod)), length(substringIndex(lower(pod), \'-\', -1))), 1)) notIn 2-element set)
             Parts: 1/1
             Granules: 100/100
             Search Algorithm: generic exclusion search
@@ -1071,7 +1071,7 @@ Expression ((Projection + Before ORDER BY))
           PrimaryKey
             Keys:
               toUUID(p)
-            Condition: not((toUUID(p) in 1-element set))
+            Condition: (toUUID(p) notIn 1-element set)
             Parts: 2/2
             Granules: 2/2
             Search Algorithm: generic exclusion search

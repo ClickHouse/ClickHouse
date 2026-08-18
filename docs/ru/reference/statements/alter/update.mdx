@@ -20,13 +20,13 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
 Один запрос может содержать несколько команд, разделённых запятыми.
 
-Синхронность обработки запроса определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync). По умолчанию обработка выполняется асинхронно.
+Синхронность обработки запроса определяется настройкой [mutations&#95;sync](/ru/reference/settings/session-settings/mutations#mutations_sync). По умолчанию обработка выполняется асинхронно.
 
 **См. также**
 
 * [Мутации](/ru/reference/statements/alter/index#mutations)
 * [Синхронность запросов ALTER](/ru/reference/statements/alter/index#synchronicity-of-alter-queries)
-* настройка [mutations&#95;sync](/ru/reference/settings/session-settings#mutations_sync)
+* настройка [mutations&#95;sync](/ru/reference/settings/session-settings/mutations#mutations_sync)
 * [Легковесный `UPDATE`](/ru/reference/statements/update) - Альтернативное легковесное обновление с использованием патч-частей
 * [`APPLY PATCHES`](/ru/reference/statements/alter/apply-patches) - Ручное применение патчей из легковесных обновлений
 

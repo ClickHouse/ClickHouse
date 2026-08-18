@@ -1,5 +1,5 @@
 {
-  "settings": 523,
+  "settings": 524,
   "anchorRoutes": {
     "abort_on_logical_error": "/reference/settings/server-settings/settings/other",
     "access_control_improvements": "/reference/settings/server-settings/settings/access-control",
@@ -139,6 +139,7 @@
     "handshake_timeout_milliseconds": "/reference/settings/server-settings/settings/other",
     "hdfs.libhdfs3_conf": "/reference/settings/server-settings/settings/other",
     "hsts_max_age": "/reference/settings/server-settings/settings/other",
+    "http_allow_path_requests": "/reference/settings/server-settings/settings/http",
     "http_connections_hard_limit": "/reference/settings/server-settings/settings/http-connections",
     "http_connections_rcvbuf": "/reference/settings/server-settings/settings/http-connections",
     "http_connections_sndbuf": "/reference/settings/server-settings/settings/http-connections",

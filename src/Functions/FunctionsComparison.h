@@ -801,6 +801,86 @@ template <> struct CompileOp<GreaterOrEqualsOp>
 
 #endif
 
+/** Whether a comparison of two values of these types can throw an exception, see `IFunction::canThrow`.
+  *
+  * A comparison does not throw as long as both sides are compared the way they are stored, or the
+  * narrower side is only widened: numbers are compared by an accurate numeric comparison, strings
+  * byte-wise, and values of exactly the same type by `IColumn::compareAt`. It throws as soon as one
+  * of the sides has to be interpreted as something else: a string parsed as a date, a time or a
+  * tuple (`CANNOT_PARSE_DATE`), a string validated against an enum, or decimals of different scales
+  * brought to a common scale, which can overflow (`DECIMAL_OVERFLOW`).
+  *
+  * These are the same groups of types that `getComparisonOrderDomainForType` keys its domains by:
+  * a comparison inside one domain is direct, a comparison across domains goes through a conversion.
+  * Types that are not listed here are reported as throwing, which is always safe: it only means
+  * that an optimization is lost.
+  */
+inline bool comparisonCanThrow(const DataTypePtr & left_type, const DataTypePtr & right_type)
+{
+    /// `Nullable` and `LowCardinality` are unwrapped by the default implementations before the
+    /// comparison itself is executed.
+    const auto left = removeNullable(removeLowCardinality(left_type));
+    const auto right = removeNullable(removeLowCardinality(right_type));
+
+    const WhichDataType which_left(left);
+    const WhichDataType which_right(right);
+
+    /// Compared by an accurate numeric comparison of both sides as they are stored, without
+    /// converting either of them. `Enum` is compared by its underlying numeric value.
+    auto is_number = [](const WhichDataType & which)
+    {
+        return which.isInt() || which.isUInt() || which.isFloat() || which.isEnum();
+    };
+    if (is_number(which_left) && is_number(which_right))
+        return false;
+
+    /// Compared byte-wise, `FixedString` of different sizes is zero-padded to the wider one.
+    if (which_left.isStringOrFixedString() && which_right.isStringOrFixedString())
+        return false;
+
+    /// Both share the days-since-epoch order, `Date` is only widened to `Date32`.
+    if (which_left.isDateOrDate32() && which_right.isDateOrDate32())
+        return false;
+
+    /// Types that are compared through their scale. Equal scales are compared as the stored
+    /// integers (the narrower side is only widened), different scales are rescaled to a common
+    /// scale first, and that multiplication can overflow.
+    enum class ScaledKind : uint8_t
+    {
+        TimePoint,
+        TimeOfDay,
+        Decimal,
+    };
+    using ScaleAndKind = std::pair<ScaledKind, UInt32>;
+
+    auto scale_and_kind = [](const DataTypePtr & type, const WhichDataType & which) -> std::optional<ScaleAndKind>
+    {
+        if (which.isDateTime())
+            return ScaleAndKind{ScaledKind::TimePoint, 0};
+        if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimePoint, date_time64->getScale()};
+        if (which.isTime())
+            return ScaleAndKind{ScaledKind::TimeOfDay, 0};
+        if (const auto * time64 = typeid_cast<const DataTypeTime64 *>(type.get()))
+            return ScaleAndKind{ScaledKind::TimeOfDay, time64->getScale()};
+        if (which.isDecimal())
+            return ScaleAndKind{ScaledKind::Decimal, getDecimalScale(*type)};
+        return {};
+    };
+
+    if (const auto left_scaled = scale_and_kind(left, which_left);
+        left_scaled && left_scaled == scale_and_kind(right, which_right))
+        return false;
+
+    /// Values of exactly the same type are compared by `IColumn::compareAt`, which reads the values
+    /// as they are stored. `Variant`, `Dynamic` and `JSON` are excluded: a comparison of those
+    /// dispatches on the type of every individual row.
+    if (left->equals(*right) && !which_left.isVariant() && !which_left.isDynamic() && !which_left.isObject())
+        return false;
+
+    return true;
+}
+
 struct ComparisonParams
 {
     bool check_decimal_overflow = false;
@@ -1688,6 +1768,14 @@ public:
     }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+
+    /// A comparison is cheap, so it is not worth executing it lazily, but it is not free of
+    /// exceptions either: comparing a date to a string parses that string. These two properties
+    /// have to be answered separately.
+    bool canThrow(const DataTypesWithConstInfo & arguments) const override
+    {
+        return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

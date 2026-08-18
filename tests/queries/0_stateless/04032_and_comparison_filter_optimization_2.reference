@@ -202,7 +202,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), indexHint(greater(__table1.i, 2)))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -212,7 +212,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), greater(__table1.i, 2))
+WHERE and(greater(__table1.i, __table1.u), greater(__table1.u, 2), indexHint(greater(__table1.i, 2)))
 SETTINGS optimize_redundant_comparisons = 1
 transitive_eq_chain
 SELECT
@@ -223,7 +223,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), indexHint(equals(__table1.i, 3)))
 SETTINGS optimize_redundant_comparisons = 0
 SELECT
     __table1.i AS i,
@@ -233,7 +233,7 @@ SELECT
     __table1.lc AS lc,
     __table1.dt AS dt
 FROM default.`04032_t` AS __table1
-WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), equals(__table1.i, 3))
+WHERE and(equals(__table1.i, __table1.u), equals(__table1.u, 3), indexHint(equals(__table1.i, 3)))
 SETTINGS optimize_redundant_comparisons = 1
 mixed_operands
 3	30	3	c	y	2024-06-15 12:00:00
@@ -545,7 +545,7 @@ FROM
         multiply(__table2.number, 2) AS y
     FROM numbers(10) AS __table2
 ) AS __table1
-WHERE and(less(__table1.x, __table1.y), less(__table1.y, 3), less(__table1.x, 3))
+WHERE and(less(__table1.x, __table1.y), less(__table1.y, 3), indexHint(less(__table1.x, 3)))
 SETTINGS optimize_redundant_comparisons = 1
 1
 derived_conflict

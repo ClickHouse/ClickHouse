@@ -224,6 +224,7 @@
     "reference/settings/session-settings/shared-merge",
     "reference/settings/session-settings/short-circuit-function-evaluation",
     "reference/settings/session-settings/show",
+    "reference/settings/session-settings/shrink-over",
     "reference/settings/session-settings/skip-unavailable-shards",
     "reference/settings/session-settings/sleep-in",
     "reference/settings/session-settings/split",

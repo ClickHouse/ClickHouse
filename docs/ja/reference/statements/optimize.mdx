@@ -24,14 +24,14 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` クエリは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー ([materialized view](/ja/reference/statements/create/view#materialized-view) を含む) および [Buffer](/ja/reference/engines/table-engines/special/buffer) エンジンでサポートされています。その他のテーブルエンジンではサポートされていません。
 
-`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定が `2` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings#alter_sync) 設定が `1` の場合) 。
+`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `2` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `1` の場合) 。
 
-* 何らかの理由で `OPTIMIZE` がマージを実行しなかった場合、クライアントには通知されません。通知を有効にするには、[optimize&#95;throw&#95;if&#95;noop](/ja/reference/settings/session-settings#optimize_throw_if_noop) 設定を使用します。
+* 何らかの理由で `OPTIMIZE` がマージを実行しなかった場合、クライアントには通知されません。通知を有効にするには、[optimize&#95;throw&#95;if&#95;noop](/ja/reference/settings/session-settings/optimize#optimize_throw_if_noop) 設定を使用します。
 * `PARTITION` を指定すると、指定したパーティションだけが最適化されます。[パーティション式の設定方法](/ja/reference/statements/alter/partition#how-to-set-partition-expression)。
-* `FINAL` または `FORCE` を指定すると、すべてのデータがすでに 1 つのパーツにまとまっている場合でも最適化が実行されます。この動作は [optimize&#95;skip&#95;merged&#95;partitions](/ja/reference/settings/session-settings#optimize_skip_merged_partitions) で制御できます。また、同時実行のマージが行われている場合でも、マージは強制されます。
+* `FINAL` または `FORCE` を指定すると、すべてのデータがすでに 1 つのパーツにまとまっている場合でも最適化が実行されます。この動作は [optimize&#95;skip&#95;merged&#95;partitions](/ja/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions) で制御できます。また、同時実行のマージが行われている場合でも、マージは強制されます。
 * `DEDUPLICATE` を指定すると、完全に同一の行は重複排除されます (`BY` 句が指定されていない場合は、すべてのカラムが比較されます) 。これは MergeTree エンジンでのみ意味があります。
 
-非アクティブなレプリカが `OPTIMIZE` クエリを実行するのを待機する時間 (秒単位) は、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
+非アクティブなレプリカが `OPTIMIZE` クエリを実行するのを待機する時間 (秒単位) は、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
   `alter_sync` が `2` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。
@@ -59,7 +59,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 ```
 
-既定では、生成された merged パーツ は [`CHECK TABLE`](/ja/reference/statements/check-table) クエリと同様の方法で検証されます。この動作は [optimize&#95;dry&#95;run&#95;check&#95;part](/ja/reference/settings/session-settings#optimize_dry_run_check_part) 設定で制御されており、既定で有効です。これを無効にすると検証がスキップされるため、マージ自体のベンチマークを行う場合に役立ちます。
+既定では、生成された merged パーツ は [`CHECK TABLE`](/ja/reference/statements/check-table) クエリと同様の方法で検証されます。この動作は [optimize&#95;dry&#95;run&#95;check&#95;part](/ja/reference/settings/session-settings/optimize#optimize_dry_run_check_part) 設定で制御されており、既定で有効です。これを無効にすると検証がスキップされるため、マージ自体のベンチマークを行う場合に役立ちます。
 
 **例**
 
@@ -69,13 +69,13 @@ CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER
 INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
 INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
 
--- 2つのパーツを使用したマージをシミュレート
+-- Simulate merging using two parts
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
 
--- 重複排除を使用したマージをシミュレート
+-- Simulate merging with deduplication
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
 
--- DRY RUN後もパーツとデータは変更されない
+-- Parts and data remain unchanged after DRY RUN
 SELECT name, rows FROM system.parts
 WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
 ORDER BY name;

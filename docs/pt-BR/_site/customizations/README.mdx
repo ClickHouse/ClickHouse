@@ -17,7 +17,7 @@ Consulte a documentação do Mintlify sobre [scripts personalizados](https://www
 
 * `ask-ai-button.js` — ajusta o estilo e o comportamento do botão Ask-AI.
 * `custom-footer.js` — renderiza o rodapé personalizado do site (`#ch-custom-footer`).
-* `galaxy.js` — inicializa o analytics do ClickHouse Galaxy, rastreia eventos do ciclo de vida de páginas da documentação e da base de conhecimento na navegação SPA do Mintlify, envia o tráfego canônico de `https://clickhouse.com/docs` para a API Galaxy de produção e o tráfego de preview em `.mintlify.app` para a API Galaxy de desenvolvimento (desabilitado em `localhost` e origens desconhecidas), e adiciona atribuição e o ID de visitante do Galaxy aos links do ClickHouse Cloud somente na documentação canônica de produção.
+* `galaxy.js` — inicializa o analytics do ClickHouse Galaxy, aplica a cada evento o mesmo modelo de atribuição do site de marketing, com último toque de 30 dias, referenciador não direto e UTM, rastreia eventos do ciclo de vida de páginas da documentação e da base de conhecimento na navegação SPA do Mintlify, envia o tráfego canônico de `https://clickhouse.com/docs` para a API Galaxy de produção e o tráfego de preview em `.mintlify.app` para a API Galaxy de desenvolvimento (desabilitado em `localhost` e origens desconhecidas), e adiciona parâmetros de campanha armazenados e o ID de visitante do Galaxy aos links do ClickHouse Cloud somente na documentação canônica de produção.
 * `inkeep-init.js` — substitui a busca nativa do Mintlify (⌘K / barra de busca da navbar) pelo modal de busca do Inkeep. Apenas busca; o chat com IA continua no Kapa.
 * `kapa-init.js` — inicializa o widget RAG do Kapa.ai.
 * `navbar-cta.js` — adiciona o CTA &quot;Primeiros passos&quot; à navbar.

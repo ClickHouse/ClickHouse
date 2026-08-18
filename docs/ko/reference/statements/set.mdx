@@ -43,13 +43,13 @@ SET TIME ZONE 'UTC';
 SET TIME ZONE 'Europe/Amsterdam';
 SET TIME ZONE 'America/New_York';
 
--- 현재 세션 시간대 확인
+-- Verify the current session time zone
 SELECT getSetting('session_timezone');
 ```
 
 시간대 값은 [IANA Time Zone Database](https://www.iana.org/time-zones)에 있는 유효한 이름이어야 합니다. 유효하지 않은 시간대 이름을 사용하면 오류가 발생합니다.
 
-`session_timezone` 설정에 관한 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings#session_timezone)을 참조하십시오.
+`session_timezone` 설정에 관한 자세한 내용은 [session&#95;timezone](/ko/reference/settings/session-settings/other#session_timezone)을 참조하십시오.
 
 <div id="setting-query-parameters">
   ## 쿼리 매개변수 설정

@@ -528,10 +528,10 @@ Peak memory usage: 639.47 MiB.
 
 上述场景中的性能和资源消耗受多种因素影响。在尝试调优之前，建议读者先了解 [Optimizing for S3 Insert and Read Performance guide](/zh/integrations/connectors/data-ingestion/AWS/performance) 中 [Using Threads for Reads](/zh/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 部分详细介绍的插入机制。概括如下：
 
-* **读取并行度** - 用于读取操作的线程数。通过 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 控制。在 ClickHouse Cloud 中，该值由实例规格决定，默认等于 vCPU 数量。提高该值可能会提升读取性能，但代价是更高的内存使用量。
-* **插入并行度** - 用于执行插入操作的线程数。通过 [`max_insert_threads`](/zh/reference/settings/session-settings#max_insert_threads) 控制。**注意**：该值受 `max_threads` 限制，因此实际插入并行度为 `min(max_insert_threads, max_threads)`。在 ClickHouse Cloud 中，该值由实例大小决定 (介于 2 到 4 之间) ，而在 OSS 中固定为 1。增大该值可能会提升性能，但代价是更高的内存使用量。
-* **插入块大小** - 数据会在一个循环中处理：先被拉取、解析，再根据[分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)组成为内存中的插入块。这些块随后会被排序、优化、压缩，并作为新的[数据分区片段](/zh/concepts/core-concepts/parts)写入存储。插入块的大小由设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings#min_insert_block_size_bytes) (未压缩) 控制，会影响内存占用和磁盘 I/O。较大的块会占用更多内存，但会生成更少的 parts，从而减少 I/O 和后台合并。这些设置表示最小阈值 (哪个先达到，就会先触发一次刷盘) 。
-* **materialized view 的块大小** - 除了上述适用于主插入的机制外，在插入到 materialized view 之前，块也会先合并，以提升处理效率。这些块的大小由设置 [`min_insert_block_size_bytes_for_materialized_views`](/zh/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) 和 [`min_insert_block_size_rows_for_materialized_views`](/zh/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views) 决定。块越大，处理效率通常越高，但代价是内存占用也会增加。默认情况下，这些设置会分别回退到源表设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings#min_insert_block_size_bytes) 的值。
+* **读取并行度** - 用于读取操作的线程数。通过 [`max_threads`](/zh/reference/settings/session-settings/max-threads#max_threads) 控制。在 ClickHouse Cloud 中，该值由实例规格决定，默认等于 vCPU 数量。提高该值可能会提升读取性能，但代价是更高的内存使用量。
+* **插入并行度** - 用于执行插入操作的线程数。通过 [`max_insert_threads`](/zh/reference/settings/session-settings/max-insert#max_insert_threads) 控制。**注意**：该值受 `max_threads` 限制，因此实际插入并行度为 `min(max_insert_threads, max_threads)`。在 ClickHouse Cloud 中，该值由实例大小决定 (介于 2 到 4 之间) ，而在 OSS 中固定为 1。增大该值可能会提升性能，但代价是更高的内存使用量。
+* **插入块大小** - 数据会在一个循环中处理：先被拉取、解析，再根据[分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)组成为内存中的插入块。这些块随后会被排序、优化、压缩，并作为新的[数据分区片段](/zh/concepts/core-concepts/parts)写入存储。插入块的大小由设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) (未压缩) 控制，会影响内存占用和磁盘 I/O。较大的块会占用更多内存，但会生成更少的 parts，从而减少 I/O 和后台合并。这些设置表示最小阈值 (哪个先达到，就会先触发一次刷盘) 。
+* **materialized view 的块大小** - 除了上述适用于主插入的机制外，在插入到 materialized views 之前，块也会先合并，以提升处理效率。这些块的大小由设置 [`min_insert_block_size_bytes_for_materialized_views`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) 和 [`min_insert_block_size_rows_for_materialized_views`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views) 决定。块越大，处理效率通常越高，但代价是内存占用也会增加。默认情况下，这些设置会分别回退到源表设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) 的值。
 
 <Note>
   **简单 INSERT SELECT 查询提示**：对于不含复杂转换的简单 `INSERT INTO t1 SELECT * FROM t2` 查询，可考虑启用 `optimize_trivial_insert_select=1`。该设置 (自 24.7 版本起默认禁用) 会自动调整 SELECT 的并行度，使其与 `max_insert_threads` 一致，从而减少资源占用以及创建的 parts 数量。这对于在表之间进行大批量数据迁移尤其实用。
@@ -539,7 +539,7 @@ Peak memory usage: 639.47 MiB.
 
 如需提升性能，可参考 [S3 插入与读取性能优化指南](/zh/integrations/connectors/data-ingestion/AWS/performance) 中的[调整插入的线程数与块大小](/zh/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts)章节所述的指导原则。在大多数情况下，无需额外修改 `min_insert_block_size_bytes_for_materialized_views` 和 `min_insert_block_size_rows_for_materialized_views` 来提升性能。如需修改这些参数，请遵循针对 `min_insert_block_size_rows` 和 `min_insert_block_size_bytes` 所讨论的最佳实践。
 
-若要降低内存占用，可以尝试调整这些设置，但这不可避免地会影响性能。以下使用前面的查询展示相关示例。
+若要尽量降低内存占用，可以尝试调整这些设置，但这不可避免地会影响性能。以下使用前面的查询展示相关示例。
 
 将 `max_insert_threads` 降低至 1 可减少内存开销。
 
@@ -554,11 +554,11 @@ SETTINGS max_insert_threads = 1
 ```
 
 ```response
-0 行。耗时：27.752 秒。已处理 15 亿行，33.48 GB（5389 万行/秒，1.21 GB/秒）
-峰值内存占用：506.78 MiB。
+0 rows in set. Elapsed: 27.752 sec. Processed 1.50 billion rows, 33.48 GB (53.89 million rows/s., 1.21 GB/s.)
+Peak memory usage: 506.78 MiB.
 ```
 
-我们可以将 `max_threads` 设置调低至 1，以进一步减少内存占用。
+我们可以通过将 `max_threads` 设置为 1，进一步降低内存占用。
 
 ```sql
 INSERT INTO pypi_v2

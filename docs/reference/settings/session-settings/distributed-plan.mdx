@@ -23,6 +23,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "New experimental setting."}]}]}/>
 
 Default number of tasks for parallel reading in distributed query. Tasks are spread across between replicas.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the read fan-out by estimated cost and does not use this setting.
 
 ## distributed_plan_default_shuffle_join_bucket_count {#distributed_plan_default_shuffle_join_bucket_count}
 
@@ -33,6 +34,7 @@ Default number of tasks for parallel reading in distributed query. Tasks are spr
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "New experimental setting."}]}]}/>
 
 Default number of buckets for distributed shuffle-hash-join.
+Used by the rule-based distributed planner. The cost-based optimizer chooses the fan-out by estimated cost and does not use this setting.
 
 ## distributed_plan_execute_locally {#distributed_plan_execute_locally}
 
@@ -77,6 +79,7 @@ Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distri
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "New experimental setting."}]}]}/>
 
 Maximum rows to use broadcast join instead of shuffle join in distributed query plan.
+A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 
 ## distributed_plan_optimize_exchanges {#distributed_plan_optimize_exchanges}
 

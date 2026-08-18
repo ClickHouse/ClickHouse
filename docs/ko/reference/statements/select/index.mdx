@@ -1,6 +1,6 @@
 ---
 description: 'SELECT 쿼리 문서'
-sidebarTitle: 'SELECT'
+sidebarTitle: '개요'
 slug: /sql-reference/statements/select/
 title: 'SELECT 쿼리'
 doc_type: 'reference'
@@ -34,9 +34,9 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [FORMAT format]
 ```
 
-모든 절은 선택 사항입니다. 단, `SELECT` 바로 뒤에 오는 필수 표현식 목록은 예외이며, 이에 대해서는 [아래](#select-clause)에서 더 자세히 설명합니다.
+`SELECT` 바로 뒤에 오는 표현식 목록은 필수이며, 다른 모든 절은 선택 사항입니다.
 
-각 선택적 절의 세부 내용은 별도의 섹션에서 설명하며, 실제 실행 순서와 동일한 순서로 나열되어 있습니다(`SELECT` 및 `DISTINCT`는 편의를 위해 먼저 나열되지만, 해당 표현식은 [아래](#select-clause)에서 설명한 대로 앞선 절의 실행이 끝난 후에만 평가됩니다):
+`SELECT` 및 선택적 절은 별도의 섹션에서 설명합니다:
 
 * [WITH 절](/ko/reference/statements/select/with)
 * [SELECT 절](#select-clause)
@@ -61,6 +61,15 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 * [EXCEPT 절](/ko/reference/statements/select/except)
 * [INTO OUTFILE 절](/ko/reference/statements/select/into-outfile)
 * [FORMAT 절](/ko/reference/statements/select/format)
+
+쿼리는 [파이프 연산자](/ko/reference/statements/select/pipe-operators)를 사용해 변환을 선형으로 연결하는 방식으로도 작성할 수 있습니다:
+
+```sql
+FROM table
+|> WHERE x > 1
+|> AGGREGATE count() AS c GROUP BY y
+|> ORDER BY c DESC
+```
 
 <div id="select-clause">
   ## SELECT 절
@@ -199,7 +208,7 @@ SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
 
 쿼리의 모든 부분에서 동의어(`AS` 별칭)를 사용할 수 있습니다.
 
-`GROUP BY`, `ORDER BY`, `LIMIT BY` 절은 위치 인수를 지원합니다. 이를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings#enable_positional_arguments) 설정을 켜십시오. 그러면 예를 들어 `ORDER BY 1,2`는 테이블을 첫 번째 컬럼, 그다음 두 번째 컬럼 기준으로 행을 정렬합니다.
+`GROUP BY`, `ORDER BY`, `LIMIT BY` 절은 위치 인수를 지원합니다. 이를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 설정을 켜십시오. 그러면 예를 들어 `ORDER BY 1,2`는 테이블을 첫 번째 컬럼, 그다음 두 번째 컬럼 기준으로 행을 정렬합니다.
 
 <div id="implementation-details">
   ## 구현 세부 사항

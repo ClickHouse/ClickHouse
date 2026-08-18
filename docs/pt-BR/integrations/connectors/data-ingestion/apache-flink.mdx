@@ -16,7 +16,7 @@ import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseS
 
 Este é o [Conector Sink oficial do Apache Flink](https://github.com/ClickHouse/flink-connector-clickhouse), com suporte da ClickHouse. Ele foi desenvolvido com o [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) do Flink e o [Java client](https://github.com/ClickHouse/clickhouse-java) oficial do ClickHouse.
 
-O conector oferece suporte à API DataStream do Apache Flink. O suporte à Table API está [planejado para um lançamento futuro](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
+O conector oferece suporte à API do DataStream do Apache Flink. O suporte à Table API está [planejado para um lançamento futuro](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42).
 
 <div id="requirements">
   ## Requisitos
@@ -439,7 +439,7 @@ Você pode notar que a vazão do conector não escala com o paralelismo do job (
 
 [//]: # "TODO: descomente esta seção quando https://github.com/ClickHouse/flink-connector-clickhouse/issues/121 for fechado"
 
-[//]: # "### Vejo batches duplicados de linhas na minha tabela do ClickHouse {#duplicate_batches}"
+[//]: # "### Vejo lotes duplicados de linhas na minha tabela do ClickHouse {#duplicate_batches}"
 
 [//]: #
 
@@ -453,9 +453,9 @@ Você pode notar que a vazão do conector não escala com o paralelismo do job (
 
 [//]: # "  1. garanta que a configuração de sessão do servidor `insert_deduplicate=1` esteja definida (consulte o [exemplo](#client-options) acima para ver como defini-la, se necessário). Observe que `insert_deduplicate` vem habilitada por padrão para tabelas replicadas."
 
-[//]: # "  2. se necessário, aumente uma ou ambas as configurações de tabela do `MergeTree` [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) ou [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)."
+[//]: # "  2. se necessário, aumente uma ou ambas as configurações de tabela do `MergeTree` [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) ou [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)."
 
-[//]: # "- Se sua tabela estiver usando um engine de tabela `*MergeTree` não replicado, aumente a configuração de tabela do `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)."
+[//]: # "- Se sua tabela estiver usando um engine de tabela `*MergeTree` não replicado, aumente a configuração de tabela do `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)."
 
 [//]: #
 

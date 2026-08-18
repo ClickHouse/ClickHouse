@@ -205,20 +205,24 @@ ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPEND
 
 La programación (`EVERY` o `AFTER`) es obligatoria: la sentencia reemplaza *todos* los parámetros de actualización de una vez. Cualquier cláusula no especificada — `RANDOMIZE FOR`, `DEPENDS ON` o `SETTINGS` — se elimina o se restablece a sus valores predeterminados. Para cambiar solo la configuración de actualización, repita la programación actual.
 
+El comando actualiza directamente la configuración de actualización de la vista existente sin volver a crear la vista materializada ni su tabla de destino, borrar los datos existentes de destino ni cancelar una actualización que ya esté en ejecución. Las lecturas continúan en la tabla de destino existente mientras se cambia la configuración.
+
+Es seguro repetir el comando con la misma especificación `REFRESH` completa. Asegúrese de repetir cada cláusula que deba permanecer configurada, porque cada ejecución reemplaza todos los parámetros de actualización como se describió anteriormente.
+
 ```sql
--- Cambiar la programación.
+-- Change the schedule.
 ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
 
--- Cambiar la configuración de reintentos (la programación debe repetirse).
-ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR
+-- Change retry settings (schedule must be repeated).
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
 SETTINGS refresh_retries = 5,
          refresh_retry_initial_backoff_ms = 500,
          refresh_retry_max_backoff_ms = 60000;
 
--- Agregar o mantener una dependencia.
+-- Add or keep a dependency.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
 
--- Eliminar la dependencia omitiendo `DEPENDS ON`.
+-- Drop the dependency by omitting `DEPENDS ON`.
 ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
 ```
 

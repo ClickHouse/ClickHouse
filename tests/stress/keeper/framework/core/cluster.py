@@ -503,6 +503,11 @@ class ClusterBuilder:
             return self._build_zookeeper_cluster(topology, opts)
         if backend_norm == "raftkeeper":
             return self._build_raftkeeper_cluster(topology, opts)
+        if backend_norm != "default":
+            # Fail close: an unknown backend previously fell through to the default Keeper
+            # build, so removed backends (e.g. `rocks` after Keeper RocksDB storage was
+            # dropped in #108000) silently produced duplicate `default` runs for months.
+            raise ValueError(f"unknown Keeper stress backend {backend!r}; supported: default, zookeeper, raftkeeper")
 
         self.cluster = ClickHouseCluster(self.file_anchor, name=self.cname)
         self.base_dir = pathlib.Path(self.cluster.base_dir)

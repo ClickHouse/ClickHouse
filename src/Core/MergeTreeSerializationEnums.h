@@ -44,6 +44,12 @@ enum class MergeTreeDynamicSerializationVersion : uint8_t
     V3,
 };
 
+enum class MergeTreePatchPartsVersion : uint8_t
+{
+    V1,
+    V2,
+};
+
 enum class MergeTreeMapSerializationVersion : uint8_t
 {
     BASIC = 0,

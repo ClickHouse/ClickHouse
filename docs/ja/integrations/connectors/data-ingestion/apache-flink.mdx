@@ -14,7 +14,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 <ClickHouseSupportedBadge />
 
-これは、ClickHouse がサポートする公式の [Apache Flink Sink Connector](https://github.com/ClickHouse/flink-connector-clickhouse) です。Flink の [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) と、公式の ClickHouse [Java クライアント](https://github.com/ClickHouse/clickhouse-java) をベースに構築されています。
+これは、ClickHouse がサポートする公式の [Apache Flink シンク Connector](https://github.com/ClickHouse/flink-connector-clickhouse) です。Flink の [AsyncSinkBase](https://cwiki.apache.org/confluence/display/FLINK/FLIP-171%3A+Async+Sink) と、公式の ClickHouse [Java クライアント](https://github.com/ClickHouse/clickhouse-java) をベースに構築されています。
 
 このコネクタは Apache Flink の DataStream API をサポートしています。Table API のサポートは、[今後のリリースで追加される予定です](https://github.com/ClickHouse/flink-connector-clickhouse/issues/42)。
 
@@ -451,11 +451,11 @@ ClickHouse への書き込み時に、コネクタのスループットがジョ
 
 [//]: # "- テーブルが `Replicated*MergeTree` table engine を使用している場合:"
 
-[//]: # "  1. サーバーの session 設定 `insert_deduplicate=1` になっていることを確認してください (必要に応じた設定方法については上記の[Example](#client-options)を参照してください)。なお、`insert_deduplicate` はレプリケートテーブルではデフォルトで有効です。"
+[//]: # (  1. サーバーの session 設定 `insert_deduplicate=1` になっていることを確認してください (必要に応じた設定方法については上記の[Example](#client-options)を参照してください)。なお、`insert_deduplicate` はレプリケートテーブルではデフォルトで有効です。)
 
-[//]: # "  2. 必要に応じて、`MergeTree` のテーブル設定 [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) または [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds) のいずれか、または両方を増やしてください。"
+[//]: # "  2. 必要に応じて、`MergeTree` のテーブル設定 [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) または [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) のいずれか、または両方を増やしてください。"
 
-[//]: # "- テーブルが非レプリケートの `*MergeTree` table engine を使用している場合は、`MergeTree` のテーブル設定 [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window) を増やしてください。"
+[//]: # "- テーブルが非レプリケートの `*MergeTree` table engine を使用している場合は、`MergeTree` のテーブル設定 [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) を増やしてください。"
 
 [//]: #
 
@@ -463,7 +463,7 @@ ClickHouse への書き込み時に、コネクタのスループットがジョ
 
 [//]: #
 
-[//]: # "_注 2: `(non_)replicated_deduplication_window` に大きな値を設定すると、比較するエントリが増えるため挿入が遅くなる可能性があります。_"
+[//]: # (*注 2: `(non_)replicated_deduplication_window` に大きな値を設定すると、比較するエントリが増えるため挿入が遅くなる可能性があります。*)
 
 <div id="missing_rows">
   ### ClickHouse テーブルの行が不足しています

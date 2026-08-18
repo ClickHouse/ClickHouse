@@ -96,7 +96,7 @@ ClickHouse Cloud の Usage statement はこれとは異なる請求サイクル�
   ### 一般的な請求情報はどこで確認できますか？
 </div>
 
-[請求の概要ページ](/ja/products/cloud/reference/billing/index)をご覧ください。
+[請求の概要ページ](/ja/products/cloud/reference/billing/billing-overview)をご覧ください。
 
 <div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
   ### クラウドプロバイダーのマーケットプレイス経由で支払う場合と、ClickHouse に直接支払う場合で、ClickHouse Cloud の料金に違いはありますか？
@@ -109,6 +109,12 @@ ClickHouse Cloud の Usage statement はこれとは異なる請求サイクル�
 </div>
 
 はい。複数の ClickHouse 組織を、同じクラウドマーケットプレイス請求先アカウント (AWS、GCP、または Azure) に利用料金を後払いで請求するよう設定できます。ただし、前払いクレジットはデフォルトでは組織間で共有されません。組織間でクレジットを共有する必要がある場合は、[ClickHouse Cloud Support](https://clickhouse.com/support/program) にお問い合わせください。
+
+<div id="can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions">
+  ### 同じ組織内のサービスごとに異なるマーケットプレイスサブスクリプションを使用して請求できますか？
+</div>
+
+いいえ。請求は組織レベルで設定されるため、1 つのClickHouse Cloud組織内のすべてのサービスは同じマーケットプレイスサブスクリプションに請求されます。サービスごとに個別に請求する必要がある場合は、請求設定ごとに別の組織を作成してください。同じClickHouse Cloud consoleのユーザーアカウントから複数の組織を管理でき、それぞれに独自の請求設定を設けることができます。
 
 <div id="automatically-move-to-PAYG-when-running-out-of-credit">
   ### ClickHouse 組織が cloud marketplace のコミットメント支出契約で課金されている場合、クレジットを使い切ると自動的に PAYG 課金へ移行しますか？

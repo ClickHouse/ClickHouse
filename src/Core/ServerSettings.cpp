@@ -1083,6 +1083,17 @@ If the response exceeds this limit, the query fails with an error.
 
 Default: `10485760` (10 MiB).
 )", 0) \
+    DECLARE(Bool, http_allow_path_requests, false, R"(
+Allow the HTTP interface to route path-style requests (such as `/my_db/my_table.csv`) to the query handler.
+
+This flag gates the routing decision only, which is made before the request is authenticated, so it cannot depend on a per-user setting. After routing, the per-user settings [`http_allow_database_as_path`](/operations/settings/settings#http_allow_database_as_path), [`http_allow_table_as_file`](/operations/settings/settings#http_allow_table_as_file), and [`http_allow_filters_as_path`](/operations/settings/settings#http_allow_filters_as_path) control whether the routed path is actually interpreted for the authenticated user. When this flag is off, unknown paths return a plain `404`.
+
+**Example**
+
+```xml
+<http_allow_path_requests>1</http_allow_path_requests>
+```
+)", 0) \
     DECLARE(UInt64, max_keep_alive_requests, 10000, R"(
 Maximal number of requests through a single keep-alive connection until it will be closed by ClickHouse server.
 
@@ -1357,14 +1368,20 @@ Maximum size of batch for MultiRead request to [Zoo]Keeper that support batching
     DECLARE(UInt32, allow_feature_tier, 0, R"(
 Controls if the user can change settings related to the different feature tiers.
 
-- `0` - Changes to any setting are allowed (experimental, beta, production).
-- `1` - Only changes to beta and production feature settings are allowed. Changes to experimental settings are rejected.
-- `2` - Only changes to production settings are allowed. Changes to experimental or beta settings are rejected.
+- `0` - Changes to any setting are allowed (experimental, private preview, beta, production).
+- `1` - Only changes to private preview, beta and production feature settings are allowed. Changes to experimental settings are rejected.
+- `2` - Only changes to beta and production feature settings are allowed. Changes to experimental or private preview settings are rejected.
+- `3` - Only changes to production settings are allowed. Changes to experimental, private preview or beta settings are rejected.
 
-This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `BETA` features.
+This is equivalent to setting a readonly constraint on all `EXPERIMENTAL` / `PRIVATE PREVIEW` / `BETA` features.
 
 :::note
 A value of `0` means that all settings can be changed.
+:::
+
+:::note
+`2` previously meant "production settings only". It now also allows beta settings, so a configuration
+that pinned `2` to allow production settings only must use `3`.
 :::
 )", 0) \
     DECLARE(Bool, dictionaries_lazy_load, 1, R"(
@@ -1822,7 +1839,7 @@ Configured as `named_collections_storage.type` (`<named_collections_storage><typ
     DECLARE(Bool, logger_use_syslog, false, R"(Also forward log output to syslog.)", 0, "logger.use_syslog") \
     DECLARE(String, logger_syslog_level, "trace", R"(Log level for logging to syslog.)", 0, "logger.syslog_level") \
     DECLARE(Bool, logger_async, true, R"(When `<true>` (default) logging will happen asynchronously (one background thread per output channel). Otherwise it will log inside the thread calling LOG.)", 0, "logger.async") \
-    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped.)", 0, "logger.async_queye_max_size") \
+    DECLARE(UInt64, logger_async_queue_max_size, 65536, R"(When using async logging, the max amount of messages that will be kept in the the queue waiting for flushing. Extra messages will be dropped. Rounded up to the next power of two (e.g. `100000` becomes `131072`).)", 0, "logger.async_queye_max_size") \
     DECLARE(String, logger_startup_level, "", R"(Startup level is used to set the root logger level at server startup. After startup log level is reverted to the `<level>` setting.)", 0, "logger.startup_level") \
     DECLARE(String, logger_shutdown_level, "", R"(Shutdown level is used to set the root logger level at server Shutdown.)", 0, "logger.shutdown_level") \
     DECLARE(String, openssl_server_private_key_file, "", R"(Path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.)", 0, "openSSL.server.privateKeyFile") \

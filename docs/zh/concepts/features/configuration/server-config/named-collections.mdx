@@ -104,6 +104,16 @@ url = 'https://connection.url/'
 
 可选配置参数 `update_timeout_ms` 的默认值为 `5000`。
 
+您可以通过 `system.server_settings` 和 `getServerSetting` 查看当前存储类型：
+
+```sql
+SELECT value, getServerSetting('named_collections_storage_type')
+FROM system.server_settings
+WHERE name = 'named_collections_storage.type';
+```
+
+更改存储类型需要重启 server；`SYSTEM RELOAD CONFIG` 不会更改当前使用的 backend。
+
 <div id="storing-named-collections-in-configuration-files">
   ## 在配置文件中存储命名集合
 </div>

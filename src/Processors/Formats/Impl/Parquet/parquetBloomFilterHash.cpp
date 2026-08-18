@@ -97,6 +97,10 @@ static std::optional<uint64_t> tryHashFLBA(
     parquet::ConvertedType::type converted_type,
     std::size_t parquet_column_length)
 {
+    /// `DECIMAL`-annotated fixed arrays are deliberately ineligible. `parquetTryHashColumn` sees
+    /// ClickHouse's native little-endian wide integers, while the Parquet bloom filter hashes the
+    /// canonical big-endian decimal bytes; hashing either representation here would mismatch the
+    /// other side of the predicate.
     if (!isParquetStringTypeSupportedForBloomFilters(logical_type, converted_type))
     {
         return std::nullopt;

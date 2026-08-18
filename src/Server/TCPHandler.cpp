@@ -52,6 +52,8 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/SettingSource.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Stopwatch.h>
 #include <Common/VersionNumber.h>
 #include <Common/logger_useful.h>
@@ -479,7 +481,16 @@ void TCPHandler::runImpl()
 
             /// When connecting, the default database could be specified.
             if (!default_database.empty())
+            {
+                /// `database` is a real setting, so enforce its constraints on the connect-time
+                /// database too: a profile that makes `database` `const` or restricts its values
+                /// must reject a database chosen in the connection handshake consistently with
+                /// `USE`, `SET database = ...` and the HTTP `?database=...` parameter.
+                SettingsChanges database_change;
+                database_change.setSetting("database", default_database);
+                session->sessionContext()->checkSettingsConstraints(database_change, SettingSource::QUERY);
                 session->sessionContext()->setCurrentDatabase(default_database);
+            }
         }
     }
     catch (const Exception & e) /// Typical for an incorrect username, password, or address.
@@ -2650,10 +2661,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     state->query_context = session->makeQueryContext(client_info);
 
-    /// Sets the default database if it wasn't set earlier for the session context.
-    if (is_interserver_mode && !default_database.empty())
-        state->query_context->setCurrentDatabase(default_database);
-
     std::weak_ptr<QueryState> state_wptr = state;
 
     state->query_context->setProgressCallback(
@@ -2722,6 +2729,13 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
     }
     state->query_context->applySettingsChanges(settings_changes);
+
+    /// Sets the default database if it wasn't set earlier for the session context. This runs after
+    /// the passed settings are applied, so the database explicitly carried by the query packet wins
+    /// over a `database` setting that may have arrived with the passed settings; `setCurrentDatabase`
+    /// mirrors it back into the setting, keeping the two in sync for `executeQuery`.
+    if (is_interserver_mode && !default_database.empty())
+        state->query_context->setCurrentDatabase(default_database);
 
     /// Use the received query id, or generate a random default. It is convenient
     /// to also generate the default OpenTelemetry trace id at the same time, and
