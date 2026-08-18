@@ -439,7 +439,7 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     for (const auto & column : columns_desc.getAllPhysical())
         if (affected_materialized.contains(column.name))
         {
-            const auto default_ast = column.default_desc.expression->clone();
+            auto default_ast = columns_desc.get(column.name).default_desc.expression->clone();
             const auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
             const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, context}.getActions(true);
 
