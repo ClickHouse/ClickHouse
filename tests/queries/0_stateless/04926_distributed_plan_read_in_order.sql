@@ -26,6 +26,9 @@ SET automatic_parallel_replicas_mode = 0;
 -- them so the case always exercises the in-order read, and always the same variant of it.
 SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 0;
 
+-- The distributed read-in-order path is off by default.
+SET distributed_plan_read_in_order = 1;
+
 -- Reading in the key's own order used to be rejected outright (SUPPORT_IS_DISABLED) because a bucketed
 -- read is pinned to the coordinator's marks and cannot re-derive it. The contract now travels with the
 -- step, so these return exactly what a non-distributed read returns.

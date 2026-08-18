@@ -21,6 +21,9 @@ SET automatic_parallel_replicas_mode = 0;
 -- while testing nothing. Pin it so the case always exercises the ordered read.
 SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 0;
 
+-- The distributed read-in-order path is off by default.
+SET distributed_plan_read_in_order = 1;
+
 -- `optimizeExchanges` lifts the gather a distributed read leaves over the read only through the steps
 -- `canHoistGatherThroughStep` accepts, and `ARRAY JOIN` is not one of them. So the scatter under the
 -- sorting stays between the sorting and the read, and nothing above may rely on the read's order. While

@@ -228,6 +228,11 @@ def _run_both_ways(
 EXCHANGE_KINDS = pytest.mark.parametrize("exchange_kind", ["Streaming", "Persisted"])
 
 
+# The distributed read-in-order path is off by default (distributed_plan_read_in_order); the tests below
+# that are about it have to turn it on, or they would pass against an ordinary full sort.
+READ_IN_ORDER = "distributed_plan_read_in_order = 1"
+
+
 def _override(exchange_kind: str, *extra: str) -> str:
     parts = [f"distributed_plan_force_exchange_kind = '{exchange_kind}'"]
     parts.extend(extra)
@@ -667,7 +672,7 @@ def test_read_in_order(started_cluster, exchange_kind):
             ORDER BY id {order}
             LIMIT 50
             """,
-            settings_override=_override(exchange_kind),
+            settings_override=_override(exchange_kind, READ_IN_ORDER),
         )
         assert distributed == baseline
 
@@ -680,7 +685,7 @@ def test_read_in_order(started_cluster, exchange_kind):
         ORDER BY id
         LIMIT 20 OFFSET 24990
         """,
-        settings_override=_override(exchange_kind),
+        settings_override=_override(exchange_kind, READ_IN_ORDER),
     )
     assert distributed == baseline
 
@@ -692,7 +697,7 @@ def test_distributed_order_by_without_distributed_read(started_cluster):
     anyway, since an ordered read wrongly assumed here returned rows from elsewhere in the table."""
     # Above the 100k rows of `big`, so tryMakeDistributedRead leaves the read alone. Last value wins over
     # the 0 in DISTRIBUTED_SETTINGS.
-    no_distributed_read = "distributed_plan_max_rows_to_broadcast = 1000000"
+    no_distributed_read = "distributed_plan_max_rows_to_broadcast = 1000000, " + READ_IN_ORDER
 
     # A ScatterExchange (rather than the ShuffleExchange a bucketed read's gather collapses into) is what
     # says the read was left non-distributed, so the case cannot quietly go back to testing the bucketed
@@ -729,7 +734,7 @@ def test_read_in_order_across_surviving_exchange(started_cluster):
 
     # 2 reader buckets against the 3 scatter partitions of DISTRIBUTED_SETTINGS: the shuffle they fuse
     # into is not an identity, so optimizeExchanges keeps it.
-    mismatched_buckets = "distributed_plan_default_reader_bucket_count = 2"
+    mismatched_buckets = "distributed_plan_default_reader_bucket_count = 2, " + READ_IN_ORDER
     plan = INITIATOR.query(
         f"EXPLAIN PLAN {query} SETTINGS {DISTRIBUTED_SETTINGS}, {mismatched_buckets}"
     )
@@ -749,7 +754,8 @@ def test_legacy_read_in_order_is_rejected(started_cluster):
     that are no longer sorted - which returned rows from the wrong part of the table on 8 of 16 runs. Such a
     plan has to be rejected rather than silently reordered."""
     legacy = ("make_distributed_plan = 1, enable_parallel_replicas = 0, "
-              "enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1")
+              "enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1, "
+              "distributed_plan_read_in_order = 1")
     bucket_counts = [
         # Mismatched, so the exchange the pair fuses into survives - the shape that reproduced.
         "distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 3",
@@ -781,10 +787,10 @@ def test_read_in_order_stops_early(started_cluster):
     # Pin the optimization on rather than relying on its default, so the comparison keeps its meaning
     # if that default ever changes; the second run turns exactly that one setting off.
     in_order = INITIATOR.query(
-        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, optimize_read_in_order = 1", query_id=in_order_id
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {READ_IN_ORDER}, optimize_read_in_order = 1", query_id=in_order_id
     )
     scan = INITIATOR.query(
-        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, optimize_read_in_order = 0", query_id=scan_id
+        f"{query} SETTINGS {DISTRIBUTED_SETTINGS}, {READ_IN_ORDER}, optimize_read_in_order = 0", query_id=scan_id
     )
 
     # Same answer either way; only the amount of data read differs.

@@ -125,6 +125,10 @@ struct FindReadingStepContext
     bool read_in_order_through_join;
     bool read_in_order_through_spilling_join;
 
+    /// Whether an ORDER BY in a distributed plan may read in order at all, i.e. whether the exchange
+    /// steps below may be descended. Off by default; see distributed_plan_read_in_order.
+    bool distributed_plan_read_in_order = false;
+
     /// Set while descending a keyless scatter whose pair was verified to collapse, so the gather half
     /// below it may be descended too. A gather reached any other way is a real boundary.
     bool inside_collapsing_exchange_pair = false;
@@ -172,7 +176,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 
     /// An exchange hands each partition its rows in arrival order, so the read may read in order only if
     /// the scatter/gather pair fuses into an identity shuffle and is dropped, leaving read and sorting together.
-    if (auto * scatter = typeid_cast<ScatterExchangeStep *>(step); scatter && scatter->getKeys().empty())
+    if (auto * scatter = typeid_cast<ScatterExchangeStep *>(step);
+        scatter && scatter->getKeys().empty() && data.distributed_plan_read_in_order)
     {
         auto * gather = findGatherOverRead(node, data);
         if (gather && scatter->getResultBucketCount() == gather->getSourceBucketCount())
@@ -184,7 +189,8 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 
     /// The gather half of a pair the scatter branch above already verified collapses.
     if (auto * gather = typeid_cast<GatherExchangeStep *>(step);
-        gather && data.inside_collapsing_exchange_pair && node.children.size() == 1
+        gather && data.distributed_plan_read_in_order && data.inside_collapsing_exchange_pair
+        && node.children.size() == 1
         && checkSupportedReadingStep(node.children.front()->step.get(), data.allow_existing_order) != nullptr)
         return findReadingStep(*node.children.front(), data);
 
@@ -1243,6 +1249,7 @@ InputOrderInfoPtr buildInputOrderInfo(
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
         .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1369,6 +1376,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
         .allow_existing_order = false,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
         .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1494,6 +1502,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
         .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
@@ -1586,6 +1595,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
         .allow_existing_order = true,
         .read_in_order_through_join = optimization_settings.read_in_order_through_join,
         .read_in_order_through_spilling_join = optimization_settings.read_in_order_through_spilling_join,
+        .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
     if (!reading_node)
