@@ -8,6 +8,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
 #include <Common/formatReadable.h>
@@ -1787,26 +1788,25 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
         auto tokens_column = ColumnString::create();
         /// Reused per pair to avoid a String allocation per token.
         String token_buf;
-        /// Keys seen in the current row: first occurrence is_rest = 0, later duplicates is_rest = 1.
-        /// Linear scan beats a hash set for small maps. See MapKeyValueToken.h.
-        std::vector<std::string_view> row_keys;
+        /// Duplicate-key detection: map each key to the last row index it appeared in. A key already
+        /// stamped with the current row `i` is a within-row duplicate (is_rest = 1); its first appearance
+        /// in the row - freshly inserted, or last stamped in an earlier row - is is_rest = 0, the
+        /// occurrence `m['key']` returns. The row-index stamp lets one map serve every row without a
+        /// per-row clear (stale entries auto-invalidate), and the small stable key vocabulary keeps it from
+        /// growing after warm-up: O(1) per entry, no O(entries^2) scan. See MapKeyValueToken.h. Keys are
+        /// string_views into this call's `keys` column, so the map is scoped to (and dies with) this call.
+        HashMap<std::string_view, UInt64, StringViewHash> seen_keys;
         for (size_t i = offset; i < offset + rows_read; ++i)
         {
             tokens_column->popBack(tokens_column->size());
-            row_keys.clear();
             for (size_t j = offsets[i - 1]; j < offsets[i]; ++j)
             {
                 const std::string_view key_view = keys.getDataAt(j);
-                bool is_rest = false;
-                for (const auto & prev_key : row_keys)
-                {
-                    if (prev_key == key_view)
-                    {
-                        is_rest = true;
-                        break;
-                    }
-                }
-                row_keys.push_back(key_view);
+                decltype(seen_keys)::LookupResult it = nullptr;
+                bool inserted = false;
+                seen_keys.emplace(key_view, it, inserted);
+                const bool is_rest = !inserted && it->getMapped() == i;
+                it->getMapped() = i;
                 encodeMapKeyValueToken(key_view, values.getDataAt(j), is_rest, token_buf);
                 tokens_column->insertData(token_buf.data(), token_buf.size());
             }
