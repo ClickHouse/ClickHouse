@@ -5,5 +5,5 @@ SELECT position(parseQueryToJSON($$SELECT 1 UNION ALL SELECT 2$$), '"list_of_mod
 
 SELECT formatQueryFromJSON(replace(
     parseQueryToJSON($$SELECT 1 UNION ALL SELECT 2$$),
-    '"list_of_modes":["UNION_ALL"]',
-    '"list_of_modes":[]')); -- { serverError BAD_ARGUMENTS }
+    '"list_of_modes":["UNION_ALL"],',
+    '')); -- { serverError BAD_ARGUMENTS }
