@@ -360,7 +360,14 @@ public:
                 {
                     auto & captured = context.state->captured;
                     for (size_t i = 0; i < captured.size(); ++i)
-                        captured[i]->insertFrom(*context.probe_block->getByPosition(i).column, probe_row);
+                    {
+                        const bool copy_column = i >= context.state->capture_column.size()
+                            || context.state->capture_column[i];
+                        if (copy_column)
+                            captured[i]->insertFrom(*context.probe_block->getByPosition(i).column, probe_row);
+                        else
+                            captured[i]->insertDefault();
+                    }
                     capture_row = static_cast<Int64>(captured.empty() ? 0 : captured.front()->size() - 1);
                 }
                 context.state->best_distance[dense_index] = distance;

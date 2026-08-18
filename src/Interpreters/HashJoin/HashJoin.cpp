@@ -1648,8 +1648,23 @@ NearestSwapState * HashJoin::acquireNearestSwapState(const Block & probe_block) 
     {
         auto owned = std::make_unique<NearestSwapState>();
         owned->captured = nearest_swap_probe_sample.cloneEmptyColumns();
+        owned->capture_column.resize(nearest_swap_probe_sample.columns());
+        for (size_t i = 0; i < nearest_swap_probe_sample.columns(); ++i)
+        {
+            const bool needed_in_output = !nearest_swap_output_sample_captured
+                || nearest_swap_output_sample.has(nearest_swap_probe_sample.getByPosition(i).name);
+            owned->capture_column[i] = needed_in_output ? 1 : 0;
+        }
         state = owned.get();
         nearest_swap_states.push_back(std::move(owned));
+    }
+
+    if (nearest_swap_output_sample_captured
+        && state->capture_column.size() == nearest_swap_probe_sample.columns())
+    {
+        for (size_t i = 0; i < nearest_swap_probe_sample.columns(); ++i)
+            state->capture_column[i]
+                = nearest_swap_output_sample.has(nearest_swap_probe_sample.getByPosition(i).name) ? 1 : 0;
     }
 
     /// The plan-time header derivation probes before the build phase, when the dense index is

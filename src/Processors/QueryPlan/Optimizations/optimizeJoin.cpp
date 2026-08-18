@@ -1287,42 +1287,10 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             if (join_operator.strictness != JoinStrictness::All && !suitable_swap_only_join && !suitable_nearest_swap)
                 flip_join = false;
 
-            if (flip_join && join_operator.strictness == JoinStrictness::Nearest)
-            {
-                /// The swapped NEAREST join builds the smaller left side and streams the right side
-                /// past it, maintaining a per-left-row argmin. That helps when the equality keys are
-                /// selective (few candidate pairs) and hurts when every streamed row updates many
-                /// argmin states. When NDV statistics of the equality keys back the estimate, require
-                /// the estimated number of candidate pairs (the ALL-semantics join cardinality) not
-                /// to exceed the streamed side's row count. Without statistics the selectivity stays
-                /// 1.0 and the estimate degenerates to the cross product, so only the size
-                /// comparison above applies.
-                auto has_ndv_stats = [&](const JoinActionRef & operand)
-                {
-                    for (const DPJoinEntry * side : {entry->left.get(), entry->right.get()})
-                    {
-                        auto it = side->column_stats.find(operand.getColumnName());
-                        if (it != side->column_stats.end() && it->second.num_distinct_values > 0)
-                            return true;
-                    }
-                    return false;
-                };
-                bool has_equality_key_stats = false;
-                for (const auto & predicate : join_operator.expression)
-                {
-                    auto [predicate_op, lhs, rhs] = predicate.asBinaryPredicate();
-                    if (predicate_op != JoinConditionOperator::Equals && predicate_op != JoinConditionOperator::NullSafeEquals)
-                        continue;
-                    if (has_ndv_stats(lhs) || has_ndv_stats(rhs))
-                    {
-                        has_equality_key_stats = true;
-                        break;
-                    }
-                }
-                if (has_equality_key_stats && entry->estimated_rows && rhs_estimation
-                    && *entry->estimated_rows > *rhs_estimation)
-                    flip_join = false;
-            }
+            /// NEAREST does not decline the swap when estimated candidate pairs exceed the
+            /// streamed side. That is the shape this join exists for: the pairs must not be
+            /// materialized, and building the large vector-bearing side is what runs out of memory.
+            /// `query_plan_join_swap_table = 0` still forces the unswapped plan.
 
             if (flip_join)
             {

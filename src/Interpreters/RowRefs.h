@@ -544,6 +544,10 @@ struct NearestSwapState
     PaddedPODArray<Float64> best_distance;
     PaddedPODArray<Int64> best_capture_row;
     MutableColumns captured;
+    /// 1 = copy the probe column; 0 = insert a default. Unused columns (the distance
+    /// vector, when the SELECT does not emit it) must not be cloned: a 768-dim Array(Float32)
+    /// per captured row is what OOMs a swapped join of this size.
+    PaddedPODArray<UInt8> capture_column;
 };
 
 /// Everything `updateNearestSwapped` needs besides the probe row itself.
