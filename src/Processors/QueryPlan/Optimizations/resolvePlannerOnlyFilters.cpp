@@ -6,7 +6,6 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Interpreters/Context.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/FunctionPlannerOnlyFilter.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
@@ -26,8 +25,7 @@ struct FilterConjuncts
 
 bool isPlannerOnlyFilter(const ActionsDAG::Node & node)
 {
-    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
-        && node.function_base->getName() == PLANNER_ONLY_FILTER_NAME;
+    return node.is_planner_only_filter;
 }
 
 void collectFilterConjuncts(const ActionsDAG::Node * node, FilterConjuncts & conjuncts)
