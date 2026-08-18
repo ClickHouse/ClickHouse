@@ -33,7 +33,7 @@ public:
             return;
 
         auto * has_function_node = node->as<FunctionNode>();
-        if (!has_function_node || has_function_node->getFunctionName() != "has")
+        if (!has_function_node || (has_function_node->getFunctionName() != "has" && has_function_node->getFunctionName() != "notHas"))
             return;
 
         auto & has_function_arguments_nodes = has_function_node->getArguments().getNodes();
@@ -105,9 +105,9 @@ public:
         if (!both_native_integers && !unwrapped_element_type->equals(*unwrapped_second_arg_type))
             return;
 
-        /// Rewrite has(const_array, elem) -> in(elem, const_array)
+        /// Rewrite has(const_array, elem) -> in(elem, const_array), notHas(const_array, elem) -> notIn(elem, const_array)
         std::swap(has_function_arguments_nodes[0], has_function_arguments_nodes[1]);
-        resolveOrdinaryFunctionNodeByName(*has_function_node, "in", getContext());
+        resolveOrdinaryFunctionNodeByName(*has_function_node, has_function_node->getFunctionName() == "has" ? "in" : "notIn", getContext());
     }
 };
 

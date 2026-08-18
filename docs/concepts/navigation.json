@@ -197,6 +197,7 @@
           "group": "Backup and restore",
           "pages": [
             "concepts/features/backup-restore/overview",
+            "concepts/features/backup-restore/restore-settings",
             "concepts/features/backup-restore/local-disk",
             "concepts/features/backup-restore/s3-endpoint",
             "concepts/features/backup-restore/azure-blob-storage",
