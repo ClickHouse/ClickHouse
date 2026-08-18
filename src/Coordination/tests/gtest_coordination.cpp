@@ -1292,21 +1292,35 @@ public:
 
     static void dropInFlightRequests(KeeperRequestDispatcher & dispatcher) { dispatcher.dropInFlightRequests(); }
 
-    /// Seeds a batch of one write plus reads parked behind it in intermediate_reads, the way
+    /// Seeds a batch of two writes with reads parked between them in intermediate_reads, the way
     /// dispatchThread does through flush_to_intermediate_reads: initialize at the fill site, then
-    /// move the reads into the batch.
+    /// move the reads into the batch. The boundary is 1 because InFlightBatch documents
+    /// 0 < next_request_idx < requests.size(); requests.size() is reserved for late_reads.
     static size_t seedIntermediateReads(
-        KeeperRequestDispatcher & dispatcher, const KeeperRequestForSession & write, KeeperRequestsForSessions reads)
+        KeeperRequestDispatcher & dispatcher,
+        const KeeperRequestForSession & write1,
+        const KeeperRequestForSession & write2,
+        KeeperRequestsForSessions reads)
     {
         size_t batch_idx = dispatcher.tail_idx.load();
         auto & batch = dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()];
-        batch.requests = {write};
+        batch.requests = {write1, write2};
         for (const auto & read : reads)
             KeeperRequestDispatcher::initializeWaitForWriteSpan(read);
-        batch.intermediate_reads.emplace_back(batch.requests.size(), std::move(reads));
+        batch.intermediate_reads.emplace_back(1, std::move(reads));
         batch.activate({});
         dispatcher.tail_idx.store(batch_idx + 1);
         return batch_idx;
+    }
+
+    static size_t intermediateReadsIdx(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].intermediate_reads_idx;
+    }
+
+    static size_t intermediateReadsSize(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
+    {
+        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].intermediate_reads.size();
     }
 
     /// Parks a read behind an in-flight batch through the production entry point, which is also
@@ -1389,6 +1403,10 @@ struct DispatcherFixture
     /// Responses the router took, i.e. that did not go to the per-session response queue.
     std::vector<DB::KeeperResponseForSession> routed;
 
+    /// Called synchronously from KeeperStateMachine::processReadRequests, so a test can observe the
+    /// window in which onCommit is executing a batch's reads. Must not throw.
+    std::function<void(DB::KeeperResponseForSession)> on_response;
+
     DB::KeeperSpecialResponseRouter router()
     {
         return [this](const DB::KeeperResponseForSession & response)
@@ -1421,7 +1439,11 @@ struct DispatcherFixture
         server = std::make_unique<DB::KeeperServer>(
             DB::KeeperConfiguration::loadFromConfig(*config, true),
             *config,
-            [](DB::KeeperResponseForSession) {},
+            [this](DB::KeeperResponseForSession response)
+            {
+                if (on_response)
+                    on_response(std::move(response));
+            },
             snapshots_queue,
             keeper_context,
             snapshot_s3,
@@ -1527,17 +1549,27 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
     fixture.initStateMachine();
     auto & dispatcher = *fixture.dispatcher;
 
-    /// intermediate_reads: parked after a prefix of the batch, drained by onCommit.
+    /// intermediate_reads: parked between two writes of the batch, drained by onCommit after the
+    /// first one commits, while the batch is still in flight.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedIntermediateReads(
             dispatcher,
-            makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate"),
-            {makeReadRequest(/*session_id=*/ 1, /*xid=*/ 2, "/"), makeReadRequest(/*session_id=*/ 1, /*xid=*/ 3, "/")});
+            makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate1"),
+            makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 2, "/intermediate2"),
+            {makeReadRequest(/*session_id=*/ 1, /*xid=*/ 3, "/"), makeReadRequest(/*session_id=*/ 1, /*xid=*/ 4, "/")});
 
-        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate"));
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 1, "/intermediate1"));
 
         EXPECT_EQ(waitForWriteObservations() - before, 2u) << "intermediate_reads were not observed";
+        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx) << "the batch was popped mid-flight";
+        EXPECT_EQ(
+            RequestDispatcherAccessor::intermediateReadsIdx(dispatcher, batch_idx),
+            RequestDispatcherAccessor::intermediateReadsSize(dispatcher, batch_idx));
+
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 1, /*xid=*/ 2, "/intermediate2"));
+
+        EXPECT_EQ(waitForWriteObservations() - before, 2u) << "retiring the batch observed extra reads";
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
@@ -1577,16 +1609,48 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         auto before = waitForWriteObservations();
         RequestDispatcherAccessor::seedIntermediateReads(
             dispatcher,
-            makeWriteRequest(/*session_id=*/ 4, /*xid=*/ 1, "/dropped"),
-            {makeReadRequest(/*session_id=*/ 4, /*xid=*/ 2, "/")});
+            makeWriteRequest(/*session_id=*/ 4, /*xid=*/ 1, "/dropped1"),
+            makeWriteRequest(/*session_id=*/ 4, /*xid=*/ 2, "/dropped2"),
+            {makeReadRequest(/*session_id=*/ 4, /*xid=*/ 3, "/")});
 
-        auto late_read = makeReadRequest(/*session_id=*/ 4, /*xid=*/ 3, "/");
+        auto late_read = makeReadRequest(/*session_id=*/ 4, /*xid=*/ 4, "/");
         ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(
             dispatcher, RequestDispatcherAccessor::headIdx(dispatcher), late_read));
 
         RequestDispatcherAccessor::dropInFlightRequests(dispatcher);
 
         EXPECT_EQ(waitForWriteObservations() - before, 0u) << "dropped reads were observed as completed waits";
+    }
+
+    /// A read that arrives while onCommit is already executing this batch's reads waited for those
+    /// reads, not for the write: the write was applied before the commit callback ran. Only the
+    /// first group taken per batch is a wait for the write.
+    {
+        auto before = waitForWriteObservations();
+        size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
+            dispatcher, makeWriteRequest(/*session_id=*/ 5, /*xid=*/ 1, "/mid_drain"));
+
+        auto first_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 2, "/");
+        ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, first_read));
+
+        /// processReadRequests calls this back synchronously, inside the drain loop, which is
+        /// exactly the window dispatchThread would add into.
+        auto mid_drain_read = makeReadRequest(/*session_id=*/ 5, /*xid=*/ 3, "/");
+        bool added_mid_drain = false;
+        fixture.on_response = [&](DB::KeeperResponseForSession)
+        {
+            if (added_mid_drain)
+                return;
+            added_mid_drain = true;
+            EXPECT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, mid_drain_read));
+        };
+
+        dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 5, /*xid=*/ 1, "/mid_drain"));
+        fixture.on_response = nullptr;
+
+        ASSERT_TRUE(added_mid_drain) << "the mid-drain read was never added, so this arm proves nothing";
+        EXPECT_EQ(waitForWriteObservations() - before, 1u) << "a read added mid-drain was counted as waiting for the write";
+        EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 }
 

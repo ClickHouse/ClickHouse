@@ -6,7 +6,6 @@
 
 #include <Common/CacheLine.h>
 #include <Common/NonblockingBoundedQueue.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/KeeperServer.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 

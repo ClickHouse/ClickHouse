@@ -922,8 +922,8 @@ void KeeperRequestDispatcher::dispatchThread()
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
-                            /// Must happen before the move. One initialize here covers both
-                            /// destinations of this vector: intermediate_reads and batch.late_reads.
+                            /// One initialize here covers both destinations of this vector:
+                            /// intermediate_reads and batch.late_reads.
                             initializeWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
@@ -1186,12 +1186,17 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         /// dispatchThread that subsequent reads can be executed right there.
         /// (Alternatively, we could make dispatchThread block waiting for onCommit to finish reading,
         ///  but that's just worse.)
+        bool first_take = true;
         while (true)
         {
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
-            finalizeWaitForWriteSpans(reads);
+            /// Only reads taken before any of this batch's reads ran were waiting for the write.
+            /// Later arrivals waited for the preceding reads, which this metric does not measure.
+            if (first_take)
+                finalizeWaitForWriteSpans(reads);
+            first_take = false;
             executeReads(std::move(reads));
         }
 
