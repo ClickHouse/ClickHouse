@@ -459,6 +459,7 @@ class ArtifactNames:
     LLVM_COVERAGE_INFO_FILE = "LLVM_COVERAGE_INFO_FILE"  # .info file generated from .profdata, used for debugging coverage results
     CH_AMD_RELEASE = "CH_AMD_RELEASE"
     COMPACT_SYMBOLS_AMD_RELEASE = "COMPACT_SYMBOLS_AMD_RELEASE"
+    COMPACT_SYMBOLS_ARM_RELEASE = "COMPACT_SYMBOLS_ARM_RELEASE"
     CH_AMD_ASAN_UBSAN = "CH_AMD_ASAN_UBSAN"
     CH_AMD_TSAN = "CH_AMD_TSAN"
     CH_AMD_MSAN = "CH_AMD_MSAN"
@@ -621,10 +622,15 @@ class ArtifactConfigs:
             ArtifactNames.CH_AMD_CFI,
         ]
     )
-    compact_symbols_amd_release = Artifact.Config(
-        name=ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
+    compact_symbols = Artifact.Config(
+        name="...",
         type=Artifact.Type.S3,
         path=f"{TEMP_DIR}/build/utils/compact-symbols/compact-symbols",
+    ).parametrize(
+        names=[
+            ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
+            ArtifactNames.COMPACT_SYMBOLS_ARM_RELEASE,
+        ]
     )
     clickhouse_darwin_plain_binaries = Artifact.Config(
         name="...",

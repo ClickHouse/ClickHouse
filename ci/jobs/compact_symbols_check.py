@@ -1,21 +1,22 @@
+import argparse
 import filecmp
 import re
 import shlex
 import shutil
-from functools import cache
+from dataclasses import dataclass
+from functools import cache, partial
 from itertools import zip_longest
 from pathlib import Path
 from typing import Dict, Set, Tuple
 
+from ci.defs.defs import ArtifactConfigs, ArtifactNames, BuildTypes
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
 
 REPO_PATH = Path(Utils.cwd())
 TEMP_PATH = REPO_PATH / "ci/tmp"
-CLICKHOUSE_PATH = TEMP_PATH / "clickhouse"
 PACKAGED_PATH = TEMP_PATH / "clickhouse.compact"
-COMPACT_SYMBOLS_PATH = TEMP_PATH / "compact-symbols"
 SYMBOL_BLOB_PATH = TEMP_PATH / "clickhouse.symbols"
 BASELINE_RANGES_PATH = TEMP_PATH / "compact_symbols_baseline_ranges.tsv"
 PACKAGED_RANGES_PATH = TEMP_PATH / "compact_symbols_packaged_ranges.tsv"
@@ -25,6 +26,62 @@ MAX_RELATIVE_COUNT_DIFFERENCE = 0.001
 MIN_DB_STACK_FRAMES = 3
 
 state: Dict[str, int] = {}
+
+ARTIFACT_NAMES_BY_BUILD_TYPE = {
+    BuildTypes.AMD_RELEASE: (
+        ArtifactNames.CH_AMD_RELEASE,
+        ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
+    ),
+    BuildTypes.ARM_RELEASE: (
+        ArtifactNames.CH_ARM_RELEASE,
+        ArtifactNames.COMPACT_SYMBOLS_ARM_RELEASE,
+    ),
+}
+
+
+@dataclass(frozen=True)
+class ArtifactPaths:
+    clickhouse: Path
+    compact_symbols: Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compact symbols check")
+    parser.add_argument("--build-type", required=True, help="see BuildTypes.*")
+    return parser.parse_args()
+
+
+def resolve_artifact_paths(build_type: str) -> ArtifactPaths:
+    if not isinstance(build_type, str) or build_type not in ARTIFACT_NAMES_BY_BUILD_TYPE:
+        raise RuntimeError(f"Unsupported compact symbols build type: {build_type!r}")
+
+    clickhouse_name, compact_symbols_name = ARTIFACT_NAMES_BY_BUILD_TYPE[build_type]
+    artifact_configs = {
+        artifact.name: artifact
+        for artifact in (
+            *ArtifactConfigs.clickhouse_binaries,
+            *ArtifactConfigs.compact_symbols,
+        )
+    }
+
+    def downloaded_path(artifact_name: str) -> Path:
+        artifact_path = artifact_configs[artifact_name].path
+        if not isinstance(artifact_path, str):
+            raise RuntimeError(
+                f"Artifact {artifact_name} must have a single path, got {artifact_path!r}"
+            )
+        return TEMP_PATH / Path(artifact_path).name
+
+    paths = ArtifactPaths(
+        clickhouse=downloaded_path(clickhouse_name),
+        compact_symbols=downloaded_path(compact_symbols_name),
+    )
+    print(
+        f"Using {build_type} artifacts: "
+        f"{clickhouse_name} at {paths.clickhouse}, "
+        f"{compact_symbols_name} at {paths.compact_symbols}"
+    )
+    return paths
 
 
 def print_command_output(stdout: str, stderr: str) -> None:
@@ -140,46 +197,49 @@ def capture_symbol_ranges(binary: Path, output: Path) -> None:
     print(f"Wrote {output.stat().st_size} bytes of sorted symbol ranges to {output}")
 
 
-def prepare_release_binary() -> bool:
-    for file_path in (CLICKHOUSE_PATH, COMPACT_SYMBOLS_PATH):
+def prepare_release_binary(artifacts: ArtifactPaths) -> bool:
+    for file_path in (artifacts.clickhouse, artifacts.compact_symbols):
         if not file_path.is_file():
             raise RuntimeError(f"Required artifact is missing: {file_path}")
         Shell.check(
             f"chmod +x {shlex.quote(str(file_path))}", verbose=True, strict=True
         )
 
-    run_checked(f"{shlex.quote(str(CLICKHOUSE_PATH))} --version", show_output=True)
-    with CLICKHOUSE_PATH.open("rb") as binary:
+    run_checked(f"{shlex.quote(str(artifacts.clickhouse))} --version", show_output=True)
+    with artifacts.clickhouse.open("rb") as binary:
         if binary.read(4) != b"\x7fELF":
             raise RuntimeError(
-                f"The self-extracting artifact did not become an ELF file: {CLICKHOUSE_PATH}"
+                "The self-extracting artifact did not become an ELF file: "
+                f"{artifacts.clickhouse}"
             )
-    print(f"Decompressed release ELF size: {CLICKHOUSE_PATH.stat().st_size} bytes")
+    print(
+        f"Decompressed release ELF size: {artifacts.clickhouse.stat().st_size} bytes"
+    )
     return True
 
 
-def collect_baseline() -> bool:
+def collect_baseline(artifacts: ArtifactPaths) -> bool:
     assert_section_layout(
-        CLICKHOUSE_PATH,
+        artifacts.clickhouse,
         required={".symtab", ".strtab"},
         forbidden={".clickhouse.symbols"},
     )
-    total_count, db_count = capture_symbol_counts(CLICKHOUSE_PATH)
+    total_count, db_count = capture_symbol_counts(artifacts.clickhouse)
     state["baseline_total_count"] = total_count
     state["baseline_db_count"] = db_count
-    capture_symbol_ranges(CLICKHOUSE_PATH, BASELINE_RANGES_PATH)
+    capture_symbol_ranges(artifacts.clickhouse, BASELINE_RANGES_PATH)
     return True
 
 
-def package_compact_symbols() -> bool:
+def package_compact_symbols(artifacts: ArtifactPaths) -> bool:
     Shell.check(
-        f"cp --reflink=auto --preserve=mode {shlex.quote(str(CLICKHOUSE_PATH))} "
+        f"cp --reflink=auto --preserve=mode {shlex.quote(str(artifacts.clickhouse))} "
         f"{shlex.quote(str(PACKAGED_PATH))}",
         verbose=True,
         strict=True,
     )
     run_checked(
-        f"{shlex.quote(str(COMPACT_SYMBOLS_PATH))} "
+        f"{shlex.quote(str(artifacts.compact_symbols))} "
         f"{shlex.quote(str(PACKAGED_PATH))} {shlex.quote(str(SYMBOL_BLOB_PATH))}",
         show_output=True,
     )
@@ -312,12 +372,14 @@ def verify_symbolization() -> bool:
 
 
 def main() -> None:
+    args = parse_args()
     stopwatch = Utils.Stopwatch()
+    artifacts = resolve_artifact_paths(args.build_type)
     results = []
     stages = [
-        ("Prepare release binary", prepare_release_binary),
-        ("Collect symtab baseline", collect_baseline),
-        ("Package compact symbols", package_compact_symbols),
+        ("Prepare release binary", partial(prepare_release_binary, artifacts)),
+        ("Collect symtab baseline", partial(collect_baseline, artifacts)),
+        ("Package compact symbols", partial(package_compact_symbols, artifacts)),
         ("Verify packaged sections", verify_packaged_sections),
         ("Compare symbol tables", compare_symbol_tables),
         ("Verify symbolization", verify_symbolization),

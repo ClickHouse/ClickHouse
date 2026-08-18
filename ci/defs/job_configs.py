@@ -377,6 +377,7 @@ class JobConfigs:
             parameter=BuildTypes.ARM_RELEASE,
             provides=[
                 ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.COMPACT_SYMBOLS_ARM_RELEASE,
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.RPM_ARM_RELEASE,
                 ArtifactNames.TGZ_ARM_RELEASE,
@@ -577,7 +578,7 @@ class JobConfigs:
     compact_symbols_check_jobs = Job.Config(
         name=JobNames.COMPACT_SYMBOLS_CHECK,
         runs_on=[],  # from parametrize()
-        command="python3 ./ci/jobs/compact_symbols_check.py",
+        command='python3 ./ci/jobs/compact_symbols_check.py --build-type "{PARAMETER}"',
         run_in_docker="clickhouse/fasttest",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
@@ -599,6 +600,14 @@ class JobConfigs:
             requires=[
                 ArtifactNames.CH_AMD_RELEASE,
                 ArtifactNames.COMPACT_SYMBOLS_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release",
+            runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            requires=[
+                ArtifactNames.CH_ARM_RELEASE,
+                ArtifactNames.COMPACT_SYMBOLS_ARM_RELEASE,
             ],
         ),
     )
