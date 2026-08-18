@@ -1,8 +1,10 @@
-#include <Compression/CompressionFactory.h>
-#include <Compression/ICompressionCodec.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/IStorage.h>
+
+#include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
+
 #include <Common/quoteString.h>
 
 #include <base/StringViewHash.h>
@@ -40,6 +42,11 @@ StorageSnapshot::StorageSnapshot(
 std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(DataPtr data_) const
 {
     return std::make_shared<StorageSnapshot>(storage, metadata, std::move(data_));
+}
+
+std::shared_ptr<StorageSnapshot> StorageSnapshot::clone(StorageMetadataPtr metadata_, DataPtr data_) const
+{
+    return std::make_shared<StorageSnapshot>(storage, std::move(metadata_), std::move(data_));
 }
 
 ColumnsDescription StorageSnapshot::getAllColumnsDescription() const
