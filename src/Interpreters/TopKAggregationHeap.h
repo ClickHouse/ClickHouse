@@ -10,6 +10,7 @@
 #include <base/PackedStringRef.h>
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/HashTableKeyHolder.h>
 #include <Common/assert_cast.h>
 #include <Core/CompareHelper.h>
 #include <Core/TypeId.h>
@@ -221,9 +222,6 @@ public:
             hash_table_keys.push_back(hash_table_key);
         heap_indices.push_back(new_idx);
 
-        /// Until the set fills, everything is admitted, so the boundary is
-        /// established once, at the fill; from then on every admitted key is
-        /// strictly better than it, so it only moves at trims.
         if (boundary_row == invalid_row && heap_indices.size() >= k)
             withComparator([&](auto cmp) { boundary_row = *std::max_element(heap_indices.begin(), heap_indices.end(), cmp); });
     }
@@ -242,10 +240,6 @@ public:
         {
             withComparator([&](auto cmp)
             {
-                /// The k-th best lands exactly at the boundary position, and
-                /// everything past it is worse-or-tied.  Only the strictly worse
-                /// can go: a key tied with the boundary is not provably outside
-                /// the top-K.
                 std::nth_element(heap_indices.begin(), heap_indices.begin() + k - 1, heap_indices.end(), cmp);
                 boundary_row = heap_indices[k - 1];
 
@@ -281,8 +275,6 @@ public:
         for (size_t idx : heap_indices)
             trim_filter[idx] = 1;
 
-        /// One survivor pass: the remap table, the in-place key compaction and
-        /// the arena rebuild together (`new_idx <= i` always).
         std::unique_ptr<Arena> compacted_arena;
         if constexpr (keys_hold_pointers)
             compacted_arena = std::make_unique<Arena>();
@@ -350,16 +342,11 @@ private:
         }
         else if constexpr (std::is_same_v<Key, PackedStringRef>)
         {
-            /// Small (and empty) keys are self-contained, nothing to copy.
-            if (key.heapSize() == 0)
-                return key;
-            auto persistent_key = key;
-            const char * copy = copyKeyBytes(static_cast<std::string_view>(key), arena);
-            if (persistent_key.isMedium())
-                persistent_key.setMediumPointer(copy);
-            else
-                persistent_key.setLargePointer(copy);
-            return persistent_key;
+            /// These keys live in a plain `HashMap` compared by exact `memcmp`,
+            /// so the ordinary unpadded persistence applies.
+            ArenaPackedStringHolder holder{key, arena};
+            keyHolderPersistKey(holder);
+            return holder.key;
         }
         else
             return key;
@@ -500,8 +487,6 @@ private:
         return lhs.compareAt(lhs_row, rhs_row, rhs, nulls_directions[column_index]);
     }
 
-    /// "a ranks strictly better than b" over `heap_column` rows, through the
-    /// virtual `compareAt` path.
     struct GenericComparator
     {
         const TopKAggregationHeap * owner;
@@ -516,7 +501,6 @@ private:
         }
     };
 
-    /// The same, fully inlined for a single numeric key column.
     template <typename T>
     struct TypedComparator
     {
@@ -537,10 +521,6 @@ private:
         }
     };
 
-    /// Calls `f.operator()<T>()` for a supported single numeric key type and
-    /// returns true; returns false (without calling `f`) otherwise.  The switch
-    /// is visible to the compiler, so every case inlines - unlike the function
-    /// pointers this replaces.
     template <typename F>
     static ALWAYS_INLINE bool dispatchNumericKeyType(TypeIndex type, F && f)
     {
@@ -561,9 +541,6 @@ private:
         }
     }
 
-    /// Runs `f` with the typed comparator when the key is a supported numeric
-    /// type, with the generic one otherwise.  Dispatch once per operation, not
-    /// per comparison.
     template <typename F>
     ALWAYS_INLINE void withComparator(F && f) const
     {
