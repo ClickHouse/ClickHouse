@@ -383,7 +383,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
 
     /// A populating miss carries its own open writer; a bypass tier's miss is writer-less. `claim` is
     /// filled by the claim loop below (empty for a bypass tier or a tail a concurrent downloader leads).
-    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; ByteRange available{}; };
+    struct MissTier { CacheWriterPtr writer; ByteRange range; CacheWriter::Claim claim; };
     VectorWithMemoryTracking<MissTier> miss_tiers;
     for (auto & cache : cache_chain)
     {
@@ -407,28 +407,20 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         }
     }
 
-    /// Every tier missed. Claim the lead role of each writing tier BEFORE the fetch. A held claim keeps
-    /// the downloader role open across the fetch+write, so concurrent executors dedup to one download.
-    /// `claimLeadRole` also reports any prefix cached since `resolve` as `available` (served below).
+    /// Every tier missed: claim each writing tier's lead role before the fetch (a held claim dedups the
+    /// download). If `claimLeadRole` reports a prefix cached since `resolve` covering the head, serve it
+    /// from that tier - no source read; otherwise keep the claim for the fetch.
     bool any_writer = false;
     for (auto & miss_tier : miss_tiers)
     {
         if (!miss_tier.writer)
             continue;  /// a bypass tier populates nothing
-        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
-        miss_tier.available = lead.available;
-        miss_tier.claim = std::move(lead.claim);
         any_writer = true;
-    }
-
-    /// A prefix cached since `resolve` is reported as `available`; serve it from that writer's cells,
-    /// no source read, taking the fastest tier that covers `window_offset`. Empty `available` (the
-    /// default) is a no-op. Held claims on other tiers release when `miss_tiers` is destroyed on return.
-    for (const auto & miss_tier : miss_tiers)
-    {
-        const ByteRange avail = miss_tier.available;
-        if (miss_tier.writer && avail.size && avail.offset <= window_offset && window_offset < avail.end())
+        auto lead = miss_tier.writer->claimLeadRole(miss_tier.range);
+        const ByteRange avail = lead.available;
+        if (avail.size && avail.offset <= window_offset && window_offset < avail.end())
             return miss_tier.writer->read(ByteRange{window_offset, serve_len(std::min(avail.end(), miss_tier.range.end()))});
+        miss_tier.claim = std::move(lead.claim);
     }
 
     /// A range another thread is already downloading is fetched through below (its `write` lands 0).

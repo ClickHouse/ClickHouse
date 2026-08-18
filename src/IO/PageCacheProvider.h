@@ -29,9 +29,8 @@ private:
 
 /// ── Per-range buffer API (see `ICacheProvider.h`) ──
 
-/// `CacheReader` over the pinned whole-block cell(s) backing one hit range.
-/// Page cells are whole blocks, so a hit is always fully resident and there is
-/// no deferred-LRU bump.
+/// `CacheReader` for one hit range: it holds the whole-block cells covering the range and serves
+/// `read` as zero-copy views into them.
 class PageCacheReader : public CacheReader
 {
 public:
@@ -42,16 +41,14 @@ public:
 
 private:
     ByteRange range_member;
-    /// Pinned whole-block cells backing this run, in file order. Each cell knows its own file range
-    /// (`cell->range`) and size, so the reader needs no separate per-cell bookkeeping.
+    /// The whole-block cells covering this range, in file order (kept alive by the shared_ptr). Each
+    /// cell carries its own file range (`cell->range`) and size, so no separate bookkeeping is needed.
     VectorWithMemoryTracking<PageCache::MappedPtr> cells;
 };
 
-/// `CacheWriter` over one whole-block-aligned miss range. Cells are created
-/// lazily on `write` (`PageCache::getOrSet`, first-writer-wins) and adopted
-/// into `blocks`; the write buffer doubles as a read buffer for the
-/// self-populated blocks. No evictable in-flight segment, so `pin` keeps the
-/// default no-op.
+/// `CacheWriter` for one miss range. `write` creates each block's cell on demand
+/// (`PageCache::getOrSet`, first-writer-wins) and adopts it into `blocks`, which also lets the writer
+/// serve `read` for the blocks it populated.
 class PageCacheWriter : public CacheWriter
 {
 public:
@@ -88,11 +85,11 @@ private:
     bool bypass_if_missing;
     ByteRange range_member;
     IntervalSet committed_ranges;
-    /// Whole-block cells this writer populated or adopted, in file order. Each cell knows its own
-    /// file range (`cell->range`) and size, so the writer needs no separate per-block bookkeeping.
+    /// The whole-block cells this writer populated or adopted, in file order (same layout as the
+    /// reader's `cells`: each cell carries its own `cell->range` and size).
     VectorWithMemoryTracking<PageCache::MappedPtr> blocks;
-    /// Guards `committed_ranges` and `blocks`: the prefetch worker may write this writer
-    /// while the foreground reads the self-populated blocks of the same writer.
+    /// Guards `committed_ranges` and `blocks`. Uncontended today (the executor drives one writer from a
+    /// single thread); it makes the writer ready for the concurrent fill a later prefetch worker adds.
     mutable std::mutex state_mutex;
     LoggerPtr log = getLogger("PageCacheWriter");
 };

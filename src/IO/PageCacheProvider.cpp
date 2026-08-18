@@ -178,8 +178,8 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
 
 CacheWriter::Lead PageCacheWriter::claimLeadRole(ByteRange range)
 {
-    /// Re-probe read-only: adopt any prefix a concurrent query cached since `resolve` and report it as
-    /// `available`; hold the role only for an uncommitted tail.
+    /// Re-probe read-only: adopt any prefix a concurrent query cached since `resolve`, report it as
+    /// `available`, and return a held claim only when an uncommitted tail is left to fill.
     Lead lead;
     lead.available = ByteRange{range.offset, 0};
 
@@ -213,8 +213,7 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Serve the self-populated blocks overlapping `sub`, zero-copy. Under the lock:
-    /// a concurrent `write` on the same writer appends to `blocks`.
+    /// Serve the self-populated blocks overlapping `sub`, zero-copy, under the lock that guards `blocks`.
     std::lock_guard lock(state_mutex);
     for (const auto & cell : blocks)
     {
@@ -253,14 +252,12 @@ PageCacheProvider::PageCacheProvider(
 {
 }
 
-/// The page tier's residency walk. One `resolve` is a ranged block walk holding
-/// no per-call state, so a shared provider is safe to resolve from many threads
-/// (the `readBigAt` fan-out). Blocks are probed read-only (`cache->get` never
-/// creates a cell), contiguous cached blocks coalesce into one hit run - capped
-/// so a warm file does not pin unboundedly through a single reader - and an
-/// uncached block is one miss cell carrying its whole-block writer when the
-/// provider populates (bypass leaves it writer-less). The executor fetches
-/// consecutive misses together.
+/// The page tier's residency walk over `range`. It holds no per-call state, so a shared provider is
+/// safe to resolve concurrently. Each block is probed read-only (`cache->get` never creates a cell):
+/// contiguous cached blocks coalesce into one bounded hit run (capped so a warm file does not pin
+/// unboundedly through one reader), and each uncached block is a one-block miss carrying a whole-block
+/// writer when the tier populates (writer-less on a bypass tier). The executor fetches consecutive
+/// misses together.
 VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::resolve(
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
