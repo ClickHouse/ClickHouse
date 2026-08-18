@@ -1139,10 +1139,7 @@ UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_str
 
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
-    /// Local execution runs every stage in-process over in-memory exchanges and
-    /// never dials a worker, so it needs no hosts and must not lease any.
-    if (context_->getSettingsRef()[Setting::distributed_plan_execute_locally])
-        return;
+    /// Only constructed for a plan that runs on workers; a local plan gets a null map instead.
     fillWorkerAddresses(context_);
 
     /// Cap the host list to match the node count the optimizer planned for.
