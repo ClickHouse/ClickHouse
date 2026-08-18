@@ -1,0 +1,32 @@
+-- `read_in_order_use_virtual_row` is enabled by default, but virtual rows cannot be
+-- planned when a fixed leading primary-key column is omitted from the GROUP BY key.
+-- The shuffle must use the actual pipeline state rather than the global setting.
+SET enable_parallel_replicas = 0;
+SET max_rows_to_group_by = 0;
+SET merge_tree_min_rows_for_concurrent_read = 0;
+SET merge_tree_min_bytes_for_concurrent_read = 0;
+
+DROP TABLE IF EXISTS t_aio_shuffle_fixed_prefix;
+CREATE TABLE t_aio_shuffle_fixed_prefix (a UInt64, b UInt64, v UInt64)
+ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 128;
+
+SYSTEM STOP MERGES t_aio_shuffle_fixed_prefix;
+INSERT INTO t_aio_shuffle_fixed_prefix SELECT 1, number % 5000, number FROM numbers(50000);
+INSERT INTO t_aio_shuffle_fixed_prefix SELECT 1, number % 5000, number FROM numbers(50000);
+INSERT INTO t_aio_shuffle_fixed_prefix SELECT 1, number % 5000, number FROM numbers(50000);
+
+-- `a = 1` makes the matched `b` key non-contiguous. `optimizeReadInOrder` disables
+-- virtual rows for this shape, so the shuffle is safe and must still be planned.
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
+FROM (EXPLAIN PIPELINE SELECT b, sum(v) FROM t_aio_shuffle_fixed_prefix WHERE a = 1 GROUP BY b
+      SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
+
+SELECT
+    (SELECT groupBitXor(cityHash64(b, s))
+     FROM (SELECT b, sum(v) s FROM t_aio_shuffle_fixed_prefix WHERE a = 1 GROUP BY b)
+     SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1)
+  = (SELECT groupBitXor(cityHash64(b, s))
+     FROM (SELECT b, sum(v) s FROM t_aio_shuffle_fixed_prefix WHERE a = 1 GROUP BY b)
+     SETTINGS max_threads = 4, optimize_aggregation_in_order = 0);
+
+DROP TABLE t_aio_shuffle_fixed_prefix;
