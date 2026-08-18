@@ -22,10 +22,14 @@ INSERT INTO prometheus (metric_name, tags, time_series) VALUES
 
 SELECT '-- sum(m) - max(m), instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - max(m)', 130) ORDER BY tags;
+SELECT '-- sum(m) % max(m), instant';
+SELECT * FROM prometheusQuery('prometheus', 'sum(m) % max(m)', 130) ORDER BY tags;
 
 SET prefer_column_name_to_alias = 1;
 SELECT '-- sum by (dc) (m) - min by (dc) (m), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'sum by (dc) (m) - min by (dc) (m)', 100, 140, 10) ORDER BY tags;
+SELECT '-- max without (host) (m) - min without (host) (m), range';
+SELECT * FROM prometheusQueryRange('prometheus', 'max without (host) (m) - min without (host) (m)', 100, 140, 10) ORDER BY tags;
 SET prefer_column_name_to_alias = 0;
 
 SELECT '-- the shared argument is a range function, range';
