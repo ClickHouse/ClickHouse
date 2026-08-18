@@ -59,7 +59,8 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         ParserSetQuery set_parser;
         if (set_parser.parse(set_pos, set_node, expected))
         {
-            const char * set_end = set_pos->begin;
+            const char * set_statement_end = set_pos->begin;
+            const char * set_end = set_statement_end;
             if (set_pos->type == TokenType::Semicolon)
                 ++set_end;
 
@@ -81,8 +82,9 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             node = std::move(set_node);
-            /// Advance the original token iterator to the end of the SET statement.
-            while (!pos->isEnd() && pos->begin < set_end)
+            /// Leave the semicolon for the outer parser, which consumes statement
+            /// delimiters after a successful parse.
+            while (!pos->isEnd() && pos->begin < set_statement_end)
                 ++pos;
             return true;
         }
