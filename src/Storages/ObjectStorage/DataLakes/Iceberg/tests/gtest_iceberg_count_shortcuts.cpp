@@ -49,21 +49,31 @@ TEST(IcebergCountShortcuts, HasEqualityAndPositionDeleteHelpers)
     EXPECT_TRUE(hasIcebergPositionDeletes(iceberg));
 }
 
-TEST(IcebergCountShortcuts, SnapshotSummaryShortcutRequiresExplicitZeroEqualityDeletes)
+TEST(IcebergCountShortcuts, SnapshotSummaryShortcutRequiresExplicitZeroDeletes)
 {
     Iceberg::IcebergDataSnapshot snapshot;
     snapshot.total_rows = 100;
-    snapshot.total_position_delete_rows = 10;
+    snapshot.total_position_delete_rows = 0;
     snapshot.total_equality_delete_rows = 0;
 
     EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
     ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_EQ(*snapshot.getTotalRows(), 100u);
+
+    snapshot.total_position_delete_rows = 10;
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
     EXPECT_EQ(*snapshot.getTotalRows(), 90u);
 
+    snapshot.total_position_delete_rows = 0;
     snapshot.total_equality_delete_rows = std::nullopt;
     EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
 
     snapshot.total_equality_delete_rows = 1;
+    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+
+    snapshot.total_equality_delete_rows = 0;
+    snapshot.total_position_delete_rows = std::nullopt;
     EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
 }
 

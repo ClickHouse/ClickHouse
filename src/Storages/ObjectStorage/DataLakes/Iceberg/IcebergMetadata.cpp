@@ -1214,8 +1214,9 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
         && *actual_data_snapshot->total_equality_delete_rows > 0)
         return {};
 
-    /// Prefer the snapshot-summary shortcut when equality deletes are explicitly zero. This avoids
-    /// opening every manifest for typical append-only tables (same fast path as before this PR).
+    /// Prefer the snapshot-summary shortcut when equality and position deletes are explicitly zero.
+    /// This avoids opening every manifest for typical append-only tables. Any live deletes
+    /// (including puffin DVs counted in `total-position-deletes`) fall through / fail closed.
     if (actual_data_snapshot->allowsSnapshotTotalRowsShortcut())
     {
         if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
