@@ -219,6 +219,18 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
 
         /// `wait_for_async_insert` is not honoured: returning early would hide a flush failure from a
         /// client already told the INSERT succeeded.
+        /// `cancelQuery` sets `is_killed` before cancelling the pipeline executors, so a `KILL QUERY`
+        /// (or `max_execution_time`) is visible here as `throwIfKilled()` / `checkTimeLimit()`. Shared
+        /// by the loop and the post-loop check, since a `false` return under `'break'` is ignored.
+        auto throwIfKilledOrTimedOut = [&]
+        {
+            if (auto process_list_elem = context->getProcessListElement())
+            {
+                process_list_elem->throwIfKilled();
+                process_list_elem->checkTimeLimit();
+            }
+        };
+
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(wait_timeout_ms);
         while (true)
         {
@@ -231,16 +243,14 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             if (result.future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
                 break;
 
+            throwIfKilledOrTimedOut();
+
             if (isCancelled())
                 return {};
-
-            if (auto process_list_elem = context->getProcessListElement())
-            {
-                /// Called only for its throwing side effect (kill / `max_execution_time`); the block is
-                /// already queued, so a `false` return under `'break'` is ignored.
-                process_list_elem->checkTimeLimit();
-            }
         }
+
+        /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
+        throwIfKilledOrTimedOut();
 
         if (result.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
