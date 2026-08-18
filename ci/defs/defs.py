@@ -132,6 +132,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
@@ -377,6 +383,7 @@ class JobNames:
     UPGRADE = "Upgrade check"
     PERFORMANCE = "Performance Comparison"
     COMPATIBILITY = "Compatibility check"
+    SIGN_MACOS = "Sign macOS binary"
     DOCS_MINTLIFY = "Docs check (Mintlify)"
     CLICKBENCH = "ClickBench"
     DOCKER_SERVER = "Docker server image"
@@ -465,6 +472,10 @@ class ArtifactNames:
     CH_TIDY_BIN = "CH_TIDY_BIN"
     CH_AMD_DARWIN_BIN = "CH_AMD_DARWIN_BIN"
     CH_ARM_DARWIN_BIN = "CH_ARM_DARWIN_BIN"
+    CH_AMD_DARWIN_PLAIN = "CH_AMD_DARWIN_PLAIN"
+    CH_ARM_DARWIN_PLAIN = "CH_ARM_DARWIN_PLAIN"
+    CH_AMD_DARWIN_SIGNED = "CH_AMD_DARWIN_SIGNED"
+    CH_ARM_DARWIN_SIGNED = "CH_ARM_DARWIN_SIGNED"
     CH_ARM_V80COMPAT = "CH_ARMV80C_DARWIN_BIN"
     CH_AMD_FREEBSD = "CH_ARM_FREEBSD_BIN"
     CH_PPC64LE = "CH_PPC64LE_BIN"
@@ -606,6 +617,27 @@ class ArtifactConfigs:
             ArtifactNames.CH_S390X,
             ArtifactNames.CH_LOONGARCH64,
             ArtifactNames.CH_AMD_CFI,
+        ]
+    )
+    clickhouse_darwin_plain_binaries = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/build/programs/clickhouse",
+        compress_zst=True,
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ArtifactNames.CH_ARM_DARWIN_PLAIN,
+        ]
+    )
+    clickhouse_darwin_signed_zips = Artifact.Config(
+        name="...",
+        type=Artifact.Type.S3,
+        path=f"{TEMP_DIR}/clickhouse-macos.zip",
+    ).parametrize(
+        names=[
+            ArtifactNames.CH_AMD_DARWIN_SIGNED,
+            ArtifactNames.CH_ARM_DARWIN_SIGNED,
         ]
     )
     llvm_profdata_file = Artifact.Config(
