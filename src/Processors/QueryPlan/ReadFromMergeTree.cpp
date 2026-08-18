@@ -321,7 +321,6 @@ namespace ErrorCodes
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_PARTITIONS;
     extern const int NO_SUCH_DATA_PART;
     extern const int SUPPORT_IS_DISABLED;
@@ -511,7 +510,7 @@ ReadFromMergeTree::ReadFromMergeTree(
     /// The `max_streams_for_merge_tree_reading` setting is bounded by `doSettingsSanityCheckClamp`.
     if (const UInt64 max_streams_for_merge_tree_reading = settings[Setting::max_streams_for_merge_tree_reading])
     {
-        if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree] && !query_info.isStream())
+        if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
@@ -4132,23 +4131,6 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
 Pipe ReadFromMergeTree::groupPartitionsByStreams(AnalysisResult &)
 {
     const size_t num_streams = std::max<size_t>(1, requested_num_streams);
-
-    /// Unlike a regular read, a streaming read has no marks by which the number of streams could be
-    /// clamped, and every stream creates a separate source here. Reject absurd values of
-    /// `max_threads * max_streams_to_max_threads_ratio` (which the planner bounds-checks only for
-    /// representability in `size_t`).
-    /// The limit is much lower than the one on the number of threads in `MergeTreeReadPool` (a million),
-    /// because a source is far heavier than a thread task: the pipeline costs about 35 KB per stream
-    /// (measured on a sanitizer build), so a million streams would still allocate tens of gigabytes
-    /// before the query could fail. There is no sensible workload with more sources than that: the
-    /// number of useful streams is bounded by the number of cores.
-    static constexpr size_t max_streams_for_streaming_read = 65536;
-    if (num_streams > max_streams_for_streaming_read)
-        throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Too many streams for a streaming read: {} (the maximum is {}). "
-            "Lower `max_streams_to_max_threads_ratio` or `max_threads`",
-            num_streams, max_streams_for_streaming_read);
-
     SharedHeader header = getOutputHeader();
 
     Pipes pipes;
