@@ -73,8 +73,12 @@ skill:
 
 - The skill must be invoked from the root of a ClickHouse checkout (the
   script verifies `tests/performance/scripts/perf.py` is present).
-- The dry-run inspects every affected XML and prints the list of external
-  datasets it actually references (`hits_*`, `test_values`, `tpch.*`,
+- The dry-run inspects **only the flagged query indices** of every affected
+  XML — asking `perf.py --print-queries` to expand them, since one `<query>`
+  element with substitutions becomes several numbered queries — plus every
+  `create_query`/`fill_query`/`drop_query`, which run whatever
+  `--queries-to-run` says. It prints the list of external datasets they
+  actually reference (`hits_*`, `test_values`, `tpch.*`,
   `tpcds.*`). Most perf tests are self-contained — they `CREATE TABLE … FROM
   numbers(…)` and need no preloaded data at all. **Only require the datasets
   the changed queries truly use; do not insist on the full 50 GB bootstrap.**
@@ -133,7 +137,10 @@ The script prints a table. For each changed query show:
 
 - CI old / new / Δ (from the report)
 - Local old / new / Δ / p-value (from `perf.py`)
-- Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, or `no local data`
+- Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, `no local data`, or
+  `perf.py FAILED ... NOT MEASURED`. The last one is not a verdict about the
+  change: nothing was measured, the run itself broke, and `raw/<test>-err.log`
+  says why. Any such failure also makes the script exit non-zero.
 
 A query counts as `CONFIRMED` when the local rerun passes the same gate
 `compare.sh` uses to confirm a flagged query: same direction, `|Δ|` above the

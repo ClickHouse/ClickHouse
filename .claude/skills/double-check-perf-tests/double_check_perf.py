@@ -41,6 +41,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -62,6 +63,14 @@ LEFT_KEEPER_TCP = 9181
 LEFT_KEEPER_RAFT = 9234
 LEFT_INTERSERVER = 9009
 LEFT_HTTP = 8123
+
+# The temporary preconfig server must not reuse LEFT_TCP: it starts before the
+# measured servers, so nothing has claimed that port yet, and if something else
+# is already listening there the readiness probe would succeed against *that*
+# server and the RENAME would be issued against someone else's data.
+PRECONFIG_TCP = 9101
+PRECONFIG_KEEPER_TCP = 9281
+PRECONFIG_KEEPER_RAFT = 9334
 
 RIGHT_TCP = 19001
 RIGHT_KEEPER_TCP = 19181
@@ -468,41 +477,78 @@ EXTERNAL_DATASETS = {
 }
 
 
-def scan_external_datasets(xml_paths: list[Path]) -> dict[str, list[str]]:
-    """Return {dataset_name: [xml_basename, ...]} for every external dataset
-    referenced by at least one of the given XMLs.
+def selected_query_text(repo_root: Path, xml_path: Path,
+                        query_indices: list[int]) -> str:
+    """The bodies of exactly the given query indices, expanded.
 
-    We treat the XML as a body of text plus any sibling SQL files pulled in
-    via ``<query file="...">``. That catches benchmarks like ``tpcds.xml``
-    and ``tpch.xml`` whose XML only says ``USE {table}`` but whose actual
-    query bodies live in ``../benchmarks/tpc-ds/queries/*.sql`` and reference
-    ``store_sales`` / ``lineitem`` / etc. without a database qualifier — so
-    we also flag the dataset when an XML does ``USE tpcds`` / ``USE tpch``
-    / etc.
-    """
+    Asks perf.py, which owns the numbering: one `<query>` element with
+    substitutions expands into several numbered queries, and `<query
+    file="...">` bodies are inlined. `--print-queries` exits before connecting
+    to any server, so this is cheap and needs nothing running."""
+    cmd = [
+        sys.executable,
+        str(repo_root / "tests/performance/scripts/perf.py"),
+        str(xml_path),
+        "--print-queries",
+        "--queries-to-run", *[str(i) for i in query_indices],
+    ]
+    try:
+        return subprocess.check_output(cmd, text=True, timeout=120,
+                                       stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+        die(f"perf.py --print-queries failed for {xml_path.name}: {e}")
+
+
+def relevant_test_text(repo_root: Path, xml_path: Path,
+                       query_indices: list[int]) -> str:
+    """Text deciding which datasets a rerun of *these* queries needs.
+
+    Scanning the whole XML over-reports: `aggregation_in_order.xml` reads
+    hits_10m_single and hits_100m_single from different queries, so rerunning
+    one of them would demand both tarballs. Only the selected queries count --
+    plus every `create_query`/`fill_query`/`drop_query`, which perf.py runs
+    whatever `--queries-to-run` says, and which it expands over *all*
+    substitution combinations."""
+    parts: list[str] = []
+    try:
+        root = ET.fromstring(xml_path.read_text())
+    except (OSError, ET.ParseError):
+        root = None
+    if root is not None:
+        prep = "\n".join(
+            q.text or ""
+            for q in root
+            if q.tag in ("create_query", "fill_query", "drop_query")
+        )
+        parts.append(prep)
+        # A preparation query with a substitution placeholder runs once per
+        # value, and which value lands where is not decidable from the text --
+        # so every value counts. `<fill_query>USE {database}</fill_query>` in
+        # tpch.xml is exactly this case.
+        if "{" in prep:
+            parts.extend(
+                v.text or ""
+                for v in root.findall("substitutions/substitution/values/value")
+            )
+    parts.append(selected_query_text(repo_root, xml_path, query_indices))
+    return "\n".join(parts)
+
+
+def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
+    """Return {dataset_name: [test, ...]} for every external dataset referenced
+    by the given per-test text (see relevant_test_text)."""
     found: dict[str, list[str]] = defaultdict(list)
     db_aliases = {
         "tpcds": "tpcds.store_sales",   # any tpcds.* entry maps to the same tarball
         "tpch":  "tpch.lineitem",
+        "tpch10": "tpch.lineitem",      # the value tpch.xml substitutes
     }
-    for path in xml_paths:
-        try:
-            text = path.read_text()
-        except OSError:
-            continue
-        # Pull in any referenced SQL files so unqualified table names inside
-        # them surface (e.g. tpcds queries use bare 'store_sales' etc.).
-        for ref in re.findall(r'<query\s+file="([^"]+)"', text):
-            sibling = (path.parent / ref).resolve()
-            if sibling.is_file():
-                try:
-                    text += "\n" + sibling.read_text()
-                except OSError:
-                    pass
+    for test_name, text in texts.items():
+        path = Path(test_name)
 
         for name in EXTERNAL_DATASETS:
             if re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", text):
-                found[name].append(path.name)
+                found[name].append(test_name)
 
         # Heuristic for benchmarks whose tables aren't database-qualified in
         # the SQL bodies. Catch both forms:
@@ -511,10 +557,10 @@ def scan_external_datasets(xml_paths: list[Path]) -> dict[str, list[str]]:
         #     a substitution block (this is how tpcds.xml / tpch.xml work).
         for db_word, canonical in db_aliases.items():
             if re.search(rf"\b(?:USE|FROM)\s+{db_word}\b", text, re.IGNORECASE):
-                found[canonical].append(path.name)
+                found[canonical].append(test_name)
                 continue
-            if re.search(rf"<value>\s*{db_word}\s*</value>", text):
-                found[canonical].append(path.name)
+            if re.search(rf"(?<![\w.]){db_word}(?![\w])", text):
+                found[canonical].append(test_name)
     return dict(found)
 
 
@@ -933,6 +979,11 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
             "running preconfig server on db0 to create test.hits "
             "(SQL: CREATE DATABASE test; RENAME TABLE datasets.hits_v1 TO test.hits)"
         )
+        ensure_ports_free({
+            PRECONFIG_TCP: "preconfig TCP",
+            PRECONFIG_KEEPER_TCP: "preconfig keeper",
+            PRECONFIG_KEEPER_RAFT: "preconfig keeper raft",
+        })
         coord = work_dir / "coordination0"
         coord.mkdir(parents=True, exist_ok=True)
         preconfig_log = work_dir / "preconfig.log"
@@ -945,7 +996,11 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
                 "--user_files_path", str(db_source / "user_files"),
                 "--top_level_domains_path", str(top_level_domains),
                 "--keeper_server.storage_path", str(coord),
-                "--tcp_port", str(LEFT_TCP),
+                "--tcp_port", str(PRECONFIG_TCP),
+                "--keeper_server.tcp_port", str(PRECONFIG_KEEPER_TCP),
+                "--keeper_server.raft_configuration.server.port",
+                str(PRECONFIG_KEEPER_RAFT),
+                "--zookeeper.node.port", str(PRECONFIG_KEEPER_TCP),
             ]
             proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT)
         client = binary_for_preconfig.parent / "clickhouse-client"
@@ -955,7 +1010,8 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
             for _ in range(30):
                 try:
                     out = subprocess.check_output(
-                        [str(client), "--port", str(LEFT_TCP), "--query", "select 1"],
+                        [str(client), "--port", str(PRECONFIG_TCP),
+                         "--query", "select 1"],
                         text=True, timeout=5, stderr=subprocess.DEVNULL,
                     )
                     if out.strip() == "1":
@@ -970,12 +1026,27 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
                 die(
                     f"preconfig server failed to come up; see {preconfig_log}"
                 )
+            # Belt and braces on top of the dedicated port: confirm the
+            # server answering is the one we started, over the dataset we mean
+            # to modify. RENAME TABLE against someone else's server would move
+            # their data.
+            server_path = subprocess.check_output(
+                [str(client), "--port", str(PRECONFIG_TCP), "--query",
+                 "SELECT value FROM system.server_settings WHERE name = 'path'"],
+                text=True, timeout=30,
+            ).strip().rstrip("/")
+            if server_path != str(db_source).rstrip("/"):
+                die(
+                    f"the server on port {PRECONFIG_TCP} serves {server_path!r}, "
+                    f"not the dataset {str(db_source)!r} we started it for. "
+                    "Refusing to rename tables on it."
+                )
             for sql in (
                 "CREATE DATABASE IF NOT EXISTS test",
                 "RENAME TABLE datasets.hits_v1 TO test.hits",
             ):
                 subprocess.run(
-                    [str(client), "--port", str(LEFT_TCP), "--query", sql],
+                    [str(client), "--port", str(PRECONFIG_TCP), "--query", sql],
                     check=True, timeout=30,
                 )
             log("preconfig: test.hits created")
@@ -1365,10 +1436,12 @@ def run_perf_test(
     test_xml: str,
     query_indices: list[int],
     runs: Optional[int],
-) -> Path:
+) -> tuple[Path, int]:
     """Run perf.py for one XML, restricted to the given query indices.
 
-    Returns the path to the raw TSV output produced by perf.py."""
+    Returns the raw TSV path and perf.py's exit code. A failed run must not be
+    quietly reported as "no local data": that reads as "CI's change did not
+    reproduce" when in fact nothing was measured."""
     out_path = work_dir / "raw" / f"{Path(test_xml).stem}-raw.tsv"
     err_path = work_dir / "raw" / f"{Path(test_xml).stem}-err.log"
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1398,8 +1471,10 @@ def run_perf_test(
     ]
     log(f"running perf.py on {test_xml} queries={query_indices}: {' '.join(cmd)}")
     with open(out_path, "w") as out_fh, open(err_path, "w") as err_fh:
-        subprocess.run(cmd, stdout=out_fh, stderr=err_fh, check=False)
-    return out_path
+        proc = subprocess.run(cmd, stdout=out_fh, stderr=err_fh, check=False)
+    if proc.returncode != 0:
+        log(f"ERROR: perf.py exited {proc.returncode} for {test_xml}; see {err_path}")
+    return out_path, proc.returncode
 
 
 def load_stat_threshold(repo_root: Path):
@@ -1531,6 +1606,7 @@ def print_report(
     changed: list[ChangedQuery],
     local_results: dict[tuple[str, int], dict],
     local_arch: str,
+    failed_tests: Optional[dict[str, int]] = None,
 ) -> None:
     print()
     print("=" * 120)
@@ -1545,6 +1621,7 @@ def print_report(
     print("-" * len(header))
     confirmed = 0
     not_reproduced = 0
+    failed = 0
     for cq in sorted(changed, key=lambda c: (c.test, c.query_index, c.arch)):
         key = (cq.test, cq.query_index)
         local = local_results.get(key)
@@ -1562,7 +1639,14 @@ def print_report(
             # local arch did NOT flag this; CI saw it elsewhere
             ci_at = "/".join(archs) + "-only"
 
-        if local is None:
+        if local is None and (failed_tests or {}).get(cq.test) is not None:
+            verdict = (
+                f"perf.py FAILED (exit {failed_tests[cq.test]}), NOT MEASURED "
+                f"— see raw/{cq.test}-err.log"
+            )
+            local_str = f"{'':>8} {'':>8} {'':>8} {'':>6}"
+            failed += 1
+        elif local is None:
             verdict = "no local data"
             local_str = f"{'':>8} {'':>8} {'':>8} {'':>6}"
         else:
@@ -1623,7 +1707,14 @@ def print_report(
         f"Summary: {confirmed} confirmed, "
         f"{not_reproduced} not reproduced, "
         f"{len(changed) - confirmed - not_reproduced} not measured"
+        + (f" (of which {failed} from failed perf.py runs)" if failed else "")
     )
+    if failed_tests:
+        print(
+            "WARNING: perf.py failed for "
+            + ", ".join(f"{t} (exit {rc})" for t, rc in sorted(failed_tests.items()))
+            + " — those queries were not validated, they did not 'fail to reproduce'."
+        )
     print(
         f"CI@ column: which arch(es) CI flagged the query on. "
         f"'<arch>-only' means CI did NOT flag it on {local_arch} (the "
@@ -1818,12 +1909,14 @@ def main() -> int:
     # filled from numbers/generateRandom) need none. Reporting this up-front
     # lets the caller know whether the 50 GB bootstrap is required at all,
     # or only a single tarball.
-    xml_paths = [
-        repo_root / "tests/performance" / f"{t}.xml"
-        for t in by_test
+    test_texts = {
+        t: relevant_test_text(
+            repo_root, repo_root / "tests/performance" / f"{t}.xml", sorted(qs)
+        )
+        for t, qs in by_test.items()
         if (repo_root / "tests/performance" / f"{t}.xml").is_file()
-    ]
-    needed_datasets = scan_external_datasets(xml_paths)
+    }
+    needed_datasets = scan_external_datasets(test_texts)
     if needed_datasets:
         log("external datasets referenced by affected XMLs:")
         for name, xmls in sorted(needed_datasets.items()):
@@ -1906,6 +1999,8 @@ def main() -> int:
             log(f"WARNING: {xml_path} not found — skipping test {test}")
             continue
         test_files[test] = f"{test}.xml"
+
+    exit_code = 0
 
     # Set up working directory
     work_dir = args.work_dir or (repo_root / "tmp/double_check_perf")
@@ -1999,10 +2094,15 @@ def main() -> int:
 
         # Run perf.py per test
         side_dbs = [work_dir / side / "db" for side in ("left", "right")]
+        failed_tests: dict[str, int] = {}
         for test, qs in sorted(by_test.items()):
             if test not in test_files:
                 continue
-            run_perf_test(repo_root, work_dir, test_files[test], sorted(qs), args.runs)
+            _, rc = run_perf_test(
+                repo_root, work_dir, test_files[test], sorted(qs), args.runs
+            )
+            if rc != 0:
+                failed_tests[test] = rc
             cleanup_user_files(side_dbs)
 
         # Collect results. stat_threshold is recomputed from the per-run
@@ -2023,7 +2123,7 @@ def main() -> int:
                 )
                 local_results[(test, qi)] = d
 
-        print_report(changed, local_results, perf_arch)
+        print_report(changed, local_results, perf_arch, failed_tests)
         # JSON dump for downstream use
         json_path = work_dir / "result.json"
         json_path.write_text(
@@ -2035,6 +2135,7 @@ def main() -> int:
                     "reference_sha": ref_sha,
                     "populated_tables": populate_tables,
                     "changed": [cq.__dict__ for cq in changed],
+                    "failed_tests": failed_tests,
                     "local": {
                         f"{k[0]}#{k[1]}": v for k, v in local_results.items()
                     },
@@ -2043,11 +2144,13 @@ def main() -> int:
             )
         )
         log(f"wrote {json_path}")
+        if failed_tests:
+            exit_code = 1
     finally:
         stop_server(right_h)
         stop_server(left_h)
 
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":
