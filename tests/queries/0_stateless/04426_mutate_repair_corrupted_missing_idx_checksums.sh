@@ -16,7 +16,9 @@
 # no-fasttest: local-disk part-file surgery (see 04402/04404).
 # no-object-storage/-shared/-replicated: relies on local on-disk file layout.
 # no-random-merge-tree-settings: depends on a fixed granule count and the
-# standalone (non-packed) index file that the surgery injects.
+# standalone (non-packed) index file that the surgery injects; the CREATE below
+# pins `packed_skip_index_max_bytes` = 0 because the tag does not cover a
+# non-zero server default.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
@@ -40,6 +42,7 @@ CREATE TABLE t_corrupt_minmax
 ENGINE = MergeTree ORDER BY k
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
          index_granularity = 100, replace_long_file_name_to_hash = 0,
+         packed_skip_index_max_bytes = 0,
          columns_and_secondary_indices_sizes_lazy_calculation = 0"
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO t_corrupt_minmax (k, v) SELECT number, number FROM numbers(2000)"
