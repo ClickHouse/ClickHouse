@@ -732,10 +732,29 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
         /// Send it now, before draining, so the replicas wind down and the drain loop
         /// terminates. No other thread sends a concurrent `Cancel`: `finish` set `was_cancelled`
         /// before delegating, which makes every later `tryCancel` return early.
-        connections->sendCancel();
-        LOG_TRACE(log, "({}) Cancelling query because enough data has been read", connections->dumpAddresses());
+        try
+        {
+            connections->sendCancel();
+            LOG_TRACE(log, "({}) Cancelling query because enough data has been read", connections->dumpAddresses());
 
-        drainConnections(std::move(packet));
+            drainConnections(std::move(packet));
+        }
+        catch (...)
+        {
+            /// This is the `PartialResult` drain path, which is deliberately best-effort: the
+            /// consumer already has enough data, so a broken replica must not turn the query
+            /// into an exception. The connection may have unread packets, so do not return it
+            /// to the pool.
+            tryLogCurrentException(log, "Error while draining cancelled remote query.");
+            try
+            {
+                connections->disconnect();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Error while disconnecting cancelled remote query.");
+            }
+        }
         return ReadResult(Block());
     }
 }
