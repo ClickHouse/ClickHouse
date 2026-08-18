@@ -46,6 +46,8 @@ Results are shown more compactly in notebook mode: a smaller font, and a pane of
 
 Running works as it always has: `Ctrl/Cmd+Enter` (or the `Run` button) runs the query in the editor, that is, the active cell. One query runs at a time per tab; starting a run in another cell of the same tab, or pressing `Stop`, ends the previous one.
 
+The `Logs` and `Metrics` views and the resource meters in the progress line belong to the cell whose result they describe: each cell keeps its own selection and its own meters, and the shared toggles show what the active cell produced. Switching cells brings that cell's own logs, metrics and meters back.
+
 ## Text cells {#text-cells}
 
 A text cell holds Markdown. While you are editing it, the text area shows the source with its markers highlighted — headings, emphasis, code spans, links, list bullets and block quotes are colored, but not rendered away — so what you edit is always the source. The text area grows with its content.
