@@ -138,6 +138,10 @@ private:
 /// Fiber local data is destroyed in Fiber destructor.
 /// Implementation is similar to boost::fiber::fiber_specific_ptr
 /// (we cannot use it because we don't use boost::fiber API.
+///
+/// The per-fiber slot uses type`T` alone, so every `FiberLocal<T>` object with the same `T` aliases the same slot.
+/// This is intentional for `thread_local` instances of one logical variable: a fiber suspended on one thread and
+/// resumed on another goes through different `FiberLocal` objects but must find the same data.
 template <typename T>
 class FiberLocal
 {

@@ -71,7 +71,7 @@ for async_send in 0 1; do
         --async_socket_for_remote=1 \
         --query "select * from remote('127.0.0.2', system, one) format Null"
 
-    poll_spans "$(trace_counts_query "$trace_id")" "1 1 1" || continue
+    poll_spans "$(trace_counts_query "$trace_id")" "1 1 1" || exit 1
 
     ${CLICKHOUSE_CLIENT} -q "
         with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
@@ -125,7 +125,7 @@ for async_send in 0 1; do
         from system.opentelemetry_span_log
         where finish_date >= yesterday() and trace_id = t
     "
-    poll_spans "$sampled_counts_query" "2 1" || continue
+    poll_spans "$sampled_counts_query" "2 1" || exit 1
 
     ${CLICKHOUSE_CLIENT} -q "
         with (select any(trace_id) from system.opentelemetry_span_log
@@ -179,6 +179,7 @@ poll_spans "
     select countIf(operation_name = 'RemoteQueryExecutorReadContext')
     from system.opentelemetry_span_log
     where finish_date >= yesterday() and trace_id = t" "1" \
-&& echo "task span emitted on cancellation: OK"
+|| exit 1
+echo "task span emitted on cancellation: OK"
 
 ${CLICKHOUSE_CLIENT} -q "select 'server is alive: OK'"
