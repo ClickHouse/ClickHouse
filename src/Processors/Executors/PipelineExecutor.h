@@ -10,6 +10,7 @@
 #include <Common/AllocatorWithMemoryTracking.h>
 
 #include <functional>
+#include <mutex>
 #include <queue>
 #include <memory>
 
@@ -134,6 +135,9 @@ private:
     ReadProgressCallbackPtr read_progress_callback;
 
     std::function<void()> finalize_callback;
+
+    /// Serializes external `cancel` calls with final progress collection.
+    std::mutex cancel_mutex;
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new

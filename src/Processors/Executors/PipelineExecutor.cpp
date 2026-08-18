@@ -179,6 +179,10 @@ void PipelineExecutor::cancel(ExecutionStatus reason)
     tryUpdateExecutionStatus(ExecutionStatus::Executing, reason);
     finish();
 
+    /// `cancel` may be called from another thread while the executor thread is
+    /// entering `finalizeExecution`. Keep the synchronous `onCancel` calls and
+    /// their remote draining separate from the final progress collection.
+    std::lock_guard lock(cancel_mutex);
     graph->cancel(toCancelReason(reason));
 
     /// After `graph->cancel`, `onCancel` has been called on all processors synchronously.
@@ -336,6 +340,11 @@ void PipelineExecutor::finalizeExecution()
 
     if (!is_cancelled && !all_processors_finished)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline stuck. Current state:\n{}\n{}", dumpPipeline(), tasks.dump());
+
+    /// Serialize final progress collection with an external `cancel`. The latter
+    /// synchronously invokes `onCancel` and can drain late `Progress` / `ProfileInfo`
+    /// packets into `ISource::read_progress`.
+    std::lock_guard lock(cancel_mutex);
 
     /// Ensure remote source processors' onCancel() handlers have run before collecting progress.
     /// For cancelled pipelines, `graph->cancel` was already called in `cancel`.
