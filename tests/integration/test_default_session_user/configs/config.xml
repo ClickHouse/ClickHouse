@@ -1,5 +1,6 @@
 <clickhouse>
     <default_session_user>global_default_user</default_session_user>
+    <auth_use_forwarded_address>true</auth_use_forwarded_address>
 
     <!-- gRPC is not a composable protocol, so only the global setting applies to it. -->
     <grpc_port>9100</grpc_port>

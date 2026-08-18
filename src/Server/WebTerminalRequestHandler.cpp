@@ -609,7 +609,23 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     try
     {
-        session->authenticate(BasicCredentials(auth_user, auth_password), request.clientAddress());
+        /// Keep the audit information and authentication address consistent with
+        /// ordinary HTTP authentication. In particular, when
+        /// `auth_use_forwarded_address` is enabled, use the trusted final entry
+        /// of `X-Forwarded-For` rather than the reverse proxy address.
+        session->setHTTPClientInfo(request);
+        const auto & client_info = session->getClientInfo();
+        const auto forwarded_address = client_info.getLastForwardedFor();
+        const bool use_forwarded_address = server.context()->getConfigRef().getBool("auth_use_forwarded_address", false);
+        if (use_forwarded_address && !client_info.forwarded_for.empty() && !forwarded_address)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Invalid address in `X-Forwarded-For` HTTP header: expected an IP literal with an optional numeric port");
+
+        const auto client_address = forwarded_address && use_forwarded_address
+            ? *forwarded_address
+            : request.clientAddress();
+        session->authenticate(BasicCredentials(auth_user, auth_password), client_address);
     }
     catch (...)
     {

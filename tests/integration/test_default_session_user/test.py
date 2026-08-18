@@ -475,9 +475,9 @@ def test_interserver_connections_do_not_use_default_session_user():
     assert node1.query("SELECT hostName(), currentUser() FROM clusterAllReplicas('secret_cluster', system.one) ORDER BY hostName()") == "node1\tdefault\nnode2\tdefault\n"
 
 
-def ws_handshake(sock, host, origin):
+def ws_handshake(sock, host, origin, headers=None):
     key = base64.b64encode(secrets.token_bytes(16)).decode()
-    headers = [
+    request_headers = [
         "GET /webterminal HTTP/1.1",
         f"Host: {host}",
         "Upgrade: websocket",
@@ -486,7 +486,8 @@ def ws_handshake(sock, host, origin):
         "Sec-WebSocket-Version: 13",
         f"Origin: {origin}",
     ]
-    sock.sendall(("\r\n".join(headers) + "\r\n\r\n").encode())
+    request_headers.extend(headers or [])
+    sock.sendall(("\r\n".join(request_headers) + "\r\n\r\n").encode())
     response = b""
     while b"\r\n\r\n" not in response:
         chunk = sock.recv(4096)
@@ -541,11 +542,11 @@ def ws_read_opcode(sock, timeout=15.0):
     return opcode
 
 
-def webterminal_auth_opcode(port, auth_message):
+def webterminal_auth_opcode(port, auth_message, headers=None):
     host = f"{node1.ip_address}:{port}"
     sock = socket.create_connection((node1.ip_address, port), timeout=10)
     try:
-        response = ws_handshake(sock, host, origin=f"http://{host}")
+        response = ws_handshake(sock, host, origin=f"http://{host}", headers=headers)
         assert response.startswith(b"HTTP/1.1 101"), response
         ws_send_text(sock, auth_message)
         return ws_read_opcode(sock)
@@ -567,6 +568,30 @@ def test_webterminal_default_session_user():
     with assert_login_success("explicit_user", "HTTP"):
         opcode = webterminal_auth_opcode(8125, json.dumps({"type": "auth", "user": "explicit_user", "password": ""}))
         assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+
+
+def test_webterminal_uses_forwarded_address_for_authentication():
+    # The web terminal authenticates after its WebSocket upgrade. It must retain
+    # the HTTP client information so `auth_use_forwarded_address` applies to the
+    # authentication audit record, just as it does for ordinary HTTP requests.
+    forwarded_address = "203.0.113.42"
+    count_before = int(node1.query(
+        "SELECT count() FROM system.session_log "
+        "WHERE type = 'LoginSuccess' AND user = 'proto_webterminal_user' AND interface = 'HTTP' "
+        f"AND client_address = toIPv6('{forwarded_address}')"))
+
+    opcode = webterminal_auth_opcode(
+        8125,
+        json.dumps({"type": "auth", "password": ""}),
+        headers=[f"X-Forwarded-For: {forwarded_address}"],
+    )
+    assert opcode == 0x02, f"Expected PTY data after successful auth, got opcode={opcode}"
+
+    node1.query("SYSTEM FLUSH LOGS session_log")
+    assert int(node1.query(
+        "SELECT count() FROM system.session_log "
+        "WHERE type = 'LoginSuccess' AND user = 'proto_webterminal_user' AND interface = 'HTTP' "
+        f"AND client_address = toIPv6('{forwarded_address}')")) > count_before
 
 
 def test_custom_webterminal_rule_default_session_user():
