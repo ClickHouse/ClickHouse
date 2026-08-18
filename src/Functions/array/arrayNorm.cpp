@@ -163,6 +163,8 @@ MULTITARGET_FUNCTION_X86_V4(
             ResultType partial_results[unroll_count]{};
             size_t i = 0;
             const size_t unrolled_end = count / unroll_count * unroll_count;
+            /// Keep this outer loop scalar: `clang-22` otherwise vectorizes it into a slow strided gather instead of letting the unrolled inner loop SLP-vectorize into contiguous loads (worst for `Linf`/`BFloat16`).
+            _Pragma("clang loop vectorize(disable)")
             for (; i < unrolled_end; i += unroll_count)
                 for (size_t s = 0; s < unroll_count; ++s)
                     partial_results[s] = Kernel::template accumulate<ResultType>(partial_results[s], static_cast<ResultType>(row_data[i + s]), params);

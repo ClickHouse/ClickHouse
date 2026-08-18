@@ -27,8 +27,10 @@ class WriteBufferFromVectorImpl : public WriteBuffer
 {
 public:
     using ValueType = typename VectorType::value_type;
-    explicit WriteBufferFromVectorImpl(VectorType & vector_)
-        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_)
+    /// `max_growth_step_` (in elements, 0 = pure doubling) caps how much the backing vector grows at
+    /// once: beyond that increment it grows by fixed steps instead of doubling, bounding over-allocation.
+    explicit WriteBufferFromVectorImpl(VectorType & vector_, size_t max_growth_step_ = 0)
+        : WriteBuffer(reinterpret_cast<Position>(vector_.data()), vector_.size()), vector(vector_), max_growth_step(max_growth_step_)
     {
         if (vector.empty())
         {
@@ -38,14 +40,14 @@ public:
     }
 
     /// Append to vector instead of rewrite.
-    WriteBufferFromVectorImpl(VectorType & vector_, AppendModeTag)
-        : WriteBuffer(nullptr, 0), vector(vector_)
+    WriteBufferFromVectorImpl(VectorType & vector_, AppendModeTag, size_t max_growth_step_ = 0)
+        : WriteBuffer(nullptr, 0), vector(vector_), max_growth_step(max_growth_step_)
     {
         size_t old_size = vector.size();
         size_t size = (old_size < initial_size) ? initial_size
                                                 : ((old_size < vector.capacity()) ? vector.capacity()
-                                                                                  : vector.capacity() * size_multiplier);
-        vector.resize(size);
+                                                                                  : grownSize(vector.capacity()));
+        growTo(size);
         set(reinterpret_cast<Position>(vector.data() + old_size), (size - old_size) * sizeof(typename VectorType::value_type));
     }
 
@@ -86,13 +88,41 @@ private:
         size_t pos_offset = pos - reinterpret_cast<Position>(vector.data());
         if (pos_offset == old_size)
         {
-            vector.resize(old_size * size_multiplier);
+            growTo(grownSize(old_size));
         }
         internal_buffer = Buffer(reinterpret_cast<Position>(vector.data() + pos_offset), reinterpret_cast<Position>(vector.data() + vector.size()));
         working_buffer = internal_buffer;
     }
 
+    /// Grow by doubling, but never by more than `max_growth_step` at once (0 = pure doubling).
+    /// Bounds over-allocation for large buffers, e.g. a 512 MiB buffer becomes 512 MiB + step, not 1 GiB.
+    size_t grownSize(size_t old_size) const
+    {
+        size_t new_size = old_size * size_multiplier;
+        if (max_growth_step != 0 && new_size - old_size > max_growth_step)
+            new_size = old_size + max_growth_step;
+        return new_size;
+    }
+
+    /// Resize to exactly `new_size` when capping is on: `PODArray::resize` rounds the requested size up
+    /// to the next power of two (via `reserve`), which would undo the cap. `resize_exact` allocates
+    /// exactly. Types without `resize_exact` (`std::string`/`std::vector`) don't pow2-round, so plain
+    /// `resize` is fine there.
+    void growTo(size_t new_size)
+    {
+        if constexpr (requires { vector.resize_exact(new_size); })
+        {
+            if (max_growth_step != 0)
+            {
+                vector.resize_exact(new_size);
+                return;
+            }
+        }
+        vector.resize(new_size);
+    }
+
     VectorType & vector;
+    size_t max_growth_step = 0;
 
     static constexpr size_t initial_size = 32;
     static constexpr size_t size_multiplier = 2;
