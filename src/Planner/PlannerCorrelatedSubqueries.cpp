@@ -623,11 +623,7 @@ QueryPlan buildLogicalJoin(
         SortingStep::Settings(settings));
     result_join->setStepDescription("JOIN to generate result stream");
     makeInternalDecorrelationJoinUnbounded(*result_join);
-    /// The subquery's totals and extremes are not part of the value it returns, but this join would
-    /// propagate them from either input and they would surface as the OUTER query's totals. Record the
-    /// carrier side here, the one place where the two inputs are known unambiguously, so the physical
-    /// join can drop them from that side only. This is set on the result join only: the inner CROSS join
-    /// built during decorrelation does not produce the subquery's result stream.
+    /// The result join only: the inner CROSS join does not produce the subquery's result stream.
     result_join->setDecorrelatedSubquerySide(decorrelated_subquery_side);
 
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
