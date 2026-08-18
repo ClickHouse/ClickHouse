@@ -119,9 +119,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
-            {"query_plan_convert_outer_join_to_inner_join_by_join_predicates", false, true, "Allow to convert `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
-            {"query_plan_promote_planner_only_not_null_filters", false, true, "Allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters."},
-            {"query_plan_max_selectivity_for_promoting_not_null_filters", 0.5, 0.5, "The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter."}
+            {"query_plan_convert_outer_join_to_inner_join_by_join_predicates", false, true, "New setting to control converting `OUTER JOIN` to `INNER JOIN` if another `JOIN` after `OUTER JOIN` always filters default values. Only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled."},
+            {"query_plan_promote_planner_only_not_null_filters", false, true, "New setting to allow `col IS NOT NULL` filters derived by the planner to be promoted to executable filters."},
+            {"query_plan_max_selectivity_for_promoting_not_null_filters", 0.5, 0.5, "New setting to control the maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter."}
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

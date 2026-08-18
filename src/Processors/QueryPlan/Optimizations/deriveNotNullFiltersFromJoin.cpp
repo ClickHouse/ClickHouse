@@ -105,12 +105,16 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
     if (!join || node->children.size() != 2)
         return 0;
 
-    /// Ensure NOT NULL filters are derived once per join.
-    if (join->notNullFiltersDerived())
+    /// Ensure NOT NULL filter derivation is attempted once per join side.
+    auto [derived_left, derived_right] = join->notNullFiltersDerivedSides();
+    if (derived_left && derived_right)
         return 0;
-    join->setNotNullFiltersDerived(true);
 
     auto [drop_left, drop_right] = droppedSides(join->getJoinOperator());
+    drop_left = drop_left && !derived_left;
+    drop_right = drop_right && !derived_right;
+
+    join->setNotNullFiltersDerivedSides(derived_left || drop_left, derived_right || drop_right);
 
     /// A JoinStepLogicalLookup child must stay directly below the join.
     if (typeid_cast<JoinStepLogicalLookup *>(node->children[0]->step.get()))
