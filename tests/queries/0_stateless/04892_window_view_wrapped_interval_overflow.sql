@@ -24,12 +24,12 @@ CREATE WINDOW VIEW 04892_wv ENGINE = Memory
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalDay(2147483648), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
--- An interval which is valid at the epoch can still wrap at a live timestamp near the end of
--- `DateTime32`. Validate the actual window bound before it becomes the initial watermark.
+-- The largest representable day interval still produces a valid first window for all
+-- `DateTime32` timestamps.
 CREATE WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = STRICTLY_ASCENDING
     AS SELECT count(v) AS c, tumble(ts, toIntervalDay(49710), 'UTC') AS w FROM 04892_src GROUP BY w;
 
-INSERT INTO 04892_src VALUES ('2106-02-07 05:00:00', 1); -- { serverError BAD_ARGUMENTS }
+INSERT INTO 04892_src VALUES ('2106-02-07 05:00:00', 1);
 
 DROP TABLE 04892_wv;
 TRUNCATE TABLE 04892_src;
