@@ -78,10 +78,12 @@ SELECT 'unmeasured right side keeps orientation', count() > 0 FROM (
 
 SET param__internal_join_table_stat_hints = '{}';
 
--- A right side read through the primary index is only an upper bound: `id < 100` selects a whole
--- granule while `pad = 7` then drops nearly all of it, so its estimate exceeds its true row count
--- by far. Comparing the left bound against such an estimate must not flip the join, or the bigger
--- side would land on the build side.
+-- A right side read through the primary index is only an upper bound: `id < 10000` selects whole
+-- granules while `pad = 7` then drops nearly all of them, so its estimate exceeds its true row
+-- count by far. Comparing the left bound against such an estimate must not flip the join, or the
+-- bigger side would land on the build side. The range is wide enough that the estimate stays above
+-- the left bound of 400 at every `index_granularity` the runner randomizes, so a build that wrongly
+-- trusted it would always swap here.
 CREATE TABLE residual_04726 (id Int32, pad Int32) ENGINE = MergeTree ORDER BY id
     SETTINGS auto_statistics_types = '';
 INSERT INTO residual_04726 SELECT number, number % 100000 FROM numbers(100000);
@@ -97,7 +99,7 @@ SELECT 'overstated right side keeps orientation',
     SELECT count()
     FROM (SELECT * FROM dim_04726 JOIN nation_04726 USING (nation_id) WHERE name = '2') AS d
     JOIN residual_04726 ON d.id = residual_04726.id
-    WHERE residual_04726.id < 100 AND residual_04726.pad = 7
+    WHERE residual_04726.id < 10000 AND residual_04726.pad = 7
 ) WHERE explain ILIKE '%Join:%';
 
 DROP TABLE residual_04726;
