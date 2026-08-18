@@ -115,6 +115,13 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
             if (!ttl || ttl > current_time)
                 continue;
 
+            /// Postpone the part until its rows have been expired long enough. This
+            /// reproduces the merge_with_ttl_timeout cadence without any in-memory
+            /// state: after a TTL merge the resulting part only holds rows with a
+            /// later TTL, so its ttl moves forward by at least the same interval.
+            if (min_ttl_age && current_time - ttl < min_ttl_age)
+                continue;
+
             centers.emplace_back(range, part, ttl);
         }
     }
@@ -192,10 +199,12 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(
 ITTLMergeSelector::ITTLMergeSelector(
     const PartitionIdToTTLs * merge_due_times_,
     time_t current_time_,
-    size_t max_parts_to_merge_at_once_)
+    size_t max_parts_to_merge_at_once_,
+    time_t min_ttl_age_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
     , max_parts_to_merge_at_once(max_parts_to_merge_at_once_)
+    , min_ttl_age(min_ttl_age_)
 {
 }
 
@@ -236,8 +245,8 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
-TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, time_t min_ttl_age_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_, /*max_parts_to_merge_at_once_=*/0, min_ttl_age_)
 {
 }
 

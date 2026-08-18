@@ -1874,6 +1874,17 @@ Compress in memory values of index granularity if it is possible
     DECLARE(Int64, merge_with_ttl_timeout, 3600 * 4, R"(
 Minimum delay in seconds before repeating a merge with delete TTL.
 )", 0) \
+    DECLARE(Int64, min_ttl_age_to_delete_merge_seconds, 0, R"(
+Minimum time in seconds that rows must have been expired before the part holding
+them may be selected for a TTL delete merge.
+
+`merge_with_ttl_timeout` enforces its delay through in-memory state, so the delay
+is lost when the server restarts and is not shared between replicas. This setting
+derives the delay from the part's own TTL metadata instead, so it survives
+restarts and resolves identically on every replica.
+
+The default value `0` disables the check and preserves the existing behaviour.
+)", 0) \
     DECLARE(Int64, merge_with_recompression_ttl_timeout, 3600 * 4, R"(
 Minimum delay in seconds before repeating a merge with recompression TTL.
 )", 0) \
