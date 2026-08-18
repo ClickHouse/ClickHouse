@@ -6208,13 +6208,10 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         && !context->getSettingsRef()[Setting::distributed_plan_prefer_replicas_over_workers])
         unsupported_deferred_filters = false;
 #endif
-    /// An order already set here was installed before the plan was optimized (the old analyzer's
-    /// executeOrderOptimized builds a FinishSorting up front). optimizeReadInOrder skips a sorting that is
-    /// not Type::Full, so the exchange-safety check in findReadingStep never sees that one, and the scatter
-    /// tryMakeDistributedSorting puts under it may survive and feed it unsorted rows. Reads this pass asks
-    /// for in order are requested after bucketing, so they are unaffected.
-    return !query_info.input_order_info
-        && !unsupported_deferred_filters
+    /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
+    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
+    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
 }
