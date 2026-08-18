@@ -6,6 +6,7 @@
 
 #include <Common/CacheLine.h>
 #include <Common/NonblockingBoundedQueue.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/KeeperServer.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 
@@ -126,6 +127,13 @@ public:
 private:
     friend class KeeperRequestDispatcherTestAccessor;
 
+    /// Start and stop measuring how long a read waits for the write it depends on.
+    /// Initialize before publishing the read to a carrier; finalize when it stops waiting because
+    /// that write committed. Reads dropped by dropInFlightRequests never saw the write complete, so
+    /// they are not finalized and their span is discarded with the request.
+    static void initializeWaitForWriteSpan(const KeeperRequestForSession & read_request);
+    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -140,6 +148,9 @@ private:
         {
             if (!lock())
                 return false;
+            /// Must happen before the move, and before the read becomes visible to onCommit,
+            /// which finalizes this span.
+            initializeWaitForWriteSpan(request_for_session);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
