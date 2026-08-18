@@ -230,6 +230,7 @@ static struct InitFiu
     REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_cleanup_error) \
     ONCE(backup_fail_before_writing_metadata) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
