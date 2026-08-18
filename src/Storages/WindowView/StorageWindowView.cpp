@@ -1392,7 +1392,12 @@ StorageWindowView::StorageWindowView(
     target_table_id = has_inner_target_table ? StorageID(table_id_.database_name, generateTargetTableName(table_id_)) : to_table_id;
 
     if (is_proctime)
-        next_fire_signal = getWindowUpperBound(now());
+    {
+        /// Old metadata can contain an interval that no longer advances `DateTime32`.
+        /// Keep it attach-compatible; the first runtime advancement fails closed in
+        /// `threadFuncFireProc`.
+        next_fire_signal = validate_intervals ? getWindowUpperBound(now()) : now();
+    }
 
     std::exchange(has_inner_table, true);
     if (mode < LoadingStrictnessLevel::ATTACH)

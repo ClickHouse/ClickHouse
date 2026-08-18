@@ -54,6 +54,13 @@ ATTACH WINDOW VIEW 04892_wv ENGINE = Memory WATERMARK = INTERVAL 2147483648 DAY
 ATTACH WINDOW VIEW 04892_wv ENGINE = Memory ALLOWED_LATENESS INTERVAL 2147483648 DAY
     AS SELECT count(v) AS c, tumble(now(), toIntervalHour(1), 'UTC') AS w FROM 04892_src GROUP BY w; -- { serverError BAD_ARGUMENTS }
 
+-- Old processing-time view metadata with an unsafe window interval still attaches. Its scheduled
+-- advancement fails closed instead of making the server loop forever.
+ATTACH WINDOW VIEW 04892_wv ENGINE = Memory
+    AS SELECT count(v) AS c, tumble(now(), toIntervalDay(2147483648), 'UTC') AS w FROM 04892_src GROUP BY w;
+
+DROP TABLE 04892_wv;
+
 -- A bounded watermark that is representable at the epoch can still overflow when it is applied to
 -- a timestamp near the end of `DateTime32`. The view must not terminate the server while handling
 -- the invalid bound.
