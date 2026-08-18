@@ -27,8 +27,31 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 يسجل الجدول `system.query_log` نوعين من الاستعلامات:
 
-1. الاستعلامات الأولية التي شغّلها العميل مباشرة.
-2. الاستعلامات الفرعية التي بدأت بواسطة استعلامات أخرى (لتنفيذ الاستعلامات الموزعة). وبالنسبة إلى هذه الأنواع من الاستعلامات، تُعرض معلومات الاستعلامات الأصلية في الأعمدة `initial_*`.
+1. الاستعلامات الأولية (ذات المستوى الأعلى).
+2. الاستعلامات الفرعية التي بدأت بواسطة استعلامات أخرى، بما في ذلك استعلامات التنفيذ الموزع والاستعلامات الفرعية الداخلية، مثل تقييم العروض. وبالنسبة إلى هذه الاستعلامات، تُعرض معلومات الاستعلام الأولي الأصلي في الأعمدة `initial_*`.
+
+<Tip>
+  **رشّح الاستعلامات الأولية افتراضيًا**
+
+  عمومًا، أضف `is_initial_query = 1` كلما استعلمت من `system.query_log`. يستبعد هذا الاستعلامات الفرعية حتى لا تُحتسب خطوات المعالجة الفردية بشكل منفصل عن الاستعلام الأولي. ولا يعني هذا المرشح أن الاستعلام قُدّم بواسطة عميل، إذ يمكن أن يكون العمل الداخلي للخادوم أيضًا استعلامًا أوليًا.
+
+  استخدم `initial_query_id` بدلًا من ذلك عندما تحتاج إلى تتبع استعلام أولي مع الاستعلامات الفرعية التي تحتفظ بمعرّفه. تكون للاستعلام الأولي القيمة نفسها لكل من `initial_query_id` و`query_id`، بينما تحتفظ الاستعلامات الفرعية في السلسلة نفسها بقيمة `initial_query_id` الخاصة بالاستعلام الأولي ويكون لها `query_id` خاص بها. لا ترتبط كل الأعمال التي ينشئها استعلام أولي بهذه الطريقة: يمكن للعمل الذي يوزّعه الخادوم أن يبدأ سلسلة استعلام أولي جديدة بقيمة `initial_query_id` جديدة، كما هو الحال مع عمليات التوزيع البعيدة لـ [`QueryRunner`](/ar/reference/engines/table-engines/special/query-runner#cluster-mode).
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  إذا كان يمكن للاستعلامات الفرعية المترابطة أن تعمل على عقد أخرى، فاستعلم من `system.query_log` على كل عقدة، مثلًا باستخدام [`clusterAllReplicas`](/ar/reference/functions/table-functions/cluster).
+</Tip>
 
 ينشئ كل استعلام صفًا واحدًا أو صفين في جدول `query_log`، وذلك بحسب حالة الاستعلام (راجع العمود `type`):
 
@@ -75,19 +98,19 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `exception_code` ([Int32](/ar/reference/data-types/int-uint)) — رمز الاستثناء.
 * `exception` ([String](/ar/reference/data-types/string)) — رسالة الاستثناء.
 * `stack_trace` ([String](/ar/reference/data-types/string)) — تتبّع المكدس. تكون سلسلة فارغة إذا اكتمل الاستعلام بنجاح.
-* `is_initial_query` ([UInt8](/ar/reference/data-types/int-uint)) — نوع الاستعلام. القيم الممكنة: 1 — بدأ العميل الاستعلام، 0 — بدأ هذا الاستعلامَ استعلامٌ آخر كجزء من التنفيذ الموزّع للاستعلامات.
+* `is_initial_query` ([UInt8](/ar/reference/data-types/int-uint)) — يشير إلى ما إذا كان الاستعلام أوليًا. القيم الممكنة: 1 — استعلام أولي (من المستوى الأعلى)، 0 — استعلام فرعي بدأه استعلام آخر، بما في ذلك استعلامات التنفيذ الموزّع والاستعلامات الفرعية الداخلية.
 * `connection_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP للعميل الذي أُنشئ منه الاتصال. عند الاتصال عبر proxy، سيكون هذا عنوان الـ proxy.
 * `connection_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُنشئ منه الاتصال. عند الاتصال عبر proxy، سيكون هذا منفذ الـ proxy.
 * `user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي بدأ الاستعلام الحالي.
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام.
 * `address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي استُخدم لإجراء الاستعلام. عند الاتصال عبر proxy وعند تعيين `auth_use_forwarded_address`، سيكون هذا عنوان العميل بدلًا من الـ proxy.
 * `port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي استُخدم لإجراء الاستعلام. عند الاتصال عبر proxy وعند تعيين `auth_use_forwarded_address`، سيكون هذا منفذ العميل بدلًا من الـ proxy.
-* `initial_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي شغّل الاستعلام الأولي (للتنفيذ الموزّع للاستعلامات).
-* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الأولي (للتنفيذ الموزّع للاستعلامات).
-* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأب.
-* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي استُخدم لإجراء الاستعلام الأب.
-* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي (للتنفيذ الموزّع للاستعلامات).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي بدقة الميكروثانية (للتنفيذ الموزّع للاستعلامات).
+* `initial_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي شغّل الاستعلام الأولي في سلسلة الاستعلامات نفسها.
+* `initial_query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام الأولي في سلسلة الاستعلامات نفسها.
+* `initial_address` ([IPv6](/ar/reference/data-types/ipv6)) — عنوان IP الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلامات نفسها.
+* `initial_port` ([UInt16](/ar/reference/data-types/int-uint)) — منفذ العميل الذي أُطلق منه الاستعلام الأولي في سلسلة الاستعلامات نفسها.
+* `initial_query_start_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلامات نفسها.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت بدء الاستعلام الأولي في سلسلة الاستعلامات نفسها، بدقة الميكروثانية.
 * `authenticated_user` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم المستخدم الذي تمت المصادقة عليه في الجلسة.
 * `interface` ([UInt8](/ar/reference/data-types/int-uint)) — الواجهة التي بدأ منها الاستعلام. القيم الممكنة: 1 — TCP، 2 — HTTP.
 * `is_secure` ([UInt8](/ar/reference/data-types/int-uint)) — علامة تشير إلى ما إذا كان الاستعلام قد نُفِّذ عبر واجهة آمنة.
@@ -150,7 +173,13 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 **مثال بسيط**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text
