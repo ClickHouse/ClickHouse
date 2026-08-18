@@ -63,7 +63,7 @@ ClickHouse autorise des types différents dans les parties gauche et droite de l
 Dans ce cas, il convertit la valeur du côté droit vers le type du côté gauche, comme si la fonction [accurateCastOrNull](/fr/reference/functions/regular-functions/type-conversion-functions#accurateCastOrNull) était appliquée au côté droit.
 
 Cela signifie que le type de données devient [Nullable](/fr/reference/data-types/nullable) et, si la conversion
-ne peut pas être effectuée, renvoie [NULL](/fr/reference/settings/formats#input_format_null_as_default).
+ne peut pas être effectuée, renvoie [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default).
 
 **Exemple**
 
@@ -127,7 +127,7 @@ Une sous-requête dans la clause `IN` est toujours exécutée une seule fois sur
   ## Traitement des NULL
 </div>
 
-Lors du traitement des requêtes, l’opérateur `IN` considère que le résultat d’une opération avec [NULL](/fr/reference/settings/formats#input_format_null_as_default) est toujours égal à `0`, que `NULL` se trouve à droite ou à gauche de l’opérateur. Les valeurs `NULL` ne sont incluses dans aucun ensemble de données, ne correspondent pas les unes aux autres et ne peuvent pas être comparées si [transform&#95;null&#95;in = 0](/fr/reference/settings/session-settings#transform_null_in).
+Lors du traitement des requêtes, l’opérateur `IN` considère que le résultat d’une opération avec [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default) est toujours égal à `0`, que `NULL` se trouve à droite ou à gauche de l’opérateur. Les valeurs `NULL` ne sont incluses dans aucun ensemble de données, ne correspondent pas les unes aux autres et ne peuvent pas être comparées si [transform&#95;null&#95;in = 0](/fr/reference/settings/session-settings/other#transform_null_in).
 
 Voici un exemple avec la table `t_null` :
 
@@ -270,7 +270,7 @@ Il peut également être judicieux de spécifier une table locale dans la clause
   ### Sous-requêtes distribuées et max_rows_in_set
 </div>
 
-Vous pouvez utiliser [`max_rows_in_set`](/fr/reference/settings/session-settings#max_rows_in_set) et [`max_bytes_in_set`](/fr/reference/settings/session-settings#max_bytes_in_set) pour contrôler la quantité de données transférées lors de requêtes distribuées.
+Vous pouvez utiliser [`max_rows_in_set`](/fr/reference/settings/session-settings/max-rows#max_rows_in_set) et [`max_bytes_in_set`](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_set) pour contrôler la quantité de données transférées lors de requêtes distribuées.
 
 C&#39;est particulièrement important si la requête `GLOBAL IN` renvoie une grande quantité de données. Prenons l&#39;instruction SQL suivante :
 
@@ -278,7 +278,7 @@ C&#39;est particulièrement important si la requête `GLOBAL IN` renvoie une gra
 SELECT * FROM table1 WHERE col1 GLOBAL IN (SELECT col1 FROM table2 WHERE <some_predicate>)
 ```
 
-Si `some_predicate` n’est pas assez sélectif, il renverra un volume important de données, ce qui entraînera des problèmes de performances. Dans ce cas, il est judicieux de limiter le volume de données transférées via le réseau. Notez également que [`set_overflow_mode`](/fr/reference/settings/session-settings#set_overflow_mode) est défini sur `throw` (par défaut), ce qui signifie qu’une exception est levée lorsque ces seuils sont atteints.
+Si `some_predicate` n’est pas assez sélectif, il renverra un volume important de données, ce qui entraînera des problèmes de performances. Dans ce cas, il est judicieux de limiter le volume de données transférées via le réseau. Notez également que [`set_overflow_mode`](/fr/reference/settings/session-settings/other#set_overflow_mode) est défini sur `throw` (par défaut), ce qui signifie qu’une exception est levée lorsque ces seuils sont atteints.
 
 <div id="distributed-subqueries-and-max_parallel_replicas">
   ### Sous-requêtes distribuées et max_parallel_replicas
@@ -286,7 +286,7 @@ Si `some_predicate` n’est pas assez sélectif, il renverra un volume important
 
 Lorsque [max&#95;parallel&#95;replicas](#distributed-subqueries-and-max_parallel_replicas) est supérieur à 1, les requêtes distribuées subissent des transformations supplémentaires.
 
-Par exemple :
+Par exemple :
 
 ```sql
 SELECT CounterID, count() FROM distributed_table_1 WHERE UserID IN (SELECT UserID FROM local_table_2 WHERE CounterID < 100)
@@ -308,4 +308,4 @@ Par conséquent, l’ajout du paramètre [max&#95;parallel&#95;replicas](#distri
 
 Une solution de contournement, si `local_table_2` ne remplit pas ces conditions, consiste à utiliser `GLOBAL IN` ou `GLOBAL JOIN`.
 
-Si une table n’a pas de clé d’échantillonnage, des options plus souples pour [parallel&#95;replicas&#95;custom&#95;key](/fr/reference/settings/session-settings#parallel_replicas_custom_key) peuvent être utilisées, ce qui peut produire un comportement différent et plus optimal.
+Si une table n’a pas de clé d’échantillonnage, des options plus souples pour [parallel&#95;replicas&#95;custom&#95;key](/fr/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) peuvent être utilisées, ce qui peut produire un comportement différent et plus optimal.

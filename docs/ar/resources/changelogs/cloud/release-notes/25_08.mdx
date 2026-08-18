@@ -1,7 +1,7 @@
 ---
 slug: /changelogs/25.8
 title: 'سجل تغييرات v25.8 لـ Cloud'
-description: 'سجل تغييرات الإصدار السريع لـ v25.8'
+description: 'سجل التغييرات لـ v25.8'
 keywords: ['سجل التغييرات', 'Cloud']
 sidebarTitle: '25.8'
 doc_type: 'changelog'
@@ -16,7 +16,7 @@ doc_type: 'changelog'
 </div>
 
 * تعطيل إحاطة الأعداد الصحيحة ذات 64 بت بعلامات اقتباس في تنسيقات JSON افتراضيًا. [#74079](https://github.com/ClickHouse/ClickHouse/pull/74079) ([Pavel Kruglov](https://github.com/Avogar)).
-* استنتاج `Array(Dynamic)` بدلًا من `Tuple` غير المسمّى لمصفوفات القيم ذات الأنواع المختلفة في JSON. لاستخدام السلوك السابق، عطّل الإعداد [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/ar/reference/settings/formats#input_format_json_infer_array_of_dynamic_from_array_of_different_types). [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
+* استنتاج `Array(Dynamic)` بدلًا من `Tuple` غير المسمّى لمصفوفات القيم ذات الأنواع المختلفة في JSON. لاستخدام السلوك السابق، عطّل الإعداد [`input_format_json_infer_array_of_dynamic_from_array_of_different_types`](/ar/reference/settings/formats/input-format#input_format_json_infer_array_of_dynamic_from_array_of_different_types). [#80859](https://github.com/ClickHouse/ClickHouse/pull/80859) ([Pavel Kruglov](https://github.com/Avogar)).
 * كتابة القيم من النوع `Enum` بصيغة `BYTE_ARRAY` مع النوع المنطقي `ENUM` في تنسيق الإخراج Parquet افتراضيًا. [#84169](https://github.com/ClickHouse/ClickHouse/pull/84169) ([Pavel Kruglov](https://github.com/Avogar)).
 
 <div id="storage-and-partitioning">
@@ -24,7 +24,7 @@ doc_type: 'changelog'
 </div>
 
 * إضافة دعم لعمليات الكتابة بأسلوب تقسيم Hive، مع إعادة هيكلة آلية تنفيذ القراءة (لم تعد أعمدة تقسيم Hive افتراضية). [#76802](https://github.com/ClickHouse/ClickHouse/pull/76802) ([Arthur Passos](https://github.com/arthurpassos)).
-* تفعيل إعداد MergeTree [`write_marks_for_substreams_in_compact_parts`](/ar/reference/settings/merge-tree-settings#write_marks_for_substreams_in_compact_parts) افتراضيًا. يحسّن ذلك بشكل كبير أداء قراءة الأعمدة الفرعية من أجزاء Compact المُنشأة حديثًا. ولن تتمكن الخوادم التي يقل إصدارها عن 25.5 من قراءة أجزاء Compact الجديدة. [#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)).
+* تفعيل إعداد MergeTree [`write_marks_for_substreams_in_compact_parts`](/ar/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts) افتراضيًا. يحسّن ذلك بشكل كبير أداء قراءة الأعمدة الفرعية من أجزاء Compact المُنشأة حديثًا. ولن تتمكن الخوادم التي يقل إصدارها عن 25.5 من قراءة أجزاء Compact الجديدة. [#84171](https://github.com/ClickHouse/ClickHouse/pull/84171) ([Pavel Kruglov](https://github.com/Avogar)).
 * منع `RENAME COLUMN` أو `DROP COLUMN` عند تضمين أعمدة مُدرجة صراحةً للتجميع في SummingMergeTree. يُغلق [#81836](https://github.com/ClickHouse/ClickHouse/issues/81836). [#82821](https://github.com/ClickHouse/ClickHouse/pull/82821) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
 
 <div id="function-enhancements">
@@ -45,8 +45,8 @@ doc_type: 'changelog'
 </div>
 
 * سابقًا، لم تكن استعلامات `BACKUP` وعمليات الدمج والتعديلات تستخدم محددات المعدل على مستوى الخادم لحركة المرور المحلية (`max_local_read_bandwidth_for_server` و `max_local_write_bandwidth_for_server`) والبعيدة (`max_remote_read_network_bandwidth_for_server` و `max_remote_write_network_bandwidth_for_server`)؛ بل كانت تُقيَّد فقط بواسطة إعدادات خادم مخصصة (`max_backup_bandwidth_for_server` و `max_mutations_bandwidth_for_server` و `max_merges_bandwidth_for_server`). أما الآن، فهي تستخدم كلا النوعين من محددات المعدل في الوقت نفسه. [#81753](https://github.com/ClickHouse/ClickHouse/pull/81753) ([Sergei Trifonov](https://github.com/serxa)).
-* أُضيف إعداد جديد [`cluster_function_process_archive_on_multiple_nodes`](/ar/reference/settings/session-settings#cluster_function_process_archive_on_multiple_nodes) يزيد أداء معالجة الأرشيفات في دوال العنقود عند ضبطه على true (وهو الإعداد الافتراضي). وينبغي ضبطه على `false` للتوافق وتجنب الأخطاء أثناء الترقية إلى 25.7+ عند استخدام دوال العنقود مع الأرشيفات في الإصدارات الأقدم. [#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* كانت القيمة الافتراضية السابقة لـ [`concurrent_threads_scheduler`](/ar/reference/settings/server-settings/settings#concurrent_threads_scheduler) هي `round_robin`، وقد تبيّن أنها غير عادلة عند وجود عدد كبير من الاستعلامات أحادية الخيط (مثل `INSERT`). ويجعل هذا التغيير المجدول `fair_round_robin`، وهو بديل أكثر أمانًا، الخيار الافتراضي. [#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
+* أُضيف إعداد جديد [`cluster_function_process_archive_on_multiple_nodes`](/ar/reference/settings/session-settings/cluster#cluster_function_process_archive_on_multiple_nodes) يزيد أداء معالجة الأرشيفات في دوال العنقود عند ضبطه على true (وهو الإعداد الافتراضي). وينبغي ضبطه على `false` للتوافق وتجنب الأخطاء أثناء الترقية إلى 25.7+ عند استخدام دوال العنقود مع الأرشيفات في الإصدارات الأقدم. [#82355](https://github.com/ClickHouse/ClickHouse/pull/82355) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* كانت القيمة الافتراضية السابقة لـ [`concurrent_threads_scheduler`](/ar/reference/settings/server-settings/settings/concurrent-threads#concurrent_threads_scheduler) هي `round_robin`، وقد تبيّن أنها غير عادلة عند وجود عدد كبير من الاستعلامات أحادية الخيط (مثل `INSERT`). ويجعل هذا التغيير المجدول `fair_round_robin`، وهو بديل أكثر أمانًا، الخيار الافتراضي. [#84747](https://github.com/ClickHouse/ClickHouse/pull/84747) ([Sergei Trifonov](https://github.com/serxa)).
 * لا يُفعَّل التجسيد الكسول إلا مع المحلل، لتجنّب الحاجة إلى صيانته من دونه، إذ قد تظهر بعض المشكلات في هذه الحالة (على سبيل المثال، عند استخدام `indexHint()` في الشروط). [#83791](https://github.com/ClickHouse/ClickHouse/pull/83791) ([Igor Nikonov](https://github.com/devcrafter)).
 
 <div id="schema-and-sql-syntax">
@@ -140,21 +140,21 @@ doc_type: 'changelog'
 
 * دعم الصيغة `DESCRIBE SELECT` بالإضافة إلى `DESCRIBE (SELECT ...)`. [#82947](https://github.com/ClickHouse/ClickHouse/pull/82947) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
 * دعم كتابة `USE DATABASE {name}`. [#81307](https://github.com/ClickHouse/ClickHouse/pull/81307) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
-* أُضيف دعم القراءة من الإسقاطات للنسخ المتماثلة المتوازية. وأُضيف إعداد جديد [`parallel_replicas_support_projection`](/ar/reference/settings/session-settings#parallel_replicas_support_projection) للتحكم في تفعيل دعم الإسقاطات. ولتبسيط التنفيذ، لا يُفعَّل دعم الإسقاطات إلا عند تفعيل `parallel_replicas_local_plan`. [#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
+* أُضيف دعم القراءة من الإسقاطات للنسخ المتماثلة المتوازية. وأُضيف إعداد جديد [`parallel_replicas_support_projection`](/ar/reference/settings/session-settings/parallel-replicas#parallel_replicas_support_projection) للتحكم في تفعيل دعم الإسقاطات. ولتبسيط التنفيذ، لا يُفعَّل دعم الإسقاطات إلا عند تفعيل `parallel_replicas_local_plan`. [#82807](https://github.com/ClickHouse/ClickHouse/pull/82807) ([zoomxi](https://github.com/zoomxi)).
 
 <div id="formats">
   ### التنسيقات
 </div>
 
-* أُضيف الإعداد [`format_schema_source`](/ar/reference/settings/formats#format_schema_source) الذي يحدّد مصدر `format_schema`. [#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
-* أُضيف `Hash` كتنسيق إخراج جديد. ويحسب قيمة hash واحدة لجميع الأعمدة والصفوف في النتيجة. وهذا مفيد لحساب &quot;بصمة&quot; للنتيجة، على سبيل المثال في حالات الاستخدام التي يشكّل فيها نقل البيانات عنق الزجاجة. مثال: `SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` يُرجع `e5f9e676db098fdb9530d2059d8c23ef`. [#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
+* أُضيف الإعداد [`format_schema_source`](/ar/reference/settings/formats/format-schema#format_schema_source) الذي يحدّد مصدر `format_schema`. [#80874](https://github.com/ClickHouse/ClickHouse/pull/80874) ([Tuan Pham Anh](https://github.com/tuanpach)).
+* أُضيف `Hash` كتنسيق الإخراج جديد. ويحسب قيمة hash واحدة لجميع الأعمدة والصفوف في النتيجة. وهذا مفيد لحساب &quot;بصمة&quot; للنتيجة، على سبيل المثال في حالات الاستخدام التي يشكّل فيها نقل البيانات عنق الزجاجة. مثال: `SELECT arrayJoin(['abc', 'def']), 42 FORMAT Hash` يُرجع `e5f9e676db098fdb9530d2059d8c23ef`. [#84607](https://github.com/ClickHouse/ClickHouse/pull/84607) ([Robert Schulze](https://github.com/rschu1ze)).
 
 <div id="server-configuration-and-workload-management">
   ### إعدادات الخادم وإدارة أعباء العمل
 </div>
 
-* يُفعّل إعداد الخادم [`cpu_slot_preemption`](/ar/reference/settings/server-settings/settings#cpu_slot_preemption) جدولة CPU الاستباقية لأعباء العمل، ويضمن تخصيصًا عادلًا وفق مبدأ max-min لوقت CPU بين أعباء العمل. كما أُضيفت إعدادات جديدة لعبء العمل للتحكم في استهلاك CPU: `max_cpus` و`max_cpu_share` و`max_burst_cpu_seconds`. [#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)).
-* أصبح إعداد عبء العمل [`max_waiting_queries`](/ar/reference/settings/server-settings/settings#max_waiting_queries) مدعومًا. ويمكن استخدامه لتقييد حجم قائمة انتظار الاستعلامات. وإذا جرى بلوغ الحد، فسيتم إنهاء جميع الاستعلامات اللاحقة بخطأ `SERVER_OVERLOADED`. [#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)).
+* يُفعّل إعداد الخادم [`cpu_slot_preemption`](/ar/reference/settings/server-settings/settings/cpu-slot#cpu_slot_preemption) جدولة CPU الاستباقية لأعباء العمل، ويضمن تخصيصًا عادلًا وفق مبدأ max-min لوقت CPU بين أعباء العمل. كما أُضيفت إعدادات جديدة لعبء العمل للتحكم في استهلاك CPU: `max_cpus` و`max_cpu_share` و`max_burst_cpu_seconds`. [#80879](https://github.com/ClickHouse/ClickHouse/pull/80879) ([Sergei Trifonov](https://github.com/serxa)).
+* أصبح إعداد عبء العمل [`max_waiting_queries`](/ar/reference/settings/server-settings/settings/max#max_waiting_queries) مدعومًا. ويمكن استخدامه لتقييد حجم قائمة انتظار الاستعلامات. وإذا جرى بلوغ الحد، فسيتم إنهاء جميع الاستعلامات اللاحقة بخطأ `SERVER_OVERLOADED`. [#81250](https://github.com/ClickHouse/ClickHouse/pull/81250) ([Oleg Doronin](https://github.com/dorooleg)).
 * إغلاق اتصال TCP بعد بلوغ العدد المُهيأ من الاستعلامات أو العتبة الزمنية المحددة. يحل [#68000](https://github.com/ClickHouse/ClickHouse/issues/68000). [#81472](https://github.com/ClickHouse/ClickHouse/pull/81472) ([Kenny Sun](https://github.com/hwabis)).
 
 <div id="cloud-storage">
@@ -206,7 +206,7 @@ doc_type: 'changelog'
 </div>
 
 * تحسين بسيط لمُعدِّل الدالة التجميعية `-If`. [#78454](https://github.com/ClickHouse/ClickHouse/pull/78454) ([李扬](https://github.com/taiyang-li)).
-* أُضيف منطق جديد (يتحكم فيه الإعداد [`enable_producing_buckets_out_of_order_in_aggregation`](/ar/reference/settings/session-settings#enable_producing_buckets_out_of_order_in_aggregation)، وهو مفعّل افتراضيًا) يتيح إرسال بعض الـ buckets خارج الترتيب أثناء التجميع الموفّر للذاكرة. وعندما تستغرق بعض buckets التجميع وقتًا أطول بكثير في الدمج مقارنةً بغيرها، يحسّن ذلك الأداء من خلال السماح للعقدة البادئة بدمج buckets ذات المعرّفات الأعلى في أثناء ذلك. والجانب السلبي هو احتمال زيادة استخدام الذاكرة (ومن المفترض ألا تكون الزيادة كبيرة). [#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)).
+* أُضيف منطق جديد (يتحكم فيه الإعداد [`enable_producing_buckets_out_of_order_in_aggregation`](/ar/reference/settings/session-settings/enable#enable_producing_buckets_out_of_order_in_aggregation)، وهو مفعّل افتراضيًا) يتيح إرسال بعض الـ buckets خارج الترتيب أثناء التجميع الموفّر للذاكرة. وعندما تستغرق بعض buckets التجميع وقتًا أطول بكثير في الدمج مقارنةً بغيرها، يحسّن ذلك الأداء من خلال السماح للعقدة البادئة بدمج buckets ذات المعرّفات الأعلى في أثناء ذلك. والجانب السلبي هو احتمال زيادة استخدام الذاكرة (ومن المفترض ألا تكون الزيادة كبيرة). [#80179](https://github.com/ClickHouse/ClickHouse/pull/80179) ([Nikita Taranov](https://github.com/nickitat)).
 * جعل مسار المعالجة بعد خطوة `TOTALS` متعدد الخيوط. [#80331](https://github.com/ClickHouse/ClickHouse/pull/80331) ([UnamedRus](https://github.com/UnamedRus)).
 * عندما لا يحتوي استعلام التجميع إلا على دالة `COUNT()` واحدة على عمود `NOT NULL`، يُضمَّن منطق التجميع بالكامل أثناء فحص جدول hash. وهذا يتجنب تخصيص أي حالة تجميع أو الاحتفاظ بها، مما يقلل بشكل كبير من استخدام الذاكرة والعبء على CPU. ويعالج هذا جزئيًا [#81982](https://github.com/ClickHouse/ClickHouse/issues/81982). [#82104](https://github.com/ClickHouse/ClickHouse/pull/82104) ([Amos Bird](https://github.com/amosbird)).
 * حساب المفتاح المتسلسل على مستوى الأعمدة عند التجميع حسب عدة أعمدة نصية أو رقمية. [#83884](https://github.com/ClickHouse/ClickHouse/pull/83884) ([李扬](https://github.com/taiyang-li)).
@@ -216,7 +216,7 @@ doc_type: 'changelog'
   ### تحسينات JOIN
 </div>
 
-* أُضيف الإعداد الجديد [`min_joined_block_size_rows`](/ar/reference/settings/session-settings#min_joined_block_size_rows) (مماثلًا لـ `min_joined_block_size_bytes`؛ وقيمته الافتراضية 65409) للتحكم في الحد الأدنى لحجم الكتلة (بعدد الصفوف) لكتل الإدخال والإخراج في JOIN (إذا كانت خوارزمية join تدعم ذلك). ستُدمج الكتل الصغيرة. [#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
+* أُضيف الإعداد الجديد [`min_joined_block_size_rows`](/ar/reference/settings/session-settings/min-joined#min_joined_block_size_rows) (مماثلًا لـ `min_joined_block_size_bytes`؛ وقيمته الافتراضية 65409) للتحكم في الحد الأدنى لحجم الكتلة (بعدد الصفوف) لكتل الإدخال والإخراج في JOIN (إذا كانت خوارزمية join تدعم ذلك). ستُدمج الكتل الصغيرة. [#81886](https://github.com/ClickHouse/ClickHouse/pull/81886) ([Nikita Taranov](https://github.com/nickitat)).
 * جرى تحسين أداء `HashJoin` عبر إزالة الحلقة الإضافية على hash maps في الحالة الشائعة التي يكون فيها هناك عمود مفتاح واحد فقط، كما أُزيلت أيضًا عمليات التحقق من `null_map` و `join_mask` عندما تكون دائمًا `true`/`false`. [#82308](https://github.com/ClickHouse/ClickHouse/pull/82308) ([Nikita Taranov](https://github.com/nickitat)).
 * طُبِّقت تحسينات `null_map` و `JoinMask` من [#82308](https://github.com/ClickHouse/ClickHouse/issues/82308) على حالة JOIN ذات الشروط المنفصلة المتعددة أيضًا. كما جرى تحسين بنية البيانات `KnownRowsHolder`. [#83041](https://github.com/ClickHouse/ClickHouse/pull/83041) ([Nikita Taranov](https://github.com/nickitat)).
 * استُخدم `std::vector<std::atomic_bool>` مباشرةً لأعلام join لتجنب حساب hash عند كل وصول إلى هذه الأعلام. [#83043](https://github.com/ClickHouse/ClickHouse/pull/83043) ([Nikita Taranov](https://github.com/nickitat)).
@@ -352,8 +352,8 @@ doc_type: 'changelog'
 
 * إتاحة إنشاء نسخ احتياطية لقواعد بيانات PostgreSQL وMySQL وDataLake. لن يحفظ النسخ الاحتياطي لمثل هذه قواعد البيانات سوى التعريف، دون البيانات الموجودة بداخلها. [#79982](https://github.com/ClickHouse/ClickHouse/pull/79982) ([Nikolay Degterinsky](https://github.com/evillique)).
 * ضبط جميع رسائل السجل الخاصة بكتابة ملفات النسخ الاحتياطي على TRACE. [#82907](https://github.com/ClickHouse/ClickHouse/pull/82907) ([Hans Krutzer](https://github.com/hkrutzer)).
-* إضافة [`backup_restore_s3_retry_initial_backoff_ms`](/ar/reference/settings/session-settings#backup_restore_s3_retry_initial_backoff_ms) و[`backup_restore_s3_retry_max_backoff_ms`](/ar/reference/settings/session-settings#backup_restore_s3_retry_max_backoff_ms) و[`backup_restore_s3_retry_jitter_factor`](/ar/reference/settings/session-settings#backup_restore_s3_retry_jitter_factor) لتهيئة استراتيجية backoff لإعادة المحاولة في S3 والمستخدمة أثناء عمليات النسخ الاحتياطي والاستعادة. [#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
-* إضافة إعداد جديد [`backup_slow_all_threads_after_retryable_s3_error`](/ar/reference/settings/session-settings#backup_slow_all_threads_after_retryable_s3_error) لتقليل الضغط على S3 أثناء موجات إعادة المحاولة الناتجة عن أخطاء مثل `SlowDown`، وذلك بإبطاء جميع الخيوط بمجرد رصد خطأ واحد قابل لإعادة المحاولة. [#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
+* إضافة [`backup_restore_s3_retry_initial_backoff_ms`](/ar/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_initial_backoff_ms) و[`backup_restore_s3_retry_max_backoff_ms`](/ar/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_max_backoff_ms) و[`backup_restore_s3_retry_jitter_factor`](/ar/reference/settings/session-settings/backup-restore#backup_restore_s3_retry_jitter_factor) لتهيئة استراتيجية backoff لإعادة المحاولة في S3 والمستخدمة أثناء عمليات النسخ الاحتياطي والاستعادة. [#84421](https://github.com/ClickHouse/ClickHouse/pull/84421) ([Julia Kartseva](https://github.com/jkartseva)).
+* إضافة إعداد جديد [`backup_slow_all_threads_after_retryable_s3_error`](/ar/reference/settings/session-settings/other#backup_slow_all_threads_after_retryable_s3_error) لتقليل الضغط على S3 أثناء موجات إعادة المحاولة الناتجة عن أخطاء مثل `SlowDown`، وذلك بإبطاء جميع الخيوط بمجرد رصد خطأ واحد قابل لإعادة المحاولة. [#84854](https://github.com/ClickHouse/ClickHouse/pull/84854) ([Julia Kartseva](https://github.com/jkartseva)).
 
 <div id="data-integrity-and-validation">
   ### سلامة البيانات والتحقق
@@ -374,7 +374,7 @@ doc_type: 'changelog'
 * دعم كتابة Iceberg بحيث يمكن قراءتها من pyiceberg. [#84466](https://github.com/ClickHouse/ClickHouse/pull/84466) ([scanhex12](https://github.com/scanhex12)).
 * إضافة snapshot version إلى محركات جداول بحيرة البيانات. [#84659](https://github.com/ClickHouse/ClickHouse/pull/84659) ([Pete Hampton](https://github.com/pjhampton)).
 * دعم كتابة ملف version-hint مع Iceberg. يغلق هذا [#85097](https://github.com/ClickHouse/ClickHouse/issues/85097). [#85130](https://github.com/ClickHouse/ClickHouse/pull/85130) ([scanhex12](https://github.com/scanhex12)).
-* دعم ملف `.metadata.json` المضغوط عبر الإعداد [`iceberg_metadata_compression_method`](/ar/reference/settings/session-settings#iceberg_metadata_compression_method). وهو يدعم جميع methods الضغط في ClickHouse. يغلق هذا [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895). [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
+* دعم ملف `.metadata.json` المضغوط عبر الإعداد [`iceberg_metadata_compression_method`](/ar/reference/settings/session-settings/iceberg-metadata#iceberg_metadata_compression_method). وهو يدعم جميع methods الضغط في ClickHouse. يغلق هذا [#84895](https://github.com/ClickHouse/ClickHouse/issues/84895). [#85196](https://github.com/ClickHouse/ClickHouse/pull/85196) ([scanhex12](https://github.com/scanhex12)).
 * تحسين استخدام الذاكرة لملفات الحذف الموضعي في Iceberg. فبدلاً من تحميل جميع بيانات ملف الحذف إلى الذاكرة، لا يُحتفَظ في RAM إلا بمجموعة الصفوف الحالية من ملفات حذف Parquet. ويؤدي ذلك إلى تقليل استهلاك الذاكرة بشكل ملحوظ عند العمل مع ملفات حذف موضعي كبيرة. [#85329](https://github.com/ClickHouse/ClickHouse/pull/85329) ([scanhex12](https://github.com/scanhex12)).
 * السماح بالتكرار غير المتزامن على الكائنات من جدول Iceberg من دون تخزين الكائنات لكل ملف بيانات على نحو صريح. [#85369](https://github.com/ClickHouse/ClickHouse/pull/85369) ([Daniil Ivanik](https://github.com/divanik)).
 * دعم عمليات الحذف بالتساوي في Iceberg. [#85843](https://github.com/ClickHouse/ClickHouse/pull/85843) ([Han Fei](https://github.com/hanfei1991)).
@@ -388,8 +388,8 @@ doc_type: 'changelog'
 * إصلاح قراءة البيانات المُقسَّمة إلى partition في table function ‏DeltaLakeCluster. في طلب السحب هذا، جرى رفع protocol version لدوال العنقود، مما يتيح إرسال معلومات إضافية من العقدة البادئة إلى replicas. وتتضمن هذه المعلومات الإضافية تعبير التحويل delta-kernel، اللازم لتحليل partition columns (وبعض الأمور الأخرى مستقبلًا، مثل generated columns، وما إلى ذلك). [#82132](https://github.com/ClickHouse/ClickHouse/pull/82132) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * أصبحت قاعدة البيانات Datalake الآن تعرض Exception أوضح. يُصلح [#81211](https://github.com/ClickHouse/ClickHouse/issues/81211). [#82304](https://github.com/ClickHouse/ClickHouse/pull/82304) ([alesapin](https://github.com/alesapin)).
 * تنفيذ Filtering الداخلي لـ `delta-kernel-rs` (الإحصاءات وpartition pruning) في وحدة التخزين `DeltaLake`. [#84006](https://github.com/ClickHouse/ClickHouse/pull/84006) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* إضافة إعداد [`delta_lake_enable_expression_visitor_logging`](/ar/reference/settings/session-settings#delta_lake_enable_expression_visitor_logging) لتعطيل سجلات expression visitor، لأنها قد تكون verbose جدًا حتى بالنسبة إلى log level الخاص بالاختبارات عند إجراء debugging. [#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
-* إضافة الإعداد [`delta_lake_snapshot_version`](/ar/reference/settings/session-settings#delta_lake_snapshot_version) للسماح بقراءة snapshot version محدد في محرك الجدول `DeltaLake`. [#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* إضافة إعداد [`delta_lake_enable_expression_visitor_logging`](/ar/reference/settings/session-settings/delta-lake#delta_lake_enable_expression_visitor_logging) لتعطيل سجلات expression visitor، لأنها قد تكون verbose جدًا حتى بالنسبة إلى log level الخاص بالاختبارات عند إجراء debugging. [#84315](https://github.com/ClickHouse/ClickHouse/pull/84315) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* إضافة الإعداد [`delta_lake_snapshot_version`](/ar/reference/settings/session-settings/delta-lake#delta_lake_snapshot_version) للسماح بقراءة snapshot version محدد في محرك الجدول `DeltaLake`. [#85295](https://github.com/ClickHouse/ClickHouse/pull/85295) ([Kseniia Sumarokova](https://github.com/kssenii)).
 
 <div id="data-lake-integration">
   ### تكامل بحيرة البيانات
@@ -483,7 +483,7 @@ doc_type: 'changelog'
 * ضبط قائمة انتظار خوادم TCP (64 افتراضيًا) استنادًا إلى `listen_backlog` (4096 افتراضيًا). [#82045](https://github.com/ClickHouse/ClickHouse/pull/82045) ([Azat Khuzhin](https://github.com/azat)).
 * إضافة إمكانية إعادة تحميل `max_local_read_bandwidth_for_server` و `max_local_write_bandwidth_for_server` أثناء التشغيل دون إعادة تشغيل الخادم. [#82083](https://github.com/ClickHouse/ClickHouse/pull/82083) ([Kai Zhu](https://github.com/nauu)).
 * تقديم الإعداد `enable_vector_similarity_index` الذي يجب تفعيله لاستخدام فهرس تشابه المتجهات. أما الإعداد الحالي `allow_experimental_vector_similarity_index` فأصبح الآن متقادِمًا. ولا يزال يعمل لمن يحتاج إليه. [#83459](https://github.com/ClickHouse/ClickHouse/pull/83459) ([Robert Schulze](https://github.com/rschu1ze)).
-* إضافة [`max_joined_block_size_bytes`](/ar/reference/settings/session-settings#max_joined_block_size_bytes) إلى جانب `max_joined_block_size_rows` لتقييد استخدام الذاكرة في عمليات JOIN ذات الأعمدة الثقيلة. [#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* إضافة [`max_joined_block_size_bytes`](/ar/reference/settings/session-settings/max-joined#max_joined_block_size_bytes) إلى جانب `max_joined_block_size_rows` لتقييد استخدام الذاكرة في عمليات JOIN ذات الأعمدة الثقيلة. [#83869](https://github.com/ClickHouse/ClickHouse/pull/83869) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * إصلاح التوافق للإعداد `cluster_function_process_archive_on_multiple_nodes`. [#83968](https://github.com/ClickHouse/ClickHouse/pull/83968) ([Kseniia Sumarokova](https://github.com/kssenii)).
 * تفعيل دعم الاستعلامات الفرعية المترابطة افتراضيًا. [#85107](https://github.com/ClickHouse/ClickHouse/pull/85107) ([Dmitry Novik](https://github.com/novikd)).
 * إضافة إعدادات `database_replicated` التي تحدد القيم الافتراضية لـ `DatabaseReplicatedSettings`. وإذا لم يكن الإعداد موجودًا في استعلام إنشاء قاعدة بيانات Replicated، فستُستخدم القيمة من هذا الإعداد. [#85127](https://github.com/ClickHouse/ClickHouse/pull/85127) ([Tuan Pham Anh](https://github.com/tuanpach)).
@@ -567,7 +567,7 @@ doc_type: 'changelog'
 * إضافة إعداد MergeTree `search_orphaned_parts_drives` لتضييق نطاق البحث عن الأجزاء، مثلًا بحسب الأقراص التي تحتوي على بيانات وصفية محلية. [#84710](https://github.com/ClickHouse/ClickHouse/pull/84710) ([Ilya Golshtein](https://github.com/ilejn)).
 * إضافة الدعم المفقود لـ `read_in_order_use_virtual_row` في `WHERE`. يتيح ذلك تخطي قراءة المزيد من الأجزاء للاستعلامات التي تتضمن شروط تصفية لم تُدفَع بالكامل إلى `PREWHERE`. [#84835](https://github.com/ClickHouse/ClickHouse/pull/84835) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
 * إصلاح استخدام تسلسل مميّزات النوع Variant بصيغة &quot;compact&quot; في MergeTree. سابقًا، لم يكن يُستخدم في بعض الحالات التي كان يمكن استخدامه فيها. [#84141](https://github.com/ClickHouse/ClickHouse/pull/84141) ([Pavel Kruglov](https://github.com/Avogar)).
-* إضافة حدّ (إعداد الجدول [`max_uncompressed_bytes_in_patches`](/ar/reference/settings/merge-tree-settings#max_uncompressed_bytes_in_patches)) لإجمالي البايتات غير المضغوطة في أجزاء التصحيح. يمنع ذلك حدوث تباطؤ كبير في استعلامات `SELECT` بعد التحديثات الخفيفة، كما يمنع إساءة الاستخدام المحتملة للتحديثات الخفيفة. [#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
+* إضافة حدّ (إعداد الجدول [`max_uncompressed_bytes_in_patches`](/ar/reference/settings/merge-tree-settings/max#max_uncompressed_bytes_in_patches)) لإجمالي البايتات غير المضغوطة في أجزاء التصحيح. يمنع ذلك حدوث تباطؤ كبير في استعلامات `SELECT` بعد التحديثات الخفيفة، كما يمنع إساءة الاستخدام المحتملة للتحديثات الخفيفة. [#85641](https://github.com/ClickHouse/ClickHouse/pull/85641) ([Anton Popov](https://github.com/CurtizJ)).
 
 <div id="cache-and-memory-management">
   ### إدارة ذاكرة التخزين المؤقت والذاكرة

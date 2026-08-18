@@ -356,8 +356,39 @@ class Targeting:
                     test_name = parts[0]
                     tests.append(test_name)
         print(f"Parsed {len(tests)} test names: {tests}")
-        tests = list(set(tests))
-        return sorted(tests)
+        tests = sorted(set(tests))
+        # A test that failed within the CIDB window (30 days) may have been
+        # deleted or renamed on master since — e.g. a flaky test that was
+        # removed instead of deflaked. Passing its name to clickhouse-test (or
+        # to the integration runner) selects nothing; with no other targeted
+        # tests the run ends with "No tests were run." and exit code 1 (the
+        # same failure mode `PR #104097` fixed for orphan data files). Rerun
+        # only tests that still exist in this checkout.
+        missing = [t for t in tests if not self._test_exists(t)]
+        if missing:
+            print(
+                f"Skipping {len(missing)} previously failed tests that no longer "
+                f"exist in the checkout: {missing}"
+            )
+            tests = [t for t in tests if t not in set(missing)]
+        return tests
+
+    def _test_exists(self, test_name: str) -> bool:
+        """Whether a test name reported by CIDB still resolves to a test in
+        this checkout."""
+        if self.job_type == self.INTEGRATION_JOB_TYPE:
+            # Integration test names look like
+            # `test_storage_kafka/test.py::test_case[param]`; the first path
+            # component is the test directory under `tests/integration/`.
+            test_dir = test_name.split("/", 1)[0].split("::", 1)[0]
+            return (Path("tests/integration") / test_dir).is_dir()
+        # Stateless test names are the base name of a file under
+        # `tests/queries/0_stateless/` with one of the known extensions.
+        test_dir = Path("tests/queries/0_stateless")
+        return any(
+            (test_dir / f"{test_name}{ext}").is_file()
+            for ext in self._TEST_FILE_EXTENSIONS
+        )
 
     @staticmethod
     def _escape_sql_string(s: str) -> str:
