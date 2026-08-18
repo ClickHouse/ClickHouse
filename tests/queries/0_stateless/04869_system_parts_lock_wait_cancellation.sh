@@ -31,8 +31,9 @@ INSERT INTO $ORDINARY_DB.t_parts_lock_wait SELECT number FROM numbers(5);
 
 READER_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_reader_$$"
 DROP_QUERY_ID="${CLICKHOUSE_DATABASE}_04869_drop_$$"
-QUERY_LOG_COMMENT="04869_break_query_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-INFINITE_LOCK_QUERY_LOG_COMMENT="04869_infinite_lock_break_query_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+TEST_RUN_SUFFIX="${CLICKHOUSE_TEST_UNIQUE_NAME}_$$"
+QUERY_LOG_COMMENT="04869_break_query_${TEST_RUN_SUFFIX}"
+INFINITE_LOCK_QUERY_LOG_COMMENT="04869_infinite_lock_break_query_${TEST_RUN_SUFFIX}"
 
 # Holds a share lock on the table for about 15 seconds (killed earlier at the end of the test).
 # The table has 5 single-row parts, so the rows arrive in single-row blocks and each block sleeps
