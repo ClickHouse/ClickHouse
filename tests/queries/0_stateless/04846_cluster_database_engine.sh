@@ -77,11 +77,11 @@ echo '-- SHOW CREATE TABLE cannot serialize a multi-shard proxy with an insert-o
 ${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}_sharded.t" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
 ${CLICKHOUSE_CLIENT} --query "DROP DATABASE ${CLUSTER_DB}_sharded"
 
-echo '-- SHOW CREATE TABLE preserves column defaults, aliases and materialized expressions'
+echo '-- SHOW CREATE TABLE cannot serialize a reloadable single-shard proxy either'
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.m (a UInt32, b UInt32 DEFAULT a + 1, c UInt32 ALIAS a + 2, d UInt32 MATERIALIZED a + 3) ENGINE = MergeTree ORDER BY a;
 "
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.m FORMAT TSVRaw" | grep -oE "(DEFAULT a \+ 1|ALIAS a \+ 2|MATERIALIZED a \+ 3)" | sort
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE ${CLUSTER_DB}.m" 2>&1 | grep -c -m1 "THERE_IS_NO_QUERY"
 
 echo '-- an unknown cluster is rejected at CREATE (prints 1 if the expected error is raised)'
 ${CLICKHOUSE_CLIENT} --allow_experimental_database_cluster=1 --query "CREATE DATABASE ${CLUSTER_DB}_unknown ENGINE = Cluster('there_is_no_such_cluster', 'default')" 2>&1 | grep -c -m1 "CLUSTER_DOESNT_EXIST"
