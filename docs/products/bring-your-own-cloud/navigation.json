@@ -42,19 +42,19 @@
     {
       "group": "Connector",
       "pages": [
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/overview",
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/onboarding",
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/architecture",
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/support-sessions",
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/configuration",
-        "products/cloud/guides/infrastructure/deployment-options/byoc/connector/operations",
+        "products/bring-your-own-cloud/connector/overview",
+        "products/bring-your-own-cloud/connector/onboarding",
+        "products/bring-your-own-cloud/connector/architecture",
+        "products/bring-your-own-cloud/connector/support-sessions",
+        "products/bring-your-own-cloud/connector/configuration",
+        "products/bring-your-own-cloud/connector/operations",
         {
           "group": "Reference",
           "pages": [
-            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/cli",
-            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/configuration",
-            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/faq",
-            "products/cloud/guides/infrastructure/deployment-options/byoc/connector/reference/privilege-model"
+            "products/bring-your-own-cloud/connector/reference/cli",
+            "products/bring-your-own-cloud/connector/reference/configuration",
+            "products/bring-your-own-cloud/connector/reference/faq",
+            "products/bring-your-own-cloud/connector/reference/privilege-model"
           ]
         }
       ]
