@@ -22,6 +22,24 @@ def upload_table(cluster, storage_type, table_name):
     )
 
 
+def _strip_file_uri_scheme(path):
+    """Return a bare absolute path ClickHouse can remap via IcebergPathResolver.
+
+    Hadoop `Path.toString()` yields `file:/...` / `file:///...`. For s3/azure
+    table functions, those URIs can be resolved onto a secondary
+    LocalObjectStorage (ClickHouse node local disk) instead of the uploaded
+    object-storage tree. A scheme-less absolute path makes
+    `tryResolveObjectStorageForPath` return nullopt so `IcebergPathResolver`
+    remaps onto the table's base storage — matching how this harness reads
+    Spark data files after `upload_table`.
+    """
+    if path.startswith("file://"):
+        return path[len("file://") :]
+    if path.startswith("file:"):
+        return path[len("file:") :]
+    return path
+
+
 def add_equality_deletes_by_id(spark, table_name, ids):
     """Commit an Iceberg equality-delete file for the given `id` values.
 
@@ -36,28 +54,36 @@ def add_equality_deletes_by_id(spark, table_name, ids):
     )
 
     id_field_id = int(table.schema().findField("id").fieldId())
-    file_name = f"eq-delete-{uuid.uuid4()}.parquet"
-    delete_path = table.locationProvider().newDataLocation(file_name)
+    staging_dir = table.locationProvider().newDataLocation(
+        f"eq-delete-staging-{uuid.uuid4()}"
+    )
+    final_uri = table.locationProvider().newDataLocation(
+        f"eq-delete-{uuid.uuid4()}.parquet"
+    )
 
     # Spark DataFrame write keeps BIGINT as Long — avoids py4j Integer boxing.
+    # coalesce(1) still writes a directory; flatten to a single Iceberg data file.
     spark.createDataFrame([(int(v),) for v in ids], "id: long").coalesce(1).write.mode(
         "overwrite"
-    ).parquet(delete_path)
+    ).parquet(staging_dir)
 
-    # coalesce(1) still writes a directory; pick the single part file.
-    hadoop_path = jvm.org.apache.hadoop.fs.Path(delete_path)
-    fs = hadoop_path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration())
-    statuses = fs.listStatus(hadoop_path)
-    part_path = None
+    staging_path = jvm.org.apache.hadoop.fs.Path(staging_dir)
+    fs = staging_path.getFileSystem(spark.sparkContext._jsc.hadoopConfiguration())
+    part_hadoop_path = None
     part_size = 0
-    for status in statuses:
+    for status in fs.listStatus(staging_path):
         name = status.getPath().getName()
         if name.startswith("part-") and name.endswith(".parquet"):
-            part_path = status.getPath().toString()
+            part_hadoop_path = status.getPath()
             part_size = int(status.getLen())
             break
-    if part_path is None:
-        raise RuntimeError(f"No parquet part file written under {delete_path}")
+    if part_hadoop_path is None:
+        raise RuntimeError(f"No parquet part file written under {staging_dir}")
+
+    final_hadoop_path = jvm.org.apache.hadoop.fs.Path(final_uri)
+    if not fs.rename(part_hadoop_path, final_hadoop_path):
+        raise RuntimeError(f"Failed to move {part_hadoop_path} to {final_hadoop_path}")
+    fs.delete(staging_path, True)
 
     equality_field_ids = spark.sparkContext._gateway.new_array(jvm.int, 1)
     equality_field_ids[0] = id_field_id
@@ -65,7 +91,7 @@ def add_equality_deletes_by_id(spark, table_name, ids):
     delete_file = (
         ice.FileMetadata.deleteFileBuilder(table.spec())
         .ofEqualityDeletes(equality_field_ids)
-        .withPath(part_path)
+        .withPath(_strip_file_uri_scheme(final_hadoop_path.toString()))
         .withFileSizeInBytes(part_size)
         .withRecordCount(len(ids))
         .withFormat(ice.FileFormat.PARQUET)
