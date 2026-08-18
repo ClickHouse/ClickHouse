@@ -181,16 +181,7 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(ContextPtr local_cont
     Tables tables;
     std::lock_guard lock(mutex);
 
-    /// Do not allow to throw here: this is reached by a `system.tables` / `system.columns` scan, which
-    /// must not fail because one remote database is unreachable. Mirrors `DatabasePostgreSQL`.
-    try
-    {
-        fetchTablesIntoLocalCache(local_context);
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__, "", mysqlToleratedConnectionFailureLogLevel());
-    }
+    fetchTablesIntoLocalCache(local_context);
 
     for (const auto & [table_name, modify_time_and_storage] : local_tables_cache)
         if (!remove_or_detach_tables.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
