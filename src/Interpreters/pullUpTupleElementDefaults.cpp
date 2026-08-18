@@ -140,6 +140,26 @@ void stripDefaultFromNameTypePair(ASTNameTypePair & pair)
         pair.children.push_back(pair.type);
 }
 
+/// Match the `DEFAULT NULL` normalization for ordinary column declarations: NULL defaults promote
+/// a non-nullable type to Nullable. LowCardinality can only wrap Nullable, not the other way round.
+ASTPtr makeNullableType(ASTPtr type)
+{
+    if (const auto * data_type = type->as<ASTDataType>(); data_type && data_type->name == "LowCardinality")
+    {
+        const auto arguments = data_type->getArguments();
+        if (arguments && arguments->children.size() == 1)
+            return makeASTDataType("LowCardinality", makeASTDataType("Nullable", arguments->children[0]));
+    }
+
+    return makeASTDataType("Nullable", std::move(type));
+}
+
+bool isLiteralNull(const ASTPtr & expression)
+{
+    const auto * literal = expression ? expression->as<ASTLiteral>() : nullptr;
+    return literal && literal->value.isNull();
+}
+
 /// Recursively walk a data type AST, building a column-level default expression from any DEFAULT
 /// expressions reachable through a chain of Tuples and stripping them from the type. Returns the
 /// default-value expression if the type (recursively) contains DEFAULTs, otherwise nullptr.
@@ -217,6 +237,9 @@ ASTPtr buildAndStripTupleDefaults(IAST & type, const NameSet & outer_element_nam
                 if (explicit_default)
                 {
                     checkDefaultDoesNotReferenceElements(*explicit_default, element_names, column_name);
+                    if (isLiteralNull(explicit_default)
+                        && (!pair->type->as<ASTDataType>() || pair->type->as<ASTDataType>()->name != "Nullable"))
+                        pair->type = makeNullableType(pair->type);
                     stripDefaultFromNameTypePair(*pair);
                 }
 

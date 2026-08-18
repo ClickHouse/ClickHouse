@@ -80,6 +80,18 @@ CREATE TABLE t_array (c Array(Tuple(x UInt8 DEFAULT 5))) ENGINE = Memory; -- { s
 SELECT defaultValueOfTypeName('Tuple(a UInt8 DEFAULT 5)'); -- { serverError BAD_ARGUMENTS }
 SELECT CAST((1, 2), 'Tuple(a UInt8, b UInt8 DEFAULT 5)'); -- { serverError BAD_ARGUMENTS }
 
+SELECT '-- default null';
+CREATE TABLE t_default_null
+(
+    c Tuple(a UInt8 DEFAULT NULL, b String)
+)
+ENGINE = Memory;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_default_null' AND name = 'c';
+INSERT INTO t_default_null VALUES ();
+SELECT c FROM t_default_null;
+
 -- The same normalization applies to ALTER, not only CREATE.
 SELECT '-- alter add column';
 DROP TABLE IF EXISTS t_alter_add;
@@ -221,6 +233,7 @@ DROP TABLE t_default_in_tuple;
 DROP TABLE t_nested_tuple;
 DROP TABLE t_ref;
 DROP TABLE t_expr;
+DROP TABLE t_default_null;
 DROP TABLE t_alter_add;
 DROP TABLE t_alter_modify;
 DROP TABLE t_nullable;
