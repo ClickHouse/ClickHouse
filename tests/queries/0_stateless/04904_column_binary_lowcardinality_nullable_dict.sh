@@ -7,6 +7,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `ColumnBinary` is experimental until its `COLUMNAR_V1` frame header is versioned.
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_experimental_column_binary_format 1"
+# `LowCardinality(Nullable(UInt64))` is a suspicious type; the fixed-width dictionary case
+# below needs it both to create the table and to cast in the `SELECT` that writes the frame.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_suspicious_low_cardinality_types 1"
 
 # `ColumnUnique` reserves the leading dictionary slots for its special values: slot 0 is the
 # nested default for a plain dictionary, and for a nullable one slot 0 is the `NULL` sentinel
@@ -19,8 +22,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
 DROP TABLE IF EXISTS t_04904;
 DROP TABLE IF EXISTS t_04904_num;
 CREATE TABLE t_04904 (v LowCardinality(Nullable(String))) ENGINE = Memory;
-CREATE TABLE t_04904_num (v LowCardinality(Nullable(UInt64))) ENGINE = Memory
-SETTINGS allow_suspicious_low_cardinality_types = 1;
+CREATE TABLE t_04904_num (v LowCardinality(Nullable(UInt64))) ENGINE = Memory;
 "
 
 # Well-formed frames produced by the writer itself must round-trip, nulls included.
@@ -80,8 +82,7 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_04904_num"
 NUM_FILE="${CLICKHOUSE_TMP}/04904_valid_num.bin"
 rm -f "${NUM_FILE}"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_04904_num_rt"
-${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04904_num_rt (v LowCardinality(Nullable(UInt64))) ENGINE = Memory
-SETTINGS allow_suspicious_low_cardinality_types = 1"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04904_num_rt (v LowCardinality(Nullable(UInt64))) ENGINE = Memory"
 ${CLICKHOUSE_CLIENT} --query "
 SELECT if(number % 2 = 0, NULL, number)::LowCardinality(Nullable(UInt64)) AS v
 FROM numbers(4) INTO OUTFILE '${NUM_FILE}' FORMAT ColumnBinary"
