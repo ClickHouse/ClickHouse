@@ -10,8 +10,9 @@ Given a commit SHA from a PR that ran a perf comparison, this tool:
   3. Downloads both the right (patched) and the left (reference) binaries
      from ``clickhouse-builds.s3.amazonaws.com``.
   4. Starts two local clickhouse-server processes (different ports, both
-     reading from a hardlinked copy of the dataset directory) configured
-     exactly like CI's performance-comparison job.
+     reading from a hardlinked copy of the dataset directory, or each
+     writing its own copy under --populate) configured exactly like CI's
+     performance-comparison job.
   5. Reruns only the changed query indices via
      ``tests/performance/scripts/perf.py`` for each affected XML.
   6. Prints a comparison of local diffs against the original CI diffs.
@@ -30,6 +31,7 @@ import json
 import platform
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -38,6 +40,7 @@ import urllib.request
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Thread
 from typing import Optional
 
 REPO = "ClickHouse/ClickHouse"
@@ -54,11 +57,13 @@ LEFT_TCP = 9001
 LEFT_KEEPER_TCP = 9181
 LEFT_KEEPER_RAFT = 9234
 LEFT_INTERSERVER = 9009
+LEFT_HTTP = 8123
 
 RIGHT_TCP = 19001
 RIGHT_KEEPER_TCP = 19181
 RIGHT_KEEPER_RAFT = 19234
 RIGHT_INTERSERVER = 19009
+RIGHT_HTTP = 18123
 
 
 def log(msg: str) -> None:
@@ -498,10 +503,18 @@ def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
     source: ``report.html`` shows ``clickhouse --version`` for the reference,
     which for official builds doesn't include the SHA, and ``left-commit.txt``
     inside ``logs.tar.zst`` has the same problem.
+
+    A commit can be measured more than once (a rerun of the perf job after
+    master moved on), and each run picks its own reference build, so the same
+    ``(new_sha, arch)`` can carry several ``old_sha`` values. The S3 report we
+    scrape is overwritten in place by the latest run, so the newest reference
+    is the one that matches it -- order by ``event_time`` instead of taking an
+    arbitrary row, and tell the user when the choice was not unique.
     """
     query = (
-        "SELECT DISTINCT old_sha FROM query_metrics_v2 "
-        f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' LIMIT 1 FORMAT TSV"
+        "SELECT old_sha, toString(max(event_time)) FROM query_metrics_v2 "
+        f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
+        "GROUP BY old_sha ORDER BY max(event_time) DESC FORMAT TSV"
     )
     try:
         out = subprocess.check_output(
@@ -528,12 +541,21 @@ def fetch_reference_sha(pr_sha: str, perf_arch: str) -> str:
             f"play.clickhouse.com query failed: {e.stderr.strip()}; "
             "pass --reference-sha explicitly"
         )
-    ref_sha = out.strip()
-    if not re.fullmatch(r"[0-9a-f]{40}", ref_sha):
+    rows = [line.split("\t") for line in out.splitlines() if line.strip()]
+    if not rows or not re.fullmatch(r"[0-9a-f]{40}", rows[0][0]):
         die(
             f"play.clickhouse.com returned no row for new_sha={pr_sha} "
-            f"arch={perf_arch} (got: {ref_sha!r}); pass --reference-sha "
+            f"arch={perf_arch} (got: {out.strip()!r}); pass --reference-sha "
             "explicitly"
+        )
+    ref_sha = rows[0][0]
+    if len(rows) > 1:
+        log(
+            f"WARNING: {len(rows)} perf runs found for {pr_sha} ({perf_arch}), "
+            "each against a different reference build: "
+            + ", ".join(f"{r[0][:12]} @ {r[1]}" for r in rows)
+            + f". Using the newest ({ref_sha[:12]}), which is the one the "
+            "scraped report reflects. Pass --reference-sha to override."
         )
     return ref_sha
 
@@ -658,14 +680,17 @@ def hardlink_db(db_source: Path, side_db: Path) -> None:
 
 def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
                     config_dir: Path, top_level_domains: Path,
-                    work_dir: Path) -> None:
+                    work_dir: Path, create_test_hits: bool = True) -> None:
     """Ensure the shared dataset directory has the bookkeeping the perf
     framework expects.
 
     - ``default`` and ``datasets`` are Ordinary databases (always needed).
-    - If ``datasets.hits_v1`` exists and ``test.hits`` doesn't, do
-      ``CREATE DATABASE test; RENAME TABLE datasets.hits_v1 TO test.hits``
-      via a temporary clickhouse-server pointed at ``db_source``.
+    - If ``create_test_hits`` and ``datasets.hits_v1`` exists and ``test.hits``
+      doesn't, do ``CREATE DATABASE test; RENAME TABLE datasets.hits_v1 TO
+      test.hits`` via a temporary clickhouse-server pointed at ``db_source``.
+      Under ``--populate`` this is skipped: each side builds its own
+      ``test.hits`` from ``datasets.hits_v1`` instead, so the source table has
+      to stay where it is.
 
     *Why a temp server and not a filesystem rename?* Filesystem moves of
     metadata files leave ClickHouse's per-table CREATE-query state in an
@@ -673,8 +698,12 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
     ``tpcds`` in our case) hits a NULL pointer in
     ``DatabaseOrdinary::getConvertToReplicatedFlagPath`` when running
     against the hardlinked copy. SQL ``RENAME TABLE`` performs the
-    transition cleanly. This is what ``ci/jobs/performance_tests.py``
-    does in its preconfig step.
+    transition cleanly.
+
+    Note this differs from ``ci/jobs/performance_tests.py``, which builds
+    ``test.hits`` with ``INSERT SELECT`` on each server separately -- that is
+    what ``--populate`` reproduces. The rename here is the cheap default: one
+    shared copy of the data, hardlinked into both sides.
 
     Finally we strip ``data/system``, ``metadata/system``,
     ``preprocessed_configs`` and ``status`` from db_source — those are
@@ -687,7 +716,8 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
     (meta / "datasets.sql").write_text("ATTACH DATABASE datasets ENGINE=Ordinary\n")
 
     needs_rename = (
-        (db_source / "data" / "datasets" / "hits_v1").is_dir()
+        create_test_hits
+        and (db_source / "data" / "datasets" / "hits_v1").is_dir()
         and not (db_source / "data" / "test" / "hits").exists()
     )
     if needs_rename:
@@ -764,6 +794,7 @@ class ServerHandle:
     name: str
     side_dir: Path
     port: int
+    http_port: int
     keeper_port: int
     raft_port: int
     interserver_port: int
@@ -771,10 +802,34 @@ class ServerHandle:
     log_path: Path = field(default=Path("/dev/null"))
 
 
+def ensure_ports_free(ports: dict[int, str]) -> None:
+    """Fail early and clearly if any port we are about to bind is taken.
+
+    The HTTP ports mirror CI (8123 / 18123) and 8123 is the default HTTP port
+    of an ordinary local clickhouse-server, so a collision on a development
+    machine is likely enough to deserve its own message rather than a bind
+    error buried in the server log."""
+    busy = []
+    for port, what in sorted(ports.items()):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                busy.append(f"{port} ({what})")
+    if busy:
+        die(
+            "these ports are already in use: " + ", ".join(busy)
+            + ". Stop whatever is listening (a local clickhouse-server, or a "
+            "previous run of this script) and try again."
+        )
+
+
 def start_server(
     side_dir: Path,
     name: str,
     port: int,
+    http_port: int,
     keeper_port: int,
     raft_port: int,
     interserver_port: int,
@@ -790,6 +845,10 @@ def start_server(
         "--user_files_path", str(side_dir / "db" / "user_files"),
         "--top_level_domains_path", str(top_level_domains),
         "--tcp_port", str(port),
+        # The perf-comparison drop-in removes <http_port>, so it has to come
+        # back on the command line; shell-script queries reach the server over
+        # $CLICKHOUSE_URL. Same as CHServer in ci/jobs/performance_tests.py.
+        "--http_port", str(http_port),
         "--keeper_server.tcp_port", str(keeper_port),
         "--keeper_server.raft_configuration.server.port", str(raft_port),
         "--keeper_server.storage_path", str(side_dir / "coordination"),
@@ -802,6 +861,7 @@ def start_server(
         name=name,
         side_dir=side_dir,
         port=port,
+        http_port=http_port,
         keeper_port=keeper_port,
         raft_port=raft_port,
         interserver_port=interserver_port,
@@ -821,6 +881,127 @@ def server_query(h: ServerHandle, sql: str, timeout: int = 30) -> str:
         timeout=timeout,
     )
     return out.strip()
+
+
+# ---------------------------------------------------------------------------
+# Dataset population (--populate)
+# ---------------------------------------------------------------------------
+
+# Same knobs as _perf_client in ci/jobs/performance_tests.py: hits_100m_single
+# alone needs ~21 GiB for the insert, and OPTIMIZE FINAL on it is slow enough
+# to trip the default execution-time limits.
+POPULATE_CLIENT_SETTINGS = [
+    "--max_memory_usage", "30G",
+    "--max_memory_usage_for_user", "30G",
+    "--max_estimated_execution_time", "0",
+    "--max_execution_time", "1800",
+    "--receive_timeout", "1800",
+]
+POPULATE_INSERT_SETTINGS = (
+    "enable_filesystem_cache_on_write_operations=0, max_insert_threads=16"
+)
+POPULATE_DONE_MARKER = "test._populate_done"
+
+
+def populate_query(h: ServerHandle, sql: str, timeout: int = 2000) -> str:
+    client = h.side_dir / "clickhouse-client"
+    out = subprocess.check_output(
+        [str(client), "--port", str(h.port), *POPULATE_CLIENT_SETTINGS,
+         "--query", sql],
+        text=True,
+        timeout=timeout,
+    )
+    return out.strip()
+
+
+def table_exists(h: ServerHandle, table: str) -> bool:
+    return populate_query(h, f"EXISTS TABLE {table}", timeout=60) == "1"
+
+
+def rebuild_table(h: ServerHandle, source: str, destination: str) -> None:
+    """Re-insert an attached dataset through this server so its parts are
+    written by *this* binary and its settings (sparse columns, statistics, mark
+    format) instead of the frozen tarball format, then OPTIMIZE FINAL back to a
+    single part matching the original layout.
+
+    Mirrors ``rebuild_table`` in ``ci/jobs/performance_tests.py``. INSERT is
+    what recomputes serialization; a bare OPTIMIZE would inherit the source
+    parts' serialization, so it cannot replace the insert. An in-place rebuild
+    goes through a temporary name and is swapped in with RENAME (the datasets
+    live in Ordinary databases, so EXCHANGE TABLES is not available)."""
+    if not table_exists(h, source):
+        die(f"{h.name}: cannot rebuild {destination}: source {source} is not attached")
+    target = f"{destination}_rebuild" if source == destination else destination
+    log(f"{h.name}: rebuilding {destination} from {source}")
+    populate_query(h, f"DROP TABLE IF EXISTS {target} SYNC")
+    populate_query(h, f"CREATE TABLE {target} AS {source}")
+    populate_query(
+        h,
+        f"INSERT INTO {target} SELECT * FROM {source} "
+        f"SETTINGS {POPULATE_INSERT_SETTINGS}",
+    )
+    populate_query(h, f"OPTIMIZE TABLE {target} FINAL")
+    if target != destination:
+        old = f"{destination}_old"
+        populate_query(h, f"DROP TABLE IF EXISTS {old} SYNC")
+        populate_query(
+            h, f"RENAME TABLE {destination} TO {old}, {target} TO {destination}"
+        )
+        populate_query(h, f"DROP TABLE {old} SYNC")
+    else:
+        populate_query(h, f"DROP TABLE {source} SYNC")
+    log(f"{h.name}: {destination} rebuilt")
+
+
+def populate_side(h: ServerHandle, tables: list[str]) -> None:
+    """Rebuild the requested hits tables on one server, sequentially.
+
+    Sequential on purpose: the inserts share the per-user memory limit and
+    hits_100m_single alone uses ~21 GiB, so running them in parallel on one
+    server gets killed by the OvercommitTracker."""
+    if table_exists(h, POPULATE_DONE_MARKER):
+        log(f"{h.name}: already populated, skipping")
+        return
+    populate_query(h, "CREATE DATABASE IF NOT EXISTS test")
+    for table in tables:
+        if table == "test.hits":
+            # Freshly extracted tarball: the source is still datasets.hits_v1.
+            # A work dir carried over from a default (hardlink) run already has
+            # it renamed to test.hits, in which case rebuild it in place.
+            if table_exists(h, "datasets.hits_v1"):
+                rebuild_table(h, "datasets.hits_v1", "test.hits")
+            else:
+                rebuild_table(h, "test.hits", "test.hits")
+        else:
+            rebuild_table(h, table, table)
+    populate_query(
+        h, f"CREATE TABLE {POPULATE_DONE_MARKER} (done UInt8) ENGINE = Log"
+    )
+
+
+def populate_data_both(handles: list[ServerHandle], tables: list[str]) -> None:
+    """Populate both servers in parallel. Each writes its own parts, so a PR
+    that changes a write-time default is reflected only on the right (patched)
+    side -- which is the whole point of doing this instead of sharing one
+    hardlinked copy."""
+    log(f"populating datasets on both sides: {', '.join(tables)}")
+    errors: list[BaseException] = []
+
+    def run(h: ServerHandle) -> None:
+        try:
+            populate_side(h, tables)
+        except BaseException as e:  # noqa: BLE001
+            log(f"{h.name}: populate failed: {e}")
+            errors.append(e)
+
+    threads = [Thread(target=run, args=(h,)) for h in handles]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    if errors:
+        die(f"dataset population failed ({len(errors)} of {len(handles)} sides)")
+    log("population done on both sides")
 
 
 def wait_for_merges(
@@ -961,11 +1142,18 @@ def run_perf_test(
         str(repo_root / "tests/performance" / test_xml),
         "--host", "localhost", "localhost",
         "--port", str(LEFT_TCP), str(RIGHT_TCP),
+        # <query type="shell"> queries build $CLICKHOUSE_BINARY / $CLICKHOUSE_LOCAL
+        # / $CLICKHOUSE_URL out of these. Without them perf.py falls back to
+        # `clickhouse` on $PATH and port 8123, which would measure the same
+        # unrelated binary on both sides and silently report "no change".
+        "--binary", str(work_dir / "left" / "clickhouse"),
+        str(work_dir / "right" / "clickhouse"),
+        "--http-port", str(LEFT_HTTP), str(RIGHT_HTTP),
         "--runs", str(runs),
         "--profile-seconds", "0",
         "--queries-to-run", *[str(i) for i in query_indices],
     ]
-    log(f"running perf.py on {test_xml} queries={query_indices}: {' '.join(cmd[:9])} ...")
+    log(f"running perf.py on {test_xml} queries={query_indices}: {' '.join(cmd)}")
     with open(out_path, "w") as out_fh, open(err_path, "w") as err_fh:
         subprocess.run(cmd, stdout=out_fh, stderr=err_fh, check=False)
     return out_path
@@ -1172,6 +1360,19 @@ def main() -> int:
         help="resolve commit/PR/SHA/changed queries and print plan; do not run",
     )
     parser.add_argument(
+        "--populate",
+        action="store_true",
+        help="rebuild the hits datasets on each server separately (INSERT "
+        "SELECT + OPTIMIZE FINAL), exactly as CI's populate_data_both does, "
+        "so each side's parts are written by its own binary. Required to see "
+        "write-path changes (serialization, sparse columns, statistics, mark "
+        "format) -- with the default hardlinked dataset both sides read parts "
+        "written by whatever binary produced the tarball, so such regressions "
+        "come back NOT REPRODUCED. Costs a full rewrite of each affected hits "
+        "table per side (hits_100m_single alone is ~21 GiB and tens of "
+        "minutes) and gives up the hardlink disk saving for them.",
+    )
+    parser.add_argument(
         "--skip-wait-for-merges",
         action="store_true",
         help="don't wait for background merges to quiesce before running "
@@ -1286,6 +1487,32 @@ def main() -> int:
             "their own tables; no preloaded data required"
         )
 
+    # Under --populate, only rebuild the hits tables the affected XMLs
+    # actually touch: rewriting hits_100m_single for a test that never reads
+    # it is tens of minutes for nothing. CI has no such luxury (it populates
+    # before knowing which tests run) but we already scanned the XMLs.
+    populate_tables: list[str] = []
+    if args.populate:
+        wanted = {
+            "hits_10m_single": "default.hits_10m_single",
+            "hits_100m_single": "default.hits_100m_single",
+            "hits": "test.hits",
+            "hits_v1": "test.hits",
+            "test.hits": "test.hits",
+        }
+        for name in needed_datasets:
+            table = wanted.get(name)
+            if table and table not in populate_tables:
+                populate_tables.append(table)
+        if populate_tables:
+            log(f"--populate: will rebuild on each side: {', '.join(populate_tables)}")
+        else:
+            log(
+                "--populate: no hits dataset referenced by the affected XMLs; "
+                "nothing to rebuild (tests that build their own tables already "
+                "write them with each side's own binary)"
+            )
+
     # Find the reference SHA
     ref_sha = args.reference_sha or fetch_reference_sha(pr_sha, perf_arch)
     log(f"reference SHA: {ref_sha}")
@@ -1362,20 +1589,30 @@ def main() -> int:
         prepare_configs(repo_root, side_dir)
 
     prepare_dataset(db_source, left_bin, work_dir / "left" / "config",
-                    tld_dst, work_dir)
+                    tld_dst, work_dir, create_test_hits=not args.populate)
 
     for side in ("left", "right"):
         side_dir = work_dir / side
         hardlink_db(db_source, side_dir / "db")
 
     # Start servers
+    ensure_ports_free({
+        LEFT_TCP: "left TCP", LEFT_HTTP: "left HTTP",
+        LEFT_KEEPER_TCP: "left keeper", LEFT_KEEPER_RAFT: "left keeper raft",
+        LEFT_INTERSERVER: "left interserver",
+        RIGHT_TCP: "right TCP", RIGHT_HTTP: "right HTTP",
+        RIGHT_KEEPER_TCP: "right keeper", RIGHT_KEEPER_RAFT: "right keeper raft",
+        RIGHT_INTERSERVER: "right interserver",
+    })
     left_h = start_server(
         work_dir / "left", "left",
-        LEFT_TCP, LEFT_KEEPER_TCP, LEFT_KEEPER_RAFT, LEFT_INTERSERVER, tld_dst,
+        LEFT_TCP, LEFT_HTTP, LEFT_KEEPER_TCP, LEFT_KEEPER_RAFT, LEFT_INTERSERVER,
+        tld_dst,
     )
     right_h = start_server(
         work_dir / "right", "right",
-        RIGHT_TCP, RIGHT_KEEPER_TCP, RIGHT_KEEPER_RAFT, RIGHT_INTERSERVER, tld_dst,
+        RIGHT_TCP, RIGHT_HTTP, RIGHT_KEEPER_TCP, RIGHT_KEEPER_RAFT,
+        RIGHT_INTERSERVER, tld_dst,
     )
 
     try:
@@ -1384,6 +1621,10 @@ def main() -> int:
         if not wait_server_ready(right_h):
             die(f"right server failed to start; see {right_h.log_path}")
         log("both servers ready")
+
+        if populate_tables:
+            populate_data_both([left_h, right_h], populate_tables)
+
         # If the dataset directory was just freshly populated, ClickHouse
         # will be busy consolidating parts that came in at various merge
         # levels. Measuring before those settle yields unstable numbers.
@@ -1414,6 +1655,7 @@ def main() -> int:
                     "pr": pr_number,
                     "arch": perf_arch,
                     "reference_sha": ref_sha,
+                    "populated_tables": populate_tables,
                     "changed": [cq.__dict__ for cq in changed],
                     "local": {
                         f"{k[0]}#{k[1]}": v for k, v in local_results.items()

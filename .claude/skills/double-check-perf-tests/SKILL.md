@@ -31,7 +31,10 @@ skill:
    querying `query_metrics_v2` on `play.clickhouse.com` for the row with
    `new_sha = <pr-sha>` (the `report.html` "Tested Commits" section is
    unreliable — for official builds `clickhouse --version` does not embed
-   the git hash).
+   the git hash). A commit that was measured more than once has one
+   reference per run, so the newest one is taken — that is the run the
+   S3 report reflects, since it is overwritten in place — and the script
+   warns when the choice was not unique.
 6. Downloads both binaries from `clickhouse-builds`:
    - Right: `PRs/<pr>/<sha>/build_{amd,arm}_release/clickhouse`
    - Left:  `REFs/master/<ref-sha>/build_{amd,arm}_release/clickhouse`
@@ -51,6 +54,9 @@ skill:
   probes `ci/tmp/perf_wd/db0`.
 - `--pr N`, `--reference-sha SHA`: override auto-detection.
 - `--runs N`: number of measurements per query (default 7, matches CI).
+- `--populate`: rebuild the affected `hits` tables on each server
+  separately, the way CI's `populate_data_both` does, instead of sharing
+  one hardlinked copy. See "Hardlinked data vs. `--populate`" below.
 - `--dry-run`: stop after resolving PR / SHAs / changed queries; do not
   download or run.
 
@@ -147,10 +153,14 @@ treated as CI noise.
   dirs via `cp -al` (same trick `performance_tests.py` uses), so disk usage
   stays low.
 - The perf framework expects `test.hits` (not `datasets.hits_v1`) for
-  several tests (`url_hits`, `count_from_formats`, ...). The script runs
-  a temporary "preconfig" `clickhouse-server` pointed at `db0` and issues
-  `CREATE DATABASE test; RENAME TABLE datasets.hits_v1 TO test.hits` via
-  SQL — same approach as `ci/jobs/performance_tests.py`. Doing this via
+  several tests (`url_hits`, `count_from_formats`, ...). By default the
+  script runs a temporary "preconfig" `clickhouse-server` pointed at `db0`
+  and issues `CREATE DATABASE test; RENAME TABLE datasets.hits_v1 TO
+  test.hits` via SQL, so one copy of the data is shared by both sides.
+  (`ci/jobs/performance_tests.py` instead builds `test.hits` with
+  `INSERT SELECT` on each server — that is what `--populate` reproduces,
+  and under `--populate` this rename is skipped so the source table stays
+  available to both sides.) Doing this via
   filesystem-only moves of the .sql files looks equivalent but leaves
   bookkeeping in a state that crashes the next server start while
   loading `tpcds` (NULL deref in
@@ -160,6 +170,22 @@ treated as CI noise.
   `data/system`, `metadata/system`, `status`, `preprocessed_configs` from
   `db0` since those are per-server state that mustn't be shared between
   the left/right hardlinked copies.
+- **Hardlinked data vs. `--populate`.** By default both servers read one
+  hardlinked copy of `db0` (`cp -al`, the same trick
+  `performance_tests.py` uses), so the parts they read were written by
+  whatever binary produced the dataset tarball. CI does not do this: its
+  `populate_data_both` re-inserts `hits_10m_single`, `hits_100m_single`
+  and `datasets.hits_v1` → `test.hits` on each server, so each side's
+  parts carry that side's own write-time defaults (sparse columns,
+  statistics, mark format). A regression that lives in the write path,
+  or one that only shows on freshly written serialization, therefore
+  comes back `NOT REPRODUCED` under the default. Pass `--populate` to
+  reproduce CI faithfully; it only rebuilds the `hits` tables the
+  affected XMLs actually reference, but each one is a full rewrite per
+  side (`hits_100m_single` alone is ~21 GiB and tens of minutes) and
+  gives up the hardlink disk saving for those tables. When a confirmed CI
+  regression does not reproduce and the PR touches anything on the write
+  path, rerun with `--populate` before calling it noise.
 - The skill does **not** attempt to reproduce flamegraphs or profiling —
   for that, use the `perf-report` skill on the same PR.
 - Architecture mismatch is partial: if a PR has only ARM shards and you're
@@ -198,4 +224,6 @@ treated as CI noise.
   be visible, same principle as the `perf-report` skill.
 - If the script reports `NOT REPRODUCED` for a query that has a large CI
   delta, suggest re-running with `--runs 13` (more samples) before
-  declaring it flaky.
+  declaring it flaky. If the PR changes anything that affects how parts
+  are written, suggest `--populate` too — the default hardlinked dataset
+  cannot show a write-path change at all.
