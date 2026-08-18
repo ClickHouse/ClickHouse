@@ -24,7 +24,9 @@ namespace Setting
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
+    extern const SettingsBool exact_rows_before_limit;
     extern const SettingsBool distributed_plan_optimize_exchanges;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool enable_join_runtime_filters;
     extern const SettingsBool enable_join_runtime_filters_index_analysis;
@@ -228,8 +230,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     read_in_order_through_spilling_join = from[Setting::query_plan_read_in_order_through_spilling_join];
+    /// In-memory buffer for correlated subqueries uses a non-serializable ChunkBuffer,
+    /// incompatible with distributed execution. When make_distributed_plan is enabled,
+    /// always use the materialization path (materializeQueryPlanReferences) instead.
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
-        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+        && from[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT
+        && !from[Setting::make_distributed_plan];
 
     optimize_use_implicit_projections = optimize_projection && from[Setting::optimize_use_implicit_projections];
     force_use_projection = optimize_projection && from[Setting::force_optimize_projection];
@@ -248,11 +254,16 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
-    /// buckets the part, so the projection would be counted once per bucket and multiply the result.
-    /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
+    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
+    /// served from a projection; the implicit count/minmax projection would also be counted once per
+    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
     if (make_distributed_plan)
+    {
+        optimize_projection = false;
         optimize_use_implicit_projections = false;
+        force_use_projection = false;
+        force_projection_name = {};
+    }
 
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
@@ -275,6 +286,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     distributed_plan_force_shuffle_aggregation = from[Setting::distributed_plan_force_shuffle_aggregation];
     distributed_aggregation_memory_efficient = from[Setting::distributed_aggregation_memory_efficient];
     distributed_plan_prefer_replicas_over_workers = from[Setting::distributed_plan_prefer_replicas_over_workers];
+    exact_rows_before_limit = from[Setting::exact_rows_before_limit];
+
+    enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
 
     optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];

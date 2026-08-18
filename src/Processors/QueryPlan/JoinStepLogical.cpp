@@ -297,6 +297,25 @@ String JoinStepLogical::getReadableRelationName() const
     return fmt::format("{} {} {}", left_relation.displayName(), joinTypePretty(join_operator), right_name);
 }
 
+void JoinStepLogical::swapInputs()
+{
+    auto inputs = getInputHeaders();
+    chassert(inputs.size() == 2);
+
+    /// TODO: any other checks that join sides can be swapped?
+
+    updateInputHeaders({inputs[1], inputs[0]});
+
+    if (join_operator.kind == JoinKind::Left)
+        join_operator.kind = JoinKind::Right;
+    else if (join_operator.kind == JoinKind::Right)
+        join_operator.kind = JoinKind::Left;
+
+    expression_actions.swapExpressionSources();
+
+    std::swap(left_relation, right_relation);
+}
+
 std::vector<std::pair<String, String>> JoinStepLogical::describeJoinProperties() const
 {
     std::vector<std::pair<String, String>> description;
@@ -1789,6 +1808,8 @@ void JoinStepLogical::buildPhysicalJoin(
         std::move(logical_join_info)
     );
 
+    new_node.cost_estimation = node.cost_estimation;
+
     node = std::move(new_node);
 }
 
@@ -2229,7 +2250,7 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
     result_step->left_relation = left_relation;
     result_step->right_relation = right_relation;
-    result_step->dummy_stats = dummy_stats;
+    result_step->table_stats_hint = table_stats_hint;
     result_step->disjunctions_optimization_applied = disjunctions_optimization_applied;
 
     return result_step;

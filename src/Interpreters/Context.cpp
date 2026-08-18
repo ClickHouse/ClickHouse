@@ -2108,6 +2108,9 @@ void Context::setUsersConfig(const ConfigurationPtr & config)
     std::lock_guard lock(shared->mutex);
     shared->users_config = config;
     shared->access_control->setUsersConfig(*shared->users_config);
+    /// The selector uses the effective default-profile settings. Rebuild it after a users reload
+    /// so changes to `allow_experimental_codecs` take effect without restarting the server.
+    shared->compression_codec_selector.reset();
 }
 
 ConfigurationPtr Context::getUsersConfig()

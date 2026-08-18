@@ -87,7 +87,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 7 registers the `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` plan
 /// settings. As with version 5, an older peer rejects the unknown names, so they are written only towards a
 /// peer at this version or above; a peer below it has no adaptive aggregation to drive anyway.
-/// Version 8 registers the `allow_experimental_codecs` plan setting for temporary-file codecs. A peer
+/// Version 8 adds the distributed-plan payloads: the bounded-sort limit on `SortingStep`, the
+/// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
+/// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
+/// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
+/// It also registers the `allow_experimental_codecs` plan setting for temporary-file codecs. A peer
 /// below this version preserves its established temporary-file codec behavior, so the setting is withheld
 /// from it. This lets a mixed-version cluster execute an in-memory plan on an older worker that has no
 /// temporary storage, rather than rejecting the plan solely because it does not know the setting name.

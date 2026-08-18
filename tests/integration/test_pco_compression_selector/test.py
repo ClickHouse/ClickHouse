@@ -120,6 +120,37 @@ def test_compression_selector_uses_default_not_system_profile(start_cluster):
     node_zxc_default_profile_allowed.query("DROP TABLE t_zxc_default_profile")
 
 
+def test_compression_selector_reloads_default_profile_policy(start_cluster):
+    node_zxc_allowed.query(
+        "CREATE TABLE t_zxc_reload_policy (x UInt32) ENGINE = MergeTree ORDER BY tuple()"
+    )
+    node_zxc_allowed.query(
+        "INSERT INTO t_zxc_reload_policy SELECT number FROM numbers(1000)"
+    )
+
+    node_zxc_allowed.replace_config(
+        "/etc/clickhouse-server/users.d/allow_experimental_codecs.xml",
+        """
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_codecs>0</allow_experimental_codecs>
+        </default>
+    </profiles>
+</clickhouse>
+""",
+    )
+    node_zxc_allowed.query("SYSTEM RELOAD USERS")
+
+    with pytest.raises(QueryRuntimeException) as exc:
+        node_zxc_allowed.query(
+            "INSERT INTO t_zxc_reload_policy SELECT number FROM numbers(1000)"
+        )
+    assert "allow_experimental_codecs" in str(exc.value), str(exc.value)
+
+    node_zxc_allowed.query("DROP TABLE t_zxc_reload_policy")
+
+
 def test_normal_compression_selector_still_works(start_cluster):
     node_zstd.query(
         "CREATE TABLE t_zstd_selector (x UInt32) ENGINE = MergeTree ORDER BY tuple()"
