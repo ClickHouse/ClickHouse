@@ -1022,13 +1022,14 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
         "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
     ).strip()
 
-    # The level was lost by the recovery: a guess that happens to equal the `RECOMPRESS` TTL codec.
+    # The level was lost by the recovery. The internal estimate is `ZSTD(1)`, but the system table
+    # must not present that lossy estimate as authoritative part metadata.
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='codec_provenance_mutation' AND active AND rows > 0"
         ).strip()
-        == "ZSTD(1)"
+        == "UNKNOWN"
     )
 
     # A column-only mutation: only `extra` is rewritten, everything else is hardlinked.
