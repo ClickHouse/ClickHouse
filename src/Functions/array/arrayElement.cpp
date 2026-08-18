@@ -73,6 +73,8 @@ public:
     /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
     /// which cannot be represented by the default nullable wrapper around the result.
     bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForDynamic() const override { return true; }
+    bool useDefaultImplementationForVariant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -2844,7 +2846,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             return std::make_shared<DataTypeArray>(element_type);
         }
 
-        if (!isNativeInteger(arguments[1]))
+        if (!isNativeInteger(removeNullable(arguments[1])))
         {
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -2855,7 +2857,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
         /// The n-th element of a QBit vector is reconstructed at the full precision of the element type.
         const auto & element_type = qbit_type->getElementType();
-        return (is_null_mode || qbit_is_nullable) ? makeNullable(element_type) : element_type;
+        return (is_null_mode || qbit_is_nullable || arguments[1]->isNullable()) ? makeNullable(element_type) : element_type;
     }
 
     const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
@@ -2972,6 +2974,18 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// The default nullable implementation cannot preserve a NULL `QBit` source for an
+    /// array-of-indices result: the result itself is an Array and cannot be wrapped in
+    /// Nullable. Handle nullable scalar indices here as well, so disabling that default
+    /// implementation does not change the established Array and Map semantics.
+    if (arguments[1].type->isNullable())
+    {
+        auto nested_arguments = arguments;
+        nested_arguments[1] = columnGetNested(arguments[1]);
+        return wrapInNullable(executeImpl(nested_arguments, removeNullable(result_type), input_rows_count),
+                              arguments, result_type, input_rows_count);
+    }
+
     if (checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get()))
         return executeQBit(arguments, input_rows_count);
 

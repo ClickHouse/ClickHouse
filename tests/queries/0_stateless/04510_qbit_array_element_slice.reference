@@ -14,6 +14,8 @@ Out-of-range index gives the default value, or NULL for arrayElementOrNull
 Non-constant index
 1	1	8	0	0
 2	-2	-7	0	0
+2	2	Nullable(Float32)
+-2	-2	Nullable(Float32)
 Constant index 0 is an error
 All element types
 3.25	Float64

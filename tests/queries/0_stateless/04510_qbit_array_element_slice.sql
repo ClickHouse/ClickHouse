@@ -19,6 +19,7 @@ SELECT vec[9], vec[-9], arrayElementOrNull(vec, 9), arrayElementOrNull(vec, 1) F
 
 SELECT 'Non-constant index';
 SELECT id, vec[id], vec[-toInt64(id)], vec[id * 100], arrayElement(vec, materialize(0)) FROM qbit ORDER BY id;
+SELECT arrayElement(vec, toNullable(2)), arrayElementOrNull(vec, toNullable(2)), toTypeName(arrayElement(vec, toNullable(2))) FROM qbit ORDER BY id;
 
 SELECT 'Constant index 0 is an error';
 SELECT vec[0] FROM qbit; -- { serverError ZERO_ARRAY_OR_TUPLE_INDEX }
