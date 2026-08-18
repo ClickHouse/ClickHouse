@@ -331,7 +331,7 @@ const std::map<String, Entry> & scalarFunctions()
                     ASTPtr captured;
                     if (index == 0)
                         captured = makeASTFunction(
-                            "arrayElement",
+                            "arrayElementOrNull",
                             makeASTFunction(
                                 "extractGroups",
                                 asString(arguments[2]),
@@ -339,7 +339,7 @@ const std::map<String, Entry> & scalarFunctions()
                             litI(1));
                     else
                         captured = makeASTFunction(
-                            "arrayElement",
+                            "arrayElementOrNull",
                             makeASTFunction("extractGroups", asString(arguments[2]), asString(arguments[0])),
                             litI(index));
 

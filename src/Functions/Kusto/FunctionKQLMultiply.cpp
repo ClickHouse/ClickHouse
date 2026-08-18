@@ -1,4 +1,6 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -7,6 +9,9 @@
 #include <Interpreters/Context.h>
 #include <Common/assert_cast.h>
 
+#include <cmath>
+#include <limits>
+
 
 namespace DB
 {
@@ -14,6 +19,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -80,21 +86,48 @@ public:
         const ColumnWithTypeAndName & interval = arguments[left_is_interval ? 0 : 1];
         const ColumnWithTypeAndName & scale = arguments[left_is_interval ? 1 : 0];
 
-        /// The interval's column already is its count as `Int64`; only the type says otherwise.
-        const DataTypePtr ticks
-            = interval.type->isNullable() ? makeNullable(std::make_shared<DataTypeInt64>()) : std::make_shared<DataTypeInt64>();
-        ColumnsWithTypeAndName multiply_arguments{{interval.column, ticks, ""}, scale};
-        auto multiply = FunctionFactory::instance().get("multiply", getContext())->build(multiply_arguments);
-        const ColumnWithTypeAndName product{
-            multiply->execute(multiply_arguments, multiply->getResultType(), input_rows_count, /*dry_run=*/false),
-            multiply->getResultType(),
-            ""};
+        ColumnPtr interval_full = interval.column->convertToFullColumnIfConst();
+        ColumnPtr scale_full = scale.column->convertToFullColumnIfConst();
 
-        const auto kind = assert_cast<const DataTypeInterval &>(*removeNullable(interval.type)).getKind();
-        ColumnsWithTypeAndName conversion_arguments{product};
-        auto to_interval
-            = FunctionFactory::instance().get(kind.toNameOfFunctionToIntervalDataType(), getContext())->build(conversion_arguments);
-        return to_interval->execute(conversion_arguments, to_interval->getResultType(), input_rows_count, /*dry_run=*/false);
+        const IColumn * interval_column = interval_full.get();
+        const IColumn * scale_column = scale_full.get();
+        const NullMap * interval_nulls = nullptr;
+        const NullMap * scale_nulls = nullptr;
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(interval_column))
+        {
+            interval_nulls = &nullable->getNullMapData();
+            interval_column = &nullable->getNestedColumn();
+        }
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(scale_column))
+        {
+            scale_nulls = &nullable->getNullMapData();
+            scale_column = &nullable->getNestedColumn();
+        }
+
+        auto result = ColumnInt64::create(input_rows_count);
+        auto null_map = ColumnUInt8::create(input_rows_count);
+        constexpr long double limit = static_cast<long double>(std::numeric_limits<Int64>::max()) + 1;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            if ((interval_nulls && (*interval_nulls)[i]) || (scale_nulls && (*scale_nulls)[i]))
+            {
+                result->getData()[i] = 0;
+                null_map->getData()[i] = 1;
+                continue;
+            }
+
+            const long double product
+                = static_cast<long double>(interval_column->getInt(i)) * static_cast<long double>(scale_column->getFloat64(i));
+            if (!std::isfinite(product) || product < -limit || product >= limit)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} result does not fit a timespan", getName());
+
+            result->getData()[i] = static_cast<Int64>(std::trunc(product));
+            null_map->getData()[i] = 0;
+        }
+
+        if (interval_nulls || scale_nulls)
+            return ColumnNullable::create(std::move(result), std::move(null_map));
+        return result;
     }
 };
 

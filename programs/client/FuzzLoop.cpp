@@ -25,6 +25,8 @@
 
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
+#include <algorithm>
+
 #if USE_BUZZHOUSE
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
 #include <Client/BuzzHouse/Generator/FuzzConfig.h>
@@ -165,10 +167,11 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
         return true;
     }
 
-    /// KQL is translated to a ClickHouse AST, whose formatted text must subsequently be parsed
-    /// as ClickHouse SQL. Replaying it under the current KQL session dialect instead fuzzes the
-    /// wrong parser, so leave this dialect out of the AST fuzzer until replay can pin its dialect.
-    if (client_context->getSettingsRef()[Setting::dialect] == Dialect::kusto)
+    /// Do not let a corpus query change the session parser for later fuzzing inputs. The AST
+    /// fuzzer serializes ASTs as ClickHouse SQL, so retaining `dialect = 'kusto'` would make a
+    /// later replay use the wrong parser.
+    if (const auto * set = orig_ast->as<ASTSetQuery>(); set
+        && std::any_of(set->changes.begin(), set->changes.end(), [](const auto & change) { return change.name == "dialect"; }))
         return true;
 
     // `USE db` should not be executed

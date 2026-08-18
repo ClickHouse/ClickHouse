@@ -11,6 +11,9 @@
 #include <Parsers/Kusto/KQLLexer.h>
 #include <base/arithmeticOverflow.h>
 
+#include <cmath>
+#include <limits>
+
 
 namespace DB
 {
@@ -18,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -86,21 +90,39 @@ public:
 
         if (isNumber(nested))
         {
-            /// Days to nanoseconds, delegated so every numeric type divides out the same way.
-            const DataTypePtr constant_type = std::make_shared<DataTypeInt64>();
-            const ColumnWithTypeAndName per_day{
-                constant_type->createColumnConst(input_rows_count, Field(Int64(86'400'000'000'000))), constant_type, ""};
+            ColumnPtr full = argument.column->convertToFullColumnIfConst();
+            const IColumn * source = full.get();
+            const NullMap * source_nulls = nullptr;
+            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(source))
+            {
+                source_nulls = &nullable->getNullMapData();
+                source = &nullable->getNestedColumn();
+            }
 
-            ColumnsWithTypeAndName multiply_arguments{argument, per_day};
-            auto multiply = FunctionFactory::instance().get("multiply", getContext())->build(multiply_arguments);
-            const ColumnWithTypeAndName product{
-                multiply->execute(multiply_arguments, multiply->getResultType(), input_rows_count, /*dry_run=*/false),
-                multiply->getResultType(),
-                ""};
+            auto values = ColumnInt64::create(input_rows_count);
+            auto null_map = ColumnUInt8::create(input_rows_count);
+            constexpr long double nanoseconds_per_day = 86'400'000'000'000.L;
+            constexpr long double limit = static_cast<long double>(std::numeric_limits<Int64>::max()) + 1;
+            for (size_t i = 0; i < input_rows_count; ++i)
+            {
+                if (source_nulls && (*source_nulls)[i])
+                {
+                    values->getData()[i] = 0;
+                    null_map->getData()[i] = 1;
+                    continue;
+                }
 
-            ColumnsWithTypeAndName conversion_arguments{product};
-            auto to_interval = FunctionFactory::instance().get("toIntervalNanosecond", getContext())->build(conversion_arguments);
-            return to_interval->execute(conversion_arguments, to_interval->getResultType(), input_rows_count, /*dry_run=*/false);
+                const long double nanoseconds = static_cast<long double>(source->getFloat64(i)) * nanoseconds_per_day;
+                if (!std::isfinite(nanoseconds) || nanoseconds < -limit || nanoseconds >= limit)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} result does not fit a timespan", getName());
+
+                values->getData()[i] = static_cast<Int64>(std::trunc(nanoseconds));
+                null_map->getData()[i] = 0;
+            }
+
+            if (source_nulls)
+                return ColumnNullable::create(std::move(values), std::move(null_map));
+            return values;
         }
 
         ColumnPtr full = argument.column->convertToFullColumnIfConst();

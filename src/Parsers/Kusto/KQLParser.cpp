@@ -1462,12 +1462,10 @@ KQLOperatorPtr KQLParser::parseUnion()
         expect(KQLTokenType::Equals);
         const KQLToken & kind_token = current();
         const String kind_name = Poco::toLower(String(expectIdentifierName()));
-        if (kind_name == "outer")
-            op->union_kind_outer = true;
-        else if (kind_name != "inner")
-            failAt(kind_token, fmt::format("'{}' is not a supported union kind", kind_name));
+        if (kind_name == "outer" || kind_name == "inner")
+            failAt(kind_token, fmt::format("'union kind={}' is not supported", kind_name));
         else
-            fail("'union kind=inner' is not supported");
+            failAt(kind_token, fmt::format("'{}' is not a supported union kind", kind_name));
     }
 
     do
