@@ -25,7 +25,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_time_series_table 1 --dialect promql --promql_table ts --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 # `offset` requires a duration. It is a syntax error at EOF, not a complete

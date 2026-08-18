@@ -29,7 +29,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 # The `(` is never closed, but the statement holding it ends at the `;`, so the

@@ -32,7 +32,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; TERM=xterm \$CLICKHOUSE_LOCAL --format PrettyCompact --allow_experimental_kusto_dialect 1 --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
 expect ":) "
 
 # The buffer switches to Kusto mid-stream and ends with an incomplete `print`
