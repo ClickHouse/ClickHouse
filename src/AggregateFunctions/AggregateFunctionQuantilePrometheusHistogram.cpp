@@ -499,6 +499,21 @@ public:
 
     String getName() const override { return NameQuantilePrometheusHistogramArray::name; }
 
+    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
+    {
+        return getName() == rhs.getName() && haveEqualArgumentTypes(rhs);
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        Array params{1};
+        AggregateFunctionProperties properties;
+        return std::make_shared<DataTypeAggregateFunction>(
+            AggregateFunctionFactory::instance().get(getName(), NullsAction::EMPTY, this->argument_types, params, properties),
+            this->argument_types,
+            params);
+    }
+
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
