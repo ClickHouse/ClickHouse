@@ -3970,7 +3970,7 @@ bool MutateTask::prepare()
 
             auto [empty_part, lock] = ctx->data->createEmptyPart(
                 ctx->future_part->part_info, ctx->source_part->partition, ctx->future_part->name,
-                ctx->source_part->getMetadataSnapshot(), ctx->txn);
+                ctx->source_part->getMetadataSnapshot(), ctx->txn, /*patch_part_index=*/ std::nullopt);
 
             ctx->temporary_directory_lock = std::move(lock);
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
