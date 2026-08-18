@@ -7,7 +7,7 @@
 
     <!-- The default codec wins every block -->
     <fill_query>SYSTEM STOP MERGES adaptive_codec_merge</fill_query>
-    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(400000000)</fill_query>
+    <fill_query>INSERT INTO adaptive_codec_merge SELECT cityHash64(number % 1024) FROM numbers_mt(150000000)</fill_query>
     <fill_query>SYSTEM START MERGES adaptive_codec_merge</fill_query>
     <fill_query>OPTIMIZE TABLE adaptive_codec_merge FINAL</fill_query>
 
