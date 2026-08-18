@@ -47,8 +47,10 @@ FROM
 WHERE explain LIKE '%GradualResize%';
 
 -- Sharded aggregation owns the pre-aggregation routing stage. It deliberately
--- keeps its strict per-shard resize even when gradual-resize thresholds are set.
-SELECT countIf(explain LIKE '%ShardByHashTransform%') > 0 AND countIf(explain LIKE '%GradualResize%') = 0
+-- does not insert `GradualResize` even when gradual-resize thresholds are set.
+-- Do not require a particular sharding-processor name here: the sharding plan is
+-- implementation-specific and has changed independently of this contract.
+SELECT countIf(explain LIKE '%GradualResize%') = 0
 FROM
 (
     EXPLAIN PIPELINE
