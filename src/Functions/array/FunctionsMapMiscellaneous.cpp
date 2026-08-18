@@ -662,7 +662,7 @@ struct MapLikeAdapter
             auto filter_and_offsets = low_cardinality_view.filterByDictionaryMatches(dictionary_matches);
             auto filtered_nested_data = map.getNestedData().filter(filter_and_offsets.filter, filter_and_offsets.result_size);
             ColumnPtr filtered_map = ColumnMap::create(
-                ColumnArray::create(std::move(filtered_nested_data), std::move(filter_and_offsets.offsets)));
+                ColumnArray::create(filtered_nested_data, std::move(filter_and_offsets.offsets)));
             filtered_map = recursiveRemoveLowCardinality(filtered_map);
             return filtered_map;
         }
@@ -745,7 +745,7 @@ struct MapKeyValueAdapter
         MapToNestedAdapter<Name, false>::extractNestedTypes(types);
     }
 
-    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments)
+    static void extractNestedTypesAndColumns(ColumnsWithTypeAndName & arguments, bool enable_lazy_columns_replication)
     {
         checkTypes(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
         convertLowCardinalityColumnsToFull(arguments);
@@ -766,11 +766,17 @@ struct MapKeyValueAdapter
         if (key_needle_arg.column && value_needle_arg.column)
         {
             /// Capture both needle columns. The nested function appends the keys and values columns,
-            /// so the ColumnFunction behaves like the desired lambda.
+            /// so the ColumnFunction behaves like the desired lambda. enable_lazy_columns_replication
+            /// keeps large non-constant needles from being materialized up front (see MapLikeAdapter).
             auto function_base = std::make_shared<FunctionToFunctionBaseAdaptor>(function, lambda_argument_types, result_type);
             function_column = ColumnFunction::create(
-                key_needle_arg.column->size(), std::move(function_base),
-                ColumnsWithTypeAndName{key_needle_arg, value_needle_arg});
+                key_needle_arg.column->size(),
+                std::move(function_base),
+                ColumnsWithTypeAndName{key_needle_arg, value_needle_arg},
+                /*is_short_circuit_argument_=*/ false,
+                /*is_function_compiled_=*/ false,
+                /*recursively_convert_result_to_full_column_if_low_cardinality_=*/ false,
+                /*allow_lazy_replicated_captures_=*/ enable_lazy_columns_replication);
         }
 
         ColumnWithTypeAndName function_arg{function_column, function_type, "__function_map_key_value"};
