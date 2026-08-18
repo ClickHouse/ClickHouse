@@ -12,9 +12,13 @@ O ClickHouse transforma os operadores nas funções correspondentes durante a et
   ## Operadores de acesso
 </div>
 
-`a[N]` – Acesso a um elemento de um Array. A função `arrayElement(a, N)`.
+`a[N]` – Acesso a um elemento de um array. A função `arrayElement(a, N)`.
+`N` também pode ser um array de inteiros; nesse caso, os elementos em todas essas posições são retornados como um array,
+assim como em `arrayMap(i -> a[i], N)`. As posições podem ser anuláveis. Uma posição `NULL` produz `NULL` quando o tipo de elemento
+pode ser encapsulado em `Nullable`; para tipos de elemento que não podem estar dentro de `Nullable` (como `Array`, `Map`), produz
+o valor padrão do tipo de elemento, assim como para um índice `NULL` escalar.
 
-`a.N` – Acesso a um elemento de uma tupla. A função `tupleElement(a, N)`.
+`a.N` – Acesso a um elemento de tupla. A função `tupleElement(a, N)`.
 
 <div id="numeric-negation-operator">
   ## Operador de negação numérica
