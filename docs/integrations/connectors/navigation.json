@@ -36,6 +36,7 @@
         "integrations/connectors/data-sources/gcs",
         "integrations/connectors/data-ingestion/s3-minio",
         "integrations/connectors/data-ingestion/s3-tigris",
+        "integrations/connectors/data-ingestion/s3-seaweedfs",
         "integrations/connectors/data-ingestion/emqx/index",
         "integrations/connectors/data-ingestion/insert-local-files",
         "integrations/connectors/data-ingestion/jdbc-with-clickhouse",
