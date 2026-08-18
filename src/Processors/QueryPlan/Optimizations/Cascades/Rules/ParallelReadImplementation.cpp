@@ -122,7 +122,7 @@ bool ReplicatedReadImplementation::checkPattern(GroupExpressionPtr expression, c
 
     /// Correct only where every worker reads the same data: shared storage, or local execution
     /// (one process). Otherwise a BroadcastExchange satisfies the replicated requirement.
-    return read_step->getMergeTreeData().isSharedStorage() || memo.getEnvironment().distributed_plan_execute_locally;
+    return read_step->getMergeTreeData().isSharedStorage() || memo.getContext().distributed_plan_execute_locally;
 }
 
 std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const

@@ -48,7 +48,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     const SortDescription & sort_desc = required_properties.sorting;
     /// The environment carries the query's sort settings (size limits, spill thresholds), seeded
     /// at optimizer setup, so the enforcer-built sort matches the rest of the query's pipeline.
-    const auto & captured_settings = memo.getEnvironment().sort_settings;
+    const auto & captured_settings = memo.getContext().sort_settings;
     if (!captured_settings)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "SortingEnforcer has no sort settings; they must be seeded at optimizer setup");
     const SortingStep::Settings & sort_settings = *captured_settings;

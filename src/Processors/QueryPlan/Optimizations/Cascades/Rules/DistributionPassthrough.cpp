@@ -67,7 +67,7 @@ protected:
             addPhysicalToMemo(implementation_expression, required_properties, memo, result);
 
         /// Speculative implementations at each candidate node count.
-        auto candidates = getCandidateNodeCounts(memo.getEnvironment().cluster_node_count);
+        auto candidates = getCandidateNodeCounts(memo.getContext().cluster_node_count);
         for (size_t candidate : candidates)
         {
             if (candidate == required_properties.distribution.node_count)

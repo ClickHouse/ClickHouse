@@ -222,7 +222,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
+    const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;
@@ -251,7 +251,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
-    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation
+    const bool only_shuffle = memo.getContext().distributed_plan_force_shuffle_aggregation
         && strategies.isShuffleApplicable() && !candidate_node_counts.empty();
 
     if (!only_shuffle)
@@ -288,7 +288,7 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
         /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
         /// whenever the shuffle strategy is available (the aggregation has group keys).
-        !(memo.getEnvironment().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
+        !(memo.getContext().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
 }
 
 std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -311,7 +311,7 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// ascending order. Force the partial step to emit them that way; otherwise a parallel
     /// flush unites several bucket sequences into one exchange stream out of order and the
     /// merge emits some groups twice.
-    if (memo.getEnvironment().distributed_aggregation_memory_efficient)
+    if (memo.getContext().distributed_aggregation_memory_efficient)
         partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
@@ -328,7 +328,7 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
         /*final_=*/true,
-        memo.getEnvironment().distributed_aggregation_memory_efficient,
+        memo.getContext().distributed_aggregation_memory_efficient,
         agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),

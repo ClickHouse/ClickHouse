@@ -70,7 +70,7 @@ std::vector<GroupExpressionPtr> TopNImplementation::applyImpl(GroupExpressionPtr
     if (is_partial)
     {
         /// Bounded sort on each node; a sorted gather merges and a coordinator limit re-bounds.
-        for (size_t candidate : getCandidateNodeCounts(memo.getEnvironment().cluster_node_count))
+        for (size_t candidate : getCandidateNodeCounts(memo.getContext().cluster_node_count))
             make_variant(candidate);
     }
     else
@@ -96,7 +96,7 @@ public:
         /// With `exact_rows_before_limit` the per-node sorts must feed the full row count
         /// into `rows_before_limit_at_least`, but the internal cap below cuts the pipeline
         /// walk that collects those counters, so the query would report fewer rows.
-        if (memo.getEnvironment().exact_rows_before_limit)
+        if (memo.getContext().exact_rows_before_limit)
             return false;
         /// Skip the partial we create ourselves.
         return isTopNSort(*expression->getQueryPlanStep())
