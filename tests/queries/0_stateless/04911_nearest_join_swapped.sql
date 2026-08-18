@@ -119,5 +119,25 @@ SELECT count(), countIf(base_id = 0 AND empty(vec_out)) FROM
 )
 SETTINGS query_plan_join_swap_table = 1;
 
+SELECT 'parallel_hash swapped vs hash swapped (expect 0 0)';
+WITH
+    hashed AS
+    (
+        SELECT upload.query_id AS query_id, base.base_id AS base_id
+        FROM swap_upload AS upload
+        NEAREST JOIN swap_base AS base ON upload.k = base.k AND L2Distance(upload.vec, base.vec)
+        SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 1
+    ),
+    parallel AS
+    (
+        SELECT upload.query_id AS query_id, base.base_id AS base_id
+        FROM swap_upload AS upload
+        NEAREST JOIN swap_base AS base ON upload.k = base.k AND L2Distance(upload.vec, base.vec)
+        SETTINGS join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 1, query_plan_join_swap_table = 1, max_threads = 4
+    )
+SELECT
+    (SELECT count() FROM (SELECT * FROM hashed EXCEPT SELECT * FROM parallel)),
+    (SELECT count() FROM (SELECT * FROM parallel EXCEPT SELECT * FROM hashed));
+
 DROP TABLE swap_upload;
 DROP TABLE swap_base;

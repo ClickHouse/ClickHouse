@@ -10,3 +10,5 @@ a single-side ON condition filters candidates identically under swap (expect 0 0
 0	0
 LEFT NEAREST is never swapped and keeps unmatched rows (expect 1000 160)
 1000	160
+parallel_hash swapped vs hash swapped (expect 0 0)
+0	0

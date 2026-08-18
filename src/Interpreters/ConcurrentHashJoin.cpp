@@ -35,6 +35,7 @@
 #include <numeric>
 #include <deque>
 #include <iterator>
+#include <mutex>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -389,6 +390,27 @@ private:
     Deque children;
 };
 
+/// DelayedJoinedBlocksWorkerTransforms share one delayed stream. ConcatStreams is not
+/// synchronized; this wrapper is.
+class ThreadSafeConcatStreams final : public IBlocksStream
+{
+public:
+    explicit ThreadSafeConcatStreams(std::vector<IBlocksStreamPtr> children_)
+        : inner(std::move(children_))
+    {
+    }
+
+    Block nextImpl() override
+    {
+        std::lock_guard lock(mutex);
+        return inner.next();
+    }
+
+private:
+    ConcatStreams inner;
+    std::mutex mutex;
+};
+
 class ConcurrentHashJoinResult : public IJoinResult
 {
     const std::vector<std::shared_ptr<ConcurrentHashJoin::InternalHashJoin>> & hash_joins;
@@ -435,9 +457,16 @@ public:
 
 JoinResultPtr ConcurrentHashJoin::joinBlock(Block block)
 {
-    ScatteredBlocks dispatched_blocks;
-
     hash_joins[0]->data->materializeColumnsFromLeftBlock(block);
+
+    /// Swapped NEAREST with a merged two-level map probes a single HashJoin (slot 0).
+    /// The 0-row header derivation (JoiningTransform::transformHeader) runs before the
+    /// two-level merge, so send it to slot 0 as well; otherwise the sample lands on
+    /// another slot and the probing instance copies every leftover probe column.
+    if (table_join->nearestSwapped() && (block.rows() == 0 || hash_joins[0]->data->twoLevelMapIsUsed()))
+        return hash_joins[0]->data->joinBlock(std::move(block));
+
+    ScatteredBlocks dispatched_blocks;
     if (hash_joins[0]->data->twoLevelMapIsUsed())
         dispatched_blocks.emplace_back(std::move(block));
     else
@@ -546,6 +575,36 @@ bool ConcurrentHashJoin::alwaysReturnsEmptySet() const
             return false;
     }
     return true;
+}
+
+bool ConcurrentHashJoin::hasDelayedBlocks() const
+{
+    return table_join->nearestSwapped();
+}
+
+IBlocksStreamPtr ConcurrentHashJoin::getDelayedBlocks()
+{
+    if (!table_join->nearestSwapped())
+        return nullptr;
+
+    /// After the two-level map merge, every probe block is routed to slot 0. The argmin
+    /// states live there, so delayed emission does too. Without two-level maps the probe
+    /// is scattered and each slot has its own states.
+    if (hash_joins[0]->data->twoLevelMapIsUsed())
+        return hash_joins[0]->data->getDelayedBlocks();
+
+    std::vector<IBlocksStreamPtr> streams;
+    streams.reserve(slots);
+    for (auto & hash_join : hash_joins)
+    {
+        if (auto stream = hash_join->data->getDelayedBlocks())
+            streams.push_back(std::move(stream));
+    }
+    if (streams.empty())
+        return nullptr;
+    if (streams.size() == 1)
+        return streams[0];
+    return std::make_shared<ThreadSafeConcatStreams>(std::move(streams));
 }
 
 IBlocksStreamPtr ConcurrentHashJoin::getNonJoinedBlocks(

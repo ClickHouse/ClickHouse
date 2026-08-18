@@ -1248,10 +1248,6 @@ void TableJoin::resetToCross()
 
 bool TableJoin::allowParallelHashJoin() const
 {
-    /// The swapped NEAREST mode keeps per-build-row argmin state inside one HashJoin instance,
-    /// so it always runs on the plain hash algorithm.
-    if (nearest_swapped)
-        return false;
     return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
 }
 

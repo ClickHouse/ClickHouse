@@ -359,11 +359,10 @@ public:
                 if (capture_row < 0)
                 {
                     auto & captured = context.state->captured;
+                    chassert(context.state->capture_column.size() == captured.size());
                     for (size_t i = 0; i < captured.size(); ++i)
                     {
-                        const bool copy_column = i >= context.state->capture_column.size()
-                            || context.state->capture_column[i];
-                        if (copy_column)
+                        if (context.state->capture_column[i])
                             captured[i]->insertFrom(*context.probe_block->getByPosition(i).column, probe_row);
                         else
                             captured[i]->insertDefault();

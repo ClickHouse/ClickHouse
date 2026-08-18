@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -226,6 +228,7 @@ public:
     NearestSwapState * acquireNearestSwapState(const Block & probe_block) const;
     void releaseNearestSwapState(NearestSwapState * state) const;
     const UInt64 * nearestSwapBlockRowOffsets() const { return nearest_swap_block_row_offsets.data(); }
+    bool nearestSwapCaptureProbeColumn(const String & name) const;
 
     /// The right-side column of the last key pair: the ASOF inequality column or the NEAREST vector column.
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
@@ -561,6 +564,8 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
 
+    JoinResultPtr captureNearestSwapOutputSample(JoinResultPtr result);
+
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
@@ -595,7 +600,7 @@ private:
     mutable Block nearest_swap_probe_sample;
     mutable bool nearest_swap_probe_sample_captured = false;
     mutable Block nearest_swap_output_sample;
-    mutable bool nearest_swap_output_sample_captured = false;
+    mutable std::atomic<bool> nearest_swap_output_sample_captured{false};
     mutable std::atomic_bool nearest_swap_results_emitted{false};
 
     /// Right table data. StorageJoin shares it between many Join objects.

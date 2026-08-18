@@ -1279,8 +1279,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 && !should_worry_about_partial_merge_join
                 && !skip_flip_any_join;
             /// A swapped NEAREST join keeps its per-original-left-row semantics through the
-            /// `nearest_swapped` marker. It always runs on the plain hash algorithm and never
-            /// spills (grace is unsupported for NEAREST, so the spilling wrapper is never chosen).
+            /// `nearest_swapped` marker. Grace is unsupported for NEAREST, so the spilling
+            /// wrapper is never chosen.
             const bool suitable_nearest_swap = join_operator.strictness == JoinStrictness::Nearest
                 && join_operator.kind == JoinKind::Inner
                 && !should_worry_about_partial_merge_join;
