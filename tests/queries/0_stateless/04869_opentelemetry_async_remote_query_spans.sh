@@ -153,14 +153,22 @@ kill_query_id="$CLICKHOUSE_TEST_UNIQUE_NAME-kill"
 ${CLICKHOUSE_CLIENT} \
     --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
     --async_socket_for_remote=1 \
+    --async_query_sending_for_remote=1 \
     --query_id "$kill_query_id" \
     --function_sleep_max_microseconds_per_block=10000000 \
     --query "select * from remote('127.0.0.2', view(select sleep(3) from system.one)) format Null" \
     >/dev/null 2>&1 &
 
+# Wait until the remote leg is in flight before killing: the non-initial entry appears in
+# system.processes (127.0.0.2 loops back to this same server) only after
+# Connection::sendQuery succeeded, and with async_query_sending_for_remote=1 sendQuery
+# runs inside the RemoteQueryExecutorReadContext fiber, so its presence proves the fiber
+# is created and suspended. Waiting only for the initiator query would race with query
+# startup: a kill landing before the first resume finds no fiber to unwind and no task
+# span is ever emitted.
 for _retry in {1..100}; do
-    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where query_id = '$kill_query_id'")
-    [[ "$started" -eq 1 ]] && break
+    started=$(${CLICKHOUSE_CLIENT} -q "select count() from system.processes where initial_query_id = '$kill_query_id' and query_id != initial_query_id")
+    [[ "$started" -ge 1 ]] && break
     sleep 0.1
 done
 ${CLICKHOUSE_CLIENT} -q "kill query where query_id = '$kill_query_id' sync format Null"
