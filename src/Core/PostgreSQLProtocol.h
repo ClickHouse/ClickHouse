@@ -18,6 +18,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <chrono>
 #include <unordered_map>
 #include <utility>
 
@@ -1632,22 +1633,31 @@ public:
 
         const AuthenticationData * scram_authentication_method = nullptr;
         const auto& access_control = session.globalContext()->getAccessControl();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         if (auto id = access_control.find<User>(user_name))
         {
             if (auto user = access_control.tryRead<User>(*id))
             {
                 for (const auto & auth_method : user->authentication_methods)
                 {
-                    if (auth_method.getType() == AuthenticationType::SCRAM_SHA256_PASSWORD)
-                    {
-                        /// SCRAM sends one salt before the client supplies its proof, so the
-                        /// PostgreSQL protocol cannot choose between several SCRAM verifiers.
-                        if (scram_authentication_method)
-                            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                "PostgreSQL protocol does not support multiple `scram_sha256_password` authentication methods for one user");
+                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+                        continue;
 
-                        scram_authentication_method = &auth_method;
-                    }
+                    const auto valid_until = auth_method.getValidUntil();
+                    if (valid_until && now > valid_until)
+                        continue;
+
+                    if (auth_method.getOneTimePassword())
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "PostgreSQL protocol does not support `scram_sha256_password` authentication with `time_based_one_time_password`");
+
+                    /// SCRAM sends one salt before the client supplies its proof, so the
+                    /// PostgreSQL protocol cannot choose between several usable SCRAM verifiers.
+                    if (scram_authentication_method)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "PostgreSQL protocol does not support multiple `scram_sha256_password` authentication methods for one user");
+
+                    scram_authentication_method = &auth_method;
                 }
             }
         }
