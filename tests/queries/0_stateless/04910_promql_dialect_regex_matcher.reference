@@ -7,3 +7,14 @@
 []	30
 -- the equality matcher still works
 [('__name__','up'),('instance','host1')]	30
+-- a metric named 'set' is not a SET statement: matchers still parse as PromQL
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+-- bare 'set' is a metric too
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+-- a real SET statement still works under the dialect
+OK
+-- a malformed SET still gets the ordinary SQL lexical error
+Unrecognized token

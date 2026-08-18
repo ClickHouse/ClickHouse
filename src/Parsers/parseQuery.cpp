@@ -1,7 +1,7 @@
 #include <Parsers/parseQuery.h>
 
 #include <Parsers/ParserQuery.h>
-#include <Parsers/ParserSetQuery.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -319,13 +319,13 @@ ASTPtr tryParseQuery(
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
     IParser::Pos set_lookahead(token_iterator);
-    /// A failed SET trial parse alone can't tell "not SET" from "SET but malformed" - both return
-    /// false. `max_parsed_pos` can: it only advances past the keyword once SET is actually matched.
-    const char * set_trial_start = set_lookahead->begin;
-    ASTPtr set_trial_node;
-    Expected set_trial_expected;
-    const bool committed_to_set = ParserSetQuery().parse(set_lookahead, set_trial_node, set_trial_expected)
-        || (set_trial_expected.max_parsed_pos && set_trial_expected.max_parsed_pos > set_trial_start);
+    /// Committed to SET once the input starts with `SET <identifier>`, as every real (even malformed) SET
+    /// statement does; `set` as a bare PromQL metric name (`set`, `set{...}`, `set[5m]`, `set @ 100`) does not.
+    ASTPtr set_probe_node;
+    Expected set_probe_expected;
+    const bool committed_to_set = parser.consumesRawText()
+        && ParserKeyword(Keyword::SET).ignore(set_lookahead, set_probe_expected)
+        && ParserCompoundIdentifier().parse(set_lookahead, set_probe_node, set_probe_expected);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {

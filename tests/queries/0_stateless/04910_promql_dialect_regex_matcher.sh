@@ -14,7 +14,10 @@ CREATE TABLE ts ENGINE = TimeSeries;
 INSERT INTO ts (metric_name, tags, time_series) VALUES
     ('up', map('instance', 'host1'), [(toDateTime64(1700000000, 3), 30)]),
     ('up', map('instance', 'host2'), [(toDateTime64(1700000000, 3), 10)]),
-    ('up', map('instance', 'host3'), [(toDateTime64(1700000000, 3), 20)]);
+    ('up', map('instance', 'host3'), [(toDateTime64(1700000000, 3), 20)]),
+    ('set', map('instance', 'host1'), [(toDateTime64(1700000000, 3), 3)]),
+    ('set', map('instance', 'host2'), [(toDateTime64(1700000000, 3), 1)]),
+    ('set', map('instance', 'host3'), [(toDateTime64(1700000000, 3), 2)]);
 "
 
 promql_client()
@@ -34,5 +37,17 @@ promql_client -q 'sum(up{instance=~"host2|host3"})' | cut -f1,3 | LC_ALL=C sort
 
 echo "-- the equality matcher still works"
 promql_client -q 'up{instance="host1"}' | cut -f1,3 | LC_ALL=C sort
+
+echo "-- a metric named 'set' is not a SET statement: matchers still parse as PromQL"
+promql_client -q 'set{instance=~"host2|host3"}' | cut -f1,3 | LC_ALL=C sort
+
+echo "-- bare 'set' is a metric too"
+promql_client -q 'set' | cut -f1,3 | LC_ALL=C sort
+
+echo "-- a real SET statement still works under the dialect"
+promql_client -q 'SET max_threads = 1' && echo OK
+
+echo "-- a malformed SET still gets the ordinary SQL lexical error"
+promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "Unrecognized token" | head -n 1
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"
