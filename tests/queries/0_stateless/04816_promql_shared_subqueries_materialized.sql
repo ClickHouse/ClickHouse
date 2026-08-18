@@ -42,7 +42,13 @@ INSERT INTO prometheus (metric_name, tags, time_series) VALUES
     ('m', map('host', 'h3', 'dc', 'b'), [(toDateTime64(100, 3), 3), (toDateTime64(110, 3), 5), (toDateTime64(120, 3), 2), (toDateTime64(130, 3), 3)]),
     ('m', map('host', 'h4', 'dc', 'b'), [(toDateTime64(100, 3), 4), (toDateTime64(130, 3), 4)]),
     ('n', map('host', 'h5', 'dc', 'a'), [(toDateTime64(100, 3), 7), (toDateTime64(110, 3), 7), (toDateTime64(120, 3), 7), (toDateTime64(130, 3), 7)]),
-    ('n', map('host', 'h6', 'dc', 'b'), [(toDateTime64(100, 3), 8), (toDateTime64(110, 3), 8), (toDateTime64(120, 3), 8), (toDateTime64(130, 3), 8)]);
+    ('n', map('host', 'h6', 'dc', 'b'), [(toDateTime64(100, 3), 8), (toDateTime64(110, 3), 8), (toDateTime64(120, 3), 8), (toDateTime64(130, 3), 8)]),
+    ('sparse_or_left', map('test_case', 'or'), [(toDateTime64(100, 3), 1), (toDateTime64(130, 3), 4)]),
+    ('dense_or_right', map('test_case', 'or'), [(toDateTime64(100, 3), 7), (toDateTime64(110, 3), 7), (toDateTime64(120, 3), 7), (toDateTime64(130, 3), 7)]),
+    ('dense_and_left', map('test_case', 'and'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1), (toDateTime64(120, 3), 1), (toDateTime64(130, 3), 1)]),
+    ('sparse_and_right', map('test_case', 'and'), [(toDateTime64(100, 3), 2), (toDateTime64(130, 3), 2)]),
+    ('dense_unless_left', map('test_case', 'unless'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 1), (toDateTime64(120, 3), 1), (toDateTime64(130, 3), 1)]),
+    ('sparse_unless_right', map('test_case', 'unless'), [(toDateTime64(100, 3), 2), (toDateTime64(130, 3), 2)]);
 
 SELECT '-- or, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'last_over_time(m[10]) or last_over_time(n[10])', 100, 130, 10) ORDER BY tags;
@@ -53,6 +59,41 @@ SELECT '-- topk(2), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags;
 SELECT '-- topk(2), range: identical result with materialization disabled';
 SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))', 100, 130, 10) ORDER BY tags SETTINGS enable_materialized_cte = 0;
+
+SELECT '-- sparse or preserves both sides at different steps';
+SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(sparse_or_left[10]) or on(test_case) last_over_time(dense_or_right[10])',
+    100, 130, 10);
+
+SELECT '-- sparse and keeps only right-present steps';
+SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(dense_and_left[10]) and on(test_case) last_over_time(sparse_and_right[10])',
+    100, 130, 10);
+
+SELECT '-- sparse unless keeps only right-absent steps';
+SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(dense_unless_left[10]) unless on(test_case) last_over_time(sparse_unless_right[10])',
+    100, 130, 10);
+
+SELECT '-- empty left vector remains empty for and';
+SELECT count() AS series_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(missing_metric[10]) and last_over_time(dense_and_left[10])',
+    100, 130, 10);
+
+SELECT '-- empty right vector leaves unless left unchanged';
+SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+FROM prometheusQueryRange(
+    'prometheus',
+    'last_over_time(dense_unless_left[10]) unless last_over_time(missing_metric[10])',
+    100, 130, 10);
 
 SELECT '-- or: the left side is evaluated once: two samples reads in total (left materialized + right inlined)';
 SELECT countIf(explain LIKE '%ReadFromMergeTree%samples_table%') AS samples_table_reads,
