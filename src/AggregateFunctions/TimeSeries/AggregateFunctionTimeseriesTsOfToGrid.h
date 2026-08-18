@@ -29,6 +29,8 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    /// The result is a timestamp in seconds, not a sample value: keep it Float64 regardless of `ValueType`.
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -148,13 +150,12 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(TimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (!combined.has_value)
                 return std::nullopt;
-            return static_cast<ValueType>(
-                static_cast<double>(combined.timestamp) / static_cast<double>(timestamp_scale_multiplier));
+            return static_cast<ResultType>(combined.timestamp) / static_cast<ResultType>(timestamp_scale_multiplier);
         }
     };
 
