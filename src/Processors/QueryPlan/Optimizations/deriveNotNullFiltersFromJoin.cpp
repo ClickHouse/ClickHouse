@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -64,8 +65,10 @@ void collectDroppedNullableColumns(const JoinActionRef & side, NameSet & left_co
         right_columns.insert(node->result_name);
 }
 
-bool tryAddDerivedNotNullFilter(QueryPlan::Node & node, const SharedHeader & header, const NameSet & columns, QueryPlan::Nodes & nodes)
+bool tryAddDerivedNotNullFilter(QueryPlan::Node & join_node, size_t child_index, const NameSet & columns, QueryPlan::Nodes & nodes)
 {
+    QueryPlan::Node * child_node = join_node.children[child_index];
+    const auto header = child_node->step->getOutputHeader();
     ActionsDAG dag(header->getColumnsWithTypeAndName());
 
     auto is_not_null = FunctionFactory::instance().get("isNotNull", Context::getGlobalContextInstance());
@@ -92,9 +95,15 @@ bool tryAddDerivedNotNullFilter(QueryPlan::Node & node, const SharedHeader & hea
     }
     dag.addOrReplaceInOutputs(*filter_node);
 
-    return makeFilterNodeOnTopOf(
-        node, std::move(dag), filter_node->result_name,
-        /*remove_filer=*/true, nodes, makeDescription("Derived NOT NULL filter from JOIN condition"));
+    auto step = std::make_unique<FilterStep>(header, std::move(dag), filter_node->result_name, /*remove_filter=*/true);
+    step->setStepDescription("Derived NOT NULL filter from JOIN condition");
+
+    auto & filter_step_node = nodes.emplace_back();
+    filter_step_node.step = std::move(step);
+    filter_step_node.children = {child_node};
+    join_node.children[child_index] = &filter_step_node;
+
+    return true;
 }
 
 }
@@ -139,9 +148,9 @@ size_t tryDeriveNotNullFiltersFromJoin(QueryPlan::Node * node, QueryPlan::Nodes 
 
     bool added = false;
     if (!left_columns.empty())
-        added |= tryAddDerivedNotNullFilter(*node->children[0], join->getInputHeaders()[0], left_columns, nodes);
+        added |= tryAddDerivedNotNullFilter(*node, 0, left_columns, nodes);
     if (!right_columns.empty())
-        added |= tryAddDerivedNotNullFilter(*node->children[1], join->getInputHeaders()[1], right_columns, nodes);
+        added |= tryAddDerivedNotNullFilter(*node, 1, right_columns, nodes);
 
     return added ? 2 : 0;
 }
