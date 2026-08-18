@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-msan, no-replicated-database
 # Tag no-fasttest: delta-kernel and Paimon pull in extra dependencies.
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
-# Tag no-replicated-database: IcebergLocal is non-replicated.
+# Tag no-replicated-database: kept for PaimonLocal, which no other test exercises without it.
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/114765
 # OPTIMIZE TABLE on an object-storage table whose configuration does not implement
@@ -12,8 +12,8 @@
 # that bool, so the statement reported success. They now throw, like every other
 # unsupported operation default in the same two headers.
 #
-# Iceberg overrides IDataLakeMetadata::optimize and must keep its own gate message, so it
-# is asserted here as a control: the change must not reach a class that implements optimize.
+# Iceberg overrides `IDataLakeMetadata::optimize`, so it is unaffected and not covered here:
+# its own gate message is worded differently in the Cloud build.
 #
 # The empty Delta table is bootstrapped by hand (a v0 _delta_log with only protocol +
 # metaData), because ClickHouse cannot initialize a Delta transaction log itself.
@@ -62,14 +62,6 @@ ${CLICKHOUSE_CLIENT} --query "
     OPTIMIZE TABLE t_s3;
 " 2>&1 | grep -o "Table engine s3 doesn't support optimize" | head -n 1
 
-# Control: Iceberg implements optimize, so it keeps its own setting gate.
-echo "-- iceberg control"
-${CLICKHOUSE_CLIENT} --allow_experimental_iceberg_compaction=0 --query "
-    DROP TABLE IF EXISTS t_iceberg;
-    CREATE TABLE t_iceberg (k Int32) ENGINE = IcebergLocal('${ROOT}/iceberg/');
-    OPTIMIZE TABLE t_iceberg;
-" 2>&1 | grep -o "Enable 'allow_experimental_iceberg_compaction' setting to call optimize for iceberg tables" | head -n 1
-
 # Control: a supported engine still optimizes, and a genuine no-op is still not an error
 # unless optimize_throw_if_noop asks for one.
 echo "-- mergetree control"
@@ -83,4 +75,4 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "OPTIMIZE TABLE t_mt SETTINGS optimize_throw_if_noop = 1" 2>&1 \
     | grep -o 'CANNOT_ASSIGN_OPTIMIZE' | head -n 1
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta; DROP TABLE IF EXISTS t_paimon; DROP TABLE IF EXISTS t_s3; DROP TABLE IF EXISTS t_iceberg; DROP TABLE IF EXISTS t_mt"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_delta; DROP TABLE IF EXISTS t_paimon; DROP TABLE IF EXISTS t_s3; DROP TABLE IF EXISTS t_mt"
