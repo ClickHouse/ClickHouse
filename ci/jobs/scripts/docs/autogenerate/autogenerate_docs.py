@@ -738,7 +738,7 @@ def _flat_setting_page(base_route, prefix, sections):
     )
 
 
-def group_session_settings(
+def _group_session_settings_fresh(
         sections,
         base_route=SESSION_SETTINGS_BASE_ROUTE):
     first_token_groups = _token_groups(sections, 1)
@@ -791,6 +791,109 @@ def group_session_settings(
             "flat settings hierarchy has duplicate routes: "
             + ", ".join(duplicates))
     return pages
+
+
+def _setting_page_for_route(base_route, route, route_definition=None):
+    prefix = base_route.rstrip("/") + "/"
+    if not route.startswith(prefix):
+        raise ValueError(
+            f"generated settings route {route!r} is outside {base_route!r}")
+
+    parts = tuple(part for part in route[len(prefix):].split("/") if part)
+    if not parts:
+        raise ValueError(f"generated settings route {route!r} has no page")
+
+    if route == prefix + "other":
+        return SettingPage(
+            base_route=base_route,
+            parts=parts,
+            label="Other",
+            match_prefix="",
+            match_mode="raw",
+        )
+
+    route_definition = route_definition or {}
+    match_prefix = route_definition.get("prefix")
+    if not match_prefix:
+        match_prefix = "_".join(parts).replace("-", "_")
+    return SettingPage(
+        base_route=base_route,
+        parts=parts,
+        label=f"{match_prefix}_*",
+        match_prefix=match_prefix,
+        match_mode=route_definition.get("mode", "token"),
+    )
+
+
+def group_session_settings(
+        sections,
+        base_route=SESSION_SETTINGS_BASE_ROUTE,
+        previous_manifest=None):
+    """Group settings without changing the page of an existing setting.
+
+    The committed manifest is the routing contract. New settings first join a
+    matching existing page; only the remaining new settings participate in the
+    prefix-count heuristic which can create another page.
+    """
+    if not previous_manifest or not previous_manifest.get("anchorRoutes"):
+        return _group_session_settings_fresh(sections, base_route)
+
+    previous_anchor_routes = previous_manifest["anchorRoutes"]
+    previous_routes = previous_manifest.get("routes", [])
+    route_definitions = {
+        route["target"]: route
+        for route in previous_routes
+        if route.get("target")
+    }
+    other_route = base_route.rstrip("/") + "/other"
+    specific_previous_routes = [
+        route for route in previous_routes
+        if route.get("target") != other_route and route.get("prefix")
+    ]
+
+    assigned_routes = {}
+    new_sections = []
+    for section in sections:
+        previous_route = previous_anchor_routes.get(section.anchor)
+        if previous_route:
+            assigned_routes[section.name] = previous_route
+            continue
+
+        try:
+            assigned_routes[section.name] = setting_route(
+                section.name, specific_previous_routes)
+        except ValueError:
+            new_sections.append(section)
+
+    new_pages = _group_session_settings_fresh(new_sections, base_route)
+    page_definitions = {}
+    for page in new_pages:
+        page_definitions[page.route] = page
+        for section in page.sections:
+            assigned_routes[section.name] = page.route
+
+    sections_by_route = {}
+    for section in sections:
+        route = assigned_routes[section.name]
+        if not route.startswith(base_route.rstrip("/") + "/"):
+            raise ValueError(
+                f"previous route {route!r} for {section.name!r} is outside "
+                f"{base_route!r}")
+        sections_by_route.setdefault(route, []).append(section)
+
+    pages = []
+    for route, grouped_sections in sections_by_route.items():
+        page = page_definitions.get(route)
+        if page is None:
+            page = _setting_page_for_route(
+                base_route, route, route_definitions.get(route))
+        page.sections = grouped_sections
+        pages.append(page)
+
+    return sorted(
+        pages,
+        key=lambda page: (page.route == other_route, page.route),
+    )
 
 
 def walk_setting_pages(pages):
@@ -1457,9 +1560,14 @@ export default __COMPONENT_NAME__;
 def split_settings_page(dest, content, docs_dir, family_name):
     family = SETTINGS_SPLIT_FAMILIES[family_name]
     root_frontmatter, preamble, sections = parse_settings_page(content)
+    manifest_path = _settings_manifest_path(docs_dir, family)
+    previous_manifest = None
+    if manifest_path.is_file():
+        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
+        previous_manifest=previous_manifest,
     )
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
@@ -1467,7 +1575,6 @@ def split_settings_page(dest, content, docs_dir, family_name):
     current_routes = {
         page.route for page in walk_setting_pages(pages) if page.sections
     }
-    manifest_path = shard_dir / "manifest.json"
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
     # Mintlify renders the frontmatter title as the page H1. Some generated
