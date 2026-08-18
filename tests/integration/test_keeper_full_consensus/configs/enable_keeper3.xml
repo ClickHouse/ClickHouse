@@ -15,6 +15,7 @@
             <raft_logs_level>trace</raft_logs_level>
             <slow_member_backpressure_max_hold_ms>3000</slow_member_backpressure_max_hold_ms>
             <stale_log_gap>100</stale_log_gap>
+            <fresh_log_gap>10</fresh_log_gap>
         </coordination_settings>
 
         <raft_configuration>

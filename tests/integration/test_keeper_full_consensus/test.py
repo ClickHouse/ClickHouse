@@ -76,12 +76,16 @@ BACKPRESSURE_MAX_HOLD_MS = 3000
 STALE_LOG_GAP = 100
 
 
-def wait_for_log(node, message, timeout=60):
+def wait_for_more_in_log(node, message, was, timeout=60):
+    # Counted rather than matched, because the cluster is shared by every test
+    # in this module and an earlier test may have logged the same line.
     for _ in range(timeout):
-        if node.contains_in_log(message):
+        if node.count_in_log(message) > was:
             return
         time.sleep(1)
-    raise AssertionError(f"{node.name} did not log {message!r} within {timeout} s")
+    raise AssertionError(
+        f"{node.name} did not log {message!r} more than {was} times within {timeout} s"
+    )
 
 
 def test_backpressure_not_applied_to_a_down_member(started_cluster):
@@ -134,24 +138,39 @@ def test_backpressure_holds_commit_for_lagging_member(started_cluster):
         followers = [node for node in [node1, node2, node3] if node != leader]
         lagging = followers[1]
 
+        holds_before = leader.count_in_log("hold the commit index for it")
+        releases_before = leader.count_in_log("stop holding the commit index for it")
+
         with PartitionManager() as pm:
             # Large enough to fall behind, small enough to keep answering
             # heartbeats within `full_consensus_leader_limit` (4) heartbeats.
-            pm.add_network_delay(lagging, 400)
+            pm.add_network_delay(lagging, 300)
 
             zk = get_fake_zk(leader.name)
-            for i in range(STALE_LOG_GAP * 5):
-                zk.create(f"/test_backpressure_lagging_{i}", b"value")
+            # Asynchronous, so that the requests pipeline: a synchronous write
+            # waits for its own commit, which never lets the leader get ahead
+            # of anyone and so can never produce a lagging member.
+            pending = [
+                zk.create_async(f"/test_backpressure_lagging_{i}", b"value")
+                for i in range(STALE_LOG_GAP * 20)
+            ]
 
-            wait_for_log(leader, "hold the commit index for it")
+            wait_for_more_in_log(
+                leader, "hold the commit index for it", holds_before
+            )
+
+            for result in pending:
+                result.get(timeout=60)
 
         # Once the delay is gone the member must catch up and be released,
         # rather than being left behind to recover from a snapshot.
-        wait_for_log(leader, "stop holding the commit index for it")
+        wait_for_more_in_log(
+            leader, "stop holding the commit index for it", releases_before
+        )
 
         zk_lagging = get_fake_zk(lagging.name)
         try:
-            last = STALE_LOG_GAP * 5 - 1
+            last = STALE_LOG_GAP * 20 - 1
             assert zk_lagging.exists(f"/test_backpressure_lagging_{last}") is not None
         finally:
             destroy_zk_client(zk_lagging)

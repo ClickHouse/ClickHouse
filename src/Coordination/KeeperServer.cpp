@@ -94,6 +94,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsUInt64 nuraft_max_uncommitted_log_entries;
     extern const CoordinationSettingsUInt64 nuraft_append_entries_backward_probe_throttle_threshold;
     extern const CoordinationSettingsMilliseconds slow_member_backpressure_max_hold_ms;
+    extern const CoordinationSettingsMilliseconds slow_member_backpressure_gap_window_ms;
     extern const CoordinationSettingsMilliseconds session_timeout_ms;
     extern const CoordinationSettingsBool use_new_dispatcher;
 }
@@ -599,6 +600,11 @@ void KeeperServer::launchRaftServer(const Poco::Util::AbstractConfiguration & co
     params.slow_member_backpressure_max_hold_ = getValueOrMaxInt32AndLogWarning(
         coordination_settings[CoordinationSetting::slow_member_backpressure_max_hold_ms].totalMilliseconds(),
         "slow_member_backpressure_max_hold_ms",
+        log);
+
+    params.slow_member_backpressure_gap_window_ = getValueOrMaxInt32AndLogWarning(
+        coordination_settings[CoordinationSetting::slow_member_backpressure_gap_window_ms].totalMilliseconds(),
+        "slow_member_backpressure_gap_window_ms",
         log);
 
     if (params.slow_member_backpressure_max_hold_ >= params.client_req_timeout_)
