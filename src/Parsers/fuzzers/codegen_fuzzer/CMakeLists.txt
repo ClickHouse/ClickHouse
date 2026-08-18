@@ -24,19 +24,15 @@ configure_file(
 # sources, so it cannot drift the way a committed snapshot does.
 # The dictionary is derived from the registration code, so an incremental
 # build must rerun it when any scanned source changes, not only when the
-# script itself does. Keep this list in sync with the trees and files that
-# generate_source_dict.sh scans.
+# script itself does. The generator greps its trees with no suffix filter, so
+# the trees are globbed whole here: this list and the trees and files that
+# generate_source_dict.sh scans are the same set.
 file(GLOB_RECURSE CODEGEN_DICT_SCANNED_SOURCES CONFIGURE_DEPENDS
-    "${ClickHouse_SOURCE_DIR}/src/Functions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/Functions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*.cpp"
-    "${ClickHouse_SOURCE_DIR}/src/Formats/*.h"
-    "${ClickHouse_SOURCE_DIR}/src/Formats/*.cpp"
+    "${ClickHouse_SOURCE_DIR}/src/Functions/*"
+    "${ClickHouse_SOURCE_DIR}/src/AggregateFunctions/*"
+    "${ClickHouse_SOURCE_DIR}/src/TableFunctions/*"
+    "${ClickHouse_SOURCE_DIR}/src/DataTypes/*"
+    "${ClickHouse_SOURCE_DIR}/src/Formats/*"
 )
 list(APPEND CODEGEN_DICT_SCANNED_SOURCES
     "${ClickHouse_SOURCE_DIR}/src/Processors/Transforms/WindowTransform.cpp"

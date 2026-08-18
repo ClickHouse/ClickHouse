@@ -231,6 +231,12 @@ class TestSuiteInputsAreInTheJobDigest:
 
     A commit touching only such a file takes a cache hit from an older run, and the
     suite above never executes on the commit that broke it.
+
+    The enumeration below covers the files this suite reads directly. The source
+    trees the generator scans are deliberately not in the `CI Tests` digest; a
+    generator that exits non-zero on them is caught instead by the `FATAL_ERROR`
+    in the root CMakeLists' `if (FUZZER)` block, which `Build (arm_fuzzers)`
+    re-runs because its digest covers `./src`.
     """
 
     # From the module's own constants, so a new input is covered automatically.
