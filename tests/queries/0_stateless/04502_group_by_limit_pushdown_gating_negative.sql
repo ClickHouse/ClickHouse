@@ -3,6 +3,10 @@
 -- the edges, negative cases, two-level hash-table conversion, huge limits, and
 -- the Distinct-combinator use-after-destroy regression.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 SET enable_group_by_top_k_optimization = 1;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.
 SET query_plan_max_limit_for_top_k_optimization = 1000;

@@ -22,6 +22,10 @@
 -- start pruning instead of freezing itself as pure overhead, while the retained
 -- `1.5 * limit` groups still exceed the 1MB spill threshold.
 
+-- The top-K optimization does not apply to serialized plans; pin the setting
+-- so the assertions hold in the distributed-plan suite.
+SET serialize_query_plan = 0;
+
 SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes these; pin them so the heap engages and the spill is the only
 -- thing under test.

@@ -17,6 +17,10 @@ SET group_by_top_k_optimization_observation_rows = 65536;
 -- One stream, so the assertions below describe a single heap.
 SET max_threads = 1;
 SET enable_parallel_replicas = 0;
+-- In-order aggregation bypasses the heap (and its randomized in-order read was
+-- slow enough to trip `TOO_SLOW` in the flaky check); pin the batch path.
+SET optimize_aggregation_in_order = 0;
+SET optimize_read_in_order = 0;
 SET log_queries = 1;
 
 DROP TABLE IF EXISTS t_freeze_burst;
