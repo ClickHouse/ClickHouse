@@ -965,16 +965,13 @@ void MutationsInterpreter::prepare(bool dry_run)
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
     /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts.
+    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. Taking the
+    /// closure rather than every MATERIALIZED column also leaves out those derived from an
+    /// EPHEMERAL column, which cannot be recomputed outside INSERT: the analysis above skips
+    /// them, so recomputing one fails to resolve the EPHEMERAL name and kills the mutation.
     NameSet clear_affected_materialized;
-    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
-    {
-        for (const auto & column : columns_desc)
-        {
-            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression)
-                clear_affected_materialized.insert(column.name);
-        }
-    }
+    if (!clear_column_names.empty())
+        clear_affected_materialized = affected_materialized_closure(clear_column_names);
 
     /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
     /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
