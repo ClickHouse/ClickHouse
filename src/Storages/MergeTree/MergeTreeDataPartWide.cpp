@@ -344,11 +344,16 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
         if (!serialization)
             continue;
 
-        auto column = columns.tryGetByName(column_name);
+        auto column = getColumns().tryGetByName(column_name);
         if (!column)
             continue;
 
-        serialization->enumerateStreams([&, column_desc = *column](const auto & subpath)
+        ISerialization::EnumerateStreamsSettings settings;
+        settings.enumerate_dynamic_streams = false;
+        auto data = ISerialization::SubstreamData(serialization)
+            .withType(column->type)
+            .withColumn(getColumnSample(*column));
+        serialization->enumerateStreams(settings, [&, column_desc = *column](const auto & subpath)
         {
             auto stream_name = getStreamNameForColumn(column_desc, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
@@ -367,7 +372,7 @@ void MergeTreeDataPartWide::loadMarksToCache(const Names & column_names, MarkCac
                 context->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
-        });
+        }, data);
     }
 
     for (auto & loader : loaders)
@@ -381,11 +386,16 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
 
     getSerializations().forEach([&](const String & column_name, const SerializationPtr & serialization)
     {
-        auto column = columns.tryGetByName(column_name);
+        auto column = getColumns().tryGetByName(column_name);
         if (!column)
-            continue;
+            return;
 
-        serialization->enumerateStreams([&, column_desc = *column](const auto & subpath)
+        ISerialization::EnumerateStreamsSettings settings;
+        settings.enumerate_dynamic_streams = false;
+        auto data = ISerialization::SubstreamData(serialization)
+            .withType(column->type)
+            .withColumn(getColumnSample(*column));
+        serialization->enumerateStreams(settings, [&, column_desc = *column](const auto & subpath)
         {
             auto stream_name = getStreamNameForColumn(column_desc, subpath, DATA_FILE_EXTENSION, checksums, storage.getSettings());
             if (!stream_name)
@@ -394,7 +404,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             auto mark_path = index_granularity_info.getMarksFilePath(*stream_name);
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
-        });
+        }, data);
     });
 }
 
