@@ -27,9 +27,12 @@ Run from the root of a ClickHouse checkout.
 from __future__ import annotations
 
 import argparse
+import ast
+import itertools
 import json
 import os
 import platform
+import random
 import re
 import shutil
 import socket
@@ -162,21 +165,33 @@ def detect_arch() -> tuple[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def gh_api(args: list[str], what: str) -> str:
+    """Run `gh api` with GH_CONFIG_DIR dropped.
+
+    Some agent and CI runners point GH_CONFIG_DIR at a config dir with no
+    usable auth, which makes every gh call fail with HTTP 403 while the
+    default config authenticates fine. Other tooling in this repo already
+    works around it the same way (.claude/tools/gh-ro.sh,
+    patch-release-check)."""
+    env = {k: v for k, v in os.environ.items() if k != "GH_CONFIG_DIR"}
+    try:
+        return subprocess.check_output(["gh", "api", *args], text=True, env=env)
+    except FileNotFoundError:
+        die(f"gh not found on PATH, needed to {what}")
+    except subprocess.CalledProcessError as e:
+        die(f"gh failed to {what}: {e}")
+
+
 def find_pr_for_commit(sha: str) -> int:
     """Use gh to find the PR number that contains this commit."""
-    try:
-        out = subprocess.check_output(
-            [
-                "gh",
-                "api",
-                f"repos/{REPO}/commits/{sha}/pulls",
-                "--jq",
-                ".[] | {number: .number, state: .state}",
-            ],
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        die(f"gh failed to resolve PR for commit {sha}: {e}")
+    out = gh_api(
+        [
+            f"repos/{REPO}/commits/{sha}/pulls",
+            "--jq",
+            ".[] | {number: .number, state: .state}",
+        ],
+        f"resolve PR for commit {sha}",
+    )
     prs = [json.loads(line) for line in out.strip().splitlines() if line.strip()]
     if not prs:
         die(f"no PR found containing commit {sha}")
@@ -189,14 +204,10 @@ def find_full_sha(sha: str) -> str:
     """Resolve possibly-short SHA against GitHub for the canonical 40-char SHA."""
     if len(sha) == 40 and all(c in "0123456789abcdef" for c in sha.lower()):
         return sha.lower()
-    try:
-        out = subprocess.check_output(
-            ["gh", "api", f"repos/{REPO}/commits/{sha}", "--jq", ".sha"],
-            text=True,
-        ).strip()
-    except subprocess.CalledProcessError as e:
-        die(f"gh failed to resolve SHA {sha}: {e}")
-    return out
+    return gh_api(
+        [f"repos/{REPO}/commits/{sha}", "--jq", ".sha"],
+        f"resolve SHA {sha}",
+    ).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -1353,7 +1364,7 @@ def run_perf_test(
     work_dir: Path,
     test_xml: str,
     query_indices: list[int],
-    runs: int,
+    runs: Optional[int],
 ) -> Path:
     """Run perf.py for one XML, restricted to the given query indices.
 
@@ -1377,7 +1388,11 @@ def run_perf_test(
         "--binary", str(work_dir / "left" / "clickhouse"),
         str(work_dir / "right" / "clickhouse"),
         "--http-port", str(LEFT_HTTP), str(RIGHT_HTTP),
-        "--runs", str(runs),
+        # Omitted unless asked for, exactly as CHServer.run_test does.
+        *(["--runs", str(runs)] if runs is not None else []),
+        # CI passes 10 here; the profile runs happen after a query's diff is
+        # computed, so they cannot change its numbers, and this skill does not
+        # collect flamegraphs.
         "--profile-seconds", "0",
         "--queries-to-run", *[str(i) for i in query_indices],
     ]
@@ -1385,6 +1400,72 @@ def run_perf_test(
     with open(out_path, "w") as out_fh, open(err_path, "w") as err_fh:
         subprocess.run(cmd, stdout=out_fh, stderr=err_fh, check=False)
     return out_path
+
+
+def load_stat_threshold(repo_root: Path):
+    """Return perf.py's own `stat_threshold` function.
+
+    compare.sh confirms a flagged query with `abs(diff) > changed_threshold and
+    abs(diff) >= stat_threshold`, where stat_threshold is the q99 of the
+    balanced-split null (eqmed.sql) recomputed from the rerun's own per-run
+    samples. perf.py carries a Python implementation of that same randomization
+    test -- it drives its adaptive stop -- so the gate is reproducible here
+    exactly, with no second implementation to drift.
+
+    The function is lifted out of perf.py by AST rather than imported: perf.py
+    runs a benchmark at module scope, so importing it is not an option. If the
+    lift fails the run stops -- silently falling back to a different statistic
+    would mean printing verdicts computed by a rule that is not CI's."""
+    src_path = repo_root / "tests/performance/scripts/perf.py"
+    try:
+        tree = ast.parse(src_path.read_text())
+    except (OSError, SyntaxError) as e:
+        die(f"cannot read {src_path} to lift stat_threshold: {e}")
+    wanted_defs = {"ch_median", "stat_threshold"}
+    wanted_consts = {"MAX_EXACT_SPLIT_RUNS", "SAMPLED_SPLITS"}
+    picked: list[ast.stmt] = []
+    found: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name in wanted_defs:
+            picked.append(node)
+            found.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id in wanted_consts:
+                    picked.append(node)
+                    found.add(target.id)
+    missing = (wanted_defs | wanted_consts) - found
+    if missing:
+        die(
+            f"could not lift {', '.join(sorted(missing))} from {src_path}; "
+            "perf.py changed shape. Update load_stat_threshold -- the local "
+            "rerun must be judged by the same gate as CI."
+        )
+    namespace: dict = {"itertools": itertools, "random": random}
+    exec(compile(ast.Module(body=picked, type_ignores=[]), str(src_path), "exec"), namespace)
+    return namespace["stat_threshold"]
+
+
+def parse_perf_runs(raw_path: Path) -> dict[int, dict[int, list[float]]]:
+    """Per-run timings from perf.py output: `query <qi> <run_id> <conn> <s>`.
+
+    Connection 0 is the left (reference) server. These are the same lines
+    compare.sh collects from the rerun's raw TSV to recompute the statistics
+    (`sed -n "s/^query\t/.../p"`)."""
+    runs: dict[int, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
+    if not raw_path.is_file():
+        return {}
+    for line in raw_path.read_text().splitlines():
+        if not line.startswith("query\t"):
+            continue
+        parts = line.split("\t")
+        if len(parts) < 5:
+            continue
+        try:
+            runs[int(parts[1])][int(parts[3])].append(float(parts[4]))
+        except ValueError:
+            continue
+    return {qi: dict(sides) for qi, sides in runs.items()}
 
 
 def parse_perf_diffs(raw_path: Path) -> dict[int, dict]:
@@ -1427,10 +1508,10 @@ def parse_perf_diffs(raw_path: Path) -> dict[int, dict]:
 # from machine noise and code-layout artifacts alone - so a local rerun must
 # clear the same bar before it can claim to have reproduced anything.
 CHANGED_THRESHOLD_FLOOR = 0.15
-# Stands in for CI's `abs(diff) >= stat_threshold`: perf.py reports a p-value
-# rather than the randomization threshold compare.sh computes downstream, and
-# 0.05 is the cutoff perf.py itself uses to decide a difference is real.
-LOCAL_PVALUE_CUTOFF = 0.05
+# The noise gate is CI's own: `abs(diff) >= stat_threshold`, non-strict, with
+# stat_threshold recomputed from the rerun's per-run samples (see
+# load_stat_threshold). The p-value perf.py reports is displayed but not used
+# to decide -- it is a different test from the one the CI gate applies.
 
 
 def fmt_diff(diff: float) -> str:
@@ -1497,10 +1578,12 @@ def print_report(
                 l_rel < 0 and ci_dir == "faster"
             )
             bar = cq.changed_threshold or CHANGED_THRESHOLD_FLOOR
+            l_stat = local.get("stat_threshold")
             confirmed_here = (
                 same_direction
                 and abs(l_rel) > bar
-                and l_pv <= LOCAL_PVALUE_CUTOFF
+                and l_stat is not None
+                and abs(l_rel) >= l_stat
             )
             if confirmed_here:
                 if local_arch in archs:
@@ -1518,8 +1601,10 @@ def print_report(
                     why = "opposite direction"
                 elif abs(l_rel) <= bar:
                     why = f"|Δ| {abs(l_rel):.1%} <= threshold {bar:.0%}"
+                elif l_stat is None:
+                    why = "no stat_threshold (too few runs)"
                 else:
-                    why = f"p={l_pv:.3f} > {LOCAL_PVALUE_CUTOFF}"
+                    why = f"|Δ| {abs(l_rel):.1%} < local noise {l_stat:.1%}"
                 if local_arch in archs:
                     verdict = f"NOT REPRODUCED ({ci_dir} in CI; {why})"
                 else:
@@ -1603,8 +1688,12 @@ def main() -> int:
     parser.add_argument(
         "--runs",
         type=int,
-        default=7,
-        help="number of measurements per query (default 7, same as CI)",
+        default=None,
+        help="minimum measurements per query. Unset by default, like CI: "
+        "perf.py's adaptive policy then decides the counts from its "
+        "--min-runs/--tau precision stop. Passing a value only widens that "
+        "policy, and changes the sampling -- and so the medians, the rerun "
+        "precision and the verdict",
     )
     parser.add_argument(
         "--dry-run",
@@ -1916,12 +2005,22 @@ def main() -> int:
             run_perf_test(repo_root, work_dir, test_files[test], sorted(qs), args.runs)
             cleanup_user_files(side_dbs)
 
-        # Collect results
+        # Collect results. stat_threshold is recomputed from the per-run
+        # samples with perf.py's own function, the way compare.sh recomputes it
+        # for its confirmation rerun.
+        stat_threshold_fn = load_stat_threshold(repo_root)
         local_results: dict[tuple[str, int], dict] = {}
         for test in by_test:
             raw = work_dir / "raw" / f"{test}-raw.tsv"
             diffs = parse_perf_diffs(raw)
+            runs = parse_perf_runs(raw)
             for qi, d in diffs.items():
+                sides = runs.get(qi, {})
+                d["stat_threshold"] = (
+                    stat_threshold_fn(sides[0], sides[1])
+                    if 0 in sides and 1 in sides
+                    else None
+                )
                 local_results[(test, qi)] = d
 
         print_report(changed, local_results, perf_arch)

@@ -53,7 +53,11 @@ skill:
   Must match the layout of `ci/tmp/perf_wd/db0`. If omitted, the script
   probes `ci/tmp/perf_wd/db0`.
 - `--pr N`, `--reference-sha SHA`: override auto-detection.
-- `--runs N`: number of measurements per query (default 7, matches CI).
+- `--runs N`: minimum measurements per query. Unset by default, as in CI —
+  `perf.py`'s adaptive policy decides the counts from its `--min-runs` /
+  `--tau` precision stop. Passing a value only widens that policy and
+  changes the sampling, and with it the medians, the rerun precision and
+  the verdict.
 - `--populate`: rebuild the affected `hits` tables on each server
   separately, the way CI's `populate_data_both` does, instead of sharing
   one hardlinked copy. See "Hardlinked data vs. `--populate`" below.
@@ -131,11 +135,19 @@ The script prints a table. For each changed query show:
 - Local old / new / Δ / p-value (from `perf.py`)
 - Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, or `no local data`
 
-A query counts as `CONFIRMED` when the local rerun shows the same direction,
-clears the **same per-query threshold CI used to flag it**, and is
-statistically significant (`p <= 0.05`, the cutoff `perf.py` itself uses).
-Anything else is `NOT REPRODUCED`, and the verdict says which of the three
-conditions failed.
+A query counts as `CONFIRMED` when the local rerun passes the same gate
+`compare.sh` uses to confirm a flagged query: same direction, `|Δ|` above the
+**per-query threshold CI used to flag it**, and `|Δ| >= stat_threshold` of the
+rerun itself (non-strict, as in `compare.sh`). Anything else is
+`NOT REPRODUCED`, and the verdict says which of the three conditions failed.
+
+`stat_threshold` is the q99 of the balanced-split null — the measurement
+precision this rerun actually reached. It is recomputed from the rerun's own
+per-run samples (the `query` rows of the raw TSV, the same lines `compare.sh`
+collects for its confirmation step), using `perf.py`'s own `stat_threshold`
+function, lifted out of the script rather than reimplemented so the two cannot
+drift. `perf.py`'s p-value is displayed but does not decide anything: it is a
+Welch t-test, not the statistic the CI gate applies.
 
 The threshold is not a fixed number: `compare.sh` computes it per query as
 the 0.15 floor raised by the query's historical p99 and the test's
@@ -221,6 +233,9 @@ treated as CI noise.
   `insert_values_with_expressions`, ...) and `drop_query` only drops tables,
   so without it a later XML can read what an earlier one left behind and a
   multi-test rerun becomes order-dependent.
+- `--profile-seconds 0` is a deliberate deviation: CI passes 10. The profile
+  runs happen after a query's diff has been computed, so they cannot change
+  its numbers, and this skill does not collect flamegraphs.
 - The skill does **not** attempt to reproduce flamegraphs or profiling —
   for that, use the `perf-report` skill on the same PR.
 - Architecture mismatch is partial: if a PR has only ARM shards and you're
