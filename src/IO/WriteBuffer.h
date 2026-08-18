@@ -84,6 +84,10 @@ public:
 
     void nextIfAtEnd()
     {
+        /// A derived buffer can temporarily alias storage owned by another buffer. Validate
+        /// that storage before `hasPendingData` accesses its current window.
+        preNext();
+
         if (!hasPendingData())
             next();
     }

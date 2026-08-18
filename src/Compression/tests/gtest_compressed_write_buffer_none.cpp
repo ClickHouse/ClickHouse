@@ -203,4 +203,44 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityIsDetected)
 #endif
 }
 
+TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeWriteIsDetected)
+{
+    /// A write must validate before `nextIfAtEnd` checks the aliased working buffer.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    auto tmp_file = createTemporaryFile("/tmp/");
+    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+
+    compressed_out.write("hello", 5);
+    out.write("x", 1);
+    out.next();
+
+    EXPECT_THROW(compressed_out.write("!", 1), DB::Exception);
+    compressed_out.cancel();
+#endif
+}
+
+TEST(CompressedWriteBufferNone, ViolatedExclusivityBeforeCharacterWriteIsDetected)
+{
+    /// `write(char)` must use the same guarded path as bulk writes.
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    auto tmp_file = createTemporaryFile("/tmp/");
+    WriteBufferFromFile out(tmp_file->path(), 1 << 20);
+    CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
+    compressed_out.declareOutBufferExclusive();
+
+    compressed_out.write("hello", 5);
+    out.write("x", 1);
+    out.next();
+
+    EXPECT_THROW(compressed_out.write('!'), DB::Exception);
+    compressed_out.cancel();
+#endif
+}
+
 }
