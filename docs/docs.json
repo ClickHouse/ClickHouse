@@ -206,6 +206,9 @@
       "src": "/_site/customizations/scroll-reset.js"
     },
     {
+      "src": "/_site/customizations/pagination-titles.js"
+    },
+    {
       "src": "/_site/customizations/custom-footer.js"
     },
     {

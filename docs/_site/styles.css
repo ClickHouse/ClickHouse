@@ -606,9 +606,8 @@ html:not(.dark) .pagination-prev:hover {
 /* Previous/Next pagination (#pagination): restyle the maple pill bar into
    two bordered cards matching the home-page hero cards (.ch-hero-card above;
    colors duplicated because the hero card's base colors live in Tailwind
-   utilities in index.mdx). CSS-only on top of Mintlify's own markup, so the
-   Previous card shows just the chevron + label — maple's markup doesn't
-   include the previous page's title. */
+   utilities in index.mdx). Mintlify omits the previous page's visible title;
+   pagination-titles.js restores that element before these styles apply. */
 #pagination {
     display: grid !important;
     grid-template-columns: 1fr;
@@ -622,7 +621,7 @@ html:not(.dark) .pagination-prev:hover {
         grid-template-columns: repeat(2, 1fr);
     }
     /* Next-only pages keep their card in the right column */
-    #pagination > a:first-child:has(svg.lucide-chevron-right) {
+    #pagination > a[rel="next"]:first-child {
         grid-column: 2;
     }
 }
@@ -660,15 +659,37 @@ html:not(.dark) .pagination-prev:hover {
     background: transparent !important;
 }
 
-/* Previous card: keep chevron + label together on the left (maple's
-   justify-between would otherwise spread them across the card) */
-#pagination > a:has(svg.lucide-chevron-left) {
-    justify-content: flex-start !important;
+/* Previous card: Mintlify omits its title from the visible markup. The
+   pagination customization restores it, and this grid places it above the
+   existing chevron + label row. */
+#pagination > a[rel="prev"] {
+    display: grid !important;
+    grid-template-areas:
+        "title title"
+        "chevron label";
+    grid-template-columns: auto minmax(0, 1fr);
+    align-content: center;
+    justify-content: initial !important;
+    column-gap: 0.375rem;
+    row-gap: 0.25rem;
+}
+
+#pagination > a[rel="prev"] [data-component-part="pagination-title"] {
+    grid-area: title;
+    min-width: 0;
+}
+
+#pagination > a[rel="prev"] [data-component-part="pagination-chevron"] {
+    grid-area: chevron;
+}
+
+#pagination > a[rel="prev"] [data-component-part="pagination-label"] {
+    grid-area: label;
 }
 
 /* Next card: drop the pill-era inner background, fixed height, divider and
    description, and stack the title over the label row, right-aligned. */
-#pagination > a:has(svg.lucide-chevron-right) > div {
+#pagination > a[rel="next"] > div {
     height: auto !important;
     background: none !important;
     box-shadow: none !important;
@@ -676,26 +697,27 @@ html:not(.dark) .pagination-prev:hover {
     align-items: flex-end !important;
 }
 
-#pagination > a:has(svg.lucide-chevron-right) > div > div {
+#pagination > a[rel="next"] > div > div {
     padding: 0 !important;
 }
 
-#pagination > a:has(svg.lucide-chevron-right) > div > div:last-child {
+#pagination > a[rel="next"] > div > div:last-child {
     margin-top: 0.25rem;
 }
 
-#pagination .font-semibold {
+#pagination [data-component-part="pagination-title"] {
     font-size: 1rem;
+    font-weight: 600;
     color: #111827 !important;
 }
 
-.dark #pagination .font-semibold,
-:is(.dark) #pagination .font-semibold {
+.dark #pagination [data-component-part="pagination-title"],
+:is(.dark) #pagination [data-component-part="pagination-title"] {
     color: #fff !important;
 }
 
 /* Description and vertical divider have no place in the card layout */
-#pagination .truncate,
+#pagination [data-component-part="pagination-description"],
 #pagination .w-px {
     display: none !important;
 }
@@ -710,17 +732,14 @@ html:not(.dark) .pagination-prev:hover {
     color: #a1a1aa !important;
 }
 
-#pagination svg.lucide-chevron-left,
-#pagination svg.lucide-chevron-right {
+#pagination [data-component-part="pagination-chevron"] {
     width: 0.875rem;
     height: 0.875rem;
     color: #6b7280 !important;
 }
 
-.dark #pagination svg.lucide-chevron-left,
-.dark #pagination svg.lucide-chevron-right,
-:is(.dark) #pagination svg.lucide-chevron-left,
-:is(.dark) #pagination svg.lucide-chevron-right {
+.dark #pagination [data-component-part="pagination-chevron"],
+:is(.dark) #pagination [data-component-part="pagination-chevron"] {
     color: #a1a1aa !important;
 }
 
