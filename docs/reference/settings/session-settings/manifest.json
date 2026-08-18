@@ -366,8 +366,8 @@
     "dynamic_throw_on_type_mismatch": "/reference/settings/session-settings/other",
     "empty_result_for_aggregation_by_constant_keys_on_empty_set": "/reference/settings/session-settings/empty-result",
     "empty_result_for_aggregation_by_empty_set": "/reference/settings/session-settings/empty-result",
-    "enable_adaptive_aggregator": "/reference/settings/session-settings/enable-adaptive",
-    "enable_adaptive_memory_spill_scheduler": "/reference/settings/session-settings/enable-adaptive",
+    "enable_adaptive_aggregator": "/reference/settings/session-settings/enable",
+    "enable_adaptive_memory_spill_scheduler": "/reference/settings/session-settings/enable",
     "enable_add_distinct_to_in_subqueries": "/reference/settings/session-settings/enable",
     "enable_automatic_decision_for_merging_across_partitions_for_final": "/reference/settings/session-settings/enable",
     "enable_blob_storage_log": "/reference/settings/session-settings/enable-blob-storage-log",
@@ -516,10 +516,10 @@
     "hnsw_candidate_list_size_for_search": "/reference/settings/session-settings/other",
     "how-the-resize-node-gets-split": "/reference/settings/session-settings/min",
     "hsts_max_age": "/reference/settings/session-settings/other",
-    "http_allow_database_as_path": "/reference/settings/session-settings/http-allow",
-    "http_allow_filters_as_path": "/reference/settings/session-settings/http-allow",
-    "http_allow_filters_as_unrecognized_url_parameters": "/reference/settings/session-settings/http-allow",
-    "http_allow_table_as_file": "/reference/settings/session-settings/http-allow",
+    "http_allow_database_as_path": "/reference/settings/session-settings/http",
+    "http_allow_filters_as_path": "/reference/settings/session-settings/http",
+    "http_allow_filters_as_unrecognized_url_parameters": "/reference/settings/session-settings/http",
+    "http_allow_table_as_file": "/reference/settings/session-settings/http",
     "http_connection_timeout": "/reference/settings/session-settings/http",
     "http_headers_progress_interval_ms": "/reference/settings/session-settings/http-headers",
     "http_headers_read_timeout": "/reference/settings/session-settings/http-headers",
@@ -1169,8 +1169,8 @@
     "schema_inference_use_cache_for_s3": "/reference/settings/session-settings/schema-inference",
     "schema_inference_use_cache_for_url": "/reference/settings/session-settings/schema-inference",
     "secondary_indices_enable_bulk_filtering": "/reference/settings/session-settings/other",
-    "select": "/reference/settings/session-settings/select",
-    "select_sequential_consistency": "/reference/settings/session-settings/select",
+    "select": "/reference/settings/session-settings/other",
+    "select_sequential_consistency": "/reference/settings/session-settings/other",
     "send_logs_level": "/reference/settings/session-settings/send-logs",
     "send_logs_source_regexp": "/reference/settings/session-settings/send-logs",
     "send_profile_events": "/reference/settings/session-settings/send",
@@ -1202,8 +1202,8 @@
     "sleep_in_send_data_ms": "/reference/settings/session-settings/sleep-in",
     "sleep_in_send_tables_status_ms": "/reference/settings/session-settings/sleep-in",
     "snappy_mode": "/reference/settings/session-settings/other",
-    "sort": "/reference/settings/session-settings/sort",
-    "sort_overflow_mode": "/reference/settings/session-settings/sort",
+    "sort": "/reference/settings/session-settings/other",
+    "sort_overflow_mode": "/reference/settings/session-settings/other",
     "split_intersecting_parts_ranges_into_layers_final": "/reference/settings/session-settings/split",
     "split_parts_ranges_into_intersecting_and_non_intersecting_final": "/reference/settings/session-settings/split",
     "splitby_max_substrings_includes_remaining_string": "/reference/settings/session-settings/other",
@@ -1665,11 +1665,6 @@
       "target": "/reference/settings/session-settings/distributed-ddl"
     },
     {
-      "prefix": "enable_adaptive",
-      "mode": "token",
-      "target": "/reference/settings/session-settings/enable-adaptive"
-    },
-    {
       "prefix": "enable_parallel",
       "mode": "token",
       "target": "/reference/settings/session-settings/enable-parallel"
@@ -2090,11 +2085,6 @@
       "target": "/reference/settings/session-settings/grace-hash"
     },
     {
-      "prefix": "http_allow",
-      "mode": "token",
-      "target": "/reference/settings/session-settings/http-allow"
-    },
-    {
       "prefix": "http_retry",
       "mode": "token",
       "target": "/reference/settings/session-settings/http-retry"
@@ -2485,11 +2475,6 @@
       "target": "/reference/settings/session-settings/s3-max"
     },
     {
-      "prefix": "select",
-      "mode": "token",
-      "target": "/reference/settings/session-settings/select"
-    },
-    {
       "prefix": "stream",
       "mode": "token",
       "target": "/reference/settings/session-settings/stream"
@@ -2605,11 +2590,6 @@
       "target": "/reference/settings/session-settings/show"
     },
     {
-      "prefix": "sort",
-      "mode": "token",
-      "target": "/reference/settings/session-settings/sort"
-    },
-    {
       "prefix": "log",
       "mode": "token",
       "target": "/reference/settings/session-settings/log"
@@ -2705,7 +2685,6 @@
     "/reference/settings/session-settings/dynamic-disk",
     "/reference/settings/session-settings/empty-result",
     "/reference/settings/session-settings/enable",
-    "/reference/settings/session-settings/enable-adaptive",
     "/reference/settings/session-settings/enable-blob-storage-log",
     "/reference/settings/session-settings/enable-filesystem",
     "/reference/settings/session-settings/enable-join",
@@ -2729,7 +2708,6 @@
     "/reference/settings/session-settings/group-by",
     "/reference/settings/session-settings/hdfs",
     "/reference/settings/session-settings/http",
-    "/reference/settings/session-settings/http-allow",
     "/reference/settings/session-settings/http-headers",
     "/reference/settings/session-settings/http-max",
     "/reference/settings/session-settings/http-response",
@@ -2864,7 +2842,6 @@
     "/reference/settings/session-settings/s3-validate",
     "/reference/settings/session-settings/s3queue",
     "/reference/settings/session-settings/schema-inference",
-    "/reference/settings/session-settings/select",
     "/reference/settings/session-settings/send",
     "/reference/settings/session-settings/send-logs",
     "/reference/settings/session-settings/serialize",
@@ -2874,7 +2851,6 @@
     "/reference/settings/session-settings/shrink-over",
     "/reference/settings/session-settings/skip-unavailable-shards",
     "/reference/settings/session-settings/sleep-in",
-    "/reference/settings/session-settings/sort",
     "/reference/settings/session-settings/split",
     "/reference/settings/session-settings/storage",
     "/reference/settings/session-settings/stream",
