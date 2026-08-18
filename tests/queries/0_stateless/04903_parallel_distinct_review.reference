@@ -1,15 +1,17 @@
 1
-(Limit)
-Limit
-  (Distinct)
-  DistinctTransform
-    Resize 2 → 1
-      (Union)
-        (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
-        (Expression)
-        ExpressionTransform
-          (ReadFromSystemNumbers)
-          NumbersRange 0 → 1
+(Expression)
+ExpressionTransform
+  (Limit)
+  Limit
+    (Distinct)
+    DistinctTransform
+      Resize 2 → 1
+        (Union)
+          (Expression)
+          ExpressionTransform
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
+          (Expression)
+          ExpressionTransform
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
