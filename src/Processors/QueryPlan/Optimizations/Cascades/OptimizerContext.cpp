@@ -33,6 +33,7 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, Optimizati
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoStageAggregationTransformation());
+    addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());

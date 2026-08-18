@@ -78,6 +78,7 @@ static OptimizationEnvironment buildEnvironment(const ContextPtr & query_context
     environment.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     environment.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     environment.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    environment.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     environment.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
     return environment;
