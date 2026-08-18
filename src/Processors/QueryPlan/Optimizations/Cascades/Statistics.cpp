@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -50,21 +51,16 @@ String ExpressionStatistics::dump() const
     return out.str();
 }
 
-/// Without a floor a zero-width row (e.g. a bare `count()`) would make exchanges look free.
-static constexpr Float64 MIN_ROW_WIDTH = 1.0;
 
 Float64 estimateColumnWidthFromType(const IDataType & type)
 {
-    static constexpr Float64 DEFAULT_STRING_SIZE = 64.0;
-    static constexpr Float64 DEFAULT_COMPLEX_TYPE_SIZE = 128.0;
-
     if (type.haveMaximumSizeOfValue())
         return Float64(type.getMaximumSizeOfValueInMemory());
     if (const auto * agg_type = typeid_cast<const DataTypeAggregateFunction *>(&type))
         return Float64(agg_type->getFunction()->sizeOfData());
     if (type.getTypeId() == TypeIndex::String)
-        return DEFAULT_STRING_SIZE;
-    return DEFAULT_COMPLEX_TYPE_SIZE;
+        return CascadesDefaults::DEFAULT_STRING_SIZE;
+    return CascadesDefaults::DEFAULT_COMPLEX_TYPE_SIZE;
 }
 
 Float64 estimateRowWidthFromHeader(const Block & header)
@@ -73,7 +69,7 @@ Float64 estimateRowWidthFromHeader(const Block & header)
     for (const auto & column : header)
         total += estimateColumnWidthFromType(*column.type);
 
-    return std::max(total, MIN_ROW_WIDTH);
+    return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
 Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, ColumnStats> & column_statistics)
@@ -88,7 +84,7 @@ Float64 estimateRowWidth(const Block & header, const std::unordered_map<String, 
             total += estimateColumnWidthFromType(*column.type);
     }
 
-    return std::max(total, MIN_ROW_WIDTH);
+    return std::max(total, CascadesDefaults::MIN_ROW_WIDTH);
 }
 
 RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);

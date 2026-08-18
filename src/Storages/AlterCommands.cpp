@@ -1799,26 +1799,41 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     metadata_copy.column_ttls_by_name.clear();
     for (const auto & [name, ast] : column_ttl_asts)
     {
-        const bool changed_by_command = columns_with_ttl_changed_by_command.contains(name);
-        auto new_ttl_entry = TTLDescription::getTTLFromAST(
-            ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
-            /* allow_experimental_codecs */ !changed_by_command || session_allow_experimental_codecs);
-        metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        try
+        {
+            const bool changed_by_command = columns_with_ttl_changed_by_command.contains(name);
+            auto new_ttl_entry = TTLDescription::getTTLFromAST(
+                ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
+                /* allow_experimental_codecs */ !changed_by_command || session_allow_experimental_codecs);
+            metadata_copy.column_ttls_by_name[name] = new_ttl_entry;
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(
+                exception.code(), "Cannot apply ALTER because it breaks the TTL of column {}: {}", backQuote(name), exception.message());
+        }
     }
 
     if (metadata_copy.table_ttl.definition_ast != nullptr)
     {
-        metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
-            metadata_copy.table_ttl.definition_ast,
-            metadata_copy.columns,
-            context,
-            metadata_copy.primary_key,
-            table_ttl_changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
-            /* allow_experimental_codecs */ !table_ttl_changed_by_command || session_allow_experimental_codecs);
+        try
+        {
+            metadata_copy.table_ttl = TTLTableDescription::getTTLForTableFromAST(
+                metadata_copy.table_ttl.definition_ast,
+                metadata_copy.columns,
+                context,
+                metadata_copy.primary_key,
+                table_ttl_changed_by_command ? fresh_ddl_validation_mode : TTLValidationMode::Attach,
+                /* allow_experimental_codecs */ !table_ttl_changed_by_command || session_allow_experimental_codecs);
+        }
+        catch (const Exception & exception)
+        {
+            throw Exception(exception.code(), "Cannot apply ALTER because it breaks the TTL of the table: {}", exception.message());
+        }
     }
 
     metadata = std::move(metadata_copy);
