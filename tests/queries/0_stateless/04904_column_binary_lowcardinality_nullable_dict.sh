@@ -74,8 +74,23 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04904_num FROM INFILE '${BAD_FILE}' 
     | grep -c "reserved leading slots require at least 2" || echo "NOT REJECTED"
 ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM t_04904_num"
 
+# The same round-trip with a fixed-width dictionary: the `COL_FIXED*` branches build the
+# declared type, so a dictionary handed the declared `Nullable(UInt64)` would build a
+# `ColumnNullable`, which `ColumnUnique` rejects as a holder.
+NUM_FILE="${CLICKHOUSE_TMP}/04904_valid_num.bin"
+rm -f "${NUM_FILE}"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS t_04904_num_rt"
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE t_04904_num_rt (v LowCardinality(Nullable(UInt64))) ENGINE = Memory
+SETTINGS allow_suspicious_low_cardinality_types = 1"
+${CLICKHOUSE_CLIENT} --query "
+SELECT if(number % 2 = 0, NULL, number)::LowCardinality(Nullable(UInt64)) AS v
+FROM numbers(4) INTO OUTFILE '${NUM_FILE}' FORMAT ColumnBinary"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO t_04904_num_rt FROM INFILE '${NUM_FILE}' FORMAT ColumnBinary"
+${CLICKHOUSE_CLIENT} --query "SELECT v IS NULL, v FROM t_04904_num_rt ORDER BY v NULLS FIRST"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 DROP TABLE IF EXISTS t_04904;
 DROP TABLE IF EXISTS t_04904_num;
+DROP TABLE IF EXISTS t_04904_num_rt;
 "
-rm -f "${VALID_FILE}" "${BAD_FILE}"
+rm -f "${VALID_FILE}" "${BAD_FILE}" "${NUM_FILE}"

@@ -1464,7 +1464,18 @@ inline MutableColumnPtr readColumnFromDesc(
         // type-dependent offsets array) still reaches into sibling bytes. region_end <=
         // buf.size() always, since this descriptor is itself validated against buf.size() by
         // its caller, so the subspan is safe.
-        auto dict_col = readColumnFromDesc(buf.subspan(0, region_end), dict_desc, dict_row_count, lowcard_type->getDictionaryType());
+        // removeNullable: for a LowCardinality(Nullable(T)) the writer serializes the
+        // dictionary as a NON-nullable sub-column (buildColDescriptor unwraps
+        // ColumnUnique::getNestedColumn's Nullable wrapper and passes is_nullable=false), so
+        // the dictionary descriptor never carries COL_IS_NULLABLE. Handing the declared
+        // Nullable(T) down would make the tag branches below disagree with the bytes on the
+        // wire: they would build a ColumnNullable, which ColumnUnique rejects as a holder
+        // ("Holder column for ColumnUnique can't be nullable"), and the COL_BYTES branch's
+        // declared-type check would reject a well-formed frame outright. Nullability is
+        // conveyed by ColumnUnique's reserved slot layout instead, and createColumnUnique
+        // below is still given the full Nullable(T) type so it allocates those slots.
+        auto dict_col = readColumnFromDesc(
+            buf.subspan(0, region_end), dict_desc, dict_row_count, removeNullable(lowcard_type->getDictionaryType()));
 
         if (desc.offsets_offset > buf.size()
             || static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size() - desc.offsets_offset)
