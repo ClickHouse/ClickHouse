@@ -53,19 +53,19 @@ ClickHouse はテーブルからデータを自動では削除しません。詳
 * `current_database` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 現在のデータベース名。
 * `query` ([String](/ja/reference/data-types/string)) — クエリ文字列。
 * `normalized_query_hash` ([UInt64](/ja/reference/data-types/int-uint)) — 正規化されたクエリのハッシュ。定数などは取り除かれています。
-* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリタイプ。設定可能な値: 1 — クエリはクライアントによって開始された、0 — 分散クエリ実行のために、別のクエリによって開始された。
+* `is_initial_query` ([UInt8](/ja/reference/data-types/int-uint)) — クエリが初期クエリかどうか。設定可能な値: 1 — 初期 (最上位) クエリ、0 — 分散実行用のクエリや内部サブクエリを含む、別のクエリによって開始された子クエリ。
 * `connection_address` ([IPv6](/ja/reference/data-types/ipv6)) — 接続元のクライアント IP アドレス。proxy 経由で接続している場合、これは proxy のアドレスになります。
 * `connection_port` ([UInt16](/ja/reference/data-types/int-uint)) — 接続元のクライアントのポートです。プロキシ経由で接続している場合は、プロキシのポートになります。
 * `user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 現在のクエリを実行したユーザー名。
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリの ID。
 * `address` ([IPv6](/ja/reference/data-types/ipv6)) — クエリの実行元として使用された IP アドレス。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアントのアドレスになります。
 * `port` ([UInt16](/ja/reference/data-types/int-uint)) — クエリの実行時に使用されたクライアントのポート。プロキシ経由で接続しており、`auth_use_forwarded_address` が設定されている場合、これはプロキシではなくクライアント側のポートになります。
-* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 最初のクエリを実行したユーザー名 (分散クエリ実行時) 。
-* `initial_query_id` ([String](/ja/reference/data-types/string)) — 初期クエリの ID (分散クエリ実行時) 。
-* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 親クエリの送信元IPアドレス。
-* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 親クエリの実行に使用されたクライアントポート。
-* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 初期クエリの実行開始時刻。
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 最初のクエリの実行開始時刻
+* `initial_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — 同じクエリチェーン内で初期クエリを実行したユーザー名。
+* `initial_query_id` ([String](/ja/reference/data-types/string)) — 同じクエリチェーン内の初期クエリの ID。
+* `initial_address` ([IPv6](/ja/reference/data-types/ipv6)) — 同じクエリチェーン内の初期クエリの送信元 IP アドレス。
+* `initial_port` ([UInt16](/ja/reference/data-types/int-uint)) — 同じクエリチェーン内の初期クエリの送信元クライアントポート。
+* `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリの開始時刻 (マイクロ秒精度) 。
 * `authenticated_user` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — セッション内で認証されたユーザー名。
 * `interface` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始元となったインターフェイス。設定可能な値: 1 — TCP、2 — HTTP。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — 接続がセキュアかどうかを示すフラグ。
