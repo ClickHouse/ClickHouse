@@ -1784,3 +1784,54 @@ def test_api_call_quota_holds_under_concurrency(started_cluster):
         f"{calls} API calls with ai_function_max_api_calls_per_query = {limit} and {peak_threads} peak "
         "threads: concurrent streams overshot the per-query cap"
     )
+
+
+def test_api_call_quota_ignores_subquery_settings(started_cluster):
+    """`ai_function_max_*_per_query` is read from the top-level query context, so a nested
+    subquery's own `SETTINGS` override of it does not apply: the whole query shares one budget
+    seeded from the outer settings. A subquery runs in a copied child context carrying its own
+    settings, but the quota tracker lives on the query context, so those overrides are ignored."""
+    _create_quota_parts("quota_levels")  # 8 parts x 8 rows = 64 rows, one API call per row
+    try:
+        # The subquery caps at 5, the outer query at 20. A result of 20 shows the outer
+        # (query-context) value governs; the subquery override (which would give 5, as would a
+        # min-of-both rule) is ignored.
+        qid = unique_query_id("quota_levels_outer_wins")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_max_api_calls_per_query": 20,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        outer_wins = int(get_profile_events(qid)["api_calls"])
+
+        # The quota is set only in the subquery; the outer query leaves it at the default (far
+        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # a quota set only in a subquery has no effect.
+        qid = unique_query_id("quota_levels_subquery_only")
+        instance.query(
+            f"SELECT c FROM (SELECT {CHAT_CALL} AS c FROM quota_levels "
+            "SETTINGS ai_function_max_api_calls_per_query = 5) FORMAT Null",
+            settings={
+                **AI_SETTINGS,
+                **_QUOTA_SCOPE_SETTINGS,
+                "ai_function_throw_on_quota_exceeded": 0,
+            },
+            query_id=qid,
+        )
+        subquery_only = int(get_profile_events(qid)["api_calls"])
+    finally:
+        instance.query("DROP TABLE IF EXISTS quota_levels SYNC")
+
+    assert outer_wins == 20, (
+        f"expected the top-level cap (20) to govern, got {outer_wins}: a subquery-scoped SETTINGS "
+        "override of ai_function_max_api_calls_per_query must not change the query budget"
+    )
+    assert subquery_only == 64, (
+        f"expected all 64 rows to run (a quota set only in the subquery is ignored), got {subquery_only}"
+    )
