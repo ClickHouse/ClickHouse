@@ -78,6 +78,7 @@ struct RelationStats
     std::optional<UInt64> estimated_rows_upper = {};
     /// `estimated_rows` is known to be <= the true row count. False unless proven.
     bool estimated_rows_is_lower_bound = false;
+    std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
