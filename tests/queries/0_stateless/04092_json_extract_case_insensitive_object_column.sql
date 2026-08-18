@@ -148,8 +148,8 @@ SELECT 'escaped dots root', JSONExtractRaw('{"a.b": 42}'::JSON), JSONExtractRawC
 SELECT 'escaped dots root keys', JSONExtractKeys('{"a.b": 42}'::JSON), JSONLength('{"a.b": 42}'::JSON);
 SET json_type_escape_dots_in_keys = 0;
 
--- Every call shape on a `JSON` column returns what the same call returns on the equivalent JSON
--- string. The functions that navigate the document instead of reading one value out of it
+-- The following navigation call shapes on a `JSON` column return what the same call returns on the
+-- equivalent JSON string. The functions that navigate the document instead of reading one value out of it
 -- (`JSONLength` and `JSONType` at a path, and the structural extractors) used to return a silent
 -- default or to fail with `ILLEGAL_TYPE_OF_ARGUMENT` on a `JSON` column.
 SELECT 'nav length', JSONLength('{"a": {"b": 1, "d": [1, 2]}}'::JSON, 'a'), JSONLength('{"a": {"b": 1, "d": [1, 2]}}', 'a');
