@@ -1209,30 +1209,20 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
 
     /// Equality deletes remove data rows by value match; summary `total-equality-deletes` counts
     /// rows in delete files, not deleted data rows. Fail closed when the field is present and > 0.
-    /// If the field is absent, skip the summary shortcut and scan manifests for EQUALITY_DELETE files.
+    /// If the field is absent, skip to manifests for EQUALITY_DELETE files.
     if (actual_data_snapshot->total_equality_delete_rows.has_value()
         && *actual_data_snapshot->total_equality_delete_rows > 0)
         return {};
 
-    /// Prefer the snapshot-summary shortcut when equality and position deletes are explicitly zero.
-    /// This avoids opening every manifest for typical append-only tables. Any live deletes
-    /// (including puffin DVs counted in `total-position-deletes`) fall through / fail closed.
-    if (actual_data_snapshot->allowsSnapshotTotalRowsShortcut())
-    {
-        if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
-        {
-            ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-            return total_rows;
-        }
-    }
-
-    /// Fall through when the summary shortcut is unavailable. Manifest-list
-    /// `added_rows_count`/`existing_rows_count` are not used (some writers stamp them from
-    /// snapshot summary and can report 0 after compaction). Subtracting live position-delete /
+    /// Do not trust snapshot-summary `total-records` for the answer. Those totals are optional,
+    /// writer-maintained incrementally, and a single bad commit can poison every later snapshot.
+    /// Sum required per-data-file `record_count` from manifests when there are no live delete
+    /// files; otherwise fail closed to a real scan. Summary is compared only for a mismatch warning.
+    ///
+    /// Manifest-list `added_rows_count`/`existing_rows_count` are not used (some writers stamp them
+    /// from snapshot summary and can report 0 after compaction). Subtracting live position-delete /
     /// deletion-vector `record_count` from data-file totals is also unsafe (duplicates, stale
-    /// references, DV supersession of parquet position deletes). Sum required per-data-file
-    /// `record_count` over live data files only when no live delete files exist; otherwise fail
-    /// closed to a real scan.
+    /// references, DV supersession of parquet position deletes).
     UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {

@@ -16,15 +16,14 @@ struct IcebergDataSnapshot
     DB::ManifestFileCacheKeys manifest_list_entries;
     Int64 snapshot_id;
     Int64 schema_id_on_snapshot_commit;
-    /// From snapshot summary (`total-records`). Preferred by the trivial COUNT shortcut when
-    /// `allowsSnapshotTotalRowsShortcut` holds; otherwise compared to the manifest-derived count
-    /// for a mismatch warning. Summary totals are maintained incrementally by writers and can be
-    /// poisoned by a bad commit in table history.
+    /// From snapshot summary (`total-records`). Compared to the manifest-derived count for a
+    /// mismatch warning only — never used as the trivial COUNT answer. Summary totals are
+    /// maintained incrementally by writers and can be poisoned by a bad commit in table history.
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
     /// Rows in equality-delete files (snapshot summary). Not a count of deleted data rows;
-    /// used only to fail closed / gate the trivial COUNT shortcut.
+    /// used only to fail closed early when present and > 0.
     std::optional<size_t> total_equality_delete_rows;
     std::optional<String> partition_key;
     std::optional<String> sorting_key;
@@ -37,17 +36,6 @@ struct IcebergDataSnapshot
         if (*total_position_delete_rows > *total_rows)
             return std::nullopt;
         return *total_rows - *total_position_delete_rows;
-    }
-
-    /// Summary delete totals are optional. Only trust the cheap `getTotalRows` shortcut when both
-    /// equality and position deletes are present and explicitly zero. Absent or >0 falls through /
-    /// fail closed — position deletes include puffin DVs; summary subtraction is also unsafe after
-    /// Spark `rewrite_data_files` (summary can keep stale `total-position-deletes` while data files
-    /// already have deletes applied and no live delete files remain).
-    bool allowsSnapshotTotalRowsShortcut() const
-    {
-        return total_equality_delete_rows.has_value() && *total_equality_delete_rows == 0
-            && total_position_delete_rows.has_value() && *total_position_delete_rows == 0;
     }
 };
 

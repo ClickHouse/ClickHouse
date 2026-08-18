@@ -642,6 +642,108 @@ def test_deletion_vectors_trivial_count_fails_closed_with_live_deletes(
     )
 
 
+def _poison_snapshot_total_records(table_name, poisoned_total="999999"):
+    """Overwrite total-records in every snapshot summary of the latest metadata JSON.
+
+    Simulates a corrupted / incorrectly-maintained incremental summary while leaving
+    data files and manifests consistent.
+    """
+    import json
+    import glob as glob_mod
+
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{table_name}/metadata"
+    metadata_files = sorted(glob_mod.glob(f"{metadata_dir}/v*.metadata.json"))
+    if not metadata_files:
+        raise RuntimeError(f"No metadata JSON under {metadata_dir}")
+    path = metadata_files[-1]
+    with open(path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+    for snapshot in meta.get("snapshots", []):
+        summary = snapshot.setdefault("summary", {})
+        summary["total-records"] = poisoned_total
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "azure", "local"])
+def test_trivial_count_prefers_manifests_over_poisoned_summary(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    """Poisoned snapshot-summary total-records must not become SELECT count().
+
+    Manifest per-file record_count is ground truth; summary is warning-only.
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    table_name = "test_poisoned_summary_count_" + storage_type + "_" + get_uuid_str()
+
+    spark.sql(
+        f"""
+        CREATE TABLE {table_name} (
+            id bigint,
+            data string
+        ) USING iceberg
+        TBLPROPERTIES ('format-version' = '3')
+        """
+    )
+    spark.sql(
+        f"""
+        INSERT INTO {table_name}
+        SELECT id, concat('row-', CAST(id AS STRING)) FROM range(50)
+        """
+    )
+    _poison_snapshot_total_records(table_name, "999999")
+    upload_table(started_cluster_iceberg_with_spark, storage_type, table_name)
+
+    expression = get_creation_expression(
+        storage_type,
+        table_name,
+        started_cluster_iceberg_with_spark,
+        table_function=True,
+    )
+    settings = {
+        "optimize_trivial_count_query": 1,
+        "use_iceberg_metadata_files_cache": 0,
+    }
+
+    instance.query("SYSTEM DROP ICEBERG METADATA CACHE")
+    query_id = f"{table_name}-{uuid.uuid4()}"
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {expression}",
+                query_id=query_id,
+                settings=settings,
+            )
+        )
+        == 50
+    )
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM (SELECT * FROM {expression})",
+                settings={"use_iceberg_metadata_files_cache": 0},
+            )
+        )
+        == 50
+    )
+
+    instance.query("SYSTEM FLUSH LOGS")
+    # Manifest-sum path still counts as the trivial COUNT optimization.
+    assert (
+        int(
+            instance.query(
+                f"""
+                SELECT ProfileEvents['IcebergTrivialCountOptimizationApplied']
+                FROM system.query_log
+                WHERE query_id = '{query_id}' AND type = 'QueryFinish'
+                """
+            )
+        )
+        == 1
+    )
+
+
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_deletion_vectors_puffin_files_cache(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]

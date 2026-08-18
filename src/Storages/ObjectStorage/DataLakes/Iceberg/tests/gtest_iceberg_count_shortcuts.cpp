@@ -49,60 +49,56 @@ TEST(IcebergCountShortcuts, HasEqualityAndPositionDeleteHelpers)
     EXPECT_TRUE(hasIcebergPositionDeletes(iceberg));
 }
 
-TEST(IcebergCountShortcuts, SnapshotSummaryShortcutRequiresExplicitZeroDeletes)
+TEST(IcebergCountShortcuts, GetTotalRowsRequiresBothSummaryFields)
 {
     Iceberg::IcebergDataSnapshot snapshot;
     snapshot.total_rows = 100;
     snapshot.total_position_delete_rows = 0;
     snapshot.total_equality_delete_rows = 0;
 
-    EXPECT_TRUE(snapshot.allowsSnapshotTotalRowsShortcut());
     ASSERT_TRUE(snapshot.getTotalRows().has_value());
     EXPECT_EQ(*snapshot.getTotalRows(), 100u);
 
     snapshot.total_position_delete_rows = 10;
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
     ASSERT_TRUE(snapshot.getTotalRows().has_value());
     EXPECT_EQ(*snapshot.getTotalRows(), 90u);
 
-    snapshot.total_position_delete_rows = 0;
-    snapshot.total_equality_delete_rows = std::nullopt;
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
-
-    snapshot.total_equality_delete_rows = 1;
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
-
-    snapshot.total_equality_delete_rows = 0;
     snapshot.total_position_delete_rows = std::nullopt;
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+    EXPECT_FALSE(snapshot.getTotalRows().has_value());
+
+    snapshot.total_position_delete_rows = 0;
+    snapshot.total_rows = std::nullopt;
+    EXPECT_FALSE(snapshot.getTotalRows().has_value());
 }
 
-/// Spark rewrite_data_files can leave summary as total-records=90, total-position-deletes=10
-/// after deletes were already applied into rewritten data files. getTotalRows would answer 80;
-/// the shortcut must stay closed so totalRows falls through to manifests / scan.
-TEST(IcebergCountShortcuts, StalePositionDeletesAfterRewriteMustNotUseSummaryShortcut)
+/// Snapshot-summary arithmetic can disagree with manifests (poisoned incremental totals,
+/// stale total-position-deletes after rewrite). getTotalRows is only for mismatch warnings;
+/// IcebergMetadata::totalRows must prefer the manifest record_count sum.
+TEST(IcebergCountShortcuts, SummaryArithmeticCanDisagreeWithManifestTruth)
 {
     Iceberg::IcebergDataSnapshot snapshot;
-    snapshot.total_rows = 90;
-    snapshot.total_position_delete_rows = 10;
+    snapshot.total_rows = 999999;
+    snapshot.total_position_delete_rows = 0;
     snapshot.total_equality_delete_rows = 0;
 
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
+    ASSERT_TRUE(snapshot.getTotalRows().has_value());
+    EXPECT_EQ(*snapshot.getTotalRows(), 999999u);
+
+    snapshot.total_rows = 90;
+    snapshot.total_position_delete_rows = 10;
     ASSERT_TRUE(snapshot.getTotalRows().has_value());
     EXPECT_EQ(*snapshot.getTotalRows(), 80u);
 }
 
-/// Live deletion vectors: Spark DELETE on v3 MOR sets total-equality-deletes=0 while
-/// total-position-deletes reflects DV cardinality. Summary subtraction must not feed the
-/// trivial COUNT shortcut (getTotalRows still computes the arithmetic for mismatch warnings).
-TEST(IcebergCountShortcuts, LiveDeletionVectorSummaryMustNotUseShortcut)
+/// Live deletion vectors: summary subtraction may look plausible while DVs are live.
+/// totalRows must open manifests, see POSITION_DELETE files, and fail closed to a scan.
+TEST(IcebergCountShortcuts, LiveDeletionVectorSummaryLooksPlausible)
 {
     Iceberg::IcebergDataSnapshot snapshot;
     snapshot.total_rows = 100;
     snapshot.total_position_delete_rows = 10;
     snapshot.total_equality_delete_rows = 0;
 
-    EXPECT_FALSE(snapshot.allowsSnapshotTotalRowsShortcut());
     ASSERT_TRUE(snapshot.getTotalRows().has_value());
     EXPECT_EQ(*snapshot.getTotalRows(), 90u);
 }
