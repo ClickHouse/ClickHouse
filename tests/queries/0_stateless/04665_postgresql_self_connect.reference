@@ -5,3 +5,6 @@
 2	two	\N	-2.25	[]	0
 --- the structure schema inference recovers
 Int64	String	Nullable(Int64)	Decimal(18, 4)	Array(Int16)	Decimal(20, 0)
+--- nullable array elements survive schema inference
+1	1
+0	0

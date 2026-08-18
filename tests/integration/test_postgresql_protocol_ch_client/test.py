@@ -476,6 +476,8 @@ def test_copy_rejects_unsupported_options(started_cluster):
             "COPY (SELECT 1 AS a) TO STDOUT WITH (DELIMITER)",
             "COPY (SELECT 1 AS a) TO STDOUT WITH (NULL)",
             "COPY (SELECT 1 AS a) TO STDOUT WITH (FORMAT csv, 'unexpected')",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (DELIMITER csv)",
+            "COPY (SELECT 1 AS a) TO STDOUT WITH (NULL on)",
         ]:
             with pytest.raises(py_psql.Error, match="missing or unexpected value"):
                 cur = conn.cursor()

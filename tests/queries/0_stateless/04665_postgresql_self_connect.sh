@@ -34,11 +34,13 @@ CREATE TABLE self_source
     c Nullable(Int64),
     d Decimal(18, 4),
     e Array(UInt8),
-    f UInt64
+    f UInt64,
+    g Array(Nullable(Int32)),
+    h Array(LowCardinality(Nullable(String)))
 )
 ENGINE = MergeTree ORDER BY a;
 
-INSERT INTO self_source VALUES (1, 'one', 10, 1.5, [1, 2], 18446744073709551615), (2, 'two', NULL, -2.25, [], 0);
+INSERT INTO self_source VALUES (1, 'one', 10, 1.5, [1, 2], 18446744073709551615, [1, NULL], ['x', NULL]), (2, 'two', NULL, -2.25, [], 0, [], []);
 
 SELECT '--- the query from the issue';
 SELECT 1 FROM postgresql('${PG_HOST}', 'system', 'one', '${USER_NAME}', 'pgpass');
@@ -48,6 +50,9 @@ SELECT a, b, c, d, e, f FROM ${PG_SOURCE} ORDER BY a;
 
 SELECT '--- the structure schema inference recovers';
 SELECT toTypeName(a), toTypeName(b), toTypeName(c), toTypeName(d), toTypeName(e), toTypeName(f) FROM ${PG_SOURCE} LIMIT 1;
+
+SELECT '--- nullable array elements survive schema inference';
+SELECT has(g, NULL), has(h, NULL) FROM ${PG_SOURCE} ORDER BY a;
 
 DROP TABLE self_source;
 DROP USER ${USER_NAME};

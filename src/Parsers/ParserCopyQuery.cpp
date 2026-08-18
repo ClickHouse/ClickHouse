@@ -426,7 +426,16 @@ bool ParserCopyQuery::parseOptions(Pos & pos, boost::intrusive_ptr<ASTCopyQuery>
                 ++next;
                 is_escape_string_prefix = next->type == TokenType::StringLiteral && pos->end == next->begin;
             }
-            if (lower == "format")
+
+            /// `DELIMITER` and `NULL` accept only string-literal values. In particular, do not let a
+            /// bare word that is expected as their value be reinterpreted as the legacy format keyword:
+            /// `DELIMITER csv` is malformed, not `DELIMITER` followed by `CSV`.
+            if ((pending == PendingOption::Delimiter || pending == PendingOption::Null) && !is_escape_string_prefix && lower != "as")
+            {
+                stray_literal = true;
+                pending = PendingOption::None;
+            }
+            else if (lower == "format")
             {
                 ++pos;
                 if (pos->isEnd() || pos->type != TokenType::BareWord)

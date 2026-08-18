@@ -904,6 +904,14 @@ def test_extended_query_errors_recover_at_sync(started_cluster):
         seen = _pg_read_until(sock, b"Z")
         assert b"E" in seen, seen
         assert_recovered()
+
+        # `COPY` has a separate sub-protocol and is therefore rejected at Parse time in an extended
+        # query cycle. In particular it must not reach the generic executor and emit raw data frames.
+        send(b"P", b"copy_probe\x00COPY (SELECT 1) TO STDOUT\x00\x00\x00")
+        send(b"S", b"")
+        seen = _pg_read_until(sock, b"Z")
+        assert b"E" in seen, seen
+        assert_recovered()
     finally:
         sock.close()
 

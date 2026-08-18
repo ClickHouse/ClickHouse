@@ -69,7 +69,7 @@ std::set<String> fetchPostgreSQLTablesList(T & tx, const String & postgres_schem
 }
 
 
-DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable, uint16_t dimensions)
+DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> recheck_array, bool is_nullable, uint16_t dimensions, bool is_array_element_nullable = false)
 {
     DataTypePtr res;
     bool is_array = false;
@@ -187,11 +187,19 @@ DataTypePtr convertPostgreSQLDataType(String & type, std::function<void()> reche
 
     if (!res)
         res = std::make_shared<DataTypeString>();
-    if (is_nullable)
+    if (is_nullable && !is_array)
         res = std::make_shared<DataTypeNullable>(res);
 
     if (is_array)
     {
+        /// PostgreSQL's `attnotnull` describes the array value, not its elements. The native PostgreSQL
+        /// catalog does not expose element nullability, but the ClickHouse PostgreSQL protocol emulation
+        /// carries it in its private `attgenerated = 'e'` marker so that self-connected arrays retain it.
+        /// Keep the historical `attnotnull` interpretation for real PostgreSQL servers, where it is the
+        /// only available signal.
+        if (is_array_element_nullable || is_nullable)
+            res = std::make_shared<DataTypeNullable>(res);
+
         /// In some cases att_ndims does not return correct number of dimensions
         /// (it might return incorrect 0 number, for example, when a postgres table is created via 'as select * from table_with_arrays').
         /// So recheck all arrays separately afterwards. (Cannot check here on the same connection because another query is in execution).
@@ -252,14 +260,13 @@ PostgreSQLTableStructure::ColumnsInfoPtr readNamesAndTypesList(
                 while (stream >> row)
                 {
                     const auto column_name = std::get<0>(row);
+                    const auto attgenerated = std::get<7>(row);
                     const auto data_type = convertPostgreSQLDataType(
                         std::get<1>(row), recheck_array,
                         use_nulls && (std::get<2>(row) == /* not nullable */"f"),
-                        std::get<3>(row));
+                        std::get<3>(row), attgenerated == "e");
 
                     columns.push_back(NameAndTypePair(column_name, data_type));
-                    auto attgenerated = std::get<7>(row);
-
                     attributes.emplace(
                         column_name,
                         PostgreSQLTableStructure::PGAttribute{

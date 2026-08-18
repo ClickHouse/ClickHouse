@@ -1849,6 +1849,21 @@ void PostgreSQLHandler::processParseQuery()
 
     try
     {
+        /// Extended-protocol `COPY` needs the dedicated CopyIn/CopyOut message exchange. It is currently
+        /// implemented only for the simple-query path, so reject it during `Parse` rather than executing it
+        /// later through the generic wire output path and desynchronizing the frontend/backend stream.
+        ParserCopyQuery copy_parser;
+        try
+        {
+            parseQuery(copy_parser, query->sql_query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "COPY is not supported in extended PostgreSQL protocol queries");
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::NOT_IMPLEMENTED)
+                throw;
+        }
+
         /// PostgreSQL rejects an invalid statement at `Parse` time. Validate it
         /// before registering its name so an invalid parse cannot poison a named
         /// prepared statement slot.
@@ -2601,7 +2616,9 @@ SELECT
     /// `Array` column itself nullable.
     if (startsWith(cols.type, 'Nullable(') OR startsWith(cols.type, 'LowCardinality(Nullable('), 'f', 't') AS attnotnull,
     cols.ndims AS attndims,
-    '' AS attgenerated
+    /// PostgreSQL has no catalog field for array-element nullability. The self-connect schema reader uses
+    /// this emulation-only marker to distinguish it from the column's `attnotnull` value.
+    if(cols.ndims > 0 AND position(cols.wrappers, 'Nullable(') > 0, 'e', '') AS attgenerated
 FROM (
     SELECT
         database, table, name, position, type,
