@@ -352,6 +352,11 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+    check(state, 2, {"column", "apply_id"},
+          "SELECT t.column FROM test.table AS t "
+          "JOIN test.table2 AS table2 ON (t.apply_id = table2.num) "
+          "WHERE t.apply_id = 1 AND table2.num = 1",
+          R"(SELECT "column", "apply_id" FROM "test"."table" WHERE "apply_id" = 1)");
 }
 
 TEST(TransformQueryForExternalDatabase, ForeignColumnInWhereOr)

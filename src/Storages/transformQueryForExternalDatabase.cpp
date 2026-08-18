@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Interpreters/Context.h>
@@ -567,9 +568,11 @@ struct RemoveUnknownSubexpressionsResult
     bool modified;
 };
 
-RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names);
+using SourceColumnNames = std::unordered_map<String, String>;
 
-bool removeUnknownChildren(ASTs & children, const NameSet & known_names)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const SourceColumnNames & known_names);
+
+bool removeUnknownChildren(ASTs & children, const SourceColumnNames & known_names)
 {
 
     ASTs new_children;
@@ -586,10 +589,17 @@ bool removeUnknownChildren(ASTs & children, const NameSet & known_names)
 }
 
 /// return `true` if we should leave node in tree
-RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const NameSet & known_names)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, const SourceColumnNames & known_names)
 {
-    if (const auto * ident = node->as<ASTIdentifier>())
-        return {known_names.contains(ident->name()), !known_names.contains(ident->name())};
+    if (auto * ident = node->as<ASTIdentifier>())
+    {
+        auto it = known_names.find(ident->name());
+        if (it == known_names.end())
+            return {false, true};
+
+        ident->setShortName(it->second);
+        return {true, false};
+    }
 
     if (node->as<ASTLiteral>() != nullptr)
         return {true, false};
@@ -631,14 +641,50 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, con
 // send the query to the storage as AST. Before that, we have to remove the conditions
 // that reference other tables from `WHERE`, so that the external engine is not confused
 // by the unknown columns.
-RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+SourceColumnNames getSourceColumnNames(
+    const ASTSelectQuery & select,
+    const NamesAndTypesList & available_columns,
+    const String & database,
+    const String & table)
+{
+    NameSet source_table_names{table, database + "." + table};
+    if (const auto * tables_ast = select.tables())
+    {
+        if (const auto * tables = tables_ast->as<ASTTablesInSelectQuery>())
+        {
+            for (const auto & child : tables->children)
+            {
+                const auto * tables_element = child->as<ASTTablesInSelectQueryElement>();
+                const auto * table_expression = tables_element && tables_element->table_expression
+                    ? tables_element->table_expression->as<ASTTableExpression>()
+                    : nullptr;
+                const auto * table_identifier = table_expression && table_expression->database_and_table_name
+                    ? table_expression->database_and_table_name->as<ASTIdentifier>()
+                    : nullptr;
+                if (table_identifier && source_table_names.contains(table_identifier->name()))
+                {
+                    source_table_names.insert(table_identifier->tryGetAlias());
+                    source_table_names.insert(table_identifier->shortName());
+                }
+            }
+        }
+    }
+
+    SourceColumnNames source_columns;
+    for (const auto & col : available_columns)
+    {
+        source_columns.emplace(col.name, col.name);
+        for (const auto & source_table_name : source_table_names)
+            if (!source_table_name.empty())
+                source_columns.emplace(source_table_name + "." + col.name, col.name);
+    }
+    return source_columns;
+}
+
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const SourceColumnNames & known_names)
 {
     if (!node)
         return {false, false};
-
-    NameSet known_names;
-    for (const auto & col : available_columns)
-        known_names.insert(col.name);
 
     if (auto * expr_list = node->as<ASTExpressionList>(); expr_list && !expr_list->children.empty())
     {
@@ -649,7 +695,15 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & 
     return removeUnknownSubexpressions(node, known_names);
 }
 
-bool containsSourceColumn(const ASTPtr & node, const NameSet & source_columns)
+RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
+{
+    SourceColumnNames known_names;
+    for (const auto & column : available_columns)
+        known_names.emplace(column.name, column.name);
+    return removeUnknownSubexpressionsFromWhere(node, known_names);
+}
+
+bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_columns)
 {
     if (!node)
         return false;
@@ -703,14 +757,13 @@ String transformQueryForExternalDatabaseImpl(
       */
 
     ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
-    NameSet source_columns;
-    for (const auto & column : available_columns)
-        source_columns.insert(column.name);
+    const auto & original_select = clone_query->as<ASTSelectQuery &>();
+    const auto source_columns = getSourceColumnNames(original_select, available_columns, database, table);
     const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
 
     /// First remove predicates belonging to other sources. Such predicates are evaluated by the
     /// outer query and must not make strict mode reject a valid remote filter.
-    auto foreign_where_result = removeUnknownSubexpressionsFromWhere(original_where, available_columns);
+    auto foreign_where_result = removeUnknownSubexpressionsFromWhere(original_where, source_columns);
     if (!foreign_where_result.keep)
     {
         if (strict && where_contains_source_column)
@@ -722,7 +775,8 @@ String transformQueryForExternalDatabaseImpl(
     for (const auto & column : available_columns)
         if (!local_only_columns.contains(column.name))
             pushdown_columns.push_back(column);
-    auto where_result = removeUnknownSubexpressionsFromWhere(original_where, pushdown_columns);
+    auto pushdown_source_columns = getSourceColumnNames(original_select, pushdown_columns, database, table);
+    auto where_result = removeUnknownSubexpressionsFromWhere(original_where, pushdown_source_columns);
 
     if (strict && where_result.modified)
     {
