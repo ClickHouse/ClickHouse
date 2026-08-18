@@ -197,10 +197,10 @@ SELECT
         SETTINGS query_plan_push_down_volume_reducing_functions = 0, query_plan_remove_unused_columns = 0, optimize_functions_to_subcolumns = 0)
 );
 
--- A same-source sibling alias can survive as an unmatched filter passthrough. Replacing only `a`
--- would leave `s` in the filter, so the rewrite must not fire.
-SELECT 'plan: alias passthrough in filter — not pushed';
-SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+-- The unused `s` alias is removed before the filter is rewritten, so only `a` reaches it. The
+-- optimization can therefore replace the remaining wide column with `length(a)`.
+SELECT 'plan: unused sibling alias in filter — pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') > 0
 FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT length(a)
     FROM (SELECT s, s AS a FROM volume_reducing_function_push_down)

@@ -34,8 +34,8 @@ plan: wide column removed from the sort
 1
 plan: wide column removed from the filter that reads it
 1
-plan: alias passthrough in filter — not pushed
-0
+plan: unused sibling alias in filter — pushed
+1
 plan: default lift-up not regressed when push-down disabled
 1
 plan: mixed roots keep only volume-reducing functions below sort
