@@ -16,14 +16,13 @@ namespace DB
 class MergeTreeData;
 class IMergeTreeDataPart;
 struct StorageInMemoryMetadata;
-struct DataPartsLock;
 
 using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 
 /// UNIQUE KEY dense-index operations for one storage: the per-storage load
-/// lifecycle (orphan sweep + rebuild-on-load). One instance per `MergeTreeData`.
+/// lifecycle (rebuild-on-load). One instance per `MergeTreeData`.
 /// The stateless write path lives in `SSTIndexWriter`.
 class UniqueKeyDenseIndexOps
 {
@@ -31,10 +30,6 @@ public:
     explicit UniqueKeyDenseIndexOps(MergeTreeData & data_) : data(data_) {}
 
     /// ===== Per-storage load lifecycle (instance) =====
-
-    /// Sweeps stray `unique_key_index.sst` files on non-UK tables over every
-    /// Active part. Caller holds the parts lock.
-    void sweepOrphans(const DataPartsLock & part_lock);
 
     /// Materializes `unique_key_index.sst` when it is missing OR present but
     /// invalid. Presence alone is not trusted: the existing file is validated
@@ -44,8 +39,8 @@ public:
     /// The SST is recorded in `checksums.txt`, so a missing or wrongly-sized file
     /// is rejected earlier by `checkConsistencyBase` and the part is detached as
     /// broken. What reaches this function is (a) size-preserving damage, and
-    /// (b) parts that legitimately carry no SST entry - written before the
-    /// sidecar was checksummed.
+    /// (b) parts that legitimately carry no SST entry (UNIQUE KEY added by
+    /// ALTER, or a restored backup without the sidecar).
     ///
     /// Fails closed: throws (CORRUPTED_DATA / SUPPORT_IS_DISABLED) when a
     /// non-empty UK part cannot get a dense index (missing UK column, empty read,
