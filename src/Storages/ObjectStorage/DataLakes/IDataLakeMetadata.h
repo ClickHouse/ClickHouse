@@ -144,7 +144,7 @@ public:
     virtual bool optimize(
         const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throwNotImplemented("optimize");
     }
 
     virtual bool supportsDelete() const { return false; }
