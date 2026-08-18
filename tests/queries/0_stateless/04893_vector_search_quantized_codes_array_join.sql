@@ -30,10 +30,11 @@ ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 4;
 INSERT INTO t_04893 SELECT number, if(number < 16, [], [number]), [toFloat32(number), toFloat32(number + 1)]
 FROM numbers(64);
 
--- The rewrite engages, and the filter sits below the shortlist limit.
+-- The rewrite engages, and the filter sits below the shortlist limit. `EXPLAIN`
+-- renders parents before children, so the shortlist must precede the filter.
 SELECT 'shortlist_above_filter',
-    countIf(explain ILIKE '%quantized shortlist limit%') > 0
-    AND countIf(explain ILIKE '%Filter%') > 0
+    arrayFirstIndex(line -> line ILIKE '%quantized shortlist limit%', groupArray(explain))
+        < arrayFirstIndex(line -> line ILIKE '%Filter%', groupArray(explain))
 FROM
 (
     EXPLAIN SELECT id FROM t_04893 WHERE arrayJoin(tags) >= 0

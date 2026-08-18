@@ -9,6 +9,9 @@
 -- here nothing at all instead of 16. `optimizeTopK` already rejects `arrayJoin` for the same reason (#82279);
 -- the vector-search rewrites did not.
 
+-- The vector-search rewrite is analyzer-only. Pin this so the assertions cannot pass
+-- through an old-analyzer variant where the rewrite never engages.
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_04813;
@@ -22,6 +25,9 @@ INSERT INTO t_04813 SELECT number, if(number < 16, [], [number]), [toFloat32(num
 FROM numbers(64);
 
 SELECT arrayJoin(tags) FROM t_04813 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1;
+
+-- Cover the separate `FilterStep` carrier of `arrayJoin` below the sort.
+SELECT id FROM t_04813 WHERE arrayJoin(tags) >= 0 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1;
 
 SELECT '--';
 
