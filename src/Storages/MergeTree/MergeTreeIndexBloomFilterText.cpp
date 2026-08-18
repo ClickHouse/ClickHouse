@@ -385,14 +385,16 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         {
             if (tryPrepareSetBloomFilter(left_argument, right_argument, out))
             {
-                if (function_name == "notIn")
+                /// A set containing NULL is refused inside the helper, so every spelling below is
+                /// answered from the non-NULL elements alone.
+                if (function_name == "notIn" || function_name == "globalNotIn"
+                    || function_name == "notNullIn" || function_name == "globalNotNullIn")
                 {
                     out.function = RPNElement::FUNCTION_NOT_IN;
                     return true;
                 }
-                /// `nullIn`/`globalNullIn` are `in`/`globalIn` under `transform_null_in = 1`. A set
-                /// containing NULL is refused inside the helper.
-                if (function_name == "in" || function_name == "globalIn" || function_name == "nullIn" || function_name == "globalNullIn")
+                if (function_name == "in" || function_name == "globalIn"
+                    || function_name == "nullIn" || function_name == "globalNullIn")
                 {
                     out.function = RPNElement::FUNCTION_IN;
                     return true;
@@ -831,12 +833,11 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             return false;
 
         const auto & column = columns[tuple_idx];
-        /// `isNullable` is false for `LowCardinality(Nullable)`.
-        const bool column_is_nullable = isColumnNullableOrLowCardinalityNullable(*column);
+        const bool column_is_nullable = column->isNullable();
 
         for (size_t row = 0; row < prepared_set_total_row_count; ++row)
         {
-            /// `nullIn` also matches the column's NULL rows, which a bloom filter cannot express.
+            /// A NULL element matches the column's NULL rows, which a bloom filter cannot express.
             if (column_is_nullable && column->isNullAt(row))
                 return false;
 

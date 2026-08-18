@@ -1712,14 +1712,13 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
         return false;
 
-    /// `isNullable` is false for `LowCardinality(Nullable)`.
-    const bool set_column_is_nullable = isColumnNullableOrLowCardinalityNullable(set_column);
+    const bool set_column_is_nullable = set_column.isNullable();
 
     size_t total_row_count = prepared_set->getTotalRowCount();
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
-        /// `nullIn` also matches the column's NULL rows, which token search cannot express.
+        /// A NULL element matches the column's NULL rows, which token search cannot express.
         if (set_column_is_nullable && set_column.isNullAt(row))
         {
             out.text_search_queries.clear();
