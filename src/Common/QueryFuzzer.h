@@ -306,6 +306,8 @@ private:
     void fuzzCodecFunction(ASTFunction & codec_fn);
     void fuzzColumnDeclaration(ASTColumnDeclaration & column);
     void fuzzColumnDeclarationList(ASTExpressionList & columns);
+    ASTPtr makeTextIndexTokenizer();
+    String makeTextTokenizerArgument();
     void fuzzIndexDeclaration(ASTIndexDeclaration & index);
     void fuzzIndexDeclarationList(ASTExpressionList & indices);
     void fuzzProjectionDeclaration(ASTProjectionDeclaration & projection);

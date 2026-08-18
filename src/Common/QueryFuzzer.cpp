@@ -2561,6 +2561,95 @@ static const std::unordered_set<String> string_case_functions
        "removeDiacriticsUTF8",
        "soundex"};
 
+/// Every name `TokenizerFactory` registers, aliases included; `SELECT name FROM system.tokenizers`
+/// lists them. `chinese`, `icu` and `japanese` are conditionally compiled, so a build without one
+/// answers `Unknown tokenizer` (Code 36) - a plain rejection, like any other expected error here.
+static const Strings text_index_tokenizers
+    = {"array",
+       "asciiCJK",
+       "chinese",
+       "icu",
+       "japanese",
+       "ngrambf_v1",
+       "ngrams",
+       "sparseGrams",
+       "sparse_grams",
+       "splitByNonAlpha",
+       "splitByString",
+       "tokenbf_v1",
+       "unicodeWord",
+       "unicode_word"};
+/// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
+static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
+/// `icu` is the one tokenizer with a mandatory argument. ICU accepts any well-formed tag,
+/// including one naming no real locale, so `xx_YY` is a valid value rather than a bad one.
+static const Strings tokenizer_icu_locales = {"en", "de", "zh", "ja", "ru", "en_US", "ja_JP", "xx_YY"};
+static const Strings tokenizer_chinese_granularities = {"coarse_grained", "fine_grained"};
+
+/// Build a value for the `tokenizer` parameter of a text index. The argument shapes are keyed by
+/// name, so a tokenizer added to the list above without one is simply emitted bare - which every
+/// tokenizer except `icu` accepts, since the parameter count is only an upper bound.
+ASTPtr QueryFuzzer::makeTextIndexTokenizer()
+{
+    const String name = pickRandomly(fuzz_rand, text_index_tokenizers);
+
+    auto args = make_intrusive<ASTExpressionList>();
+    if (name == "ngrams" || name == "ngrambf_v1")
+    {
+        /// ngram_size >= 1
+        args->children.push_back(make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)));
+    }
+    else if (name == "sparseGrams" || name == "sparse_grams")
+    {
+        /// min_length in [3, 100], max_length in [min_length, 100],
+        /// min_cutoff_length in [min_length, max_length].
+        const auto min_len = UInt64(fuzz_rand() % 8 + 3);
+        const auto max_len = std::min(min_len + UInt64(fuzz_rand() % 20 + 1), UInt64(100));
+        const auto cutoff = min_len + UInt64(fuzz_rand() % (max_len - min_len + 1));
+        args->children.push_back(make_intrusive<ASTLiteral>(min_len));
+        args->children.push_back(make_intrusive<ASTLiteral>(max_len));
+        args->children.push_back(make_intrusive<ASTLiteral>(cutoff));
+    }
+    else if (name == "splitByString")
+    {
+        Array separators;
+        const size_t num_separators = fuzz_rand() % 3 + 1;
+        for (size_t i = 0; i < num_separators; ++i)
+            separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
+        args->children.push_back(make_intrusive<ASTLiteral>(std::move(separators)));
+    }
+    else if (name == "icu")
+    {
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_icu_locales)));
+    }
+    else if (name == "chinese")
+    {
+        args->children.push_back(make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, tokenizer_chinese_granularities)));
+    }
+
+    /// Prefer the bare string form half the time, and always for the tokenizers taking no
+    /// arguments. `icu` is the exception: it throws unless given its locale.
+    if (args->children.empty() || (name != "icu" && fuzz_rand() % 2 == 0))
+        return make_intrusive<ASTLiteral>(name);
+
+    auto tokenizer_fn = make_intrusive<ASTFunction>();
+    tokenizer_fn->name = name;
+    tokenizer_fn->arguments = args;
+    tokenizer_fn->children.push_back(args);
+    return tokenizer_fn;
+}
+
+/// The same specs, rendered into the single string argument the query-side functions take:
+/// `hasAnyTokens(s, ['a'], 'ngrams(3)')`, `tokens(s, 'icu(''ja'')')`. Every one of them accepts
+/// this nested form, so the flat `tokens(s, 'icu', 'ja')` spelling is not needed here.
+String QueryFuzzer::makeTextTokenizerArgument()
+{
+    ASTPtr tokenizer = makeTextIndexTokenizer();
+    if (const auto * literal = tokenizer->as<ASTLiteral>())
+        return literal->value.safeGet<String>();
+    return tokenizer->formatWithSecretsOneLine();
+}
+
 void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
 {
     auto index_type = index.getType();
@@ -2571,10 +2660,6 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
-    /// Simple no-arg tokenizers valid as text index tokenizer values.
-    static const Strings simple_tokenizers = {"splitByNonAlpha", "splitByString", "array", "asciiCJK", "unicodeWord"};
-    /// Non-empty separators for the splitByString tokenizer (empty ones are rejected).
-    static const Strings tokenizer_separators = {" ", ",", ";", ".", "\t", "\n", "ab", "叫", "😉"};
     static const Strings posting_list_codecs = {"none", "bitpacking"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
@@ -2602,51 +2687,8 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
             {
                 if (value_ast->as<ASTLiteral>() && fuzz_rand() % 5 == 0)
                 {
-                    /// Swap between no-arg string-form tokenizers or create parametrized ones.
-                    if (fuzz_rand() % 3 == 0)
-                    {
-                        /// Create ngrams(size) function: ngram_size >= 1
-                        auto args = make_intrusive<ASTExpressionList>();
-                        args->children.push_back(make_intrusive<ASTLiteral>(UInt64(fuzz_rand() % 8 + 1)));
-                        auto ngrams_fn = make_intrusive<ASTFunction>();
-                        ngrams_fn->name = "ngrams";
-                        ngrams_fn->arguments = args;
-                        value_ast = ngrams_fn;
-                    }
-                    else if (fuzz_rand() % 2 == 0)
-                    {
-                        /// Create sparseGrams(min_length, max_length, min_cutoff_length) function
-                        auto args = make_intrusive<ASTExpressionList>();
-                        auto min_len = UInt64(fuzz_rand() % 8 + 3);
-                        auto max_len = std::min(min_len + UInt64(fuzz_rand() % 20 + 1), UInt64(100));
-                        auto cutoff = min_len + UInt64(fuzz_rand() % (max_len - min_len + 1));
-                        args->children.push_back(make_intrusive<ASTLiteral>(min_len));
-                        args->children.push_back(make_intrusive<ASTLiteral>(max_len));
-                        args->children.push_back(make_intrusive<ASTLiteral>(cutoff));
-                        auto sparse_fn = make_intrusive<ASTFunction>();
-                        sparse_fn->name = "sparseGrams";
-                        sparse_fn->arguments = args;
-                        value_ast = sparse_fn;
-                    }
-                    else if (fuzz_rand() % 2 == 0)
-                    {
-                        /// Create splitByString([separators]) function: non-empty array of non-empty strings
-                        Array separators;
-                        const size_t num_separators = fuzz_rand() % 3 + 1;
-                        for (size_t i = 0; i < num_separators; ++i)
-                            separators.push_back(pickRandomly(fuzz_rand, tokenizer_separators));
-                        auto args = make_intrusive<ASTExpressionList>();
-                        args->children.push_back(make_intrusive<ASTLiteral>(std::move(separators)));
-                        auto split_fn = make_intrusive<ASTFunction>();
-                        split_fn->name = "splitByString";
-                        split_fn->arguments = args;
-                        value_ast = split_fn;
-                    }
-                    else
-                    {
-                        /// Swap between simple string-form tokenizers
-                        value_ast = make_intrusive<ASTLiteral>(pickRandomly(fuzz_rand, simple_tokenizers));
-                    }
+                    /// Swap in another tokenizer, in its bare or parametrized form.
+                    value_ast = makeTextIndexTokenizer();
                 }
                 else if (auto * tok_fn = value_ast->as<ASTFunction>())
                 {
@@ -2728,6 +2770,22 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
         add_missing_param("posting_list_codec", String(pickRandomly(fuzz_rand, posting_list_codecs)));
         /// `support_phrase_search = 1` requires the `allow_experimental_text_index_phrase_search` MergeTree setting.
         add_missing_param("support_phrase_search", UInt64(fuzz_rand() % 2));
+
+        /// `preprocessor` transforms the column before tokenization, `postprocessor` each token.
+        /// Both take a String -> String expression naming the indexed column, so they cannot go
+        /// through `add_missing_param` (literals only) and are built over the index expression.
+        auto add_missing_processor = [&](const String & name)
+        {
+            if (seen_params.contains(name) || fuzz_rand() % 10 != 0)
+                return;
+            if (auto expression = index.getExpression())
+                index_type->arguments->children.push_back(makeASTFunction(
+                    "equals",
+                    make_intrusive<ASTIdentifier>(name),
+                    makeASTFunction(pickRandomly(fuzz_rand, string_case_functions), expression->clone())));
+        };
+        add_missing_processor("preprocessor");
+        add_missing_processor("postprocessor");
     }
 
     /// Fuzz vector_similarity index positional arguments independently of type swap.
@@ -4961,7 +5019,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "hasTokenCaseInsensitiveOrNull",
          "hasTokenOrNull",
          "hasPhrase",
+         "hasAnyToken",
          "hasAnyTokens",
+         "hasAllToken",
          "hasAllTokens"},
         /// Map containment checks
         {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
@@ -5220,13 +5280,16 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"replaceAll", "replaceOne", "replaceRegexpAll", "replaceRegexpOne", "overlay", "overlayUTF8"},
         /// Format-string interpolation (format/pattern, args... → String)
         {"format", "printf"},
-        /// String splitting / tokenizing (str[, sep or tokenizer] → Array(String))
+        /// String splitting / tokenizing (str[, sep or tokenizer] → Array(String)). `tokenizeQuery`
+        /// lexes SQL and returns Array(Tuple(...)) instead; it is here because this is the only way
+        /// the fuzzer ever calls it, and the group already swaps across mismatched arities anyway.
         {"splitByChar",
          "splitByString",
          "splitByRegexp",
          "splitByWhitespace",
          "splitByNonAlpha",
          "alphaTokens",
+         "tokenizeQuery",
          "tokens",
          "tokensForLikePattern"},
         /// Two-argument String→Array extractors (str, pattern/separator)
@@ -6138,6 +6201,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     fn->name = pickRandomly(fuzz_rand, entry);
                     break;
                 }
+            }
+        }
+
+        /// Re-roll the trailing tokenizer argument: it must agree with the text index's own
+        /// tokenizer for the index to be used. The legacy `hasToken` family takes none.
+        if (fn->arguments && fuzz_rand() % 20 == 0)
+        {
+            static const std::unordered_map<String, size_t> tokenizer_argument_position
+                = {{"tokens", 1},
+                   {"hasAnyToken", 2},
+                   {"hasAnyTokens", 2},
+                   {"hasAllToken", 2},
+                   {"hasAllTokens", 2},
+                   {"hasPhrase", 2}};
+
+            if (auto it = tokenizer_argument_position.find(fn->name); it != tokenizer_argument_position.end()
+                && fn->arguments->children.size() >= it->second)
+            {
+                /// The nested spec carries its own parameters, so drop the flat trailing ones that
+                /// `tokens` also accepts (`tokens(s, 'icu', 'ja')`) rather than leaving them dangling.
+                fn->arguments->children.resize(it->second);
+                fn->arguments->children.push_back(make_intrusive<ASTLiteral>(makeTextTokenizerArgument()));
             }
         }
 
