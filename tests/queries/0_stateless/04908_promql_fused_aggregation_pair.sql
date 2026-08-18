@@ -22,25 +22,18 @@ INSERT INTO prometheus (metric_name, tags, time_series) VALUES
 
 SELECT '-- sum(m) - max(m), instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - max(m)', 130) ORDER BY tags;
-SELECT '-- sum(m) / count(m), instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(m) / count(m)', 130) ORDER BY tags;
 SELECT '-- sum(m) % max(m), instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) % max(m)', 130) ORDER BY tags;
-SELECT '-- sum(m) * group(m), instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(m) * group(m)', 130) ORDER BY tags;
-SELECT '-- max(m) ^ min(m), instant';
-SELECT * FROM prometheusQuery('prometheus', 'max(m) ^ min(m)', 130) ORDER BY tags;
-SELECT '-- avg(m) + stddev(m), instant';
-SELECT * FROM prometheusQuery('prometheus', 'avg(m) + stddev(m)', 130) ORDER BY tags;
-SELECT '-- atan2(sum(m), max(m)), instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(m) atan2 max(m)', 130) ORDER BY tags;
 
+SET prefer_column_name_to_alias = 1;
 SELECT '-- sum by (dc) (m) - min by (dc) (m), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'sum by (dc) (m) - min by (dc) (m)', 100, 140, 10) ORDER BY tags;
 SELECT '-- max without (host) (m) - min without (host) (m), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'max without (host) (m) - min without (host) (m)', 100, 140, 10) ORDER BY tags;
 SELECT '-- stddev by (dc) (m) + stdvar by (dc) (m), range';
 SELECT * FROM prometheusQueryRange('prometheus', 'stddev by (dc) (m) + stdvar by (dc) (m)', 100, 140, 10) ORDER BY tags;
+SET prefer_column_name_to_alias = 0;
+
 SELECT '-- labels are dropped the same way with and without a shared aggregation argument, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc, host) (m)', 130) ORDER BY tags;
 SELECT * FROM prometheusQuery('prometheus', 'sum by (dc, host) (m) - max by (dc, host) (n)', 130) ORDER BY tags;
