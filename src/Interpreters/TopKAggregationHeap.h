@@ -259,7 +259,7 @@ public:
 
             if (heap_indices.size() > next_trim_size)   /// a boundary tie-set blocked the trim
             {
-                next_trim_size = heap_indices.size() + trim_slack;
+                next_trim_size = heap_indices.size() + std::max(trim_slack, heap_indices.size() / 2);
                 if (heap_indices.size() > tie_overflow_limit)
                     tie_overflow = true;
             }
