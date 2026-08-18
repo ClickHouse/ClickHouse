@@ -270,7 +270,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     bool inside_database = this == &other_db;
 
     if (!inside_database)
+    {
         other_db.createDirectories();
+        other_db.waitDatabaseStarted();
+        if (!exchange)
+            other_db.checkTablesLimit();
+    }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
@@ -995,7 +1000,7 @@ ALTER DATABASE db MODIFY SETTING max_tables = 200;
 
 Lowering the limit below the current number of tables does not drop any tables. It only prevents new ones from being created until the count drops below the limit again.
 
-`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. In contrast, `RENAME TABLE` moving a table into the database does not go through the table-creation path, so it is not currently subject to the limit.
+`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving a table into the database with `RENAME TABLE` is also subject to the limit.
 
 A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own. The check is best-effort under concurrency.
 

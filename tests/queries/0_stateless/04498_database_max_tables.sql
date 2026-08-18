@@ -54,10 +54,9 @@ CREATE OR REPLACE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t7 (x UInt32) ENGINE 
 -- CREATE TABLE IF NOT EXISTS on an existing table is a no-op even at the limit.
 CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.t1 (x UInt32) ENGINE = MergeTree ORDER BY x;
 
--- RENAME TABLE into the database does not go through the table-creation path and bypasses the
--- limit (documented behavior).
+-- RENAME TABLE into the database is subject to the limit.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.moved (x UInt32) ENGINE = MergeTree ORDER BY x;
-RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.moved TO {CLICKHOUSE_DATABASE_1:Identifier}.moved;
+RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.moved TO {CLICKHOUSE_DATABASE_1:Identifier}.moved; -- { serverError TOO_MANY_TABLES }
 SELECT count() FROM system.tables WHERE database = currentDatabase();
 
 -- The setting survives detaching and re-attaching the database.

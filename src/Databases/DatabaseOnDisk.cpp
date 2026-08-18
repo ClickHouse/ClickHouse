@@ -244,8 +244,6 @@ void DatabaseOnDisk::createTable(
     const auto & create = query->as<ASTCreateQuery &>();
     chassert(table_name == create.getTable());
 
-    checkTablesLimit();
-
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
 
@@ -263,6 +261,8 @@ void DatabaseOnDisk::createTable(
             ErrorCodes::TABLE_ALREADY_EXISTS, "Table {}.{} already exists", backQuote(getDatabaseName()), backQuote(table_name));
 
     waitDatabaseStarted();
+
+    checkTablesLimit();
 
     String table_metadata_path = getObjectMetadataPath(table_name);
 
