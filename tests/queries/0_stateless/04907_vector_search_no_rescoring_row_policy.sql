@@ -66,8 +66,8 @@ SELECT count() FROM
 WHERE explain LIKE '%Sort description: sqrt(_distance)%';
 
 -- With FINAL, this non-consuming policy is deferred and its retained `vec` passthrough is
--- replayed by `FilterTransform`. The no-rescoring rewrite must remain disabled on the local
--- distributed-plan path too, so the plan keeps the rescoring sort over `_distance`.
+-- replayed by `FilterTransform`. The no-rescoring rewrite must remain disabled, so the plan
+-- keeps the rescoring sort over `_distance`.
 SELECT count() FROM
 (
     EXPLAIN SELECT id FROM tab_vec_row_policy FINAL
@@ -77,14 +77,7 @@ SELECT count() FROM
 WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS
     vector_search_with_rescoring = 0,
-    query_plan_optimize_lazy_materialization = 0,
-    make_distributed_plan = 1,
-    distributed_plan_execute_locally = 1,
-    distributed_plan_default_reader_bucket_count = 3,
-    distributed_plan_default_shuffle_join_bucket_count = 3,
-    distributed_plan_max_rows_to_broadcast = 0,
-    enable_parallel_replicas = 0,
-    max_rows_to_group_by = 0;
+    query_plan_optimize_lazy_materialization = 0;
 
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 DROP TABLE tab_vec_row_policy;

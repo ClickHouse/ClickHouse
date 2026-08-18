@@ -4262,7 +4262,14 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->distributed_read_param_name = distributed_read_param_name;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
-    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    if (deferred_row_level_filter)
+    {
+        auto deferred_row_level_filter_copy = std::make_shared<FilterDAGInfo>();
+        deferred_row_level_filter_copy->actions = deferred_row_level_filter->actions.clone();
+        deferred_row_level_filter_copy->column_name = deferred_row_level_filter->column_name;
+        deferred_row_level_filter_copy->do_remove_column = deferred_row_level_filter->do_remove_column;
+        cloned_step->deferred_row_level_filter = std::move(deferred_row_level_filter_copy);
+    }
     cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
