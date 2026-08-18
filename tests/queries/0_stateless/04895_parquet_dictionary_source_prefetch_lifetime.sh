@@ -22,8 +22,8 @@ ABS="${USER_FILES%/}/${REL}"
 # Small row groups so there are many read ranges, hence many queued tasks at throw time.
 ${CLICKHOUSE_CLIENT} --query="
     insert into function file('${REL}', Parquet, 'key UInt64, val String')
-    select number, repeat('y', 400) from numbers(2000000)
-    settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 5000,
+    select number, repeat('y', 400) from numbers(200000)
+    settings engine_file_truncate_on_insert = 1, output_format_parquet_row_group_size = 500,
              output_format_parquet_compression_method = 'none';
 "
 
