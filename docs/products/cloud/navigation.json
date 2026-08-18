@@ -51,6 +51,7 @@
                 },
                 "products/cloud/features/large-single-replica-services",
                 "products/cloud/features/infrastructure/parallel-replicas",
+                "products/cloud/features/infrastructure/replica-aware-routing",
                 "products/cloud/features/infrastructure/deployment-options",
                 "products/cloud/features/infrastructure/shared-catalog",
                 "products/cloud/features/infrastructure/shared-merge-tree",
