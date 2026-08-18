@@ -126,7 +126,27 @@ void writeMetric(DB::WriteBuffer & wb, size_t metric, const std::string & labels
     writeMetricLine(wb, key, labels_suffix, value);
 }
 
-void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values, const std::string & labels_suffix)
+void writeLabelValueEscaped(DB::WriteBuffer & wb, const std::string & value)
+{
+    for (char c : value)
+    {
+        if (c == '\\' || c == '"')
+        {
+            DB::writeChar('\\', wb);
+            DB::writeChar(c, wb);
+        }
+        else if (c == '\n')
+        {
+            DB::writeChar('\\', wb);
+            DB::writeChar('n', wb);
+        }
+        else
+            DB::writeChar(c, wb);
+    }
+}
+
+void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues & values,
+    const std::string & constant_labels, const std::string & constant_labels_suffix)
 {
     for (const auto & name_value : values)
     {
@@ -135,14 +155,39 @@ void writeAsyncMetrics(DB::WriteBuffer & wb, const DB::AsynchronousMetricValues 
         if (!replaceInvalidChars(key))
             continue;
 
-        auto value = name_value.second;
+        const auto & value = name_value.second;
 
         std::string metric_doc{value.documentation};
         convertHelpToSingleLine(metric_doc);
 
         writeOutLine(wb, "# HELP", key, metric_doc);
         writeOutLine(wb, "# TYPE", key, "gauge");
-        writeMetricLine(wb, key, labels_suffix, value.value);
+
+        if (value.isMap())
+        {
+            /// A key-value metric is exported as one line per key, with the key as a label,
+            /// e.g. `ClickHouseAsyncMetrics_BlockReadBytes{device="sda"} 123`.
+            std::string label_name{value.key_label};
+            if (!replaceInvalidChars(label_name))
+                continue;
+
+            for (const auto & [map_key, map_value] : value.key_values)
+            {
+                DB::WriteBufferFromOwnString labels_wb;
+                DB::writeChar('{', labels_wb);
+                DB::writeText(constant_labels, labels_wb);
+                if (!constant_labels.empty())
+                    DB::writeChar(',', labels_wb);
+                DB::writeText(label_name, labels_wb);
+                DB::writeText("=\"", labels_wb);
+                writeLabelValueEscaped(labels_wb, map_key);
+                DB::writeText("\"}", labels_wb);
+
+                writeMetricLine(wb, key, labels_wb.str(), map_value);
+            }
+        }
+        else
+            writeMetricLine(wb, key, constant_labels_suffix, value.value);
     }
 }
 
@@ -185,7 +230,7 @@ void PrometheusMetricsWriter::writeMetrics(WriteBuffer & wb) const
 
 void PrometheusMetricsWriter::writeAsynchronousMetrics(WriteBuffer & wb, const AsynchronousMetrics & async_metrics) const
 {
-    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels_suffix);
+    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels, constant_labels_suffix);
 }
 
 void PrometheusMetricsWriter::writeErrors(WriteBuffer & wb) const
@@ -422,7 +467,7 @@ void KeeperPrometheusMetricsWriter::writeAsynchronousMetrics([[maybe_unused]] Wr
                                                              [[maybe_unused]] const AsynchronousMetrics & async_metrics) const
 {
 #if USE_NURAFT
-    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels_suffix);
+    writeAsyncMetrics(wb, async_metrics.getValues(), constant_labels, constant_labels_suffix);
 #endif
 }
 
