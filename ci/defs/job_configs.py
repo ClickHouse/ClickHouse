@@ -1739,18 +1739,15 @@ class JobConfigs:
         command="python3 ./ci/jobs/build_profile_diff_job.py",
         timeout=1800,
         enable_gh_auth=True,
-        # Only the job's own scripts. Whether the profiled build can produce
-        # data for this head arrives through `requires`; a file added to this
-        # job's pipeline later is not covered automatically.
+        # `requires` folds the build's digest in, so selection and result reuse
+        # both follow the source state. A file added to this job's own pipeline
+        # later is not covered automatically.
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/build_profile_diff_job.py",
                 "./ci/jobs/scripts/log_cluster.py",
             ],
         ),
-        # The comment this job posts names one concrete commit, so a reused
-        # result would describe an older head. Every selected run must run.
-        enable_cache=False,
         # Run on a red head too. This job is the only writer of the
         # `build-profile-diff` PR comment, so skipping it leaves the comment
         # posted for an older commit pinned to the PR, reading as if it

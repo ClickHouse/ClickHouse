@@ -1,16 +1,16 @@
 """Scheduling and caching invariant of the `Build profile diff` job.
 
 The job compares the PR's `arm_release` build profile against master and posts a PR
-comment. It is only useful when the profiled build can produce data for this head, and
-its result must never be reused from cache (the comment names one concrete commit).
+comment. It is only useful when the profiled build can produce data for this head.
 
-Those are two separate properties and praktika expresses them with two separate fields:
-`digest_config` selects the job from the changed files, `enable_cache` allows result
-reuse. The tests below pin both, plus the fact that adding `enable_cache` to
-`Job.Config` leaves every existing job's digest untouched.
+`digest_config` selects the job from the changed files. `requires` then folds the
+profiled build's digest into this job's cache key, so both the selection and the
+result reuse follow the source state: a head with different sources gets a different
+key, and a head with identical sources may legitimately reuse the earlier result.
+`requires` rather than `run_after` is what makes that hold, and the tests below pin it.
 
 Everything is asserted against the production functions (`_filter_unaffected_jobs`,
-`Digest.calc_job_digest`, `CacheRunnerHooks.post_run`) on the real PR workflow, so a
+`Digest.calc_job_digest`, `CacheRunnerHooks.configure`) on the real PR workflow, so a
 change to the job's declaration is caught here rather than in CI.
 """
 
@@ -180,85 +180,95 @@ def test_registry_edits_do_not_schedule_a_run_without_profile_data():
         assert BPD in skipped, path
 
 
-def test_the_job_result_is_never_reused_from_cache():
-    assert _job(BPD).enable_cache is False
+def test_the_job_requires_the_profiled_build_rather_than_running_after_it():
+    """`requires` is what folds the build's digest into this job's cache key.
 
-
-def test_no_other_job_opts_out_of_cache():
-    """`enable_cache` defaults to True, so this pins that the new field changes the
-    behaviour of exactly one job.
+    With `run_after` the job would keep only its own two near-invariant script paths in
+    the key, so one published record would be reused across unrelated heads.
     """
-    opted_out = [j.name for j in _pr_workflow().jobs if not j.enable_cache]
-    assert opted_out == [BPD]
+    assert _job(BPD).requires == [PROFILED_BUILD]
 
 
-def test_a_cache_opted_out_job_is_not_looked_up(monkeypatch):
-    """Seam 1: a job with `enable_cache=False` must not reach the cache lookup.
+def _cache_keys(monkeypatch, per_job_digest):
+    """Return the per-job cache keys `CacheRunnerHooks.configure` computes.
 
-    `cache_success_base64` is what makes the generated `if:` skip the runner, and it is
-    populated only from the records fetched for `eligible_jobs`, so being absent from
-    that set is what guarantees the job runs.
+    `digest_jobs` is what `Cache.fetch_success` and `push_success_record` are keyed by,
+    so this is the real key, not the job's own `calc_job_digest` value.
+
+    `per_job_digest(job) -> str` stands in for the file hashing. Hashing for real would
+    walk every job's include paths (~29k files for the stress tests) and take ~25 min,
+    which does not fit the `CI Tests` budget. The composition of the keys is what is
+    under test here, and it consumes those hashes opaquely; that the build's own hash
+    really does track the sources is pinned separately by
+    `test_the_builds_digest_tracks_the_source_tree`.
     """
-    workflow = _pr_workflow()
-    fetched = []
+    captured = {}
 
-    class _FakeCache:
-        class digest:
-            @staticmethod
-            def get_null_digest():
-                return "f" * 20
+    def _dump(self):
+        captured.update(self.digest_jobs)
 
-            @staticmethod
-            def calc_job_digest(job_config, docker_digests, artifact_configs):
-                return "d" * 20
-
-        def fetch_success(self, job_name, job_digest):
-            fetched.append(job_name)
-            return None
-
-    monkeypatch.setattr("ci.praktika.hook_cache.Cache", _FakeCache)
+    monkeypatch.setattr(
+        "ci.praktika.digest.Digest.calc_job_digest",
+        lambda self, job_config, docker_digests, artifact_configs: per_job_digest(
+            job_config
+        ),
+    )
     monkeypatch.setattr(
         RunConfig, "from_fs", classmethod(lambda cls, name: _make_run_config())
     )
-    monkeypatch.setattr(RunConfig, "dump", lambda self: None)
-
+    monkeypatch.setattr(RunConfig, "dump", _dump)
     with redirect_stdout(io.StringIO()):
-        CacheRunnerHooks.configure(workflow)
+        CacheRunnerHooks.configure(_pr_workflow(), skip_lookup=True)
+    assert captured, "configure() computed no digests - the seam is not exercised"
+    return captured
 
-    assert fetched, "no job was looked up at all - the seam is not being exercised"
-    assert BPD not in fetched
+
+def _fake_digests(job_config):
+    """A distinct digest per job, so a prefix relationship in the composed key can only
+    come from `configure()` prepending a dependency, never from two jobs colliding."""
+    if job_config.name == BPD:
+        return "bbbbbbbbbbbbbbbbbbbb-bbbb"
+    if job_config.name == PROFILED_BUILD:
+        return "aaaaaaaaaaaaaaaaaaaa-aaaa"
+    return Digest().get_null_digest()
 
 
-def test_a_cache_opted_out_job_pushes_no_success_record(monkeypatch):
-    """Seam 2: a successful run of the job must not publish a cache record.
+def test_the_cache_key_contains_the_profiled_builds_digest(monkeypatch):
+    """The reuse invariant: a head whose sources differ gets a different key.
 
-    A published record would be read by a later run of an unchanged head and skip the
-    job, and with it the only writer of the `build-profile-diff` comment.
+    Asserted structurally because the build's digest is the key's prefix; a change under
+    `./src` or a submodule bump moves it, and the diff job's key moves with it.
     """
-    pushed = []
-    monkeypatch.setattr(
-        "ci.praktika.hook_cache.Cache.push_success_record",
-        staticmethod(lambda *a, **kw: pushed.append(a[0])),
-    )
-    monkeypatch.setattr(
-        RunConfig,
-        "from_workflow_data",
-        classmethod(
-            lambda cls: replace(
-                _make_run_config(),
-                digest_jobs={BPD: "d" * 20, PROFILED_BUILD: "e" * 20},
-            )
-        ),
-    )
-    workflow = _pr_workflow()
+    keys = _cache_keys(monkeypatch, _fake_digests)
+    assert keys[BPD].startswith(keys[PROFILED_BUILD] + "-")
 
-    with redirect_stdout(io.StringIO()):
-        CacheRunnerHooks.post_run(workflow, _job(BPD))
-        CacheRunnerHooks.post_run(workflow, _job(PROFILED_BUILD))
 
-    # The control arm: an ordinary cacheable job with the same digest shape does push,
-    # so an assertion that nothing was pushed cannot pass by accident.
-    assert pushed == [PROFILED_BUILD]
+def test_the_cache_key_is_not_just_the_jobs_own_scripts(monkeypatch):
+    """Control for the test above.
+
+    The job's own digest covers only two rarely-changed scripts. If that were the whole
+    key, the first PR to run the job would publish a record that later PRs reuse
+    regardless of their sources - the failure mode `requires` prevents.
+    """
+    keys = _cache_keys(monkeypatch, _fake_digests)
+    own = _fake_digests(_job(BPD))
+    assert keys[BPD] != own
+    assert keys[BPD].endswith(own)
+
+
+def test_the_builds_digest_tracks_the_source_tree():
+    """The other half of the reuse invariant, and what the stubbed tests above take on
+    faith: the profiled build's own digest really does move when the sources move.
+
+    Together with the composition tests, this is what makes a cache hit on the diff job
+    mean "identical sources" rather than "some earlier PR already ran it".
+    """
+    build = _job(PROFILED_BUILD)
+    paths = build.digest_config.include_paths
+    assert "./src" in paths
+    assert build.digest_config.with_git_submodules is True
+    # And the diff job's own digest deliberately does not duplicate them.
+    assert "./src" not in _job(BPD).digest_config.include_paths
 
 
 def _config_digest(job_config):
@@ -271,11 +281,12 @@ def _config_digest(job_config):
     return digest
 
 
-def test_enable_cache_does_not_enter_the_job_digest():
-    """`enable_cache` governs result reuse, not job output, so it must be in
-    `drop_fields`. Without that entry every job's digest changes and the whole CI cache
-    is invalidated on the first push - which presents as an unrelated mass rebuild
-    rather than as a bug in the job declaration.
+def test_requires_does_not_enter_the_jobs_own_digest():
+    """`requires` is in `drop_fields`, so it shapes the key only through the dependency
+    prefix that `CacheRunnerHooks.configure` prepends, never through the job's own hash.
+
+    Pinned because the two tests above read the key as `<dep digest>-<own digest>`; if
+    `requires` also re-keyed the own half, that decomposition would silently stop holding.
     """
     job = Job.Config(
         name="digest probe",
@@ -283,8 +294,8 @@ def test_enable_cache_does_not_enter_the_job_digest():
         command="true",
         digest_config=Job.CacheDigestConfig(include_paths=["./ci/praktika/job.py"]),
     )
-    assert _config_digest(replace(job, enable_cache=True)) == _config_digest(
-        replace(job, enable_cache=False)
+    assert _config_digest(job) == _config_digest(
+        replace(job, requires=[PROFILED_BUILD])
     )
 
 

@@ -97,17 +97,12 @@ class CacheRunnerHooks:
         if os.environ.get("DISABLE_CI_CACHE", "0") == "1":
             print("NOTE: CI Cache disabled via GH Variable DISABLE_CI_CACHE=1")
         else:
-            # Filter eligible jobs (exclude null digests, filtered jobs and
-            # jobs that opted out of result reuse)
-            no_cache_jobs = {
-                name for name, job in job_by_name.items() if not job.enable_cache
-            }
+            # Filter eligible jobs (exclude null digests and filtered jobs)
             eligible_jobs = {
                 job_name: job_digest
                 for job_name, job_digest in workflow_config.digest_jobs.items()
                 if job_digest != cache.digest.get_null_digest()
                 and job_name not in workflow_config.filtered_jobs
-                and job_name not in no_cache_jobs
             }
 
             # Group 1: Jobs whose digest is NOT a prefix of any other digest
@@ -258,7 +253,7 @@ class CacheRunnerHooks:
     def post_run(cls, workflow, job):
         if job.name == Settings.CI_CONFIG_JOB_NAME:
             return
-        if job.digest_config and job.enable_cache:
+        if job.digest_config:
             # cache is enabled, and it's a job that supposed to be cached (has defined digest config)
             workflow_runtime = RunConfig.from_workflow_data()
             job_digest = workflow_runtime.digest_jobs[job.name]

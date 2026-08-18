@@ -64,10 +64,6 @@ class Job:
 
         digest_config: Optional["Job.CacheDigestConfig"] = None
 
-        # Whether an equal digest may reuse a previous result. Independent of
-        # `digest_config` above, which says which files affect the job.
-        enable_cache: bool = True
-
         run_in_docker: str = ""
 
         run_unless_cancelled: bool = False
