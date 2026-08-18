@@ -352,18 +352,18 @@ TEST(PageCacheBuffers, WriteAcrossTwoBlocks)
     EXPECT_EQ(claimedWrite(w1, makeChain(block_size, block_size, '1')), block_size);
     EXPECT_TRUE(w1.complete());
 
-    /// probeView coalesces the two adjacent hit blocks into one HitEntry.
+    /// One resolution per block: each cached block is its own hit, read from its own reader.
     auto view = probeView(provider, StoredObject{}, 0, ByteRange{0, span});
-    ASSERT_EQ(view->hits().size(), 1u) << "adjacent hit blocks coalesce into one HitEntry";
-    EXPECT_EQ(view->hits()[0].range.offset, 0u);
-    EXPECT_EQ(view->hits()[0].range.size, span);
+    ASSERT_EQ(view->hits().size(), 2u) << "one hit per cached block";
     ASSERT_EQ(view->misses().size(), 0u);
+    EXPECT_EQ(view->hits()[0].range.offset, 0u);
+    EXPECT_EQ(view->hits()[0].range.size, block_size);
+    EXPECT_EQ(view->hits()[1].range.offset, block_size);
+    EXPECT_EQ(view->hits()[1].range.size, block_size);
 
-    /// Each block round-trips through the coalesced hit reader.
-    auto & reader = *view->hits()[0].reader;
-    auto rope0 = reader.read(ByteRange{0, block_size});
+    auto rope0 = view->hits()[0].reader->read(ByteRange{0, block_size});
     EXPECT_EQ(flatten(rope0, 0, block_size), std::string(block_size, '0'));
-    auto rope1 = reader.read(ByteRange{block_size, block_size});
+    auto rope1 = view->hits()[1].reader->read(ByteRange{block_size, block_size});
     EXPECT_EQ(flatten(rope1, block_size, block_size), std::string(block_size, '1'));
 }
 

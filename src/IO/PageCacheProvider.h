@@ -29,21 +29,18 @@ private:
 
 /// ── Per-range buffer API (see `ICacheProvider.h`) ──
 
-/// `CacheReader` for one hit range: it holds the whole-block cells covering the range and serves
-/// `read` as zero-copy views into them.
+/// `CacheReader` for one cached block: it holds the block's cell and serves `read` as a zero-copy view.
 class PageCacheReader : public CacheReader
 {
 public:
-    PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<PageCache::MappedPtr> cells_);
+    PageCacheReader(ByteRange range_in_file, PageCache::MappedPtr cell_);
 
     ByteRange range() const override { return range_member; }
     ChainedBuffers read(ByteRange sub) override;
 
 private:
     ByteRange range_member;
-    /// The whole-block cells covering this range, in file order (kept alive by the shared_ptr). Each
-    /// cell carries its own file range (`cell->range`) and size, so no separate bookkeeping is needed.
-    VectorWithMemoryTracking<PageCache::MappedPtr> cells;
+    PageCache::MappedPtr cell;  /// the block's cell, kept alive by the shared_ptr
 };
 
 /// `CacheWriter` for one miss range. `write` creates each block's cell on demand
