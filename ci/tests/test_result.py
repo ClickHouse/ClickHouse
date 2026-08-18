@@ -223,9 +223,10 @@ def test_create_from_omits_child_info_by_default():
     assert r.info == ""
 
 
-def test_update_sub_result_keeps_only_required_ext_keys():
-    """Embedding a job as a workflow sub-result drops heavy ext (e.g. metrics),
-    keeping only what the workflow report renders per row."""
+def test_update_sub_result_drops_only_heavy_ext_keys():
+    """Embedding a job as a workflow sub-result drops the heavy `metrics`
+    timeline but keeps every lightweight key, so the workflow report and the
+    embedded-node fallback in json.html keep their warnings/errors/notes/run_url."""
     workflow = Result("wf", Result.Status.PENDING, results=[Result("job", Result.Status.PENDING)])
     job = Result("job", Result.Status.OK)
     job.ext = {
@@ -233,13 +234,25 @@ def test_update_sub_result_keeps_only_required_ext_keys():
         "hlabels": [["flaky", "seen before"]],
         "storage_usage": {"uploaded": 42, "uploaded_details": {"a.deb": 42}},
         "metrics": {"heavy": list(range(1000))},
-        "pipeline_utilization": {"cpu_core_s": 1.0},
+        "warnings": [{"message": "w", "from": "job"}],
+        "errors": [{"message": "e", "from": "job"}],
+        "notes": [{"message": "n", "from": "job"}],
         "run_url": "https://example/run",
     }
 
     workflow.update_sub_result(job, drop_nested_results=True)
 
-    assert set(workflow.results[0].ext) == {"labels", "hlabels", "storage_usage"}
+    embedded_ext = workflow.results[0].ext
+    assert "metrics" not in embedded_ext
+    assert set(embedded_ext) == {
+        "labels",
+        "hlabels",
+        "storage_usage",
+        "warnings",
+        "errors",
+        "notes",
+        "run_url",
+    }
     # The job's own result is untouched - its full report is uploaded separately.
     assert "metrics" in job.ext
 
