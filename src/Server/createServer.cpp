@@ -96,7 +96,7 @@ void startServers(std::vector<ProtocolServerAdapter> & servers, bool listen_try,
             /// A protocol that binds when its server is created has already passed the `listen_try`
             /// check in `createServer`, so a failure here is not a listen failure and must not be
             /// swallowed.
-            if (!it->bindsOnStart())
+            if (!it->bindsOnStart() || getCurrentExceptionCode() != ErrorCodes::NETWORK_ERROR)
                 throw;
 
             if (!listen_try)

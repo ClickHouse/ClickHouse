@@ -724,7 +724,8 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger())
+        && (start_server || !servers.back().bindsOnStart()))
     {
         /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
         /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
@@ -3284,6 +3285,11 @@ try
     {
         std::lock_guard lock(servers_lock);
         startServers(servers_to_start_before_tables, listen_try, log);
+        for (const auto & server : servers_to_start_before_tables)
+        {
+            if (server.bindsOnStart())
+                global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+        }
     }
 
 #if USE_SSL
@@ -3846,6 +3852,11 @@ try
             }
 
             startServers(servers, listen_try, log);
+            for (const auto & server : servers)
+            {
+                if (server.bindsOnStart())
+                    global_context->registerServerPort(server.getPortName(), static_cast<UInt16>(config().getInt(server.getPortName())));
+            }
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
