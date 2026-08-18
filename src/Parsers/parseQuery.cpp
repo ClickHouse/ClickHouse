@@ -319,12 +319,14 @@ ASTPtr tryParseQuery(
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
     IParser::Pos set_lookahead(token_iterator);
-    /// Such a parser tries a real `ParserSetQuery` first and only falls back to raw text if that
-    /// fails, so a genuine (if malformed) SET wants the ordinary lexical check, not dialect text.
+    /// A failed SET trial parse alone can't tell "not SET" from "SET but malformed" - both return
+    /// false. `max_parsed_pos` can: it only advances past the keyword once SET is actually matched.
+    const char * set_trial_start = set_lookahead->begin;
     ASTPtr set_trial_node;
     Expected set_trial_expected;
-    const bool consumes_raw_text
-        = parser.consumesRawText() && !ParserSetQuery().parse(set_lookahead, set_trial_node, set_trial_expected);
+    const bool committed_to_set = ParserSetQuery().parse(set_lookahead, set_trial_node, set_trial_expected)
+        || (set_trial_expected.max_parsed_pos && set_trial_expected.max_parsed_pos > set_trial_start);
+    const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
         while (lookahead->type != TokenType::Semicolon && lookahead->type != TokenType::EndOfStream)
