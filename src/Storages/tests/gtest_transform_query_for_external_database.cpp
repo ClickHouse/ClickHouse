@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <optional>
+
 #include <Storages/MemorySettings.h>
 #include <Storages/TableNameOrQuery.h>
 #include <Storages/transformQueryForExternalDatabase.h>
@@ -142,7 +144,8 @@ static void checkOld(
     const std::string & query,
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const std::string & additional_filter = "")
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -160,7 +163,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, limit);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -192,7 +195,8 @@ static void checkNewAnalyzer(
     const std::string & query,
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const std::string & additional_filter = "")
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {})
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -217,7 +221,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context);
+        literal_escaping_style, "test", "table", state.context, limit);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -230,15 +234,16 @@ static void check(
     const std::string & expected,
     const std::string & expected_new = "",
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
-    const std::string & additional_filter = "")
+    const std::string & additional_filter = "",
+    std::optional<size_t> limit = {})
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style, additional_filter);
+        checkOld(state, table_num, query, expected, literal_escaping_style, additional_filter, limit);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, additional_filter);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, additional_filter, limit);
     }
 }
 
@@ -621,6 +626,15 @@ TEST(TransformQueryForExternalDatabase, Limit)
     check(state, 1, {"column"},
         "SELECT column FROM table LIMIT 10",
         R"(SELECT "column" FROM "test"."table")");
+
+    /// An explicit limit supplied by `StoragePostgreSQL` must be disabled too.
+    check(state, 1, {"column"},
+        "SELECT column FROM table",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"",
+        /*limit=*/10);
     state.context->setSetting("external_storage_push_down_limit", String("1"));
 }
 

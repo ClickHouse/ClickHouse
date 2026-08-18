@@ -681,6 +681,9 @@ String transformQueryForExternalDatabaseImpl(
     bool strict = context->getSettingsRef()[Setting::external_table_strict_query];
     bool push_down_limit = allow_limit_push_down && context->getSettingsRef()[Setting::external_storage_push_down_limit];
 
+    if (!push_down_limit)
+        limit.reset();
+
     auto select = make_intrusive<ASTSelectQuery>();
 
     const auto & original_select = clone_query->as<ASTSelectQuery &>();
