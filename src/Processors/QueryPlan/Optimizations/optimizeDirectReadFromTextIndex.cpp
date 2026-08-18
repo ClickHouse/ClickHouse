@@ -1,5 +1,6 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,6 +34,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -570,6 +572,7 @@ private:
             chassert(preprocessor_dag.getOutputs().size() == 1);
             const auto & preprocessor_output = preprocessor_dag.getOutputs().front();
             auto haystack_name = getNameWithoutAliases(arg_haystack);
+            bool preprocessor_applied = false;
 
             /// Check that preprocessor contains current expression as its argument.
             if (hasSubexpression(preprocessor_output, haystack_name))
@@ -580,6 +583,46 @@ private:
                 chassert(merged_outputs.size() == 1);
                 new_children[0] = merged_outputs.front();
 
+                preprocessor_applied = true;
+            }
+            else if (condition.search_query->matchesJSONAllValuesSubcolumn())
+            {
+                /// `JSONAllValues(json)` can serve `json.dynamic_path::String`, while the original
+                /// preprocessor DAG is bound to `JSONAllValues(json)`. Rebind its scalar template to
+                /// this path only when index analysis explicitly identified that relationship.
+                const auto & scalar_dag = preprocessor->getScalarPreprocessorDAG();
+                const auto & scalar_inputs = scalar_dag.getInputs();
+                const auto & scalar_outputs = scalar_dag.getOutputs();
+                if (scalar_inputs.size() > 1 || scalar_outputs.size() != 1)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Scalar text index preprocessor DAG must have at most one input and exactly one output, got {} inputs and {} "
+                        "outputs",
+                        scalar_inputs.size(),
+                        scalar_outputs.size());
+
+                if (scalar_inputs.empty() || arg_haystack->result_type->equals(*scalar_inputs.front()->result_type))
+                {
+                    ActionsDAG::NodeMapping source_to_target;
+                    if (!scalar_inputs.empty())
+                        source_to_target.emplace(scalar_inputs.front(), arg_haystack);
+
+                    auto cloned_dag = ActionsDAG::cloneSubDAG(scalar_outputs, source_to_target, false);
+                    const auto * scalar_output = source_to_target.at(scalar_outputs.front());
+
+                    /// The cloned node is an internal argument of the rewritten predicate, not a
+                    /// query output. Clearing outputs before `unite` keeps the surrounding DAG shape;
+                    /// `unite` splices the nodes, so `scalar_output` remains valid.
+                    cloned_dag.getOutputs().clear();
+                    actions_dag.unite(std::move(cloned_dag));
+
+                    new_children[0] = scalar_output;
+                    preprocessor_applied = true;
+                }
+            }
+
+            if (preprocessor_applied)
+            {
                 /// Needles in array are not processed and passed as is.
                 if (needles_field.getType() == Field::Types::String)
                 {
