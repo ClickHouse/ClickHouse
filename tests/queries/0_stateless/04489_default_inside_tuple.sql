@@ -83,13 +83,14 @@ SELECT CAST((1, 2), 'Tuple(a UInt8, b UInt8 DEFAULT 5)'); -- { serverError BAD_A
 SELECT '-- default null';
 CREATE TABLE t_default_null
 (
+    id UInt8,
     c Tuple(a UInt8 DEFAULT NULL, b String)
 )
 ENGINE = Memory;
 SELECT type, default_kind, default_expression
 FROM system.columns
 WHERE database = currentDatabase() AND table = 't_default_null' AND name = 'c';
-INSERT INTO t_default_null VALUES ();
+INSERT INTO t_default_null (id) VALUES (1);
 SELECT c FROM t_default_null;
 
 -- The same normalization applies to ALTER, not only CREATE.
