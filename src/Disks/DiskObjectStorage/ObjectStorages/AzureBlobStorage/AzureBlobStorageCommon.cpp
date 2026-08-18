@@ -12,6 +12,7 @@
 #include <Core/ServerSettings.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <IO/AzureBlobStorage/PocoHTTPClient.h>
+#include <IO/AzureBlobStorage/retryAzureOnAuthError.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
@@ -310,7 +311,9 @@ static bool containerExists(const ContainerClient & client)
 
     try
     {
-        client.GetProperties();
+        /// No RequestSettings are available at client-factory time; mirror the default retry count.
+        retryAzureOnAuthError([&] { return client.GetProperties(); },
+            /*max_retries*/ 3, "containerExists", getLogger("AzureBlobStorageCommon"));
         return true;
     }
     catch (const Azure::Storage::StorageException & e)
