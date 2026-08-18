@@ -1080,9 +1080,13 @@ void IMergeTreeDataPart::clearCaches()
     /// Remove deserialized columns from cache
     if (getType() == MergeTreeDataPartType::Wide
         && !isProjectionPart()
-        && storage.getStorageID().uuid != UUIDHelpers::Nil
-        && (auto columns_cache = storage.getContext()->getColumnsCache()))
-        columns_cache->removePart(storage.getStorageID().uuid, name);
+        && storage.getStorageID().uuid != UUIDHelpers::Nil)
+    {
+        if (auto columns_cache = storage.getContext()->getColumnsCache())
+        {
+            columns_cache->removePart(storage.getStorageID().uuid, name);
+        }
+    }
 }
 
 bool IMergeTreeDataPart::mayStoreDataInCaches() const

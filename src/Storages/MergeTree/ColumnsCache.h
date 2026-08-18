@@ -20,7 +20,7 @@ namespace ProfileEvents
 namespace DB
 {
 
-class StorageInMemoryMetadata;
+struct StorageInMemoryMetadata;
 
 /// Key for looking up cached deserialized columns.
 /// Identifies a specific column in a specific row range of a specific data part.
