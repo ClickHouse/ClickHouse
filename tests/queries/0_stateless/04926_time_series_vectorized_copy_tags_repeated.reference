@@ -1,14 +1,29 @@
 timeSeriesCopyTags vectorized repeated dense pairs:
-0	[('dest','0'),('src','0')]
-1	[('dest','1'),('src','1')]
-2	[('dest','0'),('src','0')]
-3	[('dest','2'),('src','2')]
+0	[('dest','0'),('src','2')]
+1	[('dest','1'),('src','0')]
+2	[('dest','0'),('src','1')]
+3	[('dest','0'),('src','2')]
 4	[('dest','1'),('src','1')]
-5	[('dest','0'),('src','0')]
+5	[('dest','0'),('src','2')]
+
+timeSeriesCopyTags vectorized near-unique pairs:
+0	[('dest','0'),('src','9')]
+1	[('dest','1'),('src','8')]
+2	[('dest','2'),('src','7')]
+3	[('dest','3'),('src','6')]
+4	[('dest','4'),('src','5')]
+5	[('dest','5'),('src','4')]
+6	[('dest','6'),('src','3')]
+7	[('dest','7'),('src','2')]
+8	[('dest','8'),('src','1')]
+9	[('dest','0'),('src','9')]
 
 timeSeriesCopyTags vectorized repeated sparse pairs:
-0	[('dest','0'),('src','0')]
-1	[('dest','24'),('src','24')]
-2	[('dest','0'),('src','0')]
-3	[('dest','24'),('src','24')]
-4	[('dest','0'),('src','0')]
+0	[('dest','0'),('src','24')]
+1	[('dest','1'),('src','0')]
+2	[('dest','0'),('src','24')]
+3	[('dest','1'),('src','0')]
+4	[('dest','0'),('src','24')]
+
+timeSeriesCopyTags vectorized repeated pairs with identical results:
+3	1	[[('src','same')]]
