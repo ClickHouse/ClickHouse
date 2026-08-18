@@ -3761,3 +3761,40 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
 
     instance.query(f"DROP TABLE {table_name}")
 
+
+def test_query_condition_cache_does_not_write_for_unpinned_s3_read(started_cluster):
+    # Query-condition-cache entries are keyed by the generation from LIST/HEAD. With
+    # s3_validate_etag_on_read disabled, the following GET is not pinned to that generation,
+    # so its marks must not be recorded under the listed generation's key.
+    instance = started_cluster.instances["dummy"]
+    bucket = started_cluster.minio_bucket
+    table_name = f"test_qcc_unpinned_{generate_random_string()}"
+    url = f"http://{started_cluster.minio_host}:{started_cluster.minio_port}/{bucket}/{table_name}.parquet"
+
+    instance.query(
+        f"""
+        CREATE TABLE {table_name} (id Int64, val String)
+        ENGINE = S3('{url}', 'minio', '{minio_secret_key}', 'Parquet')
+        SETTINGS output_format_parquet_row_group_size = 1
+        """
+    )
+    instance.query(
+        f"""
+        INSERT INTO {table_name}
+        SELECT number AS id, toString(number) AS val
+        FROM numbers(200)
+        """
+    )
+    instance.query("SYSTEM DROP QUERY CONDITION CACHE")
+
+    result = instance.query(
+        f"SELECT count() FROM {table_name} WHERE id < 100",
+        settings={
+            "use_query_condition_cache": 1,
+            "s3_validate_etag_on_read": 0,
+        },
+    )
+    assert result.strip() == "100"
+    assert int(instance.query("SELECT count() FROM system.query_condition_cache")) == 0
+
+    instance.query(f"DROP TABLE {table_name}")

@@ -762,7 +762,12 @@ Chunk StorageObjectStorageSource::generate()
         /// would be stored as unmatched under the whole-object key `(uuid, file, condition_hash)`
         /// and poison later non-bucketed reads. This mirrors the count-cache guard below and the
         /// cache-read guard in `createReader`.
-        else if (format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info)
+        /// Marks are keyed by the listed object generation. Only store them when the read itself
+        /// was pinned to that generation; otherwise a concurrent overwrite could save marks for
+        /// different bytes under the listed generation's cache key.
+        else if (const bool marks_generation_is_pinned = configuration->isDataLakeConfiguration()
+                || (context_->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+            format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info && marks_generation_is_pinned)
         {
             const auto & object_info = reader.getObjectInfo();
             const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
