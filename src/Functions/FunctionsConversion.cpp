@@ -706,6 +706,27 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
+            {
+                /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value
+                /// of a `Date32` day does not always fit the `Int64` ticks of a high-precision `DateTime64` (a scale-9
+                /// one ends at 2262-04-11), so `date_time_overflow_behavior` has to reach the transform - unlike the
+                /// other branches here, which cannot lose a value and therefore use the default mode.
+#define GENERATE_OVERFLOW_MODE_CASE(OVERFLOW_MODE) \
+    case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
+        result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName, FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE>::execute( \
+            arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale); \
+        break;
+                switch (settings.date_time_overflow_behavior)
+                {
+                    GENERATE_OVERFLOW_MODE_CASE(Throw)
+                    GENERATE_OVERFLOW_MODE_CASE(Ignore)
+                    GENERATE_OVERFLOW_MODE_CASE(Saturate)
+                }
+#undef GENERATE_OVERFLOW_MODE_CASE
+
+                return true;
+            }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeString>)
             {
                 if (requested_result_is_nullable)
@@ -3184,14 +3205,20 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 }
 
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+{
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+}
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    CastType cast_type)
 {
     DataTypes data_types(arguments.size());
 
@@ -3237,7 +3264,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 
