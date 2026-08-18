@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class Settings;
+struct Settings;
 
 /** Merges several sorted inputs into one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
