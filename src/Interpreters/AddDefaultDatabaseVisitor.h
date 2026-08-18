@@ -150,7 +150,15 @@ private:
         if (auto * table_expression = ast.as<ASTTableExpression>())
         {
             if (table_expression->database_and_table_name)
-                tryVisit<ASTTableIdentifier>(table_expression->database_and_table_name);
+            {
+                auto & table_identifier = table_expression->database_and_table_name;
+                auto * old_table_identifier = table_identifier.get();
+                tryVisit<ASTTableIdentifier>(table_identifier);
+
+                /// ASTTableExpression keeps a raw pointer to this child as well.
+                if (table_identifier.get() != old_table_identifier)
+                    ast.updatePointerToChild(old_table_identifier, table_identifier.get());
+            }
             else if (table_expression->table_function)
                 visitTableFunction(*table_expression->table_function);
         }
