@@ -31,7 +31,8 @@ trap cleanup EXIT
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_projection_settings_frozen;
     CREATE TABLE t_projection_settings_frozen (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k
-        SETTINGS materialize_projections_on_merge = 1, max_bytes_to_merge_at_max_space_in_pool = 1;
+        SETTINGS materialize_projections_on_merge = 1, max_bytes_to_merge_at_max_space_in_pool = 1,
+            min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
     INSERT INTO t_projection_settings_frozen SELECT number, number FROM numbers(1000);
     INSERT INTO t_projection_settings_frozen SELECT number + 1000, number FROM numbers(1000);
     INSERT INTO t_projection_settings_frozen SELECT number + 2000, number FROM numbers(1000);
