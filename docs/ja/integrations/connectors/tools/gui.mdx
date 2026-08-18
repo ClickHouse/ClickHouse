@@ -62,6 +62,20 @@ doc_type: 'reference'
   [CHOps ソースコード](https://github.com/Quantrail-Data/CH-Ops).
 </Accordion>
 
+<Accordion title="LibreDB Studio">
+  [LibreDB Studio](https://github.com/libredb/libredb-studio) は、ブラウザで動作し、データベースの隣にデプロイできる、セルフホスト型の MIT ライセンスのデータベース IDE です。コンテナ、Helm チャート、OLM オペレーター、または別の製品に組み込む npm パッケージとして利用できます。ClickHouse プロバイダーは、`8123`/`8443` で公開されている HTTP インターフェイスを使用し、ドライバーに依存しません。
+
+  機能:
+
+  * スキーマ対応の自動補完、マルチタブ実行、プランツリーとして表示される `EXPLAIN` を備えた Monaco ベースの SQL エディター。
+  * 仮想化された結果グリッド、フィルタリング、CSV/JSON エクスポートを備えたスキーマエクスプローラー。
+  * `system` テーブルに基づく監視機能: `system.metrics`、`system.parts`、`system.disks` によるサーバー概要とパーツサイズ、`system.query_log` による完了済みステートメント、`system.processes` による実行中ステートメント、および強制終了コントロール。
+  * PostgreSQL、MySQL、Oracle、SQL Server、SQLite、MongoDB、Redis、Couchbase、Apache Druid と同じインターフェイスで ClickHouse を利用できるため、分析ストアとそれにデータを供給する OLTP データベースを 1 つのブラウザタブで操作できます。
+  * OIDC シングルサインオン、ロールベースアクセス、クエリ監査証跡を、すべて MIT ビルドで提供。
+
+  [LibreDB Studio ClickHouse プロバイダーリファレンス](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
+</Accordion>
+
 <Accordion title="DataStoria">
   [DataStoria](https://github.com/FrankChen021/datastoria) は、複数の ClickHouse クラスターを一元管理する AI 搭載の Web コンソールアプリケーションです。
 
@@ -88,7 +102,7 @@ doc_type: 'reference'
   * 安全な認証情報管理を備えたネイティブ ClickHouse 接続サポート
   * 複数のテーマ (ライト、ダーク、カラフルなバリエーション) を備えた、美しくアクセシブルなインターフェイス
   * 高度なクエリ結果のフィルタリングと探索
-  * クロスプラットフォーム対応 (macOS、Windows、Linux) 
+  * クロスプラットフォーム対応 (macOS、Windows、Linux)
   * 高速で応答性に優れたパフォーマンス
   * オープンソース、MIT ライセンス
 </Accordion>
@@ -147,10 +161,10 @@ doc_type: 'reference'
 
   機能:
 
-  * 構文ハイライト対応のクエリビルダー。応答をテーブルまたは JSON ビューで表示できます。
+  * 構文ハイライト機能を備えたクエリビルダー。結果はテーブルまたは JSON ビューで確認できます。
   * クエリ結果を CSV または JSON としてエクスポート。
-  * 説明付きのプロセス一覧、書き込みモード、プロセスを停止 (`KILL`) する機能。
-  * データベースグラフ。すべてのテーブルとそのカラムを追加情報とともに表示します。
+  * 説明付きのプロセス一覧。書き込みモード。プロセスを停止 (`KILL`) する機能。
+  * データベースグラフ。追加情報とともにすべてのテーブルとそのカラムを表示します。
   * カラムサイズのクイックビュー。
   * サーバー設定。
 
@@ -161,11 +175,11 @@ doc_type: 'reference'
   * リアルタイムデータ分析。
   * クラスター監視。
   * クラスター管理。
-  * レプリケートテーブルおよび Kafka テーブルの監視。
+  * レプリケートされたテーブルおよび Kafka テーブルの監視。
 </Accordion>
 
 <Accordion title="LightHouse">
-  [LightHouse](https://github.com/VKCOM/lighthouse) は、ClickHouse 向けの軽量な Web インターフェースです。
+  [LightHouse](https://github.com/VKCOM/lighthouse) は、ClickHouse 向けの軽量な Web インターフェイスです。
 
   機能:
 
@@ -175,9 +189,9 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Redash">
-  [Redash](https://github.com/getredash/redash) は、データ可視化プラットフォームです。
+  [Redash](https://github.com/getredash/redash) は、データ可視化のためのプラットフォームです。
 
-  ClickHouse を含む複数のデータソースをサポートしており、異なるデータソースからのクエリ結果を1つの最終データセットに結合できます。
+  ClickHouse を含む複数のデータソースをサポートしており、異なるデータソースからのクエリ結果を 1 つの最終データセットに結合できます。
 
   機能:
 
@@ -189,7 +203,7 @@ doc_type: 'reference'
 <Accordion title="Grafana">
   [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) は、監視と可視化のためのプラットフォームです。
 
-  「Grafana では、保存場所を問わずメトリクスのクエリ、可視化、アラート設定、分析を行えます。チームでダッシュボードを作成、探索、共有し、データドリブンな文化を育みましょう。コミュニティから信頼され、愛されています」 — grafana.com。
+  「Grafana を使用すると、保存場所に関係なく、メトリクスのクエリ、可視化、アラート設定、理解を行えます。チームでダッシュボードを作成、探索、共有し、データドリブンな文化を育成しましょう。コミュニティから信頼され、愛されています」 — grafana.com。
 
   ClickHouse データソースプラグインは、バックエンドデータベースとして ClickHouse をサポートします。
 </Accordion>
@@ -225,7 +239,7 @@ doc_type: 'reference'
   機能:
 
   * 自動補完。
-  * クエリおよびデータ出力のシンタックスハイライト。
+  * クエリおよびデータ出力の構文ハイライト。
   * データ出力のページャーサポート。
   * カスタム PostgreSQL 風コマンド。
 </Accordion>
@@ -239,30 +253,30 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickHouse テーブルグラフ">
-  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) は、ClickHouse テーブル間の依存関係を可視化するシンプルな CLI ツールです。このツールは `system.tables` テーブルからテーブル間の関係を取得し、[mermaid](https://mermaid.js.org/syntax/flowchart.html) 形式の依存関係フローチャートを生成します。テーブルの依存関係を簡単に可視化して、ClickHouse データベース内のデータフローを把握できます。mermaid により、生成されたフローチャートは見やすく、Markdown ドキュメントにも簡単に追加できます。
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) は、ClickHouse テーブル間の依存関係を可視化するシンプルな CLI ツールです。このツールは `system.tables` テーブルからテーブル間の関係を取得し、[mermaid](https://mermaid.js.org/syntax/flowchart.html) 形式の依存関係フローチャートを作成します。このツールを使用すると、テーブルの依存関係を簡単に可視化し、ClickHouse データベース内のデータフローを把握できます。mermaid により、生成されるフローチャートは見栄えがよく、Markdown ドキュメントに簡単に追加できます。
 </Accordion>
 
 <Accordion title="xeus-clickhouse">
-  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) は ClickHouse 用の Jupyter カーネルで、Jupyter 内で SQL を使用して ClickHouse データをクエリできます。
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) は、Jupyter で SQL を使用して ClickHouse データをクエリできる ClickHouse 向け Jupyter カーネルです。
 </Accordion>
 
 <Accordion title="MindsDB Studio">
-  [MindsDB](https://mindsdb.com/) は、ClickHouse を含むデータベース向けのオープンソース AI レイヤーで、最先端の機械学習モデルを簡単に開発、トレーニング、デプロイできます。MindsDB Studio (GUI) では、データベースから新しいモデルをトレーニングし、モデルの予測を解釈し、潜在的なデータバイアスを特定できます。また、Explainable AI 機能を使用してモデルの精度を評価・可視化することで、機械学習モデルをより迅速に適応・調整できます。
+  [MindsDB](https://mindsdb.com/) は、ClickHouse を含むデータベース向けのオープンソース AI レイヤーであり、最先端の機械学習モデルを簡単に開発、トレーニング、デプロイできます。MindsDB Studio(GUI) では、データベースから新しいモデルをトレーニングし、モデルによる予測を解釈し、潜在的なデータバイアスを特定し、Explainable AI 関数を使用してモデルの精度を評価・可視化できます。これにより、機械学習モデルをより迅速に適応・調整できます。
 </Accordion>
 
 <Accordion title="DBM">
-  [DBM](https://github.com/devlive-community/dbm) は ClickHouse 向けのビジュアル管理ツールです。
+  [DBM](https://github.com/devlive-community/dbm) DBM は、ClickHouse のビジュアル管理ツールです。
 
   機能:
 
-  * クエリ履歴 (ページネーション、一括クリアなど) をサポート
+  * クエリ履歴をサポート (ページネーション、すべてクリアなど)
   * 選択した SQL 句のクエリをサポート
-  * クエリの停止をサポート
-  * テーブル管理をサポート (メタデータ、削除、プレビュー) 
-  * データベース管理をサポート (削除、作成) 
+  * クエリの終了をサポート
+  * テーブル管理をサポート (メタデータ、削除、プレビュー)
+  * データベース管理をサポート (削除、作成)
   * カスタムクエリをサポート
-  * 複数のデータソースの管理をサポート (接続テスト、監視) 
-  * 監視をサポート (プロセッサ、接続、クエリ) 
+  * 複数のデータソース管理をサポート (接続テスト、監視)
+  * 監視をサポート (プロセッサ、接続、クエリ)
   * データ移行をサポート
 </Accordion>
 
@@ -335,52 +349,52 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="clickhouse-monitoring">
-  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring)は、`system.*`テーブルを利用してClickHouseクラスターの監視と概要の把握を支援する、シンプルなNext.jsダッシュボードです。
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) は、`system.*` テーブルを使用して ClickHouse クラスターの監視と概要の把握を支援するシンプルな Next.js ダッシュボードです。
 
   機能:
 
-  * クエリ監視: 現在のクエリ、クエリ履歴、クエリリソース (メモリ、読み取ったパーツ、file&#95;open、...) 、最も負荷の高いクエリ、最も使用されているテーブルまたはカラムなど。
-  * クラスター監視: 合計メモリ/CPU使用量、分散キュー、グローバル設定、MergeTree設定、メトリクスなど。
-  * テーブルおよびパーツ情報: カラムレベルで、サイズ、行数、圧縮、パーツサイズなどの詳細を確認。
-  * 便利なツール: ZooKeeperデータの探索、クエリのEXPLAIN、クエリの停止など。
+  * クエリモニター: 実行中のクエリ、クエリ履歴、クエリリソース (メモリ、読み取りパーツ数、file&#95;open、...) 、最も負荷の高いクエリ、最も使用されているテーブルまたはカラムなど。
+  * クラスターモニター: 合計メモリ/CPU 使用量、分散キュー、グローバル設定、MergeTree 設定、メトリクスなど。
+  * テーブルおよびパーツ情報: カラムレベルでのサイズ、行数、圧縮率、パーツサイズなどの詳細。
+  * 便利なツール: ZooKeeper データの探索、クエリ EXPLAIN、クエリの停止など。
   * メトリクスチャートの可視化: クエリとリソース使用量、マージ/ミューテーション数、マージパフォーマンス、クエリパフォーマンスなど。
 </Accordion>
 
 <Accordion title="CKibana">
-  [CKibana](https://github.com/TongchengOpenSource/ckibana)は、ネイティブのKibana UIを使用してClickHouseのデータを簡単に検索、探索、可視化できる軽量サービスです。
+  [CKibana](https://github.com/TongchengOpenSource/ckibana) は、ネイティブの Kibana UI を使用して ClickHouse データを簡単に検索、探索、可視化できる軽量サービスです。
 
   機能:
 
-  * ネイティブKibana UIからのチャートリクエストをClickHouseクエリ構文に変換します。
+  * ネイティブ Kibana UI からのチャートリクエストを ClickHouse クエリ構文に変換します。
   * クエリパフォーマンスを向上させるため、サンプリングやキャッシュなどの高度な機能をサポートします。
-  * ElasticSearchからClickHouseへ移行したユーザーの学習コストを最小限に抑えます。
+  * ElasticSearch から ClickHouse への移行後のユーザーの学習コストを最小限に抑えます。
 </Accordion>
 
 <Accordion title="Telescope">
-  [Telescope](https://iamtelescope.net/)は、ClickHouseに保存されたログを探索するためのモダンなWebインターフェイスです。きめ細かなアクセス制御により、ログデータのクエリ、可視化、管理を行うための使いやすいUIを提供します。
+  [Telescope](https://iamtelescope.net/) は、ClickHouse に保存されたログを探索するためのモダンな Web インターフェイスです。きめ細かなアクセス制御により、ログデータのクエリ、可視化、管理を行える使いやすい UI を提供します。
 
   機能:
 
-  * 強力なフィルターとカスタマイズ可能なフィールド選択を備えた、すっきりとしたレスポンシブUI。
-  * 直感的で表現力豊かなログフィルタリングのためのFlyQL構文。
-  * ネストされたJSON、Map、Arrayフィールドを含む、グループ化対応の時系列グラフ。
-  * 高度なフィルタリングのためのオプションのraw SQL `WHERE`クエリをサポート (権限チェック付き) 。
-  * 保存済みビュー: クエリとレイアウト用のカスタムUI設定を保存して共有。
-  * ロールベースのアクセス制御 (RBAC) とGitHub認証のインテグレーション。
-  * ClickHouse側で追加のエージェントやコンポーネントは不要です。
+  * 強力なフィルターとカスタマイズ可能なフィールド選択を備えた、洗練されたレスポンシブ UI。
+  * 直感的で表現力豊かなログフィルタリングを実現する FlyQL 構文。
+  * ネストされた JSON、Map、Array フィールドを含む、group-by をサポートする時系列グラフ。
+  * 高度なフィルタリングに対応する、オプションの生 SQL `WHERE` クエリサポート (権限チェック付き) 。
+  * 保存済みビュー: クエリやレイアウトのカスタム UI 設定を保存・共有できます。
+  * ロールベースのアクセス制御 (RBAC) と GitHub 認証の統合。
+  * ClickHouse 側で追加のエージェントやコンポーネントは不要です。
 
   [Telescope ソースコード](https://github.com/iamtelescope/telescope) · [ライブデモ](https://demo.iamtelescope.net)
 </Accordion>
 
 <Accordion title="ClickLens">
-  [ClickLens](https://ntk148v.github.io/clicklens/)は、ClickHouseデータベースの管理と監視のための、モダンで高機能かつ使いやすいWebインターフェイスです。開発者、アナリスト、管理者がClickHouseクラスターを効率的に扱えるよう、包括的なツール群を提供します。ClickHouseは非常に優れた分析データベースですが、CLIや基本的なツールだけで管理するのは難しいことがあります。ClickLensは、次のような機能を提供することでそのギャップを埋めます。
+  [ClickLens](https://ntk148v.github.io/clicklens/) は、ClickHouse データベースを管理・監視するための、モダンで高機能かつ使いやすい Web インターフェイスです。開発者、アナリスト、管理者が ClickHouse クラスターを効率的に操作するための包括的なツール群を提供します。ClickHouse は優れた分析データベースですが、CLI や基本的なツールでの管理は難しい場合があります。ClickLens は、次の機能によってそのギャップを埋めます。
 
-  * Discover - あらゆるテーブルを対象にした、Kibanaライクで柔軟なデータ探索
-  * SQL コンソール - 構文ハイライトとストリーミング結果に対応し、クエリの作成、実行、分析を行えます
-  * Real-time Monitoring - クラスターの健全性、クエリパフォーマンス、リソース使用状況をリアルタイムで把握
-  * Schema Explorer - データベース、テーブル、カラム、パーツなどをたどって確認
-  * Access Control - UIからユーザーとロールを直接管理
-  * Native RBAC - UIの権限は、ClickHouseで付与された権限に直接基づきます
+  * Discover - あらゆるテーブルに対応する、柔軟な Kibana 風のデータ探索
+  * SQL Console - 構文ハイライトとストリーミング結果を備え、クエリの作成、実行、分析が可能
+  * リアルタイム監視 - クラスターの健全性、クエリパフォーマンス、リソース使用状況を監視
+  * Schema Explorer - データベース、テーブル、カラム、パーツなどを参照
+  * アクセス制御 - UI から直接ユーザーとロールを管理
+  * ネイティブ RBAC - UI の権限は ClickHouse の権限付与から直接導出されます
 
   [ClickLens ソースコード](https://github.com/ntk148v/clicklens)
 </Accordion>
