@@ -10,6 +10,7 @@
 #include <Common/StackTraceServiceSignal.h>
 #include <Daemon/BaseDaemon.h>
 #include <Daemon/CrashWriter.h>
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -592,6 +593,12 @@ void SignalListener::onFault(
     size_t exception_trace_size) const
 try
 {
+    bool detach_logs_queue = false;
+    SCOPE_EXIT({
+        if (detach_logs_queue)
+            CurrentThread::attachInternalTextLogsQueue({}, LogsLevel::none);
+    });
+
     /// First log those fields that are safe to access and that should not cause new fault.
     /// That way we will have some duplicated info in the log but we don't loose important info
     /// in case of double fault.
@@ -648,6 +655,9 @@ try
 
         if (auto logs_queue = thread_ptr->getInternalTextLogsQueue())
         {
+            /// Detached again on the way out: this thread outlives the handler for a signal whose
+            /// handler returns, and the queue belongs to the faulting query, not to the next one.
+            detach_logs_queue = true;
             CurrentThread::attachInternalTextLogsQueue(logs_queue, LogsLevel::trace);
         }
     }
