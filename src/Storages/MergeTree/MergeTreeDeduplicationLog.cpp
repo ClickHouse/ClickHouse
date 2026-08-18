@@ -175,17 +175,12 @@ void MergeTreeDeduplicationLog::load()
 
         applyRecords(records, record_log_numbers);
 
-        /// Drop the empty log files a previous run's rotations left at the end of the
-        /// history. Without append support every rotation - including the one below in
-        /// load - starts a fresh file, and dropOutdatedLogs can never reclaim a
-        /// zero-record file that sits after the file holding the live state (a normal
-        /// committed file or a compaction snapshot), because retention only drops an
-        /// oldest prefix. So without this a restart-only cycle (no new operations) would
-        /// leak one empty file per restart and make every future load replay O(number
-        /// of restarts) files. With append support the last file is reopened and reused
-        /// instead, so no empty files pile up and this is unnecessary.
-        if (!disk_supports_writing_with_append)
-            removeTrailingEmptyLogs();
+        /// Drop zero-record files from the in-memory history before the first rotation.
+        /// A compaction can leave neutralized zero-byte files behind when unlinking is
+        /// unavailable. They are harmless on replay, but retaining them here would make
+        /// a later dropOutdatedLogs retry the failed unlink and reject an otherwise valid
+        /// insert. This applies to append-capable disks too.
+        removeEmptyLogs();
 
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
@@ -396,22 +391,19 @@ void MergeTreeDeduplicationLog::applyRecords(
     }
 }
 
-void MergeTreeDeduplicationLog::removeTrailingEmptyLogs()
+void MergeTreeDeduplicationLog::removeEmptyLogs()
 {
-    /// Remove the zero-record log files that sit at the end of the history, newest
-    /// first, stopping at the first file that still holds records (see the call site in
-    /// load for why they accumulate without append support and why dropOutdatedLogs
-    /// cannot reclaim them). Collect the numbers first, then erase, so the map is not
-    /// mutated while it is walked.
-    std::vector<size_t> empty_tail;
-    for (auto it = existing_logs.rbegin(); it != existing_logs.rend(); ++it)
+    /// A zero-record file has no effect on recovery, so it can always be removed from
+    /// the in-memory history even when the disk refuses to unlink it. Collect the
+    /// numbers first, then erase, so the map is not mutated while it is walked.
+    std::vector<size_t> empty_logs;
+    for (const auto & [number, description] : existing_logs)
     {
-        if (it->second.entries_count != 0)
-            break;
-        empty_tail.push_back(it->first);
+        if (description.entries_count == 0)
+            empty_logs.push_back(number);
     }
 
-    for (size_t number : empty_tail)
+    for (size_t number : empty_logs)
     {
         auto it = existing_logs.find(number);
         try
@@ -420,11 +412,10 @@ void MergeTreeDeduplicationLog::removeTrailingEmptyLogs()
         }
         catch (...)
         {
-            /// Best effort: keep this file (and, since we walk newest to oldest, every
-            /// older one too) - an empty file replays as no-ops, so leaving it behind is
-            /// harmless.
+            /// Best effort: the on-disk file is safe to leave behind because it replays
+            /// as a no-op. Do not keep it in existing_logs: otherwise a later rotation
+            /// retries this same unlink and can fail an unrelated insert.
             tryLogCurrentException(__PRETTY_FUNCTION__, "Cannot remove an empty deduplication log file " + it->second.path);
-            break;
         }
         existing_logs.erase(it);
     }

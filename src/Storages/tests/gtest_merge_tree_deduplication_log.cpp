@@ -1726,13 +1726,24 @@ TEST(MergeTreeDeduplicationLog, CompactionNeutralizesUnremovableOldLogs)
     }
 
     {
-        /// A final healthy restart replays the emptied files (no-ops) and the snapshot,
-        /// so the state stays correct even though the old files were never physically
-        /// removed: the committed block still deduplicates.
+        /// Restart on the same no-unlink disk. The neutralized pre-snapshot files are
+        /// still physically present, but load() must discard them from its in-memory
+        /// history. A unique insert reaches the rotation boundary and must not retry
+        /// their failed unlink.
+        auto disk = std::make_shared<DiskFailingAllRemovals>("no-unlink-after-restart", work_dir);
+        MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
+        log.load();
+        EXPECT_TRUE(log.addPart({"block2"}, part("all_10_10_0")).empty());
+    }
+
+    {
+        /// A final healthy restart replays the emptied files (no-ops) and the retained
+        /// history, so the state stays correct even though the old files were never
+        /// physically removed: the most recently committed block still deduplicates.
         auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
         MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 1, format_version, disk);
         log.load();
-        EXPECT_FALSE(log.addPart({"block1"}, part("all_11_11_0")).empty());
+        EXPECT_FALSE(log.addPart({"block2"}, part("all_11_11_0")).empty());
     }
 
     std::filesystem::remove_all(work_dir);

@@ -332,11 +332,10 @@ private:
     /// Remove all old logs with non-needed records for deduplication_window
     void dropOutdatedLogs();
 
-    /// Remove the zero-record log files at the end of the history (see the definition).
-    /// Without append support they would otherwise accumulate one per restart, because
-    /// every rotation starts a fresh file and dropOutdatedLogs can only drop an oldest
-    /// prefix. Called from load, before the first rotation.
-    void removeTrailingEmptyLogs();
+    /// Ignore zero-record log files in the history and remove them best effort (see the
+    /// definition). A compaction can leave such neutralized files behind when the disk
+    /// rejects unlinking them; they must not make a later rotation retry that unlink.
+    void removeEmptyLogs();
 
     /// Execute both previous methods if needed
     void rotateAndDropIfNeeded();
