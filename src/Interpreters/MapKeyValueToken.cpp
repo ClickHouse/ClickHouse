@@ -11,27 +11,26 @@ void encodeMapKeyValueToken(std::string_view key, std::string_view value, bool i
     /// String per token.
     out.clear();
 
-    /// Trailer = reversed varint of `(key.size() << 1) | is_rest`, written reversed so a decoder can scan
-    /// backward from the token end. See MapKeyValueToken.h.
-    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_rest ? 1ULL : 0ULL);
+    const UInt64 key_length = key.size();
 
-    /// Reserve the exact size, trailer included: `getLengthOfVarUInt(packed)` is the trailer width, which
-    /// is 1 for the common short-key case but grows for keys >= 64 bytes. Reserving `+ 1` would under-size
-    /// the multi-byte trailer and force a reallocation.
-    out.reserve(key.size() + value.size() + getLengthOfVarUInt(packed));
+    /// Leading namespace byte + key + value + reversed varint of key.size (see MapKeyValueToken.h).
+    out.reserve(1 + key.size() + value.size() + getLengthOfVarUInt(key_length));
+
+    /// Namespace byte: 0 = the key's first occurrence in the row, 1 = a later duplicate.
+    out.push_back(static_cast<char>(is_rest ? 1 : 0));
     out.append(key);
     out.append(value);
 
-    /// `packed < 0x80` (i.e. key.size() < 64) fits one varint byte, whose high bit is already clear and
-    /// which is its own reverse — emit it directly, skipping writeVarUInt and the reversal loop.
-    if (packed < 0x80)
+    /// Trailer = reversed varint of the key length, so a decoder can scan backward from the token end to
+    /// find the key/value split. `key_length < 0x80` fits one byte (its own reverse); emit it directly.
+    if (key_length < 0x80)
     {
-        out.push_back(static_cast<char>(packed));
+        out.push_back(static_cast<char>(key_length));
     }
     else
     {
         char buf[10];
-        size_t num_bytes = writeVarUInt(packed, buf) - buf;
+        size_t num_bytes = writeVarUInt(key_length, buf) - buf;
         for (size_t i = num_bytes; i-- > 0;)
             out.push_back(buf[i]);
     }

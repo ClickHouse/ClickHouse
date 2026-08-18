@@ -8,15 +8,18 @@ namespace DB
 
 /// Text-index token format for the `keyValuePairs` tokenizer.
 ///
-///     token   = key ‖ value ‖ trailer
-///     trailer = reversed-varint((key.size() << 1) | is_rest)
+///     token   = namespace ‖ key ‖ value ‖ trailer
+///     trailer = reversed-varint(key.size())
 ///
-/// Key first so tokens sort by key then value (key-prefix scans work). The key length sits in the
-/// trailer, so the leading bytes stay exactly `key ‖ value`; the varint is written reversed so a decoder
-/// can scan backward from the end. Length-delimited, so values may hold arbitrary bytes.
+/// The leading `namespace` byte tags the token kind; today: 0 = the key's first occurrence in the row,
+/// 1 = a later duplicate. Positional `m['key']` lookups (first-value semantics) match namespace 0 only;
+/// existence over any occurrence unions namespaces 0 and 1. Keeping the discriminator in a dedicated byte
+/// (rather than the trailer) leaves the trailer a plain key-length varint and reserves room for future
+/// namespaces (e.g. a distinct kind for guaranteed-unique-key maps) without changing the on-disk layout.
 ///
-/// `is_rest` (trailer LSB): 0 for a key's first occurrence in the row, 1 for later duplicates. Positional
-/// `m['key']` lookups match is_rest = 0 only.
+/// After the namespace, `key` comes first so tokens sort by (namespace, key, value) - key-prefix scans
+/// work within a namespace. The key length lives in the trailer, written reversed so a decoder can scan
+/// backward from the end; the middle bytes stay exactly `key ‖ value`, so values may hold arbitrary bytes.
 String encodeMapKeyValueToken(std::string_view key, std::string_view value, bool is_rest);
 
 /// Same encoding, appended into the caller-provided `out` (cleared first). Lets a hot loop reuse one
