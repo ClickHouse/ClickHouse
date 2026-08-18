@@ -9,7 +9,7 @@ CTP plain key NOT has	1
 --- composite has(): the attribute axis, pinned per direction ---
 attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning	1
 attr Tuple(DateTime(UTC))/Tuple(DateTime) has	1
-attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps pruning	1
+attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps atom	1
 attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has	1
 attr Tuple(Bool)/Tuple(UInt8) has declines	0
 attr Tuple(Bool)/Tuple(UInt8) has	1

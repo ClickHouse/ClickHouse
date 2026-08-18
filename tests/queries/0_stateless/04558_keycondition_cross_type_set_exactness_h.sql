@@ -118,7 +118,7 @@ INSERT INTO sp8_t VALUES (0), (1), (2), (NULL);
 INSERT INTO sp8_o VALUES (0), (1), (2), (NULL);
 
 -- Strengthens the identity control above, which only ever passed a non-NULL value through the wrapper.
-SELECT 'safe identity actual NULL keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp8_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe identity actual NULL keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp8_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%Granules: 3/4%';
 SELECT 'safe identity actual NULL IN keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp8_t WHERE k IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
 SELECT 'safe identity actual NULL',
     (SELECT count() FROM sp8_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM sp8_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1),
@@ -133,10 +133,10 @@ CREATE TABLE sp64_t (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY k SETTINGS 
 CREATE TABLE sp64_o (k Nullable(UInt64)) ENGINE = Memory;
 INSERT INTO sp64_t VALUES (0), (1), (2), (NULL);
 INSERT INTO sp64_o VALUES (0), (1), (2), (NULL);
-SELECT 'safe cross-type NOT IN keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe cross-type NOT IN keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%Granules: 3/4%';
 SELECT 'safe cross-type NOT IN',
     (SELECT count() FROM sp64_t WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1) = (SELECT count() FROM sp64_o WHERE k NOT IN (SELECT CAST(NULL, 'Nullable(UInt8)')) SETTINGS transform_null_in = 1);
-SELECT 'safe cross-type array NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE NOT has([toUInt8(1), NULL], k)) WHERE explain ILIKE '%element set%';
+SELECT 'safe cross-type array NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sp64_t WHERE NOT has([toUInt8(1), NULL], k)) WHERE explain ILIKE '%Granules: 3/4%';
 SELECT 'safe cross-type array NOT has',
     (SELECT count() FROM sp64_t WHERE NOT has([toUInt8(1), NULL], k)) = (SELECT count() FROM sp64_o WHERE NOT has([toUInt8(1), NULL], k));
 DROP TABLE sp64_t; DROP TABLE sp64_o;
@@ -148,7 +148,7 @@ CREATE TABLE sptu_t (a Nullable(UInt8), b Nullable(UInt8)) ENGINE = MergeTree OR
 CREATE TABLE sptu_o (a Nullable(UInt8), b Nullable(UInt8)) ENGINE = Memory;
 INSERT INTO sptu_t VALUES (0, 0), (1, 1), (NULL, 1), (2, NULL);
 INSERT INTO sptu_o VALUES (0, 0), (1, 1), (NULL, 1), (2, NULL);
-SELECT 'safe nullable tuple keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%element set%';
+SELECT 'safe nullable tuple keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) WHERE explain ILIKE '%Granules: 3/4%';
 SELECT 'safe nullable tuple',
     (SELECT count() FROM sptu_t WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1) = (SELECT count() FROM sptu_o WHERE (a, b) NOT IN (SELECT tuple(CAST(NULL, 'Nullable(UInt8)'), CAST(1, 'Nullable(UInt8)'))) SETTINGS transform_null_in = 1);
 DROP TABLE sptu_t; DROP TABLE sptu_o;

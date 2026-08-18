@@ -19,7 +19,7 @@ A33 array key NOT has keeps pruning	1
 N33 packed nested-Nullable has result	1
 N33 packed nested-Nullable has keeps pruning	1
 N33 packed nested-Nullable NOT has result	1
-N33 packed nested-Nullable NOT has keeps pruning	1
+N33 packed nested-Nullable NOT has keeps atom	1
 U33 unpacked nested-Nullable has result	1
 U33 unpacked nested-Nullable has declines	1
 U33 unpacked nested-Nullable NOT has result	1
