@@ -440,6 +440,23 @@ struct LowCardinalityKeys
 template <>
 struct LowCardinalityKeys<false> {};
 
+template <bool enabled>
+struct HashMethodKeysFixedPrecomputedHashState
+{
+};
+
+template <>
+struct HashMethodKeysFixedPrecomputedHashState<true>
+{
+    PaddedPODArray<size_t> precomputed_hashes;
+    bool precomputed_hashes_initialized = true;
+    bool can_precompute_hashes = false;
+    size_t min_bytes_for_prefetch = 0;
+    std::unique_ptr<PrefetchingHelper> prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+    size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
+};
+
 
 /// For the case when all keys are of fixed length, and they fit in N (for example, 128) bits.
 template <
@@ -450,12 +467,14 @@ template <
     bool has_low_cardinality_ = false,
     bool use_cache = true,
     bool need_offset = false,
-    bool enable_prepared_keys_256_ = false>
+    bool enable_prepared_keys_256_ = false,
+    bool enable_pre_computed_hashes_ = false>
 struct HashMethodKeysFixed
     : private columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>
-    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_>, Value, Mapped, use_cache, need_offset>
+    , public HashMethodKeysFixedPrecomputedHashState<enable_pre_computed_hashes_>
+    , public columns_hashing_impl::HashMethodBase<HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_, enable_pre_computed_hashes_>, Value, Mapped, use_cache, need_offset>
 {
-    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_>;
+    using Self = HashMethodKeysFixed<Value, Key, Mapped, has_nullable_keys_, has_low_cardinality_, use_cache, need_offset, enable_prepared_keys_256_, enable_pre_computed_hashes_>;
     using BaseHashed = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, use_cache, need_offset>;
     using Base = columns_hashing_impl::BaseStateKeysFixed<Key, has_nullable_keys_>;
 
@@ -470,7 +489,7 @@ struct HashMethodKeysFixed
     /// the target bucket ahead of time and to skip rehashing the key in `emplace`/`find`.
     /// Nullable and low-cardinality variants never use `prepared_keys`, so they are excluded
     /// at compile time.
-    static constexpr bool has_pre_computed_hashes = !has_nullable_keys_ && !has_low_cardinality_;
+    static constexpr bool has_pre_computed_hashes = enable_pre_computed_hashes_ && !has_nullable_keys_ && !has_low_cardinality_;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -480,17 +499,6 @@ struct HashMethodKeysFixed
     LowCardinalityKeys<has_low_cardinality> low_cardinality_keys;
     Sizes key_sizes;
     size_t keys_size;
-
-    /// See `HashMethodSerialized` for the meaning of these members: the same precomputed-hash
-    /// prefetch protocol from `columns_hashing_impl::HashMethodBase` applies here. Only used
-    /// when `has_pre_computed_hashes` is true.
-    PaddedPODArray<size_t> precomputed_hashes;
-    bool precomputed_hashes_initialized = true;
-    bool can_precompute_hashes = false;
-    size_t min_bytes_for_prefetch = 0;
-    std::unique_ptr<PrefetchingHelper> prefetching;
-    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
-    size_t calibration_row = PrefetchingHelper::iterationsToMeasure();
 
     /// SSSE3 shuffle method can be used. Shuffle masks will be calculated and stored here.
 #if defined(__SSSE3__) && !defined(MEMORY_SANITIZER)
@@ -602,10 +610,10 @@ struct HashMethodKeysFixed
             const auto * settings_context = context ? typeid_cast<const HashMethodSettingsContext *>(context.get()) : nullptr;
             if (settings_context && !prepared_keys.empty() && settings_context->settings.enable_fixed_key_prefetch)
             {
-                can_precompute_hashes = true;
-                precomputed_hashes_initialized = false;
-                min_bytes_for_prefetch = settings_context->settings.min_bytes_for_prefetch;
-                prefetching = std::make_unique<PrefetchingHelper>();
+                this->can_precompute_hashes = true;
+                this->precomputed_hashes_initialized = false;
+                this->min_bytes_for_prefetch = settings_context->settings.min_bytes_for_prefetch;
+                this->prefetching = std::make_unique<PrefetchingHelper>();
             }
         }
     }
@@ -619,19 +627,19 @@ struct HashMethodKeysFixed
     NO_INLINE void initPrecomputedHashes(const Data & data, size_t first_row)
         requires has_pre_computed_hashes
     {
-        precomputed_hashes_initialized = true;
-        calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
+        this->precomputed_hashes_initialized = true;
+        this->calibration_row = first_row + PrefetchingHelper::iterationsToMeasure();
 
-        if (min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= min_bytes_for_prefetch)
+        if (this->min_bytes_for_prefetch != 0 && data.getBufferSizeInBytes() <= this->min_bytes_for_prefetch)
         {
-            can_precompute_hashes = false;
+            this->can_precompute_hashes = false;
             return;
         }
 
         const size_t rows = prepared_keys.size();
-        precomputed_hashes.resize(rows);
+        this->precomputed_hashes.resize(rows);
         for (size_t i = 0; i < rows; ++i)
-            precomputed_hashes[i] = data.hash(prepared_keys[i]);
+            this->precomputed_hashes[i] = data.hash(prepared_keys[i]);
         ProfileEvents::increment(ProfileEvents::AggregationPrecomputedFixedKeyHashes, rows);
     }
 

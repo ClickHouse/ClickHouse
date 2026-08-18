@@ -289,6 +289,7 @@ struct AggregationMethodKeysFixed
         has_low_cardinality,
         use_cache && consecutive_keys_optimization,
         false,
+        true,
         true>;
 
     using State = StateImpl<true>;
