@@ -214,37 +214,32 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
             /// An explicit `partition_strategy = 'hive'` still rejects such paths.
             partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
         }
-        else if (!is_create_query)
+        else if (!getRawPath().hasGlobsIgnorePlaceholders())
         {
-            /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
-            /// for a table loaded from existing metadata the implicit strategy is deterministically
-            /// recoverable from the path alone, because the two strategies are mutually exclusive on
-            /// path shape — wildcard REQUIRES `{_partition_id}` in the path, hive FORBIDS it. Consulting
-            /// the mutable `file_like_engine_default_partition_strategy` default here instead would
-            /// refuse to load legitimately created tables whenever the default has changed since
-            /// creation (e.g. implicit-hive tables loaded under a `wildcard` default after a
-            /// downgrade), aborting server startup and breaking upgrades. Only a user-issued
-            /// `CREATE` applies the default.
-            partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-        }
-        else
-        {
-            switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
+            if (!is_create_query)
             {
-                case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                /// Backward compatibility on ATTACH / server startup / RESTORE / replicated-DDL replay:
+                /// derive the implicit strategy from the path rather than from the mutable default.
+                partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+            }
+            else
+            {
+                switch (context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value)
                 {
-                    /// The path has no `{_partition_id}` placeholder (checked above), so
-                    /// `PartitionStrategyFactory::get` will raise `BAD_ARGUMENTS`.
-                    partition_strategy_type = PartitionStrategyFactory::StrategyType::WILDCARD;
-                    break;
-                }
-                case FileLikeEngineDefaultPartitionStrategy::HIVE:
-                {
-                    partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
-                    break;
+                    case FileLikeEngineDefaultPartitionStrategy::WILDCARD:
+                    {
+                        /// Without `{_partition_id}`, preserve the pre-26.6 `NONE` strategy.
+                        break;
+                    }
+                    case FileLikeEngineDefaultPartitionStrategy::HIVE:
+                    {
+                        partition_strategy_type = PartitionStrategyFactory::StrategyType::HIVE;
+                        break;
+                    }
                 }
             }
         }
+        /// Globbed paths without `{_partition_id}` remain `NONE`, as they did before 26.6.
 
         /// The default for `partition_columns_in_data_file` was computed at parse time against
         /// `partition_strategy_type == NONE`. Recompute it now that the effective strategy is known,
