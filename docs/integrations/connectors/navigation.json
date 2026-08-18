@@ -39,8 +39,7 @@
         "integrations/connectors/data-ingestion/s3-seaweedfs",
         "integrations/connectors/data-ingestion/emqx/index",
         "integrations/connectors/data-ingestion/insert-local-files",
-        "integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "integrations/connectors/data-ingestion/odbc-with-clickhouse"
+        "integrations/connectors/data-ingestion/jdbc-with-clickhouse"
       ]
     },
     {
@@ -184,6 +183,7 @@
           "group": "Community integrations",
           "pages": [
             "integrations/connectors/data-ingestion/community-integrations/artie-and-clickhouse",
+            "integrations/connectors/data-ingestion/community-integrations/erathos",
             {
               "group": "Estuary",
               "pages": [
@@ -229,6 +229,7 @@
       "group": "Tools",
       "pages": [
         "integrations/connectors/tools/index",
+        "integrations/connectors/tools/misc-index",
         "integrations/connectors/tools/gui",
         "integrations/connectors/tools/proxy",
         "integrations/connectors/tools/third-party-libraries"

@@ -60,6 +60,21 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
 grep -q 'TIMEOUT' "$scratch/timeout.log"
 [[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
 
+worker="${worktree_base}-0"
+submodule="$worker/contrib/FP16"
+git clone --quiet --shared "$repo/contrib/FP16" "$submodule"
+git -C "$submodule" checkout --detach --quiet HEAD~1
+printf 'dirty\n' > "$submodule/continue-all-prs-test-untracked"
+[[ -n "$(git -C "$submodule" status --short)" ]]
+
+PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
+    "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key --timeout 1 --once \
+        --skip-submodules --no-status --worktree-base "$worktree_base" --color never > "$scratch/submodule-cleanup.log" 2>&1
+
+[[ -z "$(git -C "$worker" status --short)" ]]
+[[ -z "$(git -C "$submodule" status --short)" ]]
+[[ "$(git -C "$submodule" rev-parse HEAD)" == "$(git -C "$worker" rev-parse HEAD:contrib/FP16)" ]]
+
 # Shutdown must also remove the disposable triage `CODEX_HOME`, including when
 # the regular per-PR cleanup has not run yet.
 source <(sed -n '/^cleanup_worker_codex_auth()/,/^}/p' "$repo/utils/continue-all-prs.sh")
@@ -90,6 +105,28 @@ triage_config=$(REPO='ClickHouse/ClickHouse' prepare_triage_sandbox_config "$tri
 ! git config --file "$triage_config" --get-regexp '^remote\..*\.(url|pushurl)$' | grep -v '^remote\.origin\.url '
 ! git config --file "$triage_config" --get-regexp '^url\..*\.(insteadof|pushinsteadof)$'
 ! git config --file "$triage_config" --get-regexp '^credential(\..*)?\.helper$'
+
+# Command-scope Git config has higher priority than the sanitized clone config.
+# The triage environment must remove every numbered carrier, not only
+# `GIT_CONFIG` itself.
+command_scope_git_args=(env -u GIT_CONFIG -u GIT_CONFIG_COUNT)
+for command_scope_git_var in GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1; do
+    command_scope_git_args+=(-u "$command_scope_git_var")
+done
+if env GIT_CONFIG_COUNT=2 \
+    GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=test-helper \
+    GIT_CONFIG_KEY_1=http.https://github.com/.extraheader GIT_CONFIG_VALUE_1='Authorization: Basic secret' \
+    "${command_scope_git_args[@]}" git -c "include.path=$triage_config" config --get credential.helper; then
+        echo 'Expected command-scope credential helper to be removed' >&2
+        exit 1
+    fi
+if env GIT_CONFIG_COUNT=2 \
+    GIT_CONFIG_KEY_0=credential.helper GIT_CONFIG_VALUE_0=test-helper \
+    GIT_CONFIG_KEY_1=http.https://github.com/.extraheader GIT_CONFIG_VALUE_1='Authorization: Basic secret' \
+    "${command_scope_git_args[@]}" git -c "include.path=$triage_config" config --get http.https://github.com/.extraheader; then
+        echo 'Expected command-scope HTTP header to be removed' >&2
+        exit 1
+    fi
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true

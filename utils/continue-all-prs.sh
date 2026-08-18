@@ -1049,7 +1049,15 @@ run_continue_pr()
         active_codex_env=("${codex_env[@]}")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
-            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR -u SSH_AUTH_SOCK -u GIT_CONFIG)
+            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR -u SSH_AUTH_SOCK -u GIT_CONFIG -u GIT_CONFIG_COUNT)
+            # Command-scope Git configuration is injected through numbered
+            # `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` variables. It takes
+            # precedence over the sanitized clone config, so do not inherit
+            # any of it into the triage sandbox.
+            local git_config_var
+            for git_config_var in "${!GIT_CONFIG_KEY_@}" "${!GIT_CONFIG_VALUE_@}"; do
+                triage_git_args+=(-u "$git_config_var")
+            done
             # Bubblewrap supplies the private `CODEX_HOME`; do not override it
             # with the host-side custom-key directory after entering the sandbox.
             active_codex_env=()
