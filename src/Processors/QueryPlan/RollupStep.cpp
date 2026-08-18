@@ -34,7 +34,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
 }
 
-constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP = 8;
+constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ROLLUP_STEP = 9;
 
 static ITransformingStep::Traits getTraits()
 {
