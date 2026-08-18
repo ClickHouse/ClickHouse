@@ -12,6 +12,9 @@
 
 SET enable_analyzer = 1;
 SET cross_to_inner_join_rewrite = 0;
+-- The condition below is a pair of inequalities, which `ie_join` claims wherever it is enabled - and
+-- it is in the default list. The operator under test is the block nested loop join, so leave it out.
+SET join_algorithm = 'hash';
 SET max_threads = 1;
 SET max_block_size = 4096;
 
