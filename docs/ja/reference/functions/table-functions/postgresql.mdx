@@ -34,7 +34,9 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
 
 引数は [named collections](/ja/concepts/features/configuration/server-config/named-collections) を使用して渡すこともできます。この場合、`host` と `port` は別々に指定する必要があります。この方法は本番環境に推奨されます。
 
-<div id="returned_value">
+TLS/SSL パラメータは `libpq` に転送され、named collection のキーまたは末尾のキー・バリュー引数として指定できます。指定できるのは `sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`。未設定の場合は `libpq` のデフォルトである `prefer` が適用されます) と、2 つの形式のいずれかで指定する証明書および秘密鍵です。`sslrootcert` (CA 証明書、または特別な値 `system`) 、`sslcert` (クライアント証明書) 、`sslkey` (クライアント秘密鍵) はサーバーローカルファイルへのパスであり、サーバー設定ファイルで定義された named collection でのみ指定できます。代わりに、`sslrootcert_pem`、`sslcert_pem`、`sslkey_pem` には対応するファイルの内容を直接指定できます。たとえば、`postgresql('host:port', 'database', 'table', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')` のように指定します。これらはパスワードと同様に、ログおよび `SHOW` クエリではマスクされます。
+
+<div id="returned-value">
   ## 戻り値
 </div>
 
@@ -82,7 +84,7 @@ SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JO
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、サーバーに送信される前に PostgreSQL 方言 (PostgreSQL の識別子のクォートと文字列リテラルのエスケープ) で再シリアライズされます。したがって、有効な ClickHouse SQL でなければなりません。ClickHouse が解析しない PostgreSQL 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式のテキストはそのまま PostgreSQL に送信されます。
 
-  渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、集計などは **プッシュダウンされません**。これらは完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡すクエリ内にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings#external_table_strict_query) を使用すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに例外として拒否されます。
+  渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、集計などは **プッシュダウンされません**。これらは完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡すクエリ内にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を使用すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに例外として拒否されます。
 </Note>
 
 PostgreSQL 側の `INSERT` クエリは、各 `INSERT` ステートメントの後に自動コミットされる PostgreSQL トランザクション内で、`COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` として実行されます。
