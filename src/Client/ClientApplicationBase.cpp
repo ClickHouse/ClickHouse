@@ -273,7 +273,8 @@ void ClientApplicationBase::init(int argc, char ** argv)
         fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
     }
 
-    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    /// A name of its own: loggers are shared by name, and this one is pinned to fatal severity.
+    fatal_log = createLogger("ClientApplicationBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
 #if defined(OS_HAS_SIGNAL_HANDLERS)
     /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
     /// for - and the blocking read of that pipe is all the listener thread does.
