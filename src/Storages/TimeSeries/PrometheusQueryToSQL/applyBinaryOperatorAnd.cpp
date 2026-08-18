@@ -13,6 +13,56 @@
 namespace DB::PrometheusQueryToSQL
 {
 
+namespace
+{
+    bool canUseExactGroupMatch(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        bool left_metric_name_dropped,
+        bool right_metric_name_dropped)
+    {
+        /// This is the set of cases where transformGroupASTForBinaryOperator returns the original group column.
+        return left_metric_name_dropped && right_metric_name_dropped
+            && !operator_node->on
+            && (!operator_node->ignoring || operator_node->labels.empty());
+    }
+
+    /// Filter the left values by right-side presence for two unique VECTOR_GRID inputs with the same group key.
+    ASTPtr makeExactGroupAndQuery(const String & left, const String & right)
+    {
+        SelectQueryBuilder builder;
+
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}));
+        builder.select_list.back()->setAlias(ColumnNames::Group);
+
+        builder.select_list.push_back(makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("y")),
+                    make_intrusive<ASTIdentifier>("x"),
+                    make_intrusive<ASTLiteral>(Field{} /* NULL */))),
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
+            make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values})));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+
+        builder.from_table = left;
+        builder.join_kind = JoinKind::Inner;
+        builder.join_strictness = JoinStrictness::All;
+        builder.join_table = right;
+
+        builder.join_on = makeASTFunction(
+            "equals",
+            make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Group}),
+            make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Group}));
+
+        return builder.getSelectQuery();
+    }
+}
+
+
 SQLQueryPiece applyBinaryOperatorAnd(
     const PrometheusQueryTree::BinaryOperator * operator_node,
     SQLQueryPiece && left_argument,
@@ -34,6 +84,20 @@ SQLQueryPiece applyBinaryOperatorAnd(
     right_argument = toVectorGrid(std::move(right_argument), context);
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
+
+    if (canUseExactGroupMatch(
+            operator_node, left_argument.metric_name_dropped, right_argument.metric_name_dropped))
+    {
+        SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
+        res.select_query = makeExactGroupAndQuery(left, right);
+        res.metric_name_dropped = left_argument.metric_name_dropped;
+
+        res.start_time = left_argument.start_time;
+        res.end_time = left_argument.end_time;
+        res.step = left_argument.step;
+
+        return res;
+    }
 
     /// Step 1:
     /// SELECT timeSeriesRemoveAllTagsExcept(group, on_tags) AS join_group,

@@ -3492,6 +3492,35 @@ def test_set_binary_operators():
     )
 
     do_query_test(
+        "(sum by (shape, size) (last_over_time(foo[10])) and sum by (shape, size) (last_over_time(bar[10])))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "4"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4)]",
+            ],
+        ],
+    )
+
+    # Empty ignoring() keeps the same matching key for already grouped inputs.
+    do_query_test(
+        '(sum by (shape, size) (last_over_time(foo{shape="circle"}[10])) and ignoring() sum by (shape, size) (last_over_time(bar{shape="circle"}[10])))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+        ],
+    )
+
+    do_query_test(
         "(last_over_time(foo[10]) unless last_over_time(bar[10]))[50:10]",
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "foo", "shape": "square", "size": "s"}, "values": [[130, "40"]]}, {"metric": {"__name__": "foo", "shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
