@@ -135,6 +135,12 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodNullableSerialized<AggregatedDataWithStringKeyVoidHash64>>      nullable_serialized_void_hash64;
     std::unique_ptr<AggregationMethodPreallocSerialized<AggregatedDataWithStringKeyVoidHash64>>      prealloc_serialized_void_hash64;
     std::unique_ptr<AggregationMethodNullablePreallocSerialized<AggregatedDataWithStringKeyVoidHash64>> nullable_prealloc_serialized_void_hash64;
+    /// The nullable fixed-width set methods need the better hash for the same reason as the rest: their
+    /// tables are the ones the external merge re-aggregates. The packed forms reuse the plain void hash64
+    /// data with `has_nullable_keys`, a nullable packed key carrying its null map inside the key.
+    std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithNullableUInt64KeyVoidHash64, false, true>> nullable_key64_void_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128VoidHash64, true>>  nullable_keys128_void_hash64;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256VoidHash64, true>>  nullable_keys256_void_hash64;
     /// The nullable fixed-width keys need the better hash for the same reason as their non-nullable
     /// counterparts. The packed forms reuse the plain `*Hash64` data: a nullable packed key carries its null
     /// map inside the key, so only `has_nullable_keys` differs.
@@ -232,6 +238,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_void_hash64,          false) \
         M(prealloc_serialized_void_hash64,          false) \
         M(nullable_prealloc_serialized_void_hash64, false) \
+        M(nullable_key64_void_hash64,   false) \
+        M(nullable_keys128_void_hash64, false) \
+        M(nullable_keys256_void_hash64, false) \
         M(key32_two_level,            true) \
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
@@ -361,6 +370,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(nullable_serialized_void_hash64) \
         M(prealloc_serialized_void_hash64) \
         M(nullable_prealloc_serialized_void_hash64) \
+        M(nullable_key64_void_hash64) \
+        M(nullable_keys128_void_hash64) \
+        M(nullable_keys256_void_hash64) \
         M(nullable_key64_hash64) \
         M(nullable_keys128_hash64) \
         M(nullable_keys256_hash64) \

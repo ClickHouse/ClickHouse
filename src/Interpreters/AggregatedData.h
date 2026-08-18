@@ -187,6 +187,10 @@ using AggregatedDataWithNullableStringKeyTwoLevel = AggregationDataWithNullKeyTw
 /// keys live in the set.
 using AggregatedDataWithNullableUInt32KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt32KeyVoid>;
 using AggregatedDataWithNullableUInt64KeyVoid = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyVoid>;
+/// The better-hash counterpart, for the external-aggregation merge (see the `*Hash64` block above). The
+/// packed nullable keys need no such type: they fold the null map into the key, so they reuse
+/// `AggregatedDataWithKeys128VoidHash64` / `...256...` with `has_nullable_keys`.
+using AggregatedDataWithNullableUInt64KeyVoidHash64 = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyVoidHash64>;
 /// The per-bucket impl of a nullable two-level set: a `HashSet` bucket that also tracks the null key.
 /// `TwoLevelHashTable`'s `ImplTable` parameter is a type (unlike `TwoLevelHashMapTable`'s template-template),
 /// so it has to be instantiated explicitly here.
