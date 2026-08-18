@@ -150,7 +150,7 @@ JoinStep::JoinStep(
     updateInputHeaders({left_header_, right_header_});
 }
 
-QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStep expect two input steps");
@@ -167,8 +167,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     /// regular join pipeline which handles different stream counts
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
 
-    if (!settings.is_explain)
-        QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+    QueryExecutionCounters::addExecutedJoin(*join, getExecutedJoinAlgorithm(*join, use_sharding));
+
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
@@ -444,10 +444,9 @@ FilledJoinStep::FilledJoinStep(const SharedHeader & input_header_, JoinPtr join_
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FilledJoinStep expects Join to be filled");
 }
 
-void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
+void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (!settings.is_explain)
-        QueryExecutionCounters::addExecutedJoin(*join);
+    QueryExecutionCounters::addExecutedJoin(*join);
 
     bool default_totals = false;
     if (!pipeline.hasTotals() && !join->getTotals().empty())

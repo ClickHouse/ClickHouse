@@ -129,13 +129,12 @@ static SharedHeader concatHeaders(const SharedHeaders & headers)
     return std::make_shared<const Block>(std::move(result));
 }
 
-QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings & settings)
+QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &)
 {
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinStep expects two input pipelines, got {}", pipelines.size());
 
-    if (!settings.is_explain)
-        QueryExecutionCounters::addExecutedJoin(query_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
+    QueryExecutionCounters::addExecutedJoin(query_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
 
     if (swap_inputs)
         std::swap(pipelines[0], pipelines[1]);

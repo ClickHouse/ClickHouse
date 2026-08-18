@@ -187,16 +187,18 @@ WHERE current_database = currentDatabase()
   AND log_comment LIKE '04891\_join\_count\_ie%'
 ORDER BY log_comment;
 
-SELECT 'explain builds a pipeline without executing it';
--- `EXPLAIN PIPELINE` and `EXPLAIN ESTIMATE` assemble a pipeline for the explained query and then throw it
--- away, so the joins of the explained query must not be attributed to the query running the EXPLAIN.
+SELECT 'explain reports the joins of the pipeline it builds';
+-- These columns describe the pipeline that was built for the query, like the other `used_` columns of
+-- `system.query_log` describe what the query instantiated while it was analyzed. An `EXPLAIN` that
+-- assembles a pipeline therefore reports the joins of the explained query, whether it goes on to run
+-- the pipeline or throws it away, and `used_functions` of the same `EXPLAIN` lists the functions of
+-- the explained query in the same way.
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_explain_pipeline', join_algorithm = 'hash';
 SELECT count() > 0 FROM (EXPLAIN ESTIMATE SELECT count() FROM m1 JOIN m2 ON m1.a = m2.a)
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_explain_estimate', join_algorithm = 'hash';
--- `EXPLAIN ANALYZE` does execute the pipeline, so its join is reported.
 SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_explain_analyze', join_algorithm = 'hash';

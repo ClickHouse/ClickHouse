@@ -20,10 +20,10 @@ parallel full sorting merge
 ie join
 1	['IE_JOIN']	['INNER']	['ALL']	[]
 1	['IE_JOIN']	['RIGHT']	['ANTI']	[]
-explain builds a pipeline without executing it
+explain reports the joins of the pipeline it builds
 1	['HASH']	['INNER']	['ALL']	[]
-0	[]	[]	[]	[]
-0	[]	[]	[]	[]
+1	['HASH']	['INNER']	['ALL']	[]
+1	['HASH']	['INNER']	['ALL']	[]
 grace hash spilling
 1	['GRACE_HASH']	['INNER']	['ALL']	['join']
 partial merge spilling
