@@ -3564,7 +3564,8 @@ public:
                     // monotonicity only when an endpoint keeps the range on one side of it.
                     if (name_view == "intDiv" && isUInt(arithmetic_arg_type) && isInt(divisor_type))
                     {
-                        if (intDivRangeCrossesSignedWrap(arithmetic_arg_type, left_point, right_point))
+                        if (intDivRangeCrossesSignedWrap(
+                                arithmetic_arg_type, getArithmeticField(left_point), getArithmeticField(right_point)))
                             return {false, true, false, false};
                         return {true, is_constant_positive, false};
                     }

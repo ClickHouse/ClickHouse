@@ -88,20 +88,20 @@ SELECT 'c9iii ipv eq', (SELECT count() FROM t_cv_ipv WHERE intDiv(a, 10) = 16777
 -- `intDiv` substitutes IP keys with unsigned integers before applying a signed divisor. The
 -- ranges below cross the corresponding signed wrap, so key analysis must not prune away the
 -- values above the wrap.
-CREATE TABLE t_cv_ipwrap4 (a IPv4) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
-CREATE TABLE m_cv_ipwrap4 (a IPv4) ENGINE = Memory;
-INSERT INTO t_cv_ipwrap4 VALUES ('127.255.255.254'), ('127.255.255.255'), ('128.0.0.0'), ('128.0.0.1');
-INSERT INTO m_cv_ipwrap4 VALUES ('127.255.255.254'), ('127.255.255.255'), ('128.0.0.0'), ('128.0.0.1');
-CREATE TABLE t_cv_ipwrap6 (a IPv6) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
-CREATE TABLE m_cv_ipwrap6 (a IPv6) ENGINE = Memory;
-INSERT INTO t_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('8000::1');
-INSERT INTO m_cv_ipwrap6 VALUES ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), ('7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), ('8000::'), ('8000::1');
-SELECT 'c9iv ipv4 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) >= 100);
-SELECT 'c9iv ipv6 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) >= 100);
+CREATE TABLE t_cv_ipwrap4 (b UInt8, a IPv4) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1;
+CREATE TABLE m_cv_ipwrap4 (b UInt8, a IPv4) ENGINE = Memory;
+INSERT INTO t_cv_ipwrap4 VALUES (1, '127.255.255.254'), (1, '127.255.255.255'), (1, '128.0.0.0'), (1, '128.0.0.1'), (2, '200.0.0.0');
+INSERT INTO m_cv_ipwrap4 VALUES (1, '127.255.255.254'), (1, '127.255.255.255'), (1, '128.0.0.0'), (1, '128.0.0.1'), (2, '200.0.0.0');
+CREATE TABLE t_cv_ipwrap6 (b UInt8, a IPv6) ENGINE = MergeTree ORDER BY (b, a) SETTINGS index_granularity = 1;
+CREATE TABLE m_cv_ipwrap6 (b UInt8, a IPv6) ENGINE = Memory;
+INSERT INTO t_cv_ipwrap6 VALUES (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), (1, '8000::'), (1, '8000::1'), (2, 'ffff::');
+INSERT INTO m_cv_ipwrap6 VALUES (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:fffe'), (1, '7fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff'), (1, '8000::'), (1, '8000::1'), (2, 'ffff::');
+SELECT 'c9iv ipv4 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap4 WHERE b = 1 AND intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE b = 1 AND intDiv(a, toInt8(-2)) >= 100);
+SELECT 'c9iv ipv6 signed divisor wrap', (SELECT count() FROM t_cv_ipwrap6 WHERE b = 1 AND intDiv(a, toInt8(-2)) >= 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE b = 1 AND intDiv(a, toInt8(-2)) >= 100);
 -- A one-sided predicate reaches the null-endpoint monotonicity path. It must also reject
 -- the signed-wrap discontinuity instead of pruning the rows above it.
-SELECT 'c9iv ipv4 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE intDiv(a, toInt8(-2)) < 100);
-SELECT 'c9iv ipv6 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE intDiv(a, toInt8(-2)) < 100);
+SELECT 'c9iv ipv4 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap4 WHERE b = 1 AND intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap4 WHERE b = 1 AND intDiv(a, toInt8(-2)) < 100);
+SELECT 'c9iv ipv6 signed divisor unbounded', (SELECT count() FROM t_cv_ipwrap6 WHERE b = 1 AND intDiv(a, toInt8(-2)) < 100) = (SELECT count() FROM m_cv_ipwrap6 WHERE b = 1 AND intDiv(a, toInt8(-2)) < 100);
 
 -- ---------------------------------------------------------------------------------------------
 -- Case 8: pruning-liveness positive controls. The fix must not silently degrade the surviving
