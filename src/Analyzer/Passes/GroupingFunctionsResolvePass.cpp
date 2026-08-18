@@ -1,5 +1,9 @@
 #include <Analyzer/Passes/GroupingFunctionsResolvePass.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
+
 #include <Core/ColumnNumbers.h>
 #include <Core/Settings.h>
 
@@ -117,11 +121,13 @@ public:
         String specialization_name;
         QueryTreeNodes state_arguments;
 
-        Array indexes_array;
-        for (const auto index : arguments_indexes)
-            indexes_array.push_back(index);
+        auto indexes_data = ColumnUInt64::create();
+        indexes_data->getData().assign(arguments_indexes.begin(), arguments_indexes.end());
+        auto indexes_column = ColumnArray::create(
+            std::move(indexes_data), ColumnArray::ColumnOffsets::create(1, arguments_indexes.size()));
         state_arguments.push_back(std::make_shared<ConstantNode>(
-            Field(std::move(indexes_array)), std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())));
+            ColumnConst::create(std::move(indexes_column), 1),
+            std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())));
 
         switch (group_by_kind)
         {
@@ -134,36 +140,44 @@ public:
             {
                 specialization_name = "__groupingForRollup";
                 state_arguments.push_back(std::make_shared<ConstantNode>(
-                    Field(UInt64(aggregation_keys_size)), std::make_shared<DataTypeUInt64>()));
+                    ColumnConst::create(ColumnUInt64::create(1, aggregation_keys_size), 1),
+                    std::make_shared<DataTypeUInt64>()));
                 break;
             }
             case GroupByKind::CUBE:
             {
                 specialization_name = "__groupingForCube";
                 state_arguments.push_back(std::make_shared<ConstantNode>(
-                    Field(UInt64(aggregation_keys_size)), std::make_shared<DataTypeUInt64>()));
+                    ColumnConst::create(ColumnUInt64::create(1, aggregation_keys_size), 1),
+                    std::make_shared<DataTypeUInt64>()));
                 break;
             }
             case GroupByKind::GROUPING_SETS:
             {
                 specialization_name = "__groupingForGroupingSets";
-                Array sets_array;
+                auto sets_data = ColumnUInt64::create();
+                auto sets_offsets = ColumnArray::ColumnOffsets::create();
+                UInt64 indexes_total = 0;
                 for (const auto & grouping_set : grouping_sets_keys_indexes)
                 {
-                    Array set_array;
                     for (const auto index : grouping_set)
-                        set_array.push_back(index);
-                    sets_array.push_back(std::move(set_array));
+                        sets_data->getData().push_back(index);
+                    indexes_total += grouping_set.size();
+                    sets_offsets->getData().push_back(indexes_total);
                 }
+                auto sets_column = ColumnArray::create(
+                    ColumnArray::create(std::move(sets_data), std::move(sets_offsets)),
+                    ColumnArray::ColumnOffsets::create(1, grouping_sets_keys_indexes.size()));
                 state_arguments.push_back(std::make_shared<ConstantNode>(
-                    Field(std::move(sets_array)),
+                    ColumnConst::create(std::move(sets_column), 1),
                     std::make_shared<DataTypeArray>(std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()))));
                 break;
             }
         }
 
         state_arguments.push_back(std::make_shared<ConstantNode>(
-            Field(UInt64(force_grouping_standard_compatibility)), std::make_shared<DataTypeUInt8>()));
+            ColumnConst::create(ColumnUInt8::create(1, force_grouping_standard_compatibility), 1),
+            std::make_shared<DataTypeUInt8>()));
 
         if (group_by_kind != GroupByKind::ORDINARY)
         {
