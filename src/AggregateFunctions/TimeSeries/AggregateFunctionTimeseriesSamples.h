@@ -43,6 +43,14 @@ public:
     /// an allocated buffer and the list of adopted buffers are reached only through pointers to the heap - no pointers into itself either way.
     static constexpr bool is_position_independent = true;
 
+    AggregateFunctionTimeseriesSamples() = default;
+    /// Not copyable: the state owns the adopted chunk list through a raw tagged pointer.
+    /// (Nothing copies or moves whole states: the bucket maps relocate them with `memcpy`
+    /// and abandon the source, and merging works on references.)
+    AggregateFunctionTimeseriesSamples(const AggregateFunctionTimeseriesSamples &) = delete;
+    AggregateFunctionTimeseriesSamples & operator=(const AggregateFunctionTimeseriesSamples &) = delete;
+    ~AggregateFunctionTimeseriesSamples() { delete adoptedChunks(); }
+
     void add(TimestampType timestamp, ValueType value)
     {
         /// Out-of-order and duplicate timestamps are rare (measured ~1 per 1.5 billion adds on production-shaped multithreaded reads), hence `[[unlikely]]`.
@@ -54,7 +62,7 @@ public:
                 last.second = getMax(last.second, value);
                 return;
             }
-            sorted = false;
+            setSorted(false);
         }
         buffer.emplace_back(timestamp, value);
     }
@@ -73,7 +81,8 @@ public:
         UInt8 in_order = old_size == 0 || appended[-1].first < timestamps[0];
         for (size_t i = 1; i < count; ++i)
             in_order &= static_cast<UInt8>(timestamps[i - 1] < timestamps[i]);
-        sorted = sorted && in_order;
+        if (!in_order)
+            setSorted(false);
     }
 
     /// The destructive merge: steals the other state's buffers in O(1) instead of copying the
@@ -85,11 +94,11 @@ public:
         /// iteration, while copying N samples is ~N ns. Range queries with narrow windows keep
         /// just a few samples per bucket, and this keeps their merge identical to the copy path.
         /// (An empty own state still steals the buffer wholesale below, which is free.)
-        if (!other.adopted && (other.buffer.size() <= ADOPT_MIN_SAMPLES) && !(buffer.empty() && !adopted))
+        if (!other.adoptedChunks() && (other.buffer.size() <= ADOPT_MIN_SAMPLES) && !(buffer.empty() && !adoptedChunks()))
         {
             merge(other);
             other.buffer = {};
-            other.sorted = true;
+            other.setSorted(true);
             return;
         }
 
@@ -97,13 +106,13 @@ public:
         {
             /// A rare unsorted buffer is sorted at adoption (the other state is ours to mutate),
             /// so every adopted chunk is sorted and deduplicated - the iteration relies on that.
-            if (!other.sorted)
+            if (!other.isSorted())
                 sortBuffer(other.buffer);
 
-            if (buffer.empty() && !adopted)
+            if (buffer.empty() && !adoptedChunks())
             {
                 buffer = std::move(other.buffer);
-                sorted = true;
+                setSorted(true);
             }
             else
             {
@@ -111,16 +120,17 @@ public:
             }
         }
 
-        if (other.adopted)
+        if (auto * other_chunks = other.adoptedChunks())
         {
             auto & chunks = ensureAdopted();
-            for (auto & chunk : *other.adopted)
+            for (auto & chunk : *other_chunks)
                 chunks.push_back(std::move(chunk));
-            other.adopted.reset();
+            delete other_chunks;
+            other.setAdoptedChunks(nullptr);
         }
 
         other.buffer = {};
-        other.sorted = true;
+        other.setSorted(true);
     }
 
     void merge(const AggregateFunctionTimeseriesSamples & other)
@@ -134,7 +144,7 @@ public:
         /// The non-destructive merge flattens both sides into one buffer (it must copy the other
         /// state's samples anyway). The hot merge path (the two-level aggregation merge) uses
         /// `adopt` instead and never gets here with adopted chunks.
-        if (adopted || other.adopted)
+        if (adoptedChunks() || other.adoptedChunks())
         {
             consolidate();
             Buffer other_samples = other.flattenedCopy();
@@ -145,7 +155,7 @@ public:
         if (buffer.empty())
         {
             buffer = other.buffer;
-            sorted = other.sorted;
+            setSorted(other.isSorted());
             sort();
             return;
         }
@@ -154,20 +164,20 @@ public:
 
         /// A rare unsorted argument is sorted into a copy: `other` belongs to another state and is kept intact.
         Buffer sorted_other_buffer = other.buffer;
-        if (!other.sorted)
+        if (!other.isSorted())
             sortBuffer(sorted_other_buffer);
         mergeSortedBuffer(sorted_other_buffer);
     }
 
     void serialize(WriteBuffer & buf) const
     {
-        if (adopted) [[unlikely]]
+        if (adoptedChunks()) [[unlikely]]
         {
             writeSamples(flattenedCopy(), buf);
             return;
         }
         /// A rare unsorted state is serialized from a sorted copy, so the state is not mutated behind `const`.
-        if (!sorted) [[unlikely]]
+        if (!isSorted()) [[unlikely]]
         {
             Buffer sorted_buffer = buffer;
             sortBuffer(sorted_buffer);
@@ -181,8 +191,8 @@ public:
     {
         /// Deserialize replaces any previous contents.
         buffer.clear();
-        adopted.reset();
-        sorted = true;
+        delete adoptedChunks();
+        adopted_and_unsorted = 0;
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
@@ -216,10 +226,11 @@ public:
     template <typename F>
     void forEachSample(F && f) const
     {
-        if (!adopted) [[likely]]
+        const AdoptedChunks * chunks = adoptedChunks();
+        if (!chunks) [[likely]]
         {
             /// A rare unsorted state is iterated via a sorted copy, so the state is not mutated behind `const`.
-            if (!sorted) [[unlikely]]
+            if (!isSorted()) [[unlikely]]
             {
                 Buffer sorted_buffer = buffer;
                 sortBuffer(sorted_buffer);
@@ -235,7 +246,7 @@ public:
         /// A rare unsorted own buffer is iterated via a sorted copy (adopted chunks are always sorted).
         Buffer sorted_own;
         const Buffer * own = &buffer;
-        if (!sorted) [[unlikely]]
+        if (!isSorted()) [[unlikely]]
         {
             sorted_own = buffer;
             sortBuffer(sorted_own);
@@ -246,7 +257,7 @@ public:
         absl::InlinedVector<Cursor, 4, AllocatorWithMemoryTracking<Cursor>> cursors;
         if (!own->empty())
             cursors.push_back({own->data(), own->data() + own->size()});
-        for (const auto & chunk : *adopted)
+        for (const auto & chunk : *chunks)
             if (!chunk.empty())
                 cursors.push_back({chunk.data(), chunk.data() + chunk.size()});
         std::sort(cursors.begin(), cursors.end(), [](const Cursor & lhs, const Cursor & rhs) { return lhs.it->first < rhs.it->first; });
@@ -314,13 +325,18 @@ private:
         const std::pair<TimestampType, ValueType> * end;
     };
 
-    bool empty() const { return buffer.empty() && !adopted; }
+    bool isSorted() const { return (adopted_and_unsorted & 1) == 0; }
+    void setSorted(bool sorted) { adopted_and_unsorted = sorted ? (adopted_and_unsorted & ~uintptr_t{1}) : (adopted_and_unsorted | 1); }
+    AdoptedChunks * adoptedChunks() const { return reinterpret_cast<AdoptedChunks *>(adopted_and_unsorted & ~uintptr_t{1}); }
+    void setAdoptedChunks(AdoptedChunks * chunks) { adopted_and_unsorted = reinterpret_cast<uintptr_t>(chunks) | (adopted_and_unsorted & 1); }
+
+    bool empty() const { return buffer.empty() && !adoptedChunks(); }
 
     AdoptedChunks & ensureAdopted()
     {
-        if (!adopted)
-            adopted = std::make_unique<AdoptedChunks>();
-        return *adopted;
+        if (!adoptedChunks())
+            setAdoptedChunks(new AdoptedChunks());
+        return *adoptedChunks();
     }
 
     /// Returns all the samples flattened into one sorted deduplicated buffer.
@@ -328,8 +344,8 @@ private:
     {
         Buffer res;
         size_t total = buffer.size();
-        if (adopted)
-            for (const auto & chunk : *adopted)
+        if (const auto * chunks = adoptedChunks())
+            for (const auto & chunk : *chunks)
                 total += chunk.size();
         res.reserve(total);
         forEachSample([&res](TimestampType timestamp, ValueType value) { res.emplace_back(timestamp, value); });
@@ -339,15 +355,15 @@ private:
     /// Consolidates the adopted chunks into the own buffer.
     void consolidate()
     {
-        if (!adopted)
+        if (!adoptedChunks())
         {
             sort();
             return;
         }
         Buffer flattened = flattenedCopy();
         buffer = std::move(flattened);
-        adopted.reset();
-        sorted = true;
+        delete adoptedChunks();
+        adopted_and_unsorted = 0;
     }
 
     /// Merges a sorted deduplicated buffer into the own sorted buffer (the pre-`adopt` merge logic).
@@ -430,18 +446,21 @@ private:
     /// Restores the invariant in place after out-of-order `add`s; no-op in the common (already sorted) case.
     void sort()
     {
-        if (sorted)
+        if (isSorted())
             return;
         sortBuffer(buffer);
-        sorted = true;
+        setSorted(true);
     }
 
-    /// The samples, sorted by timestamp and deduplicated whenever `sorted` is true.
+    /// The samples, sorted by timestamp and deduplicated whenever the unsorted bit is clear.
     Buffer buffer;
-    /// Buffers adopted from destructively merged states (see `adopt`), or nullptr.
-    std::unique_ptr<AdoptedChunks> adopted;
-    /// Cleared by an out-of-order `add`; while set, timestamps in `buffer` are strictly increasing.
-    bool sorted = true;
+    /// A tagged word: the upper bits hold the `AdoptedChunks *` with buffers adopted from
+    /// destructively merged states (see `adopt`), bit 0 is set while `buffer` is NOT sorted
+    /// (an out-of-order `add` sets it; while clear, timestamps in `buffer` are strictly
+    /// increasing). Packed into one word because this struct is the per-bucket aggregation
+    /// state: one extra pointer per bucket is measurable on wide grids.
+    /// Zero-initialized = sorted, no adopted chunks.
+    uintptr_t adopted_and_unsorted = 0;
 };
 
 }
