@@ -42,6 +42,14 @@ namespace DimensionalMetrics
         {"part_state", "part_type", "part_is_projection"}
     );
 
+    MetricFamily & ObjectStorageQueueFailures = Factory::instance().registerMetric(
+        "object_storage_queue_failures_total",
+        "Number of ObjectStorageQueue (S3Queue/AzureQueue) failures, labelled by database, table, processing stage (read, set_processing, insert, commit) and error code.",
+        {"database", "table", "stage", "error_code"},
+        {},
+        MetricType::Counter
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);

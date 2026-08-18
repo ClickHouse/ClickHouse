@@ -3,7 +3,9 @@
 #include <Common/CurrentThread.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrorCodes.h>
 #include <Common/ProfileEvents.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -41,6 +43,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueExceptionsDuringRead;
     extern const Event ObjectStorageQueueExceptionsDuringInsert;
     extern const Event ObjectStorageQueueCancelledFiles;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueFailures;
 }
 
 namespace DB
@@ -379,6 +386,9 @@ ObjectStorageQueueSource::FileIterator::next()
                 else
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueFailedToBatchSetProcessing);
+                    DimensionalMetrics::add(
+                        DimensionalMetrics::ObjectStorageQueueFailures,
+                        {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(code))});
 
                     auto failed_idx = zkutil::getFailedOpIndex(code, responses);
 
@@ -1305,6 +1315,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.back().state = FileState::ErrorOnRead;
             processed_files.back().exception_during_read = message;
+            processed_files.back().exception_during_read_code = getCurrentExceptionCode();
 
              if (file_status->processed_rows > 0)
              {
@@ -1509,7 +1520,7 @@ void ObjectStorageQueueSource::prepareCommitRequests(
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1543,6 +1554,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 else
                 {
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
+                    DimensionalMetrics::add(
+                        DimensionalMetrics::ObjectStorageQueueFailures,
+                        {storage_id.getDatabaseName(), storage_id.getTableName(), "insert", String(ErrorCodes::getName(error_code))});
 
                     file_metadata->prepareFailedRequests(
                         requests,
@@ -1568,6 +1582,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 else
                     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringInsert);
 
+                if (file_state != FileState::Cancelled)
+                    DimensionalMetrics::add(
+                        DimensionalMetrics::ObjectStorageQueueFailures,
+                        {storage_id.getDatabaseName(), storage_id.getTableName(), "insert", String(ErrorCodes::getName(error_code))});
+
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_message,
@@ -1577,6 +1596,9 @@ void ObjectStorageQueueSource::prepareCommitRequests(
             case FileState::ErrorOnRead:
             {
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueExceptionsDuringRead);
+                DimensionalMetrics::add(
+                    DimensionalMetrics::ObjectStorageQueueFailures,
+                    {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
                 file_metadata->prepareFailedRequests(

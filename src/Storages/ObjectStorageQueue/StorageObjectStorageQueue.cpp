@@ -39,6 +39,7 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <Common/CurrentThread.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/ProfileEvents.h>
@@ -64,6 +65,11 @@ namespace ProfileEvents
     extern const Event ObjectStorageQueueInsertIterations;
     extern const Event ObjectStorageQueueProcessedRows;
     extern const Event ZooKeeperWatchTriggeredObjectStorageQueue;
+}
+
+namespace DimensionalMetrics
+{
+    extern MetricFamily & ObjectStorageQueueFailures;
 }
 
 
@@ -1242,6 +1248,9 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        DimensionalMetrics::add(
+            DimensionalMetrics::ObjectStorageQueueFailures,
+            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(code.value()))});
         if (try_num > 1)
         {
             /// We had at least one hardware error retry, so the first attempt may have succeeded

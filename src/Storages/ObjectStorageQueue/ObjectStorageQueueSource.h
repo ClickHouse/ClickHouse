@@ -296,6 +296,7 @@ private:
         FileState state;
         FileMetadataPtr metadata;
         std::string exception_during_read;
+        int exception_during_read_code = 0;
     };
     std::vector<ProcessedFile> processed_files;
     Source::ReaderHolder reader;
