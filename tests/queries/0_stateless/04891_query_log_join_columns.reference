@@ -1,24 +1,17 @@
 no join
 0	[]	[]	[]	[]
-0	[]	[]	[]	[]
 single inner join
-1	['HASH']	['INNER']	['ALL']	[]
 1	['HASH']	['INNER']	['ALL']	[]
 three tables, two joins
 2	['HASH']	['INNER']	['ALL']	[]
-2	['HASH']	['INNER']	['ALL']	[]
 cross join
-1	['CONSTANT']	['CROSS']	['UNSPECIFIED']	[]
-1	['CONSTANT']	['CROSS']	['UNSPECIFIED']	[]
+1	['CONSTANT']	['CROSS']	['ALL']	[]
 join engine table
-1	['HASH']	['LEFT']	['ANY']	[]
 1	['HASH']	['LEFT']	['ANY']	[]
 asof join
 1	['HASH']	['LEFT']	['ASOF']	[]
-1	['HASH']	['LEFT']	['ASOF']	[]
 paste join
-1	['PASTE']	['PASTE']	['UNSPECIFIED']	[]
-1	['PASTE']	['PASTE']	['UNSPECIFIED']	[]
+1	['PASTE']	['PASTE']	['ALL']	[]
 full sorting merge
 1	['FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
 parallel full sorting merge

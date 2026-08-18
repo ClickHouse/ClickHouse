@@ -1,7 +1,8 @@
+-- Tags: no-old-analyzer
+
 -- `used_number_of_joins` counts the physical joins of the executed pipeline, `used_join_algorithms`,
 -- `used_join_kinds` and `used_join_strictness` describe them, and `spilled_to_disk` lists the
--- operators that wrote temporary data, which is not limited to joins. The cases that do not force an
--- algorithm are checked with both analyzers: they build the join steps in different places.
+-- operators that wrote temporary data, which is not limited to joins.
 --
 -- The algorithm is set explicitly wherever it is asserted, because the choice among the algorithms
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
@@ -37,8 +38,7 @@ INSERT INTO m1 SELECT number FROM numbers(10);
 INSERT INTO m2 SELECT number FROM numbers(10);
 
 SELECT 'no join';
-SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none_new', enable_analyzer = 1;
-SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none_old', enable_analyzer = 0;
+SELECT count() FROM t1 FORMAT Null SETTINGS log_comment = '04891_join_count_none';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -51,8 +51,7 @@ ORDER BY log_comment;
 
 SELECT 'single inner join';
 -- The strictness is not written, so it comes from `join_default_strictness`.
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_inner_new', enable_analyzer = 1, join_algorithm = 'hash';
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_inner_old', enable_analyzer = 0, join_algorithm = 'hash';
+SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_inner', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -65,8 +64,7 @@ ORDER BY log_comment;
 
 SELECT 'three tables, two joins';
 -- The arrays hold distinct values, so they report a single element each while the count is 2.
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two_new', enable_analyzer = 1, join_algorithm = 'hash';
-SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two_old', enable_analyzer = 0, join_algorithm = 'hash';
+SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -78,12 +76,12 @@ WHERE current_database = currentDatabase()
 ORDER BY log_comment;
 
 SELECT 'cross join';
--- Strictness is meaningless for it. It has no `ON` clause, so its condition is a constant and it
+-- Strictness is meaningless for a CROSS join, and the reported one is whatever the join carries,
+-- which is `join_default_strictness`. It has no `ON` clause, so its condition is a constant and it
 -- is executed by `ConstantJoin` rather than by the requested `hash` algorithm. That is why every
 -- join reports an algorithm of its own: otherwise a plain CROSS JOIN would show one executed join
 -- and an empty list of algorithms.
-SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_cross_new', enable_analyzer = 1, join_algorithm = 'hash';
-SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_cross_old', enable_analyzer = 0, join_algorithm = 'hash';
+SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_cross', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -96,8 +94,7 @@ ORDER BY log_comment;
 
 SELECT 'join engine table';
 -- It is joined by `FilledJoinStep` and not by `JoinStep`.
-SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comment = '04891_join_count_filled_new', enable_analyzer = 1;
-SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comment = '04891_join_count_filled_old', enable_analyzer = 0;
+SELECT count() FROM t1 ANY LEFT JOIN tj USING (a) FORMAT Null SETTINGS log_comment = '04891_join_count_filled';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -110,8 +107,7 @@ ORDER BY log_comment;
 
 SELECT 'asof join';
 -- ASOF is a strictness and not a kind, so it is reported in `used_join_strictness`.
-SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_asof_new', enable_analyzer = 1, join_algorithm = 'hash';
-SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_asof_old', enable_analyzer = 0, join_algorithm = 'hash';
+SELECT count() FROM ta ASOF LEFT JOIN tb USING (a, t) FORMAT Null SETTINGS log_comment = '04891_join_count_asof', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -124,9 +120,9 @@ ORDER BY log_comment;
 
 SELECT 'paste join';
 -- PASTE is not one of the `join_algorithm` values, but it still reports itself, so that a query
--- whose only join is a paste join does not show an empty list of algorithms.
-SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04891_join_count_paste_new', enable_analyzer = 1;
-SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04891_join_count_paste_old', enable_analyzer = 0;
+-- whose only join is a paste join does not show an empty list of algorithms. Its strictness comes
+-- from `join_default_strictness` as well, and it is as meaningless as for a CROSS join.
+SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2 FORMAT Null SETTINGS log_comment = '04891_join_count_paste';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -171,16 +167,16 @@ WHERE current_database = currentDatabase()
 ORDER BY log_comment;
 
 SELECT 'ie join';
--- `ie_join` has no `IJoin`: the whole algorithm is `IEJoinStep`, which reports itself. It needs the
--- analyzer, and it is only picked for two inequality conditions.
+-- `ie_join` has no `IJoin`: the whole algorithm is `IEJoinStep`, which reports itself. It is only
+-- picked for two inequality conditions.
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_ie_inner', enable_analyzer = 1, join_algorithm = 'ie_join,hash';
+SETTINGS log_comment = '04891_join_count_ie_inner', join_algorithm = 'ie_join,hash';
 -- A right-side ANTI join is executed as its left-side mirror, with the input pipelines swapped. The
 -- reported kind must still be the one the query asked for.
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 RIGHT ANTI JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_ie_right_anti', enable_analyzer = 1, join_algorithm = 'ie_join,hash';
+SETTINGS log_comment = '04891_join_count_ie_right_anti', join_algorithm = 'ie_join,hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
@@ -196,14 +192,14 @@ SELECT 'explain builds a pipeline without executing it';
 -- away, so the joins of the explained query must not be attributed to the query running the EXPLAIN.
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_explain_pipeline', enable_analyzer = 1, join_algorithm = 'hash';
+SETTINGS log_comment = '04891_join_count_explain_pipeline', join_algorithm = 'hash';
 SELECT count() > 0 FROM (EXPLAIN ESTIMATE SELECT count() FROM m1 JOIN m2 ON m1.a = m2.a)
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_explain_estimate', enable_analyzer = 1, join_algorithm = 'hash';
+SETTINGS log_comment = '04891_join_count_explain_estimate', join_algorithm = 'hash';
 -- `EXPLAIN ANALYZE` does execute the pipeline, so its join is reported.
 SELECT count() > 0 FROM (EXPLAIN ANALYZE SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a)
 FORMAT Null
-SETTINGS log_comment = '04891_join_count_explain_analyze', enable_analyzer = 1, join_algorithm = 'hash';
+SETTINGS log_comment = '04891_join_count_explain_analyze', join_algorithm = 'hash';
 
 SYSTEM FLUSH LOGS query_log;
 SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk

@@ -27,13 +27,6 @@ void QueryExecutionCounters::addExecutedJoin(JoinKind kind, JoinStrictness stric
 
     counters->number_of_joins.fetch_add(1, std::memory_order_relaxed);
 
-    /// Strictness does not matter for these kinds, see `JoinKind` in Core/Joins.h, and the two
-    /// analyzers fill it in differently: for a CROSS join the old one leaves it unspecified while
-    /// the new one takes `join_default_strictness`. Report nothing instead of a value that depends
-    /// on the analyzer.
-    if (isCrossOrComma(kind) || isPaste(kind))
-        strictness = JoinStrictness::Unspecified;
-
     std::lock_guard lock(counters->mutex);
     counters->used_joins.emplace(
         toString(kind),
