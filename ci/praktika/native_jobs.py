@@ -1172,7 +1172,7 @@ if __name__ == "__main__":
             result = _finish_workflow(workflow, job_name)
         else:
             assert False, f"BUG, job name [{job_name}]"
-    except Exception:
+    except Exception as e:
         error_traceback = traceback.format_exc()
         print("Failed with Exception:")
         print(error_traceback)
@@ -1180,8 +1180,14 @@ if __name__ == "__main__":
             name=job_name,
             status=Result.Status.ERROR,
             stopwatch=sw,
-            # try out .info generated in runner._run() which works for all jobs automatically
-            # info=f"Failed with Exception [{e}]\n{error_traceback}",
+            info=f"Failed with Exception:\n{error_traceback}",
+        )
+        # An exception message can embed command output of any size, so the traceback is
+        # truncated from the top. A traceback names the type and message last, so they are
+        # what truncation drops first - keep them ahead of it.
+        first_message_line = (str(e).splitlines() or [""])[0][:500]
+        result.info = f"Failed with {type(e).__name__}: {first_message_line}\n" + (
+            result.get_info_truncated(max_info_lines_cnt=100, max_line_length=1000)
         )
 
     result.dump().complete_job(with_job_summary_in_info=False)
