@@ -140,6 +140,8 @@ PRIMARY KEY field1, field2
 
 Pour une requête adressée à la fonction `dictGet*`, un tuple est utilisé comme clé. Exemple : `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
+Lorsque la clé composite est constituée d’un seul attribut, la valeur de la clé peut être transmise directement, sans être encapsulée dans `tuple`. Par exemple, `dictGetString('dict_name', 'attr_name', 'key')` et `dictGetString('dict_name', 'attr_name', tuple('key'))` sont tous deux valides.
+
 <div id="attributes">
   ## Attributs
 </div>

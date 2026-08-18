@@ -15,6 +15,10 @@ namespace DB
 class IDisk;
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, bool validate_new_create_query = true);
+
+/// Throws QUERY_IS_TOO_LARGE if the resulting CREATE query for `metadata` exceeds max_query_size.
+/// `table_id` is used to fetch the current CREATE query AST and for the error message.
+void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context);
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
     uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context);
 

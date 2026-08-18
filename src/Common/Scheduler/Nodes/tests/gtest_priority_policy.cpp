@@ -8,23 +8,14 @@ using namespace DB;
 
 using ResourceTest = ResourceTestClass;
 
-TEST(SchedulerPriorityPolicy, Factory)
-{
-    ResourceTest t;
-
-    Poco::AutoPtr<Poco::Util::XMLConfiguration> cfg = new Poco::Util::XMLConfiguration();
-    SchedulerNodePtr prio = SchedulerNodeFactory::instance().get("priority", t.getEventQueue(), *cfg, "");
-    EXPECT_TRUE(dynamic_cast<PriorityPolicy *>(prio.get()) != nullptr);
-}
-
 TEST(SchedulerPriorityPolicy, Priorities)
 {
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", "<priority>3</priority>");
-    t.add<FifoQueue>("/B", "<priority>2</priority>");
-    t.add<FifoQueue>("/C", "<priority>1</priority>");
+    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
+    t.add<FifoQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
+    t.add<FifoQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
 
     t.enqueue("/A", {10, 10, 10});
     t.enqueue("/B", {10, 10, 10});
@@ -56,9 +47,9 @@ TEST(SchedulerPriorityPolicy, Activation)
     ResourceTest t;
 
     t.add<PriorityPolicy>("/");
-    t.add<FifoQueue>("/A", "<priority>3</priority>");
-    t.add<FifoQueue>("/B", "<priority>2</priority>");
-    t.add<FifoQueue>("/C", "<priority>1</priority>");
+    t.add<FifoQueue>("/A", SchedulerNodeInfo(1.0, Priority{3}));
+    t.add<FifoQueue>("/B", SchedulerNodeInfo(1.0, Priority{2}));
+    t.add<FifoQueue>("/C", SchedulerNodeInfo(1.0, Priority{1}));
 
     t.enqueue("/A", {10, 10, 10, 10, 10, 10});
     t.enqueue("/B", {10});

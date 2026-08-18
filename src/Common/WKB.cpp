@@ -37,6 +37,8 @@ String getGeometricObjectTypeName(const GeometricObject & object)
         return "Polygon";
     else if (std::holds_alternative<MultiPolygon<CartesianPoint>>(object))
         return "MultiPolygon";
+    else if (std::holds_alternative<MultiPoint<CartesianPoint>>(object))
+        return "MultiPoint";
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown geometric object");
 }
 
@@ -113,6 +115,25 @@ inline Polygon<CartesianPoint> readPolygonWKB(ReadBuffer & in_buffer, std::endia
 
 GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count);
 
+static MultiPoint<CartesianPoint> readMultiPointWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
+{
+    MultiPoint<CartesianPoint> multipoint;
+
+    UInt32 num_points = 0;
+    readBinaryEndian(num_points, in_buffer, endian_to_read);
+    checkCount(num_points, limit, "points");
+
+    multipoint.reserve(num_points);
+    for (UInt32 i = 0; i < num_points; ++i)
+    {
+        auto current_point = parseWKBFormat(in_buffer, limit);
+        if (!std::holds_alternative<CartesianPoint>(current_point))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "MultiPoint contains an internal type {} that differs from Point", getGeometricObjectTypeName(current_point));
+        multipoint.push_back(std::get<CartesianPoint>(current_point));
+    }
+    return multipoint;
+}
+
 static MultiLineString<CartesianPoint> readMultiLineStringWKB(ReadBuffer & in_buffer, std::endian endian_to_read, UInt32 limit)
 {
     MultiLineString<CartesianPoint> multiline;
@@ -172,6 +193,8 @@ GeometricObject parseWKBFormat(ReadBuffer & in_buffer, UInt32 max_element_count)
             return readLineWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::Polygon:
             return readPolygonWKB(in_buffer, endian_to_read, limit);
+        case WKBGeometry::MultiPoint:
+            return readMultiPointWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiLineString:
             return readMultiLineStringWKB(in_buffer, endian_to_read, limit);
         case WKBGeometry::MultiPolygon:
@@ -278,6 +301,16 @@ static void dumpMultipleObjectImpl(
         for (auto byte : transformed_object)
             out_buffer.write(byte);
     }
+}
+
+String WKBMultiPointTransform::dumpObject(const Field & geo_object)
+{
+    String result;
+    WriteBufferFromString out_buffer(result);
+    auto transform = std::make_shared<WKBPointTransform>();
+
+    dumpMultipleObjectImpl(geo_object, geometry_type, out_buffer, transform);
+    return result;
 }
 
 String WKBMultiLineStringTransform::dumpObject(const Field & geo_object)

@@ -576,6 +576,41 @@ std::vector<std::string> serializeKeysToRawString(const ColumnWithTypeAndName & 
     return result;
 }
 
+std::vector<std::string> serializeKeysToRawString(
+    const ColumnWithTypeAndName & keys, const DataTypePtr & serialization_type, PaddedPODArray<UInt8> * null_map)
+{
+    if (!keys.column)
+        return {};
+
+    size_t num_keys = keys.column->size();
+
+    if (null_map && null_map->size() != num_keys)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "serializeKeysToRawString: null_map size {} does not match column size {}",
+            null_map->size(), num_keys);
+
+    std::vector<std::string> result;
+    result.reserve(num_keys);
+
+    auto serialization = serialization_type->getDefaultSerialization();
+    for (size_t i = 0; i < num_keys; ++i)
+    {
+        std::string & serialized_key = result.emplace_back();
+        WriteBufferFromString wb(serialized_key);
+        Field field;
+        keys.column->get(i, field);
+        if (field.isNull())
+        {
+            if (null_map)
+                (*null_map)[i] = 0;
+            /// Leave `serialized_key` empty; the lookup will not match any stored key.
+            continue;
+        }
+        serialization->serializeBinary(field, wb, {});
+    }
+    return result;
+}
+
 /// In current implementation redis / keeper can have key with only one column.
 size_t getPrimaryKeyPos(const Block & header, const Names & primary_key)
 {

@@ -1,6 +1,4 @@
 {
-  "item": "Agentic Data Stack",
-  "icon": "/images/icons/icon-agentic-data-stack.svg",
   "groups": [
     {
       "group": "Get started",
@@ -17,5 +15,7 @@
         "products/agentic-data-stack/components/langfuse"
       ]
     }
-  ]
+  ],
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "item": "Agentic Data Stack"
 }

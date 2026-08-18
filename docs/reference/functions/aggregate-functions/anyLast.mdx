@@ -12,10 +12,10 @@ Introduced in: v1.1.0
 
 Selects the last encountered value of a column.
 
-:::warning
+<Warning>
 As a query can be executed in arbitrary order, the result of this function is non-deterministic.
 If you need an arbitrary but deterministic result, use functions [min](/reference/functions/aggregate-functions/min) or [max](/reference/functions/aggregate-functions/max).
-:::
+</Warning>
 
 By default, the function never returns NULL, i.e. ignores NULL values in the input column.
 However, if the function is used with the `RESPECT NULLS` modifier, it returns the last value reads no matter if NULL or not.

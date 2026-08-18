@@ -18,28 +18,33 @@
 
   // Inkeep integration API keys. These are client-side/public keys (they ship
   // in the browser bundle), so committing them is expected. Staging covers any
-  // *.mintlify.app host (preview/staging deploys); every other host (localhost,
-  // mint dev, a future prod domain) uses the local-dev key.
+  // *.mintlify.app and *.mintlify.site hosts (preview/staging deploys); every
+  // other host (localhost, mint dev, a future prod domain) uses the local-dev
+  // key.
   var INKEEP_API_KEY_STAGING = 'd3e2792740610240ff7bcf2c2a78a33012812eb4f3e34d54';
   var INKEEP_API_KEY_LOCAL = 'b25e5cf856ec9da60d250578b59dace8417359feeedcbc6b';
-  var INKEEP_API_KEY = /\.mintlify\.app$/.test(window.location.hostname)
+  var INKEEP_API_KEY = /\.mintlify\.(?:app|site)$/.test(window.location.hostname)
     ? INKEEP_API_KEY_STAGING
     : INKEEP_API_KEY_LOCAL;
+  // The legacy *.mintlify.app source exposed pages at the host root, while
+  // the *.mintlify.site source includes a /docs prefix.
+  var INKEEP_PREVIEW_URL_RE = /^https?:\/\/private-7c7dfe99\.mintlify\.(?:app|site)\/(?:docs(?:\/|(?=[?#]|$)))?/;
 
   // cxkit-mintlify CDN bundle. @0.5 resolves to the latest 0.5.x; pin a full
   // version (e.g. @0.5.119) when deploying for reproducible builds.
   var INKEEP_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/@inkeep/cxkit-mintlify@0.5/dist/index.js';
 
   // ── Search tabs ──────────────────────────────────────────────────────────
-  // Catch-all (default) tab. Deliberately NOT named 'All': Inkeep reserves the
-  // literal 'All' as a built-in tab that force-pushes EVERY result into it
-  // (`tabs.includes("All") && bucket.All.push(item)` in the cxkit bundle),
-  // which can't be filtered — so changelogs could never be excluded from it.
-  // We use our own catch-all tag instead and apply it in transformSource to
-  // every source except changelogs.
-  var CATCH_ALL_TAB = 'All results';
-  // Row 1 (always visible): the top-level tabs.
-  var ROW1_TABS = [CATCH_ALL_TAB, 'Docs', 'Changelogs', 'Blogs', 'Website', 'GitHub'];
+  // Row 1 (always visible): the top-level tabs. 'Docs' is first because cxkit
+  // uses the FIRST configured tab as the default selected one (its defaultTab
+  // is derived as `tabs[0]`), so the modal opens on Docs results.
+  //
+  // There is deliberately NO catch-all tab. If one is ever reintroduced, it
+  // must NOT be named 'All': Inkeep reserves the literal 'All' as a built-in
+  // tab that force-pushes EVERY result into it (`tabs.includes("All") &&
+  // bucket.All.push(item)` in the cxkit bundle), which can't be filtered — so
+  // changelogs could never be excluded from it.
+  var ROW1_TABS = ['Docs', 'Changelogs', 'Blogs', 'Website', 'GitHub'];
   // Row 2 (docs sub-areas): shown only while a docs-context tab is active. A
   // docs source is tagged with BOTH 'Docs' and its sub-area, so selecting
   // 'Docs' shows everything and selecting a sub-area narrows it.
@@ -63,7 +68,7 @@
     ['products/clickhouse-private', 'ClickHouse Private'],
     ['products/managed-postgres', 'Managed Postgres'],
     ['products/agentic-data-stack', 'Agentic Data Stack'],
-    ['products/chdb', 'chDB'],
+    ['chdb', 'chDB'],
     ['products/kubernetes-operator', 'Kubernetes Operator'],
     ['clickstack', 'ClickStack'],
     ['integrations/clickpipes', 'ClickPipes'],
@@ -150,11 +155,17 @@
       return;
     }
 
+    var initialQuery = new URLSearchParams(window.location.search).get('q') || '';
     var settings = {
       // Open straight to the search view. (canToggleView is honored by
       // SearchBar/ChatButton but NOT by ModalSearchAndChat, so we hide the
       // chat affordances via CSS below instead.)
       defaultView: 'search',
+      // A URL such as /docs/?q=MergeTree opens the modal and runs the search
+      // immediately, matching the old Docusaurus search-page behavior.
+      modalSettings: {
+        isOpen: Boolean(initialQuery),
+      },
       baseSettings: {
         apiKey: INKEEP_API_KEY,
         primaryBrandColor: '#fdff75',
@@ -172,10 +183,10 @@
         // overwrite tabs with the result.
         transformSource: function (source) {
           var url = source.url || '';
-          var isPreview = url.indexOf('private-7c7dfe99.mintlify.app') !== -1;
+          var isPreview = INKEEP_PREVIEW_URL_RE.test(url);
           if (isPreview) {
             // Rewrite preview links to the canonical clickhouse.com/docs domain.
-            url = url.replace(/^https?:\/\/private-7c7dfe99\.mintlify\.app\//, 'https://clickhouse.com/docs/');
+            url = url.replace(INKEEP_PREVIEW_URL_RE, 'https://clickhouse.com/docs/');
           }
           // Do NOT tag sources with 'All' — 'All' is Inkeep's reserved built-in
           // tab (shows every result automatically); tagging sources with it
@@ -197,12 +208,9 @@
           } else if (url.indexOf('clickhouse.com') !== -1) {
             tabs.push('Website'); // marketing site (the /docs case is handled above)
           }
-          // Every non-changelog result also belongs to the catch-all tab.
-          // Changelogs are excluded so they only surface under their own tab.
-          // This also captures results that matched none of the branches above
-          // (tabs still empty) — they would otherwise appear in no tab now that
-          // Inkeep's reserved 'All' tab is gone.
-          if (tabs.indexOf('Changelogs') === -1) tabs.unshift(CATCH_ALL_TAB);
+          // No catch-all tab: a result that matched none of the branches above
+          // (tabs still empty) appears in no tab, which is deliberate — every
+          // result must earn a place in one of the named tabs.
           return Object.assign({}, source, { tabs: tabs, url: url });
         },
         // Follow Mintlify's `.dark` class on <html>.
@@ -241,6 +249,7 @@
       },
       searchSettings: {
         placeholder: 'Search ClickHouse docs...',
+        defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
         // so fast typing issues one query instead of one per character.
         debounceTimeMs: 300,

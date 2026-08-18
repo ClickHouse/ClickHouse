@@ -16,6 +16,8 @@ namespace ErrorCodes
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
+class MatchedRowsStats;
+
 struct JoinOnKeyColumns
 {
     Names key_names;
@@ -39,6 +41,18 @@ struct JoinOnKeyColumns
     {
         return join_mask_column.isRowFiltered(i);
     }
+
+    /// A row with a NULL key and a row filtered out by the ON-section mask have the same
+    /// effect - the row matches nothing - so the probe loop needs a single skip byte per
+    /// row instead of two checks. Returns the skip bytes (indexed by source-block row,
+    /// 1 = skip), prepared once per call: without an ON-section condition the null map is
+    /// returned directly, no copy (nullptr when the keys are not nullable either = no row
+    /// is skipped); with one, `buffer` is filled with the merged null-and-mask bytes.
+    /// Only the positions the caller will probe are written (continuation chunks and
+    /// scattered shards visit a subset of the source block); the rest of `buffer` stays
+    /// uninitialized and must not be read.
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
+    const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };
 
 struct LazyOutput
@@ -134,7 +148,8 @@ public:
         ExpressionActionsPtr additional_filter_expression_,
         const std::vector<std::pair<size_t, size_t>> & additional_filter_required_rhs_pos_,
         bool is_asof_join,
-        bool is_join_get_)
+        bool is_join_get_,
+        bool record_refs_for_stats)
         : left_block(left_block_.getSourceBlock())
         , join_on_keys(join_on_keys_)
         , additional_filter_expression(additional_filter_expression_)
@@ -149,7 +164,7 @@ public:
 
         if constexpr (lazy)
         {
-            has_columns_to_add = num_columns_to_add > 0;
+            record_row_refs = num_columns_to_add > 0 || record_refs_for_stats;
             lazy_output.reserve(rows_to_add);
         }
 
@@ -230,7 +245,7 @@ public:
         }
         else
         {
-            if (has_columns_to_add)
+            if (record_row_refs)
                 lazy_output.addDefault();
         }
     }
@@ -261,7 +276,12 @@ public:
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
     // default_count cannot represent the position of the row
     LazyOutput lazy_output;
-    bool has_columns_to_add;
+    bool record_row_refs = false;
+
+    /// Non-owning; set only under EXPLAIN ANALYZE
+    MatchedRowsStats * match_stats = nullptr;
+
+    size_t matched_left_rows = 0;
 
     void reserve(bool need_replicate)
     {

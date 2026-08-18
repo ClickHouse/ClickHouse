@@ -8,6 +8,7 @@ keywords: ['roles personalizados', 'seguridad', 'permisos']
 ---
 
 import { Image } from "/snippets/es/components/Image.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Esta guía está dirigida a usuarios con el rol Admin en ClickHouse Cloud.
 
@@ -20,41 +21,31 @@ Los clientes de ClickHouse Cloud pueden elegir entre roles del sistema predefini
 Los roles personalizados pueden incluir una combinación de permisos de organización, servicio y base de datos. Los permisos pueden aplicarse a todos los servicios y bases de datos o a un subconjunto de ellos.
 
 <Steps>
-  <Step>
-    ### Acceda a la configuración de la organización y seleccione Users and roles
-
+  <Step title="Acceda a la configuración de la organización y seleccione Users and roles" id="users-and-roles-1">
     En la página de servicios, seleccione el nombre de su organización. En el menú emergente, seleccione la opción `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Seleccione la pestaña `Roles`
-
+  <Step title={<>Seleccione la pestaña <code>Roles</code></>} id="roles-tab">
     Seleccione la pestaña `Roles` en la parte superior central de la pantalla.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Seleccione `Create new role` en la esquina superior derecha
-
+  <Step title={<>Seleccione <code>Create new role</code> en la esquina superior derecha</>} id="create-new-role">
     Seleccione el botón `Create new role` en la esquina superior derecha de la pantalla.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
   </Step>
 
-  <Step>
-    ### Asigne un nombre al rol
-
+  <Step title="Asigne un nombre al rol" id="name-the-role">
     Introduzca un nombre descriptivo para el rol. Este será el nombre que verá al asignar roles a usuarios y claves de API.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Haga clic en `Allow` y seleccione el alcance de los permisos
-
+  <Step title={<>Haga clic en <code>Allow</code> y seleccione el alcance de los permisos</>} id="scope-permissions">
     Haga clic en el botón `Allow` y seleccione permisos de organización, servicio y/o base de datos. Para ver una descripción de todos los permisos, consulte [Console roles and permissions](/es/products/cloud/reference/security/console-roles).
 
     <Tip>
@@ -64,20 +55,72 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
     <Info>
       **Acceso a la pestaña Data Sources**
 
-      Para acceder a la pestaña **Data Sources**, el rol requiere actualmente el permiso `Manage and Delete Selected Services`.
+      Para acceder a la pestaña **Data Sources**, el rol requiere actualmente el permiso `Manage selected services`.
     </Info>
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
   </Step>
 
-  <Step>
-    ### Revise su nuevo rol
-
+  <Step title="Revise su nuevo rol" id="review-role">
     Revise los permisos asignados a su nuevo rol antes de finalizar. Cuando haya terminado, haga clic en `Create role`.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
   </Step>
 </Steps>
+
+<div id="manage-database-roles">
+  ## Administrar roles de base de datos (beta)
+</div>
+
+<BetaBadge />
+
+Además de los permisos de la consola, los roles personalizados pueden incluir permisos de datos que controlan el acceso a las bases de datos de los servicios seleccionados. Esto permite administrar el acceso a la consola y a las bases de datos desde un único lugar, en vez de mantener roles independientes en cada base de datos.
+
+<Note>
+  Esta función se encuentra en beta y está disponible para servicios que ejecutan ClickHouse versión 26.4 o posterior.
+</Note>
+
+Al añadir permisos de datos a un rol personalizado, ClickHouse Cloud crea un rol correspondiente en cada servicio seleccionado con el prefijo `cloud:`. Por ejemplo, un rol personalizado llamado `readonly` aparece en la base de datos como `cloud:readonly`. Los miembros del rol personalizado reciben estos permisos de base de datos al conectarse al servicio mediante la autenticación sin contraseña de SQL Console.
+
+<Info>
+  Los roles asignados manualmente en la base de datos mediante la [convención de nomenclatura `sql-console-role:<email>`](/es/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles) tienen prioridad sobre los roles asignados mediante la consola.
+</Info>
+
+<Steps>
+  <Step title="Añadir permisos de datos a un rol" id="add-data-permissions">
+    [Cree un rol personalizado](#create-custom-role) o edite uno existente. En el cuadro de diálogo del rol, haga clic en el botón `Allow permissions` y seleccione `Data`.
+  </Step>
+
+  <Step title="Seleccionar el servicio" id="select-data-permissions-service">
+    Seleccione el servicio al que se aplicarán los permisos. Añada más servicios para aplicar permisos a varios servicios.
+  </Step>
+
+  <Step title="Elegir el nivel de acceso" id="choose-data-access-level">
+    Seleccione el acceso `Read-only`, `Admin` o `Custom`. Con el acceso `Custom`, defina permisos específicos de acceso a datos mediante sentencias [`GRANT`](/es/reference/statements/grant) de ClickHouse.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Cuadro de diálogo para crear un rol con permisos de datos definidos mediante sentencias GRANT personalizadas" size="md" />
+  </Step>
+
+  <Step title="Crear el rol" id="create-role-with-data-permissions">
+    Haga clic en `Create role`. Los roles de base de datos se crearán en los servicios seleccionados.
+  </Step>
+</Steps>
+
+<div id="verify-database-roles">
+  ### Verificar roles de base de datos
+</div>
+
+Los roles administrados mediante la consola se crean en la base de datos con el prefijo `cloud:` y el tipo de almacenamiento `cloud`. Para listarlos, consulte la tabla `system.roles` del servicio:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
 
 <div id="update-custom-role">
   ## Actualizar roles personalizados

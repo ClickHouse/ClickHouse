@@ -28,9 +28,7 @@ doc_type: 'guide'
 你可以在 Python REPL 中或通过脚本执行以下步骤。
 
 <Steps>
-  <Step>
-    ## 安装库
-
+  <Step title="安装库" id="install-libraries">
     运行以下命令安装所需库：
 
     ```python
@@ -40,14 +38,12 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 配置凭据
-
+  <Step title="配置凭据" id="setup-credentials">
     接下来，你需要提供 Anthropic API key：
 
     ```python
     import os, getpass
-    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("输入 Anthropic API Key:")
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
     ```
 
     ```response title="响应"
@@ -74,9 +70,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 初始化 MCP 服务器和 PydanticAI 智能体
-
+  <Step title="初始化 MCP 服务器和 PydanticAI 智能体" id="initialize-mcp">
     现在，将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground：
 
     ```python
@@ -98,9 +92,7 @@ doc_type: 'guide'
     ```
   </Step>
 
-  <Step>
-    ## 向智能体提问
-
+  <Step title="向智能体提问" id="ask-agent">
     最后，你可以向智能体提出一个问题：
 
     ```python

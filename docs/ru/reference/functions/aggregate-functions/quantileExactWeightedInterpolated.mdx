@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 Добавленный в: v24.10.0
 
-Вычисляет [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности с помощью линейной интерполяции с учетом веса каждого элемента.
+Вычисляет [квантиль](https://en.wikipedia.org/wiki/Quantile) числовой последовательности данных с помощью линейной интерполяции с учетом веса каждого элемента.
 
 Чтобы получить интерполированное значение, все переданные значения объединяются в массив, после чего элементы сортируются по соответствующим весам.
 Затем интерполяция квантилей выполняется с использованием [метода взвешенного процентиля](https://en.wikipedia.org/wiki/Percentile#The_weighted_percentile_method): строится кумулятивное распределение на основе весов, а затем по весам и значениям выполняется линейная интерполяция для вычисления квантилей.
@@ -39,12 +39,12 @@ quantileExactWeightedInterpolated(level)(expr, weight)
 
 **Аргументы**
 
-* `expr` — Выражение над значениями столбца, возвращающее данные числовых типов, `Date` или `DateTime`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+* `expr` — Выражение над значениями столбца, возвращающее данные числовых типов, `Date`, `DateTime` или `DateTime64`. [`(U)Int*`](/ru/reference/data-types/int-uint) или [`Int128`](/ru/reference/data-types/int-uint) или [`UInt128`](/ru/reference/data-types/int-uint) или [`Int256`](/ru/reference/data-types/int-uint) или [`UInt256`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 * `weight` — Столбец с весами элементов последовательности. Вес — это число вхождений значения. [`UInt*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
-Квантиль указанного уровня. [`Float64`](/ru/reference/data-types/float) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime)
+Квантиль указанного уровня. Числовые аргументы возвращают `Float64`, а аргументы `Decimal`, `Date`, `DateTime` и `DateTime64` сохраняют исходный формат. [`Float64`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`Date`](/ru/reference/data-types/date) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64)
 
 **Примеры**
 

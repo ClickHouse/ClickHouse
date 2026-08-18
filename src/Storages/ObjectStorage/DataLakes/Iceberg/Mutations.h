@@ -20,6 +20,14 @@
 namespace DB::Iceberg
 {
 
+/// Fast pre-check that throws `NOT_IMPLEMENTED` when the table's configured
+/// `write_format` is not Parquet. Mutations rely on Parquet for the
+/// position-delete file format; other formats either fail on write (e.g. ORC)
+/// or produce data that cannot be read back, corrupting the table.
+/// This is a configured-format-only check; the deeper per-data-file check (for
+/// mixed-format tables) lives in `IcebergMetadata::mutate`.
+void validateMutationWriteFormat(const String & write_format);
+
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,

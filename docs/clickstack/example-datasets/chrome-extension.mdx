@@ -35,16 +35,14 @@ For background on session replay and how it fits into ClickStack, see the [Sessi
 ## Running the demo {#running-the-demo}
 
 <Steps>
-<Step>
-### Clone the extension repository {#clone-extension}
+<Step title="Clone the extension repository" id="clone-extension">
 
 ```shell
 git clone https://github.com/kyreddie/hyperdx-chrome-extension
 cd hyperdx-chrome-extension
 ```
 </Step>
-<Step>
-### Install the extension {#install-extension}
+<Step title="Install the extension" id="install-extension">
 
 1. Open Chrome and go to `chrome://extensions`.
 2. Enable **Developer mode** (top right).
@@ -53,8 +51,7 @@ cd hyperdx-chrome-extension
 
 The extension appears in your toolbar as **HyperDX Browser Extension**.
 </Step>
-<Step>
-### Start ClickStack {#start-clickstack}
+<Step title="Start ClickStack" id="start-clickstack">
 
 If you already have a ClickStack or HyperDX ingestion endpoint, skip to [Configure the extension](#configure-extension).
 
@@ -78,15 +75,13 @@ Open HyperDX at [http://localhost:8080](http://localhost:8080) to confirm the UI
 
 For a full local deployment with ClickHouse and HyperDX UI, see [Getting started with ClickStack](/clickstack/getting-started/oss).
 </Step>
-<Step>
-### Get your API key {#get-api-key}
+<Step title="Get your API key" id="get-api-key">
 
 For local ClickStack, an API key may not be required — leave the field empty in the extension when sending telemetry to a self-hosted collector on `http://localhost:4318`.
 
 For ClickStack Cloud or HyperDX Cloud ingestion, open HyperDX, go to **Team Settings → API Keys**, and copy your **Ingestion API Key**.
 </Step>
-<Step>
-### Configure the extension {#configure-extension}
+<Step title="Configure the extension" id="configure-extension">
 
 Click the **HyperDX Browser Extension** icon in the Chrome toolbar and fill in the settings:
 
@@ -108,15 +103,13 @@ Click **Save Configuration**, then reload any tabs you want to instrument.
 
 The screenshot above shows a typical local setup: monitoring enabled, service name set, collector pointed at `http://localhost:4318`, and trace propagation limited to API and localhost URLs.
 </Step>
-<Step>
-### Browse a site and generate a session {#browse-site}
+<Step title="Browse a site and generate a session" id="browse-site">
 
 Open any website or local application in Chrome — for example, [http://localhost:3000](http://localhost:3000) for a frontend dev server.
 
 Interact with the page normally: click links, submit forms, trigger errors, and navigate between views. The extension injects the Browser SDK automatically on each page load when configuration is valid.
 </Step>
-<Step>
-### View your session replay {#view-session-replay}
+<Step title="View your session replay" id="view-session-replay">
 
 Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 

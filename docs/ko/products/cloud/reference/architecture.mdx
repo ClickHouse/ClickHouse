@@ -70,6 +70,6 @@ GCP와 Azure에서는 서비스별 객체 스토리지 격리가 제공됩니다
   ## 동시성 제한
 </div>
 
-ClickHouse Cloud 서비스에는 초당 쿼리 수(QPS) 제한이 없습니다. 다만 동시에 실행할 수 있는 쿼리는 레플리카당 1000개까지입니다. QPS는 결국 평균 쿼리 실행 시간과 서비스의 레플리카 수에 따라 결정됩니다.
+ClickHouse Cloud 서비스에는 초당 쿼리 수(QPS) 제한이 없습니다. 다만, 레플리카당 동시 쿼리는 1000개까지로 제한됩니다. QPS는 결국 평균 쿼리 실행 시간과 서비스의 레플리카 수에 따라 결정됩니다.
 
-자가 관리형 ClickHouse 인스턴스나 다른 데이터베이스/데이터 웨어하우스와 비교할 때 ClickHouse Cloud의 주요 장점 중 하나는 [레플리카를 더 추가하는 방식(수평 스케일링)](/ko/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)으로 동시성을 쉽게 높일 수 있다는 점입니다.
+ClickHouse Cloud는 자가 관리형 ClickHouse 인스턴스나 다른 데이터베이스/데이터 웨어하우스와 비교했을 때, [레플리카를 추가해(수평 스케일링)](/ko/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling) 동시성을 쉽게 높일 수 있다는 점이 큰 장점입니다.

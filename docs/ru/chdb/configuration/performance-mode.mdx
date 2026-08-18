@@ -1,0 +1,331 @@
+---
+title: 'Режим производительности (compat_mode)'
+sidebarTitle: 'Режим производительности'
+slug: /chdb/configuration/performance-mode
+description: 'SQL-ориентированный режим производительности, отключающий накладные расходы на совместимость с pandas для максимальной пропускной способности'
+keywords: ['chdb', 'datastore', 'производительность', 'режим', 'compat', 'sql-first', 'оптимизация']
+doc_type: 'руководство'
+---
+
+DataStore поддерживает два режима совместимости, которые определяют, будет ли вывод адаптирован для совместимости с pandas или оптимизирован для производительности Raw SQL.
+
+<div id="overview">
+  ## Обзор
+</div>
+
+| Режим                     | значение `compat_mode` | Описание                                                                                                                                                                                                                  |
+| ------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Pandas** (по умолчанию) | `"pandas"`             | Полная совместимость с поведением pandas. Сохраняется порядок строк, поддерживаются MultiIndex, set&#95;index, корректировка Dtype, стабильная сортировка с сохранением порядка при равных ключах, обёртки `-If`/`isNaN`. |
+| **Performance**           | `"performance"`        | Выполнение с приоритетом SQL. Устранены все издержки, связанные с совместимостью с pandas. Максимальная пропускная способность, но структура результатов может отличаться от pandas.                                      |
+
+<div id="what-it-disables">
+  ### Что отключается в режиме производительности
+</div>
+
+| Накладные расходы                                | Поведение в режиме Pandas                                                          | Поведение в режиме производительности                                         |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| **Сохранение порядка строк**                     | добавление `_row_id`, `rowNumberInAllBlocks()`, подзапросы `__orig_row_num__`      | Отключено — порядок строк не гарантируется                                    |
+| **Стабильный тай-брейкер при сортировке**        | `rowNumberInAllBlocks() ASC` добавляется в ORDER BY                                | Отключено — строки с одинаковыми значениями могут идти в произвольном порядке |
+| **Parquet preserve&#95;order**                   | `input_format_parquet_preserve_order=1`                                            | Отключено — разрешено параллельное чтение Parquet                             |
+| **Автоматический ORDER BY для GroupBy**          | добавляется `ORDER BY group_key` (значение `sort=True` в pandas по умолчанию)      | Отключено — группы возвращаются в произвольном порядке                        |
+| **WHERE для dropna в GroupBy**                   | добавляется `WHERE key IS NOT NULL` (значение `dropna=True` в pandas по умолчанию) | Отключено — группы с NULL включаются                                          |
+| **set&#95;index для GroupBy**                    | Ключи группировки задаются как индекс                                              | Отключено — ключи группировки остаются столбцами                              |
+| **Столбцы MultiIndex**                           | `agg({'col': ['sum','mean']})` возвращает столбцы MultiIndex                       | Отключено — плоские имена столбцов (`col_sum`, `col_mean`)                    |
+| **Обёртки `-If`/`isNaN`**                        | `sumIf(col, NOT isNaN(col))` для skipna                                            | Отключено — обычный `sum(col)` (ClickHouse нативно пропускает NULL)           |
+| **`toInt64` для count**                          | `toInt64(count())` для соответствия pandas int64                                   | Отключено — возвращается нативный SQL Dtype                                   |
+| **`fillna(0)` для sum, состоящей только из NaN** | Сумма, где все значения — NaN, возвращает 0 (поведение pandas)                     | Отключено — возвращает NULL                                                   |
+| **Корректировки Dtype**                          | `abs()` unsigned→signed и т. д.                                                    | Отключено — нативные типы SQL                                                 |
+| **Сохранение индекса**                           | Восстанавливает исходный индекс после выполнения SQL                               | Отключено                                                                     |
+| **`first()`/`last()`**                           | `argMin/argMax(col, rowNumberInAllBlocks())`                                       | `any(col)` / `anyLast(col)` — быстрее, но недетерминированно                  |
+| **Агрегация в одном SQL**                        | ColumnExpr groupby материализует промежуточный DataFrame                           | Встраивает `LazyGroupByAgg` в цепочку отложенных операций — один SQL-запрос   |
+
+***
+
+<div id="enabling">
+  ## Включение режима производительности
+</div>
+
+<div id="using-config">
+  ### Использование объекта config
+</div>
+
+```python
+from chdb.datastore.config import config
+
+# Enable performance mode
+config.use_performance_mode()
+
+# Back to pandas compatibility
+config.use_pandas_compat()
+
+# Check current mode
+print(config.compat_mode)  # 'pandas' or 'performance'
+```
+
+<div id="using-functions">
+  ### Использование функций на уровне модуля
+</div>
+
+```python
+from chdb.datastore.config import set_compat_mode, CompatMode, is_performance_mode
+
+# Enable performance mode
+set_compat_mode(CompatMode.PERFORMANCE)
+
+# Check
+print(is_performance_mode())  # True
+
+# Back to default
+set_compat_mode(CompatMode.PANDAS)
+```
+
+<div id="using-imports">
+  ### Использование сокращённых импортов
+</div>
+
+```python
+from chdb import use_performance_mode, use_pandas_compat
+
+use_performance_mode()
+# ... high-performance operations ...
+use_pandas_compat()
+```
+
+<Note>
+  Включение режима производительности автоматически устанавливает движок выполнения `chdb`. Отдельно вызывать `config.use_chdb()` не нужно.
+</Note>
+
+***
+
+<div id="when-to-use">
+  ## Когда использовать режим производительности
+</div>
+
+**Используйте режим производительности, если:**
+
+* Обрабатываете большие наборы данных (от сотен тысяч до миллионов строк)
+* Запускаете рабочие нагрузки с интенсивной агрегацией (groupby, sum, mean, count)
+* Порядок строк не имеет значения (например, для агрегированных результатов, отчетов и панелей мониторинга)
+* Вам нужна максимальная пропускная способность SQL и минимальные накладные расходы
+* Вас беспокоит использование памяти (параллельное чтение Parquet, без промежуточных `DataFrame`)
+
+**Оставайтесь в режиме pandas, если:**
+
+* Вам нужно точное поведение pandas (порядок строк, MultiIndex, dtypes)
+* Для вас важно, чтобы `first()`/`last()` возвращали действительно первую/последнюю строку
+* Вы используете `shift()`, `diff()`, `cumsum()`, которые зависят от порядка строк
+* Вы пишете тесты, сравнивающие вывод DataStore с pandas
+
+***
+
+<div id="behavior-differences">
+  ## Различия в поведении
+</div>
+
+<div id="row-order">
+  ### Порядок строк
+</div>
+
+В режиме производительности порядок строк **не гарантируется** ни для каких операций. Это относится к следующему:
+
+* Результаты фильтрации
+* Результаты агрегирования GroupBy
+* `head()` / `tail()` без явного `sort_values()`
+* Агрегации `first()` / `last()`
+
+Если вам нужны упорядоченные результаты, добавьте явный `sort_values()`:
+
+```python
+config.use_performance_mode()
+
+ds = pd.read_csv("data.csv")
+
+# Unordered (fast)
+result = ds.groupby("region")["revenue"].sum()
+
+# Ordered (still fast, just adds ORDER BY)
+result = ds.groupby("region")["revenue"].sum().sort_values()
+```
+
+<div id="groupby-results">
+  ### Результаты GroupBy
+</div>
+
+| Аспект                    | режим Pandas                             | режим производительности                |
+| ------------------------- | ---------------------------------------- | --------------------------------------- |
+| Расположение ключа группы | Индекс (через `set_index`)               | Обычный столбец                         |
+| Порядок групп             | Сортируются по ключу (по умолчанию)      | Произвольный порядок                    |
+| Группы NULL               | Исключаются (по умолчанию `dropna=True`) | Включаются                              |
+| Формат столбцов           | MultiIndex для множественной агрегации   | Плоские имена (`col_func`)              |
+| `first()`/`last()`        | Детерминированы (порядок строк)          | Недетерминированы (`any()`/`anyLast()`) |
+
+<div id="aggregation">
+  ### Агрегация
+</div>
+
+```python
+config.use_performance_mode()
+
+# Sum of all-NaN group returns NULL (not 0)
+# Count returns native uint64 (not forced int64)
+# No -If wrappers: sum() instead of sumIf()
+result = ds.groupby("cat")["val"].sum()
+```
+
+<div id="single-sql">
+  ### Выполнение одним SQL-запросом
+</div>
+
+В режиме производительности агрегация GroupBy для `ColumnExpr` (например, `ds[condition].groupby('col')['val'].sum()`) выполняется как **один SQL-запрос**, а не в два этапа, как в режиме pandas:
+
+```python
+config.use_performance_mode()
+
+# Pandas mode: two SQL queries (filter → materialize → groupby)
+# Performance mode: one SQL query (WHERE + GROUP BY in same query)
+result = ds[ds["rating"] > 3.5].groupby("category")["revenue"].sum()
+
+# Generated SQL (single query):
+# SELECT category, sum(revenue) FROM data WHERE rating > 3.5 GROUP BY category
+```
+
+Это исключает промежуточную материализацию DataFrame и может значительно сократить использование памяти и время выполнения.
+
+***
+
+<div id="vs-execution-engine">
+  ## Сравнение с движком выполнения
+</div>
+
+Режим производительности (`compat_mode`) и движок выполнения (`execution_engine`) — **независимые параметры конфигурации**:
+
+| Конфигурация       | Управляет                                                      | Значения                 |
+| ------------------ | -------------------------------------------------------------- | ------------------------ |
+| `execution_engine` | **Каким движком** выполняются вычисления                       | `auto`, `chdb`, `pandas` |
+| `compat_mode`      | **Нужно ли** изменять формат вывода для совместимости с pandas | `pandas`, `performance`  |
+
+При установке `compat_mode='performance'` параметр `execution_engine` автоматически получает значение `chdb`, поскольку режим производительности предназначен для выполнения SQL.
+
+```python
+from chdb.datastore.config import config
+
+# These are independent
+config.use_chdb()              # Force chDB engine, keep pandas compat
+config.use_performance_mode()  # Force chDB + remove pandas overhead
+```
+
+***
+
+<div id="testing">
+  ## Тестирование в режиме производительности
+</div>
+
+При тестировании в режиме производительности результаты могут отличаться от pandas порядком строк и структурой данных. Используйте следующие стратегии:
+
+<div id="sort-then-compare">
+  ### Сортировка с последующим сравнением (агрегации, фильтры)
+</div>
+
+```python
+# Sort both sides by the same columns before comparing
+ds_result = ds.groupby("cat")["val"].sum()
+pd_result = pd_df.groupby("cat")["val"].sum()
+
+ds_sorted = ds_result.sort_index()
+pd_sorted = pd_result.sort_index()
+np.testing.assert_array_equal(ds_sorted.values, pd_sorted.values)
+```
+
+<div id="value-range-check">
+  ### Проверка диапазона значений (первое/последнее)
+</div>
+
+```python
+# first() with any() returns an arbitrary element from the group
+result = ds.groupby("cat")["val"].first()
+for group_key in groups:
+    assert result.loc[group_key] in group_values[group_key]
+```
+
+<div id="schema-and-count">
+  ### Схема и количество строк (LIMIT без ORDER BY)
+</div>
+
+```python
+# head() without sort_values: row set is non-deterministic
+result = ds.head(5)
+assert len(result) == 5
+assert set(result.columns) == expected_columns
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="enable-early">
+  ### 1. Включайте в самом начале скрипта
+</div>
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# All subsequent operations benefit
+ds = pd.read_parquet("data.parquet")
+result = ds[ds["amount"] > 100].groupby("region")["amount"].sum()
+```
+
+<div id="explicit-sort">
+  ### 2. Явно задавайте сортировку, когда важен порядок
+</div>
+
+```python
+# For display or downstream processing that expects order
+result = (ds
+    .groupby("region")["revenue"].sum()
+    .sort_values(ascending=False)
+)
+```
+
+<div id="batch-etl">
+  ### 3. Используйте для пакетных и ETL-нагрузок
+</div>
+
+```python
+config.use_performance_mode()
+
+# ETL pipeline — order doesn't matter, throughput does
+summary = (ds
+    .filter(ds["date"] >= "2024-01-01")
+    .groupby(["region", "product"])
+    .agg({"revenue": "sum", "quantity": "sum", "rating": "mean"})
+)
+summary.to_df().to_parquet("summary.parquet")
+```
+
+<div id="switch-modes">
+  ### 4. Переключение режимов в сеансе
+</div>
+
+```python
+# Performance mode for heavy computation
+config.use_performance_mode()
+aggregated = ds.groupby("cat")["val"].sum()
+
+# Back to pandas mode for exact-match comparison
+config.use_pandas_compat()
+detailed = ds[ds["val"] > 100].head(10)
+```
+
+***
+
+<div id="related">
+  ## Сопутствующая документация
+</div>
+
+* [Движок выполнения](/ru/chdb/configuration/execution-engine) — Выбор движка (auto/chDB/pandas)
+* [Руководство по производительности](/ru/chdb/guides/pandas-performance) — Общие рекомендации по оптимизации
+* [Основные отличия от pandas](/ru/chdb/guides/pandas-differences) — Различия в поведении

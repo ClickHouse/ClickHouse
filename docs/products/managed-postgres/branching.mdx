@@ -7,17 +7,17 @@ keywords: ['managed postgres', 'branching', 'pitr', 'point-in-time recovery', 's
 doc_type: 'guide'
 ---
 
-Managed Postgres supports creating isolated database branches using Point-in-Time Recovery (PITR).
+ClickHouse Managed Postgres supports creating isolated database branches using Point-in-Time Recovery (PITR).
 
 A branch is a fully independent PostgreSQL deployment created from a specific point in time of an existing database. Branches can be used for development, staging, testing, debugging, data validation, or recovery workflows — without impacting the source database.
 
-Unlike copy-on-write implementations that share storage with the primary database, Managed Postgres branches are restored from backups and operate as independent PostgreSQL deployments.
+Unlike copy-on-write implementations that share storage with the primary database, ClickHouse Managed Postgres branches are restored from backups and operate as independent PostgreSQL deployments.
 
 ## How branching works {#branching}
 
 Branch creation is built on the same backup and recovery infrastructure used for [Point-in-Time Recovery (PITR)](/products/managed-postgres/backup-and-restore).
 
-When you create a branch, Managed Postgres restores a base backup from object storage, replays the required WAL segments to reach the requested recovery point, and provisions a new PostgreSQL deployment from the recovered state. Once recovery completes, the branch operates independently of the source database.
+When you create a branch, ClickHouse Managed Postgres restores a base backup from object storage, replays the required WAL segments to reach the requested recovery point, and provisions a new PostgreSQL deployment from the recovered state. Once recovery completes, the branch operates independently of the source database.
 
 The resulting branch is a complete copy of the source database at the selected point in time.
 
@@ -47,7 +47,7 @@ For example, a production deployment may run on a larger configuration while a d
 
 ## Branch creation time {#branch-creation-time}
 
-Because Managed Postgres uses NVMe-backed PostgreSQL storage, branches are restored from backups rather than created through storage-level copy-on-write mechanisms. As a result, branch creation isn't instantaneous.
+Because ClickHouse Managed Postgres uses NVMe-backed PostgreSQL storage, branches are restored from backups rather than created through storage-level copy-on-write mechanisms. As a result, branch creation isn't instantaneous.
 
 Typical branch creation times range from several minutes to tens of minutes, depending on:
 

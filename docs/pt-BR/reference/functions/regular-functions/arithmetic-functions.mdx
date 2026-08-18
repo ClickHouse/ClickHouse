@@ -259,7 +259,7 @@ SELECT byteSwap(123294967295)
   ## divide
 </div>
 
-Introduzido na versão: v1.1.0
+Introduzido em: v1.1.0
 
 Calcula o quociente entre dois valores, `a` e `b`. O tipo do resultado é sempre [Float64](/pt-BR/reference/data-types/float).
 A divisão inteira é fornecida pela função `intDiv`.
@@ -404,7 +404,7 @@ Introduzido em: v1.1.0
 
 Retorna o máximo divisor comum de dois valores a e b.
 
-Uma exceção é gerada ao dividir por zero ou ao dividir o menor número
+Uma exceção é lançada ao dividir por zero ou ao dividir o menor número
 negativo por menos um.
 
 **Sintaxe**
@@ -778,8 +778,8 @@ max2(x, y)
 
 **Argumentos**
 
-* `x` — Primeiro valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint), [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
-* `y` — Segundo valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint), [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `x` — Primeiro valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `y` — Segundo valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
 
 **Valor retornado**
 
@@ -899,8 +899,8 @@ min2(x, y)
 
 **Argumentos**
 
-* `x` — Primeiro valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
-* `y` — Segundo valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `x` — Primeiro valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+* `y` — Segundo valor [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`BFloat16`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
 
 **Valor retornado**
 
@@ -1050,8 +1050,9 @@ SELECT moduloLegacy(10, 3)
 
 Introduzido em: v25.5.0
 
-Calcula o resto da divisão de `a` por `b`. Semelhante à função `modulo`, exceto que `moduloOrNull` retorna NULL
-se o argumento da direita for 0.
+Calcula o resto da divisão de `a` por `b`. Semelhante à função `modulo`, exceto que `moduloOrNull` retorna `NULL`
+quando a operação, de outra forma, geraria uma exceção de ponto flutuante. Para argumentos de ponto flutuante, isso acontece apenas quando o
+divisor é `0`; para argumentos inteiros, isso também inclui o menor valor negativo módulo `-1` (por exemplo, `-128 % -1` para `Int8`).
 
 **Sintaxe**
 
@@ -1068,7 +1069,8 @@ moduloOrNull(x, y)
 
 **Valor retornado**
 
-Retorna o resto da divisão de `x` por `y`, ou `NULL` quando o divisor é zero.
+Retorna o resto da divisão de `x` por `y`, ou `NULL` quando a operação geraria uma exceção de ponto flutuante:
+quando o divisor é zero ou, para argumentos inteiros, ao calcular o menor valor negativo módulo `-1`.
 
 **Exemplos**
 
@@ -1076,6 +1078,16 @@ Retorna o resto da divisão de `x` por `y`, ou `NULL` quando o divisor é zero.
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull do menor inteiro negativo por -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1198,7 +1210,8 @@ SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
 **Diferença em relação à multiplicação normal**
 
 ```sql title=Query
-SELECT multiplyDecimal(toDecimal256(-12, 0), toDecimal32(-2.1, 1), 1)
+SELECT multiply(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
+SELECT multiplyDecimal(toDecimal64(-12.647, 3), toDecimal32(2.1239, 4));
 ```
 
 ```response title=Response
@@ -1371,8 +1384,9 @@ SELECT positiveModulo(-1, 10)
 
 Introduzido em: v25.5.0
 
-Calcula o resto da divisão de `a` por `b`. Semelhante à função `positiveModulo`, exceto que `positiveModuloOrNull` retornará NULL
-se o argumento da direita for 0.
+Calcula o resto da divisão de `a` por `b`. Semelhante à função `positiveModulo`, exceto que `positiveModuloOrNull` retorna `NULL`
+quando a operação, de outra forma, geraria uma exceção de ponto flutuante. Para argumentos de ponto flutuante, isso acontece apenas quando o
+divisor é `0`; para argumentos inteiros, isso também cobre o menor valor negativo módulo `-1` (por exemplo, `-128 % -1` para `Int8`).
 
 **Sintaxe**
 
@@ -1388,12 +1402,12 @@ positiveModuloOrNull(x, y)
 
 **Valor retornado**
 
-Retorna a diferença entre `x` e o inteiro mais próximo divisível por `y` que não seja maior que
-`x`; `null` quando o divisor é zero.
+Retorna a diferença entre `x` e o maior inteiro não superior a `x` que seja divisível por `y`, ou `NULL` quando a operação geraria uma exceção de ponto flutuante: quando o divisor é zero ou,
+para argumentos inteiros, ao calcular o menor valor negativo módulo `-1`.
 
 **Exemplos**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull por zero**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
@@ -1401,6 +1415,50 @@ SELECT positiveModuloOrNull(5, 0)
 
 ```response title=Response
 \N
+```
+
+**positiveModuloOrNull do menor inteiro negativo por -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
+```
+
+```response title=Response
+\N
+```
+
+<div id="sqr">
+  ## sqr
+</div>
+
+Introduzido em: v26.7.0
+
+Calcula o quadrado de um valor `x`.
+
+**Sintaxe**
+
+```sql
+sqr(x)
+```
+
+**Argumentos**
+
+* `x` — Valor a ser elevado ao quadrado. [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float) ou [`Decimal`](/pt-BR/reference/data-types/decimal)
+
+**Valor retornado**
+
+Retorna o produto de `x` por ele mesmo.
+
+**Exemplos**
+
+**Elevando um número ao quadrado**
+
+```sql title=Query
+SELECT sqr(5)
+```
+
+```response title=Response
+25
 ```
 
 {/*AUTOGENERATED_END*/}
