@@ -2147,15 +2147,14 @@ UInt64 estimateNeededMemoryForMerge(
                 /// The read-back readers: past the first level the nested merge reads parts that are
                 /// themselves read-back results, so price the reader sets at the widest format a read-back
                 /// input can have (the final format when it is wider than the temporary parts') - capped by
-                /// the rebuilt volume: MergeTreeReaderStream sizes every stream's buffer by the bytes that
-                /// stream will actually read (adjustBufferSize, on by default with no override on the merge
-                /// path), so the readers of one nested merge can never hold more than the on-disk data of
-                /// the parts they merge, which is at most the whole rebuilt volume.
+                /// twice the rebuilt volume. MergeTreeReaderStream can retain both a compressed file buffer
+                /// and its decompressed block, and each side is bounded by the input volume. The readers of
+                /// one nested merge see no more than the whole rebuilt volume.
                 const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
                     projection_read_buffer_size);
                 projection_memory += std::min(projection_worst_case, projection_data_bound)
-                    + std::min(read_back_reader_worst_case, projection_uncompressed_bytes);
+                    + std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes));
             }
         }
     }
