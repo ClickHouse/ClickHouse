@@ -1024,59 +1024,35 @@ void MergeTreeData::checkProperties(
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
 
-    /// Rows are stored inside a part in sorting key order, so a value that changes on read leaves the part
-    /// mis-sorted. Not on attach: a table stored by an earlier version stays loadable.
+    /// Check that the table sorting column is not compressed by a lossy codec (e.g. SZ3). Lossy codecs
+    /// lose precision and may destroy the sorting. Not on attach, so a table stored by an earlier version
+    /// stays loadable.
     if (!attach)
     {
-        /// Keyed by codec text as well as name, so replacing one lossy codec by another is still a new
-        /// pair rather than a restatement of the grandfathered one.
-        const auto lossy_sorting_key_columns = [](const StorageInMemoryMetadata & metadata)
+        /// Collecting the sort key columns.
+        for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
         {
-            std::set<std::pair<String, String>> result;
-            for (const auto & name : metadata.getColumnsRequiredForSortingKey())
-            {
-                const auto column = metadata.columns.tryGetColumnDescription(
-                    GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
-                if (!column || !column->codec)
-                    continue;
-
-                /// A codec applies to `Array(Float64)` through its float substream, not through the outer
-                /// type, so lossiness is resolved per substream the way the part writer resolves it.
-                bool lossy = false;
-                ISerialization::StreamCallback callback = [&](const auto & substream_path)
-                {
-                    if (lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
-                        return;
-                    const auto & substream_type = substream_path.back().data.type;
-                    lossy = CompressionCodecFactory::instance()
-                                .get(column->codec, substream_type.get())->isLossyCompression();
-                };
-                column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
-
-                if (lossy)
-                    result.emplace(name, column->codec->formatWithSecretsOneLine());
-            }
-            return result;
-        };
-
-        /// Only what this operation introduces, so an unrelated ALTER of a table stored by an earlier
-        /// version is not refused. On CREATE both arguments are the same object and nothing is excused.
-        const auto already_present = &old_metadata == &new_metadata
-            ? std::set<std::pair<String, String>>{}
-            : lossy_sorting_key_columns(old_metadata);
-
-        for (const auto & pair : lossy_sorting_key_columns(new_metadata))
-        {
-            if (already_present.contains(pair))
+            const auto column = new_metadata.columns.tryGetColumnDescription(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
+            if (!column || !column->codec)
                 continue;
 
-            const auto & name = pair.first;
+            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+            /// so lossiness is resolved per substream the way the part writer resolves it.
+            bool is_lossy = false;
+            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            {
+                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                    return;
+                is_lossy = CompressionCodecFactory::instance()
+                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+            };
+            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
 
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Column {} is compressed with a lossy codec and is used in the sorting key. A lossy codec does "
-                "not return the value that was written, so parts would be stored out of order. Use a lossless "
-                "codec for this column, or remove it from the sorting key.",
-                backQuoteIfNeed(name));
+            if (is_lossy)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} is used in the sorting key, so it cannot be compressed with a lossy codec",
+                    backQuoteIfNeed(name));
         }
     }
 
