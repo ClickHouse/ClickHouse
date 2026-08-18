@@ -60,22 +60,29 @@ def udf():
 
 
 def test_delete_from_on_cluster_expands_udf_absent_on_other_host(udf):
+    # The initiator's body decides which rows go on every host, so assert the surviving keys
+    # rather than their count: a count also passes when the wrong row was deleted.
     ch1.query("CREATE FUNCTION udf_key AS (x) -> x = 1")
     ch1.query("DELETE FROM t ON CLUSTER 'cluster' WHERE udf_key(key)")
     for node in (ch1, ch2):
-        assert node.query("SELECT count() FROM t") == "9\n"
+        assert (
+            node.query("SELECT arraySort(groupArray(key)) FROM t")
+            == "[0,2,3,4,5,6,7,8,9]\n"
+        )
 
 
 def test_delete_from_on_cluster_expands_udf_defined_differently(udf):
     # Divergent bodies delete different rows on each host without raising anywhere, so the row
-    # counts still match and only the surviving keys reveal it.
+    # counts still match. Asserting the initiator's key set on both hosts catches that divergence
+    # and a uniformly wrong answer, which comparing the two hosts to each other would not.
     ch1.query("CREATE FUNCTION udf_key AS (x) -> x = 1")
     ch2.query("CREATE FUNCTION udf_key AS (x) -> x = 2")
     ch1.query("DELETE FROM t ON CLUSTER 'cluster' WHERE udf_key(key)")
-    surviving = [
-        node.query("SELECT arraySort(groupArray(key)) FROM t") for node in (ch1, ch2)
-    ]
-    assert surviving[0] == surviving[1]
+    for node in (ch1, ch2):
+        assert (
+            node.query("SELECT arraySort(groupArray(key)) FROM t")
+            == "[0,2,3,4,5,6,7,8,9]\n"
+        )
 
 
 @pytest.fixture

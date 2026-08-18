@@ -5509,7 +5509,7 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
-Allow to execute alters which affects not only tables metadata, but also data on disk.
+Allows `ALTER` statements that modify data on disk, not only table metadata.
 
 When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
 `ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
