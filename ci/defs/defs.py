@@ -132,6 +132,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/utils",
+        path="./ci/docker/utils",
+        platforms=[Docker.Platforms.AMD],
+        depends_on=["clickhouse/fasttest"],
+    ),
+    Docker.Config(
         name="clickhouse/test-base",
         path="./ci/docker/test-base",
         platforms=Docker.Platforms.arm_amd,
