@@ -4414,41 +4414,25 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
 {
     const UInt64 readonly = aiSessionReadonly();
 
-    /// Whether the session would accept every statement of the query, and whether the read-only
-    /// tool would accept the query as well - in which case the confirmation of the user protects
-    /// them from nothing the agent could not do on its own.
-    size_t statements = 0;
+    /// Whether the session would accept every statement of the query.
     bool accepted_by_session = true;
-    bool accepted_by_read_only_tool = true;
 
     const std::optional<String> syntax_error = parseAIQueryStatements(query, [&](const IAST & ast)
     {
-        ++statements;
-
         if (readonly == 1)
         {
             /// Nothing but reads, and not a single setting change - neither a `SET` statement nor
             /// a SETTINGS clause, which the server rejects the whole query for.
-            if (!isReadOnlyStatementForAIAgent(ast) || changesSettingsForAIAgent(ast))
+            if (!isReadOnlyStatementForAISession(ast) || changesSettingsForAIAgent(ast))
                 accepted_by_session = false;
         }
         else if (readonly >= 2)
         {
             /// Reads and setting changes, but no writes.
-            if (!isReadOnlyStatementForAIAgent(ast) && !ast.as<ASTSetQuery>())
+            if (!isReadOnlyStatementForAISession(ast) && !ast.as<ASTSetQuery>())
                 accepted_by_session = false;
         }
 
-        /// A predicate over the validation of the read-only tool, which reports what it rejects
-        /// by throwing (the message is meant for the model, and here there is nothing to report).
-        try
-        {
-            validateReadOnlyQueryForAIAgent(ast, ai_agent ? ai_agent->schemaAccessEnabled() : true);
-        }
-        catch (const Exception &)
-        {
-            accepted_by_read_only_tool = false;
-        }
     });
 
     AIQueryRunDecision decision;
@@ -4471,12 +4455,6 @@ AIQueryRunDecision ClientBase::checkAIQuery(const String & query)
                           : "it accepts only read-only queries and setting changes");
         return decision;
     }
-
-    /// With `readonly = 1` a single query the read-only tool would accept is exactly what that
-    /// tool runs on its own, and the limits it adds cannot be applied in such a session either,
-    /// so there is nothing left for the user to decide.
-    if (readonly == 1 && statements == 1 && accepted_by_read_only_tool)
-        decision.needs_confirmation = false;
 
     return decision;
 }
@@ -4541,6 +4519,10 @@ void ClientBase::recordErrorForAIContext(std::string_view query_or_input)
 
 Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNameMap & params, [[maybe_unused]] bool from_ai_agent)
 {
+    /// The server-side settings profile is applied lazily. Internal queries can be the first
+    /// query in a session, so read the effective dialect and `readonly` only after applying it.
+    applySettingsFromServerIfNeeded();
+
     /// The internal queries (of the AI agent and of the `help` command) are ClickHouse SQL,
     /// so when the session was switched to another dialect, this query is explicitly pinned
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query

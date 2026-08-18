@@ -345,6 +345,38 @@ bool changesSettingsForAIAgent(const IAST & ast)
     return false;
 }
 
+bool isReadOnlyStatementForAISession(const IAST & ast)
+{
+    return isAnyOf<
+        ASTSelectWithUnionQuery,
+        ASTExplainQuery,
+        ASTDescribeQuery,
+        ASTDescribeCacheQuery,
+        ASTShowTablesQuery,
+        ASTShowColumnsQuery,
+        ASTShowIndexesQuery,
+        ASTShowEnginesQuery,
+        ASTShowFunctionsQuery,
+        ASTShowSettingQuery,
+        ASTShowProcesslistQuery,
+        ASTExistsDatabaseQuery,
+        ASTExistsTableQuery,
+        ASTExistsViewQuery,
+        ASTExistsDictionaryQuery,
+        ASTShowCreateTableQuery,
+        ASTShowCreateViewQuery,
+        ASTShowCreateDatabaseQuery,
+        ASTShowCreateDictionaryQuery,
+        ASTShowAccessQuery,
+        ASTShowAccessEntitiesQuery,
+        ASTShowCreateAccessEntityQuery,
+        ASTShowGrantsQuery,
+        ASTShowPrivilegesQuery,
+        ASTCheckTableQuery,
+        ASTCheckAllTablesQuery,
+        ASTCheckDatabaseQuery>(ast);
+}
+
 bool isReadOnlyStatementForAIAgent(const IAST & ast)
 {
     return isAnyOf<

@@ -200,8 +200,8 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
 
     tools["run_query"] = makeTool(
         "Run any SQL on the user's connection: writes (INSERT, ALTER, DROP), DDL, SET, or read queries that need to "
-        "exceed the limits of run_readonly_query. The user is asked to confirm the call (unless the session itself "
-        "already restricts the query to reading), so prefer run_readonly_query when possible. A query the session "
+        "exceed the limits of run_readonly_query. The user is asked to confirm the call, so prefer "
+        "run_readonly_query when possible. A query the session "
         "does not allow at all is refused without asking them. The query and its output are displayed in the user's "
         "terminal exactly as if the user ran it; you receive a summary truncated to the first and last rows.",
         ai::JsonValue{{"query", stringParameter("The SQL to run (may contain several statements)")}},
@@ -223,9 +223,9 @@ ai::ToolSet buildAIAgentToolSet(const AIAgentHooks & hooks_, bool enable_schema_
                     if (decision.refusal)
                         return errorResult(*decision.refusal);
 
-                    /// A query the session restricts to reading anyway is run through the very path
-                    /// of the read-only tool, which also echoes it in the terminal (for a confirmed
-                    /// query the confirmation prompt does that).
+                    /// The unconfirmed read-only tool has an independent sandbox. A confirmed
+                    /// query must use the normal visible path, even in a read-only session,
+                    /// because `readonly = 1` prevents installing that sandbox's settings.
                     if (!decision.needs_confirmation)
                         return successResult(hooks->run_visible(query, /*readonly=*/ true, enable_schema_access));
 

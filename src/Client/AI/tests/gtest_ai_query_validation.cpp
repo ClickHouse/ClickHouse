@@ -55,7 +55,7 @@ bool isAllowedWithoutSchemaAccess(const String & query)
 
 bool isReadOnlyStatement(const String & query)
 {
-    return isReadOnlyStatementForAIAgent(*parse(query));
+    return isReadOnlyStatementForAISession(*parse(query));
 }
 
 bool changesSettings(const String & query)

@@ -27,6 +27,11 @@ bool changesSettingsForAIAgent(const IAST & ast);
 /// file with INTO OUTFILE, read one with `file`, reach another server with `remote`, or call an
 /// external AI provider. A read-only session allows all of that, so those queries are refused by
 /// the read-only tool but can run through the confirmed one.
+bool isReadOnlyStatementForAISession(const IAST & ast);
+
+/// Whether the statement type can be considered by the unconfirmed read-only AI tool. Callers
+/// must use `validateReadOnlyQueryForAIAgent` before executing it: this predicate only classifies
+/// the statement type and does not check for external access or unsafe settings.
 bool isReadOnlyStatementForAIAgent(const IAST & ast);
 
 }
