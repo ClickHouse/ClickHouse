@@ -59,7 +59,11 @@ ABORTED_RUN_EXIT_CODES = frozenset(
     }
 )
 
-SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
+NO_TESTS_SIGN = "No tests were run"
+NO_TESTS_FILTERED_OUT_SIGN = (
+    "No tests were run because every explicitly requested test was filtered out"
+)
+SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -87,6 +91,7 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
@@ -102,6 +107,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        no_tests_run = False
         test_results = []
         test_end = True
 
@@ -112,6 +118,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if NO_TESTS_FILTERED_OUT_SIGN in line:
+                    no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
                 if HUNG_SIGN in line:
@@ -208,6 +216,7 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            no_tests_run=no_tests_run,
             retries=retries,
         )
 
@@ -218,10 +227,24 @@ class FTResultsProcessor:
         task_name="Tests",
         runner_exit_code: Optional[int] = None,
         is_bugfix_validation: bool = False,
+        allow_no_tests: bool = False,
     ):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
+
+        if s.no_tests_run and allow_no_tests and not s.hung:
+            # The job was given an explicit list of tests (flaky, targeted or
+            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # filtered every one of them out - e.g. all are tagged `no-tsan` in a
+            # TSan job. A generic "No tests were run" banner is not sufficient:
+            # it is also printed after runner-level failures before the first test.
+            return Result.create_from(
+                name=task_name,
+                results=test_results,
+                status=Result.Status.SKIPPED,
+                info="No tests to run - every selected test is filtered out in this job flavor",
+            )
 
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAIL
