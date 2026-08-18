@@ -817,20 +817,20 @@ std::optional<Int32> IcebergSchemaProcessor::tryGetSchemaIdForSnapshot(Int64 sna
 }
 
 
-void IcebergSchemaProcessor::observeLastColumnId(Int64 last_column_id_)
+void IcebergSchemaProcessor::observeLastAssignedFieldId(Int64 last_assigned_field_id_)
 {
     std::lock_guard lock(mutex);
     /// Only ever raise the bound: an older metadata version reaching this processor later must not
     /// lower it, or field ids assigned since would start being rejected again.
-    if (!last_column_id.has_value() || *last_column_id < last_column_id_)
-        last_column_id = last_column_id_;
+    if (!last_assigned_field_id.has_value() || *last_assigned_field_id < last_assigned_field_id_)
+        last_assigned_field_id = last_assigned_field_id_;
 }
 
 
-std::optional<Int64> IcebergSchemaProcessor::tryGetLastColumnId() const
+std::optional<Int64> IcebergSchemaProcessor::tryGetLastAssignedFieldId() const
 {
     SharedLockGuard lock(mutex);
-    return last_column_id;
+    return last_assigned_field_id;
 }
 
 
@@ -897,8 +897,8 @@ ColumnMapperPtr IcebergSchemaProcessor::getColumnMapperById(Int32 id) const
     if (!schema)
         return nullptr;
     auto column_mapper = createColumnMapper(schema);
-    if (auto bound = tryGetLastColumnId())
-        column_mapper->setLastColumnId(*bound);
+    if (auto bound = tryGetLastAssignedFieldId())
+        column_mapper->setLastAssignedFieldId(*bound);
     return column_mapper;
 }
 

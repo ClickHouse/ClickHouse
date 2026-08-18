@@ -111,11 +111,11 @@ public:
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
-    /// Iceberg `last-column-id` is a monotonic high-water mark, but one processor is shared across
-    /// queries and the background prefetcher, which may observe metadata versions out of order,
-    /// so only ever raise the bound.
-    void observeLastColumnId(Int64 last_column_id_);
-    std::optional<Int64> tryGetLastColumnId() const;
+    /// The table's highest ever assigned field id (Iceberg `last-column-id`) is a monotonic
+    /// high-water mark, but one processor is shared across queries and the background prefetcher,
+    /// which may observe metadata versions out of order, so only ever raise the bound.
+    void observeLastAssignedFieldId(Int64 last_assigned_field_id_);
+    std::optional<Int64> tryGetLastAssignedFieldId() const;
 
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -131,7 +131,7 @@ private:
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
-    std::optional<Int64> last_column_id TSA_GUARDED_BY(mutex);
+    std::optional<Int64> last_assigned_field_id TSA_GUARDED_BY(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);

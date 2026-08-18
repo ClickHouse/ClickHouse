@@ -163,13 +163,13 @@ std::optional<std::string_view> SchemaConverter::useColumnMapperIfNeeded(const p
         if (element.field_id > iceberg_max_user_field_id)
             return std::nullopt;
 
-        /// An id in [1, `last-column-id`] was assigned by this table at some point, so a read schema
-        /// that lacks it simply does not project it (https://iceberg.apache.org/spec/#column-projection).
-        /// Iceberg assigns ids from 1 up, so an id outside that window was never assigned: a mismatch.
+        /// An id the table has assigned is simply not projected by a schema that lacks it
+        /// (https://iceberg.apache.org/spec/#column-projection); ids run from 1 up, so an id
+        /// outside [1, last assigned] was never assigned and is a mismatch.
         static constexpr Int64 iceberg_min_user_field_id = 1;
-        auto last_column_id = column_mapper->getLastColumnId();
-        if (last_column_id.has_value() && element.field_id >= iceberg_min_user_field_id
-            && element.field_id <= *last_column_id)
+        auto last_assigned_field_id = column_mapper->getLastAssignedFieldId();
+        if (last_assigned_field_id.has_value() && element.field_id >= iceberg_min_user_field_id
+            && element.field_id <= *last_assigned_field_id)
             return std::nullopt;
 
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parquet file has column {} with field_id {} that is not in datalake metadata", element.name, element.field_id);

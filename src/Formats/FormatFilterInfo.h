@@ -54,10 +54,11 @@ public:
     bool hasIcebergRequiredInfo() const { return has_iceberg_required_info; }
     bool isIcebergOptionalPath(const String & path) const { return iceberg_optional_paths.contains(path); }
 
-    /// Iceberg `last-column-id`: the highest field id the table has ever assigned.
+    /// Table-level high-water mark: the highest field id the table has ever assigned to any
+    /// column (Iceberg calls it `last-column-id`). Not per-column information.
     /// nullopt when the metadata did not report it.
-    void setLastColumnId(Int64 last_column_id_) { last_column_id = last_column_id_; }
-    std::optional<Int64> getLastColumnId() const { return last_column_id; }
+    void setLastAssignedFieldId(Int64 last_assigned_field_id_) { last_assigned_field_id = last_assigned_field_id_; }
+    std::optional<Int64> getLastAssignedFieldId() const { return last_assigned_field_id; }
 
     /// clickhouse_column_name -> format_column_name (just join the maps above by field_id).
     std::pair<std::unordered_map<String, String>, std::unordered_map<String, String>> makeMapping(const std::unordered_map<Int64, String> & format_encoding);
@@ -69,7 +70,7 @@ private:
     bool has_iceberg_string_info = false;
     std::unordered_set<String> iceberg_optional_paths;
     bool has_iceberg_required_info = false;
-    std::optional<Int64> last_column_id;
+    std::optional<Int64> last_assigned_field_id;
 };
 
 using ColumnMapperPtr = std::shared_ptr<ColumnMapper>;
