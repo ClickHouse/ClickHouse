@@ -140,3 +140,18 @@ TEST(PuffinFilesCacheWeight, EmptyEntryChargesKeyNotOneByte)
     EXPECT_GT(weight, key->approximateMemoryBytes());
     EXPECT_GE(weight, 2 * 4096u);
 }
+
+TEST(PuffinFilesCacheWeight, EstimateMinimumMatchesEmptyEntryWeight)
+{
+    const auto key = PuffinFilesCache::tryCreateKey(
+        "Local:////test-prefix", "data/file.parquet", "etag-1", 4, 44, "/data/file.parquet", 2, 100);
+    ASSERT_TRUE(key.has_value());
+
+    const UInt64 key_bytes = key->approximateMemoryBytes();
+    EXPECT_EQ(
+        PuffinFilesCacheCell::estimateMinimumMemorySize(key_bytes),
+        PuffinFilesCacheCell::calculateMemorySize(/*is_empty_deletion_vector_=*/true, nullptr, key_bytes));
+
+    /// A 1-byte cache cannot hold the key/overhead lower bound for a realistic path.
+    EXPECT_GT(PuffinFilesCacheCell::estimateMinimumMemorySize(key_bytes), 1u);
+}

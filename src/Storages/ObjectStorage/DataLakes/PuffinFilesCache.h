@@ -69,6 +69,13 @@ struct PuffinFilesCacheCell : private boost::noncopyable
         const DataLakeObjectMetadata::ExcludedRowsPtr & excluded_rows_,
         UInt64 key_memory_bytes_);
 
+    /// Lower-bound resident weight before the DV payload is known (key + cell object + overhead).
+    /// Used to skip the in-memory cache path when `puffin_files_cache_size` cannot hold even one entry.
+    static UInt64 estimateMinimumMemorySize(UInt64 key_memory_bytes_)
+    {
+        return calculateMemorySize(/*is_empty_deletion_vector_=*/true, nullptr, key_memory_bytes_);
+    }
+
 private:
     /// Hash-map node + LRU list node + shared_ptr control block underestimates are absorbed here.
     static constexpr size_t SIZE_IN_MEMORY_OVERHEAD = 256;

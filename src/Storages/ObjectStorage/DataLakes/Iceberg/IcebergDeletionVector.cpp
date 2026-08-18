@@ -17,6 +17,8 @@
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 
+#include <atomic>
+
 namespace DB
 {
 
@@ -78,6 +80,20 @@ namespace
 {
 
 using FooterBlobsPtr = PuffinFilesCache::FooterBlobsPtr;
+
+void logUndersizedPuffinFilesCacheOnce(LoggerPtr log, size_t max_size_in_bytes, UInt64 minimum_entry_weight)
+{
+    static std::atomic_flag logged = ATOMIC_FLAG_INIT;
+    if (!logged.test_and_set())
+    {
+        LOG_WARNING(
+            log,
+            "Not using Puffin files cache because puffin_files_cache_size ({}) is smaller than the "
+            "minimum deletion-vector entry weight (at least {}); falling back to filesystem-cache-enabled reads",
+            max_size_in_bytes,
+            minimum_entry_weight);
+    }
+}
 
 FooterBlobsPtr readFooterBlobs(
     ObjectStoragePtr object_storage,
@@ -222,8 +238,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
     /// puffin_files_cache_size=0 means the LRU accepts no entries ("disabled" in server settings).
     /// Take the same uncached path as use_puffin_files_cache=0 so we keep filesystem cache and
     /// skip etag HEAD / getOrSet (which would disable filesystem cache on the miss loader).
-    const bool use_cache = cache && cache->maxSizeInBytes() != 0;
-    if (!use_cache)
+    if (!cache || cache->maxSizeInBytes() == 0)
     {
         if (!use_cache_setting)
         {
@@ -250,6 +265,41 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             nullptr);
     }
 
+    const String storage_identity = PuffinFilesCache::makeStorageIdentity(*object_storage);
+    const String referenced_data_file_key = expected_data_file.serialize();
+
+    /// Before etag HEAD: if the budget cannot hold even the key/overhead lower bound, skip the
+    /// cached path entirely (keeps filesystem cache, avoids a useless HEAD + immediate eviction).
+    {
+        const PuffinFilesCacheKey provisional_key{
+            storage_identity,
+            puffin_path,
+            /*etag=*/"",
+            content_offset,
+            content_size_in_bytes,
+            referenced_data_file_key,
+            expected_cardinality_u64,
+            static_cast<UInt64>(data_file_record_count)};
+        const UInt64 minimum_entry_weight
+            = PuffinFilesCacheCell::estimateMinimumMemorySize(provisional_key.approximateMemoryBytes());
+        if (minimum_entry_weight > cache->maxSizeInBytes())
+        {
+            logUndersizedPuffinFilesCacheOnce(log, cache->maxSizeInBytes(), minimum_entry_weight);
+            return loadDeletionVectorUncached(
+                object_storage,
+                puffin_path,
+                content_offset,
+                content_size_in_bytes,
+                expected_data_file,
+                expected_cardinality_u64,
+                data_file_record_count,
+                context,
+                log,
+                false,
+                nullptr);
+        }
+    }
+
     RelativePathWithMetadata puffin_object{puffin_path};
     if (!puffin_object.metadata)
         puffin_object.metadata = object_storage->getObjectMetadata(puffin_object.getPath(), /*with_tags=*/ false);
@@ -274,8 +324,6 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             nullptr);
     }
 
-    const String storage_identity = PuffinFilesCache::makeStorageIdentity(*object_storage);
-
     auto footer_key = PuffinFilesCache::tryCreateFooterKey(storage_identity, puffin_path, puffin_object.metadata->etag);
     auto cache_key = PuffinFilesCache::tryCreateKey(
         storage_identity,
@@ -283,7 +331,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         puffin_object.metadata->etag,
         content_offset,
         content_size_in_bytes,
-        expected_data_file.serialize(),
+        referenced_data_file_key,
         expected_cardinality_u64,
         static_cast<UInt64>(data_file_record_count));
 
@@ -294,6 +342,28 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             ErrorCodes::LOGICAL_ERROR,
             "PuffinFilesCache::tryCreate* returned nullopt for non-empty etag on '{}'",
             puffin_path);
+    }
+
+    /// Recheck with the real etag (provisional estimate used an empty etag string).
+    {
+        const UInt64 minimum_entry_weight
+            = PuffinFilesCacheCell::estimateMinimumMemorySize(cache_key->approximateMemoryBytes());
+        if (minimum_entry_weight > cache->maxSizeInBytes())
+        {
+            logUndersizedPuffinFilesCacheOnce(log, cache->maxSizeInBytes(), minimum_entry_weight);
+            return loadDeletionVectorUncached(
+                object_storage,
+                puffin_path,
+                content_offset,
+                content_size_in_bytes,
+                expected_data_file,
+                expected_cardinality_u64,
+                data_file_record_count,
+                context,
+                log,
+                false,
+                nullptr);
+        }
     }
 
     /// Footer is keyed by file identity only, so N DV slices in one coalesced Puffin share one parse.
