@@ -218,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time` e `zk_cnt_election_time` são métricas cumulativas exclusivas do líder. Elas representam observações por servidor, não medições de disponibilidade de todo o cluster: o rastreamento começa quando esse servidor deixa de observar um líder ativo. Durante uma partição de rede, isso pode incluir o período em que um líder antigo permanece ativo em outra partição. As métricas de eleição registram apenas uma eleição bem-sucedida que ocorre após uma janela sem líder observada localmente; uma transferência de liderança que não expõe um estado sem líder amostrado não é contabilizada intencionalmente.
+
+O Keeper amostra seu estado local de líder no NuRaft uma vez a cada `heart_beat_interval_ms`, mas nunca em intervalos menores que 100 milissegundos. Cada limite pode diferir dessa transição de estado local em até o intervalo efetivo, e janelas menores que esse intervalo podem não ser detectadas. O Keeper registra a conclusão da eleição local em `BecomeLeader` do NuRaft. `srst` zera todos os quatro valores.
+
+A duração da janela mais recente observada localmente de cada tipo também é exportada para `system.asynchronous_metrics` como `KeeperLastLeaderElectionTime` e `KeeperLastLeaderUnavailableTime`, em milissegundos. `KeeperLastLeaderElectionTime` segue a mesma definição de janela sem líder que `zk_sum_election_time`. Ambas também são exclusivas do líder: um nó que não é o líder ativo ou que ainda não concluiu uma janela informa `0`. `srst` as zera juntamente com os contadores cumulativos.
 
 * `srvr`: Lista todos os detalhes do servidor.
 
@@ -259,7 +270,7 @@ Node count: 4
 Server stats reset.
 ```
 
-* `conf`: Imprime detalhes da configuração do servidor.
+* `conf`: Exibe detalhes sobre a configuração de serviço.
 
 ```response
 server_id=1
@@ -385,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`: Solicitação para se tornar o novo líder. Retorna `Sent leadership request to leader.` se a solicitação for enviada ou `Failed to send leadership request to leader.` se ela não for enviada. Se o nó já for o líder, o resultado será o mesmo de quando a solicitação é enviada.
+* `rqld`: Solicita tornar-se o novo líder. Retorna `Sent leadership request to leader.` se a solicitação for enviada ou `Failed to send leadership request to leader.` caso não seja enviada. Se o nó já for o líder, o resultado será o mesmo de quando a solicitação é enviada.
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`: Lista todas as feature flags e indica se estão ativadas para a instância do Keeper.
+* `ftfl`: Lista todos os feature flags e informa se estão habilitados na instância do Keeper.
 
 ```response
 filtered_list   1
@@ -399,32 +410,32 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: Solicitação para abrir mão da liderança e se tornar seguidor. Se o servidor que receber a solicitação for o líder, ele primeiro pausará as operações de gravação, aguardará até que o sucessor (o líder atual nunca pode ser o sucessor) conclua a sincronização com o Log mais recente e, então, renunciará. O sucessor será escolhido automaticamente. Retorna `Sent yield leadership request to leader.` se a solicitação for enviada ou `Failed to send yield leadership request to leader.` se a solicitação não for enviada. Se o nó já for um seguidor, o resultado será o mesmo de quando a solicitação é enviada.
+* `ydld`: Solicita a cessão da liderança e a transição para seguidor. Se o servidor que receber a solicitação for o líder, ele primeiro pausará as operações de escrita, aguardará até que o sucessor (o líder atual nunca pode ser o sucessor) conclua a sincronização do log mais recente e, então, renunciará à liderança. O sucessor será escolhido automaticamente. Retorna `Sent yield leadership request to leader.` se a solicitação for enviada ou `Failed to send yield leadership request to leader.` se não for enviada. Se o nó já for um seguidor, o resultado será o mesmo de quando a solicitação é enviada.
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: Retorna os valores de todos os eventos coletados. Para cada evento, retorna o nome, o valor e a descrição do evento.
+* `pfev`: Retorna os valores de todos os eventos coletados. Para cada evento, retorna o nome, o valor e a descrição.
 
 ```response
-FileOpen        62      Número de arquivos abertos.
-Seek    4       Número de vezes que a função 'lseek' foi chamada.
-ReadBufferFromFileDescriptorRead        126     Número de leituras (read/pread) de um file descriptor. Não inclui sockets.
-ReadBufferFromFileDescriptorReadFailed  0       Número de vezes que a leitura (read/pread) de um file descriptor falhou.
-ReadBufferFromFileDescriptorReadBytes   178846  Número de bytes lidos de file descriptors. Se o arquivo estiver compactado, exibirá o tamanho dos dados compactados.
-WriteBufferFromFileDescriptorWrite      7       Número de gravações (write/pwrite) em um file descriptor. Não inclui sockets.
-WriteBufferFromFileDescriptorWriteFailed        0       Número de vezes que a gravação (write/pwrite) em um file descriptor falhou.
-WriteBufferFromFileDescriptorWriteBytes 153     Número de bytes gravados em file descriptors. Se o arquivo estiver compactado, exibirá o tamanho dos dados compactados.
-FileSync        2       Número de vezes que a função F_FULLFSYNC/fsync/fdatasync foi chamada para arquivos.
-DirectorySync   0       Número de vezes que a função F_FULLFSYNC/fsync/fdatasync foi chamada para diretórios.
-FileSyncElapsedMicroseconds     12756   Tempo total aguardando a syscall F_FULLFSYNC/fsync/fdatasync para arquivos.
-DirectorySyncElapsedMicroseconds        0       Tempo total aguardando a syscall F_FULLFSYNC/fsync/fdatasync para diretórios.
-ReadCompressedBytes     0       Número de bytes (quantidade de bytes antes da descompactação) lidos de fontes compactadas (arquivos, rede).
-CompressedReadBufferBlocks      0       Número de blocks compactados (blocks de dados compactados de forma independente entre si) lidos de fontes compactadas (arquivos, rede).
-CompressedReadBufferBytes       0       Número de bytes não compactados (quantidade de bytes após a descompactação) lidos de fontes compactadas (arquivos, rede).
-AIOWrite        0       Número de gravações com a interface AIO do Linux ou FreeBSD
-AIOWriteBytes   0       Número de bytes gravados com a interface AIO do Linux ou FreeBSD
+FileOpen        62      Number of files opened.
+Seek    4       Number of times the 'lseek' function was called.
+ReadBufferFromFileDescriptorRead        126     Number of reads (read/pread) from a file descriptor. Does not include sockets.
+ReadBufferFromFileDescriptorReadFailed  0       Number of times the read (read/pread) from a file descriptor have failed.
+ReadBufferFromFileDescriptorReadBytes   178846  Number of bytes read from file descriptors. If the file is compressed, this will show the compressed data size.
+WriteBufferFromFileDescriptorWrite      7       Number of writes (write/pwrite) to a file descriptor. Does not include sockets.
+WriteBufferFromFileDescriptorWriteFailed        0       Number of times the write (write/pwrite) to a file descriptor have failed.
+WriteBufferFromFileDescriptorWriteBytes 153     Number of bytes written to file descriptors. If the file is compressed, this will show compressed data size.
+FileSync        2       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for files.
+DirectorySync   0       Number of times the F_FULLFSYNC/fsync/fdatasync function was called for directories.
+FileSyncElapsedMicroseconds     12756   Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for files.
+DirectorySyncElapsedMicroseconds        0       Total time spent waiting for F_FULLFSYNC/fsync/fdatasync syscall for directories.
+ReadCompressedBytes     0       Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).
+CompressedReadBufferBlocks      0       Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).
+CompressedReadBufferBytes       0       Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).
+AIOWrite        0       Number of writes with Linux or FreeBSD AIO interface
+AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interface
 ...
 ```
 
