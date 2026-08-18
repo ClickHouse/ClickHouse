@@ -80,6 +80,19 @@ public:
     /// samples. The other state is left empty; the caller destroys it right after.
     void adopt(AggregateFunctionTimeseriesSamples && other)
     {
+        /// A small buffer is cheaper to copy than to keep as a separate chunk: an adopted chunk
+        /// costs a heap allocation for the chunk list plus per-chunk cursor work on every
+        /// iteration, while copying N samples is ~N ns. Range queries with narrow windows keep
+        /// just a few samples per bucket, and this keeps their merge identical to the copy path.
+        /// (An empty own state still steals the buffer wholesale below, which is free.)
+        if (!other.adopted && (other.buffer.size() <= ADOPT_MIN_SAMPLES) && !(buffer.empty() && !adopted))
+        {
+            merge(other);
+            other.buffer = {};
+            other.sorted = true;
+            return;
+        }
+
         if (!other.buffer.empty())
         {
             /// A rare unsorted buffer is sorted at adoption (the other state is ours to mutate),
@@ -283,6 +296,9 @@ public:
     }
 
 private:
+    /// Buffers at most this big are copied by `adopt` instead of being kept as separate chunks.
+    static constexpr size_t ADOPT_MIN_SAMPLES = 64;
+
     /// Some buckets hold a single sample - the inline capacity of 1 keeps it in the state itself with no heap allocation.
     using Buffer = absl::InlinedVector<
         std::pair<TimestampType, ValueType>,
