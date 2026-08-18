@@ -20,6 +20,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
+#include <Storages/MergeTree/MergeTreeIndexTextSetHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 
 #include <Poco/Logger.h>
@@ -831,6 +832,14 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
         /// `tuple_index` counts left-hand arguments while `columns` are the set elements.
         if (tuple_idx >= columns.size())
             return false;
+
+        /// The element bytes are tokenized as they arrive, so an element spelling the stored value
+        /// in another representation requires tokens no granule holds.
+        if (const auto & set_types = prepared_set->getDataTypes(); tuple_idx < set_types.size())
+        {
+            if (!textIndexSetElementIsComparable(set_types[tuple_idx], index_data_types[elem.key_index], *tokenizer))
+                return false;
+        }
 
         const auto & column = columns[tuple_idx];
         const bool column_is_nullable = column->isNullable();

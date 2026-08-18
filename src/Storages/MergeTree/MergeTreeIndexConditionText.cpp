@@ -20,6 +20,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/misc.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
+#include <Storages/MergeTree/MergeTreeIndexTextSetHelper.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPreprocessor.h>
 #include <Storages/MergeTree/MergeTreeIndexTextPostprocessor.h>
@@ -28,6 +29,7 @@
 #include <absl/container/inlined_vector.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
@@ -1650,12 +1652,38 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     RPNElement & out) const
 {
     std::optional<size_t> set_key_position;
+    /// Type of the values the matched carrier stores.
+    DataTypePtr indexed_type;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
     {
-        return header.has(node.getColumnName())
-            || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+        auto column_name = node.getColumnName();
+
+        if (header.has(column_name))
+        {
+            indexed_type = header.getByName(column_name).type;
+            return true;
+        }
+
+        /// A map-element carrier is indexed through `mapValues(map)` and a JSON subcolumn through
+        /// `JSONAllValues(json)`, so the stored type is that header column's, not the node's.
+        if (hasIndexForMapElementValue(node))
+        {
+            auto map_values_name = fmt::format("mapValues({})", node.isFunction()
+                ? node.toFunctionNode().getArgumentAt(0).getColumnName()
+                : tryParseMapSubcolumnName(node.getColumnName())->first);
+            if (header.has(map_values_name))
+                indexed_type = header.getByName(map_values_name).type;
+            return true;
+        }
+
+        if (auto json_info = tryMatchNodeToJSONIndex(node, header, "JSONAllValues"))
+        {
+            indexed_type = header.getByPosition(json_info->header_position).type;
+            return true;
+        }
+
+        return false;
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
@@ -1695,9 +1723,18 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         return false;
 
     Columns columns = prepared_set->getSetElements();
+    DataTypes types = prepared_set->getDataTypes();
     /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
     if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+    {
         columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+        /// The types must be unpacked alongside them to stay addressable by the same position.
+        if (types.size() == 1)
+        {
+            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(types.front()).get()))
+                types = tuple_type->getElements();
+        }
+    }
 
     if (*set_key_position >= columns.size())
         return false;
@@ -1710,6 +1747,13 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const auto & set_column_values = set_column_nullable ? set_column_nullable->getNestedColumn() : set_column;
 
     if (!WhichDataType(set_column_values.getDataType()).isStringOrFixedString())
+        return false;
+
+    /// The element bytes are tokenized as they arrive, so an element spelling the stored value in
+    /// another representation requires tokens no granule holds. A preprocessor runs first and can
+    /// turn the padding into ordinary token bytes, so it leaves no representation interchangeable.
+    if (!indexed_type || *set_key_position >= types.size()
+        || !textIndexSetElementIsComparable(types[*set_key_position], indexed_type, *tokenizer, has_preprocessor))
         return false;
 
     const bool set_column_is_nullable = set_column.isNullable();

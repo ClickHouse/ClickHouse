@@ -20,3 +20,43 @@ text null in set, transform_null_in = 0	1
 tokenbf_v1 null in subquery set rows	1
 ngrambf_v1 null in subquery set rows	1
 tokenbf_v1 null-free subquery set	Granules: 2/250
+ngrambf_v1 fixed set rows	1
+ngrambf_v1 fixed set count	1
+ngrambf_v1 fixed set rows, transform_null_in = 0	1
+tokenbf_v1 fixed set	Granules: 1/250
+tokenbf_v1 fixed set rows	1
+text fixed set rows	1
+text fixed set count	1
+text fixed set rows, transform_null_in = 0	1
+ngrambf_v1 fixed key, fixed set	Granules: 1/250
+ngrambf_v1 fixed key, fixed set rows	1
+ngrambf_v1 narrow key, wide set rows	1
+ngrambf_v1 narrow key, wide set count	1
+ipv6 text set rows	1
+ipv6 text set count	1
+ipv6 text set rows, transform_null_in = 0	1
+ipv6 own set rows	1
+array fixed key, fixed set rows	1
+array fixed key, fixed set count	1
+array fixed key, string set rows	1
+array fixed key, string set count	1
+array fixed key, string set rows, transform_null_in = 0	1
+array string key, fixed set rows	1
+array string key, fixed set count	1
+array string key, fixed set rows, transform_null_in = 0	1
+array string key, string set	Granules: 1/250
+tuple subquery set used	1
+tuple subquery set rows	1
+tuple subquery set unpacked rows	1
+preprocessor fixed set rows	1
+preprocessor fixed set count	1
+preprocessor fixed set rows, transform_null_in = 0	1
+preprocessor string set	Granules: 1/251
+map fixed set rows	1
+map fixed set count	1
+map fixed set rows, transform_null_in = 0	1
+map string set	Granules: 1/251
+sparse_grams	Granules: 29/250
+sparse_grams rows	1
+sparse_grams fixed set rows	1
+sparse_grams fixed set count	1
