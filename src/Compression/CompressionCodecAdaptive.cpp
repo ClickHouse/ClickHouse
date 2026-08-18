@@ -136,8 +136,7 @@ UInt32 CompressionCodecAdaptive::compress(const char * source, UInt32 source_siz
             char * target = dest;
             if (best_compressed == dest)
             {
-                if (scratch.empty())
-                    scratch.resize_exact(getMaxCompressedDataSize(source_size));
+                scratch.resize_exact(getMaxCompressedDataSize(source_size));
                 target = scratch.data();
             }
             const UInt32 size = codec->compress(source, source_size, target);
