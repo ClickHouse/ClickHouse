@@ -8,8 +8,6 @@ keywords: ['data lake', 'lakehouse', 'write', 'iceberg', 'reverse ETL', 'INSERT 
 doc_type: 'guide'
 ---
 
-import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
-
 In the previous guides, you queried open table formats in place and loaded data into MergeTree for fast analytics. In many architectures, data also needs to flow in the other direction - from ClickHouse back into open table formats. Two common scenarios drive this:
 
 - **Offloading to long-term storage** - Data arrives in ClickHouse as a real-time analytics layer, powering dashboards and operational reporting. Once the data ages beyond its real-time window, it can be written out to Iceberg in object storage for durable, cost-effective retention in an interoperable format.
@@ -99,11 +97,9 @@ Peak memory usage: 485.15 MiB.
 
 ## Write data to an Iceberg table {#write-iceberg}
 
-<BetaBadge/>
-
 ### Create the Iceberg table {#create-iceberg-table}
 
-For direct reads from an existing Iceberg table, we recommend the [`icebergS3` table function](/reference/functions/table-functions/iceberg). This guide creates a new standalone Iceberg table, so it uses the [`IcebergS3` table engine](/reference/engines/table-engines/integrations/iceberg) with an explicit schema. Subsequent inserts target that persistent table.
+For direct reads from an existing Iceberg table, we recommend the [`icebergS3` table function](/reference/functions/table-functions/iceberg). This guide demonstrates creating and populating standalone Iceberg tables, so it uses the [`IcebergS3` table engine](/reference/engines/table-engines/integrations/iceberg) with an explicit schema. The example S3 locations already contain the completed tables; to run the `CREATE` and `INSERT` statements, replace both locations with empty, writable S3 prefixes and credentials you control.
 
 Note that the schema must be simplified compared to the MergeTree source. ClickHouse supports a richer type system than Iceberg and the underlying Parquet files - types such as `Enum`, `LowCardinality`, and `UInt8` are not supported in Iceberg and must be mapped to compatible types.
 

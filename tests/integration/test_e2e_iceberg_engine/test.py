@@ -384,7 +384,7 @@ def test_engine_primitive_types(node, manager, types_table):
 
 
 # ===================================================================
-# Read-only nature of the engine
+# Writing through the engine
 # ===================================================================
 
 

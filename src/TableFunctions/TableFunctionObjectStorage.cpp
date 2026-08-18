@@ -1611,7 +1611,7 @@ Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` p
 
 ### Example scenarios {#example-scenarios}
 
-All scenarios are written in Spark because CH doesn't support writing to Iceberg tables yet.
+These scenarios use Spark to illustrate schema changes made by an external Iceberg writer.
 
 #### Scenario 1: Schema Changes Without New Snapshots {#scenario-1}
 
@@ -1792,15 +1792,7 @@ Table function `iceberg` is an alias to `icebergS3` now.
 
 ## Writes into iceberg table {#writes-into-iceberg-table}
 
-<BetaBadge/>
-
 Starting from version 25.7, ClickHouse supports modifications of Iceberg tables on writable storage backends.
-
-Iceberg writes are in Beta. To enable them:
-
-```sql
-SET allow_insert_into_iceberg = 1;
-```
 
 ### Creating table {#create-iceberg-table}
 
@@ -1822,6 +1814,14 @@ Note: To create a version hint file, enable the `iceberg_use_version_hint` setti
 If you want to compress the metadata.json file, specify the codec name in the `iceberg_metadata_compression_method` setting.
 
 ### INSERT {#writes-inserts}
+
+<BetaBadge/>
+
+Enable Iceberg inserts with:
+
+```sql
+SET allow_insert_into_iceberg = 1;
+```
 
 After creating a new table, you can insert data using the usual ClickHouse syntax.
 
