@@ -766,7 +766,7 @@ Chunk StorageObjectStorageSource::generate()
         /// was pinned to that generation; otherwise a concurrent overwrite could save marks for
         /// different bytes under the listed generation's cache key.
         else if (const bool marks_generation_is_pinned = configuration->isDataLakeConfiguration()
-                || (context_->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+                || (context->getSettingsRef()[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
             format_filter_info->condition_hash && !reader.getObjectInfo()->file_bucket_info && marks_generation_is_pinned)
         {
             const auto & object_info = reader.getObjectInfo();
