@@ -35,20 +35,16 @@ private:
 class PageCacheReader : public CacheReader
 {
 public:
-    struct HeldCell
-    {
-        PageCacheByteRange byte_range;
-        PageCache::MappedPtr cell;
-    };
-
-    PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_);
+    PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<PageCache::MappedPtr> cells_);
 
     ByteRange range() const override { return range_member; }
     ChainedBuffers read(ByteRange sub) override;
 
 private:
     ByteRange range_member;
-    VectorWithMemoryTracking<HeldCell> cells;
+    /// Pinned whole-block cells backing this run, in file order. Each cell knows its own file range
+    /// (`cell->range`) and size, so the reader needs no separate per-cell bookkeeping.
+    VectorWithMemoryTracking<PageCache::MappedPtr> cells;
 };
 
 /// `CacheWriter` over one whole-block-aligned miss range. Cells are created
@@ -78,13 +74,6 @@ public:
     ChainedBuffers read(ByteRange sub) override;
 
 private:
-    struct AdoptedBlock
-    {
-        PageCacheByteRange byte_range;
-        UInt128 key_hash{};
-        PageCache::MappedPtr cell;
-    };
-
     PageCachePtr cache;
     PageCacheFile file;
     size_t block_size;
@@ -95,7 +84,9 @@ private:
     bool bypass_if_missing;
     ByteRange range_member;
     IntervalSet committed_ranges;
-    VectorWithMemoryTracking<AdoptedBlock> blocks;
+    /// Whole-block cells this writer populated or adopted, in file order. Each cell knows its own
+    /// file range (`cell->range`) and size, so the writer needs no separate per-block bookkeeping.
+    VectorWithMemoryTracking<PageCache::MappedPtr> blocks;
     /// Guards `committed_ranges` and `blocks`: the prefetch worker may write this writer
     /// while the foreground reads the self-populated blocks of the same writer.
     mutable std::mutex state_mutex;

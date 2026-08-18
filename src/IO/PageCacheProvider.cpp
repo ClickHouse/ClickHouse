@@ -20,7 +20,7 @@ PageCacheChainedBuffer::PageCacheChainedBuffer(PageCache::MappedPtr cell_)
 }
 
 
-PageCacheReader::PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<HeldCell> cells_)
+PageCacheReader::PageCacheReader(ByteRange range_in_file, VectorWithMemoryTracking<PageCache::MappedPtr> cells_)
     : range_member(range_in_file)
     , cells(std::move(cells_))
 {
@@ -40,13 +40,13 @@ ChainedBuffers PageCacheReader::read(ByteRange sub)
         sub = ByteRange{lo, hi - lo};
     }
 
-    /// Zero-copy nodes from the held cells overlapping `sub`.
-    for (const auto & held : cells)
+    /// Zero-copy nodes from the held cells overlapping `sub`. Each cell knows its own file range.
+    for (const auto & cell : cells)
     {
-        if (!held.cell)
+        if (!cell)
             continue;
 
-        ByteRange block_range{held.byte_range.offset, held.byte_range.size};
+        ByteRange block_range{cell->range.offset, cell->range.size};
         if (block_range.end() <= sub.offset || block_range.offset >= sub.end())
             continue;
 
@@ -55,7 +55,7 @@ ChainedBuffers PageCacheReader::read(ByteRange sub)
         size_t offset_in_cell = overlap_start - block_range.offset;
         size_t overlap_size = overlap_end - overlap_start;
 
-        auto buf = std::make_shared<PageCacheChainedBuffer>(held.cell);
+        auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
         result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
     }
     return result;
@@ -158,13 +158,9 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
         /// bytes WE wrote.
         if (cell)
         {
-            AdoptedBlock adopted;
-            adopted.byte_range = byte_range;
-            adopted.key_hash = key_hash;
-            adopted.cell = cell;
             {
                 std::lock_guard lock(state_mutex);
-                blocks.push_back(std::move(adopted));
+                blocks.push_back(cell);
                 committed_ranges.add(block_range);
             }
 
@@ -196,12 +192,12 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
     /// Serve the self-populated blocks overlapping `sub`, zero-copy. Under the lock:
     /// a concurrent `write` on the same writer appends to `blocks`.
     std::lock_guard lock(state_mutex);
-    for (const auto & block : blocks)
+    for (const auto & cell : blocks)
     {
-        if (!block.cell)
+        if (!cell)
             continue;
 
-        ByteRange block_range{block.byte_range.offset, block.byte_range.size};
+        ByteRange block_range{cell->range.offset, cell->range.size};
         if (block_range.end() <= sub.offset || block_range.offset >= sub.end())
             continue;
 
@@ -210,7 +206,7 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
         size_t offset_in_cell = overlap_start - block_range.offset;
         size_t overlap_size = overlap_end - overlap_start;
 
-        auto buf = std::make_shared<PageCacheChainedBuffer>(block.cell);
+        auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
         result.append(ChainedBufferNode{std::move(buf), offset_in_cell, overlap_size, overlap_start});
     }
     return result;
@@ -279,15 +275,15 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
         }
 
         /// Coalesce contiguous cached blocks into one bounded hit run; one
-        /// reader holds the run's cells.
-        VectorWithMemoryTracking<PageCacheReader::HeldCell> cells;
+        /// reader holds the run's cells (each cell knows its own file range).
+        VectorWithMemoryTracking<PageCache::MappedPtr> cells;
         const size_t run_start = pos;
         size_t run_end = pos;
         PageCache::MappedPtr held = std::move(cell);
         while (true)
         {
             const size_t sz = std::min(blk, file_size - run_end);
-            cells.push_back(PageCacheReader::HeldCell{PageCacheByteRange{run_end, sz}, std::move(held)});
+            cells.push_back(std::move(held));
             run_end += sz;
             if (run_end >= file_size || run_end - run_start >= HIT_RUN_CAP)
                 break;
