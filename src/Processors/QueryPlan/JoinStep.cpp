@@ -5,6 +5,8 @@
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
@@ -18,6 +20,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <fmt/format.h>
+#include <unordered_set>
 
 namespace DB
 {
@@ -238,6 +241,58 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
+namespace
+{
+
+std::unordered_set<const IJoin *> collectExecutedJoins(StepProcessors step_processors)
+{
+    std::unordered_set<const IJoin *> joins;
+    for (const auto * processor : step_processors)
+        if (const auto * joining = typeid_cast<const JoiningTransform *>(processor))
+            joins.insert(joining->getJoin().get());
+    return joins;
+}
+
+StepAnalysisReport buildShardedHashJoinReport(const std::unordered_set<const IJoin *> & shard_joins)
+{
+    JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    UInt64 unique_keys = 0;
+    UInt64 memory = 0;
+
+    for (const auto * shard_join : shard_joins)
+    {
+        const auto * hash_join = typeid_cast<const HashJoin *>(shard_join);
+        if (!hash_join)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected join type {} in a pipeline sharded by primary key ranges", shard_join->getName());
+
+        const auto * stats = hash_join->getMatchStats();
+        const UInt64 right_rows = hash_join->getRightTableRowCount();
+        counters.left_rows += stats->getInputLeft();
+        counters.right_rows += right_rows;
+        matched_left.add(stats->getMatchedLeft());
+        matched_right.add(stats->getMatchedRight(right_rows));
+
+        unique_keys += hash_join->getTotalRowCount();
+        memory += hash_join->getPeakBuildBytes();
+    }
+
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    StepAnalysisReport report = buildMatchedRowsReport(counters);
+
+    MetricList hash_table_metrics;
+    hash_table_metrics.emplace_back(MetricKey::UniqueKeys, unique_keys);
+    hash_table_metrics.emplace_back(MetricKey::Memory, memory);
+    report.push_back({MetricGroupKey::HashTable, std::move(hash_table_metrics)});
+
+    return report;
+}
+
+}
+
 JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
 {
     JoinAnalysisCounters counters;
@@ -267,10 +322,20 @@ StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) c
     /// so every join it reaches must have been told to collect statistics
     chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
 
-    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
-        return join->getAnalysisReport();
+    /// Case of Y-shaped join
+    if (typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
 
-    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
+    /// Case for sharded join
+    auto executed_joins = collectExecutedJoins(step_processors);
+    const bool executed_by_shard_clones = !executed_joins.empty() && !executed_joins.contains(join.get());
+    if (executed_by_shard_clones)
+        return buildShardedHashJoinReport(executed_joins);
+
+    chassert(executed_joins.size() == 1);
+
+    /// Case for one join, stored in the JoinStep directly
+    return join->getAnalysisReport();
 }
 
 bool JoinStep::allowPushDownToRight() const

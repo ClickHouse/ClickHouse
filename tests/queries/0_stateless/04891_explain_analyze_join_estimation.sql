@@ -42,6 +42,20 @@ SELECT
     countIf(explain LIKE '%no stats%') = 0
 FROM (EXPLAIN ANALYZE SELECT * FROM table1 INNER JOIN table2 ON table1.id = table2.id);
 
+-- The same join in a pipeline sharded by primary-key ranges: the join runs as per-shard clones,
+-- and the reported actuals must be the sums over the clones, identical to the unsharded run.
+SELECT
+    countIf(explain LIKE '%Cost: estimated 100.00 · actual 100.00%') = 1,
+    countIf(explain LIKE '%Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 100.00 · actual 100.00 · q-error 1.00%') = 1,
+    countIf(explain LIKE '%Left: rows estimated 100.00 · rows 100.00%') = 1,
+    countIf(explain LIKE '%Right: rows estimated 100.00 · rows 100.00%') = 1,
+    countIf(explain LIKE '%Input (left): id, v1%') = 1,
+    countIf(explain LIKE '%Input (right): id, v2%') = 1,
+    countIf(explain LIKE '%no stats%') = 0
+FROM (EXPLAIN ANALYZE SELECT * FROM table1 INNER JOIN table2 ON table1.id = table2.id
+      SETTINGS query_plan_join_shard_by_pk_ranges = 1);
+
 -- Three-table join in one reorder cluster: the top join's actual cost accumulates the matched
 -- output rows of both joins in the cluster (100 + 100 = 200), while the bottom join reports
 -- only its own (100).
