@@ -3941,22 +3941,6 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     query_task_size_limit = query_limit ? query_limit : read_limit;
     reader_settings.read_in_order = true;
 
-    /// `storage_limits` may have been prepared before this late read-in-order request
-    /// (for example, by normal projection analysis). Keep the limits local to this step,
-    /// but remove row limits once the ordered-read semantics are established.
-    if (query_info.storage_limits)
-    {
-        /// A projection can create its read pipeline before this late ordered-read decision.
-        /// Keep the existing shared object so those sources observe the disabled row limits too.
-        /// The list is initially owned as mutable and exposed through a const shared pointer.
-        auto in_order_storage_limits = std::const_pointer_cast<StorageLimitsList>(query_info.storage_limits);
-        for (auto & limits : *in_order_storage_limits)
-        {
-            limits.local_limits.size_limits.max_rows = 0;
-            limits.leaf_limits.max_rows = 0;
-        }
-    }
-
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
