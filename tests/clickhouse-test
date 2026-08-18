@@ -602,6 +602,15 @@ class TestException(Exception):
     pass
 
 
+class TestTimeout(BaseException):
+    """The per-test deadline expired.
+
+    Not an `Exception` subclass: the alarm is armed once per attempt, so a
+    deadline absorbed by a retry or health-check handler leaves that attempt
+    running unbounded.
+    """
+
+
 class ConfigException(Exception):
     pass
 
@@ -763,7 +772,7 @@ def kill_process_group(pgid, fatal_log):
                             in f.read()
                         ):
                             client_printed_stacktrace = True
-            except:
+            except Exception:
                 print(f"Cannot read {fatal_log}. Ignoring.")
 
             if not client_printed_stacktrace:
@@ -2381,8 +2390,15 @@ class TestCase:
         return new_options + " " + client_options
 
     def remove_settings_from_env(self):
-        os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
-        os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
+        # Both stores or neither: a signal in between leaves this test's
+        # randomized options installed for every later test in the worker,
+        # which reads them as its own baseline. Two stores, no I/O, no loop.
+        prev_mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+        try:
+            os.environ["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
+            os.environ["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
 
     def add_info_about_settings(self, description):
         if self.effective_settings:
@@ -4849,12 +4865,13 @@ def run_tests_array(
                         # `killpg` the shared group, so one test's deadline
                         # would kill every worker and the parent (143).
                         kill_out_of_group_children(os.getpid())
-                    raise TimeoutError("Test execution timed out")
+                    raise TestTimeout("Test execution timed out")
 
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(int(args.timeout * 1.1) + 60)
                 test_result = None
                 formatted = False
+                timed_out = False
                 attempt_start = datetime.now()
                 try:
                     test_result = test_case.run(args, test_suite, client_options)
@@ -4870,12 +4887,33 @@ def run_tests_array(
                         formatted = True
                     finally:
                         signal.pthread_sigmask(signal.SIG_SETMASK, prev_mask)
-                except TimeoutError:
+                except TestTimeout:
+                    timed_out = True
+                finally:
+                    # A deadline delivered here would be raised from the
+                    # `finally`, which the sibling `except` cannot catch, so it
+                    # is recorded rather than propagated.
+                    try:
+                        signal.alarm(0)
+                    except TestTimeout:
+                        timed_out = True
+
+                if timed_out:
+                    # Idempotent, and `run`'s own restore may have been cut
+                    # short by the deadline. No alarm is armed here.
+                    test_case.remove_settings_from_env()
                     # The alarm lands wherever the worker was, which may be
-                    # before a result exists or before its status marker is
-                    # stamped. Reporting needs both, so complete what is missing.
-                    signal.alarm(0)
-                    if test_result is None:
+                    # before a result exists, before its status marker is
+                    # stamped, or after a verdict the deadline invalidates.
+                    # FAIL, UNKNOWN and NOT_FAILED already fail the run;
+                    # anything else would report a test that never finished
+                    # as one the run may ignore.
+                    survives = (
+                        TestStatus.FAIL,
+                        TestStatus.UNKNOWN,
+                        TestStatus.NOT_FAILED,
+                    )
+                    if test_result is None or test_result.status not in survives:
                         test_result = TestResult(
                             test_case.name,
                             TestStatus.FAIL,
@@ -4883,13 +4921,12 @@ def run_tests_array(
                             (datetime.now() - attempt_start).total_seconds(),
                             "\nTest execution timed out\n",
                         )
+                        formatted = False
                     if not formatted:
                         test_result = test_case.process_result(
                             test_result, MESSAGES
                         )
                     break
-                finally:
-                    signal.alarm(0)
 
                 if not test_result or not test_result.need_retry:
                     break

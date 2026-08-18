@@ -147,7 +147,7 @@ def _run_timeout_handler(monkeypatch):
 
 def test_per_test_timeout_does_not_signal_our_own_process_group(rec, monkeypatch):
     """The defect: one test's deadline SIGTERMed all 24 workers and the parent."""
-    with pytest.raises(TimeoutError):
+    with pytest.raises(_ct["TestTimeout"]):
         _run_timeout_handler(monkeypatch)
 
     assert rec.own_group_broadcasts == [], (
@@ -159,7 +159,7 @@ def test_per_test_timeout_does_not_signal_our_own_process_group(rec, monkeypatch
 
 def test_per_test_timeout_still_kills_the_tests_own_clients(rec, monkeypatch):
     """Counter (b): the fix must not disarm the per-test teardown it replaces."""
-    with pytest.raises(TimeoutError):
+    with pytest.raises(_ct["TestTimeout"]):
         _run_timeout_handler(monkeypatch)
 
     assert rec.killed_groups == [_OUT_OF_GROUP_PGID], (
@@ -177,11 +177,22 @@ def _parsed_leaf(report):
     return None
 
 
-def _drive_run_tests_array(monkeypatch, run_impl, process_result=None):
+def _drive_run_tests_array(
+    monkeypatch,
+    run_impl,
+    process_result=None,
+    testname=False,
+    case_mixin=None,
+    queue=("00001_probe.sql",),
+):
     """Run the real `run_tests_array` over one test whose `run` is `run_impl`.
 
     Returns (stdout, exit_code.value). Everything else is production code: the
     result is formatted by the real `TestCase.process_result`.
+
+    `testname` selects the pre-test health-check path that `Fast test` and the
+    functional suites use. `case_mixin` supplies the extra attributes and methods
+    that path needs, so the default arms keep the minimal fake they had.
     """
     real_test_case = _ct["TestCase"]
 
@@ -191,21 +202,32 @@ def _drive_run_tests_array(monkeypatch, run_impl, process_result=None):
 
         def __init__(self, suite, case, args, is_concurrent):
             # pylint: disable=super-init-not-called
-            self.name = "00001_probe.sql"
+            self.name = case
             self.case = case
             self.args = args
             self.suite = suite
             self.testcase_args = None
             self.runs_count = 0
+            # Production captures these at construction (the pre-test
+            # environment) and restores them in `run`'s `finally`.
+            self.base_url_params = ""
+            self.base_client_options = ""
 
         run = run_impl
 
     if process_result is not None:
         _Case.process_result = process_result
 
+    if case_mixin is not None:
+        _Case = type("_Case", (case_mixin, _Case), {})
+
+    # Bound outside the class body: a class body does not see the enclosing
+    # function scope, so `testname = testname` there raises NameError.
+    want_testname = testname
+
     class _Args:
         timeout = 60
-        testname = False
+        testname = want_testname
         max_failures = 0
         max_failures_chain = 10**9
         stop_time = None
@@ -233,7 +255,7 @@ def _drive_run_tests_array(monkeypatch, run_impl, process_result=None):
         suite_tmp_path="/tmp",
     )
     params = (
-        ["00001_probe.sql"],
+        list(queue),
         1,
         suite,
         True,
@@ -245,7 +267,7 @@ def _drive_run_tests_array(monkeypatch, run_impl, process_result=None):
         0,
         multiprocessing.Value("i", 0),
         multiprocessing.Value("i", 0),
-        1,
+        len(queue),
         multiprocessing.Value("i", 0),
     )
 
@@ -323,7 +345,7 @@ def test_alarm_between_run_and_formatting_still_yields_a_parseable_leaf(
     def process_result(self, result, messages):
         calls.append(result.reason)
         if len(calls) == 1:
-            raise TimeoutError("Test execution timed out")
+            raise _ct["TestTimeout"]("Test execution timed out")
         return _ct["TestCase"].process_result(self, result, messages)
 
     report, exit_code = _drive_run_tests_array(
@@ -406,6 +428,411 @@ def test_alarm_after_formatting_does_not_stamp_the_report_twice(rec, monkeypatch
         f"the real description was lost:\n{report}"
     )
     assert exit_code == 1, f"the real FAIL must still count, exit_code={exit_code}"
+
+
+def test_deadline_in_the_testname_prelude_is_not_absorbed(rec, monkeypatch):
+    """`--testname` is the default CI path (`Fast test`, functional suites), and
+    its pre-test health check runs under the same one-shot alarm as the test.
+
+    `run` wraps that check in `except Exception`, and `check_server_liveness`
+    retries under another one. A deadline raised as an `Exception` subclass is
+    absorbed there, and because `signal.alarm` is armed once per attempt and
+    never re-armed inside `run`, the attempt then continues with no deadline at
+    all: the timeout is silently lost rather than reported.
+
+    Both counters are asserted, so neither an unreached prelude nor a swallowed
+    deadline can pass: the prelude must be entered, and nothing after it may run.
+    """
+    reached = []
+    past_prelude = []
+
+    # A live server, so the prelude's `except Exception` arm does NOT legitimately
+    # return SERVER_DIED: the only thing that can end this attempt is the deadline.
+    monkeypatch.setitem(_CT_GLOBALS, "clickhouse_execute", lambda *a, **k: b"1\n")
+
+    class _TestnameCase:
+        """The attributes and hooks the `--testname` prelude touches."""
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.base_url_params = ""
+            self.base_client_options = ""
+            self.case_file = "/dev/null"
+            self.stdout_file = "/dev/null"
+            self.stderr_file = "/dev/null"
+
+        # A single Optional[FailureReason]; a tuple is truthy and would
+        # early-return SKIPPED before the prelude.
+        def should_skip_test(self, *_a, **_k):
+            return None
+
+        def should_skip_cloud_test(self, *_a, **_k):
+            return (None, None)
+
+        def send_test_name_failed(self, suite, case):
+            reached.append(True)
+            # Stand in for a hung pre-test query so the pending alarm lands here.
+            signal.setitimer(signal.ITIMER_REAL, 0.05)
+            while True:
+                pass
+
+        def configure_testcase_args(self, args, case_file, suite_tmp_path):
+            # The first statement after the prelude. Reaching it means the
+            # deadline was absorbed and this attempt is now unbounded.
+            past_prelude.append(signal.alarm(0))
+            raise AssertionError("unreachable")
+
+        def add_effective_settings(self, client_options):
+            return client_options
+
+    # The real `TestCase.run` IS the code under test here: its `except Exception`
+    # around the prelude is what must not absorb the deadline.
+    try:
+        report, exit_code = _drive_run_tests_array(
+            monkeypatch,
+            _ct["TestCase"].run,
+            testname=True,
+            case_mixin=_TestnameCase,
+        )
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.alarm(0)
+
+    assert reached, "the prelude was never entered, so nothing was measured"
+    assert not past_prelude, (
+        "the deadline was absorbed by the health-check handlers and the attempt "
+        f"continued with {past_prelude[0]} s left on the one-shot alarm, so this "
+        "test would run unbounded instead of being reported as timed out"
+    )
+
+    leaf = _parsed_leaf(report)
+    assert leaf, f"the timed-out test must still produce a parseable leaf:\n{report}"
+    assert leaf.group(2) == "[ FAIL ]", f"expected FAIL, got {leaf.group(2)}"
+    assert "Timeout" in report, f"the reason must be TIMEOUT:\n{report}"
+    assert "server died" not in report.lower(), (
+        "a single test's deadline must not be reported as a dead server, which "
+        f"aborts the whole run:\n{report}"
+    )
+    assert rec.own_group_broadcasts == [], (
+        f"the deadline must not signal our own process group: "
+        f"{rec.own_group_broadcasts}"
+    )
+    assert exit_code == 1, (
+        f"the timed-out test must count as a failure, exit_code={exit_code}"
+    )
+
+
+def test_deadline_does_not_turn_an_interrupted_pass_into_a_pass(rec, monkeypatch):
+    """A verdict that says the test succeeded cannot survive its own deadline.
+
+    The recovery arm used to synthesize a TIMEOUT only when no result existed, so
+    an OK produced just before the alarm was preserved and formatted: the run
+    reported a passing test and kept exit code 0 even though the deadline fired.
+    A FAIL is kept, being more specific than the deadline."""
+    raised = []
+
+    def run(self, args, suite, client_options):
+        return _ct["TestResult"](
+            self.name, _ct["TestStatus"].OK, None, 1.0, "\npassed\n"
+        )
+
+    def process_result(self, result, messages):
+        if not raised:
+            raised.append(True)
+            raise _ct["TestTimeout"]("Test execution timed out")
+        return _ct["TestCase"].process_result(self, result, messages)
+
+    report, exit_code = _drive_run_tests_array(
+        monkeypatch, run, process_result=process_result
+    )
+
+    assert raised, "the deadline was never delivered, so nothing was measured"
+    leaf = _parsed_leaf(report)
+    assert leaf, f"the timed-out test must produce a parseable leaf:\n{report}"
+    assert leaf.group(2) == "[ FAIL ]", (
+        f"a test whose deadline expired must not be reported as passing, "
+        f"got {leaf.group(2)}:\n{report}"
+    )
+    assert "Timeout" in report, f"the reason must be TIMEOUT:\n{report}"
+    assert exit_code == 1, (
+        f"a timed-out test must fail the run, exit_code={exit_code}"
+    )
+
+
+@pytest.mark.parametrize(
+    "status,keeps_verdict",
+    [
+        # Already fail the run, so they name a more specific problem.
+        ("FAIL", True),
+        ("UNKNOWN", True),
+        ("NOT_FAILED", True),
+        # Do not fail the run, so keeping one hides a test that never
+        # finished. `SKIPPED` is reachable after a test has executed
+        # (`@@SKIP@@`, cloud post-filters, blacklists).
+        ("SKIPPED", False),
+        ("OK", False),
+    ],
+)
+def test_which_verdicts_survive_their_own_deadline(
+    rec, monkeypatch, status, keeps_verdict
+):
+    """Pin the whole status matrix, not just the two statuses that motivated it.
+
+    Dropping a status from the survivor set silently rewrites a more specific
+    verdict as a timeout; adding one lets a success outlive the deadline that
+    expired on it."""
+    raised = []
+
+    def run(self, args, suite, client_options):
+        return _ct["TestResult"](
+            self.name,
+            getattr(_ct["TestStatus"], status),
+            None,
+            1.0,
+            f"\nverdict {status}\n",
+        )
+
+    def process_result(self, result, messages):
+        if not raised:
+            raised.append(True)
+            raise _ct["TestTimeout"]("Test execution timed out")
+        return _ct["TestCase"].process_result(self, result, messages)
+
+    report, _exit_code = _drive_run_tests_array(
+        monkeypatch, run, process_result=process_result
+    )
+
+    assert raised, "the deadline was never delivered, so nothing was measured"
+    assert _parsed_leaf(report), f"no parseable leaf:\n{report}"
+    if keeps_verdict:
+        assert f"verdict {status}" in report, (
+            f"a {status} verdict is more specific than the deadline and must be "
+            f"kept:\n{report}"
+        )
+    else:
+        assert f"verdict {status}" not in report, (
+            f"a {status} verdict cannot outlive the deadline that expired on "
+            f"it:\n{report}"
+        )
+        assert "Timeout" in report, f"it must be reported as a timeout:\n{report}"
+
+
+def test_deadline_arriving_during_teardown_does_not_escape(rec, monkeypatch):
+    """The alarm can be delivered inside the `finally` that cancels it.
+
+    An exception raised from a `finally` is not caught by that statement's own
+    `except`, so the deadline would propagate out of `run_tests_array` and, in
+    sequential mode, abort the whole run instead of reporting one test."""
+    fired = []
+    real_alarm = signal.alarm
+
+    def alarm(seconds):
+        # Deliver the pending signal exactly at the cancellation point.
+        if seconds == 0 and not fired:
+            fired.append(True)
+            rv = real_alarm(0)
+            signal.raise_signal(signal.SIGALRM)
+            return rv
+        return real_alarm(seconds)
+
+    def run(self, args, suite, client_options):
+        return _ct["TestResult"](
+            self.name, _ct["TestStatus"].OK, None, 1.0, "\npassed\n"
+        )
+
+    monkeypatch.setattr(signal, "alarm", alarm)
+    report, exit_code = _drive_run_tests_array(monkeypatch, run)
+
+    assert fired, "the cancellation window was never entered"
+    leaf = _parsed_leaf(report)
+    assert leaf, (
+        f"the run must still report the test rather than aborting:\n{report}"
+    )
+    # Not propagating is only half of it: the deadline must still be recorded,
+    # or swallowing it silently turns the timed-out test into a pass.
+    assert leaf.group(2) == "[ FAIL ]", (
+        f"the recorded deadline must still fail the test, got {leaf.group(2)}:"
+        f"\n{report}"
+    )
+    assert "Timeout" in report, f"the reason must be TIMEOUT:\n{report}"
+    assert exit_code == 1, (
+        f"a timed-out test must fail the run, exit_code={exit_code}"
+    )
+
+
+def test_no_handler_around_a_test_can_absorb_the_deadline(monkeypatch, tmp_path):
+    """The deadline type is only as strong as the handlers it passes through.
+
+    `kill_process_group` reads the client fatal log while the per-test alarm is
+    still armed, so a bare `except` there swallows the deadline whatever its base
+    class is. Assert the property on the real function rather than the spelling:
+    a deadline raised from the log read must propagate."""
+    fatal_log = tmp_path / "client-fatal"
+    fatal_log.write_bytes(b"anything")
+
+    def exploding_open(*_a, **_k):
+        raise _ct["TestTimeout"]("Test execution timed out")
+
+    monkeypatch.setitem(_CT_GLOBALS, "pgrep", lambda **_k: [])
+    monkeypatch.setattr(os, "killpg", lambda pgid, sig: None)
+    # The log read sits behind this flag, and sleeps guard it.
+    monkeypatch.setitem(_CT_GLOBALS, "CAPTURE_CLIENT_STACKTRACE", True)
+    monkeypatch.setitem(_CT_GLOBALS, "SANITIZED", False)
+    monkeypatch.setitem(_CT_GLOBALS, "sleep", lambda _s: None)
+    # The function resolves `open` through its own module globals, so patching
+    # `builtins.open` would not be seen by it.
+    monkeypatch.setitem(_CT_GLOBALS, "open", exploding_open)
+
+    with pytest.raises(_ct["TestTimeout"]):
+        _ct["kill_process_group"](_OUR_PGID, str(fatal_log))
+
+
+def test_the_run_continues_with_the_next_test_after_a_deadline(rec, monkeypatch):
+    """The whole point: the queue must outlive one test's deadline.
+
+    Every other driver test supplies a single-element queue, so a run that
+    stopped right after reporting the timed-out test would satisfy them all.
+    Two tests, the first timing out: the second must execute, get its own leaf,
+    and the run must still fail because of the first."""
+    ran = []
+
+    def run(self, args, suite, client_options):
+        ran.append(self.name)
+        if self.name == "00001_probe.sql":
+            raise _ct["TestTimeout"]("Test execution timed out")
+        return _ct["TestResult"](
+            self.name, _ct["TestStatus"].OK, None, 1.0, "\npassed\n"
+        )
+
+    report, exit_code = _drive_run_tests_array(
+        monkeypatch, run, queue=("00001_probe.sql", "00002_after.sql")
+    )
+
+    assert ran == ["00001_probe.sql", "00002_after.sql"], (
+        f"the run must reach the test after the timed-out one, ran={ran}"
+    )
+    leaves = [
+        _TEST_RESULT_PATTERN.match(line)
+        for line in report.splitlines()
+        if _TEST_RESULT_PATTERN.match(line)
+    ]
+    assert len(leaves) == 2, f"both tests must be reported once each:\n{report}"
+    assert leaves[0].group(2) == "[ FAIL ]", f"first must be the timeout:\n{report}"
+    assert leaves[1].group(2) == "[ OK ]", f"second must pass on merit:\n{report}"
+    assert exit_code == 1, (
+        f"the timed-out test must still fail the run, exit_code={exit_code}"
+    )
+
+
+def test_the_run_restores_the_environment_it_cannot_prove_was_restored(
+    rec, monkeypatch
+):
+    """Masking narrows the leak window; it cannot close it.
+
+    The deadline can be delivered after `run` enters its `finally` but before
+    `pthread_sigmask` has taken effect, and then neither variable is restored
+    and the single restore call is already spent. The recovery path therefore
+    repeats the restore, where no alarm is armed. Both stores are idempotent,
+    so repeating them is free.
+
+    The restore is refused for the whole attempt here, which is the worst case
+    the window can produce."""
+    dirty = {"CLICKHOUSE_URL_PARAMS": "DIRTY", "CLICKHOUSE_CLIENT_OPT": "LEAK_OPT"}
+    env = dict(dirty)
+    refused = []
+
+    class _Refusing:
+        """Refuses the restore while an alarm could still be delivered."""
+
+        def remove_settings_from_env(self):
+            if not refused:
+                refused.append(True)
+                raise _ct["TestTimeout"]("Test execution timed out")
+            env["CLICKHOUSE_URL_PARAMS"] = self.base_url_params
+            env["CLICKHOUSE_CLIENT_OPT"] = self.base_client_options
+
+    def run(self, args, suite, client_options):
+        self.remove_settings_from_env()
+        raise AssertionError("unreachable: the restore refuses first")
+
+    report, exit_code = _drive_run_tests_array(
+        monkeypatch, run, case_mixin=_Refusing
+    )
+
+    assert refused, "the un-restorable window was never entered"
+    assert env == {"CLICKHOUSE_URL_PARAMS": "", "CLICKHOUSE_CLIENT_OPT": ""}, (
+        f"the timed-out test's settings outlived it: {env}"
+    )
+    leaf = _parsed_leaf(report)
+    assert leaf and leaf.group(2) == "[ FAIL ]", (
+        f"the deadline must still be reported as a failure:\n{report}"
+    )
+    assert exit_code == 1, f"exit_code={exit_code}"
+
+
+class _FiringEnv(dict):
+    """`os.environ` that delivers a real SIGALRM after the first store."""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.fired = False
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if key == "CLICKHOUSE_URL_PARAMS" and not self.fired:
+            self.fired = True
+            signal.raise_signal(signal.SIGALRM)
+
+
+class _OsWithEnv:
+    """`os` with a substituted `environ`, delegating everything else."""
+
+    def __init__(self, environ):
+        self.environ = environ
+
+    def __getattr__(self, name):
+        return getattr(os, name)
+
+
+def test_env_restore_is_indivisible_under_the_deadline(monkeypatch):
+    """A test's randomized options must not outlive the test that set them.
+
+    `remove_settings_from_env` restores two variables, and every later test in
+    the worker reads them as its own baseline. A deadline between the stores
+    leaves `CLICKHOUSE_CLIENT_OPT` at the timed-out test's value for the rest of
+    the worker's life, so an unrelated later test runs under settings that
+    appear nowhere in its own output.
+
+    The SIGALRM is real and is delivered from inside the first store, and the
+    deadline must still arrive: masking has to defer it, not swallow it."""
+    real_test_case = _ct["TestCase"]
+    TestTimeout = _ct["TestTimeout"]
+
+    class Case(real_test_case):
+        def __init__(self):  # pylint: disable=super-init-not-called
+            self.base_url_params = ""
+            self.base_client_options = ""
+
+    env = _FiringEnv(
+        {"CLICKHOUSE_URL_PARAMS": "DIRTY", "CLICKHOUSE_CLIENT_OPT": "LEAK_OPT"}
+    )
+
+    def handler(_signum, _frame):
+        raise TestTimeout("Test execution timed out")
+
+    monkeypatch.setitem(_CT_GLOBALS, "os", _OsWithEnv(env))
+    prev = signal.signal(signal.SIGALRM, handler)
+    try:
+        with pytest.raises(TestTimeout):
+            Case().remove_settings_from_env()
+    finally:
+        signal.signal(signal.SIGALRM, prev)
+
+    assert env.fired, "the window between the two stores was never entered"
+    assert env["CLICKHOUSE_CLIENT_OPT"] == "", (
+        "the timed-out test's client options leaked into every later test: "
+        f"{env['CLICKHOUSE_CLIENT_OPT']!r}"
+    )
 
 
 def test_whole_run_teardown_still_broadcasts_to_the_group(rec):
