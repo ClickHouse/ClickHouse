@@ -225,7 +225,7 @@ DictionaryPtr createCacheDictionaryLayout(
     else
     {
         auto storage_configuration = parseSSDCacheStorageConfiguration(config, full_name, layout_type, dictionary_layout_prefix, dict_lifetime);
-        if (created_from_ddl && !weaklyCanonicalPathStartsWith(storage_configuration.file_path, global_context->getUserFilesPath()))
+        if (created_from_ddl && !global_context->isUserFilesPath(storage_configuration.file_path))
             throw Exception(ErrorCodes::PATH_ACCESS_DENIED, "File path {} is not inside user files path", storage_configuration.file_path);
 
         /// `SSDCacheDictionaryStorage` opens `storage_configuration.file_path` via
