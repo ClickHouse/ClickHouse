@@ -291,6 +291,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
         "user_ssh_then_scram": f"ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519', scram_sha256_password BY 'p123'",
         "user_scram_then_sha256": "scram_sha256_password BY 'p123', sha256_password BY 'other_password'",
         "user_two_scram": "scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
+        "user_plaintext_and_two_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_expired_then_live_scram": "scram_sha256_password BY 'expired' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
     }
     try:

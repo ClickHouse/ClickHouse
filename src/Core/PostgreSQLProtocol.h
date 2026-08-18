@@ -1453,6 +1453,11 @@ protected:
     }
 
 public:
+    virtual bool isSupportedForUser(const String &, Session &) const
+    {
+        return true;
+    }
+
     virtual void authenticate(
         const String & user_name,
         Session & session,
@@ -1513,6 +1518,35 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
+    const AuthenticationData * getScramAuthenticationMethod(const String & user_name, Session & session) const
+    {
+        const auto & access_control = session.globalContext()->getAccessControl();
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        const AuthenticationData * scram_authentication_method = nullptr;
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                for (const auto & auth_method : user->authentication_methods)
+                {
+                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
+                        continue;
+
+                    const auto valid_until = auth_method.getValidUntil();
+                    if (valid_until && now > valid_until)
+                        continue;
+
+                    /// PostgreSQL SCRAM cannot represent a second factor or choose between several salts.
+                    if (auth_method.getOneTimePassword() || scram_authentication_method)
+                        return nullptr;
+
+                    scram_authentication_method = &auth_method;
+                }
+            }
+        }
+        return scram_authentication_method;
+    }
+
     static size_t findPatternPosition(const String & key, const String & pattern)
     {
         size_t pos = key.size();
@@ -1564,6 +1598,11 @@ class ScrambleSHA256Auth : public AuthenticationMethod
     }
 
 public:
+    bool isSupportedForUser(const String & user_name, Session & session) const override
+    {
+        return getScramAuthenticationMethod(user_name, session) != nullptr;
+    }
+
     static String generateNonce()
     {
         static constexpr size_t nonce_length = 16;
@@ -1631,37 +1670,11 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        const AuthenticationData * scram_authentication_method = nullptr;
-        const auto& access_control = session.globalContext()->getAccessControl();
-        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                for (const auto & auth_method : user->authentication_methods)
-                {
-                    if (auth_method.getType() != AuthenticationType::SCRAM_SHA256_PASSWORD)
-                        continue;
+        const auto * scram_authentication_method = getScramAuthenticationMethod(user_name, session);
+        if (!scram_authentication_method)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
 
-                    const auto valid_until = auth_method.getValidUntil();
-                    if (valid_until && now > valid_until)
-                        continue;
-
-                    if (auth_method.getOneTimePassword())
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "PostgreSQL protocol does not support `scram_sha256_password` authentication with `time_based_one_time_password`");
-
-                    /// SCRAM sends one salt before the client supplies its proof, so the
-                    /// PostgreSQL protocol cannot choose between several usable SCRAM verifiers.
-                    if (scram_authentication_method)
-                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "PostgreSQL protocol does not support multiple `scram_sha256_password` authentication methods for one user");
-
-                    scram_authentication_method = &auth_method;
-                }
-            }
-        }
-        const String salt = scram_authentication_method ? scram_authentication_method->getSalt() : String{};
+        const String salt = scram_authentication_method->getSalt();
         auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
@@ -1707,7 +1720,7 @@ public:
 
             for (auto user_authentication_type : user_authentication_types)
             {
-                if (type_to_method.contains(user_authentication_type))
+                if (type_to_method.contains(user_authentication_type) && type_to_method[user_authentication_type]->isSupportedForUser(user_name, session))
                 {
                     type_to_method[user_authentication_type]->authenticate(user_name, session, mt, address);
                     mt.send(Messaging::AuthenticationOk(), true);
