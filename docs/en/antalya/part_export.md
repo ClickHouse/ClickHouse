@@ -47,10 +47,29 @@ SETTINGS allow_experimental_export_merge_tree_part = 1
 
 ## Requirements
 
-Source and destination tables must be 100% compatible:
+Source and destination tables must support positional schema conversion. The following differences between the two schemas are allowed:
 
-1. **Identical schemas** - same columns, types, and order
-2. **Matching partition keys** - partition expressions must be identical
+- **Column names** may differ between source and destination for non-partition-key columns - columns are matched by position, similar to `INSERT INTO dest SELECT * FROM src`, not by name.
+- **Column types** may differ, as long as the source type is safely castable to the destination type. Set `export_merge_tree_part_allow_lossy_cast = 1` to also permit lossy casts.
+- **`Tuple` element names** may differ if either the source or destination declares the tuple without named elements: an unnamed `Tuple` (e.g. `Tuple(Int32, Int32)`) is matched against the destination by element position and type only, not by name. For example, exporting from `t Tuple(Int32, Int32)` to `t Tuple(x Int32, y Int32)` is allowed as long as element types match positionally.
+
+The following must match between source and destination:
+
+1. **Column count** - source and destination must have the same number of columns.
+2. **`PARTITION BY` expressions** - for destinations other than data lakes, the source and destination `PARTITION BY` expressions must be identical. For Apache Iceberg destinations, the source partition key must be representable as an Iceberg partition spec and must match the destination partition fields and transforms.
+3. **The position of every column backing the partition key** - it is not enough for the `PARTITION BY` expressions to be textually identical: every top-level column that provides a column or subcolumn used by the source table's partition key must have the same name at the same position in the destination table's schema. If such a column contains a named `Tuple`, its element names must also be declared in the same order (an unnamed `Tuple` on either side is exempt from this, per the allowance above). This comparison is recursive through nested tuples and through container types such as `Array` and `Map`.
+
+  For example, `CREATE TABLE src (a Int32, b Int32) ... PARTITION BY a` and `CREATE TABLE dst (b Int32, a Int32) ... PARTITION BY a` both have the expression `PARTITION BY a`, but `a` is at position 0 in `src` and position 1 in `dst`. The export is rejected with a `BAD_ARGUMENTS` exception whose message includes `Cannot export to <destination>: partition key column 'a' is at position 0 in the source table, but the destination's column at that position is named 'b'`.
+
+  This position check applies only to partition-key columns. A mismatch in the position of a non-partition-key column is allowed by name (see above) and is only rejected if the resulting types aren't castable. If two non-partition-key columns happen to have swapped positions but compatible types, the export succeeds and silently writes values into the wrong destination column, so keep the intended column order rather than relying on type compatibility alone.
+
+  For `PARTITION BY t.a`, this rule applies to the top-level owning column `t`. Exporting from `t Tuple(a Int32, b Int32)` to `t Tuple(b Int32, a Int32)` is rejected, even though `a` is accessed by name. Requiring a stable layout for every partition-key owner also protects positional expressions such as `tupleElement(t, 1)` from changing their meaning after conversion.
+
+  The same rule applies when the named tuple is nested inside a container. For example, `arr Array(Tuple(a Int32, b Int32))` and `arr Array(Tuple(b Int32, a Int32))` are incompatible when `arr` provides an input to the partition key. Likewise, tuple layouts in both the key and value types of `Map` are checked recursively.
+
+  In this case, the export throws a `BAD_ARGUMENTS` exception whose message includes `partition key column 't' has a different Tuple element layout in the source (Tuple(a Int32, b Int32)) and destination (Tuple(b Int32, a Int32)). Tuple element names must be declared in the same order in both tables`.
+
+  For partition expressions containing functions, the check applies to their input columns. For example, `PARTITION BY (toYYYYMM(ts), category)` requires both `ts` and `category` to have the same names at the same top-level positions in both tables.
 
 In case a table function is used as the destination, the schema can be omitted and it will be inferred from the source table.
 

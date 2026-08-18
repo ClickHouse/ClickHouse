@@ -43,6 +43,14 @@ TO TABLE [destination_database.]destination_table
 - **`partition_id`**: The partition identifier to export (e.g., `'2020'`, `'2021'`)
 - **`destination_table`**: The target table for the export (typically an S3, Azure, or other object storage table)
 
+## Requirements
+
+`EXPORT PARTITION` exports each part via the same mechanism as [`EXPORT PART`](/docs/en/antalya/part_export.md#requirements), so the source and destination tables must satisfy the same compatibility requirements. Column names may differ (columns are matched by position, not by name), and column types may differ as long as they are safely castable (or `export_merge_tree_part_allow_lossy_cast = 1` is set). Beyond that, the following must match:
+
+1. **Column count** - source and destination must have the same number of columns.
+2. **`PARTITION BY` expressions** - for destinations other than data lakes, the source and destination `PARTITION BY` expressions must be identical. For Apache Iceberg destinations, the source partition key must match the destination partition fields and transforms.
+3. **Partition key column positions and layouts** - every top-level column that provides a column or subcolumn used by the source table's partition key must have the same name at the same position in the destination table's schema. Named `Tuple` elements within such a column must also be declared in the same order, including tuples nested inside `Array` or `Map`. This applies even if both tables' `PARTITION BY` expressions are textually identical. See [`EXPORT PART` requirements](/docs/en/antalya/part_export.md#requirements) for a worked example and the corresponding exception message.
+
 ## Settings
 
 ### Server Settings
@@ -251,5 +259,4 @@ WHERE source_table = 'rmt_table' AND destination_table = 's3_table';
 
 ## Related Features
 
-- [ALTER TABLE EXPORT PART](/docs/en/engines/table-engines/mergetree-family/part_export.md) - Export individual parts (non-replicated)
-
+- [ALTER TABLE EXPORT PART](/docs/en/antalya/part_export.md) - Export individual parts (non-replicated)
