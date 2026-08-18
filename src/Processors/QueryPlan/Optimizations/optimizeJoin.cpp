@@ -363,9 +363,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         String table_display_name = reading->getStorageID().getTableName();
 
-        /// Run partition/PK analysis up front: statistics must be composed over the parts
-        /// surviving pruning, not over all active parts (issue #110281), and the index-based
-        /// fallback below needs the same analysis result anyway.
+        /// Analyze partition and primary-key ranges before estimating the relation so column
+        /// statistics come only from parts that can satisfy the query. Reuse the result for
+        /// the index-based fallback below.
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = reading->getAnalyzedResult();
         if (!analyzed_result)
         {
@@ -374,25 +374,23 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 = (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
                 || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
 
-            /// Join-order estimation needs these ranges before `optimizeReadInOrder` runs. Both variants
-            /// perform the same partition/PK/index analysis; the normal one memoizes its result for later
-            /// consumers. Since `optimizeReadInOrder` may exempt the final read from row limits, under
-            /// throwing limits analyze locally without checking them, then let the final read analyze and
-            /// memoize the ranges after its input order is known.
+            /// Range analysis normally enforces throwing read limits and memoizes its result.
+            /// At this stage, however, later planning may make the executed read exempt from those
+            /// limits. In that case use an estimation-only analysis; execution will analyze again
+            /// after its final read mode is known.
             analyzed_result = has_throwing_row_limit
                 ? reading->selectRangesToReadForEstimation()
                 : reading->selectRangesToRead();
         }
 
-        /// `has_exact_ranges` is a deterministic index-analysis result, not a confidence estimate.
-        /// If it selects zero rows, the read is provably empty. Early empty returns have no
-        /// `index_stats`, so preserve zero here instead of degrading to unknown in the fallback.
+        /// An exact empty range selection proves that the relation is empty. Other empty
+        /// analysis results can be placeholders for deferred work, so only propagate zero
+        /// when `has_exact_ranges` is set.
         if (analyzed_result && analyzed_result->has_exact_ranges && analyzed_result->selected_rows == 0)
             return RelationStats{.estimated_rows = 0, .table_name = table_display_name};
 
-        /// `STREAM` reads intentionally defer index analysis to `MergeTreeCommitOrderSequentialSource`,
-        /// so the empty `AnalysisResult` is not an exact empty relation. Do not expose its sentinel
-        /// zero as a join cardinality estimate.
+        /// `STREAM` defers range analysis until execution. Its placeholder result has zero
+        /// selected rows but does not mean that the relation is empty.
         if (reading->getQueryInfo().isStream() && analyzed_result && analyzed_result->selected_rows == 0)
         {
             return RelationStats{
