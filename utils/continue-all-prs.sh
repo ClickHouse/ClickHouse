@@ -884,7 +884,9 @@ prepare_triage_sandbox_config()
     mkdir -p "${config%/*}" || return 1
     source_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
     cp "$source_config" "$config" || return 1
-    git config --file "$config" --unset-all credential.helper 2>/dev/null || true
+    while IFS= read -r key; do
+        git config --file "$config" --unset-all "$key" || return 1
+    done < <(git config --file "$config" --name-only --get-regexp '^credential(\..*)?\.helper$' || true)
     while IFS= read -r key; do
         git config --file "$config" --unset-all "$key" || return 1
     done < <(git config --file "$config" --name-only --get-regexp '^http\..*\.extraheader$' || true)

@@ -76,17 +76,20 @@ cleanup_worker_codex_auth
 [[ ! -e "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json" ]]
 
 # Load and exercise the sandbox-config helper directly. The mounted config
-# must not retain credentials embedded in remotes or URL-rewrite rules.
+# must not retain credentials embedded in remotes, URL-rewrite rules, or
+# URL-scoped credential helpers.
 source <(sed -n '/^prepare_triage_sandbox_config()/,/^}/p' "$repo/utils/continue-all-prs.sh")
 triage_repo="$scratch/triage-repository"
 git init -q "$triage_repo"
 git -C "$triage_repo" remote add origin 'https://user:SECRET_TOKEN@example.com/ClickHouse/ClickHouse.git'
 git -C "$triage_repo" remote set-url --push origin 'https://user:SECRET_TOKEN@example.com/ClickHouse/ClickHouse.git'
 git -C "$triage_repo" config url.'https://user:SECRET_TOKEN@example.com/'.insteadOf 'https://example.com/'
+git -C "$triage_repo" config credential.https://github.com.helper test-helper
 triage_config=$(REPO='ClickHouse/ClickHouse' prepare_triage_sandbox_config "$triage_repo" "$scratch/triage-git-config")
 [[ "$(git config --file "$triage_config" --get remote.origin.url)" == 'https://github.com/ClickHouse/ClickHouse.git' ]]
 ! git config --file "$triage_config" --get-regexp '^remote\..*\.(url|pushurl)$' | grep -v '^remote\.origin\.url '
 ! git config --file "$triage_config" --get-regexp '^url\..*\.(insteadof|pushinsteadof)$'
+! git config --file "$triage_config" --get-regexp '^credential(\..*)?\.helper$'
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
