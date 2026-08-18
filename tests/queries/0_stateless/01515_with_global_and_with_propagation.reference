@@ -56,10 +56,10 @@ WITH
     x AS
     (
         SELECT
-            plus(number, 100) AS b,
+            number + 100 AS b,
             number AS a
         FROM numbers(10)
-        WHERE greater(number, q1)
+        WHERE number > q1
     )
 SELECT *
 FROM x

@@ -11,23 +11,17 @@
 #include <Common/logger_useful.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunctionAdaptors.h>
-#include <Functions/FunctionTopKFilter.h>
+
+namespace DB
+{
+FunctionOverloadResolverPtr createInternalFunctionTopKFilterResolver(TopKThresholdTrackerPtr threshold_tracker_);
+}
 
 namespace DB::QueryPlanOptimizations
 {
 
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
-    /// The dynamic-filtering path injects an internal `__topKFilter` function that
-    /// is created on demand with a runtime threshold tracker and is not registered
-    /// in `FunctionFactory`. The skip-index-on-data-read path likewise relies on a
-    /// `TopKThresholdTracker` shared between `SortingStep` and `ReadFromMergeTree`.
-    /// None of this can be transmitted to remote workers, so when the plan is
-    /// going to be distributed, the remote node would fail to deserialize the
-    /// plan with `Unknown function __topKFilter` (or run with stale state).
-    if (settings.make_distributed_plan)
-        return 0;
-
     QueryPlan::Node * node = parent_node;
 
     auto * limit_step = typeid_cast<LimitStep *>(node->step.get());
@@ -51,14 +45,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (expression_step)
     {
-        /// `arrayJoin` changes the number of rows. The dynamic top-K prewhere filter
-        /// applies the threshold to source rows BEFORE the expansion, while the sort
-        /// + limit operates on EXPANDED rows. Mixing the two breaks the assumption
-        /// that "rows seen by the filter" equals "rows seen by the sort": the
-        /// threshold can stabilize at the wrong value, letting the wrong source rows
-        /// through and producing non-deterministic / incorrect results. See #82279.
-        if (expression_step->getExpression().hasArrayJoin())
-            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -67,10 +53,6 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (filter_step)
     {
-        /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort
-        /// breaks the top-K source-row threshold assumption. See #82279.
-        if (filter_step->getExpression().hasArrayJoin())
-            return 0;
         if (node->children.size() != 1)
             return 0;
         node = node->children.front();
@@ -104,7 +86,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     const auto & sort_column = sorting_step->getInputHeaders().front()->getByName(sort_column_name);
 
-    const bool where_clause = filter_step || read_from_mergetree_step->getPrewhereInfo();
+    /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
+    /// so it must count as a `where_clause` as well. Otherwise a query filtered only by a row policy leaves
+    /// `where_clause == false`, `MergeTreeDataSelectExecutor` enables `perform_top_k_optimization` and narrows
+    /// the read to the top-K marks before the policy runs: the policy then discards the rows in those marks
+    /// and the query returns fewer rows than the `LIMIT` - or none at all - even though later marks hold rows
+    /// the policy keeps.
+    const bool where_clause
+        = filter_step || read_from_mergetree_step->getPrewhereInfo() || read_from_mergetree_step->getRowLevelFilter();
 
     ///remove alias
     if (sort_column_name.contains('.'))

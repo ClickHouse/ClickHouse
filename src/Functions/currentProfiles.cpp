@@ -33,7 +33,7 @@ namespace
         }
     }
 
-    class FunctionProfiles final : public IFunction
+    class FunctionProfiles : public IFunction
     {
     public:
         bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override
@@ -51,7 +51,7 @@ namespace
         {
             const auto & manager = context_->getAccessControl();
 
-            UUIDs profile_ids;
+            std::vector<UUID> profile_ids;
 
             switch (kind)
             {

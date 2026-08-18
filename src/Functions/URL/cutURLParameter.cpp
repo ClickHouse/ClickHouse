@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-class FunctionCutURLParameter final : public IFunction
+class FunctionCutURLParameter : public IFunction
 {
 public:
     static constexpr auto name = "cutURLParameter";
@@ -140,12 +140,12 @@ public:
         PODArrayWithStackMemory<std::pair<size_t, size_t>, 16 * sizeof(size_t)> cuts;
 
         size_t prev_offset = 0;
-        size_t cur_offset = 0;
-        size_t cur_len = 0;
+        size_t cur_offset;
+        size_t cur_len;
         size_t res_offset = 0;
-        size_t cur_res_offset = 0;
-        size_t cut_begin = 0;
-        size_t cut_end = 0;
+        size_t cur_res_offset;
+        size_t cut_begin;
+        size_t cut_end;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {

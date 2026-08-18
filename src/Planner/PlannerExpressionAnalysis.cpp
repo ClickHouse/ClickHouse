@@ -1,6 +1,5 @@
 #include <memory>
 #include <optional>
-#include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
@@ -197,7 +196,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                             continue;
 
                         auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
+                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
@@ -249,7 +248,7 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                         continue;
 
                     auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
+                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : expression_dag_node->column;
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
@@ -581,8 +580,12 @@ SortAnalysisResult analyzeSort(
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
     }
 
-    /// before_interpolate_actions is intentionally not added to the chain here;
-    /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
+    if (before_interpolate_actions)
+    {
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
+    }
+
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 
@@ -769,20 +772,6 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             required_output_nodes_names,
             correlated_columns_set,
             actions_chain);
-        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
-    }
-
-    /** Add before_interpolate_actions to the chain AFTER the limit by step.
-      * This matches the query plan execution order where Before INTERPOLATE runs after LIMIT BY.
-      * Previously it was added before LIMIT BY in the chain (inside analyzeSort), which caused
-      * the LIMIT BY DAG to expect interpolated column names (e.g. 's') that don't exist yet
-      * in the block at that point in the plan.
-      */
-    if (sort_analysis_result_optional.has_value() && sort_analysis_result_optional->before_interpolate_actions)
-    {
-        auto & before_interpolate_actions = sort_analysis_result_optional->before_interpolate_actions;
-        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
-        actions_chain.addStep(std::move(actions_step_before_interpolate));
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-static bool isParquetStringTypeSupportedForBloomFilters(
+bool isParquetStringTypeSupportedForBloomFilters(
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type)
 {
@@ -31,7 +31,7 @@ static bool isParquetStringTypeSupportedForBloomFilters(
     return true;
 }
 
-static bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
+bool isParquetIntegerTypeSupportedForBloomFilters(const std::shared_ptr<const parquet::LogicalType> & logical_type, parquet::ConvertedType::type converted_type)
 {
     if (logical_type && !logical_type->is_none() && !logical_type->is_int())
     {
@@ -61,7 +61,7 @@ uint64_t hashSpecialFLBATypes(const Field & field)
     return hasher.Hash(&flba, sizeof(T));
 };
 
-static std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
+std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Field & field)
 {
     const auto field_type = field.getType();
 
@@ -76,7 +76,7 @@ static std::optional<uint64_t> tryHashStringWithoutCompatibilityCheck(const Fiel
     return hasher.Hash(&ba);
 }
 
-static std::optional<uint64_t> tryHashString(
+std::optional<uint64_t> tryHashString(
     const Field & field,
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type)
@@ -89,7 +89,7 @@ static std::optional<uint64_t> tryHashString(
     return tryHashStringWithoutCompatibilityCheck(field);
 }
 
-static std::optional<uint64_t> tryHashFLBA(
+std::optional<uint64_t> tryHashFLBA(
     const Field & field,
     const std::shared_ptr<const parquet::LogicalType> & logical_type,
     parquet::ConvertedType::type converted_type,

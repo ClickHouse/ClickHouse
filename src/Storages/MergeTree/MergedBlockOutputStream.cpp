@@ -2,7 +2,8 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -102,9 +103,9 @@ void MergedBlockOutputStream::cancel() noexcept
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
-void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
-    writeImpl(block, permutation, permuted_columns_cache);
+    writeImpl(block, permutation);
 }
 
 struct MergedBlockOutputStream::Finalizer::Impl
@@ -246,7 +247,12 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
 
-    new_part->checksums = checksums;
+    {
+        /// The checksums map lives on the part for its whole lifetime: copy it into the part under the
+        /// dedicated arena directly, rather than assigning and re-homing with a second copy later.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        new_part->checksums = checksums;
+    }
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->setBytesUncompressedOnDisk(checksums.getTotalSizeUncompressedOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
@@ -277,6 +283,23 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
 
     if (default_codec != nullptr)
         new_part->default_codec = default_codec;
+
+    /// The TTL infos and the index granularity are built during the write (in the default arenas) and
+    /// assigned above; re-home them into the dedicated MergeTree arena so a freshly written part's
+    /// long-lived metadata lives there, like a reloaded part's. The in-memory primary index is
+    /// already built in the arena by the writer, and `checksums` was copied under the arena above.
+    /// Runs for insert / merge / mutation, and for projections via each projection part's own
+    /// finalize. When the feature is off, skip the O(marks) copies rather than paying them for nothing.
+    if (JemallocMergeTreeArena::isEnabled())
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        /// `TTLTransform` rebuilds `ttl_infos` from scratch during the write (in the default arenas),
+        /// discarding the copy re-homed at prepare time, so re-home the final maps here. `checksums`
+        /// was already copied into the part under the arena above.
+        reallocateByCopy(new_part->ttl_infos);
+        if (new_part->index_granularity)
+            new_part->index_granularity = new_part->index_granularity->clone();
+    }
 
     auto finalizer = std::make_unique<Finalizer::Impl>(*writer, new_part, files_to_remove_after_sync, sync);
     finalizer->written_files = std::move(written_files);
@@ -339,13 +362,12 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
-            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
-            if (new_part->info.isPatch())
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    source_parts.writeBinary(buffer);
                 });
             }
         }
@@ -417,13 +439,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    if (!new_part->storage.storesMetadataVersionInPartAttributes())
+    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
-        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
-        {
-            writeIntText(new_part->getMetadataVersion(), buffer);
-        });
-    }
+        writeIntText(new_part->getMetadataVersion(), buffer);
+    });
 
     if (default_codec != nullptr)
     {
@@ -445,14 +464,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
         return;
 
-    writer->write(block, permutation, permuted_columns_cache);
+    writer->write(block, permutation);
     if (reset_columns)
         new_serialization_infos.add(block);
 

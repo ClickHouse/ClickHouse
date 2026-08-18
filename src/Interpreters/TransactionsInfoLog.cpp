@@ -70,7 +70,7 @@ void TransactionsInfoLogElement::fillCommonFields(const TransactionInfoContext *
 
 void TransactionsInfoLogElement::appendToBlock(MutableColumns & columns) const
 {
-    chassert(type != UNKNOWN);
+    assert(type != UNKNOWN);
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());

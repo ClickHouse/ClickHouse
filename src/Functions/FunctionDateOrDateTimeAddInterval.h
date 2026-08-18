@@ -656,7 +656,7 @@ private:
     template <typename Value>
     static Int64 checkOverflow(Value val)
     {
-        Int64 result = 0;
+        Int64 result;
         if (accurate::convertNumeric<Value, Int64, false>(val, result))
             return result;
         throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -784,7 +784,7 @@ template <> struct ResultDataTypeMap<Int8>             { using ResultDataType = 
 }
 
 template <typename Transform>
-class FunctionDateOrDateTimeAddInterval final : public IFunction
+class FunctionDateOrDateTimeAddInterval : public IFunction
 {
 public:
     static constexpr auto name = Transform::name;

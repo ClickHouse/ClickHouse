@@ -2,10 +2,11 @@
 #include <Interpreters/FileCache/Guards.h>
 #include <Interpreters/FileCache/LRUFileCachePriority.h>
 
+#include <mutex>
+
 namespace DB
 {
 struct ReadSettings;
-struct FilesystemCacheSettings;
 class FileSegment;
 
 class FileCacheQueryLimit
@@ -18,10 +19,14 @@ public:
 
     QueryContextPtr getOrSetQueryContext(
         const std::string & query_id,
-        const FilesystemCacheSettings & settings,
+        const ReadSettings & settings,
         const CachePriorityGuard::WriteLock &);
 
-    void removeQueryContext(const std::string & query_id, const CachePriorityGuard::WriteLock &);
+    /// Releases this holder's reference to the query context and, when it was the last holder,
+    /// removes the map entry and returns the now-orphaned context so the caller can destroy it
+    /// after releasing the cache write lock (see ~QueryContextHolder). Returns nullptr when the
+    /// context is still owned by another live holder.
+    QueryContextPtr removeQueryContext(const std::string & query_id, QueryContextPtr & context, const CachePriorityGuard::WriteLock &);
 
     class QueryContext
     {
@@ -68,8 +73,8 @@ public:
         ~QueryContextHolder();
 
         String query_id;
-        FileCache * cache{};
-        FileCacheQueryLimit * query_limit{};
+        FileCache * cache;
+        FileCacheQueryLimit * query_limit;
         QueryContextPtr context;
     };
     using QueryContextHolderPtr = std::unique_ptr<QueryContextHolder>;
@@ -77,6 +82,11 @@ public:
 private:
     using QueryContextMap = std::unordered_map<String, QueryContextPtr>;
     QueryContextMap query_map;
+    /// query_map is reached under two different cache locks: reads (tryGetQueryContext) run under
+    /// CacheStateGuard while writes (getOrSetQueryContext/removeQueryContext) run under
+    /// CachePriorityGuard, so neither cache lock serializes access to the map by itself. This
+    /// dedicated leaf mutex is the single lock that actually guards query_map.
+    mutable std::mutex query_map_mutex;
 };
 
 using FileCacheQueryLimitPtr = std::unique_ptr<FileCacheQueryLimit>;

@@ -45,7 +45,7 @@ namespace ErrorCodes
   * from Map arguments and possibly modify other columns.
 */
 template <typename Impl, typename Adapter, typename Name>
-class FunctionMapToArrayAdapter final : public IFunction
+class FunctionMapToArrayAdapter : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -277,7 +277,7 @@ struct MapToSubcolumnAdapter
 /// A special function that works like the following:
 /// mapKeyLike(pattern, key, value) <=> key LIKE pattern
 /// It is used to mimic lambda: (key, value) -> key LIKE pattern.
-class FunctionMapKeyLike final : public IFunction
+class FunctionMapKeyLike : public IFunction
 {
 public:
     FunctionMapKeyLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context
@@ -305,7 +305,7 @@ private:
 /// A special function that works like the following:
 /// mapValueLike(pattern, key, value) <=> value LIKE pattern
 /// It is used to mimic lambda: (key, value) -> value LIKE pattern.
-class FunctionMapValueLike final : public IFunction
+class FunctionMapValueLike : public IFunction
 {
 public:
 FunctionMapValueLike() : impl(/*context*/ nullptr) {} /// nullptr because getting a context here is hard and FunctionLike doesn't need context

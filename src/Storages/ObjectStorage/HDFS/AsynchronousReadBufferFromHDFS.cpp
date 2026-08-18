@@ -38,13 +38,13 @@ namespace ErrorCodes
 
 AsynchronousReadBufferFromHDFS::AsynchronousReadBufferFromHDFS(
     IAsynchronousReader & reader_, const ReadSettings & settings_, std::shared_ptr<ReadBufferFromHDFS> impl_)
-    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_settings.buffer_size)
+    : BufferWithOwnMemory<SeekableReadBuffer>(settings_.remote_fs_buffer_size)
     , reader(reader_)
     , base_priority(settings_.priority)
     , impl(std::move(impl_))
-    , prefetch_buffer(settings_.remote_fs_settings.buffer_size)
+    , prefetch_buffer(settings_.remote_fs_buffer_size)
     , read_until_position(impl->getFileSize())
-    , use_prefetch(settings_.remote_fs_settings.prefetch)
+    , use_prefetch(settings_.remote_fs_prefetch)
     , log(getLogger("AsynchronousReadBufferFromHDFS"))
 {
     ProfileEvents::increment(ProfileEvents::RemoteFSBuffers);
@@ -181,8 +181,8 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
             /// Position is still inside the buffer.
             /// Probably it is at the end of the buffer - then we will load data on the following 'next' call.
             pos = working_buffer.end() - file_offset_of_buffer_end + new_pos;
-            chassert(pos >= working_buffer.begin());
-            chassert(pos <= working_buffer.end());
+            assert(pos >= working_buffer.begin());
+            assert(pos <= working_buffer.end());
             return new_pos;
         }
         if (prefetch_future.valid())
@@ -202,7 +202,7 @@ off_t AsynchronousReadBufferFromHDFS::seek(off_t offset, int whence)
         break;
     }
 
-    chassert(!prefetch_future.valid());
+    assert(!prefetch_future.valid());
 
     /// First reset the buffer so the next read will fetch new data to the buffer.
     resetWorkingBuffer();

@@ -67,18 +67,19 @@ See below sections for examples of using the `DataLakeCatalog` engine:
 * [Unity Catalog](/use-cases/data-lake/unity-catalog)
 * [Glue Catalog](/use-cases/data-lake/glue-catalog)
 * OneLake Catalog
-    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+  Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)
 SETTINGS
-    catalog_type = 'onelake',
-    warehouse = warehouse,
-    onelake_tenant_id = tenant_id,
-    oauth_server_uri = server_uri,
-    auth_scope = auth_scope,
-    onelake_client_id = client_id,
-    onelake_client_secret = client_secret;
+   catalog_type = 'onelake',
+   warehouse = warehouse,
+   onelake_tenant_id = tenant_id,
+   oauth_server_uri = server_uri,
+   auth_scope = auth_scope, 
+   onelake_client_id = client_id, 
+   onelake_client_secret = client_secret;
 SHOW TABLES IN database_name;
 SELECT count() from database_name.table_name;
 ```
+To authenticate without sharing a client secret, set `onelake_bearer_token` to a pre-obtained bearer token (scoped to `https://storage.azure.com`) instead of `onelake_client_id`/`onelake_client_secret`. ClickHouse does not refresh the token, so the database must be recreated after it expires.

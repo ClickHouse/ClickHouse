@@ -16,7 +16,6 @@
 #include <Backups/RestoreSettings.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Backups/getBackupDataFileName.h>
-#include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
 #include <Backups/BackupsHelper.h>
 #endif
@@ -156,7 +155,7 @@ namespace
         addThrottler(read_settings.remote_throttler, context->getBackupsThrottler());
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = backup_settings.read_from_filesystem_cache;
-        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = backup_settings.read_from_filesystem_cache;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = backup_settings.read_from_filesystem_cache;
         return read_settings;
     }
 
@@ -174,7 +173,7 @@ namespace
         addThrottler(read_settings.local_throttler, context->getBackupsThrottler());
         read_settings.enable_filesystem_cache = false;
         read_settings.read_through_distributed_cache = false;
-        read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass = false;
+        read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache = false;
         return read_settings;
     }
 
@@ -196,12 +195,18 @@ enum class BackupsWorker::ThreadPoolId : uint8_t
     /// Making a list of files to copy or copying those files.
     BACKUP,
 
+    /// Dedicated pool for creating lightweight snapshots, so it is not starved by a concurrent heavy BACKUP sharing the BACKUP pool.
+    CREATE_SNAPSHOT,
+
     /// Creating of tables and databases during RESTORE and filling them with data.
     RESTORE,
 
     /// We need background threads for ASYNC backups and restores.
     ASYNC_BACKGROUND_BACKUP,
     ASYNC_BACKGROUND_RESTORE,
+
+    /// Dedicated async-starter pool for lightweight snapshot creation, so a snapshot's top-level operation is not starved by a concurrent heavy BACKUP occupying ASYNC_BACKGROUND_BACKUP.
+    ASYNC_BACKGROUND_CREATE_SNAPSHOT,
 
     /// We need background threads for coordination workers (see BackgroundCoordinationStageSync).
     ON_CLUSTER_COORDINATION_BACKUP,
@@ -250,7 +255,9 @@ public:
         switch (thread_pool_id)
         {
             case ThreadPoolId::BACKUP:
+            case ThreadPoolId::CREATE_SNAPSHOT:
             case ThreadPoolId::ASYNC_BACKGROUND_BACKUP:
+            case ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP:
             case ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP:
             case ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP:
@@ -260,7 +267,7 @@ public:
                 metric_scheduled_threads = CurrentMetrics::BackupsThreadsScheduled;
                 max_threads = num_backup_threads;
                 /// We don't use thread pool queues for thread pools with a lot of tasks otherwise that queue could be memory-wasting.
-                use_queue = (thread_pool_id != ThreadPoolId::BACKUP);
+                use_queue = (thread_pool_id != ThreadPoolId::BACKUP && thread_pool_id != ThreadPoolId::CREATE_SNAPSHOT);
                 break;
             }
 
@@ -285,8 +292,9 @@ public:
         size_t max_free_threads = 0;
         size_t queue_size = use_queue ? 0 : max_threads;
         auto thread_pool = std::make_unique<ThreadPool>(metric_threads, metric_active_threads, metric_scheduled_threads, max_threads, max_free_threads, queue_size);
-        it = thread_pools.emplace(thread_pool_id, std::move(thread_pool)).first;
-        return *it->second;
+        auto * thread_pool_ptr = thread_pool.get();
+        thread_pools.emplace(thread_pool_id, std::move(thread_pool));
+        return *thread_pool_ptr;
     }
 
     /// Waits for all threads to finish.
@@ -298,10 +306,12 @@ public:
             /// and everything else is after those ones.
             ThreadPoolId::ASYNC_BACKGROUND_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_RESTORE,
+            ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP,
             ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_RESTORE,
             /// Others:
             ThreadPoolId::BACKUP,
+            ThreadPoolId::CREATE_SNAPSHOT,
             ThreadPoolId::RESTORE,
             ThreadPoolId::ON_CLUSTER_COORDINATION_BACKUP,
             ThreadPoolId::ON_CLUSTER_COORDINATION_INTERNAL_BACKUP,
@@ -575,8 +585,20 @@ std::pair<BackupOperationID, BackupStatus> BackupsWorker::startMakingBackup(cons
 
     try
     {
-        auto thread_pool_id = starter->is_internal_backup ? ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP: ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
-        ThreadName thread_name = starter->is_internal_backup ? ThreadName::BACKUP_ASYNC_INTERNAL : ThreadName::BACKUP_ASYNC;
+        ThreadPoolId thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_BACKUP;
+        ThreadName thread_name = ThreadName::BACKUP_ASYNC;
+        if (starter->backup_settings.experimental_lightweight_snapshot)
+        {
+            /// Snapshot creation needs its own async-starter capacity: otherwise a concurrent heavy BACKUP can occupy all
+            /// ASYNC_BACKGROUND_BACKUP threads and the snapshot's doBackup would never start (and so never reach CREATE_SNAPSHOT).
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_CREATE_SNAPSHOT;
+            thread_name = ThreadName::SNAPSHOT_ASYNC;
+        }
+        else if (starter->is_internal_backup)
+        {
+            thread_pool_id = ThreadPoolId::ASYNC_BACKGROUND_INTERNAL_BACKUP;
+            thread_name = ThreadName::BACKUP_ASYNC_INTERNAL;
+        }
         auto schedule = threadPoolCallbackRunnerUnsafe<void>(thread_pools->getThreadPool(thread_pool_id), thread_name);
 
         schedule([starter]
@@ -660,6 +682,10 @@ void BackupsWorker::doBackup(
 
     bool is_internal_backup = backup_settings.internal;
 
+    /// Snapshot creation uses a dedicated thread pool so it is not starved by a concurrent heavy BACKUP occupying the shared BACKUP pool.
+    const ThreadPoolId backup_thread_pool_id
+        = backup_settings.experimental_lightweight_snapshot ? ThreadPoolId::CREATE_SNAPSHOT : ThreadPoolId::BACKUP;
+
     maybeSleepForTesting();
 
     /// Write the backup.
@@ -692,7 +718,7 @@ void BackupsWorker::doBackup(
                 backup_coordination,
                 read_settings,
                 context,
-                getThreadPool(ThreadPoolId::BACKUP));
+                getThreadPool(backup_thread_pool_id));
             backup_entries = backup_entries_collector.run();
         }
 
@@ -700,8 +726,8 @@ void BackupsWorker::doBackup(
         chassert(backup);
         chassert(backup_coordination);
         chassert(context);
-        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, context->getProcessListElement());
-        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, context->getProcessListElement());
+        buildFileInfosForBackupEntries(backup, backup_entries, read_settings, backup_coordination, backup_thread_pool_id, context->getProcessListElement());
+        writeBackupEntries(backup, std::move(backup_entries), backup_id, backup_coordination, is_internal_backup, backup_thread_pool_id, context->getProcessListElement());
 
         /// We have written our backup entries (there is no need to sync it with other hosts because it's the last stage).
         backup_coordination->setStage(Stage::COMPLETED, "", /* sync = */ false);
@@ -739,10 +765,10 @@ void BackupsWorker::doBackup(
 }
 
 
-void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, QueryStatusPtr process_list_element)
+void BackupsWorker::buildFileInfosForBackupEntries(const BackupPtr & backup, const BackupEntries & backup_entries, const ReadSettings & read_settings, std::shared_ptr<IBackupCoordination> backup_coordination, ThreadPoolId thread_pool_id, QueryStatusPtr process_list_element)
 {
     backup_coordination->setStage(Stage::BUILDING_FILE_INFOS, "", /* sync = */ true);
-    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(ThreadPoolId::BACKUP), process_list_element));
+    backup_coordination->addFileInfos(::DB::buildFileInfosForBackupEntries(backup_entries, backup->getBaseBackup(), read_settings, getThreadPool(thread_pool_id), process_list_element));
 }
 
 
@@ -752,6 +778,7 @@ void BackupsWorker::writeBackupEntries(
     const OperationID & backup_id,
     std::shared_ptr<IBackupCoordination> backup_coordination,
     bool is_internal_backup,
+    ThreadPoolId thread_pool_id,
     QueryStatusPtr process_list_element)
 {
     LOG_TRACE(log, "{}, num backup entries={}", Stage::WRITING_BACKUP, backup_entries.size());
@@ -771,7 +798,7 @@ void BackupsWorker::writeBackupEntries(
     std::atomic_bool failed = false;
 
     bool always_single_threaded = !backup->supportsWritingInMultipleThreads();
-    auto & thread_pool = getThreadPool(ThreadPoolId::BACKUP);
+    auto & thread_pool = getThreadPool(thread_pool_id);
 
     std::vector<size_t> writing_order;
     if (test_randomize_order)
@@ -791,6 +818,13 @@ void BackupsWorker::writeBackupEntries(
         size_t index = !writing_order.empty() ? writing_order[i] : i;
 
         auto & entry = backup_entries[index].second;
+
+        if (entry->isFromRemoteFile())
+        {
+            backup->setOriginalEndpointAndNamespaceIfEmpty(entry->getEndpointURI(), entry->getNamespace());
+            continue;
+        }
+
         const auto & file_info = file_infos[index];
 
         /// Using references here is fine as the variables reference objects either belonging to `this` or passed as references in the
@@ -1355,7 +1389,7 @@ void BackupsWorker::maybeSleepForTesting() const
 BackupStatus BackupsWorker::wait(const OperationID & backup_or_restore_id, bool rethrow_exception)
 {
     std::unique_lock lock{infos_mutex};
-    BackupStatus current_status = {};
+    BackupStatus current_status;
     status_changed.wait(lock, [&]
     {
         auto it = infos.find(backup_or_restore_id);
@@ -1397,7 +1431,7 @@ void BackupsWorker::waitAll()
 BackupStatus BackupsWorker::cancel(const BackupOperationID & backup_or_restore_id, bool wait_)
 {
     QueryStatusPtr process_list_element;
-    BackupStatus current_status = {};
+    BackupStatus current_status;
 
     {
         std::unique_lock lock{infos_mutex};

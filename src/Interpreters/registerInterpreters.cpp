@@ -66,7 +66,6 @@ void registerInterpreterUpdateQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterExecuteAsQuery(InterpreterFactory & factory);
 
-void registerInterpreters();
 void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();

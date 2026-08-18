@@ -34,12 +34,6 @@ struct PartDataVersionColumn
     static const DataTypePtr type;
 };
 
-struct PartitionIdColumn
-{
-    static const String name;
-    static const DataTypePtr type;
-};
-
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
 
 }

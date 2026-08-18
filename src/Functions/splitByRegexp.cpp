@@ -32,12 +32,12 @@ private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
 
-    Pos pos{};
-    Pos end{};
+    Pos pos;
+    Pos end;
 
     std::optional<size_t> max_splits;
-    size_t splits{};
-    bool max_substrings_includes_remaining_string{};
+    size_t splits;
+    bool max_substrings_includes_remaining_string;
 
 public:
     static constexpr auto name = "splitByRegexp";
@@ -150,7 +150,7 @@ public:
 using FunctionSplitByRegexp = FunctionTokens<SplitByRegexpImpl>;
 
 /// Fallback splitByRegexp to splitByChar when its 1st argument is a trivial char for better performance
-class SplitByRegexpOverloadResolver final : public IFunctionOverloadResolver
+class SplitByRegexpOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "splitByRegexp";
@@ -197,8 +197,8 @@ private:
             OptimizedRegularExpression re = Regexps::createRegexp<false, false, false>(pattern);
 
             std::string required_substring;
-            bool is_trivial = false;
-            bool required_substring_is_prefix = false;
+            bool is_trivial;
+            bool required_substring_is_prefix;
             re.getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
             return is_trivial && required_substring == pattern;
         }

@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class ParquetBlockOutputFormat final : public IOutputFormat
+class ParquetBlockOutputFormat : public IOutputFormat
 {
 public:
     ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_);

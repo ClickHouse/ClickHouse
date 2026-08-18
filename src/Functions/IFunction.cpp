@@ -18,10 +18,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 #include "config.h"
 
@@ -912,7 +910,7 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const ValuesWith
         ValuesWithType unwrapped_arguments;
         unwrapped_arguments.reserve(arguments.size());
 
-        VectorWithMemoryTracking<llvm::Value *> is_null_values;
+        std::vector<llvm::Value *> is_null_values;
 
         auto skip_arguments = getArgumentsThatDontParticipateInCompilation(arguments_types);
         for (size_t i = 0; i < arguments.size(); ++i)

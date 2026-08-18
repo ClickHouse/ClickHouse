@@ -39,7 +39,7 @@ void DiskLocalCheckThread::startup()
         formatReadableTime(static_cast<double>(check_period_ms) * 1e6 /* ns */));
 }
 
-static int diskStatusChange(bool old_val, bool new_val)
+int diskStatusChange(bool old_val, bool new_val)
 {
     return static_cast<int>(new_val) - static_cast<int>(old_val);
 }

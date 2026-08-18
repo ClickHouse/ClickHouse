@@ -29,7 +29,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
 {
     DistributedAsyncInsertHeader distributed_header;
 
-    UInt64 query_size = 0;
+    UInt64 query_size;
     readVarUInt(query_size, in);
 
     if (query_size == DBMS_DISTRIBUTED_SIGNATURE_HEADER)
@@ -63,7 +63,7 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
         distributed_header.insert_settings->read(header_buf);
 
         if (header_buf.hasPendingData())
-            distributed_header.client_info.read(header_buf, distributed_header.revision, /*with_client_agent=*/ false);
+            distributed_header.client_info.read(header_buf, distributed_header.revision);
 
         if (header_buf.hasPendingData())
         {
@@ -89,12 +89,6 @@ DistributedAsyncInsertHeader DistributedAsyncInsertHeader::read(ReadBufferFromFi
             readStringBinary(distributed_header.distributed_table, header_buf);
             readStringBinary(distributed_header.remote_table, header_buf);
         }
-
-        /// Trailing field: the detected AI coding agent of the initiating client.
-        /// Stored outside the embedded `ClientInfo` above (read with `with_client_agent=false`) so that
-        /// older binaries can safely ignore it instead of misinterpreting it as `rows`/`bytes`.
-        if (header_buf.hasPendingData())
-            readStringBinary(distributed_header.client_info.client_agent, header_buf);
 
         /// Add handling new data here, for example:
         ///

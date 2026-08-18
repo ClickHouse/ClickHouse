@@ -92,7 +92,7 @@ public:
             .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
             .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
             .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
-            .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])};
+            .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]};
         slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
     }
 
@@ -151,7 +151,7 @@ private:
                 .max_retries = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_attempts]),
                 .initial_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_initial_backoff_ms]),
                 .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
-                .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])},
+                .jitter_factor = local_settings[Setting::backup_restore_s3_retry_jitter_factor]},
 
             local_settings[Setting::s3_slow_all_threads_after_network_error],
             local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error],
@@ -185,8 +185,6 @@ private:
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
 
-        auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(s3_uri.endpoint, s3_uri.bucket);
-
         return S3::ClientFactory::instance().create(
             client_configuration,
             client_settings,
@@ -205,9 +203,7 @@ private:
                 std::move(role_session_name),
                 std::move(external_id),
                 /*sts_endpoint_override=*/""
-            },
-            /*session_token=*/"",
-            shared_cache);
+            });
     }
 
     Aws::Vector<Aws::S3::Model::Object> listObjects(S3::Client & client, const S3::URI & s3_uri, const String & file_name)

@@ -59,7 +59,7 @@ TEST(ColumnDynamic, InsertFields)
     ASSERT_TRUE(column->getVariantInfo().variant_name_to_discriminator == expected_variant_name_to_discriminator);
 }
 
-static ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, Field tuple_element = Field(42))
+ColumnDynamic::MutablePtr getDynamicWithManyVariants(size_t num_variants, Field tuple_element = Field(42))
 {
     auto column = ColumnDynamic::create(254);
     for (size_t i = 0; i != num_variants; ++i)
@@ -139,7 +139,7 @@ TEST(ColumnDynamic, InsertFieldsOverflow2)
     ASSERT_EQ(field, 42);
 }
 
-static ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
+ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
 {
     auto column_from = ColumnDynamic::create(254);
     for (size_t i = 0; i != num; ++i)
@@ -151,7 +151,7 @@ static ColumnDynamic::MutablePtr getInsertFromColumn(size_t num = 1)
     return column_from;
 }
 
-static void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertFrom(*column_from, 0);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -275,7 +275,7 @@ TEST(ColumnDynamic, InsertFromOverflow3)
     ASSERT_EQ(field, 42.42);
 }
 
-static void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertManyFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertManyFrom(*column_from, 0, 2);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);
@@ -591,7 +591,7 @@ TEST(ColumnDynamic, SameLayoutSharedVariantKeepsInvariant)
     check(Range);
 }
 
-static void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
+void checkInsertRangeFrom(const ColumnDynamic::MutablePtr & column_from, ColumnDynamic::MutablePtr & column_to, const std::string & expected_variant, const Names & expected_names, const UnorderedMapWithMemoryTracking<String, UInt8> & expected_variant_name_to_discriminator)
 {
     column_to->insertRangeFrom(*column_from, 0, 3);
     ASSERT_EQ(column_to->getVariantInfo().variant_type->getName(), expected_variant);

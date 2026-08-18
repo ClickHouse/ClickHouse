@@ -846,7 +846,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
     return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
 }
 
-MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index)
 {
     static std::set<ITokenizer::Type> allowed_tokenizers =
     {
@@ -883,7 +883,7 @@ MergeTreeIndexPtr bloomFilterIndexTextCreator(const IndexDescription & index, co
     return std::make_shared<MergeTreeIndexBloomFilterText>(index, params, std::move(tokenizer));
 }
 
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & /*settings*/)
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool /*attach*/)
 {
     for (const auto & index_data_type : index.data_types)
     {

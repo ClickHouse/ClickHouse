@@ -271,8 +271,8 @@ struct AggregateFunctionFlameGraphData
 {
     struct Entry
     {
-        AggregateFunctionFlameGraphTree::TreeNode * trace{};
-        UInt64 size{};
+        AggregateFunctionFlameGraphTree::TreeNode * trace;
+        UInt64 size;
         Entry * next = nullptr;
     };
 
@@ -415,7 +415,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -static_cast<UInt64>(size);
+            UInt64 abs_size = -size;
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -501,7 +501,7 @@ struct AggregateFunctionFlameGraphData
 
             for (auto * deallocation = entry.value.second.deallocation; deallocation; deallocation = deallocation->next)
             {
-                add(entry.value.first, static_cast<Int64>(-deallocation->size), nullptr, 0, arena);
+                add(entry.value.first, -Int64(deallocation->size), nullptr, 0, arena);
             }
         }
 
@@ -699,7 +699,6 @@ static AggregateFunctionPtr createAggregateFunctionFlameGraph(const std::string 
     return std::make_shared<AggregateFunctionFlameGraph>(argument_types);
 }
 
-void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory);
 void registerAggregateFunctionFlameGraph(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -320,12 +320,12 @@ public:
     /** Despite the presence of a template constructor, this constructor is still needed,
       *  since, in its absence, the compiler will still generate the default constructor.
       */
-    Field(const Field & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `create` before any read; zero-initializing it would clear the whole buffer on every construction of this very hot object
+    Field(const Field & rhs)
     {
         create(rhs);
     }
 
-    Field(Field && rhs) noexcept // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(Field && rhs) noexcept
     {
         create(std::move(rhs));
     }
@@ -346,7 +346,7 @@ public:
     Field(const char * str) { create(std::string_view{str}); } /// NOLINT
 
     template <typename CharT>
-    Field(const CharT * data, size_t size) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - see the note on the copy constructor above
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
@@ -521,9 +521,9 @@ private:
         Null, UInt64, UInt128, UInt256, Int64, Int128, Int256, UUID, IPv4, IPv6, Float64, String, Array, Tuple, Map,
         DecimalField<Decimal32>, DecimalField<Decimal64>, DecimalField<Decimal128>, DecimalField<Decimal256>,
         AggregateFunctionStateData, CustomType
-        > storage; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - raw union storage; the active value is always placement-constructed by `create`/`createConcrete` before any read, and zero-initializing it would clear the whole buffer on every construction of this very hot object
+        > storage;
 
-    Types::Which which{};
+    Types::Which which;
 
     /// This function is prone to type punning and should never be used outside of Field class,
     /// whenever it is used within this class the stored type should be checked in advance.
@@ -587,11 +587,24 @@ private:
         ptr->assign(std::move(str));
     }
 
-    void create(const Field & x)
+    /// Array/Tuple/Map/Object nest Fields inside Fields, so a straightforward
+    /// (recursive) copy/destroy overflows the native stack for a deeply nested value.
+    /// These containers are handled by explicit-worklist iterative helpers instead.
+    static bool isContainer(Types::Which w)
     {
-        dispatch([this] (auto & value) { createConcrete(value); }, x);
+        return w == Types::Array || w == Types::Tuple || w == Types::Map || w == Types::Object;
     }
 
+    void create(const Field & x)
+    {
+        if (isContainer(x.which))
+            createContainerIteratively(x);
+        else
+            dispatch([this] (auto & value) { createConcrete(value); }, x);
+    }
+
+    /// Moving a Field just steals the container buffer (no per-element recursion), so
+    /// the move paths only need the iterative teardown of the value being overwritten.
     void create(Field && x)
     {
         dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
@@ -599,12 +612,26 @@ private:
 
     void assign(const Field & x)
     {
-        dispatch([this] (auto & value) { assignConcrete(value); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map copy-assignment would recurse per nesting level; rebuild instead.
+            destroy();
+            create(x);
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(value); }, x);
     }
 
     void assign(Field && x)
     {
-        dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map move-assignment first destroys the old (possibly deep) value recursively.
+            destroy();
+            create(std::move(x));
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
     template <typename CharT>
@@ -631,16 +658,10 @@ private:
                 destroy<String>();
                 break;
             case Types::Array:
-                destroy<Array>();
-                break;
             case Types::Tuple:
-                destroy<Tuple>();
-                break;
             case Types::Map:
-                destroy<Map>();
-                break;
             case Types::Object:
-                destroy<Object>();
+                destroyContainerIteratively(old_which);
                 break;
             case Types::AggregateFunctionState:
                 destroy<AggregateFunctionStateData>();
@@ -659,6 +680,14 @@ private:
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
+
+    /// Placement-construct an empty container of the given type into raw (or Null) storage.
+    void initEmptyContainer(Types::Which w);
+
+    /// Copy/destroy a (possibly deeply nested) Array/Tuple/Map/Object value using an explicit
+    /// worklist so the native stack depth stays bounded regardless of the nesting depth.
+    void createContainerIteratively(const Field & src);
+    void destroyContainerIteratively(Types::Which old_which) noexcept;
 };
 
 #undef DBMS_MIN_FIELD_SIZE
@@ -735,7 +764,7 @@ constexpr bool isInt64OrUInt64orBoolFieldType(Field::Types::Which t)
 
 template <typename T>
 requires not_field_or_bool_or_stringlike<T>
-Field::Field(T && rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - `storage` is raw union storage placement-constructed by `createConcrete` before any read
+Field::Field(T && rhs)
 {
     auto && val = castToNearestFieldType(std::forward<T>(rhs));
     createConcrete(std::forward<decltype(val)>(val));

@@ -58,8 +58,8 @@ ALWAYS_INLINE size_t selectorIndexAt(const Selector & selector, size_t k)
 template <typename PrefetchAction>
 struct JoinPrefetcher
 {
-    bool use_prefetch = false;
-    size_t total = 0;
+    bool use_prefetch;
+    size_t total;
     PrefetchAction prefetch_action;
     PrefetchingHelper prefetching{};
     size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
@@ -156,7 +156,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     /** For LEFT/INNER JOIN, the saved blocks do not contain keys.
       * For FULL/RIGHT JOIN, the saved blocks contain keys;
-      *  but they will not be used at this stage of joining (and will be in `CollectorNonJoined`), and they need to be skipped.
+      *  but they will not be used at this stage of joining (and will be in `AdderNonJoined`), and they need to be skipped.
       * For ASOF, the last column is used as the ASOF column
       */
     AddedColumns<!join_features.is_any_join> added_columns(
@@ -615,7 +615,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
         if (!skip_row)
         {
-            bool row_acceptable = false;
+            bool row_acceptable;
             if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                 row_acceptable = false;
             else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
@@ -746,7 +746,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
             if (!skip_row)
             {
-                bool row_acceptable = false;
+                bool row_acceptable;
                 if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllFalse)
                     row_acceptable = false;
                 else if constexpr (join_mask_kind == JoinCommon::JoinMask::Kind::AllTrue)
@@ -1192,6 +1192,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     if constexpr (join_features.need_replication)
     {
         added_columns.offsets_to_replicate.resize(left_block_rows);
+        added_columns.filter.resize(left_block_rows);
+    }
+    else if (need_filter)
+    {
+        /// The loop above may break early at max_joined_block_rows, producing fewer left rows
+        /// than the selector size the filter was allocated for. Trim the filter to the number of
+        /// processed rows so the required right key column built from it matches the left block,
+        /// which is cut to left_block_rows downstream.
         added_columns.filter.resize(left_block_rows);
     }
     added_columns.applyLazyDefaults();

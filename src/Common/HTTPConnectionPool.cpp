@@ -354,22 +354,8 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
     void atStart(int bytes) override
     {
         Stopwatch timer;
-        try
-        {
-            request.enqueue(bytes, link);
-            request.wait();
-        }
-        catch (...)
-        {
-            // The request failed in `enqueue()` (before it was linked into the scheduler) or in `wait()`.
-            // `HTTPSession::write`/`HTTPSession::receive` catch the propagating exception and unconditionally
-            // call `atFail()` while unwinding, so recover the request to the `Finished` state now and keep
-            // `active` false. Otherwise `atFail()` would call `request.finish()` on a non-`Dequeued` request,
-            // tripping `chassert(state == Dequeued)` in debug builds and corrupting the queue budget in release.
-            request.recoverAfterConstructorFailure(link);
-            throw;
-        }
-        active = true;
+        request.enqueue(bytes, link);
+        request.wait();
         timer.stop();
         if (timer.elapsedMilliseconds() >= 5000)
             LOG_INFO(log, "Resource request took too long to finish: {} ms for {}", timer.elapsedMilliseconds(), http_request);
@@ -377,23 +363,16 @@ struct ResourceGuardSessionDataHooks : public Poco::Net::IHTTPSessionDataHooks
 
     void atFinish(int bytes) override
     {
-        if (!active)
-            return;
-        active = false;
         request.finish(bytes, link);
     }
 
     void atFail() override
     {
-        if (!active)
-            return;
-        active = false;
         request.finish(0, link);
     }
 
     ResourceLink link;
     ResourceGuard::Request request;
-    bool active = false; // Whether `request` is active (granted by the scheduler and not yet finished)
     LoggerPtr log;
     String http_request;
 };
@@ -624,7 +603,7 @@ private:
                 auto fd = Session::socket().impl()->sockfd();
                 if (fd < 0)
                     return;
-                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+                struct stat st; // NOLINT(cppcoreguidelines-pro-type-member-init)
                 if (fstat(fd, &st) == 0)
                     group->updateSocketInode(this, st.st_ino);
             }

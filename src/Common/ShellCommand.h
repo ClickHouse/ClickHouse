@@ -5,7 +5,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/WriteBufferFromFile.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <base/types.h>
 
 
 namespace DB
@@ -67,12 +66,6 @@ public:
         bool pipe_stdin_only = false;
 
         DestructorStrategy terminate_in_destructor_strategy = DestructorStrategy(false, 0);
-
-        /// When true, `tryWaitImpl` reaps with `wait4` and captures the child's
-        /// `rusage` (read back via `getChild*`/`wasChildResourceUsageCaptured`).
-        /// When false (the default) it reaps with plain `waitpid` and allocates
-        /// nothing. Set for executable (non-pool) UDFs, which read the usage.
-        bool collect_resource_usage = false;
     };
 
     pid_t getPid() const
@@ -89,18 +82,6 @@ public:
     {
         do_not_terminate = true;
     }
-
-    /// True once the child has been reaped by `tryWaitImpl` and its
-    /// resource usage was captured.
-    bool wasChildResourceUsageCaptured() const noexcept;
-
-    /// User-mode CPU time consumed by the reaped child. Zero if
-    /// `wasChildResourceUsageCaptured` returns false.
-    UInt64 getChildUserTimeMicroseconds() const noexcept;
-
-    /// Kernel-mode CPU time consumed by the reaped child. Zero if
-    /// `wasChildResourceUsageCaptured` returns false.
-    UInt64 getChildSystemTimeMicroseconds() const noexcept;
 
     /// Run the command using /bin/sh -c.
     /// If terminate_in_destructor is true, send terminate signal in destructor and don't wait process.
@@ -120,11 +101,6 @@ public:
     /// If process terminated, then handle return code.
     bool waitIfProccesTerminated();
 
-    /// Non-blocking reap: if the child has already terminated, collect its `rusage`
-    /// without inspecting the exit status, so a non-zero or signalled exit is not
-    /// raised as an error. Returns whether the child was reaped.
-    bool tryReapWithoutStatusCheck();
-
     WriteBufferFromFile in;        /// If the command reads from stdin, do not forget to call in.close() after writing all the data there.
     ReadBufferFromFile out;
     ReadBufferFromFile err;
@@ -138,19 +114,12 @@ private:
     bool wait_called = false;
     bool do_not_terminate = false;
 
-    /// CPU time of the reaped child, taken from `wait4` rusage and stored by value
-    /// at reap time. The reap path performs no allocation, so a memory-limit
-    /// `exception` can never fail a query whose child has already exited.
-    bool child_resource_usage_captured = false;
-    UInt64 child_user_time_us = 0;
-    UInt64 child_system_time_us = 0;
-
     ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const Config & config);
 
     bool tryWaitProcessWithTimeout(size_t timeout_in_seconds);
     struct tryWaitResult;
 
-    tryWaitResult tryWaitImpl(bool blocking, bool check_exit_status = true);
+    tryWaitResult tryWaitImpl(bool blocking);
 
     void handleProcessRetcode(int retcode) const;
 

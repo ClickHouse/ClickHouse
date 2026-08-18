@@ -49,24 +49,10 @@ endif()
 # The previous external-cmake build (cmake/build_clang_builtin.cmake) avoided
 # this entirely by spawning a separate cmake invocation with only the toolchain
 # file and CMAKE_BUILD_TYPE=Release. Now that we build in-process, we have to
-# strip those flags explicitly. We keep:
-#   * --gcc-toolchain= / --no-default-config (toolchain bits from cmake/linux/toolchain-*.cmake)
-#   * -march= / -mcpu= / -mtune= (target microarchitecture from cmake/cpu_features.cmake)
-#   * -mpclmul / -maltivec (explicit ISA features added by cmake/cpu_features.cmake)
-# The --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
-#
-# Keeping the -march/-m* ISA bits aligns the RTL with the rest of the build:
-# the RTL is then free to use the same baseline instructions as the main
-# binary (where useful). Note this does NOT eliminate vzeroupper insertion at
-# the boundary: LLVM's X86VZeroUpperInserter pass is purely caller-side and
-# does not consult callee target-features, so an AVX2-using caller still
-# emits a vzeroupper before any external call regardless of how the callee
-# was built (see contrib/llvm-project/llvm/lib/Target/X86/X86VZeroUpper.cpp).
-# Eliminating that overhead requires either dropping the upper-half live
-# state in the caller (e.g. -fsanitize-memory-track-origins=1 for MSan
-# drops the hot __msan_chain_origin calls; see cmake/sanitize.cmake),
-# or LTO so the inserter can see across the call boundary.
-set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config|-march=[^ ]+|-mcpu=[^ ]+|-mtune=[^ ]+|-mpclmul|-maltivec)")
+# strip those flags explicitly. We keep only the toolchain bits added by
+# cmake/linux/toolchain-*.cmake (--gcc-toolchain, --no-default-config); the
+# --target= flag is applied automatically by cmake from CMAKE_<LANG>_COMPILER_TARGET.
+set(_compiler_rt_keep_re "(--gcc-toolchain=[^ ]+|--no-default-config)")
 foreach (lang C CXX ASM)
     string(REGEX MATCHALL "${_compiler_rt_keep_re}" _kept "${CMAKE_${lang}_FLAGS}")
     string(JOIN " " CMAKE_${lang}_FLAGS ${_kept})
@@ -299,10 +285,7 @@ set(SANITIZER_COMMON_FLAGS
     # RTTI is disabled by default in compiler-rt
     # (lib/sanitizer_common/CMakeLists.txt sets RTTI OFF; ubsan_cxx overrides).
     -fno-rtti
-    # The query profiler uses frame-pointer-based stack unwinding under sanitizers
-    # (via abseil), so sanitizer runtime frames (e.g. TSan interceptors) need frame
-    # pointers too. Override compiler-rt's default -fomit-frame-pointer.
-    -fno-omit-frame-pointer
+    -fomit-frame-pointer
     -funwind-tables
     -fno-stack-protector
     -fvisibility=hidden

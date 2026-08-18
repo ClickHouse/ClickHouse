@@ -273,7 +273,6 @@ AggregateFunctionPtr createAggregateFunctionBitmapL2(
 
 }
 
-void registerAggregateFunctionsBitmap(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsBitmap(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -1,6 +1,4 @@
-#include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
-#include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -501,7 +499,7 @@ private:
         if (arg_needles->type != ActionsDAG::ActionType::COLUMN || !arg_needles->column)
             return;
 
-        if (arg_needles->column->onlyNull())
+        if (arg_needles->column->empty() || arg_needles->column->isNullAt(0))
             return;
 
         Field needles_field = (*arg_needles->column)[0];
@@ -543,16 +541,18 @@ private:
             auto tokenizer_description = tokenizer->getDescription();
 
             /// Add argument with tokenizer definition.
-            auto arg_type = std::make_shared<DataTypeString>();
-            auto arg_column = arg_type->createColumnConst(0, Field(tokenizer_description));
-            new_children.push_back(&actions_dag.addColumn(std::move(arg_column), std::move(arg_type), quoteString(tokenizer_description)));
+            ColumnWithTypeAndName arg;
+            arg.type = std::make_shared<DataTypeString>();
+            arg.column = arg.type->createColumnConst(1, Field(tokenizer_description));
+            arg.name = quoteString(tokenizer_description);
+            new_children.push_back(&actions_dag.addColumn(std::move(arg)));
 
             /// Convert needles to array if they are a string by applying a tokenizer.
             /// For hasPhrase the phrase must stay as a string — tokenization is done inside hasPhrase itself.
             const bool convert_needle_to_array = function_name == "hasAnyTokens" || function_name == "hasAllTokens";
             if (convert_needle_to_array && needles_field.getType() == Field::Types::String)
             {
-                VectorWithMemoryTracking<String> needles_array;
+                std::vector<String> needles_array;
                 const auto & needles_string = needles_field.safeGet<String>();
                 tokenizer->stringToTokens(needles_string.data(), needles_string.size(), needles_array);
                 needles_array = tokenizer->compactTokens(needles_array);
@@ -562,8 +562,11 @@ private:
         }
 
         /// Recreate an argument with needles.
-        auto needles_column = needles_type->createColumnConst(0, needles_field);
-        new_children[1] = &actions_dag.addColumn(std::move(needles_column), needles_type, applyVisitor(FieldVisitorToString(), needles_field));
+        ColumnWithTypeAndName arg;
+        arg.type = needles_type;
+        arg.column = needles_type->createColumnConst(1, needles_field);
+        arg.name = applyVisitor(FieldVisitorToString(), needles_field);
+        new_children[1] = &actions_dag.addColumn(std::move(arg));
 
         /// Recreate a function object because we have modified the arguments.
         auto new_function_base = FunctionFactory::instance().get(function_name, context);
@@ -743,9 +746,22 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     if (text_index_read_infos.empty())
         return;
 
+    /// This step can be visited by the pass more than once, because a Merge child plan is optimized
+    /// again after ReadFromMerge pushes a filter down into it (StorageMerge), and because the same
+    /// text-index predicate can reach the step from several filter stages. Direct read replaces a
+    /// text-search function with a synthetic __text_index_..._has_<hash> column that is registered
+    /// into the step's read set exactly once (ReadFromMergeTree::createReadTasksForTextIndex). If the
+    /// step already carries index read tasks, direct read has already been applied to it, so a later
+    /// visit must not register the column a second time -- doing so throws "already added for reading"
+    /// (e.g. an identical predicate in both PREWHERE and WHERE over Merge -> Distributed -> MergeTree).
+    /// The tokenizer/preprocessor rewrite below still runs regardless: it is needed for correctness
+    /// (row-level evaluation when direct read is off or a part is not fully materialized) and does not
+    /// register any read column.
+    bool already_has_direct_read = !read_from_merge_tree_step->getIndexReadTasks().empty();
+
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
-        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index);
+        optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index && !already_has_direct_read);
 
     if (stack.size() < 2)
         return;
@@ -757,7 +773,7 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
+    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read);
 
     if (!result_filter_node)
         return;

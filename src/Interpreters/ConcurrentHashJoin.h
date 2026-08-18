@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -12,6 +13,8 @@
 
 namespace DB
 {
+
+struct SelectQueryInfo;
 
 /**
  * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.
@@ -126,4 +129,7 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
+// The following two methods are deprecated and hopefully will be removed in the future.
+IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
+UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }

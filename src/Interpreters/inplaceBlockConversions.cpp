@@ -27,7 +27,6 @@
 
 #include <Planner/CollectTableExpressionData.h>
 #include <Planner/Utils.h>
-#include <Planner/CollectSets.h>
 #include <Planner/PlannerActionsVisitor.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -240,8 +239,7 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
 
-    collectSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
-    collectSets(expression, *planner_context);
+    collectSetsAndSourceColumns(expression, planner_context, true /*keep_alias_columns*/);
 
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
@@ -286,7 +284,7 @@ void performRequiredConversions(Block & block, const NamesAndTypesList & require
     }
 }
 
-static bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
+bool needConvertAnyNullToDefault(const Block & header, const NamesAndTypesList & required_columns, const ColumnsDescription & columns)
 {
     for (const auto & required_column : required_columns)
     {
@@ -374,19 +372,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return const_column->convertToFullColumnIfConst();
+        return column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    ColumnPtr data_column = const_column->getDataColumnPtr();
-    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
+    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
+    column = data_type.getSubcolumn(subcolumn_name, column);
 
-    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
+    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
@@ -425,7 +423,8 @@ void fillMissingColumns(
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
     StorageSnapshotPtr storage_snapshot,
-    bool share_nested_offsets)
+    bool share_nested_offsets,
+    const NameSet & additional_available_columns)
 {
     size_t num_columns = requested_columns.size();
     if (num_columns != res_columns.size())
@@ -452,6 +451,15 @@ void fillMissingColumns(
 
         /// Nothing to fill or default should be filled in evaluateMissingDefaults.
         if (res_columns[i] || hasDefault(storage_snapshot, *requested_column))
+            continue;
+
+        /// Subcolumn missing from the part's (older) type but whose parent is available (read here
+        /// or produced by an earlier step): defer to evaluateMissingDefaults instead of default-
+        /// filling. Needs a storage_snapshot, i.e. a caller that runs that pass (not Memory engine).
+        if (storage_snapshot
+            && requested_column->isSubcolumn()
+            && (available_columns.contains(requested_column->getNameInStorage())
+                || additional_available_columns.contains(requested_column->getNameInStorage())))
             continue;
 
         std::vector<ColumnPtr> current_offsets;

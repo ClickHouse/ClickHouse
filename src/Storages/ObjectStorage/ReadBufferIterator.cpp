@@ -256,7 +256,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
 
         std::unique_ptr<ReadBuffer> read_buf;
-        CompressionMethod compression_method = {};
+        CompressionMethod compression_method;
         using ObjectInfoInArchive = StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive;
         if (const auto * object_info_in_archive = dynamic_cast<const ObjectInfoInArchive *>(current_object_info.get()))
         {

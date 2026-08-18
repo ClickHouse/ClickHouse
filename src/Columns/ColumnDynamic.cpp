@@ -806,7 +806,7 @@ std::string_view ColumnDynamic::serializeValueIntoArena(size_t n, Arena & arena,
 void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings *)
 {
     auto & variant_col = getVariantColumn();
-    UInt8 null_bit = 0;
+    UInt8 null_bit;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
     {
@@ -815,7 +815,7 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
     }
 
     /// Read variant type and value in binary format.
-    size_t type_and_value_size = 0;
+    size_t type_and_value_size;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     if (in.available() < type_and_value_size)
         throw Exception(ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF, "Attempt to read after eof when deserializing ColumnDynamic");
@@ -850,12 +850,12 @@ void ColumnDynamic::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn
 
 void ColumnDynamic::skipSerializedInArena(ReadBuffer & in) const
 {
-    UInt8 null_bit = 0;
+    UInt8 null_bit;
     readBinaryLittleEndian<UInt8>(null_bit, in);
     if (null_bit)
         return;
 
-    size_t type_and_value_size = 0;
+    size_t type_and_value_size;
     readBinaryLittleEndian<size_t>(type_and_value_size, in);
     in.ignore(type_and_value_size);
 }
@@ -1563,15 +1563,9 @@ void ColumnDynamic::applyNullMap(const ColumnVector<UInt8>::Container & null_map
     variant_column_ptr->applyNullMap(null_map);
 }
 
-void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset)
+void ColumnDynamic::applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map)
 {
-    if (offset + null_map.size() != size())
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Null map of size {} at offset {} does not match {} of size {}",
-            null_map.size(), offset, getName(), size());
-
-    variant_column_ptr->applyNegatedNullMap(null_map, offset);
+    variant_column_ptr->applyNegatedNullMap(null_map);
 }
 
 }

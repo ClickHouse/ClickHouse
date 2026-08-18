@@ -2,7 +2,6 @@
 
 #include <Client/ConnectionPool_fwd.h>
 #include <Core/Protocol.h>
-#include <Core/Types.h>
 #include <Common/Macros.h>
 #include <Common/Exception.h>
 #include <Common/MultiVersion.h>
@@ -42,9 +41,6 @@ struct DatabaseReplicaInfo
     std::optional<bool> is_local;
 };
 
-/// List of replica hostnames grouped per shard. Used to construct a Cluster for the remote() function.
-using HostsByShard = std::vector<Strings>;
-
 struct ClusterConnectionParameters
 {
     const String & username;
@@ -80,7 +76,7 @@ public:
     /// Used for remote() function.
     Cluster(
         const Settings & settings,
-        const HostsByShard & names,
+        const std::vector<std::vector<String>> & names,
         const ClusterConnectionParameters & params);
 
 

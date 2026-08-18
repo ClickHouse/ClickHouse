@@ -32,7 +32,7 @@ namespace Setting
 namespace
 {
 
-class FunctionDateTrunc final : public IFunction
+class FunctionDateTrunc : public IFunction
 {
 public:
     static constexpr auto name = "dateTrunc";
@@ -87,7 +87,7 @@ private:
 };
 
 
-class FunctionDateTruncOverloadResolver final : public IFunctionOverloadResolver
+class FunctionDateTruncOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = "dateTrunc";
@@ -117,9 +117,9 @@ public:
             DateTime,
             DateTime64,
         };
-        ResultType result_type = {};
+        ResultType result_type;
 
-        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+        IntervalKind::Kind datepart_kind;
 
         String datepart_param;
         auto check_first_argument = [&] {
@@ -233,7 +233,7 @@ public:
                 "name of datepart", getName());
 
         String datepart_param = Poco::toLower(datepart_column->getValue<String>());
-        IntervalKind::Kind datepart_kind = IntervalKind::Kind::Second;
+        IntervalKind::Kind datepart_kind;
         if (!IntervalKind::tryParseString(datepart_param, datepart_kind))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} doesn't look like datepart name in {}", datepart_param, getName());
 

@@ -147,6 +147,7 @@ private:
         const IStorage * ignore_self);
 
     ColumnSizeByName getColumnSizes() const override;
+    ColumnSizeByName getColumnSizes(const Names & columns) const override;
 
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override;
 
@@ -194,10 +195,6 @@ public:
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
 
     QueryPlanRawPtrs getChildPlans() override;
-
-    /// Returns child plans aligned 1:1 with `getSelectedTables()`. Entries for uninitialized
-    /// plans are returned as `nullptr` so that callers can pair tables with their plans.
-    std::vector<QueryPlan *> getAllChildPlans();
 
     void addFilter(FilterDAGInfo filter);
 

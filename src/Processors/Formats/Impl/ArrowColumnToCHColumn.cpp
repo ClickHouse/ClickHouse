@@ -286,6 +286,9 @@ const ArrowViewArray & checkedCastView(const arrow::Array & array, const String 
 /// because value_length(i) = offset[i+1] - offset[i], so the last element needs
 /// offset[length].  This must be checked before any call to value_offset(i) or
 /// GetView(i) to prevent an over-read of the offsets buffer.
+/// When length == 0, no offsets are accessed at all (every caller's iteration loop
+/// is skipped), so no bytes are required.  This accepts the 0-byte offsets buffers
+/// that Apache Arrow Java < 19.0.0 emits for empty String/Binary columns.
 template <typename ArrowBinaryArray>
 void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & column_name)
 {
@@ -296,7 +299,9 @@ void checkBinaryOffsetsBuffer(const ArrowBinaryArray & chunk, const String & col
             column_name, chunk.length(), chunk.offset());
     const auto & buffer = chunk.data()->buffers[1];
     const size_t buffer_size = buffer ? static_cast<size_t>(buffer->size()) : 0;
-    const size_t count_plus_one = static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1;
+    const size_t count_plus_one = chunk.length() > 0
+        ? static_cast<size_t>(chunk.offset()) + static_cast<size_t>(chunk.length()) + 1
+        : 0;
     size_t required = 0;
     if (unlikely(__builtin_mul_overflow(sizeof(typename ArrowBinaryArray::offset_type), count_plus_one, &required)))
         throw Exception(
@@ -1271,6 +1276,11 @@ static ColumnPtr readOffsetsFromArrowListColumn(const std::shared_ptr<arrow::Chu
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
     {
         auto & list_chunk = dynamic_cast<ArrowListArray &>(*(arrow_column->chunk(chunk_i)));
+        /// A zero-length list chunk accesses no offsets (the loop below is skipped), so no bytes
+        /// are required.  Skip before checkedCast to accept the 0-byte offsets buffer that Apache
+        /// Arrow Java < 19.0.0 emits for an empty nested List/Map (see checkBinaryOffsetsBuffer).
+        if (list_chunk.length() == 0)
+            continue;
         auto arrow_offsets_array = list_chunk.offsets();
         /// The offsets array is a numeric Int32/Int64 array, validate its buffer before Value() calls.
         using OffsetArray = typename ArrowOffsetArray<ArrowListArray>::type;
@@ -1456,6 +1466,21 @@ static std::shared_ptr<arrow::ChunkedArray> getNestedArrowColumn(const std::shar
         /// Validate the parent list validity bitmap before Flatten(): when null_count > 0,
         /// Flatten calls IsValid on the parent list array which reads buffers[0].
         checkValidityBitmap(list_chunk, column_name);
+
+        /// A zero-length list chunk may carry a 0-byte offsets buffer (Apache Arrow Java < 19.0.0
+        /// emits one for an empty nested List/Map).  Arrow's Flatten() would read offset[0] from
+        /// that missing buffer and return a slice with a garbage offset; instead push an empty
+        /// slice of the values array, which preserves the child type with zero rows.
+        if (list_chunk.length() == 0)
+        {
+            const auto & values = list_chunk.values();
+            if (!values)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Arrow List chunk has no values array for column '{}'", column_name);
+            array_vector.emplace_back(values->Slice(0, 0));
+            continue;
+        }
 
         /// Validate the offsets buffer before Flatten() reads it: Flatten() iterates
         /// over offset[0..length] to slice the values array, so it needs (length+1) entries.
@@ -2349,11 +2374,19 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
     bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
+    /// allow_experimental_nullable_tuple_type (otherwise schema inference would return a type
+    /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
+    /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
+    /// before Nullable(Tuple) was supported.
+    bool allow_nullable_struct = settings.format_settings.schema_inference_allow_nullable_tuple_type
+        || (type_hint && isNullableOrLowCardinalityNullable(type_hint));
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
         arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
+        (arrow_column->type()->id() != arrow::Type::STRUCT || allow_nullable_struct) &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;
@@ -2403,7 +2436,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
 {
     if (!status.ok())
-        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}'", format_name, column_name);
+        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
 static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)
@@ -2511,12 +2544,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -2644,12 +2673,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {

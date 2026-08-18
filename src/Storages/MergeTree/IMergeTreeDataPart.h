@@ -3,7 +3,6 @@
 #include <atomic>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
@@ -148,6 +147,13 @@ public:
     void setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version);
 
     void setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_);
+
+    /// Re-home the small, part-lifetime metadata that build paths may populate outside the
+    /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
+    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
+    /// `setMinMaxIndex` / the population sites.
+    void moveMetadataToDedicatedArena();
 
     /// Version of metadata for part (columns, pk and so on)
     int32_t getMetadataVersion() const { return metadata_version; }
@@ -409,7 +415,7 @@ public:
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version{};
+    int32_t metadata_version;
 
     /// The number of temporary projection block.
     /// It is set while rebuilding projections in merges or mutations.

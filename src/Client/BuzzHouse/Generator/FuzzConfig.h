@@ -30,7 +30,6 @@ using JSONParserImpl = DB::DummyJSONParser;
 #endif
 
 #include <Client/BuzzHouse/AST/SQLProtoStr.h>
-#include <Client/BuzzHouse/Generator/SQLFuncs.h>
 #include <Client/ClientBase.h>
 #include <Common/logger_useful.h>
 
@@ -308,13 +307,6 @@ public:
     DB::Strings hot_table_settings;
     DB::Strings tokenizers;
 
-    std::vector<CHFunction> det_funcs;
-    std::vector<CHFunction> nondet_funcs;
-    std::vector<CHFunction> common_funcs;
-    std::vector<CHAggregate> det_aggrs;
-    std::vector<CHAggregate> simple_det_aggrs;
-    std::vector<CHAggregate> nondet_aggrs;
-
     std::optional<ServerCredentials> clickhouse_server;
     std::optional<ServerCredentials> mysql_server;
     std::optional<ServerCredentials> postgresql_server;
@@ -425,8 +417,6 @@ private:
 
     String tableGetRandomSystemName(uint64_t rand_val, const String & system_table, const String & database, const String & table);
 
-    void loadFunctions();
-
 public:
     void loadServerConfigurations();
 
@@ -455,10 +445,6 @@ public:
     uint32_t tableCountProjections(const String & database, const String & table);
 
     String tableGetRandomProjection(uint64_t rand_val, const String & database, const String & table);
-
-    uint32_t tableCountConstraints(const String & database, const String & table);
-
-    String tableGetRandomConstraint(uint64_t rand_val, const String & database, const String & table);
 
     void comparePerformanceResults(const String & oracle_name, PerformanceResult & server, PerformanceResult & peer) const;
 

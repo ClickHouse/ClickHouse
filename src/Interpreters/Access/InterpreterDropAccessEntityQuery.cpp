@@ -125,7 +125,6 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{}: type is not supported by DROP query", toString(query.type));
 }
 
-void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory);
 void registerInterpreterDropAccessEntityQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

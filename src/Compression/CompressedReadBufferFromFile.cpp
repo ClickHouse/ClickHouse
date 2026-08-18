@@ -1,3 +1,4 @@
+#include <cassert>
 
 #include <Compression/CompressedReadBufferFromFile.h>
 
@@ -28,7 +29,7 @@ bool CompressedReadBufferFromFile::nextImpl()
         auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
 
         /// This is for clang static analyzer.
-        chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+        assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
 
         memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
         working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
@@ -146,7 +147,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 bytes += offset();
 
                 /// This is for clang static analyzer.
-                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 /// Synchronous mode must be set since we need read partial data immediately from working buffer to target buffer.
@@ -172,7 +173,7 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
                 bytes += offset();
 
                 /// This is for clang static analyzer.
-                chassert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+                assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
                 memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
                 working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
                 // Asynchronous mode can be set here because working_buffer wouldn't be overwritten any more since this is the last block.

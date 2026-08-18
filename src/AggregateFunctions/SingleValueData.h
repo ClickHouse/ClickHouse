@@ -281,7 +281,7 @@ private:
 
     union
     {
-        char * large_data{}; /// Always allocated in arena
+        char * large_data; /// Always allocated in arena
         char small_data[MAX_SMALL_STRING_SIZE];
     };
 
@@ -386,7 +386,7 @@ struct SingleValueReference final : public SingleValueDataBase
     using Self = SingleValueReference;
 
     ColumnPtr column_ref;
-    size_t row_number{};
+    size_t row_number;
 
     bool has() const override { return column_ref != nullptr; }
     void insertResultInto(IColumn & to, const DataTypePtr & type) const override;

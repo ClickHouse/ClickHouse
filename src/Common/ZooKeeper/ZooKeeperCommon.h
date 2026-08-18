@@ -133,7 +133,7 @@ struct ZooKeeperReconfigRequest final : ZooKeeperRequest
     String joining;
     String leaving;
     String new_members;
-    int64_t version{}; // kazoo sends a 64bit integer in this request
+    int64_t version; // kazoo sends a 64bit integer in this request
 
     String getPath() const override { return keeper_config_path; }
     OpNum getOpNum() const override { return OpNum::Reconfig; }
@@ -822,10 +822,10 @@ struct ZooKeeperMultiReadResponse final : public ZooKeeperMultiResponse
 /// and never send to client.
 struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
 {
-    int64_t internal_id{};
-    int64_t session_timeout_ms{};
+    int64_t internal_id;
+    int64_t session_timeout_ms;
     /// Who requested this session
-    int32_t server_id{};
+    int32_t server_id;
 
     Coordination::OpNum getOpNum() const override { return OpNum::SessionID; }
     String getPath() const override { return {}; }
@@ -841,10 +841,10 @@ struct ZooKeeperSessionIDRequest final : ZooKeeperRequest
 /// and never send to client.
 struct ZooKeeperSessionIDResponse final : ZooKeeperResponse
 {
-    int64_t internal_id{};
-    int64_t session_id{};
+    int64_t internal_id;
+    int64_t session_id;
     /// Who requested this session
-    int32_t server_id{};
+    int32_t server_id;
 
     void readImpl(ReadBuffer & in) override;
 

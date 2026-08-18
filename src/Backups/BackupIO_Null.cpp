@@ -91,8 +91,6 @@ bool BackupWriterNull::fileContentsEqual(const String & file_name, const String 
 }
 
 
-void registerBackupEngineNull(BackupFactory & factory);
-
 void registerBackupEngineNull(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>

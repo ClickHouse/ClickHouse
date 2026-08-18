@@ -696,7 +696,7 @@ void ZooKeeperCheckWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
 
-    int32_t type_representation = 0;
+    int32_t type_representation;
     Coordination::read(type_representation, in);
     type = static_cast<CheckWatchType>(type_representation);
 }
@@ -740,7 +740,7 @@ size_t ZooKeeperCheckWatchResponse::sizeImpl() const
 void ZooKeeperRemoveWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t type_representation = 0;
+    int32_t type_representation;
     Coordination::read(type_representation, in);
     type = static_cast<WatchType>(type_representation);
 }
@@ -784,7 +784,7 @@ size_t ZooKeeperRemoveWatchResponse::sizeImpl() const
 void ZooKeeperAddWatchRequest::readImpl(ReadBuffer & in)
 {
     Coordination::read(path, in);
-    int32_t mode_representation = 0;
+    int32_t mode_representation;
     Coordination::read(mode_representation, in);
     mode = static_cast<AddWatchMode>(mode_representation);
 }
@@ -814,7 +814,7 @@ ZooKeeperResponsePtr ZooKeeperAddWatchRequest::makeResponse() const
 
 void ZooKeeperAddWatchResponse::readImpl(ReadBuffer & in)
 {
-    int32_t err = 0;
+    int32_t err;
     Coordination::read(err, in);
 }
 
@@ -1000,7 +1000,7 @@ std::string ZooKeeperCheckRequest::toStringImpl(bool /*short_format*/) const
 
 void ZooKeeperErrorResponse::readImpl(ReadBuffer & in)
 {
-    Coordination::Error read_error = {};
+    Coordination::Error read_error;
     Coordination::read(read_error, in);
 
     if (read_error != error)
@@ -1155,9 +1155,9 @@ void ZooKeeperMultiRequest::readImpl(ReadBuffer & in, RequestValidator request_v
 {
     while (true)
     {
-        OpNum op_num = {};
-        bool done = false;
-        int32_t error = 0;
+        OpNum op_num;
+        bool done;
+        int32_t error;
         Coordination::read(op_num, in);
         Coordination::read(done, in);
         Coordination::read(error, in);
@@ -1210,9 +1210,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 {
     for (auto & response : responses)
     {
-        OpNum op_num = {};
-        bool done = false;
-        Error op_error = {};
+        OpNum op_num;
+        bool done;
+        Error op_error;
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1246,9 +1246,9 @@ void ZooKeeperMultiResponse::readImpl(ReadBuffer & in)
 
     /// Footer.
     {
-        OpNum op_num = {};
-        bool done = false;
-        int32_t error_read = 0;
+        OpNum op_num;
+        bool done;
+        int32_t error_read;
 
         Coordination::read(op_num, in);
         Coordination::read(done, in);
@@ -1481,7 +1481,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
     for (const auto & request : requests)
     {
         auto & req = dynamic_cast<ZooKeeperRequest &>(*request);
-        chassert(!req.xid || req.xid == xid);
+        assert(!req.xid || req.xid == xid);
         req.createLogElements(elems);
     }
 }
@@ -1490,7 +1490,7 @@ void ZooKeeperMultiRequest::createLogElements(LogElements & elems) const
 void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
     auto & elem =  elems[idx];
-    chassert(!elem.xid || elem.xid == xid);
+    assert(!elem.xid || elem.xid == xid);
     elem.xid = xid;
     int32_t response_op = tryGetOpNum();
 
@@ -1498,7 +1498,7 @@ void ZooKeeperResponse::fillLogElements(LogElements & elems, size_t idx) const
         && response_op == static_cast<int32_t>(Coordination::OpNum::List))
         || (elem.op_num == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData)
         && response_op == static_cast<int32_t>(Coordination::OpNum::FilteredListWithStatsAndData));
-    chassert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
+    assert(!elem.op_num || elem.op_num == response_op || is_filtered_list || response_op < 0);
     elem.op_num = response_op;
 
     elem.zxid = zxid;
@@ -1606,14 +1606,14 @@ ZooKeeperResponsePtr ZooKeeperListRecursiveRequest::makeResponse() const
 
 void ZooKeeperMultiResponse::fillLogElements(LogElements & elems, size_t idx) const
 {
-    chassert(idx == 0);
-    chassert(elems.size() == responses.size() + 1);
+    assert(idx == 0);
+    assert(elems.size() == responses.size() + 1);
     ZooKeeperResponse::fillLogElements(elems, idx);
     for (const auto & response : responses)
     {
         auto & resp = dynamic_cast<ZooKeeperResponse &>(*response);
-        chassert(!resp.xid || resp.xid == xid);
-        chassert(!resp.zxid || resp.zxid == zxid);
+        assert(!resp.xid || resp.xid == xid);
+        assert(!resp.zxid || resp.zxid == zxid);
         resp.xid = xid;
         resp.zxid = zxid;
         resp.fillLogElements(elems, ++idx);
@@ -1630,8 +1630,8 @@ void ZooKeeperRequestFactory::registerRequest(OpNum op_num, Creator creator)
 
 std::shared_ptr<ZooKeeperRequest> ZooKeeperRequest::read(ReadBuffer & in)
 {
-    XID xid = 0;
-    OpNum op_num = {};
+    XID xid;
+    OpNum op_num;
 
     Coordination::read(xid, in);
     Coordination::read(op_num, in);

@@ -781,24 +781,12 @@ class Result(MetaClasses.Serializable):
             # Covers sanitizer reports ("SUMMARY:") and ClickHouse logical errors.
             _ERROR_PREFIXES = ("SUMMARY:", "Logical error:", "Code: ", "Signal description:")
             crash_info = ""
-            # Some gtests (e.g. the function property fuzzer, gtest_functions_stress) log the
-            # offending call as a runnable SQL query right before crashing, via
-            # logCurrentOperation: "(while executing: SELECT f(...);)". Surface it next to the
-            # error so the report shows a copy-pasteable repro instead of just the message.
-            repro_info = ""
-            _REPRO_MAX_LEN = 8192
             if result.files:
                 log_content = Shell.get_output(f"cat {result.files[0]}", verbose=False)
                 for line in log_content.splitlines():
-                    if not crash_info and any(line.startswith(p) for p in _ERROR_PREFIXES):
+                    if any(line.startswith(p) for p in _ERROR_PREFIXES):
                         crash_info = line
-                    if not repro_info and line.startswith("(while ") and "SELECT " in line:
-                        repro_info = line
-                        if len(repro_info) > _REPRO_MAX_LEN:
-                            repro_info = repro_info[:_REPRO_MAX_LEN] + " ... (truncated, see log)"
-                    if crash_info and repro_info:
                         break
-            crash_info = "\n".join(p for p in (crash_info, repro_info) if p)
             result.info = crash_info or info
             # Synthesize a failed sub-result so the job summary is not empty.
             crashed_test = gtest_filter.rstrip(".*") or "unknown"
@@ -920,14 +908,27 @@ class Result(MetaClasses.Serializable):
         # Apply truncation if info_lines exceeds MAX_LINES_IN_INFO
         truncated = False
         if len(info_lines) > MAX_LINES_IN_INFO:
-            # For clang-tidy and similar builds, find the first error/warning
-            # and show context around it instead of just the last lines
+            # For clang-tidy and similar builds, find the first error (or, if
+            # there is none, the first warning) and show context around it
+            # instead of just the last lines.
+            # Errors take priority over warnings: a build log often contains
+            # many unrelated warnings (e.g. deprecation warnings from contrib
+            # libraries) before the actual compile error that stopped the
+            # build. Centering the excerpt on the first warning would truncate
+            # away the real error, so scan for the first error first and only
+            # fall back to the first warning when no error is present.
             first_error_idx = None
+            first_warning_idx = None
             for idx, line in enumerate(info_lines):
                 # Match clang-tidy format: "file:line:col: error:" or "file:line:col: warning:"
-                if ": error:" in line or ": warning:" in line:
+                if ": error:" in line:
                     first_error_idx = idx
                     break
+                if first_warning_idx is None and ": warning:" in line:
+                    first_warning_idx = idx
+
+            if first_error_idx is None:
+                first_error_idx = first_warning_idx
 
             if first_error_idx is not None:
                 # Show context around the first error (lines before and after)

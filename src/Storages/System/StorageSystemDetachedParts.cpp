@@ -87,7 +87,7 @@ struct WorkerState
     std::atomic<size_t> next_task = {0};
 };
 
-class DetachedPartsSource final : public ISource
+class DetachedPartsSource : public ISource
 {
 public:
     DetachedPartsSource(SharedHeader header_, std::shared_ptr<SourceState> state_, std::vector<UInt8> columns_mask_, UInt64 block_size_)

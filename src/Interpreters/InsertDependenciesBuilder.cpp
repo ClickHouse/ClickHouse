@@ -74,6 +74,7 @@
 #include <base/defines.h>
 
 #include <atomic>
+#include <cassert>
 #include <exception>
 #include <memory>
 #include <unordered_map>
@@ -134,6 +135,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
     extern const int TOO_DEEP_RECURSION;
 }
 
@@ -492,7 +494,7 @@ private:
 };
 
 
-static DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
+DB::ConstraintsDescription buildConstraints(StorageMetadataPtr metadata, StoragePtr storage)
 {
     auto constraints = metadata->getConstraints();
 
@@ -782,9 +784,9 @@ struct SquashingTransformContext
 
 }
 
-VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
+std::vector<Chain> InsertDependenciesBuilder::createChainWithDependenciesForAllStreams() const
 {
-    VectorWithMemoryTracking<Chain> insert_chains;
+    std::vector<Chain> insert_chains;
     std::vector<SquashingProcessorsMap> squashing_processor_maps;
     std::unordered_map<
         StorageIDMaybeEmpty,
@@ -902,7 +904,7 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
         result_data.push_back(std::make_pair(std::move(processor_list), std::move(resources)));
     }
 
-    VectorWithMemoryTracking<Chain> result_chains;
+    std::vector<Chain> result_chains;
     result_chains.reserve(result_data.size());
 
     for (auto & [processor_list, resources] : result_data)
@@ -1453,13 +1455,10 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     if (!constraints.empty())
         result.addSink(std::make_shared<CheckConstraintsTransform>(inner_table_id, header, constraints, insert_context));
 
-    const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
-
     if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
     {
         auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
     else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
@@ -1471,7 +1470,6 @@ Chain InsertDependenciesBuilder::createSink(StorageIDMaybeEmpty view_id) const
     {
         auto sink = inner_storage->write(select_queries.at(view_id), metadata_snapshots.at(inner_table_id), insert_context, async_insert);
         sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
         result.addSink(std::move(sink));
     }
 
@@ -1485,7 +1483,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     if (dependent_views_ids.empty())
         return {};
 
-    VectorWithMemoryTracking<Chain> view_chains;
+    std::vector<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
     std::vector<Block> output_view_chains_headers;
@@ -1534,15 +1532,19 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
 }
 
 
-static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
+String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 {
-    String res = q->formatWithSecretsOneLine();
-    if (auto masker = SensitiveDataMasker::getInstance())
-        masker->wipeSensitiveData(res);
+    if (!q)
+        return {};
 
-    res = res.substr(0, context->getSettingsRef()[Setting::log_queries_cut_to_length]);
+    const auto max_length = context->getSettingsRef()[Setting::log_queries_cut_to_length];
 
-    return res;
+    if (q->hasSecretParts())
+    {
+        return q->formatForLogging(max_length);
+    }
+
+    return wipeSensitiveDataAndCutToLength(q->formatWithSecretsOneLine(), max_length, true);
 }
 
 
@@ -1690,6 +1692,26 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     LOG_DEBUG(logger, "Creating retry chain for path {}, partition <{}> starting from {}", fmt::join(path, "/"), partition, start_from);
 
+    /// Behind a table with the `Alias` engine the deduplication info travels into a nested insert
+    /// chain, and its visited views belong to the outer chain's builder, so this builder cannot
+    /// rebuild them. A foreign element can appear anywhere in the path: at its end (a direct
+    /// insert into the source table), at its start (a direct insert into a materialized view
+    /// keeps the view as `start_from`), or in the middle (a regular-table root keeps an empty
+    /// `start_from`, which every builder "owns" because `inner_tables` always contains the
+    /// empty root, while the intermediate views of the outer chain are still foreign — and
+    /// skipping them would silently drop their transformations from the retried rows). Require
+    /// every element to be owned by this builder and refuse loudly otherwise, instead of
+    /// failing with a bare `std::out_of_range` or losing rows below.
+    auto foreign = std::find_if(path.begin(), path.end(), [this](const auto & id) { return !isView(id); });
+    if (foreign != path.end() || !isView(start_from))
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot rebuild the deduplication retry chain for '{}': it does not belong to this insert chain. "
+            "This happens when deduplicated rows have to be recalculated after a table with the `Alias` engine. "
+            "Retry path: {}",
+            foreign != path.end() ? *foreign : start_from,
+            fmt::join(path, "/"));
+
     Chain result;
 
     auto it = std::find(path.begin(), path.end(), start_from);
@@ -1709,10 +1731,6 @@ Chain InsertDependenciesBuilder::createRetry(const std::vector<StorageIDMaybeEmp
 
     for (; it != path.end(); ++it)
     {
-        // build nodes only for views in path
-        if (!isView(*it))
-            continue;
-
         const auto & view_id = *it;
         chassert(isView(view_id));
 

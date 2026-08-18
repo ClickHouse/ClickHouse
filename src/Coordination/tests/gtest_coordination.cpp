@@ -89,7 +89,7 @@ TYPED_TEST(CoordinationTest, BufferSerde)
 
         DB::ReadBufferFromNuraftBuffer rbuf(nuraft_buffer);
 
-        int32_t length = {};
+        int32_t length;
         Coordination::read(length, rbuf);
         EXPECT_EQ(length + sizeof(length), nuraft_buffer->size());
 
@@ -107,7 +107,7 @@ TYPED_TEST(CoordinationTest, BufferSerde)
 
         EXPECT_EQ(xid, request->xid);
 
-        Coordination::OpNum opnum = {};
+        Coordination::OpNum opnum;
         Coordination::read(opnum, rbuf);
 
         Coordination::ZooKeeperRequestPtr request_read = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
@@ -217,7 +217,7 @@ struct SimpliestRaftServer
 
 using SummingRaftServer = SimpliestRaftServer<DB::SummingStateMachine>;
 
-static nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
+nuraft::ptr<nuraft::buffer> getBuffer(int64_t number)
 {
     nuraft::ptr<nuraft::buffer> ret = nuraft::buffer::alloc(sizeof(number));
     nuraft::buffer_serializer bs(ret);

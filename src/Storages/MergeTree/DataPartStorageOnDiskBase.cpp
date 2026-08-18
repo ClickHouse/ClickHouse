@@ -4,10 +4,10 @@
 #include <Backups/BackupSettings.h>
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Disks/TemporaryFileOnDisk.h>
-#include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadBufferFromString.h>
-#include <IO/ReadPipeline.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
@@ -32,16 +32,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int CORRUPTED_DATA;
-}
-
-std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
-    const std::string & name,
-    const ReadSettings & settings,
-    std::optional<size_t> read_hint) const
-{
-    ReadPipeline pipeline;
-    prepareRead(name, settings, read_hint, pipeline);
-    return pipeline.build();
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)
@@ -86,7 +76,7 @@ std::string DataPartStorageOnDiskBase::getParentDirectory() const
 
 std::optional<String> DataPartStorageOnDiskBase::getRelativePathForPrefix(LoggerPtr log, const String & prefix, bool detached, bool broken) const
 {
-    chassert(!broken || detached);
+    assert(!broken || detached);
     String res;
 
     auto full_relative_path = fs::path(root_path);
@@ -146,7 +136,7 @@ String DataPartStorageOnDiskBase::getPartDirForPrefix(const String & prefix, boo
         res += part_dir;
 
     if (try_no)
-        res += DetachedPartInfo::TRY_N_SUFFIX + DB::toString(try_no);
+        res += "_try" + DB::toString(try_no);
 
     return res;
 }
@@ -390,7 +380,7 @@ void DataPartStorageOnDiskBase::backup(
     std::shared_ptr<TemporaryFileOnDisk> temp_dir_owner;
     if (make_temporary_hard_links)
     {
-        chassert(temp_dirs);
+        assert(temp_dirs);
         auto temp_dir_it = temp_dirs->find(disk);
         if (temp_dir_it == temp_dirs->end())
             temp_dir_it = temp_dirs->emplace(disk, std::make_shared<TemporaryFileOnDisk>(disk, "tmp/")).first;
@@ -527,6 +517,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena, like the
+    /// builder-owned storage path.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
@@ -583,6 +577,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// frozen part for its whole lifetime; route them into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
@@ -623,6 +620,9 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::clonePart(
         throw;
     }
 
+    /// The SingleDiskVolume and the DataPartStorageOnDiskFull built by `create` are stored on the
+    /// cloned part for its whole lifetime; route them into the dedicated MergeTree arena.
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
     return create(single_disk_volume, to, dir_path, /*initialize=*/ true);
 }
@@ -962,7 +962,13 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
     if (dst_size > 0 && to_root.back() == '/')
         --dst_size;
 
-    root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+    /// `root_path` is part-lifetime metadata of this (arena-owned) storage, so build its new value in
+    /// the dedicated arena instead of the caller's default arena. Parent-part commit calls this for
+    /// every projection storage, so otherwise the projection path escapes back to the default arena.
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
+    }
 }
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const

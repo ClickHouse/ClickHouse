@@ -1,22 +1,13 @@
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-
-#include <atomic>
-#include <limits>
 
 
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
 thread_local bool memory_tracker_always_throw_logical_error_on_allocation = false;
 #endif
-
-namespace
-{
-    std::atomic<UInt64> min_allocation_size_to_throw_on_memory_limit{std::numeric_limits<UInt64>::max()};
-}
 
 namespace DB
 {
@@ -46,7 +37,7 @@ MemoryTracker * getMemoryTracker()
 
 using DB::current_thread;
 
-AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit)
+AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool throw_if_memory_exceeded)
 {
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
     if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
@@ -61,7 +52,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         if (!current_thread)
         {
             /// total_memory_tracker only, ignore untracked_memory
-            return memory_tracker->allocImpl(size, enforce_memory_limit);
+            return memory_tracker->allocImpl(size, throw_if_memory_exceeded);
         }
 
         /// Make sure we do memory tracker calls with the correct level in MemoryTrackerBlockerInThread.
@@ -85,7 +76,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
 
             try
             {
-                return memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit);
+                return memory_tracker->allocImpl(current_untracked_memory, throw_if_memory_exceeded);
             }
             catch (...)
             {
@@ -108,31 +99,12 @@ void CurrentMemoryTracker::check()
 
 AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 {
-    return allocImpl(size, /*enforce_memory_limit=*/ true);
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ true);
 }
 
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
-    return allocImpl(size, /*enforce_memory_limit=*/ false);
-}
-
-AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
-{
-    const bool enforce_memory_limit = static_cast<UInt64>(size) >= min_allocation_size_to_throw_on_memory_limit.load(std::memory_order_relaxed);
-    return allocImpl(size, enforce_memory_limit);
-}
-
-void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)
-{
-    min_allocation_size_to_throw_on_memory_limit.store(
-        value == 0 ? std::numeric_limits<UInt64>::max() : value,
-        std::memory_order_relaxed);
-}
-
-UInt64 CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()
-{
-    const auto value = min_allocation_size_to_throw_on_memory_limit.load(std::memory_order_relaxed);
-    return value == std::numeric_limits<UInt64>::max() ? 0 : value;
+    return allocImpl(size, /*throw_if_memory_exceeded=*/ false);
 }
 
 AllocationTrace CurrentMemoryTracker::free(Int64 size)

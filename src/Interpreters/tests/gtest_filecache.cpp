@@ -16,6 +16,7 @@
 #include <Common/randomSeed.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadSettings.h>
 #include <IO/WriteHelpers.h>
 
 #include <Interpreters/FileCache/FileCache.h>
@@ -23,8 +24,9 @@
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/FileCache/EvictionCandidates.h>
 #include <Interpreters/FileCache/SLRUFileCachePriority.h>
+#include <Interpreters/FileCache/QueryLimit.h>
 #if CLICKHOUSE_CLOUD
-#include <Interpreters/FileCache/OvercommitFileCachePriority.h>
+#include <Interpreters/Cache/OvercommitFileCachePriority.h>
 #endif
 #include <Interpreters/Context.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
@@ -89,8 +91,6 @@ namespace DB::FileCacheSetting
     extern const FileCacheSettingsBool load_metadata_asynchronously;
     extern const FileCacheSettingsBool write_cache_per_user_id_directory;
     extern const FileCacheSettingsBool allow_dynamic_cache_resize;
-    extern const FileCacheSettingsBool enable_bypass_cache_with_threshold;
-    extern const FileCacheSettingsUInt64 bypass_cache_threshold;
 }
 
 void printRanges(const auto & segments)
@@ -100,13 +100,13 @@ void printRanges(const auto & segments)
         std::cerr << '\n' << segment->range().toString() << " (state: " + DB::FileSegment::stateToString(segment->state()) + ")" << "\n";
 }
 
-[[maybe_unused]] static String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
+String getFileSegmentPath(const String & base_path, const DB::FileCache::Key & key, size_t offset)
 {
     auto key_str = key.toString();
     return fs::path(base_path) / key_str.substr(0, 3) / key_str / DB::toString(offset);
 }
 
-static void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
+void download(const std::string & cache_base_path, DB::FileSegment & file_segment)
 {
     const auto & key = file_segment.key();
     size_t size = file_segment.range().size();
@@ -133,7 +133,7 @@ std::string cache_base_path2 = caches_dir / "cache2" / "";
 std::string cache_base_path3 = caches_dir / "cache3" / "";
 
 
-static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(const FileSegmentsHolderPtr & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : *file_segments)
@@ -164,7 +164,7 @@ static void assertEqual(const FileSegmentsHolderPtr & file_segments, const Range
     }
 }
 
-static void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(const std::vector<FileSegment::Info> & file_segments, const Ranges & expected_ranges, const States & expected_states = {})
 {
     std::cerr << "\nFile segments: ";
     for (const auto & file_segment : file_segments)
@@ -195,7 +195,7 @@ static void assertEqual(const std::vector<FileSegment::Info> & file_segments, co
     }
 }
 
-static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
+void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected_ranges, const States & expected_states = {})
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -207,7 +207,7 @@ static void assertEqual(const IFileCachePriority::PriorityDumpPtr & dump, const 
     }
 }
 
-static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
+void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected, bool assert_protected)
 {
     std::cerr << "\nFile segments: ";
     std::vector<Range> res;
@@ -238,19 +238,19 @@ static void assertProtectedOrProbationary(const std::vector<FileSegmentInfo> & f
     }
 }
 
-static void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+void assertProtected(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert protected";
     assertProtectedOrProbationary(file_segments, expected, true);
 }
 
-static void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
+void assertProbationary(const std::vector<FileSegmentInfo> & file_segments, const Ranges & expected)
 {
     std::cerr << "\nAssert probationary";
     assertProtectedOrProbationary(file_segments, expected, false);
 }
 
-static void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -262,7 +262,7 @@ static void assertProtected(const IFileCachePriority::PriorityDumpPtr & dump, co
     }
 }
 
-static void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
+void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump, const Ranges & expected)
 {
     if (const auto * lru = dynamic_cast<const LRUFileCachePriority::IPriorityDump *>(dump.get()))
     {
@@ -274,7 +274,7 @@ static void assertProbationary(const IFileCachePriority::PriorityDumpPtr & dump,
     }
 }
 
-static FileSegmentPtr get(const HolderPtr & holder, int i)
+FileSegmentPtr get(const HolderPtr & holder, int i)
 {
     auto it = std::next(holder->begin(), i);
     if (it == holder->end())
@@ -282,7 +282,7 @@ static FileSegmentPtr get(const HolderPtr & holder, int i)
     return *it;
 }
 
-static void download(FileSegmentPtr file_segment, bool complete = true)
+void download(FileSegmentPtr file_segment, bool complete = true)
 {
     std::cerr << "\nDownloading range " << file_segment->range().toString() << "\n";
 
@@ -302,7 +302,7 @@ static void download(FileSegmentPtr file_segment, bool complete = true)
     }
 }
 
-static void assertDownloadFails(FileSegmentPtr file_segment)
+void assertDownloadFails(FileSegmentPtr file_segment)
 {
     ASSERT_EQ(file_segment->getOrSetDownloader(), FileSegment::getCallerId());
     ASSERT_EQ(file_segment->getDownloadedSize(), 0);
@@ -311,7 +311,7 @@ static void assertDownloadFails(FileSegmentPtr file_segment)
     FileSegment::complete(FileSegmentPtr(file_segment), /*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
 }
 
-static void download(const HolderPtr & holder)
+void download(const HolderPtr & holder)
 {
     for (auto & it : *holder)
     {
@@ -319,13 +319,13 @@ static void download(const HolderPtr & holder)
     }
 }
 
-static void increasePriority(const HolderPtr & holder)
+void increasePriority(const HolderPtr & holder)
 {
     for (auto & it : *holder)
         it->increasePriority();
 }
 
-[[maybe_unused]] static void increasePriority(const HolderPtr & holder, size_t pos)
+void increasePriority(const HolderPtr & holder, size_t pos)
 {
     FileSegments::iterator it = holder->begin();
     std::advance(it, pos);
@@ -1044,8 +1044,8 @@ try
     ASSERT_GT(size_used_before_temporary_data, 0);
     ASSERT_GT(segments_used_before_temporary_data, 0);
 
-    size_t size_used_with_temporary_data = {};
-    size_t segments_used_with_temporary_data = {};
+    size_t size_used_with_temporary_data;
+    size_t segments_used_with_temporary_data;
 
 
     {
@@ -1129,62 +1129,6 @@ catch (...)
     throw;
 }
 
-/// `getDownloadedContiguousOrEmpty` must inspect the actually downloaded segments even when
-/// `enable_bypass_cache_with_threshold` is on and the requested range exceeds the threshold.
-/// Otherwise getImpl() would return a synthetic DETACHED placeholder and the helper would
-/// wrongly report present-but-large data (e.g. distributed-cache temporary data) as missing.
-TEST_F(FileCacheTest, GetDownloadedContiguousIgnoresBypassThreshold)
-try
-{
-    ServerUUID::setRandomForUnitTests();
-    DB::ThreadStatus thread_status;
-
-    const size_t bypass_threshold = 100;
-    const size_t chunk = bypass_threshold; /// each cached segment stays at/below the threshold
-
-    DB::FileCacheSettings settings;
-    settings[FileCacheSetting::path] = cache_base_path;
-    settings[FileCacheSetting::max_size] = 100_KiB;
-    settings[FileCacheSetting::max_file_segment_size] = chunk;
-    settings[FileCacheSetting::boundary_alignment] = 1;
-    settings[FileCacheSetting::load_metadata_asynchronously] = false;
-    settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
-    /// Any read larger than `bypass_threshold` bytes would normally bypass the cache.
-    settings[FileCacheSetting::enable_bypass_cache_with_threshold] = true;
-    settings[FileCacheSetting::bypass_cache_threshold] = bypass_threshold;
-
-    DB::FileCache file_cache("bypass-temp", settings);
-    file_cache.initialize();
-
-    const auto & user = FileCache::getCommonOrigin();
-    const auto key = FileCacheKey::fromPath("bypass_temp_key");
-
-    /// Populate several contiguous segments, each no larger than the bypass threshold (a single
-    /// write larger than the threshold would itself bypass the cache and never be stored). The
-    /// downloaded data covers a range that, when read at once, exceeds the threshold.
-    const size_t num_chunks = 3;
-    const size_t downloaded_size = num_chunks * chunk;
-    for (size_t i = 0; i < num_chunks; ++i)
-    {
-        auto holder = file_cache.getOrSet(key, i * chunk, chunk, downloaded_size, CreateFileSegmentSettings{}, 0, user);
-        download(holder);
-    }
-
-    const auto & user_id = user.user_id;
-
-    /// The whole downloaded range is larger than the threshold but must still be reported present.
-    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size, user_id)->empty());
-    /// A sub-range that also exceeds the threshold is present too.
-    EXPECT_FALSE(file_cache.getDownloadedContiguousOrEmpty(key, 10, downloaded_size - 10, user_id)->empty());
-    /// A range past the downloaded data is correctly reported as missing.
-    EXPECT_TRUE(file_cache.getDownloadedContiguousOrEmpty(key, 0, downloaded_size + 1, user_id)->empty());
-}
-catch (...)
-{
-    std::cerr << getCurrentExceptionMessage(true) << std::endl;
-    throw;
-}
-
 TEST_F(FileCacheTest, CachedReadBuffer)
 {
     ServerUUID::setRandomForUnitTests();
@@ -1217,7 +1161,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     std::string file_path = fs::current_path() / "test";
     auto read_buffer_creator = [&]()
@@ -1239,9 +1183,7 @@ TEST_F(FileCacheTest, CachedReadBuffer)
 
     {
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file_path, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
-            "test", s.size(), false, false, std::nullopt, nullptr);
+            file_path, key, cache, user, read_buffer_creator, read_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
@@ -1251,10 +1193,12 @@ TEST_F(FileCacheTest, CachedReadBuffer)
     }
 
     {
+        ReadSettings modified_settings{read_settings};
+        modified_settings.local_fs_buffer_size = 10;
+        modified_settings.remote_fs_buffer_size = 10;
+
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file_path, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, /* remote_fs_buffer_size */ 10, /* local_fs_buffer_size */ 10,
-            "test", s.size(), false, false, std::nullopt, nullptr);
+            file_path, key, cache, user, read_buffer_creator, modified_settings, "test", s.size(), false, false, std::nullopt, nullptr);
 
         cached_buffer->next();
         assertEqual(cache->dumpQueue(), {Range(10, 14), Range(15, 19), Range(20, 24), Range(25, 29), Range(0, 4), Range(5, 9)});
@@ -1318,7 +1262,6 @@ TEST_F(FileCacheTest, TemporaryDataReadBufferSize)
 }
 
 TEST_F(FileCacheTest, SLRUPolicy)
-try
 {
     ServerUUID::setRandomForUnitTests();
     DB::ThreadStatus thread_status;
@@ -1435,7 +1378,7 @@ try
     {
         ReadSettings read_settings;
         read_settings.enable_filesystem_cache = true;
-        read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+        read_settings.local_fs_method = LocalFSReadMethod::pread;
 
         auto write_file = [](const std::string & filename, const std::string & s)
         {
@@ -1468,9 +1411,7 @@ try
             };
 
             auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-                file, key, cache, user, read_buffer_creator,
-                read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
-                "test", expect_result.size(), false, false, std::nullopt, nullptr);
+                file, key, cache, user, read_buffer_creator, read_settings, "test", expect_result.size(), false, false, std::nullopt, nullptr);
 
             WriteBufferFromOwnString result;
             copyData(*cached_buffer, result);
@@ -1528,11 +1469,6 @@ try
         assertProtected(cache->dumpQueue(), { Range(10, 14), Range(0, 4), Range(5, 9)  });
     }
 }
-catch (...)
-{
-    std::cerr << getCurrentExceptionMessage(true) << "\n";
-    throw;
-}
 
 TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 {
@@ -1543,7 +1479,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
 
     ReadSettings read_settings;
     read_settings.enable_filesystem_cache = true;
-    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
+    read_settings.local_fs_method = LocalFSReadMethod::pread;
 
     auto write_file = [](const std::string & filename, const std::string & s)
     {
@@ -1580,8 +1516,7 @@ TEST_F(FileCacheTest, SLRUDynamicResizeCorrectEviction)
             return createReadBufferFromFileBase(file, read_settings, std::nullopt, std::nullopt);
         };
         auto cached_buffer = std::make_shared<CachedOnDiskReadBufferFromFile>(
-            file, key, cache, user, read_buffer_creator,
-            read_settings.filesystem_cache_settings, read_settings.remote_fs_settings.buffer_size, read_settings.local_fs_settings.buffer_size,
+            file, key, cache, user, read_buffer_creator, read_settings,
             "test", expect_result.size(), false, false, std::nullopt, nullptr);
         WriteBufferFromOwnString result;
         copyData(*cached_buffer, result);
@@ -1668,7 +1603,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -1803,7 +1738,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
@@ -1921,7 +1856,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2309,7 +2244,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2362,7 +2297,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2407,7 +2342,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2480,7 +2415,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2571,7 +2506,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2630,7 +2565,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2676,7 +2611,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2712,4 +2647,134 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
 
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
     ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
+}
+
+TEST_F(FileCacheTest, QueryLimitContextRevivedDuringRelease)
+{
+    /// Regression for STID 4192-71db: a holder for some query_id decides it is the last one and
+    /// releases its query context, but a concurrent holder for the same query_id revives the
+    /// context first. The release must then be a no-op: the revived context must survive (so the
+    /// per-query download limit keeps being enforced for the rest of the query) and a later release
+    /// of the revived context must not fail with "Attempt to release query context that does not exist".
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_revive";
+    ReadSettings cache_settings;
+    cache_settings.filesystem_cache_max_download_size = 1024;
+
+    /// holder1 takes the context; query_map and holder1 both reference it (use_count == 2).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_TRUE(context1 != nullptr);
+    ASSERT_EQ(context1.use_count(), 2);
+
+    /// holder2 revives the same context before holder1 releases (getOrSetQueryContext returns the
+    /// existing entry). Now query_map, holder1 and holder2 all reference it (use_count == 3).
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// holder1 releases. The map still maps query_id to the live context and another holder is
+    /// alive, so the entry must be kept (no erase, no throw) and nothing is handed back for
+    /// destruction.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_EQ(doomed1, nullptr);
+    context1.reset();
+
+    /// Enforcement is preserved: the revived context is still discoverable.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), context2.get());
+    }
+
+    /// holder2 is now the last holder; releasing it actually removes the entry, once, and hands the
+    /// orphaned context back so it is destroyed by the caller outside the cache lock.
+    const auto * context2_raw = context2.get();
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+    ASSERT_EQ(doomed2.get(), context2_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+    context2.reset();
+
+    /// After full release the context is gone.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
+}
+
+TEST_F(FileCacheTest, QueryLimitConcurrentReleaseNoLeak)
+{
+    /// Regression for #109508: two holders for the same query_id release "at the same time".
+    /// A query with parallel read streams has several holders (each CachedOnDiskReadBufferFromFile
+    /// creates its own), so use_count is > 2. If the last-holder decision reads use_count before this
+    /// holder drops its own reference (or drops it outside the lock), both releasers observe the shared
+    /// count, both skip the erase, and after both drop their reference only the map entry remains and is
+    /// never removed. That orphans query_map[query_id] for the lifetime of the cache and lets a later
+    /// query reusing the same query_id pick up stale per-query limit state. The fix drops each holder's
+    /// reference under the lock and erases once the map entry is the sole owner.
+
+    CachePriorityGuard cache_guard;
+    CacheStateGuard state_guard;
+    FileCacheQueryLimit query_limit;
+
+    const std::string query_id = "query_id_concurrent_release";
+    ReadSettings cache_settings;
+    cache_settings.filesystem_cache_max_download_size = 1024;
+
+    /// Two holders take the same context; query_map + both holders reference it (use_count == 3).
+    auto context1 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    auto context2 = query_limit.getOrSetQueryContext(query_id, cache_settings, cache_guard.writeLock());
+    ASSERT_EQ(context1.get(), context2.get());
+    ASSERT_EQ(context1.use_count(), 3);
+
+    /// Keep a raw pointer to assert which release actually surrenders the context for destruction.
+    const auto * context_raw = context1.get();
+
+    /// Both holders decide to release while both are still alive (the interleaving that leaks): each
+    /// removeQueryContext drops that holder's reference under the lock. The first keeps the entry (one
+    /// holder still alive) and returns nullptr; the second erases it and returns the now-orphaned
+    /// context so the caller destroys it after the cache lock is released. Neither throws.
+    FileCacheQueryLimit::QueryContextPtr doomed1;
+    FileCacheQueryLimit::QueryContextPtr doomed2;
+    ASSERT_NO_THROW(doomed1 = query_limit.removeQueryContext(query_id, context1, cache_guard.writeLock()));
+    ASSERT_NO_THROW(doomed2 = query_limit.removeQueryContext(query_id, context2, cache_guard.writeLock()));
+
+    /// removeQueryContext resets each passed reference, so both are already null here.
+    ASSERT_EQ(context1, nullptr);
+    ASSERT_EQ(context2, nullptr);
+
+    /// Only the last release hands the context back for out-of-lock destruction; the earlier one
+    /// returns nullptr because another holder was still alive.
+    ASSERT_EQ(doomed1, nullptr);
+    ASSERT_EQ(doomed2.get(), context_raw);
+    ASSERT_EQ(doomed2.use_count(), 1);
+
+    /// The entry must be gone: with the pre-fix logic both releases skipped the erase and the entry
+    /// leaked, so tryGetQueryContext would still find it.
+    {
+        DB::ThreadStatus thread_status;
+        auto query_context = DB::Context::createCopy(getContext().context);
+        query_context->makeQueryContext();
+        query_context->setCurrentQueryId(query_id);
+        auto query_scope_holder = DB::QueryScope::create(query_context);
+
+        auto found = query_limit.tryGetQueryContext(state_guard.lock());
+        ASSERT_EQ(found.get(), nullptr);
+    }
 }
