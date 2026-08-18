@@ -15,10 +15,15 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    bool isExactGroup(const ASTPtr & group)
+    bool canUseExactGroupMatch(
+        const PrometheusQueryTree::BinaryOperator * operator_node,
+        bool left_metric_name_dropped,
+        bool right_metric_name_dropped)
     {
-        const auto * identifier = group->as<ASTIdentifier>();
-        return identifier && identifier->name() == ColumnNames::Group;
+        /// This is the set of cases where transformGroupASTForBinaryOperator f returns the original group column.
+        return left_metric_name_dropped && right_metric_name_dropped
+            && !operator_node->on
+            && (!operator_node->ignoring || operator_node->labels.empty());
     }
 
     /// Merge two unique VECTOR_GRID inputs by group, preferring non-NULL values from the left input.
@@ -94,34 +99,23 @@ SQLQueryPiece applyBinaryOperatorOr(
     }
 
     left_argument = toVectorGrid(std::move(left_argument), context);
-    bool left_metric_name_dropped = left_argument.metric_name_dropped;
-    ASTPtr left_join_group = transformGroupASTForBinaryOperator(
-        operator_node,
-        make_intrusive<ASTIdentifier>(ColumnNames::Group),
-        /*drop_metric_name=*/ true,
-        left_metric_name_dropped);
-
-    right_argument = toVectorGrid(std::move(right_argument), context);
-    bool right_metric_name_dropped = right_argument.metric_name_dropped;
-    ASTPtr right_join_group = transformGroupASTForBinaryOperator(
-        operator_node,
-        make_intrusive<ASTIdentifier>(ColumnNames::Group),
-        /*drop_metric_name=*/ true,
-        right_metric_name_dropped);
-
-    const bool exact_group_match = isExactGroup(left_join_group) && isExactGroup(right_join_group);
-
-    context.subqueries.emplace_back(SQLSubquery{
-        context.subqueries.size(),
-        std::move(left_argument.select_query),
-        exact_group_match ? SQLSubqueryType::TABLE : SQLSubqueryType::MATERIALIZED_TABLE});
+    /// Keep the left grid materialized on the general path because it is read by both Step 1 and Step 3.
+    /// The subquery type is changed below if both transformed groups are the original unique group column.
+    const size_t left_subquery = context.subqueries.size();
+    context.subqueries.emplace_back(SQLSubquery{left_subquery, std::move(left_argument.select_query), SQLSubqueryType::MATERIALIZED_TABLE});
     String left = context.subqueries.back().name;
 
+    right_argument = toVectorGrid(std::move(right_argument), context);
     context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
     String right = context.subqueries.back().name;
 
+    const bool exact_group_match = canUseExactGroupMatch(
+        operator_node, left_argument.metric_name_dropped, right_argument.metric_name_dropped);
+
     if (exact_group_match)
     {
+        context.subqueries[left_subquery].subquery_type = SQLSubqueryType::TABLE;
+
         SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
         res.select_query = makeOrMergeQuery(left, right);
         res.metric_name_dropped = left_argument.metric_name_dropped && right_argument.metric_name_dropped;
@@ -132,6 +126,20 @@ SQLQueryPiece applyBinaryOperatorOr(
 
         return res;
     }
+
+    bool left_metric_name_dropped = left_argument.metric_name_dropped;
+    ASTPtr left_join_group = transformGroupASTForBinaryOperator(
+        operator_node,
+        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+        /*drop_metric_name=*/ true,
+        left_metric_name_dropped);
+
+    bool right_metric_name_dropped = right_argument.metric_name_dropped;
+    ASTPtr right_join_group = transformGroupASTForBinaryOperator(
+        operator_node,
+        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+        /*drop_metric_name=*/ true,
+        right_metric_name_dropped);
 
     /// Step 1: Build the per-step presence mask per `join_group` on the left side.
     ///
