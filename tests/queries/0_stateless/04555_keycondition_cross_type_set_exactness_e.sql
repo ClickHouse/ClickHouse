@@ -85,13 +85,15 @@ DROP TABLE IF EXISTS ca_tz; DROP TABLE IF EXISTS oa_tz;
 CREATE TABLE ca_tz (kt Tuple(DateTime('UTC'))) ENGINE = MergeTree ORDER BY kt SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE oa_tz (kt Tuple(DateTime('UTC'))) ENGINE = Memory;
 -- `INSERT ... VALUES ((toDateTime(100)))` is rejected with `Code: 53` for a 1-tuple column, so build
--- the rows with `SELECT tuple(...)`.
-INSERT INTO ca_tz SELECT tuple(toDateTime(100 + number * 100)) FROM numbers(3);
+-- the rows with `SELECT tuple(...)`. One part per row, so `Parts:` can register a reduction.
+INSERT INTO ca_tz SELECT tuple(toDateTime(100));
+INSERT INTO ca_tz SELECT tuple(toDateTime(200));
+INSERT INTO ca_tz SELECT tuple(toDateTime(300));
 INSERT INTO oa_tz SELECT tuple(toDateTime(100 + number * 100)) FROM numbers(3);
-SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%Parts: 1/3%';
 SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) has',
     (SELECT count() FROM ca_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt)) = (SELECT count() FROM oa_tz WHERE has([tuple(CAST(100, 'DateTime'))], kt));
-SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM ca_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt)) WHERE explain ILIKE '%Parts: 2/3%';
 SELECT 'attr Tuple(DateTime(UTC))/Tuple(DateTime) NOT has',
     (SELECT count() FROM ca_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt)) = (SELECT count() FROM oa_tz WHERE NOT has([tuple(CAST(100, 'DateTime'))], kt));
 DROP TABLE ca_tz; DROP TABLE oa_tz;

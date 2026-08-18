@@ -126,7 +126,7 @@ SELECT 'N33 packed nested-Nullable has result',
 SELECT 'N33 packed nested-Nullable has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM n33 WHERE has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) WHERE explain ILIKE '%element set%';
 SELECT 'N33 packed nested-Nullable NOT has result',
     (SELECT count() FROM n33 WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) = (SELECT count() FROM n33o WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt));
-SELECT 'N33 packed nested-Nullable NOT has keeps atom', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM n33 WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) WHERE explain ILIKE '%element set%';
+SELECT 'N33 packed nested-Nullable NOT has keeps pruning', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM n33 WHERE NOT has([(10, 0), (50000, 0), (0, NULL), (NULL, 10)], kt)) WHERE explain ILIKE '%Parts: 1/3%';
 
 DROP TABLE IF EXISTS u33; DROP TABLE IF EXISTS u33o;
 CREATE TABLE u33 (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY (a, b) SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
