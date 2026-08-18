@@ -42,6 +42,9 @@ SELECT length(arrayFilter(x -> (x > 1), CAST([], 'Array(UInt8)')));
 SELECT '-- an alias on the outer call';
 SELECT length(arrayFilter(x -> (x > 1), materialize([1, 2, 3]))) AS c, c, c + 1;
 
+SELECT '-- the unaliased projection keeps its generated name';
+SELECT length(arrayFilter(x -> (x > 1), materialize([1, 2, 3]))) FORMAT TabSeparatedWithNamesAndTypes;
+
 SELECT '-- the filtered array is also used on its own';
 WITH arrayFilter(x -> (x > 1), materialize([1, 2, 3])) AS f
 SELECT length(f), f;

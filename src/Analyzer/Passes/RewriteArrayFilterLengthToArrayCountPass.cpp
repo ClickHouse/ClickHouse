@@ -58,7 +58,10 @@ public:
         if (!array_count_function_node->getResultType()->equals(*length_function_node->getResultType()))
             return;
 
-        array_count_function_node->setAlias(node->getAlias());
+        /// Preserve the generated name because replacing the node changes the formatted expression.
+        /// Consumers that match columns by name must continue to see the original `length` expression.
+        auto original_column_name = node->formatConvertedASTForErrorMessage();
+        array_count_function_node->setAlias(original_column_name);
         node = std::move(array_count_function_node);
     }
 };

@@ -21,6 +21,10 @@ UInt64
 0
 -- an alias on the outer call
 2	2	3
+-- the unaliased projection keeps its generated name
+length(arrayFilter(lambda(tuple(x), greater(x, 1)), materialize([1, 2, 3])))
+UInt64
+2
 -- the filtered array is also used on its own
 2	[2,3]
 -- the count is exact for arrays of any size: `arrayCount` also returns UInt64
