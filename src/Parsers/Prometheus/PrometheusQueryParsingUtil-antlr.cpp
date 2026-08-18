@@ -352,16 +352,20 @@ namespace
         String getMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx) const { return ctx->getText(); }
 
         /// Extracts a label name, unquoting quoted names.
-        bool getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & label_name)
+        bool getLabelName(
+            antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & label_name, bool require_non_empty)
         {
             if (auto * string_ctx = ctx->STRING())
             {
                 if (!parseStringLiteral(string_ctx, label_name))
                     return false;
 
-                if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+                if ((require_non_empty && label_name.empty())
+                    || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
                 {
-                    error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
+                    error_listener.setError(
+                        require_non_empty ? "invalid label name for grouping" : "invalid selector identifier",
+                        getStartPos(string_ctx));
                     return false;
                 }
 
@@ -381,7 +385,7 @@ namespace
             for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
             {
                 String label_name;
-                if (!getLabelName(label_name_ctx, label_name))
+                if (!getLabelName(label_name_ctx, label_name, /* require_non_empty = */ true))
                     return {};
                 label_name_list.push_back(std::move(label_name));
             }
@@ -398,7 +402,7 @@ namespace
             if (!label_name_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            if (!getLabelName(label_name_ctx, res_matcher.label_name))
+            if (!getLabelName(label_name_ctx, res_matcher.label_name, /* require_non_empty = */ false))
                 return false;
 
             MatcherType matcher_type = {};
