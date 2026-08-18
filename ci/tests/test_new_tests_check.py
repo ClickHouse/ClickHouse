@@ -13,11 +13,18 @@ pre-hook auto-injects such a link into every upstream PR body, so it can no
 longer serve as operator-supplied evidence), so a Bug-Fix PR that adds no
 tests is rejected regardless of the links in its body.
 
-Invariant under test: when a Bug-Fix PR adds new functional or integration
-regression tests (`has_ft or has_it`), `check()` returns True iff at least
-one per-arch Bugfix Validation job is strict-success (`OK` or `XFAIL`). The
-unit-test presence shortcut may not override this; only the per-arch jobs
-decide.
+Invariant under test: when a Bug-Fix PR ADDS new functional or integration
+regression tests, `check()` returns True iff at least one per-arch Bugfix
+Validation job is strict-success (`OK` or `XFAIL`). The unit-test presence
+shortcut may not override this; only the per-arch jobs decide.
+
+The requirement is keyed on ADDED tests, not merely changed ones: a
+pre-existing functional/integration test passes on master HEAD by
+construction, so no per-arch job can ever report OK for it and demanding one
+would be unsatisfiable. A PR that only EDITS such tests therefore falls
+through to the remaining evidence - which is not a bypass, since every later
+branch keeps its own verdict and an edited test that does reproduce still
+validates above.
 
 See ClickHouse/ClickHouse#103541 (bot review, 2026-06-06).
 """
@@ -41,6 +48,12 @@ from ci.praktika.result import Result
 # `_install_stubs` replaces `has_new_unit_tests` with a path-classification stub; keep
 # the real one so a test can opt back into the actual gtest-macro parsing.
 _REAL_HAS_NEW_UNIT_TESTS = new_tests_check.has_new_unit_tests
+
+# Sentinel for `_install_stubs(added_files=...)`: unless a test says otherwise, every changed
+# file is treated as newly ADDED. That is what the truth-table cases below mean by "the PR
+# adds an FT regression test", and it keeps them exercising the strict per-arch requirement.
+# Pass `added_files=[]` for the edited-only case, or `added_files=None` for "not recorded".
+_ADDED_FILES_DEFAULT = object()
 
 
 # ---------------------------------------------------------------------------
@@ -68,14 +81,26 @@ class _StubInfo:
     `any_bugfix_validation_passed` touch is implemented.
     """
 
-    def __init__(self, *, workflow_name="PR", pr_body="", changed_files=None, labels=None):
+    def __init__(
+        self,
+        *,
+        workflow_name="PR",
+        pr_body="",
+        changed_files=None,
+        added_files=None,
+        labels=None,
+    ):
         self.workflow_name = workflow_name
         self.pr_body = pr_body
         self._changed_files = list(changed_files or [])
+        self._added_files = added_files
         self.pr_labels = list(labels or [])
 
     def get_changed_files(self):
         return list(self._changed_files)
+
+    def get_added_files(self):
+        return None if self._added_files is None else list(self._added_files)
 
 
 def _install_stubs(
@@ -86,6 +111,7 @@ def _install_stubs(
     workflow_subresults,
     title="A bug fix",
     labels=None,
+    added_files=_ADDED_FILES_DEFAULT,
 ):
     """Patch `Info`, `GH.get_pr_title_body_labels`, and `Result.from_fs` so
     `check()` and `any_bugfix_validation_passed()` run without external state.
@@ -94,6 +120,12 @@ def _install_stubs(
     not required to exist on disk: `has_new_*_tests` use `Path.is_file`, so
     the helpers in `new_tests_check` are also stubbed to return whether any
     matching path was provided.
+
+    `added_files` is the subset of `changed_files` that the PR ADDS, as
+    `Info.get_added_files` reports it. It defaults to all of `changed_files`
+    (every path treated as newly added), which is what the truth-table cases
+    below intend; pass `[]` for a PR that only edits pre-existing tests, or
+    `None` for a run where the subset was not recorded.
 
     `labels` drives the bug-fix gate, which `check()` keys on the
     `pr-bugfix` / `pr-critical-bugfix` labels (set by the
@@ -104,10 +136,13 @@ def _install_stubs(
     """
     if labels is None:
         labels = ["pr-bugfix"] if " Bug Fix" in pr_body else []
+    if added_files is _ADDED_FILES_DEFAULT:
+        added_files = list(changed_files)
     stub_info = _StubInfo(
         workflow_name="PR",
         pr_body=pr_body,
         changed_files=list(changed_files),
+        added_files=added_files,
         labels=labels,
     )
     monkeypatch.setattr(new_tests_check, "Info", lambda: stub_info)
@@ -446,6 +481,184 @@ def test_ft_present_with_xfail_per_arch_passes(monkeypatch):
         ],
     )
     assert new_tests_check.check() is True
+
+
+# ---------------------------------------------------------------------------
+# `check()` truth table: FT/IT only EDITED, none added
+# ---------------------------------------------------------------------------
+#
+# A pre-existing functional/integration test passes on master HEAD by construction, so no
+# per-arch job can ever report OK for it. Requiring one would make the gate unsatisfiable for
+# any fix that has to adjust an existing test (pin a setting whose meaning the fix changes,
+# say) while its actual regression coverage lives in a gtest. Such a PR must fall through to
+# the remaining evidence instead - but nothing that used to validate may stop validating.
+
+
+def test_ft_edited_only_falls_through_to_unit_branch(monkeypatch):
+    """Edited-only FT + a unit test the unit validator did not refute -> pass.
+
+    This is the PR #109722 shape: the gtest is the regression test, and the only
+    functional-test change pins settings in a test a merged PR added.
+    """
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=[
+            "tests/queries/0_stateless/04653_pre_existing.sql",
+            "src/Processors/QueryPlan/tests/gtest_my_unit.cpp",
+        ],
+        added_files=["src/Processors/QueryPlan/tests/gtest_my_unit.cpp"],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_ARM, Result.Status.SKIPPED),
+            # Inconclusive: the before-binary cannot compile a gtest that uses
+            # PR-introduced API. Must not block.
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_UT, Result.Status.ERROR),
+        ],
+    )
+    assert new_tests_check.check() is True
+
+
+def test_ft_edited_only_still_blocks_when_unit_validation_refuted(monkeypatch):
+    """Falling through is not a bypass: the unit branch's own verdict still applies."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=[
+            "tests/queries/0_stateless/04653_pre_existing.sql",
+            "src/Processors/QueryPlan/tests/gtest_my_unit.cpp",
+        ],
+        added_files=["src/Processors/QueryPlan/tests/gtest_my_unit.cpp"],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_UT, Result.Status.FAIL),
+        ],
+    )
+    assert new_tests_check.check() is False
+
+
+def test_ft_edited_only_and_no_other_evidence_still_blocks(monkeypatch):
+    """Edited-only FT and nothing else -> still rejected. The fall-through reaches the
+    remaining branches, and with no unit test and no Docker image change none of them
+    accepts, so the gate does not become a free pass."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=["tests/queries/0_stateless/04653_pre_existing.sql"],
+        added_files=[],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_ARM, Result.Status.SKIPPED),
+        ],
+    )
+    assert new_tests_check.check() is False
+
+
+def test_ft_edited_only_that_does_reproduce_still_passes(monkeypatch):
+    """An EDITED test that does reproduce the bug on master HEAD is still full validation -
+    the per-arch check runs first, so relaxing the requirement takes nothing away."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=["tests/queries/0_stateless/04653_pre_existing.sql"],
+        added_files=[],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.OK),
+        ],
+    )
+    assert new_tests_check.check() is True
+
+
+def test_ft_added_alongside_edited_keeps_the_strict_gate(monkeypatch):
+    """One newly added FT is enough to keep the strict requirement: the per-arch jobs CAN
+    reproduce against master HEAD, so an unvalidated added regression test is still rejected
+    even though the PR also edits a pre-existing test and adds a unit test."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=[
+            "tests/queries/0_stateless/04653_pre_existing.sql",
+            "tests/queries/0_stateless/04500_my_regression.sql",
+            "src/Functions/tests/gtest_my_unit.cpp",
+        ],
+        added_files=[
+            "tests/queries/0_stateless/04500_my_regression.sql",
+            "src/Functions/tests/gtest_my_unit.cpp",
+        ],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_ARM, Result.Status.SKIPPED),
+        ],
+    )
+    assert new_tests_check.check() is False
+
+
+def test_it_edited_only_falls_through(monkeypatch):
+    """Same contract for integration tests."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=[
+            "tests/integration/test_my_thing/test.py",
+            "src/Functions/tests/gtest_my_unit.cpp",
+        ],
+        added_files=["src/Functions/tests/gtest_my_unit.cpp"],
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_IT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_IT_ARM, Result.Status.SKIPPED),
+        ],
+    )
+    assert new_tests_check.check() is True
+
+
+def test_unrecorded_added_files_keep_the_strict_gate(monkeypatch):
+    """`added_files` unavailable (a run predating it, or a failed GitHub API read) is NOT
+    "adds nothing": we cannot tell an added test from an edited one, so the strict per-arch
+    requirement stays in force. A transient API failure must not silently weaken the gate."""
+    _install_stubs(
+        monkeypatch,
+        pr_body="A change.\n\n- [x]  Bug Fix\n",
+        changed_files=[
+            "tests/queries/0_stateless/04500_my_regression.sql",
+            "src/Functions/tests/gtest_my_unit.cpp",
+        ],
+        added_files=None,
+        workflow_subresults=[
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_AMD, Result.Status.SKIPPED),
+            _per_arch_job(JobNames.BUGFIX_VALIDATE_FT_ARM, Result.Status.SKIPPED),
+        ],
+    )
+    assert new_tests_check.check() is False
+
+
+# ---------------------------------------------------------------------------
+# `adds_functional_or_integration_test` itself
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "added_files, expected",
+    [
+        (None, True),  # not recorded -> keep the strict gate
+        ([], False),
+        (["src/Functions/tests/gtest_my_unit.cpp"], False),
+        (["tests/queries/0_stateless/04500_my_regression.sql"], True),
+        (["tests/integration/test_my_thing/test.py"], True),
+        # e2e integration tests cannot be executed by the validation jobs, so adding one
+        # gives the per-arch machinery nothing to run - same as adding no test.
+        (["tests/integration/test_e2e_my_thing/test.py"], False),
+    ],
+)
+def test_adds_functional_or_integration_test(monkeypatch, added_files, expected):
+    _install_stubs(
+        monkeypatch,
+        pr_body="",
+        changed_files=[],
+        workflow_subresults=[],
+    )
+    assert (
+        new_tests_check.adds_functional_or_integration_test(added_files) is expected
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -277,6 +277,14 @@ class Info:
     def get_changed_files(self):
         return self.get_kv_data().get("changed_files", None)
 
+    def get_added_files(self):
+        """The subset of the changed files that this change ADDS, or None when it was not
+        recorded (a non-PR run, or a failed read - the storing hook never fails the workflow
+        over it). None means "not known", which is distinct from an empty list meaning "this
+        change adds no file at all", so consumers can keep their strict behaviour when the
+        distinction is unavailable."""
+        return self.get_kv_data().get("added_files", None)
+
     def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())
         self.env.dump()

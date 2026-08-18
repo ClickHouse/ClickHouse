@@ -93,6 +93,12 @@ def has_new_integration_test_docker_images(changed_files):
 # responsible for the merge-blocking decision: validation passes iff at
 # least ONE per-arch job is OK (or new unit tests were added; unit tests
 # can't be auto-validated by re-running master HEAD).
+#
+# The per-arch requirement is merge-blocking only when the PR ADDS a
+# functional/integration test. When it merely edits pre-existing ones, no
+# per-arch job can ever report OK - a pre-existing test passes on master HEAD
+# by construction - so requiring one would be unsatisfiable; see
+# `adds_functional_or_integration_test`.
 _BUGFIX_VALIDATE_PER_ARCH_JOB_NAMES = (
     JobNames.BUGFIX_VALIDATE_FT_AMD,
     JobNames.BUGFIX_VALIDATE_FT_ARM,
@@ -168,6 +174,24 @@ def unit_bugfix_validation_refuted():
     return False
 
 
+def adds_functional_or_integration_test(added_files):
+    """Return True iff the PR ADDS a functional or integration test, so the per-arch Bugfix
+    Validation jobs have something they can reproduce against master HEAD.
+
+    `added_files` is `Info.get_added_files()`: None when the added-file subset was not
+    recorded (a run whose `Config Workflow` predates it, or a failed GitHub API read). None
+    is NOT "adds nothing" - we simply cannot tell an added test from an edited one, so return
+    True and keep the strict gate. Relaxing on an unknown would turn a transient API failure
+    into a silently weaker merge requirement."""
+    if added_files is None:
+        print(
+            "WARNING: the added-file list was not recorded - cannot tell a newly added test "
+            "from an edited one, so the strict per-arch requirement stays in force"
+        )
+        return True
+    return has_new_functional_tests(added_files) or has_new_integration_tests(added_files)
+
+
 def check():
     _title, _body, labels = GH.get_pr_title_body_labels()
     if not labels:
@@ -181,6 +205,7 @@ def check():
         return True
 
     changed_files = Info().get_changed_files()
+    added_files = Info().get_added_files()
     has_unit = has_new_unit_tests(changed_files)
     has_ft = has_new_functional_tests(changed_files)
     has_it = has_new_integration_tests(changed_files)
@@ -202,13 +227,28 @@ def check():
                 "At least one per-arch Bugfix Validation job validated the bug - pass"
             )
             return True
+        if adds_functional_or_integration_test(added_files):
+            print(
+                "No per-arch Bugfix Validation job validated the bug - the test "
+                "either passes on master HEAD on every arch (so it's not actually "
+                "a regression test for the fix) or every arch errored out. See "
+                "the per-arch Bugfix validation jobs in the report."
+            )
+            return False
+        # The PR only EDITS pre-existing functional/integration tests. Such a test passes on
+        # master HEAD by construction - that is what makes it pre-existing - so the per-arch
+        # jobs have nothing to reproduce and this branch could never be satisfied, no matter
+        # what the author does. Editing one is a normal part of a fix (pinning a setting whose
+        # meaning the fix changes, say), and the regression coverage then lives elsewhere, so
+        # fall through to the remaining evidence instead of blocking forever. An edited test
+        # that DOES reproduce still passes above, so nothing that used to validate stops
+        # validating. (Hit by PR #109722, whose regression test is a gtest while its only
+        # functional-test change pins settings in a test that a merged PR added.)
         print(
-            "No per-arch Bugfix Validation job validated the bug - the test "
-            "either passes on master HEAD on every arch (so it's not actually "
-            "a regression test for the fix) or every arch errored out. See "
-            "the per-arch Bugfix validation jobs in the report."
+            "The PR edits pre-existing functional/integration tests but adds none: such a "
+            "test passes on master HEAD by construction, so the per-arch Bugfix Validation "
+            "jobs have nothing to reproduce. Falling through to the remaining evidence."
         )
-        return False
 
     # Unit-only PR. The unit-test Bugfix Validation job builds a merge-base "before"
     # binary and runs the touched gtest suite against it. Block ONLY if that job
@@ -245,7 +285,13 @@ def check():
         )
         return True
 
-    # No new tests at all.
+    # Nothing left that could have validated the bug.
+    if has_ft or has_it:
+        print(
+            "Only pre-existing functional/integration tests were edited, and no unit test "
+            "or integration Docker image change backs the fix - nothing validated the bug"
+        )
+        return False
     print("No new tests have been added")
     return False
 

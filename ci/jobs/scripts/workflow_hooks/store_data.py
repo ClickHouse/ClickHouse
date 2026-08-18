@@ -38,6 +38,52 @@ def _settings_history_entry_without_name(entry_body):
 SETTINGS_HISTORY_FILE = "src/Core/SettingsChangesHistory.cpp"
 
 
+def fetch_added_files(repo_name, pr_number):
+    """The paths this PR ADDS, per the GitHub API's per-file `status`.
+
+    `changed_files` deliberately cannot answer this: it flattens added, modified, renamed and
+    deleted paths into one list (and includes both sides of a rename), which is what every
+    other consumer wants. The bug-fix gate needs the distinction, because only a newly ADDED
+    functional or integration test can be reproduced against master HEAD - a pre-existing one
+    passes there by construction. See `new_tests_check.py`.
+
+    Only `added` counts. A `renamed` test is pre-existing content at a new path, so it does
+    not exist on master HEAD under that path and cannot be run there either; treating it as
+    added would make the gate unsatisfiable for exactly the same reason."""
+    return [
+        line.strip()
+        for line in GH.get_output_with_retries(
+            f"gh api repos/{repo_name}/pulls/{pr_number}/files --paginate "
+            "--jq '.[] | select(.status == \"added\") | .filename'",
+            verbose=True,
+            strict=True,
+        ).splitlines()
+        if line.strip()
+    ]
+
+
+def store_added_files(info):
+    """Record the added-file subset for the bug-fix gate.
+
+    Never raises: `changed_files` (stored just above by the caller) is what the merge-queue
+    flaky check and job filtering depend on, and this is a strictly additional signal, so a
+    GitHub API blip must not fail the whole workflow. On failure the key is simply left
+    unset, and `Info.get_added_files` then returns None - which every consumer must read as
+    "not known" and handle by keeping its strict behaviour."""
+    pr_number = info.pr_number
+    if pr_number <= 0 and info.is_merge_queue_event:
+        pr_number = info.linked_pr_number
+    if pr_number <= 0:
+        print("Not a PR / merge-queue run - skip storing added files")
+        return
+    try:
+        added_files = fetch_added_files(info.repo_name, pr_number)
+        info.store_kv_data("added_files", added_files)
+        print(f"Stored {len(added_files)} added files")
+    except Exception as e:
+        print(f"WARNING: failed to compute the added-file list: {e}")
+
+
 def fetch_settings_history_patch_and_file(
     repo_name, pr_number, path=SETTINGS_HISTORY_FILE
 ):
@@ -364,6 +410,9 @@ if __name__ == "__main__":
         or []
     )
     info.store_kv_data("changed_files", changed_files)
+
+    # Which of those files the change ADDS, for the bug-fix gate in `new_tests_check.py`.
+    store_added_files(info)
 
     # For the settings-history style check (check_style.py): when
     # src/Core/SettingsChangesHistory.cpp changed in a PR or merge-queue run, record the
