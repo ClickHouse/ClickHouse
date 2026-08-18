@@ -50,8 +50,8 @@ NC="${CLICKHOUSE_TEST_UNIQUE_NAME}_nc"
 NOEXT_NC="${CLICKHOUSE_TEST_UNIQUE_NAME}_noext_nc"
 ABS_NOEXT_NC="${USER_FILES_PATH}/${NOEXT_NC}"
 printf '{"a":1,"b":"Hello"}\n{"a":2,"b":"World"}\n' > "$ABS_NOEXT_NC"
-# Reuse a leftover collection instead of dropping and recreating it: an interrupted previous run can
-# leave the table behind too, and then the drop is refused because that table still references it.
+# Reuse a leftover collection rather than recreating it: dropping it is refused while a leftover table
+# still references it.
 ${CLICKHOUSE_CLIENT} -q "CREATE NAMED COLLECTION IF NOT EXISTS ${NC} AS url = 'file://${ABS_NOEXT_NC}'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${CLICKHOUSE_TEST_UNIQUE_NAME}_n"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n ENGINE = URL(${NC})"
@@ -62,6 +62,5 @@ ${CLICKHOUSE_CLIENT} -q "DETACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n"
 rm -f "$ABS_NOEXT_NC"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = '${CLICKHOUSE_TEST_UNIQUE_NAME}_n'"
-# Chained: the collection must outlive the table, or a restart between the two drops leaves metadata
-# referencing a missing collection.
+# Chained so the collection outlives the table: metadata must never reference a missing collection.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${CLICKHOUSE_TEST_UNIQUE_NAME}_n" && ${CLICKHOUSE_CLIENT} -q "DROP NAMED COLLECTION ${NC}"
