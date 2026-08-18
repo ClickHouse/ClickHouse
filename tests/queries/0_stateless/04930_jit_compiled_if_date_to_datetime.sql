@@ -1,3 +1,10 @@
+-- Tags: no-fasttest, no-msan
+-- no-fasttest: the Fast test build has no embedded compiler (ENABLE_EMBEDDED_COMPILER defaults to
+--              ENABLE_LIBRARIES, which that build sets to 0), so nothing is ever JIT-compiled and the
+--              "same-unit shape is still compiled" assertion cannot hold.
+-- no-msan: the MSan build also disables the embedded compiler (contrib/llvm-project-cmake/CMakeLists.txt),
+--          so the same assertion cannot hold there.
+
 SET session_timezone = 'UTC';
 SET min_count_to_compile_expression = 0;
 
