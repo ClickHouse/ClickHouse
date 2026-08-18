@@ -18,9 +18,8 @@ public:
     /// must not be narrowed, because shuffling streams via `ConcatProcessor` would break ordering
     /// invariants of downstream transforms such as `GroupingAggregatedTransform` for
     /// memory-efficient distributed aggregation.
-    /// The flag is part of the plan, so it is serialized (from
-    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_UNION_NARROWING` on) and every node that
-    /// executes a shipped fragment narrows the same unions the node that built it decided to narrow.
+    /// The flag is part of the plan, so it is serialized, and every node that executes a shipped
+    /// fragment narrows the same unions the node that built it decided to narrow.
     explicit UnionStep(SharedHeaders input_headers_, size_t max_threads_ = 0, bool allow_narrowing_ = false);
 
     String getName() const override { return "Union"; }
