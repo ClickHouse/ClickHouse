@@ -22,7 +22,8 @@ $CLICKHOUSE_CLIENT -q "
         ENGINE = MergeTree ORDER BY x AS SELECT x FROM v;
 "
 
-for _ in {1..120}
+# Keep the two polling phases comfortably below the Fast test's 60-second timeout.
+for _ in {1..30}
 do
     initial=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
     [ "$initial" -eq 1 ] && break
@@ -32,7 +33,7 @@ done
 # The source data is unchanged, but the definer now reads two rows. Without invalidating the old
 # watermark the refresh is skipped and `mv` remains at one row.
 $CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_result_rows = 2, result_overflow_mode = 'break'"
-for _ in {1..120}
+for _ in {1..30}
 do
     rows=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
     [ "$rows" -eq 3 ] && break
