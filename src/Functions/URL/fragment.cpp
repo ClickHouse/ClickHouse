@@ -23,7 +23,7 @@ Returns the fragment identifier without the initial hash symbol.
         {
             "Usage example",
             R"(
-SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
             )",
             R"(
 ┌─fragment('http⋯ouse-service')─┐
