@@ -132,6 +132,17 @@ time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const St
     return it->second.since;
 }
 
+void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxEntries(size_t max_entries_)
+{
+    std::lock_guard lock(mutex);
+    max_entries = max_entries_ ? max_entries_ : 10000;
+    while (observations.size() > max_entries)
+    {
+        observations.erase(lru.back());
+        lru.pop_back();
+    }
+}
+
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessingByAnotherProcessor(ForeignProcessingObservers & observers)
 {
     /// Publish the foreign marker before `Processing`: contenders which observe the

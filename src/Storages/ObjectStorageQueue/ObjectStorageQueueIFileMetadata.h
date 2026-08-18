@@ -32,6 +32,7 @@ public:
 
         void set(const String & path, time_t since);
         time_t get(const String & path) const;
+        void setMaxEntries(size_t max_entries_);
 
     private:
         struct Observation
@@ -40,7 +41,7 @@ public:
             std::list<String>::iterator lru_position;
         };
 
-        const size_t max_entries;
+        size_t max_entries;
         mutable std::mutex mutex;
         mutable std::list<String> lru;
         mutable std::unordered_map<String, Observation> observations;

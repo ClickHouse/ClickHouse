@@ -174,6 +174,21 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversEvictOnlyTheLeastRe
     ASSERT_EQ(observers.get("data/third.csv"), 3);
 }
 
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversFollowChangedCapacity)
+{
+    ObjectStorageQueueIFileMetadata::ForeignProcessingObservers observers(1);
+
+    observers.set("data/first.csv", 1);
+    observers.setMaxEntries(2);
+    observers.set("data/second.csv", 2);
+    ASSERT_EQ(observers.get("data/first.csv"), 1);
+    ASSERT_EQ(observers.get("data/second.csv"), 2);
+
+    observers.setMaxEntries(1);
+    ASSERT_EQ(observers.get("data/first.csv"), 0);
+    ASSERT_EQ(observers.get("data/second.csv"), 2);
+}
+
 /// The pre-Keeper state gate must keep a locally owned `Processing` state terminal.
 /// A foreign state without an observation for the asking table, on the other hand,
 /// must be retried so that the table can check whether the foreign node was released.

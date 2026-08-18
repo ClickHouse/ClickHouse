@@ -1719,6 +1719,8 @@ void StorageObjectStorageQueue::alter(
                 deduplication_v2 = change.value.safeGet<UInt64>();
             else if (change.name == "foreign_processing_node_cache_ttl_seconds")
                 foreign_processing_node_cache_ttl_seconds = static_cast<time_t>(change.value.safeGet<UInt64>());
+            else if (change.name == "metadata_cache_size_elements")
+                foreign_processing_observers->setMaxEntries(change.value.safeGet<UInt64>());
         }
 
         files_metadata->updateSettings(changed_settings);
