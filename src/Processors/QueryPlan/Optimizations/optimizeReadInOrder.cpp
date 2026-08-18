@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/ScatterExchangeStep.h>
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -149,8 +150,9 @@ GatherExchangeStep * findGatherOverRead(QueryPlan::Node & node, FindReadingStepC
             return nullptr;
         }
 
-        if (!typeid_cast<ExpressionStep *>(step) && !typeid_cast<FilterStep *>(step)
-            && !typeid_cast<ArrayJoinStep *>(step))
+        /// Only a step optimizeExchanges lifts the gather through leaves the pair collapsible; anything
+        /// else keeps the scatter between the read and the sorting, where it destroys the read's order.
+        if (!canHoistGatherThroughStep(*step))
             return nullptr;
     }
     return nullptr;

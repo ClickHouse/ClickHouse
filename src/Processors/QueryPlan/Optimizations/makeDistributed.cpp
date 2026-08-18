@@ -1004,10 +1004,7 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
         else /// After all children were processed
         {
             /// Try to push up GatherExchange above Expression or Filter step
-            if (frame.node->children.size() == 1 &&
-                (typeid_cast<ExpressionStep *>(frame.node->step.get()) ||
-                typeid_cast<FilterStep *>(frame.node->step.get()) ||
-                typeid_cast<BuildRuntimeFilterStep *>(frame.node->step.get())))
+            if (frame.node->children.size() == 1 && canHoistGatherThroughStep(*frame.node->step))
             {
                 auto & child_node = *frame.node->children[0];
                 auto * gather_step = typeid_cast<GatherExchangeStep *>(child_node.step.get());
@@ -1022,12 +1019,6 @@ void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettin
                         dag = &filter->getExpression();
 
                     bool can_move_gather_up = true;
-
-                    /// Per-block functions (`rowNumberInAllBlocks`, `blockNumber`, `nowInBlock`, ...)
-                    /// depend on the whole block stream; below a gather they would run per shard and
-                    /// produce different values. Keep such a step above the gather.
-                    if (dag && dagContainsNonDeterministicFunction(*dag))
-                        can_move_gather_up = false;
 
                     /// Moving the sorted GatherExchange above the step is only valid if every sort column
                     /// survives the step unchanged - otherwise GatherReceive would merge by a sort
