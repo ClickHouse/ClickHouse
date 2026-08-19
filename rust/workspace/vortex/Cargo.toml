@@ -8,7 +8,15 @@ version = "0.1.0"
 # passed between this crate and `vortex` without conversion.
 arrow-array = "58.4.0"
 arrow-schema = "58.4.0"
+# The building blocks of the host-driven runtime (see `HostRuntime` in `src/lib.rs`): tasks that the
+# host runs on its own threads, the queues they wait in, and the parking of a thread that drives the
+# runtime itself. All three are already dependencies of `vortex`.
+async-task = "4.7"
+concurrent-queue = "2"
 futures = "0.3"
+parking = "2"
+# The same MPMC channel `vortex-io` uses; the scan hands chunks to any number of consumer threads through it.
+kanal = "0.1"
 vortex = { version = "0.83.0", default-features = false, features = ["files", "zstd"] }
 
 [lib]

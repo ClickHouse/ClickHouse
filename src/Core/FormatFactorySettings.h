@@ -256,6 +256,9 @@ Treat ORC dictionary encoded columns as LowCardinality columns while reading ORC
     DECLARE(Bool, input_format_vortex_filter_push_down, true, R"(
 When reading Vortex files, push translatable parts of WHERE conditions on top-level integer, floating-point, and string/binary columns down into the scan, which may reduce the rows decoded. ClickHouse reapplies the full filter after the scan. Whole segments are not yet pruned by statistics.
 )", 0) \
+    DECLARE(Bool, input_format_vortex_preserve_order, false, R"(
+Return the rows of a Vortex file in file order. By default the row splits of a file are decoded in parallel (see `max_parsing_threads`) and returned as soon as they are ready, so the row order is not guaranteed; with this setting a slow split holds back the ones after it. Not recommended as row ordering is generally not guaranteed, and other parts of the query pipeline may break it.
+)", 0) \
     DECLARE(Bool, input_format_parquet_allow_missing_columns, true, R"(
 Allow missing columns while reading Parquet input formats
 )", 0) \
