@@ -53,6 +53,7 @@
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
 #include <Parsers/Polyglot/ParserPolyglotQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
@@ -163,6 +164,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool ast_fuzzer_any_query;
     extern const SettingsFloat ast_fuzzer_runs;
@@ -2262,6 +2264,18 @@ static BlockIO executeQueryImpl(
                 settings[Setting::polyglot_dialect],
                 end,
                 settings[Setting::allow_experimental_polyglot_dialect]);
+            out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        }
+        else if (settings[Setting::dialect] == Dialect::trino && !internal)
+        {
+            /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
+            /// the feature gate internally so users can always switch the dialect back.
+            ParserTrinoQuery parser(
+                max_query_size,
+                settings[Setting::max_parser_depth],
+                settings[Setting::max_parser_backtracks],
+                end,
+                settings[Setting::allow_experimental_trino_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)

@@ -28,6 +28,7 @@
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/ParserKQLStatement.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
@@ -42,6 +43,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
+    extern const SettingsBool allow_experimental_trino_dialect;
     extern const SettingsString database;
     extern const SettingsDialect dialect;
     extern const SettingsString input_format;
@@ -327,6 +329,8 @@ void LocalConnection::sendQuery(
                 parser = std::make_unique<ParserPRQLQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
+            else if (dialect == Dialect::trino)
+                parser = std::make_unique<ParserTrinoQuery>(settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::allow_experimental_trino_dialect]);
             else
                 parser = std::make_unique<ParserQuery>(end, settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
 
