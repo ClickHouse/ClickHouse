@@ -1785,11 +1785,12 @@ Chunk StorageFileSource::generate()
             /// format-level metadata cache (e.g. Parquet footer cache) is reachable. The
             /// "etag" is just any version identifier the cache compares for equality — for
             /// local files we use the precomputed `current_file_cache_version` (sub-second
-            /// mtime + inode + size). Do not use it until it is settled: a same-size in-place
-            /// rewrite within one filesystem timestamp tick could otherwise reuse a stale
-            /// `Parquet` footer under the same token.
+            /// mtime + inode + size) so an in-place rewrite invalidates the cache even when
+            /// the new file has the same length and is written within the same wall-clock
+            /// second. Unlike the query condition cache below, the format metadata cache
+            /// must remain available immediately after a write.
             std::optional<RelativePathWithMetadata> object_with_metadata;
-            if (current_file_version_settled && !storage->use_table_fd && !storage->archive_info && !current_path.empty()
+            if (!storage->use_table_fd && !storage->archive_info && !current_path.empty()
                 && current_file_size.has_value() && current_file_last_modified.has_value()
                 && current_file_cache_version.has_value())
             {
