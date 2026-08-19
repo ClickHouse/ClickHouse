@@ -4,18 +4,21 @@
 -- Case 1: Direct sort key column (already blocked)
 DROP TABLE IF EXISTS t_mat_sort_direct;
 CREATE TABLE t_mat_sort_direct (a Int, b Int MATERIALIZED a + 1) ENGINE = MergeTree() ORDER BY b;
+INSERT INTO t_mat_sort_direct (a) VALUES (1);
 ALTER TABLE t_mat_sort_direct MATERIALIZE COLUMN b; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_sort_direct;
 
 -- Case 2: Column used inside sort key function expression (was NOT blocked — the bug)
 DROP TABLE IF EXISTS t_mat_sort_expr;
 CREATE TABLE t_mat_sort_expr (c1 Int, c2 DateTime MATERIALIZED now()) ENGINE = MergeTree() ORDER BY (metroHash64(c1, c2));
+INSERT INTO t_mat_sort_expr (c1) VALUES (1);
 ALTER TABLE t_mat_sort_expr MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_sort_expr;
 
 -- Case 3: Parent column whose subcolumn is in the sort key (ORDER BY t.k) — must be blocked
 DROP TABLE IF EXISTS t_mat_sort_subcolumn;
 CREATE TABLE t_mat_sort_subcolumn (a Int, t Tuple(k UInt64, v UInt64) MATERIALIZED (rand64(), a)) ENGINE = MergeTree() ORDER BY t.k;
+INSERT INTO t_mat_sort_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_sort_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_sort_subcolumn;
 
@@ -36,6 +39,7 @@ CREATE TABLE t_mat_sort_projection
     c2 DateTime MATERIALIZED now(),
     PROJECTION p (SELECT * ORDER BY metroHash64(c2))
 ) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_sort_projection (a) VALUES (1);
 ALTER TABLE t_mat_sort_projection MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_sort_projection;
 
@@ -44,12 +48,14 @@ DROP TABLE t_mat_sort_projection;
 -- metadata still describes the old partition id.
 DROP TABLE IF EXISTS t_mat_part_expr;
 CREATE TABLE t_mat_part_expr (a Int, c2 DateTime MATERIALIZED now()) ENGINE = MergeTree() PARTITION BY toYYYYMM(c2) ORDER BY a;
+INSERT INTO t_mat_part_expr (a) VALUES (1);
 ALTER TABLE t_mat_part_expr MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_part_expr;
 
 -- Case 7: Parent column whose subcolumn is in the partition key — must be blocked.
 DROP TABLE IF EXISTS t_mat_part_subcolumn;
 CREATE TABLE t_mat_part_subcolumn (a Int, t Tuple(k UInt64, v UInt64) MATERIALIZED (rand64(), a)) ENGINE = MergeTree() PARTITION BY t.k ORDER BY a;
+INSERT INTO t_mat_part_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_part_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_part_subcolumn;
 
@@ -112,6 +118,7 @@ DROP TABLE t_mat_index_multicol;
 DROP TABLE IF EXISTS t_mat_dep_sort_key;
 CREATE TABLE t_mat_dep_sort_key (a Int, c2 Int MATERIALIZED a * 10, k Int MATERIALIZED c2 + 1)
     ENGINE = MergeTree() ORDER BY k;
+INSERT INTO t_mat_dep_sort_key (a) VALUES (1);
 ALTER TABLE t_mat_dep_sort_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_sort_key;
 
@@ -120,6 +127,7 @@ DROP TABLE t_mat_dep_sort_key;
 DROP TABLE IF EXISTS t_mat_dep_part_key;
 CREATE TABLE t_mat_dep_part_key (a Int, c2 Int MATERIALIZED a * 10, p Int MATERIALIZED c2 % 2)
     ENGINE = MergeTree() PARTITION BY p ORDER BY a;
+INSERT INTO t_mat_dep_part_key (a) VALUES (1);
 ALTER TABLE t_mat_dep_part_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_part_key;
 
@@ -133,6 +141,7 @@ CREATE TABLE t_mat_dep_proj_key
     m Int MATERIALIZED c2 + 1,
     PROJECTION p (SELECT * ORDER BY m)
 ) ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_dep_proj_key (a) VALUES (1);
 ALTER TABLE t_mat_dep_proj_key MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_proj_key;
 
@@ -187,12 +196,14 @@ DROP TABLE t_mat_ttl_recalc;
 -- so it must be refused too — otherwise the collapsing semantics of existing data would be corrupted.
 DROP TABLE IF EXISTS t_mat_sign;
 CREATE TABLE t_mat_sign (a Int, sign Int8 MATERIALIZED 1) ENGINE = CollapsingMergeTree(sign) ORDER BY a;
+INSERT INTO t_mat_sign (a) VALUES (1);
 ALTER TABLE t_mat_sign MATERIALIZE COLUMN sign; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_sign;
 
 -- Case 18: Same for the ReplacingMergeTree version column.
 DROP TABLE IF EXISTS t_mat_version;
 CREATE TABLE t_mat_version (a Int, ver UInt32 MATERIALIZED 1) ENGINE = ReplacingMergeTree(ver) ORDER BY a;
+INSERT INTO t_mat_version (a) VALUES (1);
 ALTER TABLE t_mat_version MATERIALIZE COLUMN ver; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_version;
 
@@ -201,6 +212,7 @@ DROP TABLE t_mat_version;
 -- same reason as the direct sign-column case.
 DROP TABLE IF EXISTS t_mat_dep_sign;
 CREATE TABLE t_mat_dep_sign (a Int, c2 Int MATERIALIZED a, s Int8 MATERIALIZED c2) ENGINE = CollapsingMergeTree(s) ORDER BY a;
+INSERT INTO t_mat_dep_sign (a) VALUES (1);
 ALTER TABLE t_mat_dep_sign MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_sign;
 
@@ -212,6 +224,7 @@ DROP TABLE t_mat_dep_sign;
 DROP TABLE IF EXISTS t_mat_ttl_subcolumn;
 CREATE TABLE t_mat_ttl_subcolumn (a Int, t Tuple(k DateTime, v UInt64) MATERIALIZED (toDateTime(1800000000 + a), 0))
     ENGINE = MergeTree() ORDER BY a TTL t.k + INTERVAL 1 DAY;
+INSERT INTO t_mat_ttl_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_ttl_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_subcolumn;
 
@@ -229,6 +242,7 @@ DROP TABLE IF EXISTS t_mat_ttl_dynamic_subcolumn;
 CREATE TABLE t_mat_ttl_dynamic_subcolumn
     (a Int, j JSON MATERIALIZED CAST(concat('{"d":"', toString(toDateTime(1800000000 + a)), '"}'), 'JSON'))
     ENGINE = MergeTree() ORDER BY a TTL j.d::DateTime + INTERVAL 1 DAY;
+INSERT INTO t_mat_ttl_dynamic_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_ttl_dynamic_subcolumn MATERIALIZE COLUMN j; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_dynamic_subcolumn;
 SET allow_suspicious_ttl_expressions = 0;
@@ -243,6 +257,7 @@ SET allow_suspicious_ttl_expressions = 0;
 DROP TABLE IF EXISTS t_mat_ttl_where_full;
 CREATE TABLE t_mat_ttl_where_full (a Int, c3 UInt8 MATERIALIZED (a % 2)::UInt8, d DateTime MATERIALIZED toDateTime(1700000000 + a))
     ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE c3 = 1;
+INSERT INTO t_mat_ttl_where_full (a) VALUES (1);
 ALTER TABLE t_mat_ttl_where_full MATERIALIZE COLUMN c3; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_where_full;
 
@@ -251,6 +266,7 @@ DROP TABLE t_mat_ttl_where_full;
 DROP TABLE IF EXISTS t_mat_ttl_where_subcolumn;
 CREATE TABLE t_mat_ttl_where_subcolumn (a Int, t Tuple(k UInt8, v UInt64) MATERIALIZED ((a % 2)::UInt8, a), d DateTime MATERIALIZED toDateTime(1700000000 + a))
     ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE t.k = 1;
+INSERT INTO t_mat_ttl_where_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_ttl_where_subcolumn MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_where_subcolumn;
 
@@ -276,6 +292,7 @@ CREATE TABLE t_mat_ttl_index_subcolumn
      x Tuple(k UInt64, v UInt64) TTL c + INTERVAL 1 SECOND,
      INDEX idx_xk x.k TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_ttl_index_subcolumn (a) VALUES (1);
 ALTER TABLE t_mat_ttl_index_subcolumn MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_index_subcolumn;
 
@@ -309,6 +326,7 @@ CREATE TABLE t_mat_ttl_where_column_ttl
      d DateTime MATERIALIZED toDateTime(1700000000 + a),
      x UInt64 TTL c + INTERVAL 1 SECOND)
     ENGINE = MergeTree() ORDER BY a TTL d + INTERVAL 1 DAY DELETE WHERE c > toDateTime(1500000000);
+INSERT INTO t_mat_ttl_where_column_ttl (a) VALUES (1);
 ALTER TABLE t_mat_ttl_where_column_ttl MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_where_column_ttl;
 
@@ -340,6 +358,7 @@ CREATE TABLE t_mat_ttl_index_expr
      y UInt64 TTL c + INTERVAL 1 SECOND,
      INDEX idx_ay (a + y) TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_ttl_index_expr (a, y) VALUES (1, 1);
 ALTER TABLE t_mat_ttl_index_expr MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_index_expr;
 
@@ -352,6 +371,7 @@ CREATE TABLE t_mat_ttl_index_expr_single
      y UInt64 TTL c + INTERVAL 1 SECOND,
      INDEX idx_ye (y + 1) TYPE minmax GRANULARITY 1)
     ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_ttl_index_expr_single (a, y) VALUES (1, 1);
 ALTER TABLE t_mat_ttl_index_expr_single MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_index_expr_single;
 
@@ -432,6 +452,7 @@ DROP TABLE t_mat_ttl_proj_agg_sibling;
 DROP TABLE IF EXISTS t_mat_is_deleted;
 CREATE TABLE t_mat_is_deleted (a Int, ver UInt32, d UInt8 MATERIALIZED 0)
     ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+INSERT INTO t_mat_is_deleted (a, ver) VALUES (1, 1);
 ALTER TABLE t_mat_is_deleted MATERIALIZE COLUMN d; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_is_deleted;
 
@@ -440,6 +461,7 @@ DROP TABLE t_mat_is_deleted;
 DROP TABLE IF EXISTS t_mat_dep_is_deleted;
 CREATE TABLE t_mat_dep_is_deleted (a Int, ver UInt32, c2 UInt8 MATERIALIZED 0, d UInt8 MATERIALIZED c2)
     ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+INSERT INTO t_mat_dep_is_deleted (a, ver) VALUES (1, 1);
 ALTER TABLE t_mat_dep_is_deleted MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_dep_is_deleted;
 
@@ -451,6 +473,7 @@ DROP TABLE IF EXISTS t_mat_ttl_sign;
 CREATE TABLE t_mat_ttl_sign
     (a Int, c DateTime MATERIALIZED toDateTime(2000000000), sign Int8 TTL c + INTERVAL 1 SECOND)
     ENGINE = CollapsingMergeTree(sign) ORDER BY a;
+INSERT INTO t_mat_ttl_sign (a) VALUES (1);
 ALTER TABLE t_mat_ttl_sign MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_sign;
 
@@ -459,6 +482,7 @@ DROP TABLE IF EXISTS t_mat_ttl_is_deleted;
 CREATE TABLE t_mat_ttl_is_deleted
     (a Int, ver UInt32, c DateTime MATERIALIZED toDateTime(2000000000), d UInt8 TTL c + INTERVAL 1 SECOND)
     ENGINE = ReplacingMergeTree(ver, d) ORDER BY a;
+INSERT INTO t_mat_ttl_is_deleted (a, ver) VALUES (1, 1);
 ALTER TABLE t_mat_ttl_is_deleted MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_is_deleted;
 

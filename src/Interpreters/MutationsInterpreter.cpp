@@ -1292,8 +1292,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
             for (const auto & projection : projections_desc)
             {
-                if (source.hasProjection(projection.name)
-                    && projection.metadata
+                if (projection.metadata
                     && column_used_in_sorting_key(command.column_name, projection.metadata))
                 {
                     throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
@@ -1366,8 +1365,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 for (const auto & projection : projections_desc)
                 {
-                    if (source.hasProjection(projection.name)
-                        && projection.metadata
+                    if (projection.metadata
                         && column_used_in_sorting_key(dependent_name, projection.metadata))
                     {
                         throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
@@ -1521,15 +1519,10 @@ void MutationsInterpreter::prepare(bool dry_run)
             /// pre-existing limitation of the shared mutation machinery (`ALTER TABLE ... UPDATE` of
             /// the parent column leaves such an index equally stale), so, following the fail-close
             /// approach used below for subcolumn TTL bounds, refuse the command rather than silently
-            /// producing a stale index. Parts created before ADD INDEX do not carry the index yet,
-            /// so they are safe to rewrite; MATERIALIZE INDEX can build it afterwards. (Projections
-            /// cannot contain individual subcolumns, and statistics exist only for whole columns, so
-            /// only skip indices are affected.)
+            /// producing a stale index. (Projections cannot contain individual subcolumns, and
+            /// statistics exist only for whole columns, so only skip indices are affected.)
             for (const auto & index : indices_desc)
             {
-                if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
-                    continue;
-
                 for (const auto & required_column : index.expression->getRequiredColumns())
                 {
                     auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
@@ -1764,8 +1757,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 for (const auto & index : indices_desc)
                 {
-                    if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
-                        continue;
                     if (reads_ttl_target(index.expression->getRequiredColumns()))
                         feed_non_target_inputs(index.expression->getRequiredColumns(), ColumnDependency::SKIP_INDEX);
                 }
