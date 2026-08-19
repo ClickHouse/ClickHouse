@@ -17,7 +17,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 }
 
 /** The partitioned counterpart of `NotJoinedHash`'s per-offset regime, for RIGHT/FULL output. Leaf
-  * maps are iterated in leaf order and a cell's used flag sits at its leaf's `flag_base` plus the
+  * maps are iterated in leaf order - one filler walks only its own stride of them, so that parallel
+  * fillers emit disjoint rows - and a cell's used flag sits at its leaf's `flag_base` plus the
   * map-internal offset, exactly where the probe marked it. Rows whose keys were never inserted come
   * from the saved nullmap holders, as in the standard filler. Nothing here handles the per-row-flags
   * regime, whose shapes take the delegated path and `NotJoinedHash` itself.
@@ -65,12 +66,10 @@ public:
 private:
     const PartitionedHashJoin & parent;
     const UInt64 max_block_size;
-    /// This filler visits every `num_streams`-th leaf, starting at its own stream index.
     const size_t num_streams;
 
     size_t current_leaf;
-    /// The rows that never entered a map are not partitioned by leaf, so one stream takes all of
-    /// them rather than every stream re-emitting them; as `NotJoinedHash` does.
+    /// Nullmap rows are not partitioned by leaf, so exactly one stream emits them.
     const bool owns_nulls;
     std::any position; /// iterator into the current leaf's map, resumable across calls
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;

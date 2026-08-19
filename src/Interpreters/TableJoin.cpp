@@ -1312,9 +1312,8 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .num_files = ProfileEvents::ExternalJoinWritePart}, temporary_files_buffer_size, temporary_files_codec);
 }
 
-/// The join shapes the concurrent hash-join family serves, independent of which of its algorithms
-/// is enabled.
-static bool isConcurrentHashJoinShape(JoinKind kind, bool is_special_storage, bool one_disjunct)
+/// The shapes a multi-threaded hash join can serve, whichever of them is enabled.
+static bool isParallelHashJoinShape(JoinKind kind, bool is_special_storage, bool one_disjunct)
 {
     if (kind != JoinKind::Left && kind != JoinKind::Inner
         && kind != JoinKind::Right && kind != JoinKind::Full)
@@ -1332,7 +1331,7 @@ bool allowParallelHashJoin(
 {
     if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
         return false;
-    return isConcurrentHashJoinShape(kind, is_special_storage, one_disjunct);
+    return isParallelHashJoinShape(kind, is_special_storage, one_disjunct);
 }
 
 bool allowHashTableSizeStatistics(
@@ -1345,6 +1344,6 @@ bool allowHashTableSizeStatistics(
         = [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::PARTITIONED_HASH; };
     if (std::ranges::none_of(join_algorithms, collects_statistics))
         return false;
-    return isConcurrentHashJoinShape(kind, is_special_storage, one_disjunct);
+    return isParallelHashJoinShape(kind, is_special_storage, one_disjunct);
 }
 }
