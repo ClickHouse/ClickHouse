@@ -796,7 +796,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
     String query = String(payload.position(), payload.buffer().end());
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
-    // As Clickhouse doesn't support these statements, we just send OK packet in response.
+    // As ClickHouse doesn't support these statements, we just send OK packet in response.
     if (isFederatedServerSetupSetCommand(query))
     {
         packet_endpoint->sendPacket(OKPacket(0x00, client_capabilities, 0, 0, 0));
