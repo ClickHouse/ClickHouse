@@ -415,6 +415,13 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
     for (size_t i = stack.size() - 1; i-- > 0;)
     {
         auto * step = stack[i].node->step.get();
+        /// An outer LIMIT must not influence whether a `SQL SECURITY` view uses the
+        /// lazy-FINAL split: that decision changes the amount of work below the view
+        /// and can expose the presence of rows hidden by the view. The barrier step
+        /// itself belongs to the view, but nothing above it applies to this read.
+        if (step->isSecurityBarrier())
+            break;
+
         if (const auto * expression_step = typeid_cast<ExpressionStep *>(step))
         {
             /// arrayJoin changes the number of rows, a limit above it is not comparable to selected_rows.

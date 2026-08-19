@@ -24,9 +24,21 @@ CREATE VIEW $db.owned_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT * FROM $db.owned WHERE owner = currentUser();
 
+CREATE TABLE $db.lazy_final_owned (key UInt64, version UInt64, owner String)
+ENGINE = ReplacingMergeTree(version) ORDER BY key;
+SYSTEM STOP MERGES $db.lazy_final_owned;
+INSERT INTO $db.lazy_final_owned SELECT number, 1, 'nobody' FROM numbers(100000);
+INSERT INTO $db.lazy_final_owned SELECT number, 2, 'nobody' FROM numbers(100000);
+INSERT INTO $db.lazy_final_owned SELECT number + 100000, 1, 'nobody' FROM numbers(100000);
+
+CREATE VIEW $db.lazy_final_owned_view
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT * FROM $db.lazy_final_owned FINAL WHERE owner = currentUser();
+
 DROP USER IF EXISTS $user;
 CREATE USER $user;
 GRANT SELECT ON $db.owned_view TO $user;
+GRANT SELECT ON $db.lazy_final_owned_view TO $user;
 EOF
 
 # `99999` exists in the table but is hidden by the view; `500000` exists nowhere. With the barrier
@@ -64,5 +76,18 @@ for analyzer in 1 0; do
         WHERE current_database = currentDatabase()
           AND query_id IN ('$hidden_id', '$absent_id') AND type = 'QueryFinish'"
 done
+
+echo "===== lazy FINAL does not consume an outer limit through the barrier ====="
+# The third part has a non-overlapping key range. Lazy FINAL may split it out only when the outer
+# LIMIT is not considered to apply to the read below the barrier. Before the fence this query kept
+# regular FINAL instead, because the invoker's LIMIT disabled the partial split.
+${CLICKHOUSE_CLIENT} --enable_analyzer 1 --user "$user" --query "
+    SELECT countIf(explain LIKE '%LazyFinal%')
+    FROM (
+        EXPLAIN SELECT * FROM $db.lazy_final_owned_view LIMIT 1
+        SETTINGS query_plan_optimize_lazy_final = 1,
+                 max_rows_for_lazy_final = 10000000,
+                 min_filtered_ratio_for_lazy_final = 0
+    ) > 0"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER $user"
