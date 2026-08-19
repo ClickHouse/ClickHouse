@@ -1125,7 +1125,8 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
 
     const auto followups = getWindowViewFollowups(tokens);
     NameSet rebound_removed_window_views = removed_window_views;
-    if (retireReboundWindowViewNames(rebound_removed_window_views, tokens, followups))
+    const bool rebinds_removed_window_view = retireReboundWindowViewNames(rebound_removed_window_views, tokens, followups);
+    if (rebinds_removed_window_view)
     {
         /// The rebinding DDL and its tombstone retirement must commit together.
         /// Otherwise a failed DDL could expose later legacy followups.
@@ -1144,7 +1145,7 @@ DDLTaskPtr DatabaseReplicatedDDLWorker::initAndCheckTask(const String & entry_na
         return removed_window_views.contains(followup.table_name)
             || (is_exchange && followup.rename_to && removed_window_views.contains(*followup.rename_to));
     });
-    if (has_removed_window_view)
+    if (has_removed_window_view && !rebinds_removed_window_view)
     {
         const bool is_rename = isKeyword(tokens[0], "RENAME");
         const bool has_non_removed_window_view = std::any_of(followups.begin(), followups.end(), [this, is_exchange](const auto & followup)
