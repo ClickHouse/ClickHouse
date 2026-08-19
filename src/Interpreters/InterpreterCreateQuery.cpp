@@ -3459,6 +3459,17 @@ BlockIO InterpreterCreateQuery::execute()
         auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
+            /// Older distributed DDL entry formats dispatch the query before createTable() reaches
+            /// getColumnsDescription(). Normalize here so older workers receive a regular
+            /// column-level DEFAULT rather than the new Tuple element syntax.
+            if (create.columns_list && create.columns_list->columns)
+            {
+                for (const auto & column : create.columns_list->columns->children)
+                {
+                    pullUpTupleElementDefaults(column->as<ASTColumnDeclaration &>());
+                }
+            }
+
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine

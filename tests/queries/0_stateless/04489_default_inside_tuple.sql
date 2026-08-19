@@ -120,6 +120,21 @@ ALTER TABLE t_alter_add ADD COLUMN n Nested(x String, y UInt8 DEFAULT 5); -- { s
 -- DEFAULT inside Array is not supported on ALTER either.
 ALTER TABLE t_alter_add MODIFY COLUMN c Array(Tuple(x UInt8 DEFAULT 5)); -- { serverError NOT_IMPLEMENTED }
 
+SELECT '-- old distributed DDL format';
+SET distributed_ddl_entry_format_version = 2;
+DROP TABLE IF EXISTS t_default_in_tuple_cluster ON CLUSTER test_shard_localhost;
+CREATE TABLE t_default_in_tuple_cluster ON CLUSTER test_shard_localhost
+(
+    id UInt8,
+    c Tuple(a UInt8, s String DEFAULT 'Hello')
+)
+ENGINE = MergeTree ORDER BY id;
+SELECT type, default_kind, default_expression
+FROM system.columns
+WHERE database = currentDatabase() AND table = 't_default_in_tuple_cluster' AND name = 'c';
+DROP TABLE t_default_in_tuple_cluster ON CLUSTER test_shard_localhost;
+SET distributed_ddl_entry_format_version = 0;
+
 SELECT '-- nullable tuple';
 -- Nullable is a transparent wrapper around a Tuple, so a DEFAULT inside Nullable(Tuple(...)) is
 -- pulled up as the same column-level tuple(...) default and cast to the nullable tuple type.

@@ -23,6 +23,8 @@ Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\'
 Tuple(a UInt8, b UInt8)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), 42)
 1	(0,42)
 -- alter errors
+-- old distributed DDL format
+Tuple(a UInt8, s String)	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hello\')
 -- nullable tuple
 Nullable(Tuple(a UInt8, s String))	DEFAULT	tuple(defaultValueOfTypeName(\'UInt8\'), \'Hi\')
 1	(0,'Hi')
