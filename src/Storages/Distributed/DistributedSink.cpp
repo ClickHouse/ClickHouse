@@ -653,7 +653,6 @@ void DistributedSink::writeSync(const Block & block)
                         pool->wait();
                     }
                 }
-            }
         }
     }
     catch (...)
