@@ -10,6 +10,10 @@
 
 #include <Interpreters/Aggregator.h>
 
+#include <pcg_random.hpp>
+
+#include <algorithm>
+
 #include <map>
 #include <memory>
 #include <vector>
@@ -212,4 +216,121 @@ TEST(GroupingAggregatedOOO, DelayedBucketBelowTheHighestIsPushedBeforeTheEnd)
     d.finish();
     for (auto [bucket, count] : d.counts())
         EXPECT_EQ(count, 1) << "bucket " << bucket << " is pushed " << count << " times";
+}
+
+namespace
+{
+
+/// The stream of one producer: the buckets in order, except that some are postponed and sent later,
+/// which is what `enable_producing_buckets_out_of_order_in_aggregation` does. Every chunk reports the
+/// buckets which are postponed and not sent yet, and a bucket can be split into several chunks.
+std::vector<std::pair<Int32, std::vector<Int32>>> generateStream(pcg64 & rng, Int32 num_buckets)
+{
+    std::vector<std::pair<Int32, std::vector<Int32>>> stream;
+    std::vector<Int32> postponed;
+    Int32 next = 0;
+
+    auto emit = [&](Int32 bucket)
+    {
+        std::vector<Int32> reported;
+        for (auto p : postponed)
+            if (p != bucket)
+                reported.push_back(p);
+        stream.emplace_back(bucket, reported);
+        /// The producer converts the variants of a bucket one by one, so it can send it in parts.
+        if (rng() % 4 == 0)
+            stream.emplace_back(bucket, reported);
+    };
+
+    while (next < num_buckets || !postponed.empty())
+    {
+        const bool resolve = !postponed.empty() && (next >= num_buckets || rng() % 3 == 0);
+        if (resolve)
+        {
+            const size_t index = rng() % postponed.size();
+            const Int32 bucket = postponed[index];
+            postponed.erase(postponed.begin() + index);
+            emit(bucket);
+        }
+        else if (rng() % 4 == 0)
+        {
+            postponed.push_back(next++);
+            std::ranges::sort(postponed);
+        }
+        else
+        {
+            emit(next++);
+        }
+    }
+    return stream;
+}
+
+}
+
+/// Whatever the producers do and in whatever order their chunks arrive, every bucket has to be pushed
+/// exactly once and the transform has to finish. Being stricter about when a delayed bucket can be
+/// pushed may only postpone a push, the in order push and the drain of the finished inputs still take
+/// every bucket, so the transform must never get stuck holding one.
+TEST(GroupingAggregatedOOO, EveryBucketIsPushedOnceAndTheTransformFinishesFuzz)
+{
+    constexpr Int32 num_buckets = 16;
+    for (uint64_t seed = 0; seed < 300; ++seed)
+    {
+        pcg64 rng(seed);
+        const size_t num_inputs = 2 + rng() % 2;
+
+        Driver d(num_inputs);
+        std::vector<std::vector<std::pair<Int32, std::vector<Int32>>>> streams;
+        std::vector<size_t> positions(num_inputs, 0);
+        for (size_t i = 0; i < num_inputs; ++i)
+            streams.push_back(generateStream(rng, num_buckets));
+
+        /// Interleave the streams at random, one chunk at a time. A chunk can only be sent to an input
+        /// whose port is free, the transform reads an input only while it needs the buckets it sends.
+        int idle = 0;
+        for (;;)
+        {
+            std::vector<size_t> ready;
+            bool anything_left = false;
+            for (size_t i = 0; i < num_inputs; ++i)
+            {
+                if (positions[i] >= streams[i].size())
+                    continue;
+                anything_left = true;
+                if (d.feeders[i]->canPush())
+                    ready.push_back(i);
+            }
+
+            if (!anything_left)
+                break;
+
+            if (ready.empty())
+            {
+                /// Every port is busy, let the transform read them.
+                d.step();
+                ASSERT_LT(++idle, 100) << "seed " << seed << ": the transform stopped reading the inputs";
+                continue;
+            }
+
+            idle = 0;
+            const size_t input = ready[rng() % ready.size()];
+            const auto & [bucket, reported] = streams[input][positions[input]++];
+            d.send(input, bucket, reported);
+            /// Sometimes let the transform breathe, this is when it pushes.
+            if (rng() % 3 == 0)
+                d.step();
+        }
+
+        d.finish();
+
+        auto counts = d.counts();
+        for (Int32 bucket = 0; bucket < num_buckets; ++bucket)
+            EXPECT_EQ(counts[bucket], 1) << "seed " << seed << ": bucket " << bucket << " is pushed "
+                                         << counts[bucket] << " times";
+        EXPECT_EQ(d.last_status, IProcessor::Status::Finished)
+            << "seed " << seed << ": the transform did not finish, it is stuck holding a bucket";
+
+        if (::testing::Test::HasFailure())
+            break;
+    }
 }
