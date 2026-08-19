@@ -249,6 +249,13 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeCapsTheCeilingAtReachableBuffers
 
     const auto memory = getMultipartUploadMemory(settings, 20);
 
+    /// Before the first strict-size part is full, the writer doubles its initial 1-MiB buffer in place.
+    /// It has not detached a part yet, so reserve only the reached 256-MiB tier rather than two 512-MiB
+    /// buffers.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 200ULL * 1024 * 1024),
+        256ULL * 1024 * 1024);
+
     /// A strict-size writer starts with the caller's at-most-1-MiB buffer and grows it only after data
     /// fills it. With 1 GiB of output it can reach at most two completed 512-MiB buffers and the next
     /// buffer being filled, not all 21 configured in-flight buffers.

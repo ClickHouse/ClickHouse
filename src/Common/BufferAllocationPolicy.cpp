@@ -180,8 +180,16 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         /// can reach, otherwise a small merge with a large strict upload part size is rejected for memory
         /// the writer cannot allocate.
         const UInt64 initial_buffer_size = std::min<UInt64>(settings.strict_size, DBMS_DEFAULT_BUFFER_SIZE);
-        if (bytes_written <= initial_buffer_size)
-            return initial_buffer_size;
+        UInt64 first_buffer_size = initial_buffer_size;
+        while (bytes_written > first_buffer_size && first_buffer_size < settings.strict_size)
+        {
+            if (__builtin_mul_overflow(first_buffer_size, static_cast<UInt64>(2), &first_buffer_size))
+                return MultipartUploadMemory::UNLIMITED;
+            first_buffer_size = std::min(first_buffer_size, static_cast<UInt64>(settings.strict_size));
+        }
+
+        if (bytes_written <= first_buffer_size)
+            return first_buffer_size;
 
         UInt64 reachable_buffers = bytes_written / settings.strict_size;
         if (bytes_written % settings.strict_size)
