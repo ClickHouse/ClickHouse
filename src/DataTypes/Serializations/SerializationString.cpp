@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationString.h>
@@ -28,9 +30,10 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 }
+
+static constexpr UInt64 MAX_TOTAL_STRING_SIZE = 1ULL << 48;
 
 UInt128 SerializationString::getHash(MergeTreeStringSerializationVersion version_)
 {
@@ -635,29 +638,12 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
 
     size_t end = limit && (offset + limit < size) ? offset + limit : size;
     UInt64 prev_offset = offset_values[offset - 1];
-    if constexpr (std::endian::native == std::endian::big)
-    {
-        for (size_t i = offset; i < end; ++i)
-        {
-            UInt64 current_offset = offset_values[i];
-            writeBinaryLittleEndian(current_offset - prev_offset, ostr);
-            prev_offset = current_offset;
-        }
-    }
-    else
-    {
-        size_t count = end - offset;
-        PaddedPODArray<UInt64> sizes;
-        sizes.resize(count);
 
-        for (size_t i = 0; i < count; ++i)
-        {
-            UInt64 current_offset = offset_values[offset + i];
-            sizes[i] = current_offset - prev_offset;
-            prev_offset = current_offset;
-        }
-
-        ostr.write(reinterpret_cast<const char *>(sizes.data()), sizeof(UInt64) * count);
+    for (size_t i = offset; i < end; ++i)
+    {
+        UInt64 current_offset = offset_values[i];
+        writeBinaryLittleEndian(current_offset - prev_offset, ostr);
+        prev_offset = current_offset;
     }
 }
 
@@ -731,7 +717,15 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
     }
 
     const auto & column_string = typeid_cast<const ColumnString &>(column);
-    serializeStringSizes(column, *size_stream, offset, limit);
+    const auto & offsets = column_string.getOffsets();
+
+    /// On disk (position independent) the stream carries per-row sizes so a granule reads on its own.
+    /// Over the network it carries the cumulative offsets directly (like Array offsets) for exact
+    /// reader preallocation.
+    if (settings.position_independent_encoding)
+        serializeStringSizes(column, *size_stream, offset, limit);
+    else
+        SerializationNumber<ColumnString::Offset>::serializeBinaryBulk(offsets, *size_stream, offset, limit);
 
     settings.path.back() = Substream::Regular;
     auto * stream = settings.getter(settings.path);
@@ -739,7 +733,6 @@ void SerializationString::serializeBinaryBulkWithSizeStream(
         throw Exception(ErrorCodes::INCORRECT_DATA, "String stream is missing when try to serialize string with separate size stream");
 
     /// Serialize string data
-    const auto & offsets = column_string.getOffsets();
     size_t begin = (offset == 0) ? 0 : offsets[offset - 1];
     size_t end = offsets[offset + limit - 1];
     size_t bytes = end - begin;
@@ -796,6 +789,75 @@ void SerializationString::deserializeBinaryBulkStatePrefix(
     settings.path.pop_back();
 }
 
+std::pair<size_t, size_t> SerializationString::deserializeStringOffsetsAndGetDataRange(
+    ColumnString & column,
+    size_t rows_offset,
+    size_t limit,
+    DeserializeBinaryBulkSettings & settings,
+    DeserializeBinaryBulkStatePtr & state,
+    SubstreamsCache * cache) const
+{
+    auto & offsets = column.getOffsets();
+    const IColumn::Offset prev_last_offset = offsets.empty() ? 0 : offsets.back();
+
+    /// Over the network the stream carries cumulative byte offsets.
+    if (!settings.position_independent_encoding)
+    {
+        chassert(rows_offset == 0 && prev_last_offset == 0);
+
+        ReadBuffer * offsets_stream = settings.getter(settings.path);
+        if (!offsets_stream)
+            return {0, 0};
+
+        SerializationNumber<ColumnString::Offset>::deserializeBinaryBulk(offsets, *offsets_stream, 0, limit);
+
+        /// Offsets must be monotonically increasing.
+        auto * const it = std::adjacent_find(offsets.begin(), offsets.end(), std::greater<>());
+        if (it != offsets.end())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "String offsets stream is not monotonically increasing (at index {}, value {})",
+                std::distance(offsets.begin(), it),
+                *it);
+
+        return {0, offsets.back()};
+    }
+
+    /// On disk the stream carries per-row sizes, read through the state's sizes column and the cache.
+    size_t num_read_rows = 0;
+    auto * string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithSizeStream>(state);
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    {
+        std::tie(string_state->size_column, num_read_rows) = *cached_column_with_num_read_rows;
+    }
+    else if (ReadBuffer * size_stream = settings.getter(settings.path))
+    {
+        /// If we started to read a new column, reinitialize sizes column in the state.
+        if (!string_state->size_column || column.empty())
+            string_state->size_column = ColumnUInt64::create();
+
+        const size_t prev_size = string_state->size_column->size();
+        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
+            *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
+        num_read_rows = string_state->size_column->size() - prev_size;
+        /// The sizes column has rows_offset unapplied, so it can be cached as is.
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state->size_column, num_read_rows);
+    }
+    else
+    {
+        return {0, 0};
+    }
+
+    const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
+    const size_t sizes_begin = sizes_data.size() - num_read_rows;
+    size_t bytes_to_skip = 0;
+    for (size_t i = sizes_begin; i != sizes_begin + rows_offset; ++i)
+        bytes_to_skip += sizes_data[i];
+
+    appendStringSizesToColumnStringOffsets(column, sizes_data.data(), sizes_begin + rows_offset, num_read_rows - rows_offset);
+    return std::make_pair(bytes_to_skip, offsets.back() - prev_last_offset);
+}
+
 void SerializationString::deserializeBinaryBulkWithSizeStream(
     ColumnPtr & column,
     size_t rows_offset,
@@ -806,74 +868,39 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
 {
     /// Check if the whole String column is already deserialized and we have it in the cache.
     settings.path.push_back(Substream::Regular);
-
     if (insertDataFromSubstreamsCacheIfAny(cache, settings, column))
     {
         settings.path.pop_back();
         return;
     }
 
-    /// String column is not in the cache.
-    /// First, read sizes.
     settings.path.back() = Substream::StringSizes;
-    size_t num_read_rows = 0;
-    DeserializeBinaryBulkStateStringWithSizeStream * string_state = nullptr;
+    auto mutable_column = column->assumeMutable();
+    auto & string_column = assert_cast<ColumnString &>(*mutable_column);
+    const size_t prev_num_rows = string_column.getOffsets().size();
 
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
-    {
-        string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithSizeStream>(state);
-        std::tie(string_state->size_column, num_read_rows) = *cached_column_with_num_read_rows;
-    }
-    else if (ReadBuffer * size_stream = settings.getter(settings.path))
-    {
-        string_state = checkAndGetState<DeserializeBinaryBulkStateStringWithSizeStream>(state);
-        /// If we started to read a new column, reinitialize sizes column in the state.
-        if (!string_state->size_column || column->empty())
-            string_state->size_column = ColumnUInt64::create();
+    auto [bytes_to_skip, bytes_to_read] = deserializeStringOffsetsAndGetDataRange(string_column, rows_offset, limit, settings, state, cache);
 
-        size_t prev_size = string_state->size_column->size();
-        SerializationNumber<UInt64>::create()->deserializeBinaryBulk(
-            *string_state->size_column->assumeMutable(), *size_stream, 0, rows_offset + limit, 0);
-        num_read_rows = string_state->size_column->size() - prev_size;
-        /// We are not going to apply rows_offsets to sizes column here, so we can put it as is in the cache.
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state->size_column, num_read_rows);
-    }
-    else
+    settings.path.back() = Substream::Regular;
+    auto * stream = settings.getter(settings.path);
+
+    if (!stream)
     {
         settings.path.pop_back();
         return;
     }
 
-    /// Read string data.
-    settings.path.back() = Substream::Regular;
-    auto * stream = settings.getter(settings.path);
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for String data.");
+    if (bytes_to_read > MAX_TOTAL_STRING_SIZE)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Total size of String column is too large ({}): most likely the data is corrupted",bytes_to_read);
 
-    /// Fill offsets and calculate bytes to skip and read based on sizes column.
-    auto mutable_column = column->assumeMutable();
-    auto & mutable_string_column = assert_cast<ColumnString &>(*mutable_column);
-    auto & offsets = mutable_string_column.getOffsets();
-    size_t prev_last_offset = offsets.back();
-    size_t bytes_to_skip = 0;
-    const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
-    size_t prev_size = sizes_data.size() - num_read_rows;
-    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
-
-    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
-    size_t bytes_to_read = offsets.back() - prev_last_offset;
-    auto & data = mutable_string_column.getChars();
-    size_t initial_size = data.size();
+    auto & data = string_column.getChars();
+    const size_t initial_size = data.size();
     data.resize(initial_size + bytes_to_read);
     stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + bytes_to_read);
+    stream->readBigStrict(reinterpret_cast<char *>(&data[initial_size]), bytes_to_read);
+
     column = std::move(mutable_column);
-    /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
-    /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
-    /// rows in this call — that is what a later cache lookup must be able to take off its tail.
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, num_read_rows - rows_offset);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column, string_column.getOffsets().size() - prev_num_rows);
     settings.path.pop_back();
 }
 
