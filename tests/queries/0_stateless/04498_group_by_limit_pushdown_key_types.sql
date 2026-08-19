@@ -63,6 +63,10 @@ SELECT k_u8, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key8;
+SELECT * FROM (SELECT * FROM gt_key8)
+EXCEPT
+SELECT * FROM (SELECT k_u8, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u8 ORDER BY k_u8 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_key16;
 CREATE TABLE gt_key16 ENGINE = Memory EMPTY AS
@@ -79,6 +83,10 @@ SELECT k_u16, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key16;
+SELECT * FROM (SELECT * FROM gt_key16)
+EXCEPT
+SELECT * FROM (SELECT k_u16, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u16 ORDER BY k_u16 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_key32;
 CREATE TABLE gt_key32 ENGINE = Memory EMPTY AS
@@ -95,6 +103,10 @@ SELECT k_u32, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key32;
+SELECT * FROM (SELECT * FROM gt_key32)
+EXCEPT
+SELECT * FROM (SELECT k_u32, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_key64;
 CREATE TABLE gt_key64 ENGINE = Memory EMPTY AS
@@ -111,6 +123,10 @@ SELECT k_u64, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key64;
+SELECT * FROM (SELECT * FROM gt_key64)
+EXCEPT
+SELECT * FROM (SELECT k_u64, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_keys128;
 CREATE TABLE gt_keys128 ENGINE = Memory EMPTY AS
@@ -127,6 +143,10 @@ SELECT k_u128, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_keys128;
+SELECT * FROM (SELECT * FROM gt_keys128)
+EXCEPT
+SELECT * FROM (SELECT k_u128, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u128 ORDER BY k_u128 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_keys256;
 CREATE TABLE gt_keys256 ENGINE = Memory EMPTY AS
@@ -143,6 +163,10 @@ SELECT k_u256, count(), sum(val)
 FROM t_gbylimit_uint GROUP BY k_u256 ORDER BY k_u256 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_keys256;
+SELECT * FROM (SELECT * FROM gt_keys256)
+EXCEPT
+SELECT * FROM (SELECT k_u256, count(), sum(val)
+FROM t_gbylimit_uint GROUP BY k_u256 ORDER BY k_u256 ASC LIMIT 10);
 
 DROP TABLE t_gbylimit_uint;
 
@@ -185,6 +209,10 @@ SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int8_asc;
+SELECT * FROM (SELECT * FROM gt_int8_asc)
+EXCEPT
+SELECT * FROM (SELECT k_i8, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int8_desc;
 CREATE TABLE gt_int8_desc ENGINE = Memory EMPTY AS
@@ -201,6 +229,10 @@ SELECT k_i8, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int8_desc;
+SELECT * FROM (SELECT * FROM gt_int8_desc)
+EXCEPT
+SELECT * FROM (SELECT k_i8, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i8 ORDER BY k_i8 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int16_asc;
 CREATE TABLE gt_int16_asc ENGINE = Memory EMPTY AS
@@ -217,6 +249,10 @@ SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int16_asc;
+SELECT * FROM (SELECT * FROM gt_int16_asc)
+EXCEPT
+SELECT * FROM (SELECT k_i16, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int16_desc;
 CREATE TABLE gt_int16_desc ENGINE = Memory EMPTY AS
@@ -233,6 +269,10 @@ SELECT k_i16, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int16_desc;
+SELECT * FROM (SELECT * FROM gt_int16_desc)
+EXCEPT
+SELECT * FROM (SELECT k_i16, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i16 ORDER BY k_i16 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int32_asc;
 CREATE TABLE gt_int32_asc ENGINE = Memory EMPTY AS
@@ -249,6 +289,10 @@ SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int32_asc;
+SELECT * FROM (SELECT * FROM gt_int32_asc)
+EXCEPT
+SELECT * FROM (SELECT k_i32, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int32_desc;
 CREATE TABLE gt_int32_desc ENGINE = Memory EMPTY AS
@@ -265,6 +309,10 @@ SELECT k_i32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int32_desc;
+SELECT * FROM (SELECT * FROM gt_int32_desc)
+EXCEPT
+SELECT * FROM (SELECT k_i32, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i32 ORDER BY k_i32 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int64_asc;
 CREATE TABLE gt_int64_asc ENGINE = Memory EMPTY AS
@@ -281,6 +329,10 @@ SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int64_asc;
+SELECT * FROM (SELECT * FROM gt_int64_asc)
+EXCEPT
+SELECT * FROM (SELECT k_i64, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_int64_desc;
 CREATE TABLE gt_int64_desc ENGINE = Memory EMPTY AS
@@ -297,6 +349,10 @@ SELECT k_i64, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_int64_desc;
+SELECT * FROM (SELECT * FROM gt_int64_desc)
+EXCEPT
+SELECT * FROM (SELECT k_i64, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_i64 ORDER BY k_i64 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_date32_asc;
 CREATE TABLE gt_date32_asc ENGINE = Memory EMPTY AS
@@ -313,6 +369,10 @@ SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_date32_asc;
+SELECT * FROM (SELECT * FROM gt_date32_asc)
+EXCEPT
+SELECT * FROM (SELECT k_d32, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_date32_desc;
 CREATE TABLE gt_date32_desc ENGINE = Memory EMPTY AS
@@ -329,6 +389,10 @@ SELECT k_d32, count(), sum(val)
 FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_date32_desc;
+SELECT * FROM (SELECT * FROM gt_date32_desc)
+EXCEPT
+SELECT * FROM (SELECT k_d32, count(), sum(val)
+FROM t_gbylimit_signed GROUP BY k_d32 ORDER BY k_d32 DESC LIMIT 10);
 
 DROP TABLE t_gbylimit_signed;
 
@@ -365,6 +429,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_asc;
+SELECT * FROM (SELECT * FROM gt_float32_asc)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float32_desc;
 CREATE TABLE gt_float32_desc ENGINE = Memory EMPTY AS
@@ -381,6 +449,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_desc;
+SELECT * FROM (SELECT * FROM gt_float32_desc)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float64_asc;
 CREATE TABLE gt_float64_asc ENGINE = Memory EMPTY AS
@@ -397,6 +469,10 @@ SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_float64_asc;
+SELECT * FROM (SELECT * FROM gt_float64_asc)
+EXCEPT
+SELECT * FROM (SELECT k_f64, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float64_desc;
 CREATE TABLE gt_float64_desc ENGINE = Memory EMPTY AS
@@ -413,6 +489,10 @@ SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_float64_desc;
+SELECT * FROM (SELECT * FROM gt_float64_desc)
+EXCEPT
+SELECT * FROM (SELECT k_f64, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float32_asc_nulls_first;
 CREATE TABLE gt_float32_asc_nulls_first ENGINE = Memory EMPTY AS
@@ -429,6 +509,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS FIRST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_asc_nulls_first;
+SELECT * FROM (SELECT * FROM gt_float32_asc_nulls_first)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS FIRST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float32_asc_nulls_last;
 CREATE TABLE gt_float32_asc_nulls_last ENGINE = Memory EMPTY AS
@@ -445,6 +529,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS LAST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_asc_nulls_last;
+SELECT * FROM (SELECT * FROM gt_float32_asc_nulls_last)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 ASC NULLS LAST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float32_desc_nulls_first;
 CREATE TABLE gt_float32_desc_nulls_first ENGINE = Memory EMPTY AS
@@ -461,6 +549,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS FIRST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_desc_nulls_first;
+SELECT * FROM (SELECT * FROM gt_float32_desc_nulls_first)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS FIRST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float32_desc_nulls_last;
 CREATE TABLE gt_float32_desc_nulls_last ENGINE = Memory EMPTY AS
@@ -477,6 +569,10 @@ SELECT k_f32, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS LAST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float32_desc_nulls_last;
+SELECT * FROM (SELECT * FROM gt_float32_desc_nulls_last)
+EXCEPT
+SELECT * FROM (SELECT k_f32, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f32 ORDER BY k_f32 DESC NULLS LAST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float64_asc_nulls_first;
 CREATE TABLE gt_float64_asc_nulls_first ENGINE = Memory EMPTY AS
@@ -493,6 +589,10 @@ SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC NULLS FIRST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float64_asc_nulls_first;
+SELECT * FROM (SELECT * FROM gt_float64_asc_nulls_first)
+EXCEPT
+SELECT * FROM (SELECT k_f64, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 ASC NULLS FIRST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_float64_desc_nulls_last;
 CREATE TABLE gt_float64_desc_nulls_last ENGINE = Memory EMPTY AS
@@ -509,6 +609,10 @@ SELECT k_f64, count(), sum(val)
 FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC NULLS LAST LIMIT 10
 EXCEPT
 SELECT * FROM gt_float64_desc_nulls_last;
+SELECT * FROM (SELECT * FROM gt_float64_desc_nulls_last)
+EXCEPT
+SELECT * FROM (SELECT k_f64, count(), sum(val)
+FROM t_gbylimit_float GROUP BY k_f64 ORDER BY k_f64 DESC NULLS LAST LIMIT 10);
 
 DROP TABLE t_gbylimit_float;
 
@@ -543,6 +647,10 @@ SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_datetime_asc;
+SELECT * FROM (SELECT * FROM gt_datetime_asc)
+EXCEPT
+SELECT * FROM (SELECT k_dt, count(), sum(val)
+FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_datetime_desc;
 CREATE TABLE gt_datetime_desc ENGINE = Memory EMPTY AS
@@ -559,6 +667,10 @@ SELECT k_dt, count(), sum(val)
 FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_datetime_desc;
+SELECT * FROM (SELECT * FROM gt_datetime_desc)
+EXCEPT
+SELECT * FROM (SELECT k_dt, count(), sum(val)
+FROM t_gbylimit_datetime GROUP BY k_dt ORDER BY k_dt DESC LIMIT 10);
 
 DROP TABLE t_gbylimit_datetime;
 
@@ -605,6 +717,10 @@ SELECT k_str, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_str ORDER BY k_str ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key_string;
+SELECT * FROM (SELECT * FROM gt_key_string)
+EXCEPT
+SELECT * FROM (SELECT k_str, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_str ORDER BY k_str ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_key_fixed_string;
 CREATE TABLE gt_key_fixed_string ENGINE = Memory EMPTY AS
@@ -621,6 +737,10 @@ SELECT k_fstr, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_key_fixed_string;
+SELECT * FROM (SELECT * FROM gt_key_fixed_string)
+EXCEPT
+SELECT * FROM (SELECT k_fstr, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_fstr ORDER BY k_fstr ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_serialized;
 CREATE TABLE gt_serialized ENGINE = Memory EMPTY AS
@@ -637,6 +757,10 @@ SELECT k_tup, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_serialized;
+SELECT * FROM (SELECT * FROM gt_serialized)
+EXCEPT
+SELECT * FROM (SELECT k_tup, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_tup ORDER BY k_tup ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_nullable_key32;
 CREATE TABLE gt_nullable_key32 ENGINE = Memory EMPTY AS
@@ -653,6 +777,10 @@ SELECT k_nu32, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_nullable_key32;
+SELECT * FROM (SELECT * FROM gt_nullable_key32)
+EXCEPT
+SELECT * FROM (SELECT k_nu32, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_nu32 ORDER BY k_nu32 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_nullable_key_string;
 CREATE TABLE gt_nullable_key_string ENGINE = Memory EMPTY AS
@@ -669,6 +797,10 @@ SELECT k_nstr, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_nullable_key_string;
+SELECT * FROM (SELECT * FROM gt_nullable_key_string)
+EXCEPT
+SELECT * FROM (SELECT k_nstr, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_nstr ORDER BY k_nstr ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_low_cardinality_key64;
 CREATE TABLE gt_low_cardinality_key64 ENGINE = Memory EMPTY AS
@@ -685,6 +817,10 @@ SELECT k_lcu64, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_low_cardinality_key64;
+SELECT * FROM (SELECT * FROM gt_low_cardinality_key64)
+EXCEPT
+SELECT * FROM (SELECT k_lcu64, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_lcu64 ORDER BY k_lcu64 ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_low_cardinality_key_string;
 CREATE TABLE gt_low_cardinality_key_string ENGINE = Memory EMPTY AS
@@ -701,6 +837,10 @@ SELECT k_lcstr, count(), sum(val)
 FROM t_gbylimit_str GROUP BY k_lcstr ORDER BY k_lcstr ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_low_cardinality_key_string;
+SELECT * FROM (SELECT * FROM gt_low_cardinality_key_string)
+EXCEPT
+SELECT * FROM (SELECT k_lcstr, count(), sum(val)
+FROM t_gbylimit_str GROUP BY k_lcstr ORDER BY k_lcstr ASC LIMIT 10);
 
 DROP TABLE t_gbylimit_str;
 

@@ -54,6 +54,10 @@ SELECT a, b, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b ORDER BY a, b ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_two_int;
+SELECT * FROM (SELECT * FROM gt_composite_two_int)
+EXCEPT
+SELECT * FROM (SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a, b ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_composite_int_string;
 CREATE TABLE gt_composite_int_string ENGINE = Memory EMPTY AS
@@ -70,6 +74,10 @@ SELECT a, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, c ORDER BY a, c ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_int_string;
+SELECT * FROM (SELECT * FROM gt_composite_int_string)
+EXCEPT
+SELECT * FROM (SELECT a, c, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, c ORDER BY a, c ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_composite_three_keys;
 CREATE TABLE gt_composite_three_keys ENGINE = Memory EMPTY AS
@@ -86,6 +94,10 @@ SELECT a, b, c, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a, b, c ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_three_keys;
+SELECT * FROM (SELECT * FROM gt_composite_three_keys)
+EXCEPT
+SELECT * FROM (SELECT a, b, c, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a, b, c ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_composite_nullable;
 CREATE TABLE gt_composite_nullable ENGINE = Memory EMPTY AS
@@ -102,6 +114,10 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a, d ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_nullable;
+SELECT * FROM (SELECT * FROM gt_composite_nullable)
+EXCEPT
+SELECT * FROM (SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a, d ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_prefix_one_of_two;
 CREATE TABLE gt_prefix_one_of_two ENGINE = Memory EMPTY AS
@@ -120,6 +136,12 @@ SELECT * FROM (
 ) ORDER BY a, b ASC
 EXCEPT
 SELECT * FROM gt_prefix_one_of_two ORDER BY a, b ASC;
+SELECT * FROM (SELECT * FROM gt_prefix_one_of_two ORDER BY a, b ASC)
+EXCEPT
+SELECT * FROM (SELECT * FROM (
+    SELECT a, b, count() AS cnt, sum(val) AS s
+    FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC LIMIT 10
+) ORDER BY a, b ASC);
 
 DROP TABLE IF EXISTS gt_prefix_one_of_three;
 CREATE TABLE gt_prefix_one_of_three ENGINE = Memory EMPTY AS
@@ -138,6 +160,12 @@ SELECT * FROM (
 ) ORDER BY a, b, c ASC
 EXCEPT
 SELECT * FROM gt_prefix_one_of_three ORDER BY a, b, c ASC;
+SELECT * FROM (SELECT * FROM gt_prefix_one_of_three ORDER BY a, b, c ASC)
+EXCEPT
+SELECT * FROM (SELECT * FROM (
+    SELECT a, b, c, count() AS cnt
+    FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a ASC LIMIT 12
+) ORDER BY a, b, c ASC);
 
 DROP TABLE IF EXISTS gt_prefix_two_of_three;
 CREATE TABLE gt_prefix_two_of_three ENGINE = Memory EMPTY AS
@@ -156,6 +184,12 @@ SELECT * FROM (
 ) ORDER BY a, b, c ASC
 EXCEPT
 SELECT * FROM gt_prefix_two_of_three ORDER BY a, b, c ASC;
+SELECT * FROM (SELECT * FROM gt_prefix_two_of_three ORDER BY a, b, c ASC)
+EXCEPT
+SELECT * FROM (SELECT * FROM (
+    SELECT a, b, c, count() AS cnt
+    FROM t_gbylimit_comp GROUP BY a, b, c ORDER BY a, b ASC LIMIT 12
+) ORDER BY a, b, c ASC);
 
 DROP TABLE IF EXISTS gt_prefix_with_offset;
 CREATE TABLE gt_prefix_with_offset ENGINE = Memory EMPTY AS
@@ -174,6 +208,12 @@ SELECT * FROM (
 ) ORDER BY a, b ASC
 EXCEPT
 SELECT * FROM gt_prefix_with_offset ORDER BY a, b ASC;
+SELECT * FROM (SELECT * FROM gt_prefix_with_offset ORDER BY a, b ASC)
+EXCEPT
+SELECT * FROM (SELECT * FROM (
+    SELECT a, b, count() AS cnt, sum(val) AS s
+    FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC LIMIT 4, 6
+) ORDER BY a, b ASC);
 
 DROP TABLE IF EXISTS gt_composite_two_level;
 CREATE TABLE gt_composite_two_level ENGINE = Memory EMPTY AS
@@ -199,6 +239,13 @@ SELECT
 FROM numbers(200000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_two_level;
+SELECT * FROM (SELECT * FROM gt_composite_two_level)
+EXCEPT
+SELECT * FROM (SELECT
+    (number % 100000)::UInt32 AS x,
+    (number % 50000)::UInt32 AS y,
+    count()
+FROM numbers(200000) GROUP BY x, y ORDER BY x, y ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_prefix_two_level;
 CREATE TABLE gt_prefix_two_level ENGINE = Memory EMPTY AS
@@ -226,6 +273,15 @@ SELECT * FROM (
 ) ORDER BY x, y ASC
 EXCEPT
 SELECT * FROM gt_prefix_two_level ORDER BY x, y ASC;
+SELECT * FROM (SELECT * FROM gt_prefix_two_level ORDER BY x, y ASC)
+EXCEPT
+SELECT * FROM (SELECT * FROM (
+    SELECT
+        (number % 100000)::UInt32 AS x,
+        (number % 50000)::UInt32 AS y,
+        count() AS cnt
+    FROM numbers(200000) GROUP BY x, y ORDER BY x ASC LIMIT 10
+) ORDER BY x, y ASC);
 
 DROP TABLE IF EXISTS gt_nullable_nulls_first_asc;
 CREATE TABLE gt_nullable_nulls_first_asc ENGINE = Memory EMPTY AS
@@ -242,6 +298,10 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5
 EXCEPT
 SELECT * FROM gt_nullable_nulls_first_asc;
+SELECT * FROM (SELECT * FROM gt_nullable_nulls_first_asc)
+EXCEPT
+SELECT * FROM (SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS FIRST LIMIT 5);
 
 DROP TABLE IF EXISTS gt_nullable_nulls_last_asc;
 CREATE TABLE gt_nullable_nulls_last_asc ENGINE = Memory EMPTY AS
@@ -258,6 +318,10 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5
 EXCEPT
 SELECT * FROM gt_nullable_nulls_last_asc;
+SELECT * FROM (SELECT * FROM gt_nullable_nulls_last_asc)
+EXCEPT
+SELECT * FROM (SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d ASC NULLS LAST LIMIT 5);
 
 DROP TABLE IF EXISTS gt_nullable_nulls_first_desc;
 CREATE TABLE gt_nullable_nulls_first_desc ENGINE = Memory EMPTY AS
@@ -274,6 +338,10 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5
 EXCEPT
 SELECT * FROM gt_nullable_nulls_first_desc;
+SELECT * FROM (SELECT * FROM gt_nullable_nulls_first_desc)
+EXCEPT
+SELECT * FROM (SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS FIRST LIMIT 5);
 
 DROP TABLE IF EXISTS gt_nullable_nulls_last_desc;
 CREATE TABLE gt_nullable_nulls_last_desc ENGINE = Memory EMPTY AS
@@ -290,6 +358,10 @@ SELECT d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5
 EXCEPT
 SELECT * FROM gt_nullable_nulls_last_desc;
+SELECT * FROM (SELECT * FROM gt_nullable_nulls_last_desc)
+EXCEPT
+SELECT * FROM (SELECT d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY d ORDER BY d DESC NULLS LAST LIMIT 5);
 
 DROP TABLE IF EXISTS gt_composite_nullable_nulls_first;
 CREATE TABLE gt_composite_nullable_nulls_first ENGINE = Memory EMPTY AS
@@ -306,6 +378,10 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_nullable_nulls_first;
+SELECT * FROM (SELECT * FROM gt_composite_nullable_nulls_first)
+EXCEPT
+SELECT * FROM (SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_composite_nullable_nulls_last;
 CREATE TABLE gt_composite_nullable_nulls_last ENGINE = Memory EMPTY AS
@@ -322,6 +398,10 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10
 EXCEPT
 SELECT * FROM gt_composite_nullable_nulls_last;
+SELECT * FROM (SELECT * FROM gt_composite_nullable_nulls_last)
+EXCEPT
+SELECT * FROM (SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_agg_one_key;
 CREATE TABLE gt_trailing_agg_one_key ENGINE = Memory EMPTY AS
@@ -338,6 +418,10 @@ SELECT a, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, count() DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_agg_one_key;
+SELECT * FROM (SELECT * FROM gt_trailing_agg_one_key)
+EXCEPT
+SELECT * FROM (SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, count() DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_agg_all_keys;
 CREATE TABLE gt_trailing_agg_all_keys ENGINE = Memory EMPTY AS
@@ -354,6 +438,10 @@ SELECT a, b, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, count() DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_agg_all_keys;
+SELECT * FROM (SELECT * FROM gt_trailing_agg_all_keys)
+EXCEPT
+SELECT * FROM (SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, count() DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_agg_key_desc;
 CREATE TABLE gt_trailing_agg_key_desc ENGINE = Memory EMPTY AS
@@ -370,6 +458,10 @@ SELECT a, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a ORDER BY a DESC, count() ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_agg_key_desc;
+SELECT * FROM (SELECT * FROM gt_trailing_agg_key_desc)
+EXCEPT
+SELECT * FROM (SELECT a, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a ORDER BY a DESC, count() ASC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_nullable_nulls_first;
 CREATE TABLE gt_trailing_nullable_nulls_first ENGINE = Memory EMPTY AS
@@ -386,6 +478,10 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST, count() DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_nullable_nulls_first;
+SELECT * FROM (SELECT * FROM gt_trailing_nullable_nulls_first)
+EXCEPT
+SELECT * FROM (SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS FIRST, count() DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_nullable_nulls_last;
 CREATE TABLE gt_trailing_nullable_nulls_last ENGINE = Memory EMPTY AS
@@ -402,6 +498,10 @@ SELECT a, d, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST, count() DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_nullable_nulls_last;
+SELECT * FROM (SELECT * FROM gt_trailing_nullable_nulls_last)
+EXCEPT
+SELECT * FROM (SELECT a, d, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, d ORDER BY a ASC, d ASC NULLS LAST, count() DESC LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_collate;
 CREATE TABLE gt_trailing_collate ENGINE = Memory EMPTY AS
@@ -418,6 +518,18 @@ SELECT a, max(c), count()
 FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_collate;
+SELECT * FROM (SELECT * FROM gt_trailing_collate)
+EXCEPT
+SELECT * FROM (SELECT a, max(c), count()
+FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10);
+
+-- The COLLATE sits past the matched key prefix: `a` alone identifies a group, so
+-- the collated tie-break can never affect which groups qualify - the optimization
+-- fires for this shape by design.
+SELECT 'trailing_collate: optimized by design';
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT a, max(c), count()
+    FROM t_gbylimit_comp GROUP BY a ORDER BY a ASC, max(c) ASC COLLATE 'en' LIMIT 10);
 
 DROP TABLE IF EXISTS gt_trailing_duplicate_key;
 CREATE TABLE gt_trailing_duplicate_key ENGINE = Memory EMPTY AS
@@ -434,6 +546,10 @@ SELECT a, b, count(), sum(val)
 FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, a ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_trailing_duplicate_key;
+SELECT * FROM (SELECT * FROM gt_trailing_duplicate_key)
+EXCEPT
+SELECT * FROM (SELECT a, b, count(), sum(val)
+FROM t_gbylimit_comp GROUP BY a, b ORDER BY a ASC, b ASC, a ASC LIMIT 10);
 
 DROP TABLE t_gbylimit_comp;
 

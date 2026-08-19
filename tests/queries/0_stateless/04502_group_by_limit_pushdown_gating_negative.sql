@@ -197,6 +197,20 @@ FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_multi_key;
 
+SELECT 'gated shapes carry no Top-K in the plan, the control does';
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10);
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY ROLLUP(k_u32) ORDER BY k_u32 ASC LIMIT 10);
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY CUBE(k_u32) ORDER BY k_u32 ASC LIMIT 10);
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY GROUPING SETS ((k_u32), (k_u64)) ORDER BY k_u32 ASC LIMIT 10);
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10 WITH TIES);
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k_u32, count() FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10);
+
 -- CI randomizes group_by_two_level_threshold (can exceed the row count below);
 -- pin it so the two-level conversion is deterministic, and keep the row count
 -- moderate so a debug-build flaky-check run fits the timeout.

@@ -95,11 +95,21 @@ SELECT 'ORDER BY under spill: identical to optimization off';
 SELECT count()
 FROM
 (
-    SELECT k, sum(v) AS s
-    FROM (SELECT toString(number % 500000) AS k, 1 AS v FROM numbers(2000000))
-    GROUP BY k ORDER BY k ASC LIMIT 10000
-    EXCEPT
-    SELECT k, s FROM t_04817_ground_truth ORDER BY k ASC LIMIT 10000
+    (
+        SELECT k, sum(v) AS s
+        FROM (SELECT toString(number % 500000) AS k, 1 AS v FROM numbers(2000000))
+        GROUP BY k ORDER BY k ASC LIMIT 10000
+        EXCEPT
+        SELECT k, s FROM t_04817_ground_truth ORDER BY k ASC LIMIT 10000
+    )
+    UNION ALL
+    (
+        SELECT k, s FROM t_04817_ground_truth ORDER BY k ASC LIMIT 10000
+        EXCEPT
+        SELECT k, sum(v) AS s
+        FROM (SELECT toString(number % 500000) AS k, 1 AS v FROM numbers(2000000))
+        GROUP BY k ORDER BY k ASC LIMIT 10000
+    )
 ) SETTINGS log_comment = '04817_order_by';
 
 -- Without this guard the queries above would still pass if the aggregation

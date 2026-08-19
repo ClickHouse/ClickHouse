@@ -24,6 +24,13 @@ negative_with_totals
 negative_having
 negative_order_by_aggregate
 negative_multi_key
+gated shapes carry no Top-K in the plan, the control does
+0
+0
+0
+0
+0
+1
 two_level
 two_level_string
 Single numeric key, huge limit
