@@ -2836,7 +2836,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
         auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
-        return is_null_mode && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
+        return (is_null_mode || arguments[1]->isNullable()) && value_type->canBeInsideNullable() ? makeNullable(value_type) : value_type;
     }
 
     const bool qbit_is_nullable = arguments[0]->isNullable();
@@ -2908,7 +2908,11 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
         return std::make_shared<DataTypeArray>(nested_type);
     }
 
+    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     auto index_type = removeNullable(removeLowCardinality(arguments[1]));
+    if (arguments[1]->onlyNull())
+        return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+
     if (!isNativeInteger(index_type))
     {
         throw Exception(
@@ -2918,8 +2922,7 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
             arguments[1]->getName());
     }
 
-    auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
-    return is_null_mode && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
+    return (is_null_mode || arguments[1]->isNullable()) && nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2990,6 +2993,12 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
     const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
+
+    /// The regular nullable adapter would return NULL without evaluating the nested `Nothing`
+    /// column. Reproduce that behavior here because QBit handling disables the adapter for the
+    /// whole overload set.
+    if (!is_qbit && arguments[1].type->onlyNull())
+        return result_type->createColumnConstWithDefaultValue(input_rows_count);
 
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
     /// array-of-indices result: the result itself is an Array and cannot be wrapped in
