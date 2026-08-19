@@ -477,6 +477,17 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
                 tables_to_replicate = getFormattedTablesList();
             }
 
+            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+
+            /// Initialize the PostgreSQL side before publishing either the persistent table list or
+            /// the wrapper. If the snapshot or temporary-slot setup fails, the catch below only has
+            /// to remove the nested table created by createTable(): a retry starts from the same
+            /// database definition and cannot observe a ghost materialized table.
+            {
+                std::lock_guard lock(handler_mutex);
+                replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
+            }
+
             /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
             SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
             auto alter_query = createAlterSettingsQuery(new_setting);
@@ -485,14 +496,10 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             /// `handler_mutex`, and the two mutexes must always be taken in that order.
             InterpreterAlterQuery(alter_query, current_context).execute();
 
-            auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
             }
-
-            std::lock_guard lock(handler_mutex);
-            replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
         }
         catch (...)
         {

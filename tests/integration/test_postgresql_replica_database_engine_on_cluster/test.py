@@ -561,3 +561,50 @@ def test_upgrade_with_grown_schema_adopts_presalt_identity(started_cluster):
     cursor.close()
     conn.close()
     server_cursor.execute(f'DROP DATABASE "{pg_db}" WITH (FORCE)')
+
+
+def test_attach_table_does_not_persist_failed_replication_setup(started_cluster):
+    pg_table = "attach_failure_source"
+    mat_db = "attach_failure_database"
+    pg_manager.create_postgres_table(pg_table)
+
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE attach_failure_table (key integer, value integer)")
+    cursor.execute("INSERT INTO attach_failure_table VALUES (1, 1)")
+
+    node1.query(
+        f"""
+        CREATE DATABASE {mat_db}
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_tables_list = '{pg_table}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.{pg_table}", "0")
+
+    # A table without a primary key or replica identity cannot complete the snapshot. Its failed
+    # `ATTACH TABLE` must leave neither a persisted table-list entry nor a cached wrapper behind.
+    error = node1.query_and_get_error(f"ATTACH TABLE {mat_db}.attach_failure_table")
+    assert "Failed to add table" in error
+    assert f"materialized_postgresql_tables_list = '{pg_table}'" in node1.query(
+        f"SHOW CREATE DATABASE {mat_db}"
+    )
+    assert pg_table == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
+
+    # Once PostgreSQL is repaired, the same attach starts from the original definition and succeeds.
+    cursor.execute("ALTER TABLE attach_failure_table ADD PRIMARY KEY (key)")
+    node1.query(f"ATTACH TABLE {mat_db}.attach_failure_table")
+    assert_eq_with_retry(node1, f"SELECT count() FROM {mat_db}.attach_failure_table", "1")
+
+    node1.query(f"DROP DATABASE {mat_db} SYNC")
+    cursor.execute("DROP TABLE attach_failure_table")
+    cursor.close()
+    conn.close()
