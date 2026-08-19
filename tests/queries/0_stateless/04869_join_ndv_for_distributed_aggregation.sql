@@ -1,10 +1,10 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
--- Regression test for #68096. An optimized JoinStepLogical has two children,
--- so estimateReadRowsCount must read its saved result-column statistics before
--- the generic single-child guard. Otherwise this low-NDV GROUP BY falls back
--- to the join row count and uses shuffle aggregation.
+-- Regression test for preserving result-column statistics through a distributed join.
+-- A low-NDV GROUP BY after a join must use the join output statistics before
+-- applying the generic single-child guard. Otherwise it uses the join row count
+-- and selects shuffle aggregation.
 
 DROP TABLE IF EXISTS left_04869;
 DROP TABLE IF EXISTS right_04869;
@@ -15,13 +15,18 @@ CREATE TABLE right_04869 (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO left_04869 SELECT number % 2, number FROM numbers(100);
 INSERT INTO right_04869 SELECT number FROM numbers(2);
 
+-- Disable persisted statistics so the test uses only the deterministic hints below.
 SET use_statistics = 0;
+
+-- Provide deterministic table cardinalities and key NDVs for join planning.
 SET param__internal_join_table_stat_hints = '
 {
     "left_04869": { "cardinality": 100, "distinct_keys": { "k": 2, "v": 100 } },
     "right_04869": { "cardinality": 2, "distinct_keys": { "k": 2 } }
 }';
 
+-- Before the fix, the plan contained 0 partial aggregation steps because the
+-- low NDV was lost. Now it contains 1 partial aggregation step.
 SELECT count()
 FROM
 (
