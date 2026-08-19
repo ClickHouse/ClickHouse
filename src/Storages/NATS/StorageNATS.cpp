@@ -139,7 +139,9 @@ StorageNATS::StorageNATS(
     nats_context = addSettings(getContext());
     nats_context->makeQueryContext();
 
-    event_loop_thread = std::make_unique<ThreadFromGlobalPool>([this] { event_handler.runLoop(); });
+    event_loop_thread = std::make_unique<ThreadFromGlobalPool>(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+        [this] { event_handler.runLoop(); });
 
     try
     {

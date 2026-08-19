@@ -1339,7 +1339,10 @@ public:
                 try
                 {
                     /// Starts the thread which will do periodic updates.
-                    thread = ThreadFromGlobalPool{&PeriodicUpdater::doPeriodicUpdates, this};
+                    thread = ThreadFromGlobalPool{
+                        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+                        &PeriodicUpdater::doPeriodicUpdates,
+                        this};
                 }
                 catch (Exception & e)
                 {
