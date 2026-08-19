@@ -19,7 +19,7 @@ ColumnsCache::MappedPtr makeEntry(size_t rows)
 {
     auto column = ColumnUInt64::create();
     column->getData().resize_fill(rows, 0);
-    return std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows});
+    return std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows, {}});
 }
 
 }

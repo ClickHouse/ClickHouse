@@ -20,7 +20,8 @@ single column of a single data part.
 The cache identifies entries by table UUID, so it is only active for tables in
 databases that assign UUIDs (`Atomic` and `Replicated`). Tables in legacy
 `Ordinary` databases, which do not have UUIDs, are silently excluded from the
-cache.
+cache. Only wide parts participate in the cache; compact parts are silently
+excluded.
 
 The cache is controlled by the server settings `columns_cache_size` and
 `columns_cache_size_ratio`, and by the query-level settings `use_columns_cache`,
