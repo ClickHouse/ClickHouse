@@ -15,8 +15,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    constexpr const char * right_group_present = "right_group_present";
-
     bool canUseExactGroupMatch(
         const PrometheusQueryTree::BinaryOperator * operator_node,
         bool left_metric_name_dropped,
@@ -38,10 +36,7 @@ namespace
 
         builder.select_list.push_back(makeASTFunction(
             "if",
-            makeASTFunction(
-                "equals",
-                make_intrusive<ASTIdentifier>(Strings{right, right_group_present}),
-                make_intrusive<ASTLiteral>(1u)),
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values})),
             makeASTFunction(
                 "arrayMap",
                 makeASTFunction(
@@ -104,18 +99,6 @@ SQLQueryPiece applyBinaryOperatorUnless(
 
     if (exact_group_match)
     {
-        /// Add an explicit marker because an unmatched LEFT JOIN row and a matched row whose values are all NULL
-        /// must take different branches below.
-        SelectQueryBuilder builder;
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
-        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
-        builder.select_list.push_back(make_intrusive<ASTLiteral>(1u));
-        builder.select_list.back()->setAlias(right_group_present);
-        builder.from_table = right;
-
-        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
-        right = context.subqueries.back().name;
-
         SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
         res.select_query = makeExactGroupUnlessQuery(left, right);
         res.metric_name_dropped = left_argument.metric_name_dropped;

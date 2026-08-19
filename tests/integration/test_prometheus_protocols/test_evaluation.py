@@ -3536,6 +3536,28 @@ def test_set_binary_operators():
         ],
     )
 
+    # The RHS still has matching VECTOR_GRID rows, but filtering removes every sample.
+    # The exact-group path must treat those rows as present and preserve the full LHS arrays.
+    do_query_test(
+        "(sum by (shape, size) (last_over_time(foo[10])) unless ((last_over_time(bar[10]) > 10000) + 0))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "circle", "size": "l"}, "values": [[110, "16"], [130, "16"], [150, "16"]]}, {"metric": {"shape": "square", "size": "s"}, "values": [[110, "4"], [130, "40"]]}, {"metric": {"shape": "triangle", "size": "m"}, "values": [[110, "8"], [120, "80"]]}]}',
+        [
+            [
+                "[('shape','circle'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',16),('1970-01-01 00:02:10.000',16),('1970-01-01 00:02:30.000',16)]",
+            ],
+            [
+                "[('shape','square'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:10.000',40)]",
+            ],
+            [
+                "[('shape','triangle'),('size','m')]",
+                "[('1970-01-01 00:01:50.000',8),('1970-01-01 00:02:00.000',80)]",
+            ],
+        ],
+    )
+
     do_query_test(
         "(last_over_time(foo[10]) or last_over_time(bar[10]))[50:10]",
         150,
