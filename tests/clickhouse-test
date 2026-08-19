@@ -1856,6 +1856,7 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
+        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -4312,6 +4313,11 @@ class TestSuite:
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
         self.cloud_skip_errors_list: List[str] = []
+        # Keep this separate from the final test list. A selected-test job may
+        # legitimately find a test and subsequently filter it out for its
+        # flavor, but every selector must match a test before the benign
+        # filtered-out result is allowed.
+        self.explicit_test_selectors_matched: Set[str] = set()
         # List of tests included in a blacklist.
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
@@ -4466,12 +4472,22 @@ class TestSuite:
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
-            if self.args.test and not any(
-                re.search(pattern, test_name) for pattern in self.args.test
-            ):
+            matching_selectors = (
+                {
+                    pattern
+                    for pattern in self.args.test
+                    if re.search(pattern, test_name)
+                }
+                if self.args.test
+                else set()
+            )
+            if self.args.test and not matching_selectors:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+
+            if self.args.test:
+                self.explicit_test_selectors_matched.update(matching_selectors)
 
             if not filter_func(test_name):
                 continue
@@ -6023,6 +6039,7 @@ ORDER BY (test_name, callee_offset)
         )
 
     total_tests_run = 0
+    explicit_test_selectors_matched = set()
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
@@ -6100,6 +6117,10 @@ ORDER BY (test_name, callee_offset)
             test_suite = TestSuite.read_test_suite(args, suite)
             if test_suite is None:
                 continue
+
+            explicit_test_selectors_matched.update(
+                test_suite.explicit_test_selectors_matched
+            )
 
             test_suite.skip_list = skip_list
             test_suite.cloud_skip_list = cloud_skip_list
@@ -6211,7 +6232,14 @@ ORDER BY (test_name, callee_offset)
             print(test_result.description)
 
     if total_tests_run == 0:
-        print("No tests were run.")
+        if runner_process_killed.is_set() or exit_code.value != 0:
+            print("No tests were run.")
+        elif args.test and set(args.test).issubset(explicit_test_selectors_matched):
+            print(
+                "No tests were run because every explicitly requested test was filtered out."
+            )
+        else:
+            print("No tests were run.")
         sys.exit(1)
     else:
         print("All tests have finished.")
