@@ -2432,6 +2432,114 @@ function activePinnedColumns() {
     return tab ? tab.pinnedColumns : {};
 }
 
+/// The sort the user chose in a result's column headers (`tab.sortColumns`, see `makeTab`) is an
+/// ORDERED array of `{name, desc}` entries, one per sort key. Unlike the color modes and the pinned
+/// columns above, it is not display state: it is sent as the `order` query-construction setting,
+/// which the server materializes by wrapping the query as a derived table with an `ORDER BY`, so the
+/// rows themselves come back sorted and a change re-runs the query. Like them it is PER TAB, shared
+/// by reference with the tab's result element (`_sortColumns`) and therefore always mutated in place,
+/// and it is persisted with the tab's result snapshot and mirrored into the URL / history. The
+/// helpers below serialize, quote and bind it; the header controls live in `QueryResultElement`.
+
+/// Validate a `sort_columns` payload read back from a URL, a history entry, or a stored snapshot
+/// into the in-memory shape. Anything malformed is dropped rather than trusted: the value ends up in
+/// an `ORDER BY` of the next request. Duplicate columns are dropped too - a repeated `ORDER BY` key
+/// is a no-op for the server, but the header arrows assume one entry per column.
+function sanitizeSortColumns(value) {
+    if (!Array.isArray(value)) { return []; }
+    const out = [];
+    const seen = new Set();
+    for (const entry of value) {
+        if (!entry || typeof entry.name !== 'string' || entry.name === '' || seen.has(entry.name)) { continue; }
+        seen.add(entry.name);
+        out.push({ name: entry.name, desc: !!entry.desc });
+    }
+    return out;
+}
+
+/// Quote a column name as a ClickHouse identifier. Back-quoting (with the `\` escapes the lexer
+/// accepts inside back-quotes) is what makes an arbitrary result column name - `count()`, `a + b`,
+/// a name with a space - usable as a sort key: the `order` setting takes a full `ORDER BY` expression
+/// list, so the name is passed as a quoted identifier rather than through the simpler `sort` setting,
+/// which accepts bare identifiers only.
+function backQuoteIdentifier(name) {
+    return '`' + name.replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`';
+}
+
+/// The `ORDER BY` expression list for a sort, as the `order` setting takes it, or '' for no sort.
+function sortOrderExpression(sortColumns) {
+    if (!Array.isArray(sortColumns) || sortColumns.length === 0) { return ''; }
+    return sortColumns.map(entry => backQuoteIdentifier(entry.name) + (entry.desc ? ' DESC' : ' ASC')).join(', ');
+}
+
+/// The identity a sort is bound to: the producing statement, up to the trailing delimiter and
+/// surrounding whitespace. A sort names the columns of one specific result, so it must not leak onto
+/// a different statement - `ORDER BY` on a column that statement does not have is an error, not a
+/// no-op - and `resolveSortForRun` drops it whenever the statement about to run is not the one the
+/// sort was made on.
+///
+/// The normalization is needed because the two launch paths spell the same statement differently:
+/// `getQueryUnderCursor` returns it with its trailing `;` and whitespace, `splitAllQueries` returns
+/// it trimmed, and a run started by a sort click goes through the latter (the previous run left the
+/// statement selected in the editor). A trailing `;` after trimming is always the statement
+/// delimiter: a `;` inside a string literal or a comment cannot be the last character of a
+/// syntactically complete statement.
+function sortQueryKey(query) {
+    return String(query === undefined || query === null ? '' : query).trim().replace(/;+\s*$/, '').trim();
+}
+
+/// Apply a click on one of a column's sort arrows to a sort list, IN PLACE (the list is the owning
+/// tab's `sortColumns`, aliased by its result element(s), so it must not be replaced).
+///
+///  - the arrow of the already active direction deactivates it, dropping only this column: the other
+///    keys of a multi-column sort are kept, since the click says nothing about them;
+///  - the arrow of the other direction replaces the active one on this column;
+///  - without Shift the column becomes the only sort key, so activating a sort on one column
+///    deactivates every other one; with Shift the column is appended after the keys already in effect,
+///    or keeps its position when only its direction changes.
+function applySortToggle(list, name, desc, shift) {
+    const index = list.findIndex(entry => entry.name === name);
+    if (index >= 0 && list[index].desc === desc) {
+        list.splice(index, 1);
+    } else if (index >= 0 && shift) {
+        list[index].desc = desc;
+    } else {
+        if (!shift) { list.length = 0; }
+        list.push({ name, desc });
+    }
+}
+
+/// The `order` expression for a run of `query` in `tab`, dropping a sort that belongs to a different
+/// statement (see `sortQueryKey`) and re-binding the tab's sort to the statement now being run.
+function resolveSortForRun(tab, query) {
+    if (sortQueryKey(tab.sortQuery) !== sortQueryKey(query)) {
+        /// In place: the array is aliased by the tab's result element(s).
+        tab.sortColumns.length = 0;
+        tab.sortQuery = query;
+    }
+    return sortOrderExpression(tab.sortColumns);
+}
+
+/// Re-run the query behind `el`'s result so the server returns it in the sort just chosen in its
+/// header. This goes through the ordinary launch path (`postOne`, exactly as Ctrl+Enter does) rather
+/// than resubmitting the recorded producing query, so the run is bound to the editor, the history
+/// and the parameters the same way every other run is - there is no second, differently-behaving way
+/// to execute a query. The statement that path picks is the one that produced this result whenever
+/// the editor still holds it (the previous run left it selected), which is the case for a sort click;
+/// if the editor has been edited since, the edit is what runs, and `resolveSortForRun` then drops the
+/// sort as belonging to a statement that is no longer there.
+function rerunForSort(el) {
+    const tab = el._ownerTab;
+    if (!tab) { return; }
+    /// Bind the sort to the exact statement whose header was clicked, so the launch below applies it.
+    tab.sortQuery = el._queryText;
+    /// Only the active tab's panel is visible, so a click can only ever come from it; `postOne` acts
+    /// on the active tab, so refuse to launch anything for a background tab rather than run the wrong
+    /// one. The chosen sort is already persisted and applies to that tab's next run.
+    if (tab.id !== activeTabId) { return; }
+    postOne();
+}
+
 /// How many streamed server log lines a result retains, and how many of them are built into the DOM
 /// per animation frame. The retention budget covers the rendered lines AND the ones still queued for
 /// the next frame (see `appendLog` and `_flushLogs`), so a high-volume stream cannot hold two full
@@ -2763,6 +2871,99 @@ class QueryResultElement extends HTMLElement
                 {
                     opacity: 0;
                     pointer-events: none;
+                }
+
+                /* The pair of arrows at the right side of a column header that sort the result by
+                   that column, ascending or descending. Unlike pinning and color coding - which are
+                   pure display state - sorting reshapes the result, so it re-runs the query with an
+                   "order" query-construction setting; it is therefore offered only for the queries
+                   the server can wrap that way (see queryIsSortable), which the "sortable" class on
+                   the table marks. Where it is not offered the arrows are removed outright
+                   (display: none also takes them out of the tab order), rather than merely dimmed.
+
+                   The group is laid out as a flex row of fixed size, so the two arrows keep their
+                   places whether or not they are visible and the header does not reflow when a sort
+                   is activated. It sits where the colorize toggle normally sits; that toggle is
+                   shifted left below to make room, unconditionally for a sortable table, so
+                   revealing the icons on hover never moves them.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                .sort-toggles
+                {
+                    display: inline-flex;
+                    position: absolute;
+                    top: 50%;
+                    right: 0.3rem;
+                    transform: translateY(-50%);
+                    gap: 0.1rem;
+                    line-height: 1;
+                    user-select: none;
+                }
+
+                #data-table:not(.sortable) .sort-toggles
+                {
+                    display: none;
+                }
+
+                #data-table.sortable .colorize-toggle
+                {
+                    right: 2.5rem;
+                }
+
+                /* An inactive arrow stays invisible - but, being a real <button>, in the tab order -
+                   until its header is hovered or the arrow itself takes keyboard focus, exactly like
+                   the pin toggle. The pointer events follow the visibility so an invisible arrow is
+                   not clickable. */
+                .sort-toggle
+                {
+                    opacity: 0;
+                    pointer-events: none;
+                    cursor: pointer;
+                    font-size: 0.8em;
+                    line-height: 1;
+                    /* Reset the <button> chrome so the arrow reads as a plain glyph; the focus
+                       outline itself is left to the browser default. */
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    font-family: inherit;
+                    color: inherit;
+                }
+
+                th:hover .sort-toggle,
+                th .sort-toggle:focus-visible
+                {
+                    opacity: 0.55;
+                    pointer-events: auto;
+                }
+
+                th .sort-toggle:hover
+                {
+                    opacity: 0.85;
+                    pointer-events: auto;
+                }
+
+                /* The arrow of an active sort direction is always shown, and in the accent color, so
+                   the sorted columns and their order are readable without hovering every header.
+                   Placed last so it wins over the hover rules above. */
+                .sort-toggle.sort-active
+                {
+                    opacity: 1;
+                    pointer-events: auto;
+                    color: var(--link-color);
+                }
+
+                /* Touch / coarse-pointer devices have no hover, and an invisible arrow is not
+                   usefully tappable, so keep both arrows visible there (as for the other header
+                   icons). Multi-column sorting needs a Shift key and is unavailable on such a
+                   device; a single-column sort is fully usable. */
+                @media (hover: none), (pointer: coarse)
+                {
+                    .sort-toggle
+                    {
+                        opacity: 0.55;
+                        pointer-events: auto;
+                    }
                 }
 
                 /* Per-column color coding compares values across rows; with no more than a single
@@ -3280,6 +3481,20 @@ class QueryResultElement extends HTMLElement
         /// run within the same tab, and pointing at the owning tab's `pinnedColumns`), so pinning a
         /// column in one tab never re-lays-out another tab's identically-named columns.
         this._pinnedColumns = {};
+        /// The sort the result is (re)produced with: an ORDERED array of `{name, desc}` entries, one
+        /// per sort key, in `ORDER BY` order. Unlike `_colorModes` / `_pinnedColumns` this is not
+        /// display state - it is turned into the `order` query-construction setting of the request
+        /// (see `sortOrderExpression`), so changing it re-runs the query. Points at the owning tab's
+        /// `sortColumns` array, which is why it is always mutated IN PLACE.
+        this._sortColumns = [];
+        /// Whether this result's producing query is one the `order` setting can shape (a `SELECT` /
+        /// `UNION`, see `queryIsSortable`) AND this element is its tab's single result element.
+        /// Resolved asynchronously from `_queryText` by `_refreshSortAvailability`, which mirrors it
+        /// into the `sortable` class of the table; the sort arrows exist only while it holds.
+        this._sortable = false;
+        /// Generation counter for the asynchronous `_refreshSortAvailability` above, so a resolution
+        /// for a superseded query text cannot overwrite a newer one.
+        this._sort_availability_token = 0;
         /// Set when a result finished rendering into this element while its tab was hidden: the
         /// width/height-measuring layout passes (`transposeIfNeeded` / `_changeTableLayout`) read
         /// `offsetWidth`/`offsetHeight`, which are 0 for a `display:none` panel and would freeze
@@ -3337,7 +3552,10 @@ class QueryResultElement extends HTMLElement
     get incompleteResult() { return this._incomplete_result; }
     get isExplainGraph() { return this._is_explain_graph; }
     get explainGraph() { return this._explain_graph; }
-    set queryText(v) { this._queryText = v; }
+    /// Every path that shows a result in this element - a live run and both restore paths (the tab's
+    /// own snapshot and a history entry) - stamps the producing query here, so this is also the one
+    /// place from which the sort availability can be (re)resolved for whatever is displayed.
+    set queryText(v) { this._queryText = v; this._refreshSortAvailability(); }
     get rawText() { return this._dataUnparsed.textContent; }
 
     _clearElement(elem)
@@ -3606,6 +3824,7 @@ class QueryResultElement extends HTMLElement
             this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
+            this._appendSortToggles(th, elem.name);
 
             this._appendHeaderResizer(th);
             /// Base header z-index: left columns are highest so a column's type-hint tooltip
@@ -3963,6 +4182,125 @@ class QueryResultElement extends HTMLElement
     _updateColorizeToggleTitle(toggle, name)
     {
         toggle.title = 'Color coding: ' + this._effectiveColorMode(name) + ' (click to change)';
+    }
+
+    /// Add the pair of arrows at the right of a column header that sort the result by that column.
+    /// Real <button>s, so they are keyboard-reachable (Tab) and keyboard-activatable (Enter/Space)
+    /// for free, like the pin toggle. Whether they are offered at all is decided by the `sortable`
+    /// class of the table (see `_refreshSortAvailability`), not per button, so a header rendered
+    /// before the asynchronous availability check resolves does not need to be revisited.
+    _appendSortToggles(th, name)
+    {
+        const group = document.createElement('span');
+        group.className = 'sort-toggles';
+        for (const desc of [false, true])
+        {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'sort-toggle ' + (desc ? 'sort-desc' : 'sort-asc');
+            button.addEventListener('click', (e) => {
+                e.stopPropagation();
+                /// Shift extends the current sort with this column instead of replacing it, which is
+                /// the conventional gesture for a multi-column sort. A `click` event carries the
+                /// modifier state of the activating gesture, including for a keyboard activation
+                /// (Shift+Enter), so this works without a separate key handler.
+                this._toggleSort(name, desc, e.shiftKey);
+            });
+            /// Do not let pressing an arrow start a column-resize drag or a text selection.
+            button.addEventListener('mousedown', (e) => e.stopPropagation());
+            group.appendChild(button);
+        }
+        th.appendChild(group);
+        this._updateSortToggles(th, name);
+    }
+
+    /// Paint one column header's arrows for the current sort: the arrow of the active direction (if
+    /// any) is highlighted, and in a multi-column sort it also carries the column's 1-based position
+    /// in the `ORDER BY` as a superscript, since the order of the keys is what distinguishes e.g.
+    /// "by country, then by city" from the reverse. `aria-sort` on the header conveys the same to a
+    /// screen reader, which cannot see the highlighting.
+    _updateSortToggles(th, name)
+    {
+        const index = this._sortColumns.findIndex(entry => entry.name === name);
+        const entry = index < 0 ? null : this._sortColumns[index];
+        const rank = (index >= 0 && this._sortColumns.length > 1) ? QueryResultElement._superscript(index + 1) : '';
+        th.setAttribute('aria-sort', entry ? (entry.desc ? 'descending' : 'ascending') : 'none');
+        for (const button of th.querySelectorAll('.sort-toggle'))
+        {
+            const desc = button.classList.contains('sort-desc');
+            const active = !!entry && entry.desc === desc;
+            button.classList.toggle('sort-active', active);
+            /// A solid triangle rather than an arrow glyph: it stays legible at this size, and it is
+            /// the conventional sort indicator.
+            button.textContent = (desc ? '▼' : '▲') + (active ? rank : '');
+            const label = active
+                ? 'Stop sorting by this column (re-runs the query)'
+                : 'Sort ' + (desc ? 'descending' : 'ascending') + ' by this column (re-runs the query; hold Shift to sort by it after the columns already sorted)';
+            button.title = label;
+            /// aria-label instead of relying on the title attribute, which screen readers announce
+            /// inconsistently; aria-pressed exposes the direction's own state.
+            button.setAttribute('aria-label', label);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        }
+    }
+
+    /// Repaint every column header's sort arrows. Cheap (O(columns)) and idempotent.
+    refreshSortIndicators()
+    {
+        if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
+        /// The header cells are direct <th> children of <thead> (not wrapped in a <tr>), with the
+        /// row-number header at index 0, so column `j` sits at `children[j + 1]`.
+        for (let j = 0; j < this._header.length; ++j)
+        {
+            const th = this._dataTable.tHead.children[j + 1];
+            if (th) { this._updateSortToggles(th, this._header[j].name); }
+        }
+    }
+
+    /// A small integer as superscript digits, for the sort position badge on an arrow.
+    static _superscript(n)
+    {
+        const digits = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+        return String(n).replace(/[0-9]/g, d => digits[+d]);
+    }
+
+    /// Apply a click on one of a column's sort arrows (see `applySortToggle` for the semantics) and
+    /// re-run the query with the new sort.
+    _toggleSort(name, desc, shift)
+    {
+        /// The arrows are hidden (and out of the tab order) unless sorting applies, but guard anyway:
+        /// a stale header from the previous, sortable result can still be on screen while the current
+        /// query text is not sortable.
+        if (!this._sortable) { return; }
+        /// `this._sortColumns` IS the owning tab's array (see the constructor), and `applySortToggle`
+        /// mutates it in place, so every element of the tab sees the new sort.
+        applySortToggle(this._sortColumns, name, desc, shift);
+        this.refreshSortIndicators();
+        persistSortColumns();
+        rerunForSort(this);
+    }
+
+    /// Resolve whether sorting applies to what this element currently shows, and mirror the answer
+    /// into the `sortable` class that gates the arrows.
+    ///
+    /// Sorting re-runs the query with the `order` query-construction setting, which the server
+    /// materializes by wrapping the query as a derived table. That only happens for a result-producing
+    /// `SELECT` / `UNION`: for anything else (`SHOW`, `DESCRIBE`, `EXPLAIN`, a write) the setting is
+    /// silently ignored, so offering the arrows there would produce an unsorted result under an active
+    /// sort indicator. Sorting is also restricted to the tab's single result element: a multi-query
+    /// ("Run all") run sends one request per statement and the sort is chosen by column name, so
+    /// applying it to the whole run would push an `ORDER BY` onto the statements that have no such
+    /// column and fail them.
+    async _refreshSortAvailability()
+    {
+        const query = this._queryText;
+        const token = ++this._sort_availability_token;
+        const single_result = !!this._ownerTab && this._ownerTab.resultEl === this;
+        const sortable = !!query && single_result && await queryIsSortable(query);
+        /// A newer query text was stamped while the lexer was awaited; its own resolution wins.
+        if (token !== this._sort_availability_token) { return; }
+        this._sortable = sortable;
+        this._dataTable.classList.toggle('sortable', sortable);
     }
 
     /// The sequence of color coding modes available for a column, in cycling order. Value columns
@@ -4519,6 +4857,11 @@ class QueryResultElement extends HTMLElement
             /// No horizontal column layout in vertical mode, so drop the pin toggle too.
             const pin_toggle = th.querySelector('.pin-toggle');
             if (pin_toggle) { th.removeChild(pin_toggle); }
+            /// Vertical mode is used for a result of at most one row, where sorting cannot reorder
+            /// anything, so drop the sort arrows as well. `_toggleSort` is unreachable afterwards,
+            /// and `refreshSortIndicators` tolerates their absence.
+            const sort_toggles = th.querySelector('.sort-toggles');
+            if (sort_toggles) { th.removeChild(sort_toggles); }
             tr.appendChild(th);
             if (values)
             {
@@ -6010,6 +6353,16 @@ let url_pinned_columns = {};
 const pinned_columns_from_url = current_url.searchParams.get('pinned_columns');
 if (pinned_columns_from_url) {
     try { url_pinned_columns = JSON.parse(pinned_columns_from_url) || {}; } catch (e) { /* ignore malformed */ }
+}
+
+/// Restore the column sort from the URL, like the two above - but this one shapes the ROWS: an
+/// auto-run (`run=1`) link re-runs its query with it as the `order` setting, so the shared link
+/// reproduces the sorted result. The payload is validated (`sanitizeSortColumns`) rather than trusted:
+/// it ends up in an `ORDER BY` of the request.
+let url_sort_columns = [];
+const sort_columns_from_url = current_url.searchParams.get('sort_columns');
+if (sort_columns_from_url) {
+    try { url_sort_columns = sanitizeSortColumns(JSON.parse(sort_columns_from_url)); } catch (e) { /* ignore malformed */ }
 }
 
 let url_elem = document.getElementById('url');
@@ -8777,7 +9130,7 @@ function parseInbandExceptionFromTail(tail, format)
 /// not be re-read here, or a tab switch + database/connection edit during that await (or between the
 /// sequential statement groups of a "Run all") would send this run's already-snapshotted query to a
 /// different database, server or identity.
-async function postImpl(tab, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart)
+async function postImpl(tab, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, order_expr = '')
 {
     /// The connection tuple (server address, user, password) is snapshotted once per run by the
     /// caller and passed in, rather than read live from the inputs here. Otherwise, in a
@@ -8800,6 +9153,14 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
 
     /// If the user selected a database in the panel, use it as the default database.
     if (query_database) url += '&database=' + encodeURIComponent(query_database);
+
+    /// The column sort chosen in the result header, as the `order` query-construction setting: the
+    /// server materializes it on the parsed query by wrapping it as a derived table with an outer
+    /// `ORDER BY`, so it composes with whatever the query already is (a `UNION`, a trailing `FORMAT`,
+    /// its own `ORDER BY` / `LIMIT`) instead of this page having to rewrite the query text. Empty
+    /// unless the run is a single statement the setting applies to (see `resolveSortForRun`), so a
+    /// multi-statement run never pushes one statement's sort key onto the others.
+    if (order_expr) url += '&order=' + encodeURIComponent(order_expr);
 
     for (const [name, value] of Object.entries(paramValuesSnapshot))
     {
@@ -9751,12 +10112,22 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     tab.progressPhase = 'running';
     if (active()) { paintDownloadCopy(tab); progressEl.start(); }
 
+    /// The sort chosen in this tab's result header, but only while it still belongs to the statement
+    /// being run - `resolveSortForRun` drops a sort left over from a different statement, which would
+    /// otherwise put an `ORDER BY` on a column this query does not have and fail it.
+    const order_expr = resolveSortForRun(tab, query);
+
     tab.controller = new AbortController();
-    const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart);
+    const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart, order_expr);
 
     if (result.cancelled) return;
 
     if (result.is_error || !result.response_ok) {
+        /// A failed run rendered no table, so its header - the only place the sort can be changed - is
+        /// not on screen. Drop the sort rather than leave the user with an unreachable one they cannot
+        /// clear: it may well be what failed the query (an ambiguous column name, or a server too old
+        /// for the `order` setting), and the error itself is still reported in full below.
+        tab.sortColumns.length = 0;
         tab.logoVisible = false;
         tab.progressPhase = 'error';
         tab.failed = true;
@@ -9833,6 +10204,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     tab.copyVisible = result.is_raw;
     tab.downloadQuery = query;
     tab.downloadParams = paramValuesSnapshot;
+    /// The download re-runs this query, so it has to carry the same `order` setting or it would export
+    /// the rows in a different order than the result on screen.
+    tab.downloadOrder = order_expr;
     /// Record the database and connection this run produced its result against, so a later download
     /// (possibly after switching tabs, so `paintDownloadCopy` mirrors these into the shared
     /// `last_*_for_download`) reproduces the result against the same database/server/user rather than
@@ -9926,6 +10300,14 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     const query_url = connection.url;
     const query_user = connection.user;
 
+    /// A multi-statement run is not sortable: it sends one request per statement while a sort names
+    /// the columns of ONE result, so applying it would push an `ORDER BY` onto statements that have no
+    /// such column. The results it renders therefore offer no sort arrows (see
+    /// `_refreshSortAvailability`), and this run drops whatever sort a previous single-statement run
+    /// in this tab left behind, so nothing stale is persisted with its snapshot.
+    tab.sortColumns.length = 0;
+    tab.sortQuery = null;
+
     tab.downloadVisible = false;
     tab.copyVisible = false;
     clearPanel(tab);
@@ -9954,6 +10336,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         const el = document.createElement('query-result');
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
+        el._sortColumns = tab.sortColumns;
         el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         resultElements.push(el);
@@ -10539,6 +10922,38 @@ function persistPinnedColumns() {
     scheduleSave();
 }
 
+/// Persist the column sort the same way `persistPinnedColumns` persists the pinned columns: onto the
+/// active tab's result snapshot, the URL, and the current history entry, so reloads, shares, and
+/// Back/Forward keep it. For the sort this also makes the URL reproduce the RESULT and not just its
+/// presentation: an auto-run (`run=1`) link carrying `sort_columns` re-runs the query with the same
+/// `order` setting, so the rows come back in the order the link was shared in.
+function persistSortColumns() {
+    const tab = getActiveTab();
+    const sort = tab ? tab.sortColumns : [];
+    if (tab && tab.result) tab.result.sort_columns = sort;
+    const url = new URL(window.location);
+    if (sort.length > 0) {
+        url.searchParams.set('sort_columns', JSON.stringify(sort));
+    } else {
+        url.searchParams.delete('sort_columns');
+    }
+    /// Keep the tabs state shape: fold the sort into the entry's nested `result` when it has one
+    /// (matching how the restore path reads it back via `state.result || state`), else at the top
+    /// level for a legacy flat entry.
+    const cur = history.state;
+    if (cur) {
+        const next = cur.result
+            ? { ...cur, result: { ...cur.result, sort_columns: sort } }
+            : { ...cur, sort_columns: sort };
+        try {
+            history.replaceState(next, document.title, url.toString());
+        } catch (e) {
+            /// History manipulation is not allowed for the 'file:' protocol.
+        }
+    }
+    scheduleSave();
+}
+
 /// Re-render a saved multi-query ("Run all") result snapshot into `tab`'s own panel, rebuilding
 /// its multi-query container the same way `postMulti` lays it out: one result element per
 /// statement, this tab's single result element and the logo hidden, and aggregated progress text.
@@ -10561,6 +10976,7 @@ async function restoreMultiQuery(snapshot, tab, matToken) {
         const el = document.createElement('query-result');
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
+        el._sortColumns = tab.sortColumns;
         el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         elements.push(el);
@@ -10702,12 +11118,21 @@ async function materializeResult(tab) {
     /// paint. The element shares the tab's pinned-columns object, mirroring the color modes above.
     tab.pinnedColumns = result.pinned_columns || {};
     el._pinnedColumns = tab.pinnedColumns;
+    /// Restore the sort the snapshotted rows were produced with, so the header arrows show what the
+    /// restored result is actually sorted by. It stays bound to the producing query (`sortQuery`), so
+    /// re-running that exact statement reproduces the sort while anything else drops it.
+    tab.sortColumns = sanitizeSortColumns(result.sort_columns);
+    tab.sortQuery = result.query ?? null;
+    el._sortColumns = tab.sortColumns;
 
     clearPanel(tab);
     tab.downloadVisible = false;
     tab.copyVisible = false;
     tab.downloadQuery = result.query || '';
     tab.downloadParams = result.params || {};
+    /// The download re-runs the producing query, so it must carry the shown sort too or it would
+    /// export the same rows in a different order than the result on screen.
+    tab.downloadOrder = sortOrderExpression(tab.sortColumns);
     /// Graph detection keys off the producing query, so a snapshot still renders as a graph
     /// even if the editor query was changed without rerunning.
     el.queryText = result.query ?? tab.query;
@@ -11131,8 +11556,11 @@ function tabRuntimeDefaults() {
         resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
+        sortColumns: [],        /// column sort of this tab's result, in ORDER BY order (shared with its element)
+        sortQuery: null,        /// statement `sortColumns` was chosen on (see `sortQueryKey`); null for none
         downloadQuery: '',      /// query the download button should re-run for this tab
         downloadParams: {},
+        downloadOrder: '',      /// `order` expression the download must reproduce the shown sort with
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
@@ -11212,6 +11640,7 @@ function getOrCreatePanel(tab) {
     const el = document.createElement('query-result');
     el._colorModes = tab.colorModes;
     el._pinnedColumns = tab.pinnedColumns;
+    el._sortColumns = tab.sortColumns;
     /// The element's log/metric packets mark availability on this tab (see `_markLogsAvailable`).
     el._ownerTab = tab;
     panel.appendChild(el);
@@ -11258,6 +11687,9 @@ function paintDownloadCopy(tab) {
     document.getElementById('copy-div').style.display = tab.copyVisible ? 'block' : 'none';
     last_query_for_download = tab.downloadQuery || '';
     last_params_for_download = tab.downloadParams || {};
+    /// The `order` setting the shown result was produced with, so the exported file is sorted the same
+    /// way the table on screen is.
+    last_order_for_download = tab.downloadOrder || '';
     /// Target the download at the database and connection that produced this tab's result (see the
     /// download handler / `last_url_for_download`), so switching tabs and downloading reproduces the
     /// active tab's own result rather than whatever the previous tab or the live inputs point at.
@@ -11902,7 +12334,7 @@ async function persist() {
 /// reloaded `run=1` URL reproduces the displayed result instead of replaying against a different
 /// database or server.
 /// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
-function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, user, server_address, database) {
+function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, sortColumns, user, server_address, database) {
     const out = [];
     if (user) out.push('user=' + encodeURIComponent(user));
     /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
@@ -11936,6 +12368,12 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     /// Likewise carry the result's pinned columns, so a shared/reloaded URL restores them.
     if (pinnedColumns && Object.keys(pinnedColumns).length > 0) {
         out.push('pinned_columns=' + encodeURIComponent(JSON.stringify(pinnedColumns)));
+    }
+    /// The column sort, likewise - but unlike the two above it also shapes the ROWS: an auto-run
+    /// (`run=1`) link re-runs the query with it as the `order` setting, so the shared link reproduces
+    /// the result itself and not only how it is displayed.
+    if (sortColumns && sortColumns.length > 0) {
+        out.push('sort_columns=' + encodeURIComponent(JSON.stringify(sortColumns)));
     }
     if (tabName) out.push('tab=' + encodeURIComponent(tabName));
     return out;
@@ -12139,28 +12577,34 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         runnableUrl: !!tab.runnableUrl,
     };
     const title = "ClickHouse Query: " + (titleForDoc || recorded_query);
-    /// Once the tab has materialized, its live `colorModes` / `pinnedColumns` objects are the
-    /// authoritative display state: URL reconciliation and per-column toggles mutate them in place,
-    /// and a rerun nulls `tab.result` entirely, so the snapshot's `color_modes` / `pinned_columns`
-    /// may lag them or be missing (e.g. a snapshot saved with the default palette stores none, then
-    /// a shared link's URL modes are applied on top). Serialize the live state, and mirror it into
-    /// the snapshot so the IndexedDB persistence (`scheduleSave` below) and the history-state copy
-    /// carry it too. A tab whose stored result has NOT been rendered yet keeps its snapshot's saved
-    /// state: its `colorModes` / `pinnedColumns` are still the `makeTab` placeholders and must not
-    /// clobber the saved ones.
+    /// Once the tab has materialized, its live `colorModes` / `pinnedColumns` / `sortColumns` objects
+    /// are the authoritative per-column state: URL reconciliation and the header controls mutate them
+    /// in place, and a rerun nulls `tab.result` entirely, so the snapshot's `color_modes` /
+    /// `pinned_columns` / `sort_columns` may lag them or be missing (e.g. a snapshot saved with the
+    /// default palette stores none, then a shared link's URL modes are applied on top). Serialize the
+    /// live state, and mirror it into the snapshot so the IndexedDB persistence (`scheduleSave` below)
+    /// and the history-state copy carry it too. A tab whose stored result has NOT been rendered yet
+    /// keeps its snapshot's saved state: its live objects are still the `makeTab` placeholders and
+    /// must not clobber the saved ones.
     let color_modes = tab.result && tab.result.color_modes;
     let pinned_columns = tab.result && tab.result.pinned_columns;
+    let sort_columns = tab.result && tab.result.sort_columns;
     if (tab.materialized) {
         color_modes = tab.colorModes;
         pinned_columns = tab.pinnedColumns;
-        if (tab.result) { tab.result.color_modes = tab.colorModes; tab.result.pinned_columns = tab.pinnedColumns; }
+        sort_columns = tab.sortColumns;
+        if (tab.result) {
+            tab.result.color_modes = tab.colorModes;
+            tab.result.pinned_columns = tab.pinnedColumns;
+            tab.result.sort_columns = tab.sortColumns;
+        }
     }
     /// `stamp_run` (rather than the raw `fromRun`) drops `run=1` when the live connection/database
     /// diverged from the one the displayed result was produced against: auto-running the live target
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
     /// The producing user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, entry_user, entry_server, entry_database);
+    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, sort_columns, entry_user, entry_server, entry_database);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);
@@ -12331,6 +12775,10 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// Pinned columns in effect when this result was produced; travels with the snapshot so
         /// re-activating the tab (or navigating / reloading) restores them, like `color_modes`.
         pinned_columns: tab.pinnedColumns,
+        /// The column sort this result was produced with (the `order` setting of its request), so the
+        /// restored rows and the sort its header shows stay consistent, and a download or an auto-run
+        /// link reproduces the same order.
+        sort_columns: tab.sortColumns,
         /// The run identity that produced this result (see `run_epoch`). A completing run still owns
         /// its tab here (the caller bailed on a superseding `reqNum`), so `tab.launchRunId` is this
         /// run's. Lets `window.onpopstate` recognize the mid-run history entry this run wrote —
@@ -12655,6 +13103,7 @@ window.onpopstate = function(event) {
             multi: flat.multi ?? null,
             color_modes: flat.color_modes || {},
             pinned_columns: flat.pinned_columns || {},
+            sort_columns: sanitizeSortColumns(flat.sort_columns),
             elapsed_ns: flat.elapsed_ns,
         };
     } else {
@@ -14086,17 +14535,19 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
     'ATTACH', 'DETACH', 'GRANT', 'REVOKE', 'KILL', 'BACKUP', 'RESTORE'
 ]);
 
-/// Whether one statement, given as its significant lexer tokens, is read-only. Shared by
-/// `queryIsReadOnly` (the no-framing retry gate) and `splitAllQueries` (the `Run all`
-/// parallelizable/barrier classification), so both make the same decision.
+/// The statement kind of one statement, given as its significant lexer tokens: the upper-cased
+/// keyword that says what the statement IS, or null when the walk cannot name one. Shared by
+/// `statementIsReadOnly` (the no-framing retry gate and the `Run all` parallelizable/barrier
+/// classification) and `queryIsSortable` (whether the result header may offer sorting), so all of
+/// them resolve the statement kind the same way.
 ///
 /// The leading keyword is not enough: ClickHouse allows a query to begin with a `WITH` (CTE) clause,
 /// so `WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y` starts with the
 /// read-only-looking `WITH` yet is a write. The real statement kind is the first statement keyword
 /// that follows the CTE list, which is found by walking the tokens and skipping the CTE list
 /// (its `AS`, `RECURSIVE`, aliases, commas, and parenthesized subqueries live either at the same
-/// level as ordinary identifiers or nested one level deeper). A write/DDL keyword there means the
-/// whole statement is a write; a read-only keyword means it is read-only.
+/// level as ordinary identifiers or nested one level deeper). Only a keyword that names a statement
+/// kind ends that walk, so the words of the CTE list itself are stepped over.
 ///
 /// A CTE alias is NOT restricted to non-keyword words: with an explicit `AS`, the parser accepts any
 /// bare word as the alias (`ParserAlias` only rejects keyword aliases when `AS` is omitted), so
@@ -14107,17 +14558,19 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
 ///
 /// Regression coverage lives in `src/Parsers/tests/gtest_play_query_is_read_only.cpp` (a port of the
 /// token-walking algorithm on top of the same `DB::Lexer`). Keep the two in sync.
-function statementIsReadOnly(tokens)
+function statementKeyword(tokens)
 {
-    /// `PARALLEL WITH` combines full statements. Its children can carry writes even when the first
-    /// child begins with `SELECT`, so treat every occurrence conservatively as a barrier rather
-    /// than retrying or parallelizing a composite statement that may mutate state.
+    /// `PARALLEL WITH` combines full statements, so it has no single statement kind: its children can
+    /// carry writes even when the first child begins with `SELECT`, and it is not a `SELECT` the
+    /// server can wrap for sorting either. Report every occurrence as unresolved, which is the
+    /// conservative answer for both callers (a barrier that is never retried or parallelized, and no
+    /// sorting).
     for (let i = 0; i + 1 < tokens.length; ++i) {
         if (tokens[i].type === TT.BareWord
             && tokens[i].token.toUpperCase() === 'PARALLEL'
             && tokens[i + 1].type === TT.BareWord
             && tokens[i + 1].token.toUpperCase() === 'WITH') {
-            return false;
+            return null;
         }
     }
     let depth = 0;
@@ -14135,8 +14588,9 @@ function statementIsReadOnly(tokens)
         const keyword = t.token.toUpperCase();
         if (with_depth < 0) {
             /// The first significant keyword (possibly wrapped in leading brackets). If it is not a
-            /// leading `WITH`, it is the statement kind.
-            if (keyword !== 'WITH') return PARALLELIZABLE_KEYWORDS.has(keyword);
+            /// leading `WITH`, it is the statement kind - whatever it is, including a keyword neither
+            /// caller recognizes (`USE`, `SET`, `CHECK`, ...), which they both reject.
+            if (keyword !== 'WITH') return keyword;
             with_depth = depth;
             continue;
         }
@@ -14151,10 +14605,41 @@ function statementIsReadOnly(tokens)
         /// form - skip it too; a real statement keyword is never followed by `AS`.
         const next = tokens[i + 1];
         if (next && next.type === TT.BareWord && next.token.toUpperCase() === 'AS') continue;
-        if (WRITE_STATEMENT_KEYWORDS.has(keyword)) return false;
-        if (PARALLELIZABLE_KEYWORDS.has(keyword)) return true;
+        if (WRITE_STATEMENT_KEYWORDS.has(keyword) || PARALLELIZABLE_KEYWORDS.has(keyword)) return keyword;
     }
-    return false;
+    return null;
+}
+
+/// Whether one statement, given as its significant lexer tokens, is read-only. Used by
+/// `queryIsReadOnly` (the no-framing retry gate) and `splitAllQueries` (the `Run all`
+/// parallelizable/barrier classification), so both make the same decision. An unresolved statement
+/// kind (see `statementKeyword`) is not read-only: never resubmitting or parallelizing a statement
+/// whose kind we could not name is the safe direction.
+function statementIsReadOnly(tokens)
+{
+    const keyword = statementKeyword(tokens);
+    return keyword !== null && PARALLELIZABLE_KEYWORDS.has(keyword);
+}
+
+/// Statement kinds the query-construction settings can shape, i.e. the ones the server parses into an
+/// `ASTSelectWithUnionQuery` and can therefore wrap as a derived table with an outer `ORDER BY`.
+/// Deliberately narrower than `PARALLELIZABLE_KEYWORDS`: `SHOW` / `DESCRIBE` / `EXISTS` do produce a
+/// table, but they are not `SELECT`s, so the `order` setting is silently ignored for them; and for
+/// `EXPLAIN` the setting applies to the EXPLAINED query (changing the plan that is printed) rather
+/// than sorting the printed plan. Offering the header arrows for any of those would leave an active
+/// sort indicator over a result that is not sorted.
+const SORTABLE_STATEMENT_KEYWORDS = new Set(['SELECT', 'FROM']);
+
+/// Whether the result of `query` may be sorted by re-running it with an `order` setting. Without the
+/// lexer the statement kind cannot be resolved (the text-level fallback used elsewhere resolves only
+/// a leading keyword, and a leading `WITH` hides the real one), so sorting is simply not offered:
+/// unlike the parallelization and retry gates, which must decide something either way, this only
+/// withholds an optional affordance.
+async function queryIsSortable(query)
+{
+    const tokens = await tokenizeOrNull(query);
+    if (tokens === null) { return false; }
+    return SORTABLE_STATEMENT_KEYWORDS.has(statementKeyword(tokens.filter(t => t.significant)));
 }
 
 /// Best-effort text-level fallback for `statementIsReadOnly`, used only when WebAssembly - hence
@@ -16140,10 +16625,14 @@ if (theme) {
 /// first paint is identical to the pre-tabs UI (no layout shift).
 tabs = [makeTab(undefined, query_area.value)];
 activeTabId = tabs[0].id;
-/// Seed the bootstrap tab's color modes and pinned columns from the URL (a shared/bookmarked link
-/// may carry them).
+/// Seed the bootstrap tab's color modes, pinned columns and column sort from the URL (a
+/// shared/bookmarked link may carry them).
 tabs[0].colorModes = url_color_modes;
 tabs[0].pinnedColumns = url_pinned_columns;
+tabs[0].sortColumns = url_sort_columns;
+/// The sort belongs to the statement the link carries, which is what a `run=1` load auto-runs, so
+/// bind it to that text (`resolveSortForRun` would otherwise drop it as belonging to another query).
+tabs[0].sortQuery = tabs[0].query;
 /// Build the active tab's panel now (synchronously), so the `resultEl` alias exists before any
 /// connection check / early render runs, matching the pre-tabs invariant that it always existed.
 setActivePanel(tabs[0]);
@@ -16242,11 +16731,15 @@ async function reconcileStartup() {
                     /// coherent pair, whose every binding has its placeholder in the text.
                     paramsSyncedQuery: r.paramsSyncedQuery ?? null,
                     /// Attach fresh transient runtime state (panels/queries are materialized lazily on
-                    /// first activation), seeding color modes and pinned columns from the persisted
-                    /// result snapshot.
+                    /// first activation), seeding the color modes, pinned columns and column sort from
+                    /// the persisted result snapshot.
                     ...tabRuntimeDefaults(),
                     colorModes: (r.result && r.result.color_modes) || {},
                     pinnedColumns: (r.result && r.result.pinned_columns) || {},
+                    sortColumns: sanitizeSortColumns(r.result && r.result.sort_columns),
+                    /// The sort belongs to the statement that produced the stored result, so it is
+                    /// re-applied only by a run of that exact statement (see `resolveSortForRun`).
+                    sortQuery: (r.result && r.result.query) ?? null,
                 });
             } else {
                 pruned_blank_ids.add(r.id);
@@ -16509,11 +17002,18 @@ async function reconcileStartup() {
                 /// place (keeping every aliasing element bound to the same object) alongside the modes.
                 for (const k of Object.keys(t.pinnedColumns)) delete t.pinnedColumns[k];
                 Object.assign(t.pinnedColumns, url_pinned_columns);
+                /// The column sort likewise, bound to the URL's query (the one a `run=1` load
+                /// auto-runs) so the deferred run reproduces the link's sorted result. Spliced in
+                /// place for the same aliasing reason as above.
+                t.sortColumns.length = 0;
+                t.sortColumns.push(...url_sort_columns);
+                t.sortQuery = url_query;
                 const els = t.resultEl ? [t.resultEl] : [];
                 if (t.multiContainer) for (const el of t.multiContainer.querySelectorAll('query-result')) els.push(el);
                 for (const el of els) {
                     el._colorModes = t.colorModes; el.applyColumnColors();
                     el._pinnedColumns = t.pinnedColumns; el.applyPinnedColumns();
+                    el._sortColumns = t.sortColumns; el.refreshSortIndicators();
                 }
             }
         }
@@ -16801,6 +17301,10 @@ document.getElementById('copy-div').addEventListener('click', function() {
 // Download functionality
 let last_query_for_download = '';
 let last_params_for_download = {};
+/// The `order` query-construction setting behind the downloadable result: the column sort the user
+/// chose in the result header (snapshotted at run time and on restore, like the query itself), so
+/// Download re-runs the query with the same `ORDER BY` and the file matches the visible table.
+let last_order_for_download = '';
 /// The default database that produced the downloadable result (snapshotted at run time and on
 /// restore), so Download stays tied to the displayed result even if the panel selection changes.
 let last_database_for_download = '';
@@ -16985,6 +17489,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
+    if (last_order_for_download) url += '&order=' + encodeURIComponent(last_order_for_download);
 
     for (const [name, value] of Object.entries(last_params_for_download))
     {

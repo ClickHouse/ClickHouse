@@ -1,0 +1,48 @@
+---
+description: 'Documentation for sorting a result by its columns in the built-in Web SQL UI (`/play`)'
+sidebarTitle: 'Web UI Sorting'
+slug: /interfaces/web-ui-sorting
+title: 'Web UI Sorting'
+doc_type: 'reference'
+sidebar: false
+---
+
+The built-in Web SQL UI (`play.html`, served at the [`/play`](/concepts/features/interfaces/http) path of any ClickHouse HTTP port) can sort a result by any of its columns, without editing the query. Sorting is performed by the server, not in the browser: choosing a sort re-runs the query with an `ORDER BY` applied to its result, so the sort covers the whole result and not merely the rows that happen to be displayed.
+
+## Sorting by a column {#sorting-by-a-column}
+
+Two arrows appear at the right of every column header: ▲ sorts the result by that column ascending, ▼ sorts it descending. Clicking an arrow activates that sort and re-runs the query; clicking the arrow of the direction that is already active deactivates it, and clicking the arrow of the other direction switches to it. The arrows are real buttons, so keyboard users can tab to them and activate them with the keyboard, and each exposes its state to assistive technology (the header itself carries `aria-sort`).
+
+On devices with a hovering pointer (a mouse) the arrows are shown only while the header is hovered or an arrow is focused, so they stay out of the way otherwise; on touch and other coarse-pointer devices, which have no hover, they are always shown so they can be tapped directly. The arrow of an active sort is always shown, in the accent color, so it is visible which columns the result is sorted by without hovering each header.
+
+## Sorting by several columns {#sorting-by-several-columns}
+
+Activating a sort replaces the current one: the previously sorted columns are deactivated, and the clicked column becomes the only sort key. Hold <kbd>Shift</kbd> while clicking to keep the sort keys already in effect and add this column after them, which is the order the `ORDER BY` uses — the first key decides, and each later key breaks the ties of the ones before it. With more than one sort key, every active arrow also shows its column's position in that order as a superscript (▼¹, ▲², …).
+
+<kbd>Shift</kbd> on a column that is already a sort key only changes its direction and keeps its position in the order. Deactivating a column drops that column alone and leaves the remaining keys in place.
+
+## How the sort is applied {#how-the-sort-is-applied}
+
+The sort is sent as the [`order`](/reference/settings/session-settings/other#order) query-construction setting of the request. The server materializes it on the parsed query by wrapping the query as a derived table with an outer `ORDER BY`, so it composes with whatever the query already is: a `UNION`, a trailing `FORMAT` clause, or its own `ORDER BY` and `LIMIT` all keep working, and the query text itself is never rewritten by the page. Column names are passed as quoted identifiers, so a column whose name is an expression such as `count()` can be sorted by like any other.
+
+## When sorting is available {#when-sorting-is-available}
+
+Sorting is offered only for the statements the `order` setting shapes, i.e. `SELECT` and `UNION` queries (including a query that begins with a `WITH` clause or with `FROM`). It is not offered for `SHOW`, `DESCRIBE`, `EXISTS` or `EXPLAIN`: those do produce a table, but the setting does not apply to them, so an arrow there would indicate a sort the rows do not have.
+
+Sorting applies to the result of a single statement, so it is not offered for a "Run all" multi-statement run, whose statements are separate queries with separate columns. It is also not offered in the vertical (transposed) layout used for a single-row result, where there is nothing to reorder.
+
+A sort belongs to the statement it was made on. Running a different statement — after editing the query, or moving the cursor to another statement of a multi-statement editor — drops it, rather than applying an `ORDER BY` on a column the new statement may not have.
+
+## Downloading and copying {#downloading-and-copying}
+
+Download re-runs the producing query with the same sort, so the exported file is ordered exactly like the result on screen. Copy uses the rendered result and is therefore sorted as displayed.
+
+## Persistence {#persistence}
+
+The sort is remembered in the page URL, in the browser history, and in the per-tab result snapshot, so reloading the page, sharing the link, or navigating back and forward preserves it. Because the sort shapes the rows and not only their presentation, a shared link that auto-runs its query (`run=1`) re-runs it with the same sort, and so reproduces the sorted result. Only an active sort is stored — an unsorted result adds nothing to the URL or history state — to keep them compact.
+
+Like the [color coding modes](/concepts/features/interfaces/web-ui-color-coding) and the [pinned columns](/concepts/features/interfaces/web-ui-pinned-columns), the sort is kept per query tab, so sorting a result in one tab does not re-run or reorder another tab's result.
+
+## Limitations {#limitations}
+
+- A sort the server cannot apply fails the query, and the error is shown as for any other failing query; the sort is then dropped, since a failed run renders no header to clear it from.
