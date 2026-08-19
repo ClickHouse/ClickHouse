@@ -1,6 +1,6 @@
 import { queryClickHouse } from './queryClickHouse.js';
 
-export async function* clickHousePartsInserter({host, user, password, query, table, database, partition})
+export async function* clickhousePartsInserter({host, user, password, query, table, database, partition})
 {
     if (!query)
     {
