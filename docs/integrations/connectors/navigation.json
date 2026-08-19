@@ -39,8 +39,7 @@
         "integrations/connectors/data-ingestion/s3-seaweedfs",
         "integrations/connectors/data-ingestion/emqx/index",
         "integrations/connectors/data-ingestion/insert-local-files",
-        "integrations/connectors/data-ingestion/jdbc-with-clickhouse",
-        "integrations/connectors/data-ingestion/odbc-with-clickhouse"
+        "integrations/connectors/data-ingestion/jdbc-with-clickhouse"
       ]
     },
     {
