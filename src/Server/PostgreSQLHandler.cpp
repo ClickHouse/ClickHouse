@@ -2618,7 +2618,7 @@ SELECT
     cols.ndims AS attndims,
     /// PostgreSQL has no catalog field for array-element nullability. The self-connect schema reader uses
     /// this emulation-only marker to distinguish it from the column's `attnotnull` value.
-    if(cols.ndims > 0 AND position(cols.wrappers, 'Nullable(') > 0, 'e', '') AS attgenerated
+    if (cols.ndims > 0 AND position(cols.wrappers, 'Nullable(') > 0, 'e', '') AS attgenerated
 FROM (
     SELECT
         database, table, name, position, type,
