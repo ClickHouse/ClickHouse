@@ -20,7 +20,7 @@
 -- FINAL, parts pruned locally across lanes
 1	5
 1	5
--- FINAL, every part pruned locally, clean empty exit
+-- FINAL, every part pruned locally and restored, no row matches
 0	0
 0	0
 -- the FINAL read distributes	1

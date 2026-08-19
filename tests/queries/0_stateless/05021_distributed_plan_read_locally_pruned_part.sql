@@ -122,9 +122,9 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
     optimize_move_to_prewhere_if_final = 1;
 
--- With every part pruned there is nothing left to read, so the read finishes empty before the
--- coordinator's part list is resolved: this arm covers that exit and asserts nothing about resolution.
-SELECT '-- FINAL, every part pruned locally, clean empty exit';
+-- Local analysis prunes every part, so the coordinator's whole part list is restored and resolved
+-- against it; no row matches the predicate, so zero rows is also what reading nothing would give.
+SELECT '-- FINAL, every part pruned locally and restored, no row matches';
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000);
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000)
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
