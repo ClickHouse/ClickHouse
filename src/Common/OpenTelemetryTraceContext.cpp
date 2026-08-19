@@ -280,7 +280,9 @@ bool TracingContext::parseTraceparentHeader(std::string_view traceparent, String
     }
 
     ++data;
-    this->trace_flags = unhex2(data);
+    /// Keep only the W3C-defined sampled bit: the header comes from an external client, which
+    /// must not be able to set internal feature flags
+    this->trace_flags = unhex2(data) & TRACE_FLAG_SAMPLED;
     UUIDHelpers::getHighBytes(this->trace_id) = trace_id_higher_64;
     UUIDHelpers::getLowBytes(this->trace_id) = trace_id_lower_64;
     this->span_id = span_id_64;
@@ -435,9 +437,8 @@ TracingContextHolder::TracingContextHolder(
     /// Set up trace context on current thread only when the root span is successfully initialized.
     *current_trace_context = _parent_trace_context;
     current_trace_context->span_id = this->root_span.span_id;
-    /// Feature flags of the parent context (e.g. `TRACE_FLAG_KEEPER_SPANS`) must survive propagation
-    /// across threads, fibers and servers, so only force the sampled bit instead of resetting the flags.
-    current_trace_context->trace_flags = _parent_trace_context.trace_flags | TRACE_FLAG_SAMPLED;
+    /// Reset the flags instead of inheriting them: the parent context may come from an untrusted client
+    current_trace_context->trace_flags = TRACE_FLAG_SAMPLED;
     current_trace_context->span_log = _span_log;
 }
 
