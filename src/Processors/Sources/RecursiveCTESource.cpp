@@ -1378,6 +1378,16 @@ public:
                     "Parallel replicas (allow_experimental_parallel_reading_from_replicas = 2) are not supported for the "
                     "recursive part of a recursive CTE. Set it to 0 or 1 to run the query.");
 
+            /// Nothing in this context can engage parallel replicas for the recursive
+            /// step. Leave it intact instead of disabling the setting unconditionally:
+            /// in particular, an ordinary `VIEW` in the leftmost position of the outer
+            /// join tree makes that tree ineligible, while `StorageView::readImpl` can
+            /// still use parallel replicas for the view's independent inner query. That
+            /// inner query cannot observe the recursive working table or the legacy
+            /// `GLOBAL JOIN` cache this rewrite protects.
+            if (!engagement.any())
+                return;
+
             auto new_ctx = Context::createCopy(ctx);
             new_ctx->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
             context_copies.emplace(ctx.get(), new_ctx);

@@ -849,7 +849,7 @@ WITH RECURSIVE view_pr AS
 SELECT sum(n) FROM view_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
-    automatic_parallel_replicas_mode = 0;
+    automatic_parallel_replicas_mode = 0, log_comment = '04489_view_pr';
 
 -- This remains true when view-over-`MergeTree` support is enabled: the outer join-tree
 -- gate still leaves the `VIEW` on its regular read path.
@@ -862,7 +862,18 @@ WITH RECURSIVE view_pr_throw AS
 SELECT sum(n) FROM view_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
-    automatic_parallel_replicas_mode = 0;
+    automatic_parallel_replicas_mode = 0, log_comment = '04489_view_pr_allow';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT throwIf(count() != 2 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
+    'ordinary view inner queries did not use parallel replicas')
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04489_view_pr', '04489_view_pr_allow')
+    AND type = 'QueryFinish' AND query_id = initial_query_id
+FORMAT Null;
 
 -- `FINAL` on a view is an outer `TableNode` modifier. It disqualifies parallel replicas
 -- in the ordinary planner, so the recursive-step preflight must preserve that guard and
@@ -1444,6 +1455,32 @@ WITH RECURSIVE float_walk_pm AS
 SELECT cur FROM float_walk_pm ORDER BY cur
 SETTINGS join_algorithm = 'partial_merge';
 
+-- `prefer_partial_merge` selects the same value-comparing path when it is
+-- applicable, so it must also leave the recursive join as a plain scan.
+WITH RECURSIVE float_walk_ppm AS
+(
+    SELECT toFloat64(0.) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges_mj AS e
+    INNER JOIN float_walk_ppm AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk_ppm ORDER BY cur
+SETTINGS join_algorithm = 'prefer_partial_merge' FORMAT Null;
+
+-- Force `auto` to leave its initial hash attempt and use its value-comparing
+-- `partial_merge` fallback. The generated `IN` prefilter must remain disabled.
+WITH RECURSIVE float_walk_auto AS
+(
+    SELECT toFloat64(0.) AS cur
+  UNION ALL
+    SELECT e.to_id AS cur
+    FROM float_edges_mj AS e
+    INNER JOIN float_walk_auto AS w ON e.from_id = w.cur
+)
+SELECT cur FROM float_walk_auto ORDER BY cur
+SETTINGS join_algorithm = 'auto', max_bytes_in_join = 1 FORMAT Null;
+
 -- `parallel_full_sorting_merge` builds the very same `FullSortingMergeJoin` as
 -- `full_sorting_merge`, so it compares floating-point keys by value too and
 -- must fail closed identically.
@@ -1559,7 +1596,8 @@ WITH RECURSIVE plan_based_traverse_pr AS
 SELECT current_id FROM plan_based_traverse_pr ORDER BY current_id
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    log_comment = '04489_plan_based_traverse_pr';
 
 -- The best-effort mode (`= 1`) must likewise keep plan-based parallelism
 -- enabled for the recursive steps instead of downgrading them to plain runs.
@@ -1572,7 +1610,19 @@ WITH RECURSIVE plan_based_joined_pr AS
 SELECT sum(n) FROM plan_based_joined_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 1, max_parallel_replicas = 2,
     parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    log_comment = '04489_plan_based_joined_pr';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT throwIf(count() != 2 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
+    'plan-based recursive steps did not use parallel replicas')
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04489_plan_based_traverse_pr', '04489_plan_based_joined_pr')
+    AND type = 'QueryFinish' AND query_id = initial_query_id
+FORMAT Null;
 
 DROP TABLE edges_pb;
 
@@ -1696,7 +1746,8 @@ WITH RECURSIVE plan_based_branch_settings_pr AS
 SELECT current_id FROM plan_based_branch_settings_pr ORDER BY current_id
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    log_comment = '04489_plan_based_branch_settings_pr';
 
 WITH RECURSIVE plan_based_multi_branch_pr AS
 (
@@ -1715,6 +1766,18 @@ WITH RECURSIVE plan_based_multi_branch_pr AS
 SELECT current_id FROM plan_based_multi_branch_pr ORDER BY current_id
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_plan_based = 1, cluster_for_parallel_replicas = 'parallel_replicas',
-    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    log_comment = '04489_plan_based_multi_branch_pr';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT throwIf(count() != 2 OR countIf(ProfileEvents['ParallelReplicasUsedCount'] = 0) > 0,
+    'plan-based branch contexts did not use parallel replicas')
+FROM system.query_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND current_database = currentDatabase()
+    AND log_comment IN ('04489_plan_based_branch_settings_pr', '04489_plan_based_multi_branch_pr')
+    AND type = 'QueryFinish' AND query_id = initial_query_id
+FORMAT Null;
 
 DROP TABLE edges_pb_branches;
