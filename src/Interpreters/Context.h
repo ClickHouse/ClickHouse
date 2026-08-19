@@ -148,6 +148,7 @@ class SessionLog;
 class BackupsWorker;
 class TransactionsInfoLog;
 class ProcessorsProfileLog;
+class QueryPlanLog;
 class FilesystemCacheLog;
 class DistributedCacheLog;
 class DistributedCacheServerLog;
@@ -1709,6 +1710,7 @@ public:
     std::shared_ptr<ZooKeeperLog> getZooKeeperLog() const;
     std::shared_ptr<SessionLog> getSessionLog() const;
     std::shared_ptr<TransactionsInfoLog> getTransactionsInfoLog() const;
+    std::shared_ptr<QueryPlanLog> getQueryPlanLog() const;
     std::shared_ptr<ProcessorsProfileLog> getProcessorsProfileLog() const;
     std::shared_ptr<FilesystemCacheLog> getFilesystemCacheLog() const;
     std::shared_ptr<ObjectStorageQueueLog> getS3QueueLog() const;

@@ -36,6 +36,7 @@
 #include <Interpreters/BackgroundSchedulePoolLog.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryPlanLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
 #include <Interpreters/QueryThreadLog.h>

@@ -33,6 +33,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Interpreters/DeadLetterQueue.h>
 #include <Interpreters/PredicateStatisticsLog.h>
+#include <Interpreters/QueryPlanLog.h>
 #include <Common/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
