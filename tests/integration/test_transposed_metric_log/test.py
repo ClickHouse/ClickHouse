@@ -43,10 +43,12 @@ def start_cluster():
         cluster.shutdown()
 
 def test_table_rotation(start_cluster):
-    # default wide mode
+    # default wide mode: bucketed Map columns plus per-metric aliases
     node1.query("SYSTEM FLUSH LOGS")
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert "Map(Enum16(" in node1.query("SHOW CREATE TABLE system.metric_log")
+    assert int(node1.query("select sum(ProfileEvent_Query) from system.metric_log").strip()) > 0
 
     node1.replace_in_config(LOG_PATH, ">wide<", ">transposed<")
 

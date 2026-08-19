@@ -16,6 +16,10 @@ namespace DB
 {
 
 /** MetricLog is a log of metric values measured at regular time interval.
+  *
+  * Profile events and current metrics are stored in a fixed number of bucket columns
+  * of type Map(Enum16(...), Int64), and every metric also has an ALIAS column
+  * (e.g. `ProfileEvent_Query`) that extracts its value from the corresponding bucket.
   */
 
 struct MetricLogElement
@@ -24,7 +28,7 @@ struct MetricLogElement
     Decimal64 event_time_microseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;
-    std::vector<CurrentMetrics::Metric> current_metrics;
+    std::vector<CurrentMetrics::Value> current_metrics;
 
     Array histogram_metric;
     Array histogram_labels;
@@ -34,7 +38,7 @@ struct MetricLogElement
 
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();
-    static NamesAndAliases getNamesAndAliases() { return {}; }
+    static NamesAndAliases getNamesAndAliases();
     void appendToBlock(MutableColumns & columns) const;
 };
 
