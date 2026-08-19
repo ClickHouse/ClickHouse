@@ -619,14 +619,19 @@ namespace
 
 [[maybe_unused]] const bool rest_settings_alter_validator_registered = []
 {
-    CatalogSettingsAlterValidatorFactory::instance().registerValidator(
-        DB::DatabaseDataLakeCatalogType::ICEBERG_REST,
-        [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
-        {
-            const bool credential_mode = !current_settings[DB::DatabaseDataLakeSetting::catalog_credential].value.empty();
-            const bool header_mode = !current_settings[DB::DatabaseDataLakeSetting::auth_header].value.empty();
-            RestCatalog::validateSettingsChanges(changes, credential_mode, header_mode);
-        });
+    /// `DeltaSharingCatalog` is a plain `RestCatalog` with a distinct type and the same
+    /// `catalog_credential` / `auth_header` authentication settings, so it shares the validator.
+    for (const auto catalog_type : {DB::DatabaseDataLakeCatalogType::ICEBERG_REST, DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING})
+    {
+        CatalogSettingsAlterValidatorFactory::instance().registerValidator(
+            catalog_type,
+            [](const DB::DatabaseDataLakeSettings & current_settings, const DB::SettingsChanges & changes)
+            {
+                const bool credential_mode = !current_settings[DB::DatabaseDataLakeSetting::catalog_credential].value.empty();
+                const bool header_mode = !current_settings[DB::DatabaseDataLakeSetting::auth_header].value.empty();
+                RestCatalog::validateSettingsChanges(changes, credential_mode, header_mode);
+            });
+    }
     return true;
 }();
 

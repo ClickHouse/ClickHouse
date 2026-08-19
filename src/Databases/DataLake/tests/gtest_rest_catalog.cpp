@@ -7,6 +7,8 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Databases/DataLake/DatabaseDataLakeSettings.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -45,6 +47,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int DATALAKE_DATABASE_ERROR;
+}
+namespace DatabaseDataLakeSetting
+{
+    extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
+    extern const DatabaseDataLakeSettingsString auth_header;
 }
 }
 
@@ -691,6 +698,30 @@ TEST(RestCatalog, OneLakeApplySettingsChangesRefreshMode)
     expired.emplace_back("onelake_refresh_token", "expired-refresh");
     expectThrowsCode([&] { catalog.applySettingsChanges(expired); }, DB::ErrorCodes::DATALAKE_DATABASE_ERROR);
     EXPECT_EQ(catalog.getStateSnapshot()->refresh_token, "another-good-refresh");
+}
+
+TEST(RestCatalog, DeltaSharingSettingsAlterValidatorRegistered)
+{
+    /// `DeltaSharingCatalog` is a plain `RestCatalog` with a distinct catalog type, so its type
+    /// must have the settings-alter validator too (otherwise `ALTER DATABASE ... MODIFY SETTING`
+    /// is rejected with `NOT_IMPLEMENTED` before reaching the catalog).
+    DB::DatabaseDataLakeSettings settings;
+    settings[DB::DatabaseDataLakeSetting::catalog_type] = DB::DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING;
+    settings[DB::DatabaseDataLakeSetting::auth_header] = "Authorization: Bearer token-1";
+
+    DB::SettingsChanges changes;
+    changes.emplace_back("auth_header", "Authorization: Bearer token-2");
+    CatalogSettingsAlterValidatorFactory::instance().validate(settings, changes);
+
+    DB::SettingsChanges mode_switch;
+    mode_switch.emplace_back("catalog_credential", "id:secret");
+    expectThrowsCode(
+        [&] { CatalogSettingsAlterValidatorFactory::instance().validate(settings, mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    DB::SettingsChanges unknown_setting;
+    unknown_setting.emplace_back("warehouse", "other");
+    expectThrowsCode(
+        [&] { CatalogSettingsAlterValidatorFactory::instance().validate(settings, unknown_setting); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 #endif

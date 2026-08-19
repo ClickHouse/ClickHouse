@@ -373,6 +373,16 @@ void generateManifestFile(
         per_file_entry_lineage.empty() || per_file_entry_lineage.size() == data_file_names.size(),
         "per_file_entry_lineage size does not match number of data files");
 
+    /// Callers resolve the spec by scanning `partition-specs` for `default-spec-id` and leave the
+    /// pointer null when nothing matches. Report that here rather than letting it reach the
+    /// `partition_spec->getArray()` calls below, which would raise a bare Poco "Null pointer" -
+    /// opaque, and unattributable to a table when it surfaces from a background thread.
+    if (!partition_spec)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Iceberg table metadata has no partition spec matching default-spec-id {}",
+            partition_spec_id);
+
     /// The value and type tuples must have exactly one entry per partition column;
     if (partition_values.size() != partition_columns.size() || partition_types.size() != partition_columns.size())
         throw Exception(
