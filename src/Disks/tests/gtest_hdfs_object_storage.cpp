@@ -7,6 +7,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/HDFS/HDFSObjectStorage.h>
 #include <Common/Exception.h>
 #include <Poco/Util/MapConfiguration.h>
+#include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 
 namespace DB::ErrorCodes
 {
@@ -34,6 +35,26 @@ TEST(HDFSObjectStorageMetadata, EtagIsPopulatedForTheVirtualColumn)
     /// even though it cannot key a cache.
     auto metadata = HDFSObjectStorage::makeObjectMetadata(/*last_modified=*/ 1700000000, /*size=*/ 42);
     EXPECT_FALSE(metadata.etag.empty());
+}
+
+TEST(HDFSObjectStorageMetadata, IcebergCanCacheBucketedParquetFooterWithWeakEtag)
+{
+    auto metadata = HDFSObjectStorage::makeObjectMetadata(/*last_modified=*/ 1700000000, /*size=*/ 42);
+
+    /// An Iceberg snapshot pins this path to an immutable data-file generation,
+    /// so its weak HDFS ETag must not suppress `ParquetMetadataCache` reuse.
+    EXPECT_TRUE(DB::canUseParquetMetadataCache(
+        metadata,
+        /*is_data_lake_configuration=*/ true,
+        /*has_file_bucket_info=*/ true,
+        /*read_is_pinned_to_etag=*/ false));
+
+    /// The same weak token cannot key a cache for a mutable HDFS read.
+    EXPECT_FALSE(DB::canUseParquetMetadataCache(
+        metadata,
+        /*is_data_lake_configuration=*/ false,
+        /*has_file_bucket_info=*/ true,
+        /*read_is_pinned_to_etag=*/ false));
 }
 
 TEST(HDFSObjectStorageMetadata, SizeAndModificationTimeArePreserved)

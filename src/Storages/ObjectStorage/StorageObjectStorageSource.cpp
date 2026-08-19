@@ -95,6 +95,16 @@ namespace CurrentMetrics
 
 namespace DB
 {
+bool canUseParquetMetadataCache(
+    const ObjectMetadata & metadata,
+    bool is_data_lake_configuration,
+    bool has_file_bucket_info,
+    bool read_is_pinned_to_etag)
+{
+    return (is_data_lake_configuration || metadata.isEtagUsableAsCacheKey())
+        && (!has_file_bucket_info || is_data_lake_configuration || read_is_pinned_to_etag);
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -1292,14 +1302,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// can fail close on a concurrent in-place overwrite.
         const bool read_is_pinned_to_etag = context_->getSettingsRef()[Setting::s3_validate_etag_on_read]
             && object_storage->getType() == ObjectStorageType::S3;
-        const bool can_use_metadata_cache = !object_info->file_bucket_info
-            || configuration->isDataLakeConfiguration()
-            || read_is_pinned_to_etag;
+        const bool can_use_metadata_cache = canUseParquetMetadataCache(
+            *object_info->getObjectMetadata(),
+            configuration->isDataLakeConfiguration(),
+            static_cast<bool>(object_info->file_bucket_info),
+            read_is_pinned_to_etag);
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && (configuration->isDataLakeConfiguration() || object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
             && can_use_metadata_cache)
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;

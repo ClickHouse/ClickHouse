@@ -18,6 +18,15 @@ namespace DB
 
 class SchemaCache;
 
+/// Whether a `Parquet` footer may be reused for an object-storage reader.
+/// Data-lake metadata pins listed files to an immutable generation, including on
+/// backends such as HDFS that only expose a weak synthetic ETag.
+bool canUseParquetMetadataCache(
+    const ObjectMetadata & metadata,
+    bool is_data_lake_configuration,
+    bool has_file_bucket_info,
+    bool read_is_pinned_to_etag);
+
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
 
