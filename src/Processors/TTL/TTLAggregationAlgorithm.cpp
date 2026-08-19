@@ -8,6 +8,8 @@
 
 #include <Core/Settings.h>
 
+#include <Storages/MergeTree/MergeTreeSettings.h>
+
 #include <unordered_set>
 
 namespace DB
@@ -18,8 +20,6 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsNonZeroUInt64 max_block_size;
-    extern const SettingsUInt64 max_bytes_before_external_group_by;
-    extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;

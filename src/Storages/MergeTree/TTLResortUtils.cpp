@@ -48,7 +48,7 @@ namespace
 /// Stored default and MATERIALIZED expressions must remain executable during a background merge
 /// even when a feature used at table-creation time is disabled in the current context. Keep this
 /// in sync with `IMergeTreeReader::createContextForDefaultExpressions`; chained materialized
-/// subcolumns additionally require the new analyzer for the expression DAG assembled here.
+/// subcolumns additionally require the analyzer for the expression DAG assembled here.
 ContextPtr createContextForTTLDefaultExpressions(const ContextPtr & context)
 {
     auto expressions_context = Context::createCopy(context);
