@@ -8,7 +8,3 @@ tenant1-own
 1
 -- a nested SETTINGS clause cannot lift the row filter
 1
--- a SQL SECURITY DEFINER view with inner SETTINGS still reads
-3
--- a SQL SECURITY INVOKER view with inner SETTINGS is now checked
-1
