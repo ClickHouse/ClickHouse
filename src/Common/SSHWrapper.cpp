@@ -6,6 +6,7 @@
 #    include <base/scope_guard.h>
 
 #    include <cstdlib>
+#    include <cctype>
 #    include <cstring>
 #    include <fstream>
 #    include <fnmatch.h>
@@ -140,13 +141,57 @@ bool matchesHostPattern(const String & patterns, const String & host)
     return matched;
 }
 
+String expandSSHConfigEnvironmentVariables(std::string_view value)
+{
+    String result;
+    for (size_t i = 0; i < value.size(); ++i)
+    {
+        if (value[i] != '$')
+        {
+            result += value[i];
+            continue;
+        }
+
+        size_t variable_begin = i + 1;
+        size_t variable_end = variable_begin;
+        if (variable_begin < value.size() && value[variable_begin] == '{')
+        {
+            variable_begin += 1;
+            variable_end = value.find('}', variable_begin);
+            if (variable_end == String::npos)
+                throw Exception(ErrorCodes::LIBSSH_ERROR, "Invalid environment variable reference in IdentityAgent: {}", value);
+            i = variable_end;
+        }
+        else
+        {
+            while (variable_end < value.size() && (std::isalnum(static_cast<unsigned char>(value[variable_end])) || value[variable_end] == '_'))
+                ++variable_end;
+            if (variable_begin == variable_end)
+            {
+                result += '$';
+                continue;
+            }
+            i = variable_end - 1;
+        }
+
+        String variable_name = String(value.substr(variable_begin, variable_end - variable_begin));
+        const char * variable_value = std::getenv(variable_name.c_str()); // NOLINT(concurrency-mt-unsafe)
+        if (variable_value == nullptr)
+            throw Exception(ErrorCodes::LIBSSH_ERROR, "Environment variable {} referenced by IdentityAgent is not set", variable_name);
+        result += variable_value;
+    }
+    return result;
+}
+
 std::optional<String> findSSHAgentSocketPathInConfig(const String & config_file, const String & host, const String & home_directory)
 {
     std::ifstream input(config_file);
     if (!input)
         return std::nullopt;
 
-    bool applies = false;
+    /// Global directives apply to every host. Like OpenSSH, use the first value
+    /// obtained for an option, so a later matching Host section cannot override it.
+    bool applies = true;
     String line;
     while (std::getline(input, line))
     {
@@ -175,7 +220,12 @@ std::optional<String> findSSHAgentSocketPathInConfig(const String & config_file,
         {
             if (argument == "none")
                 return String{};
-            return expandIdentityFileName(argument, home_directory, host);
+            if (argument == "SSH_AUTH_SOCK")
+            {
+                const char * socket_path = std::getenv("SSH_AUTH_SOCK"); // NOLINT(concurrency-mt-unsafe)
+                return socket_path ? String(socket_path) : String{};
+            }
+            return expandIdentityFileName(expandSSHConfigEnvironmentVariables(argument), home_directory, host);
         }
     }
     return std::nullopt;

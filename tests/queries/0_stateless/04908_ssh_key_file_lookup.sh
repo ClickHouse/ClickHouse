@@ -48,6 +48,14 @@ ssh-add -q "${SSH_HOME}/.ssh/id_ed25519" 2>/dev/null
 rm "${SSH_HOME}/.ssh/id_ed25519"
 run_client
 
+echo '--- A global IdentityAgent expands an environment variable'
+AGENT_SOCKET="${SSH_AUTH_SOCK}"
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityAgent ${CLICKHOUSE_TEST_AGENT_SOCKET}
+EOF
+CLICKHOUSE_TEST_AGENT_SOCKET="${AGENT_SOCKET}" SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" run_client
+rm "${SSH_HOME}/.ssh/config"
+
 echo '--- The rsa key in the ssh-agent, with nothing in ~/.ssh'
 ssh-add -qD 2>/dev/null
 ssh-add -q "${SSH_HOME}/.ssh/id_rsa" 2>/dev/null
