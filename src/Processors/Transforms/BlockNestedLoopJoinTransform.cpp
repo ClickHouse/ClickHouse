@@ -135,9 +135,10 @@ constexpr size_t WORK_BUDGET_PAIRS = 8 * TILE_PAIRS;
 constexpr size_t MIN_PROBE_WINDOW_PAIRS = 8192;
 
 /// How many bytes of build blocks a probe stream may keep alive for pairs it has not emitted yet.
-/// The bound is the operator's own, deliberately not `max_joined_block_size_bytes`: what it limits
-/// is not the output chunk but the store's working set, and it has to stay small however large the
-/// chunks the query asks for.
+/// The bound is the operator's own: what it limits is one stream's copies of stored blocks, neither
+/// the output chunk (`max_joined_block_size_bytes`) nor the store as a whole (`max_bytes_in_join`,
+/// `max_bytes_before_external_join`). Those bound something else, are 0 by default, and would scale
+/// with the number of probe streams, while the copies have to stay bounded whatever they are.
 constexpr size_t MAX_RETAINED_BUILD_BYTES = 4 * 1024 * 1024;
 
 }
@@ -586,6 +587,8 @@ Chunk BlockNestedLoopProbeTransform::takeMatchedRows()
     Columns result;
     result.reserve(output_header->columns());
 
+    /// The probe half of the chunk: the pending pairs' probe rows, gathered from the probe chunk. The
+    /// scope releases the gather indexes before the build side allocates its own.
     {
         auto indexes = ColumnUInt64::create();
         indexes->getData().insert(pending_probe_begin, pending_probe_begin + num_rows);

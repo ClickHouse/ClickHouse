@@ -5,6 +5,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
 
+#include <algorithm>
 #include <optional>
 
 namespace ProfileEvents
@@ -137,13 +138,15 @@ BlockNestedLoopJoinData::BlockNestedLoopJoinData(
     JoinKind kind_,
     JoinStrictness strictness_,
     const SizeLimits & size_limits_,
-    BlockNestedLoopStoreSettings store_settings_)
+    BlockNestedLoopStoreSettings store_settings_,
+    size_t num_build_streams_)
     : build_header(std::move(build_header_))
     , kind(kind_)
     , strictness(strictness_)
     , size_limits(size_limits_)
     , store_settings(withJoinTemporaryDataScope(std::move(store_settings_)))
     , needs_match_flags(needsBuildSideMatchFlags(kind_, strictness_))
+    , spill_sinks(std::max<size_t>(1, num_build_streams_))
 {
 }
 
@@ -156,7 +159,7 @@ bool BlockNestedLoopJoinData::canSpill() const
     return store_settings.tmp_data != nullptr && build_header->columns() != 0;
 }
 
-bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
+bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows, size_t stream_index)
 {
     if (isFinished())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot add a block to a finished block nested loop join build side");
@@ -193,6 +196,9 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
             || (store_settings.min_bytes_to_compress != 0 && bytes_in_join >= store_settings.min_bytes_to_compress)))
         compressed_block = compressBuildBlock(build_block);
 
+    /// What this call writes once the lock is released, in the order the file takes them: whatever a
+    /// flush took out of memory, and this block after it.
+    std::vector<BuildBlockPtr> to_spill;
     {
         std::lock_guard lock(mutex);
 
@@ -201,22 +207,27 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows)
         entry.num_rows = num_rows;
 
         const bool spill = canSpill()
-            && (tmp_stream != nullptr
+            && (getNumSpilledBlocks() != 0
                 || (store_settings.max_bytes_in_memory != 0
                     && getInMemoryBytes() + block_bytes > store_settings.max_bytes_in_memory));
 
         if (spill)
         {
-            /// What is still in memory goes out first, so that the file order stays the index order.
-            if (!tmp_stream)
-                spillInMemoryBlocksLocked();
-            spillBlock(entry, build_block);
+            /// What is still in memory goes out first, into this stream's own file, so that the file
+            /// keeps its blocks in index order and this block lands after them.
+            if (getNumSpilledBlocks() == 0)
+                to_spill = takeInMemoryBlocksLocked(stream_index);
+            entry.sink_index = stream_index;
+            num_spilled_blocks.fetch_add(1, std::memory_order_relaxed);
+            to_spill.push_back(std::make_shared<const BuildBlock>(std::move(build_block)));
         }
         else if (compressed_block)
             storeBlock(entry, index, std::move(*compressed_block), /*compressed=*/ true, block_bytes);
         else
             storeBlock(entry, index, std::move(build_block), /*compressed=*/ false, block_bytes);
     }
+
+    writeSpilledBlocks(stream_index, std::move(to_spill));
 
     ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
 
@@ -242,52 +253,71 @@ void BlockNestedLoopJoinData::storeBlock(
         has_compressed_blocks.store(true, std::memory_order_relaxed);
 }
 
-void BlockNestedLoopJoinData::spillBlock(BuildBlockEntry & entry, const BuildBlock & build_block)
+void BlockNestedLoopJoinData::writeSpilledBlocks(size_t stream_index, std::vector<BuildBlockPtr> blocks_to_write)
 {
-    if (!tmp_stream)
-        tmp_stream = std::make_unique<TemporaryBlockStreamHolder>(build_header, store_settings.tmp_data);
+    if (blocks_to_write.empty())
+        return;
 
-    (*tmp_stream)->write(build_header->cloneWithColumns(build_block.columns));
-    entry.spill_ordinal = num_spilled_blocks.fetch_add(1, std::memory_order_relaxed);
+    auto & sink = spill_sinks.at(stream_index);
+    if (!sink)
+        sink = std::make_unique<TemporaryBlockStreamHolder>(build_header, store_settings.tmp_data);
+
+    for (auto & block : blocks_to_write)
+    {
+        /// A block that was compressed is written out as it will be read back, and one that was not
+        /// comes back from `decompress` as it is. Either way the store's hold on it ends here.
+        auto to_write = decompressBuildBlock(*block);
+        block.reset();
+        (*sink)->write(build_header->cloneWithColumns(to_write->columns));
+    }
 }
 
 /// TODO: a build side that does not fit in memory is spilled sequentially and re-read once per probe
 /// chunk. Grace partitioning - partitioning both sides on a monotone part of the condition, if any -
 /// would replace that with one pass per partition pair.
-bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes)
+bool BlockNestedLoopJoinData::spillInMemoryBlocks(size_t min_bytes, size_t stream_index)
 {
-    std::lock_guard lock(mutex);
+    std::vector<BuildBlockPtr> taken;
+    {
+        std::lock_guard lock(mutex);
 
-    /// Once the store is closed the temporary file is closed for writing too, and the readers the
-    /// probe streams hold would not see anything appended to it anyway.
-    if (finished.load(std::memory_order_relaxed) || !canSpill())
-        return false;
+        /// Once the store is closed the temporary files are closed for writing too, and the readers
+        /// the probe streams hold would not see anything appended to them anyway.
+        if (finished.load(std::memory_order_relaxed) || !canSpill())
+            return false;
 
-    const size_t bytes_to_free = getInMemoryBytes();
-    if (bytes_to_free == 0 || bytes_to_free < min_bytes)
-        return false;
+        const size_t bytes_to_free = getInMemoryBytes();
+        if (bytes_to_free == 0 || bytes_to_free < min_bytes)
+            return false;
 
-    spillInMemoryBlocksLocked();
+        taken = takeInMemoryBlocksLocked(stream_index);
+    }
+
+    writeSpilledBlocks(stream_index, std::move(taken));
     return true;
 }
 
-void BlockNestedLoopJoinData::spillInMemoryBlocksLocked()
+std::vector<BuildBlockPtr> BlockNestedLoopJoinData::takeInMemoryBlocksLocked(size_t stream_index)
 {
-    /// In increasing index order, so that the file order stays the index order: every block added
-    /// after this point is written to the file too, and gets a higher index.
+    /// In increasing index order, so that the file keeps its blocks in that order: every block added
+    /// after this point is written out too, and gets a higher index.
+    std::vector<BuildBlockPtr> taken;
     for (auto & entry : blocks)
     {
         if (!entry.block)
             continue;
 
-        auto to_write = entry.compressed ? decompressBuildBlock(*entry.block) : entry.block;
-        spillBlock(entry, *to_write);
-        entry.block.reset();
+        entry.sink_index = stream_index;
+        taken.push_back(std::move(entry.block));
         entry.compressed = false;
     }
 
+    num_spilled_blocks.fetch_add(taken.size(), std::memory_order_relaxed);
+    /// The blocks are out of the store's hands and are released as they are written, which is a moment
+    /// later than the counters say.
     in_memory_bytes.store(0, std::memory_order_relaxed);
     max_in_memory_block_bytes.store(0, std::memory_order_relaxed);
+    return taken;
 }
 
 void BlockNestedLoopJoinData::setBuildSideTotals(Block totals)
@@ -314,7 +344,22 @@ void BlockNestedLoopJoinData::finish()
     auto state = std::make_unique<FinishedState>();
     state->blocks = std::move(blocks);
     state->build_side_totals = std::move(build_side_totals);
-    state->tmp_stream = std::move(tmp_stream);
+    state->spill_sinks = std::move(spill_sinks);
+
+    /// Group the blocks by the file they went to, so that a walk over them in index order reads each
+    /// file forward and one open reader is enough. A file holds its blocks in index order, so a stable
+    /// sort keeps that, and a block's place in its group is its position in the file.
+    if (getNumSpilledBlocks() != 0)
+    {
+        chassert(
+            std::ranges::none_of(state->blocks, [](const BuildBlockEntry & entry) { return entry.block != nullptr; }),
+            "a block nested loop join build side that spilled kept a block in memory");
+        std::ranges::stable_sort(state->blocks, {}, &BuildBlockEntry::sink_index);
+
+        std::vector<size_t> next_ordinal(state->spill_sinks.size(), 0);
+        for (auto & entry : state->blocks)
+            entry.spill_ordinal = next_ordinal[entry.sink_index]++;
+    }
 
     state->row_offsets.resize(state->blocks.size() + 1);
     size_t offset = 0;
@@ -330,8 +375,9 @@ void BlockNestedLoopJoinData::finish()
         matched_flags = std::make_unique<std::atomic_bool[]>(offset);
 
     /// Nothing more will be written, and the readers can only be created once it is flushed.
-    if (state->tmp_stream)
-        state->tmp_stream->finishWriting();
+    for (const auto & sink : state->spill_sinks)
+        if (sink)
+            sink->finishWriting();
 
     finished_state = std::move(state);
     /// Publishes everything written above, `matched_flags` included, to every reader that has seen
@@ -378,8 +424,11 @@ size_t BlockNestedLoopJoinData::getSpilledCompressedBytes() const
     if (!isFinished())
         return 0;
 
-    const auto & stream = finishedState("the spilled bytes").tmp_stream;
-    return stream ? stream->getHolder()->getStat().compressed_size : 0;
+    size_t compressed_bytes = 0;
+    for (const auto & sink : finishedState("the spilled bytes").spill_sinks)
+        if (sink)
+            compressed_bytes += sink->getHolder()->getStat().compressed_size;
+    return compressed_bytes;
 }
 
 const BlockNestedLoopJoinData::FinishedState & BlockNestedLoopJoinData::finishedState(const char * what) const
@@ -406,12 +455,13 @@ const BlockNestedLoopJoinData::BuildBlockEntry & BlockNestedLoopJoinData::getBlo
     return finishedState("the stored blocks").blocks.at(index);
 }
 
-TemporaryBlockStreamReaderHolder BlockNestedLoopJoinData::createSpillReadStream() const
+TemporaryBlockStreamReaderHolder BlockNestedLoopJoinData::createSpillReadStream(size_t sink_index) const
 {
-    const auto & stream = finishedState("the spilled blocks").tmp_stream;
-    if (!stream)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Block nested loop join build side has no spilled blocks");
-    return stream->getReadStream();
+    const auto & sink = finishedState("the spilled blocks").spill_sinks.at(sink_index);
+    if (!sink)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Block nested loop join build side spilled nothing to the file {}", sink_index);
+    return sink->getReadStream();
 }
 
 const std::vector<size_t> & BlockNestedLoopJoinData::getRowOffsets() const
@@ -444,7 +494,7 @@ BuildBlockPtr BuildSideBlockReader::read(size_t index)
     if (entry.block)
         current = entry.compressed ? decompressBuildBlock(*entry.block) : entry.block;
     else
-        current = readSpilledBlock(index, entry.spill_ordinal);
+        current = readSpilledBlock(index, entry.sink_index, entry.spill_ordinal);
     current_index = index;
     return current;
 }
@@ -453,16 +503,20 @@ void BuildSideBlockReader::release()
 {
     current = nullptr;
     spill_stream = nullptr;
+    spill_stream_sink = 0;
     next_spill_ordinal = 0;
 }
 
-BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t spill_ordinal)
+BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t sink_index, size_t spill_ordinal)
 {
-    /// The file holds the spilled blocks in index order and cannot be seeked, so a block behind the
-    /// reader is only reachable by starting the file over - which is what a new probe chunk does.
-    if (!spill_stream || spill_ordinal < next_spill_ordinal)
+    /// A file holds its blocks in index order and cannot be seeked, so a block behind the reader - or
+    /// one in another file - is only reachable by starting that file over. Walking the blocks in index
+    /// order moves from one file to the next, so that costs one restart per file per walk, which is
+    /// what a new probe chunk pays anyway.
+    if (!spill_stream || spill_stream_sink != sink_index || spill_ordinal < next_spill_ordinal)
     {
-        spill_stream = std::make_unique<TemporaryBlockStreamReaderHolder>(data->createSpillReadStream());
+        spill_stream = std::make_unique<TemporaryBlockStreamReaderHolder>(data->createSpillReadStream(sink_index));
+        spill_stream_sink = sink_index;
         next_spill_ordinal = 0;
     }
 
@@ -488,10 +542,11 @@ BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t spill_
 }
 
 BlockNestedLoopBuildTransform::BlockNestedLoopBuildTransform(
-    SharedHeader input_header, BlockNestedLoopJoinDataPtr data_, FinishCounterPtr finish_counter_)
+    SharedHeader input_header, BlockNestedLoopJoinDataPtr data_, FinishCounterPtr finish_counter_, size_t stream_index_)
     : IProcessor({std::move(input_header)}, {Block()})
     , data(std::move(data_))
     , finish_counter(std::move(finish_counter_))
+    , stream_index(stream_index_)
 {
     spillable = data->canSpill();
 }
@@ -585,7 +640,7 @@ void BlockNestedLoopBuildTransform::work()
     if (for_totals)
         data->setBuildSideTotals(std::move(block));
     else
-        stop_reading = !data->addBlock(std::move(block), num_rows);
+        stop_reading = !data->addBlock(std::move(block), num_rows, stream_index);
 }
 
 ProcessorMemoryStats BlockNestedLoopBuildTransform::getMemoryStats()
@@ -601,7 +656,7 @@ ProcessorMemoryStats BlockNestedLoopBuildTransform::getMemoryStats()
 
 bool BlockNestedLoopBuildTransform::spillOnSize(size_t bytes)
 {
-    return data->spillInMemoryBlocks(bytes);
+    return data->spillInMemoryBlocks(bytes, stream_index);
 }
 
 void BlockNestedLoopBuildTransform::finishBuild()

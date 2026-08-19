@@ -19,6 +19,7 @@ namespace DB
 class TemporaryDataOnDiskScope;
 using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 class TemporaryBlockStreamHolder;
+using TemporaryBlockStreamHolderPtr = std::unique_ptr<TemporaryBlockStreamHolder>;
 class TemporaryBlockStreamReaderHolder;
 
 /// Whether the result still depends on which build rows matched once the probe phase is over:
@@ -89,13 +90,16 @@ public:
         JoinKind kind_,
         JoinStrictness strictness_,
         const SizeLimits & size_limits_,
-        BlockNestedLoopStoreSettings store_settings_ = {});
+        BlockNestedLoopStoreSettings store_settings_ = {},
+        size_t num_build_streams_ = 1);
     ~BlockNestedLoopJoinData();
 
     /// Appends one build block; `num_rows` is authoritative, because a block with no columns still
     /// has rows. Thread-safe. Returns false when the size limits are exceeded under
     /// `join_overflow_mode = 'break'`, asking the caller to stop reading the build side.
-    bool addBlock(Block block, size_t num_rows);
+    /// `stream_index` names the calling build stream, which owns the temporary file its blocks go to;
+    /// no two build streams may share one.
+    bool addBlock(Block block, size_t num_rows, size_t stream_index);
 
     /// Records the build side's `WITH TOTALS` row. It is not a build row: it never takes part in
     /// matching, it only contributes its columns to the joined totals row.
@@ -132,10 +136,10 @@ public:
     size_t getInMemoryBytes() const { return in_memory_bytes.load(std::memory_order_relaxed); }
     size_t getMaxInMemoryBlockBytes() const { return max_in_memory_block_bytes.load(std::memory_order_relaxed); }
     size_t getNumSpilledBlocks() const { return num_spilled_blocks.load(std::memory_order_relaxed); }
-    /// Streams every block that is still in memory out to the temporary file, and keeps the build
-    /// side streaming from then on. Returns false when there is less than `min_bytes` to gain.
-    /// Thread-safe, and called by the query memory tracker through the build transform.
-    bool spillInMemoryBlocks(size_t min_bytes);
+    /// Streams every block that is still in memory out to the temporary file of `stream_index`, and
+    /// keeps the build side streaming from then on. Returns false when there is less than `min_bytes`
+    /// to gain. Thread-safe, and called by the query memory tracker through the build transform.
+    bool spillInMemoryBlocks(size_t min_bytes, size_t stream_index);
 
     /// Whether the match flags below are kept at all; decided by the kind and strictness.
     bool hasBuildSideMatchFlags() const { return needs_match_flags; }
@@ -169,14 +173,16 @@ public:
 private:
     friend class BuildSideBlockReader;
 
-    /// One stored build block: in memory, possibly compressed, or in the temporary file at
-    /// `spill_ordinal`. `num_rows` is known either way.
+    /// One stored build block: in memory, possibly compressed, or in the temporary file of
+    /// `sink_index`, at `spill_ordinal` in it. `num_rows` is known either way.
     struct BuildBlockEntry
     {
         BuildBlockPtr block;
         size_t num_rows = 0;
         bool compressed = false;
-        /// Position of the block in the temporary file; meaningful only when `block` is null.
+        /// Which temporary file holds the block, and where in that file - the position is assigned by
+        /// `finish`. Both are meaningful only when `block` is null.
+        size_t sink_index = 0;
         size_t spill_ordinal = 0;
     };
 
@@ -188,7 +194,7 @@ private:
         std::vector<BuildBlockEntry> blocks;
         std::vector<size_t> row_offsets;
         Block build_side_totals;
-        std::unique_ptr<TemporaryBlockStreamHolder> tmp_stream;
+        std::vector<TemporaryBlockStreamHolderPtr> spill_sinks;
     };
 
     /// The published state; throws while the build phase is still going. The only way to read it,
@@ -199,17 +205,18 @@ private:
     /// the shape the spill writes it out in.
     void storeBlock(BuildBlockEntry & entry, size_t index, BuildBlock build_block, bool compressed, size_t uncompressed_bytes)
         TSA_REQUIRES(mutex);
-    /// Writes the block out and leaves `entry` pointing at it by its position in the file. Blocks
-    /// are written in increasing index order, which is what makes one forward pass enough to read
-    /// any of them back.
-    void spillBlock(BuildBlockEntry & entry, const BuildBlock & build_block) TSA_REQUIRES(mutex);
-    /// Writes out every block that is still in memory, in index order.
-    void spillInMemoryBlocksLocked() TSA_REQUIRES(mutex);
+    /// Takes every block that is still in memory out of it, in index order, for the temporary file of
+    /// `stream_index`. What it returns has to be written before that stream writes anything else.
+    std::vector<BuildBlockPtr> takeInMemoryBlocksLocked(size_t stream_index) TSA_REQUIRES(mutex);
+    /// Writes blocks to the temporary file of `stream_index`, opening it on the first ones. Called
+    /// without the store mutex: serializing and compressing a block is what spilling costs, and a file
+    /// has one writer only, so this is where the build streams stop queueing behind each other.
+    void writeSpilledBlocks(size_t stream_index, std::vector<BuildBlockPtr> blocks_to_write);
 
     /// The entry of block `index`. Needs no lock: the store is read-only by the time it is called.
     const BuildBlockEntry & getBlockEntry(size_t index) const;
-    /// A fresh sequential reader over the spilled blocks, positioned at the first of them.
-    TemporaryBlockStreamReaderHolder createSpillReadStream() const;
+    /// A fresh sequential reader over one temporary file, positioned at the first block in it.
+    TemporaryBlockStreamReaderHolder createSpillReadStream(size_t sink_index) const;
 
     const SharedHeader build_header;
     const JoinKind kind;
@@ -224,9 +231,11 @@ private:
     mutable std::mutex mutex;
     std::vector<BuildBlockEntry> blocks TSA_GUARDED_BY(mutex);
     Block build_side_totals TSA_GUARDED_BY(mutex);
-    /// Exists from the first spill on; every later block is written to it as well, so that the
-    /// build side never goes back to growing in memory once it has proved too large for it.
-    std::unique_ptr<TemporaryBlockStreamHolder> tmp_stream TSA_GUARDED_BY(mutex);
+    /// One temporary file per build stream, opened on that stream's first spilled block. Not guarded:
+    /// a stream is the only writer of its own file - the bulk flush included, since the memory spill
+    /// scheduler asks a processor to spill from that processor's own execution slot - and nothing reads
+    /// them before `finish` has moved them into the published state.
+    std::vector<TemporaryBlockStreamHolderPtr> spill_sinks;
 
     /// Written once by `finish`, under the mutex and before the release store to `finished`.
     std::unique_ptr<const FinishedState> finished_state;
@@ -279,11 +288,12 @@ public:
     void release();
 
 private:
-    BuildBlockPtr readSpilledBlock(size_t index, size_t spill_ordinal);
+    BuildBlockPtr readSpilledBlock(size_t index, size_t sink_index, size_t spill_ordinal);
 
     BlockNestedLoopJoinDataPtr data;
     std::unique_ptr<TemporaryBlockStreamReaderHolder> spill_stream;
-    /// Position of the file reader: the ordinal of the next spilled block it will hand out.
+    /// Which file the reader is on, and the position of the next block it will hand out from it.
+    size_t spill_stream_sink = 0;
     size_t next_spill_ordinal = 0;
     /// The block handed out last, kept because one block is walked over several tiles.
     BuildBlockPtr current;
@@ -296,7 +306,8 @@ private:
 class BlockNestedLoopBuildTransform final : public IProcessor
 {
 public:
-    BlockNestedLoopBuildTransform(SharedHeader input_header, BlockNestedLoopJoinDataPtr data_, FinishCounterPtr finish_counter_);
+    BlockNestedLoopBuildTransform(
+        SharedHeader input_header, BlockNestedLoopJoinDataPtr data_, FinishCounterPtr finish_counter_, size_t stream_index_);
 
     String getName() const override { return "BlockNestedLoopBuild"; }
 
@@ -316,6 +327,8 @@ private:
 
     BlockNestedLoopJoinDataPtr data;
     FinishCounterPtr finish_counter;
+    /// This stream's place among the build streams, and so the temporary file it spills to.
+    const size_t stream_index;
     Chunk chunk;
     bool stop_reading = false;
     bool for_totals = false;

@@ -46,9 +46,11 @@ BlockNestedLoopJoinDataPtr makeData(
     JoinKind kind = JoinKind::Inner,
     JoinStrictness strictness = JoinStrictness::All,
     const SizeLimits & limits = {},
-    BlockNestedLoopStoreSettings store_settings = {})
+    BlockNestedLoopStoreSettings store_settings = {},
+    size_t num_build_streams = 1)
 {
-    return std::make_shared<BlockNestedLoopJoinData>(makeHeader(), kind, strictness, limits, std::move(store_settings));
+    return std::make_shared<BlockNestedLoopJoinData>(
+        makeHeader(), kind, strictness, limits, std::move(store_settings), num_build_streams);
 }
 
 /// The value of every stored row, in the store's own block order, read back the way the probe
@@ -116,9 +118,9 @@ BlockNestedLoopStoreSettings spillOnRequest(const TemporaryDataOnDiskScopePtr & 
 TEST(BlockNestedLoopJoinData, RowOffsetsCoverEveryStoredRow)
 {
     auto data = makeData();
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3));
-    ASSERT_TRUE(data->addBlock(makeBlock({4}), 1));
-    ASSERT_TRUE(data->addBlock(makeBlock({5, 6}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({4}), 1, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({5, 6}), 2, 0));
     data->finish();
 
     EXPECT_EQ(data->getTotalRows(), 6);
@@ -136,7 +138,7 @@ TEST(BlockNestedLoopJoinData, RowOffsetsCoverEveryStoredRow)
 TEST(BlockNestedLoopJoinData, EmptyBlocksAreNotStored)
 {
     auto data = makeData();
-    ASSERT_TRUE(data->addBlock(makeBlock({}), 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({}), 0, 0));
     data->finish();
 
     EXPECT_EQ(data->getNumBlocks(), 0);
@@ -148,7 +150,7 @@ TEST(BlockNestedLoopJoinData, ColumnlessBlocksKeepTheirRowCount)
 {
     auto data = std::make_shared<BlockNestedLoopJoinData>(
         std::make_shared<const Block>(), JoinKind::Inner, JoinStrictness::All, SizeLimits{});
-    ASSERT_TRUE(data->addBlock(Block{}, 5));
+    ASSERT_TRUE(data->addBlock(Block{}, 5, 0));
     data->finish();
 
     EXPECT_EQ(data->getTotalRows(), 5);
@@ -163,7 +165,7 @@ TEST(BlockNestedLoopJoinData, ConstAndSparseColumnsAreMaterialized)
     Block const_block;
     const_block.insert(ColumnWithTypeAndName(
         ColumnConst::create(ColumnUInt64::create(1, 7), 3), std::make_shared<DataTypeUInt64>(), "x"));
-    ASSERT_TRUE(data->addBlock(std::move(const_block), 3));
+    ASSERT_TRUE(data->addBlock(std::move(const_block), 3, 0));
 
     auto values = ColumnUInt64::create();
     values->insertDefault();
@@ -174,7 +176,7 @@ TEST(BlockNestedLoopJoinData, ConstAndSparseColumnsAreMaterialized)
     Block sparse_block;
     sparse_block.insert(ColumnWithTypeAndName(
         ColumnSparse::create(std::move(values), std::move(offsets), 3), std::make_shared<DataTypeUInt64>(), "x"));
-    ASSERT_TRUE(data->addBlock(std::move(sparse_block), 3));
+    ASSERT_TRUE(data->addBlock(std::move(sparse_block), 3, 0));
 
     data->finish();
 
@@ -191,7 +193,7 @@ TEST(BlockNestedLoopJoinData, ConstAndSparseColumnsAreMaterialized)
 TEST(BlockNestedLoopJoinData, FinishIsRecorded)
 {
     auto data = makeData();
-    ASSERT_TRUE(data->addBlock(makeBlock({1}), 1));
+    ASSERT_TRUE(data->addBlock(makeBlock({1}), 1, 0));
 
     EXPECT_FALSE(data->isFinished());
     data->finish();
@@ -201,16 +203,16 @@ TEST(BlockNestedLoopJoinData, FinishIsRecorded)
 TEST(BlockNestedLoopJoinData, SizeLimitsThrow)
 {
     auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits(2, 0, OverflowMode::THROW));
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
-    EXPECT_THROW(data->addBlock(makeBlock({3}), 1), Exception);
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
+    EXPECT_THROW(data->addBlock(makeBlock({3}), 1, 0), Exception);
 }
 
 TEST(BlockNestedLoopJoinData, SizeLimitsBreak)
 {
     auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits(3, 0, OverflowMode::BREAK));
-    EXPECT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
+    EXPECT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
     /// `break` asks to stop once the limit is reached, but the block that reached it is kept.
-    EXPECT_FALSE(data->addBlock(makeBlock({3, 4}), 2));
+    EXPECT_FALSE(data->addBlock(makeBlock({3, 4}), 2, 0));
     data->finish();
     EXPECT_EQ(data->getTotalRows(), 4);
 }
@@ -220,14 +222,14 @@ TEST(BlockNestedLoopJoinData, ConcurrentInsertsKeepEveryRow)
     constexpr size_t num_threads = 8;
     constexpr size_t blocks_per_thread = 32;
 
-    auto data = makeData();
+    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, {}, num_threads);
     std::vector<std::thread> threads;
     for (size_t thread_index = 0; thread_index < num_threads; ++thread_index)
     {
         threads.emplace_back([&, thread_index]
         {
             for (size_t i = 0; i < blocks_per_thread; ++i)
-                data->addBlock(makeBlock({thread_index, i}), 2);
+                data->addBlock(makeBlock({thread_index, i}), 2, thread_index);
         });
     }
     for (auto & thread : threads)
@@ -291,8 +293,8 @@ TEST(BlockNestedLoopJoinData, MatchFlagsAreKeptOnlyWhereTheResultNeedsThem)
 TEST(BlockNestedLoopJoinData, MatchFlagsStartUnset)
 {
     auto data = makeData(JoinKind::Right, JoinStrictness::All);
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3));
-    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
     data->finish();
 
     for (size_t row = 0; row < data->getTotalRows(); ++row)
@@ -317,7 +319,7 @@ TEST(BlockNestedLoopJoinData, ConcurrentMatchFlagSetsKeepEveryFlag)
 
     auto data = makeData(JoinKind::Full, JoinStrictness::All);
     for (size_t i = 0; i < num_rows; ++i)
-        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1));
+        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1, 0));
     data->finish();
     ASSERT_EQ(data->getTotalRows(), num_rows);
 
@@ -347,7 +349,7 @@ TEST(BlockNestedLoopJoinData, ConcurrentClaimsGiveEveryBuildRowToOneProbeStream)
 
     auto data = makeData(JoinKind::Right, JoinStrictness::Any);
     for (size_t i = 0; i < num_rows; ++i)
-        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1));
+        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1, 0));
     data->finish();
 
     /// Every thread tries to take every row, so all of them contend on each one in turn.
@@ -382,8 +384,8 @@ TEST(BlockNestedLoopJoinData, CompressedBlocksRoundTrip)
 {
     /// Every block is compressed, because the very first one already passes the threshold.
     auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, compressEverything());
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3));
-    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
     data->finish();
 
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
@@ -396,11 +398,11 @@ TEST(BlockNestedLoopJoinData, CompressionShrinksWhatIsHeldInMemory)
     const std::vector<UInt64> compressible(4096, 7);
 
     auto plain = makeData();
-    ASSERT_TRUE(plain->addBlock(makeBlock(compressible), compressible.size()));
+    ASSERT_TRUE(plain->addBlock(makeBlock(compressible), compressible.size(), 0));
     plain->finish();
 
     auto compressed = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, compressEverything());
-    ASSERT_TRUE(compressed->addBlock(makeBlock(compressible), compressible.size()));
+    ASSERT_TRUE(compressed->addBlock(makeBlock(compressible), compressible.size(), 0));
     compressed->finish();
 
     EXPECT_LT(compressed->getInMemoryBytes(), plain->getInMemoryBytes());
@@ -417,9 +419,9 @@ TEST(BlockNestedLoopJoinData, SpilledBlocksRoundTrip)
         JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillEverything(storage.scope));
     ASSERT_TRUE(data->canSpill());
 
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3));
-    ASSERT_TRUE(data->addBlock(makeBlock({4}), 1));
-    ASSERT_TRUE(data->addBlock(makeBlock({5, 6}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2, 3}), 3, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({4}), 1, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({5, 6}), 2, 0));
     data->finish();
 
     EXPECT_EQ(data->getNumSpilledBlocks(), 3);
@@ -438,7 +440,7 @@ TEST(BlockNestedLoopJoinData, ARewoundReaderStartsTheTemporaryFileOver)
     auto data = makeData(
         JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillEverything(storage.scope));
     for (UInt64 i = 0; i < 4; ++i)
-        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1));
+        ASSERT_TRUE(data->addBlock(makeBlock({i}), 1, 0));
     data->finish();
 
     /// One reader serves every probe chunk, and each of them walks the build side from the start.
@@ -460,21 +462,21 @@ TEST(BlockNestedLoopJoinData, SpillingOnDemandMovesTheStoredBlocksOut)
     auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope));
 
     /// Nothing spills on its own without a threshold, ...
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
-    ASSERT_TRUE(data->addBlock(makeBlock({3}), 1));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
+    ASSERT_TRUE(data->addBlock(makeBlock({3}), 1, 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
     EXPECT_GT(data->getInMemoryBytes(), 0);
 
     /// ... until the memory tracker asks for it.
-    EXPECT_FALSE(data->spillInMemoryBlocks(data->getInMemoryBytes() + 1));
-    EXPECT_TRUE(data->spillInMemoryBlocks(data->getInMemoryBytes()));
+    EXPECT_FALSE(data->spillInMemoryBlocks(data->getInMemoryBytes() + 1, 0));
+    EXPECT_TRUE(data->spillInMemoryBlocks(data->getInMemoryBytes(), 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 2);
     EXPECT_EQ(data->getInMemoryBytes(), 0);
-    EXPECT_FALSE(data->spillInMemoryBlocks(0));
+    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
 
     /// From then on the build side streams: a block that arrives later goes straight to the file,
     /// so the file order stays the block order.
-    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 3);
     data->finish();
 
@@ -490,27 +492,75 @@ TEST(BlockNestedLoopJoinData, SpillingOnAThresholdTakesTheEarlierBlocksWithIt)
     /// Wide enough for the first block to stay in memory and narrow enough for the second to
     /// cross it, so that the spill starts with blocks already stored.
     auto probe = makeData();
-    ASSERT_TRUE(probe->addBlock(makeBlock({1, 2}), 2));
+    ASSERT_TRUE(probe->addBlock(makeBlock({1, 2}), 2, 0));
     settings.max_bytes_in_memory = probe->getInMemoryBytes() + 1;
 
     auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, settings);
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
 
     /// The block that crosses the threshold goes out behind the ones already in memory, so the
     /// file order is still the index order and a forward read walks the blocks in order.
-    ASSERT_TRUE(data->addBlock(makeBlock({3}), 1));
+    ASSERT_TRUE(data->addBlock(makeBlock({3}), 1, 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 2);
     EXPECT_EQ(data->getInMemoryBytes(), 0);
     EXPECT_EQ(data->getMaxInMemoryBlockBytes(), 0);
     /// Nothing is left for the memory tracker to gain.
-    EXPECT_FALSE(data->spillInMemoryBlocks(0));
+    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
 
-    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({4, 5}), 2, 0));
     data->finish();
 
     EXPECT_EQ(data->getNumSpilledBlocks(), 3);
     EXPECT_EQ(storedValues(data), (std::vector<UInt64>{1, 2, 3, 4, 5}));
+}
+
+TEST(BlockNestedLoopJoinData, ConcurrentSpillingGivesEveryBuildStreamItsOwnFile)
+{
+    constexpr size_t num_threads = 4;
+    constexpr size_t blocks_per_thread = 16;
+    constexpr size_t num_blocks = num_threads * blocks_per_thread;
+
+    auto storage = makeTemporaryStorage();
+    auto data = makeData(
+        JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillEverything(storage.scope), num_threads);
+
+    std::vector<std::thread> threads;
+    for (size_t thread_index = 0; thread_index < num_threads; ++thread_index)
+    {
+        threads.emplace_back([&, thread_index]
+        {
+            for (UInt64 i = 0; i < blocks_per_thread; ++i)
+                data->addBlock(makeBlock({thread_index * blocks_per_thread + i}), 1, thread_index);
+        });
+    }
+    for (auto & thread : threads)
+        thread.join();
+    data->finish();
+
+    EXPECT_EQ(data->getNumBlocks(), num_blocks);
+    EXPECT_EQ(data->getNumSpilledBlocks(), num_blocks);
+    EXPECT_EQ(data->getInMemoryBytes(), 0);
+    EXPECT_GT(data->getSpilledCompressedBytes(), 0);
+
+    /// Every row comes back whichever file it went to, and the blocks are handed out in an order that
+    /// reads each of the files forward - over and over, as one probe chunk after another does.
+    std::vector<UInt64> expected(num_blocks);
+    std::iota(expected.begin(), expected.end(), 0);
+
+    BuildSideBlockReader reader(data);
+    for (size_t pass = 0; pass < 3; ++pass)
+    {
+        std::vector<UInt64> values;
+        for (size_t index = 0; index < data->getNumBlocks(); ++index)
+        {
+            auto block = reader.read(index);
+            ASSERT_EQ(block->num_rows, data->getBlockNumRows(index)) << "pass " << pass << ", block " << index;
+            values.push_back(assert_cast<const ColumnUInt64 &>(*block->columns.at(0)).getElement(0));
+        }
+        std::sort(values.begin(), values.end());
+        EXPECT_EQ(values, expected) << "pass " << pass;
+    }
 }
 
 TEST(BlockNestedLoopJoinData, MatchFlagsAreIndexedAcrossTheSpilledBoundary)
@@ -518,10 +568,10 @@ TEST(BlockNestedLoopJoinData, MatchFlagsAreIndexedAcrossTheSpilledBoundary)
     auto storage = makeTemporaryStorage();
     auto data = makeData(JoinKind::Right, JoinStrictness::All, SizeLimits{}, spillOnRequest(storage.scope));
 
-    ASSERT_TRUE(data->addBlock(makeBlock({10, 11, 12}), 3));
-    ASSERT_TRUE(data->spillInMemoryBlocks(0));
+    ASSERT_TRUE(data->addBlock(makeBlock({10, 11, 12}), 3, 0));
+    ASSERT_TRUE(data->spillInMemoryBlocks(0, 0));
     /// The store now holds one spilled block and, from here on, everything else spilled too.
-    ASSERT_TRUE(data->addBlock(makeBlock({13, 14}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({13, 14}), 2, 0));
     data->finish();
     ASSERT_EQ(data->getNumSpilledBlocks(), 2);
 
@@ -552,8 +602,8 @@ TEST(BlockNestedLoopJoinData, ColumnlessBuildSidesNeverSpill)
         spillEverything(storage.scope));
 
     EXPECT_FALSE(data->canSpill());
-    ASSERT_TRUE(data->addBlock(Block{}, 5));
-    EXPECT_FALSE(data->spillInMemoryBlocks(0));
+    ASSERT_TRUE(data->addBlock(Block{}, 5, 0));
+    EXPECT_FALSE(data->spillInMemoryBlocks(0, 0));
     data->finish();
 
     EXPECT_EQ(data->getNumSpilledBlocks(), 0);
@@ -570,8 +620,8 @@ TEST(BlockNestedLoopJoinData, SizeLimitsCountSpilledRowsToo)
         JoinKind::Inner, JoinStrictness::All, SizeLimits(2, 0, OverflowMode::THROW),
         spillEverything(storage.scope));
 
-    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2));
+    ASSERT_TRUE(data->addBlock(makeBlock({1, 2}), 2, 0));
     EXPECT_EQ(data->getNumSpilledBlocks(), 1);
-    EXPECT_THROW(data->addBlock(makeBlock({3}), 1), Exception);
+    EXPECT_THROW(data->addBlock(makeBlock({3}), 1, 0), Exception);
 }
 

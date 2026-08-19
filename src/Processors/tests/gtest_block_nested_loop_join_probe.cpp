@@ -187,7 +187,7 @@ BlockNestedLoopJoinDataPtr makeData(
     {
         Block block;
         block.insert(ColumnWithTypeAndName(makeColumn(values, nullable), valueType(nullable), "build"));
-        data->addBlock(std::move(block), values.size());
+        data->addBlock(std::move(block), values.size(), 0);
     }
     data->finish();
     return data;

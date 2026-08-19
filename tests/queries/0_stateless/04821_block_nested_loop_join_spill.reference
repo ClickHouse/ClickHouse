@@ -1,15 +1,3 @@
-INNER
-routed	1
-spilled	1
-compressed	1
-LEFT
-routed	1
-spilled	1
-compressed	1
-RIGHT
-routed	1
-spilled	1
-compressed	1
 FULL
 routed	1
 spilled	1
@@ -22,9 +10,7 @@ RIGHT SEMI
 routed	1
 spilled	1
 compressed	1
-LEFT ANTI
-routed	1
-spilled	1
-compressed	1
+many files	1
 9418
 wrote temporary files	1	1	1
+wrote a file per build stream	1

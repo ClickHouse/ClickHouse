@@ -214,8 +214,12 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
     const bool build_has_totals = build_pipeline->hasTotals();
     const bool probe_totals_are_default = build_has_totals && !probe_pipeline->hasTotals();
 
+    const size_t max_streams = std::max<size_t>(1, settings.max_threads);
+    /// One store, one totals row: a single build stream owns the totals port.
+    const size_t num_build_streams = build_has_totals ? 1 : max_streams;
+
     auto data = std::make_shared<BlockNestedLoopJoinData>(
-        build_pipeline->getSharedHeader(), kind, strictness, size_limits, store_settings);
+        build_pipeline->getSharedHeader(), kind, strictness, size_limits, store_settings, num_build_streams);
 
     /// The condition is evaluated on the columns of these two headers, so this is what its input
     /// positions have to name - not the plan's input headers, which an equivalent header may have
@@ -224,13 +228,10 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
     probe_predicate.inputs = resolvePredicateInputs(
         *predicate.actions, *probe_pipeline->getSharedHeader(), *data->getHeader());
 
-    const size_t max_streams = std::max<size_t>(1, settings.max_threads);
-
     {
         QueryPipelineProcessorsCollector collector(*build_pipeline, this);
 
-        /// One store, one totals row: a single build stream owns the totals port.
-        build_pipeline->resize(build_has_totals ? 1 : max_streams);
+        build_pipeline->resize(num_build_streams);
 
         /// A tile of candidate pairs never spans two stored blocks, so a right input made of small
         /// blocks costs one evaluation of the condition per block per probe chunk, and a stage that
@@ -250,16 +251,19 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
         if (build_has_totals)
         {
             auto build_transform = std::make_shared<BlockNestedLoopBuildTransform>(
-                build_pipeline->getSharedHeader(), data, std::make_shared<FinishCounter>(1));
+                build_pipeline->getSharedHeader(), data, std::make_shared<FinishCounter>(1), /*stream_index=*/ 0);
             auto * totals_port = build_transform->addTotalsPort();
             build_pipeline->addTransform(std::move(build_transform), totals_port, nullptr);
         }
         else
         {
             auto finish_counter = std::make_shared<FinishCounter>(build_pipeline->getNumStreams());
+            /// The streams are handed out in order, and each spills to a temporary file of its own, so
+            /// the index a stream is given here is what keeps two of them off one file.
+            size_t stream_index = 0;
             build_pipeline->addSimpleTransform([&](const SharedHeader & header)
             {
-                return std::make_shared<BlockNestedLoopBuildTransform>(header, data, finish_counter);
+                return std::make_shared<BlockNestedLoopBuildTransform>(header, data, finish_counter, stream_index++);
             });
         }
 
