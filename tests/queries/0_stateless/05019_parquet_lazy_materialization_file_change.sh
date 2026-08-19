@@ -27,6 +27,7 @@ LOCAL=(${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}")
 # lazy pass must reject the replacement instead of combining columns from the two generations.
 "${LOCAL[@]}" \
     --enable_analyzer=1 \
+    --max_block_size=1 \
     --query_plan_optimize_lazy_materialization=1 \
     --query_plan_max_limit_for_lazy_materialization=0 \
     --query_plan_optimize_lazy_materialization_for_file=1 \
