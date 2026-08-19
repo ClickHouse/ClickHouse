@@ -1263,6 +1263,15 @@ QueryPlan QueryPlan::cloneSubtree(Node * subplan_root)
     return result;
 }
 
+QueryPlan QueryPlan::cloneSubtree(Node * subplan_root, const QueryPlan & source_plan)
+{
+    auto result = cloneSubtree(subplan_root);
+    result.max_threads = source_plan.max_threads;
+    result.concurrency_control = source_plan.concurrency_control;
+    result.resources.append(source_plan.resources);
+    return result;
+}
+
 void QueryPlan::cloneSubplanAndReplace(Node * node_to_replace, Node * subplan_root, Nodes & nodes)
 {
     if (!subplan_root)
@@ -1360,6 +1369,7 @@ void QueryPlan::replaceNodeWithPlan(Node * node, QueryPlan plan, SharedHeader ex
     node->children = std::move(plan.getRootNode()->children);
 
     max_threads = std::max(max_threads, plan.max_threads);
+    concurrency_control = concurrency_control || plan.concurrency_control;
     resources = std::move(plan.resources);
 }
 

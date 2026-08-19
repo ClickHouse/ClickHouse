@@ -1,14 +1,23 @@
 #include <gtest/gtest.h>
 
 #include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
+
+namespace DB
+{
+void registerReadNothingStep(QueryPlanStepRegistry & registry);
+}
 
 namespace
 {
@@ -19,9 +28,24 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "k")}));
 }
 
+void tryRegisterReadNothingStep()
+{
+    static struct Register
+    {
+        Register()
+        {
+            registerReadNothingStep(QueryPlanStepRegistry::instance());
+        }
+    } registered;
+}
+
 /// Smallest plan that owns a root node: a single source step.
 QueryPlan makeSourcePlan()
 {
+    /// `registerStep` rejects duplicate names, and other tests in this binary register
+    /// overlapping subsets. Register only the step deserialized in this test file.
+    tryRegisterReadNothingStep();
+
     QueryPlan plan;
     plan.addStep(std::make_unique<ReadNothingStep>(makeHeader()));
     return plan;
@@ -46,6 +70,62 @@ TEST(QueryPlanExecutionLimits, ClonePreservesLimitsAndResources)
     /// `append` shares the handle rather than moving it, so the source keeps its own copy.
     EXPECT_EQ(clone.getInterpretersContexts().size(), 1u);
     EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
+}
+
+TEST(QueryPlanExecutionLimits, CloneSubtreePreservesSourceLimitsAndResources)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+    source.setConcurrencyControl(true);
+    source.addInterpreterContext(Context::createCopy(getContext().context));
+
+    auto subtree = QueryPlan::cloneSubtree(source.getRootNode(), source);
+
+    EXPECT_EQ(subtree.getMaxThreads(), 4u);
+    EXPECT_TRUE(subtree.getConcurrencyControl());
+    EXPECT_EQ(subtree.getInterpretersContexts().size(), 1u);
+    EXPECT_EQ(source.getInterpretersContexts().size(), 1u);
+}
+
+TEST(QueryPlanExecutionLimits, SerializationPreservesLimits)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+    source.setConcurrencyControl(true);
+
+    WriteBufferFromOwnString out;
+    source.serialize(out, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
+
+    ReadBufferFromString in(out.str());
+    auto deserialized = QueryPlan::deserialize(in, getContext().context, /*max_type_complexity=*/0);
+    auto restored = QueryPlan::makeSets(std::move(deserialized), getContext().context);
+
+    EXPECT_EQ(restored.getMaxThreads(), 4u);
+    EXPECT_TRUE(restored.getConcurrencyControl());
+}
+
+TEST(QueryPlanExecutionLimits, SerializationRejectsOlderPeerWhenLimitsAreSet)
+{
+    auto source = makeSourcePlan();
+    source.setMaxThreads(4);
+
+    WriteBufferFromOwnString out;
+    EXPECT_THROW(source.serialize(out, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS - 1), Exception);
+}
+
+TEST(QueryPlanExecutionLimits, ReplaceNodeWithPlanMergesConcurrencyControl)
+{
+    auto destination = makeSourcePlan();
+    destination.setMaxThreads(2);
+
+    auto replacement = makeSourcePlan();
+    replacement.setMaxThreads(4);
+    replacement.setConcurrencyControl(true);
+
+    destination.replaceNodeWithPlan(destination.getRootNode(), std::move(replacement));
+
+    EXPECT_EQ(destination.getMaxThreads(), 4u);
+    EXPECT_TRUE(destination.getConcurrencyControl());
 }
 
 TEST(QueryPlanExecutionLimits, ExtractSubplanPreservesLimitsAndResources)

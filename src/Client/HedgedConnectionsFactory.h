@@ -82,6 +82,12 @@ public:
     /// Tell Factory to not return connections with two level aggregation incompatibility.
     void skipReplicasWithTwoLevelAggregationIncompatibility() { skip_replicas_with_two_level_aggregation_incompatibility = true; }
 
+    /// Whether a future hedge could select a replica whose capabilities are not yet known.
+    bool maySelectUnverifiedReplica() const
+    {
+        return hasEventsInProcess() || entries_count + replicas_in_process_count + failed_pools_count < shuffled_pools.size();
+    }
+
     size_t getFailedPoolsCount() const { return failed_pools_count; }
 
     ~HedgedConnectionsFactory();
