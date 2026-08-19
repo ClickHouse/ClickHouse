@@ -276,6 +276,42 @@ def test_get_xdbc_type_info():
     ]
     assert order_keys == sorted(order_keys)
 
+    rows = {
+        table.column("type_name")[i].as_py(): {
+            name: table.column(name)[i].as_py() for name in expected_columns
+        }
+        for i in range(table.num_rows)
+    }
+
+    # Datetime rows report the generic SQL_DATETIME (9) in sql_data_type and the
+    # concise type in datetime_subcode (1 = date, 3 = timestamp); other rows
+    # repeat data_type in sql_data_type and have NULL datetime_subcode.
+    for name in ("Date", "Date32"):
+        assert rows[name]["data_type"] == 91
+        assert rows[name]["sql_data_type"] == 9
+        assert rows[name]["datetime_subcode"] == 1
+    for name in ("DateTime", "DateTime64"):
+        assert rows[name]["data_type"] == 93
+        assert rows[name]["sql_data_type"] == 9
+        assert rows[name]["datetime_subcode"] == 3
+    assert rows["Int32"]["sql_data_type"] == 4
+    assert rows["Int32"]["datetime_subcode"] is None
+
+    # create_params is NULL for types without parameters and lists the
+    # parameter keywords otherwise.
+    assert rows["FixedString"]["create_params"] == ["length"]
+    assert rows["Decimal"]["create_params"] == ["precision", "scale"]
+    assert rows["DateTime"]["create_params"] == ["timezone"]
+    assert rows["DateTime64"]["create_params"] == ["scale", "timezone"]
+    assert rows["Int32"]["create_params"] is None
+    assert rows["String"]["create_params"] is None
+
+    # Exact numeric types report num_prec_radix = 10, approximate numerics 2.
+    assert rows["Int32"]["num_prec_radix"] == 10
+    assert rows["UInt64"]["num_prec_radix"] == 10
+    assert rows["Float64"]["num_prec_radix"] == 2
+    assert rows["String"]["num_prec_radix"] is None
+
 
 def test_get_xdbc_type_info_filtered():
     """CommandGetXdbcTypeInfo with data_type filter returns matching rows only."""

@@ -186,6 +186,12 @@ static constexpr int32_t SQL_VARCHAR = 12;
 static constexpr int32_t SQL_TYPE_DATE = 91;
 static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
 
+/// Verbose SQL data type used in sql_data_type for datetime rows,
+/// with the concise type reported in datetime_subcode (see FlightSql.proto).
+static constexpr int32_t SQL_DATETIME = 9;
+static constexpr int32_t SQL_CODE_DATE = 1;
+static constexpr int32_t SQL_CODE_TIMESTAMP = 3;
+
 static constexpr int32_t SQL_NULLABLE = 1;
 static constexpr int32_t SQL_SEARCHABLE = 3;
 
@@ -198,40 +204,16 @@ struct XdbcTypeInfoRow
     int32_t column_size = 0;
     const char * literal_prefix = nullptr;
     const char * literal_suffix = nullptr;
+    /// Comma-separated parameter keywords (e.g. "precision,scale"); empty means NULL.
+    std::string_view create_params = {};
     bool case_sensitive = false;
     bool unsigned_attribute = false;
     bool fixed_prec_scale = false;
+    /// -1 means NULL; when set, sql_data_type is SQL_DATETIME and this is the subcode.
+    int32_t datetime_subcode = -1;
     int32_t minimum_scale = -1; /// -1 means NULL
     int32_t maximum_scale = -1;
     int32_t num_prec_radix = -1;
-
-    static constexpr XdbcTypeInfoRow make(
-        std::string_view type_name_,
-        int32_t data_type_,
-        int32_t column_size_,
-        bool case_sensitive_ = false,
-        bool unsigned_attribute_ = false,
-        bool fixed_prec_scale_ = false,
-        int32_t num_prec_radix_ = -1,
-        int32_t minimum_scale_ = -1,
-        int32_t maximum_scale_ = -1,
-        const char * literal_prefix_ = nullptr,
-        const char * literal_suffix_ = nullptr)
-    {
-        return XdbcTypeInfoRow{
-            type_name_,
-            data_type_,
-            column_size_,
-            literal_prefix_,
-            literal_suffix_,
-            case_sensitive_,
-            unsigned_attribute_,
-            fixed_prec_scale_,
-            minimum_scale_,
-            maximum_scale_,
-            num_prec_radix_,
-        };
-    }
 };
 
 static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
@@ -241,43 +223,43 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
     // Ordered by data_type ascending, then type_name (protocol requirement).
     static constexpr XdbcTypeInfoRow kTypeInfoRows[] = {
         // UUID
-        XdbcTypeInfoRow::make("UUID", SQL_GUID, 36),
+        {.type_name = "UUID", .data_type = SQL_GUID, .column_size = 36},
         // Bool
-        XdbcTypeInfoRow::make("Bool", SQL_BIT, 1),
+        {.type_name = "Bool", .data_type = SQL_BIT, .column_size = 1},
         // Int8 / UInt8
-        XdbcTypeInfoRow::make("Int8", SQL_TINYINT, 4),
-        XdbcTypeInfoRow::make("UInt8", SQL_TINYINT, 3, false, true),
+        {.type_name = "Int8", .data_type = SQL_TINYINT, .column_size = 3, .num_prec_radix = 10},
+        {.type_name = "UInt8", .data_type = SQL_TINYINT, .column_size = 3, .unsigned_attribute = true, .num_prec_radix = 10},
         // Int64 / UInt64 (SQL_BIGINT = -5; must sort between TINYINT and BINARY)
-        XdbcTypeInfoRow::make("Int64", SQL_BIGINT, 19),
-        XdbcTypeInfoRow::make("UInt64", SQL_BIGINT, 20, false, true),
+        {.type_name = "Int64", .data_type = SQL_BIGINT, .column_size = 19, .num_prec_radix = 10},
+        {.type_name = "UInt64", .data_type = SQL_BIGINT, .column_size = 20, .unsigned_attribute = true, .num_prec_radix = 10},
         // FixedString
-        XdbcTypeInfoRow::make("FixedString", SQL_BINARY, 65536, true),
-        // Wide integers as NUMERIC
-        XdbcTypeInfoRow::make("Int128", SQL_NUMERIC, 38, false, false, false, 10),
-        XdbcTypeInfoRow::make("Int256", SQL_NUMERIC, 76, false, false, false, 10),
-        XdbcTypeInfoRow::make("UInt128", SQL_NUMERIC, 38, false, true, false, 10),
-        XdbcTypeInfoRow::make("UInt256", SQL_NUMERIC, 76, false, true, false, 10),
+        {.type_name = "FixedString", .data_type = SQL_BINARY, .column_size = 65536, .create_params = "length"},
+        // Wide integers as NUMERIC (max number of decimal digits)
+        {.type_name = "Int128", .data_type = SQL_NUMERIC, .column_size = 39, .num_prec_radix = 10},
+        {.type_name = "Int256", .data_type = SQL_NUMERIC, .column_size = 77, .num_prec_radix = 10},
+        {.type_name = "UInt128", .data_type = SQL_NUMERIC, .column_size = 39, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "UInt256", .data_type = SQL_NUMERIC, .column_size = 78, .unsigned_attribute = true, .num_prec_radix = 10},
         // Decimal
-        XdbcTypeInfoRow::make("Decimal", SQL_DECIMAL, 76, false, false, true, 10, 0, 76),
+        {.type_name = "Decimal", .data_type = SQL_DECIMAL, .column_size = 76, .create_params = "precision,scale", .minimum_scale = 0, .maximum_scale = 76, .num_prec_radix = 10},
         // Int32 / UInt32
-        XdbcTypeInfoRow::make("Int32", SQL_INTEGER, 10),
-        XdbcTypeInfoRow::make("UInt32", SQL_INTEGER, 10, false, true),
+        {.type_name = "Int32", .data_type = SQL_INTEGER, .column_size = 10, .num_prec_radix = 10},
+        {.type_name = "UInt32", .data_type = SQL_INTEGER, .column_size = 10, .unsigned_attribute = true, .num_prec_radix = 10},
         // Int16 / UInt16
-        XdbcTypeInfoRow::make("Int16", SQL_SMALLINT, 6),
-        XdbcTypeInfoRow::make("UInt16", SQL_SMALLINT, 5, false, true),
+        {.type_name = "Int16", .data_type = SQL_SMALLINT, .column_size = 5, .num_prec_radix = 10},
+        {.type_name = "UInt16", .data_type = SQL_SMALLINT, .column_size = 5, .unsigned_attribute = true, .num_prec_radix = 10},
         // Floats
-        XdbcTypeInfoRow::make("Float32", SQL_REAL, 24, false, false, false, 2),
-        XdbcTypeInfoRow::make("Float64", SQL_DOUBLE, 53, false, false, false, 2),
+        {.type_name = "Float32", .data_type = SQL_REAL, .column_size = 24, .num_prec_radix = 2},
+        {.type_name = "Float64", .data_type = SQL_DOUBLE, .column_size = 53, .num_prec_radix = 2},
         // Enums / String as VARCHAR
-        XdbcTypeInfoRow::make("Enum16", SQL_VARCHAR, 65536),
-        XdbcTypeInfoRow::make("Enum8", SQL_VARCHAR, 65536),
-        XdbcTypeInfoRow::make("String", SQL_VARCHAR, 65536, true, false, false, -1, -1, -1, "'", "'"),
+        {.type_name = "Enum16", .data_type = SQL_VARCHAR, .column_size = 65536},
+        {.type_name = "Enum8", .data_type = SQL_VARCHAR, .column_size = 65536},
+        {.type_name = "String", .data_type = SQL_VARCHAR, .column_size = 65536, .literal_prefix = "'", .literal_suffix = "'", .case_sensitive = true},
         // Dates
-        XdbcTypeInfoRow::make("Date", SQL_TYPE_DATE, 10),
-        XdbcTypeInfoRow::make("Date32", SQL_TYPE_DATE, 10),
+        {.type_name = "Date", .data_type = SQL_TYPE_DATE, .column_size = 10, .literal_prefix = "'", .literal_suffix = "'", .datetime_subcode = SQL_CODE_DATE},
+        {.type_name = "Date32", .data_type = SQL_TYPE_DATE, .column_size = 10, .literal_prefix = "'", .literal_suffix = "'", .datetime_subcode = SQL_CODE_DATE},
         // DateTime / DateTime64
-        XdbcTypeInfoRow::make("DateTime", SQL_TYPE_TIMESTAMP, 19),
-        XdbcTypeInfoRow::make("DateTime64", SQL_TYPE_TIMESTAMP, 29, false, false, false, -1, 0, 9),
+        {.type_name = "DateTime", .data_type = SQL_TYPE_TIMESTAMP, .column_size = 19, .literal_prefix = "'", .literal_suffix = "'", .create_params = "timezone", .datetime_subcode = SQL_CODE_TIMESTAMP},
+        {.type_name = "DateTime64", .data_type = SQL_TYPE_TIMESTAMP, .column_size = 29, .literal_prefix = "'", .literal_suffix = "'", .create_params = "scale,timezone", .datetime_subcode = SQL_CODE_TIMESTAMP, .minimum_scale = 0, .maximum_scale = 9},
     };
 
     auto schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
@@ -290,7 +272,7 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
     arrow::StringBuilder literal_suffix_builder(pool);
     auto create_params_value_builder = std::make_shared<arrow::StringBuilder>(pool);
     arrow::ListBuilder create_params_builder(
-        pool, create_params_value_builder, schema->field(5)->type());
+        pool, create_params_value_builder, schema->GetFieldByName("create_params")->type());
     arrow::Int32Builder nullable_builder(pool);
     arrow::BooleanBuilder case_sensitive_builder(pool);
     arrow::Int32Builder searchable_builder(pool);
@@ -329,8 +311,25 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
             else
                 ARROW_RETURN_NOT_OK(literal_suffix_builder.AppendNull());
 
-            // Empty create_params list (items would be NOT NULL strings).
-            ARROW_RETURN_NOT_OK(create_params_builder.Append());
+            // NULL when the type has no parameters; otherwise the list of parameter keywords.
+            if (row.create_params.empty())
+            {
+                ARROW_RETURN_NOT_OK(create_params_builder.AppendNull());
+            }
+            else
+            {
+                ARROW_RETURN_NOT_OK(create_params_builder.Append());
+                size_t param_start = 0;
+                while (true)
+                {
+                    const size_t comma = row.create_params.find(',', param_start);
+                    ARROW_RETURN_NOT_OK(create_params_value_builder->Append(
+                        std::string(row.create_params.substr(param_start, comma == std::string_view::npos ? comma : comma - param_start))));
+                    if (comma == std::string_view::npos)
+                        break;
+                    param_start = comma + 1;
+                }
+            }
 
             ARROW_RETURN_NOT_OK(nullable_builder.Append(SQL_NULLABLE));
             ARROW_RETURN_NOT_OK(case_sensitive_builder.Append(row.case_sensitive));
@@ -350,8 +349,18 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
             else
                 ARROW_RETURN_NOT_OK(maximum_scale_builder.AppendNull());
 
-            ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(row.data_type));
-            ARROW_RETURN_NOT_OK(datetime_subcode_builder.AppendNull());
+            // Datetime rows report the generic SQL_DATETIME in sql_data_type and
+            // the concise type in datetime_subcode; other rows repeat data_type.
+            if (row.datetime_subcode >= 0)
+            {
+                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(SQL_DATETIME));
+                ARROW_RETURN_NOT_OK(datetime_subcode_builder.Append(row.datetime_subcode));
+            }
+            else
+            {
+                ARROW_RETURN_NOT_OK(sql_data_type_builder.Append(row.data_type));
+                ARROW_RETURN_NOT_OK(datetime_subcode_builder.AppendNull());
+            }
 
             if (row.num_prec_radix >= 0)
                 ARROW_RETURN_NOT_OK(num_prec_radix_builder.Append(row.num_prec_radix));
