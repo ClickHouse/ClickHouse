@@ -11,6 +11,7 @@
 
 #include <Common/HashTable/HashTableAllocator.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/PODArray.h>
 
 
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
@@ -27,7 +28,7 @@
 /** Very simple hash-set for approximate number of unique values.
   * Works like this:
   * - you can insert UInt64;
-  * - before insertion, first the hash function UInt64 -> UInt32 is calculated;
+  * - before insertion, first the hash function UInt64 -> UInt64 is calculated;
   * - the original value is not saved (lost);
   * - further all operations are made with these hashes;
   * - hash table is constructed according to the scheme:
@@ -40,6 +41,23 @@
   * - if the situation repeats, then only elements dividing by 4, etc., are taken.
   * - the size() method returns an approximate number of elements that have been inserted into the set;
   * - there are methods for quick reading and writing in binary and text form.
+  *
+  * Compatibility note. Historically the hashes were truncated to 32 bits, which capped the number
+  * of distinguishable elements at around ten billion: for larger cardinalities the estimate
+  * saturated and even resulted in undefined behavior in the correction formula (issue #6078).
+  * Now the full 64-bit hash is kept. States written in the legacy format (by old servers,
+  * or read from tables created before the change) identify elements by only the low 32 bits
+  * of the hash, and the discarded bits cannot be recovered. Such states are kept in a special
+  * "compat" mode: the stored values carry only 32 bits of information, and merging a 64-bit state
+  * with a compat state downgrades the former by truncating its hashes - the result is exactly
+  * the same as if the whole calculation had been done with 32-bit hashes. The same truncation
+  * is applied when a state is serialized for an old server.
+  *
+  * In the compat mode, a 32-bit hash h is stored in the 64-bit cell as (h << 32) | h.
+  * With this encoding both halves of the cell equal h, so the bits used for the position
+  * in the hash table (the high-order ones) and the bits used for thinning (the low-order ones)
+  * coincide with what the legacy 32-bit implementation used, and no separate code path
+  * is needed for lookups and thinning.
   */
 
 /// The maximum degree of buffer size before the values are discarded
@@ -51,7 +69,7 @@
 /** The number of least significant bits used for thinning. The remaining high-order bits are used to determine the position in the hash table.
   * (high-order bits are taken because the younger bits will be constant after dropping some of the values)
   */
-#define UNIQUES_HASH_BITS_FOR_SKIP (32 - UNIQUES_HASH_MAX_SIZE_DEGREE)
+#define UNIQUES_HASH_BITS_FOR_SKIP (64 - UNIQUES_HASH_MAX_SIZE_DEGREE)
 
 /// Initial buffer size degree
 #define UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE 4
@@ -70,17 +88,18 @@ struct UniquesHashSetDefaultHash
 
 
 template <typename Hash = UniquesHashSetDefaultHash>
-class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>
+class UniquesHashSet : private HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt64)>
 {
 private:
     using Value = UInt64;
-    using HashValue = UInt32;
-    using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
+    using HashValue = UInt64;
+    using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt64)>;
 
     UInt32 m_size;          /// Number of elements
     UInt8 size_degree{};      /// The size of the table as a power of 2
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
+    bool compat_32bit;      /// The stored values carry only 32 bits of hash information (see the comment above).
 
     HashValue * buf{};
 
@@ -114,6 +133,13 @@ private:
     bool good(HashValue hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
 
     HashValue hash(Value key) const { return static_cast<HashValue>(Hash()(key)); }
+
+    /// The representation of a 32-bit hash in the compat mode (see the comment above).
+    static HashValue replicate32(HashValue x)
+    {
+        HashValue low = x & 0xFFFFFFFFULL;
+        return (low << 32) | low;
+    }
 
     /// Delete all values whose hashes do not divide by 2 ^ skip_degree
     void rehash()
@@ -276,6 +302,42 @@ private:
         }
     }
 
+    template <typename StoredValue>
+    void readImpl(DB::ReadBuffer & rb)
+    {
+        if (m_size <= 1)
+        {
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                StoredValue x = 0;
+                DB::readBinaryLittleEndian(x, rb);
+                insertValueRead(static_cast<HashValue>(x));
+            }
+        }
+        else
+        {
+            auto hs = std::make_unique<StoredValue[]>(m_size);
+            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(StoredValue));
+
+            for (size_t i = 0; i < m_size; ++i)
+            {
+                DB::transformEndianness<std::endian::native, std::endian::little>(hs[i]);
+                insertValueRead(static_cast<HashValue>(hs[i]));
+            }
+        }
+    }
+
+    void insertValueRead(HashValue x)
+    {
+        if (compat_32bit)
+            x = replicate32(x);
+
+        if (x == 0)
+            has_zero = true;
+        else
+            reinsertImpl(x);
+    }
+
 
 public:
     using value_type = Value;
@@ -283,7 +345,8 @@ public:
     UniquesHashSet() : // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
         m_size(0),
         skip_degree(0),
-        has_zero(false)
+        has_zero(false),
+        compat_32bit(false)
     {
         alloc(UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE);
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
@@ -292,7 +355,7 @@ public:
     }
 
     UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
-        : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
+        : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero), compat_32bit(rhs.compat_32bit)
     {
         alloc(rhs.size_degree);
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
@@ -312,6 +375,7 @@ public:
         m_size = rhs.m_size;
         skip_degree = rhs.skip_degree;
         has_zero = rhs.has_zero;
+        compat_32bit = rhs.compat_32bit;
 
         memcpy(buf, rhs.buf, buf_size() * sizeof(buf[0]));
 
@@ -325,7 +389,10 @@ public:
 
     void ALWAYS_INLINE insert(Value x)
     {
-        const HashValue hash_value = hash(x);
+        HashValue hash_value = hash(x);
+        if (unlikely(compat_32bit))
+            hash_value = replicate32(hash_value);
+
         if (!good(hash_value))
             return;
 
@@ -342,6 +409,14 @@ public:
     requires std::is_invocable_r_v<Value, decltype(Transform), const SourceType &>
     void insertMany(const SourceType * data, size_t size)
     {
+        /// States downgraded to the compat mode are rare and not worth a separate batch implementation.
+        if (unlikely(compat_32bit))
+        {
+            for (size_t i = 0; i < size; ++i)
+                insert(Transform(data[i]));
+            return;
+        }
+
         size_t i = 0;
         while (i < size)
         {
@@ -423,6 +498,13 @@ public:
           */
         res += (intHashCRC32(m_size) & ((1ULL << skip_degree) - 1));
 
+        /** With 64-bit hashes, the systematic error due to hash collisions is negligible:
+          * it reaches just 0.003% at 10^15 distinct elements,
+          * which is far below the statistical error of the estimate itself.
+          */
+        if (!compat_32bit)
+            return res;
+
         /** Correction of a systematic error due to collisions during hashing in UInt32.
           * `fixed_res(res)` formula
           * - with how many different elements of fixed_res,
@@ -430,12 +512,72 @@ public:
           *   filled buckets with average of res is obtained.
           */
         size_t p32 = 1ULL << 32;
-        size_t fixed_res = static_cast<size_t>(round(static_cast<double>(p32) * (log(p32) - log(p32 - res))));
+
+        /** When the number of distinct elements is much larger than 2^32, almost all buckets are filled
+          * and `res` may reach (or, due to the pseudo-random remainder, exceed) 2^32,
+          * where the formula below is not defined (previously this resulted in undefined behavior
+          * when casting infinity or NaN to an integer). Saturate the estimate instead:
+          * for larger cardinalities the 32-bit state contains no information anyway.
+          */
+        if (res >= p32)
+            res = p32 - 1;
+
+        size_t fixed_res = static_cast<size_t>(round(static_cast<double>(p32) * (log(static_cast<double>(p32)) - log(static_cast<double>(p32 - res)))));
         return fixed_res;
     }
 
+    /** Convert the state to the compat mode, where elements are identified by only the low
+      * 32 bits of the hash (as done by the legacy implementation). The stored values are truncated;
+      * values that collide after truncation are deduplicated exactly as the legacy implementation would do.
+      * This loses information and cannot be undone.
+      */
+    void downgradeToCompat32()
+    {
+        if (compat_32bit)
+            return;
+
+        compat_32bit = true;
+
+        if (0 == m_size)
+            return;
+
+        /// Truncated values are placed by different bits of the hash, so the table is rebuilt from scratch.
+        DB::PODArray<HashValue> values;
+        values.reserve(m_size);
+        for (size_t i = 0; i < buf_size(); ++i)
+            if (buf[i])
+                values.push_back(replicate32(buf[i]));
+
+        memset(buf, 0, buf_size() * sizeof(buf[0]));
+        m_size = has_zero ? 1 : 0;
+
+        for (HashValue x : values)
+        {
+            /// A value with zero low 32 bits truncates to the zero hash.
+            if (x == 0)
+            {
+                m_size += !has_zero;
+                has_zero = true;
+            }
+            else
+                insertImpl(x);
+        }
+    }
+
+    bool isCompat32() const { return compat_32bit; }
+
     void merge(const UniquesHashSet & rhs)
     {
+        /** If the other state was built (fully or partially) with 32-bit hashes, there is no way
+          * to recover the missing bits of its hashes. Downgrade this state to the compat mode
+          * to keep deduplication correct: the result is the same as if the whole calculation
+          * had been done with 32-bit hashes.
+          */
+        if (rhs.compat_32bit && !compat_32bit)
+            downgradeToCompat32();
+
+        const bool need_truncation = compat_32bit && !rhs.compat_32bit;
+
         if (rhs.skip_degree > skip_degree)
         {
             skip_degree = rhs.skip_degree;
@@ -451,15 +593,35 @@ public:
 
         for (size_t i = 0; i < rhs.buf_size(); ++i)
         {
-            if (rhs.buf[i] && good(rhs.buf[i]))
+            if (!rhs.buf[i])
+                continue;
+
+            HashValue x = need_truncation ? replicate32(rhs.buf[i]) : rhs.buf[i];
+
+            if (x == 0)
             {
-                insertImpl(rhs.buf[i]);
+                /// A truncated value with zero low 32 bits becomes the zero hash.
+                if (!has_zero)
+                {
+                    has_zero = true;
+                    ++m_size;
+                    shrinkIfNeed();
+                }
+            }
+            else if (good(x))
+            {
+                insertImpl(x);
                 shrinkIfNeed();
             }
         }
     }
 
-    void write(DB::WriteBuffer & wb) const
+    /** Two serialization formats exist.
+      * The legacy format (state version 0): skip_degree, then the number of values, then the values truncated to 32 bits.
+      * The new format (state version 1): a flags byte (bit 0 - the values carry only 32 bits of hash information),
+      * then skip_degree, then the number of values, then the values, 4 or 8 bytes each according to the flag.
+      */
+    void write(DB::WriteBuffer & wb, bool use_legacy_format) const
     {
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot write UniquesHashSet: too large size_degree.");
@@ -467,29 +629,74 @@ public:
         /// A null `buf` here would indicate upstream state corruption (e.g. a double-destroyed state).
         chassert(buf);
 
+        if (use_legacy_format && !compat_32bit)
+        {
+            /// Serialization for an old server. The hashes have to be truncated to 32 bits;
+            /// the truncated values are exactly what an old server would have computed for the same elements.
+            UniquesHashSet compat_copy(*this);
+            compat_copy.downgradeToCompat32();
+            compat_copy.write(wb, /*use_legacy_format=*/ true);
+            return;
+        }
+
+        if (!use_legacy_format)
+        {
+            UInt8 flags = compat_32bit ? 1 : 0;
+            DB::writeBinaryLittleEndian(flags, wb);
+        }
+
         DB::writeBinaryLittleEndian(skip_degree, wb);
         DB::writeVarUInt(m_size, wb);
 
         if (has_zero)
         {
-            HashValue x = 0;
-            DB::writeBinaryLittleEndian(x, wb);
+            if (compat_32bit)
+                DB::writeBinaryLittleEndian(static_cast<UInt32>(0), wb);
+            else
+                DB::writeBinaryLittleEndian(static_cast<UInt64>(0), wb);
         }
 
         for (size_t i = 0; i < buf_size(); ++i)
+        {
             if (buf[i])
-                DB::writeBinaryLittleEndian(buf[i], wb);
+            {
+                /// In the compat mode both halves of the stored value equal the 32-bit hash.
+                if (compat_32bit)
+                    DB::writeBinaryLittleEndian(static_cast<UInt32>(buf[i]), wb);
+                else
+                    DB::writeBinaryLittleEndian(buf[i], wb);
+            }
+        }
     }
 
-    void read(DB::ReadBuffer & rb)
+    void read(DB::ReadBuffer & rb, bool use_legacy_format)
     {
         has_zero = false;
+
+        if (use_legacy_format)
+        {
+            compat_32bit = true;
+        }
+        else
+        {
+            UInt8 flags = 0;
+            DB::readBinaryLittleEndian(flags, rb);
+            if (flags & ~1)
+                throw Poco::Exception("Cannot read UniquesHashSet: unknown flags.");
+            compat_32bit = flags & 1;
+        }
 
         DB::readBinaryLittleEndian(skip_degree, rb);
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
+
+        /// The structure never produces skip_degree above 48 (at that point the number of possible
+        /// values passing the thinning is already below the maximum number of stored elements),
+        /// and shifting by 64 or more would be undefined behavior.
+        if (skip_degree >= 64)
+            throw Poco::Exception("Cannot read UniquesHashSet: too large skip_degree.");
 
         free();
 
@@ -499,37 +706,25 @@ public:
 
         alloc(new_size_degree);
 
-        if (m_size <= 1)
-        {
-            for (size_t i = 0; i < m_size; ++i)
-            {
-                HashValue x = 0;
-                DB::readBinaryLittleEndian(x, rb);
-                if (x == 0)
-                    has_zero = true;
-                else
-                    reinsertImpl(x);
-            }
-        }
+        if (compat_32bit)
+            readImpl<UInt32>(rb);
         else
-        {
-            auto hs = std::make_unique<HashValue[]>(m_size);
-            rb.readStrict(reinterpret_cast<char *>(hs.get()), m_size * sizeof(HashValue));
-
-            for (size_t i = 0; i < m_size; ++i)
-            {
-                DB::transformEndianness<std::endian::native, std::endian::little>(hs[i]);
-                if (hs[i] == 0)
-                    has_zero = true;
-                else
-                    reinsertImpl(hs[i]);
-            }
-        }
+            readImpl<UInt64>(rb);
     }
 
-    static void skip(DB::ReadBuffer & rb)
+    static void skip(DB::ReadBuffer & rb, bool use_legacy_format)
     {
         size_t size = 0;
+
+        bool values_32bit = true;
+        if (!use_legacy_format)
+        {
+            UInt8 flags = 0;
+            DB::readBinaryLittleEndian(flags, rb);
+            if (flags & ~1)
+                throw Poco::Exception("Cannot read UniquesHashSet: unknown flags.");
+            values_32bit = flags & 1;
+        }
 
         rb.ignore();
         DB::readVarUInt(size, rb);
@@ -537,7 +732,7 @@ public:
         if (size > UNIQUES_HASH_MAX_SIZE)
             throw Poco::Exception("Cannot read UniquesHashSet: too large size_degree.");
 
-        rb.ignore(sizeof(HashValue) * size);
+        rb.ignore((values_32bit ? sizeof(UInt32) : sizeof(UInt64)) * size);
     }
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
