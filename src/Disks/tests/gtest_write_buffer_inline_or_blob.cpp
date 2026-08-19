@@ -155,6 +155,24 @@ TEST(WriteBufferInlineOrBlob, CancelCommitsNothing)
     EXPECT_EQ(harness.underlying_created, 0u);
 }
 
+TEST(WriteBufferInlineOrBlob, StagingBufferStaysSmall)
+{
+    /// One such buffer exists per column stream of a wide part, so it must not allocate the full
+    /// requested buffer size (that would defeat the adaptive write buffer sizing of the writers).
+    InlineBufferHarness harness;
+    auto buf = harness.makeBuffer(/*max_inline_bytes=*/1024, /*buf_size=*/DBMS_DEFAULT_BUFFER_SIZE);
+    EXPECT_EQ(buf->internalBuffer().size(), DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE);
+    buf->cancel();
+
+    auto big_threshold = harness.makeBuffer(/*max_inline_bytes=*/65536, /*buf_size=*/DBMS_DEFAULT_BUFFER_SIZE);
+    EXPECT_EQ(big_threshold->internalBuffer().size(), 65536u);
+    big_threshold->cancel();
+
+    auto small_requested = harness.makeBuffer(/*max_inline_bytes=*/0, /*buf_size=*/16);
+    EXPECT_EQ(small_requested->internalBuffer().size(), 16u);
+    small_requested->cancel();
+}
+
 TEST(WriteBufferInlineOrBlob, ZeroThresholdBuildsStackAtConstruction)
 {
     InlineBufferHarness harness;

@@ -1,5 +1,7 @@
 #include <Disks/IO/WriteBufferInlineOrBlob.h>
 
+#include <Core/Defines.h>
+
 namespace DB
 {
 
@@ -10,7 +12,13 @@ WriteBufferInlineOrBlob::WriteBufferInlineOrBlob(
     CreateUnderlying create_underlying_,
     FinalizeCallback finalize_callback_,
     size_t buf_size)
-    : WriteBufferFromFileBase(buf_size, nullptr, /*alignment=*/0)
+    /// This is a staging buffer only: before the spill it has to hold just the inline-or-blob
+    /// decision window (`max_inline_bytes`), after it the data is copied into `underlying`, which
+    /// does its own batching with a properly sized buffer. Allocating the full `buf_size` here
+    /// would defeat the adaptive write buffer sizing of wide-part writers, where every column
+    /// stream holds one of these buffers (see `use_adaptive_write_buffer`).
+    : WriteBufferFromFileBase(
+          std::min<size_t>(buf_size, std::max<size_t>(max_inline_bytes_, DBMS_DEFAULT_INITIAL_ADAPTIVE_BUFFER_SIZE)), nullptr, /*alignment=*/0)
     , file_name(std::move(file_name_))
     , max_inline_bytes(max_inline_bytes_)
     , create_blob_if_empty(create_blob_if_empty_)
