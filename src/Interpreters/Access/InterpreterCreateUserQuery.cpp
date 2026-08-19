@@ -262,18 +262,25 @@ BlockIO InterpreterCreateUserQuery::execute()
     /// slightly different deadlines.
     const time_t valid_for_base_time = getCurrentTime();
 
+    /// `ATTACH USER` accepts the stable storage representation emitted by
+    /// `AuthenticationData::toAST(true)`. In particular, that representation uses a numeric Unix
+    /// timestamp for dates past 2286, which must use the same no-context parsing path as access-entity
+    /// deserialization. Ordinary `CREATE`/`ALTER USER` statements still evaluate their expressions
+    /// against the query context.
+    const ContextPtr valid_until_context = query.attach ? nullptr : getContext();
+
     std::vector<AuthenticationData> authentication_methods;
     if (!query.authentication_methods.empty())
     {
         for (const auto & authentication_method_ast : query.authentication_methods)
         {
-            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, getContext(), !query.attach, valid_for_base_time));
+            authentication_methods.push_back(AuthenticationData::fromAST(*authentication_method_ast, valid_until_context, !query.attach, valid_for_base_time));
         }
     }
 
     std::optional<time_t> global_valid_until;
     if (query.global_valid_until)
-        global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext(), query.global_valid_until_is_interval, valid_for_base_time);
+        global_valid_until = getValidUntilFromAST(query.global_valid_until, valid_until_context, query.global_valid_until_is_interval, valid_for_base_time);
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)
