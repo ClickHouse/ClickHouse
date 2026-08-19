@@ -42,6 +42,9 @@ $CLICKHOUSE_CLIENT -q "
 
   -- The same two shapes for DELETE FROM. A fresh row per statement, because a statement that
   -- deletes nothing is satisfied by whatever the one before it removed.
+  -- A local DELETE FROM re-enters the UPDATE or the ALTER interpreter, and each of those inlines
+  -- function bodies before filling in the database too, so these two rows hold whichever of the
+  -- three does the inlining. They pin the resolution, not the place it happens.
   INSERT INTO ${CLICKHOUSE_DATABASE_1}.t_lwu VALUES (4, 0), (5, 0);
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_udf_lwu_four AS () -> (SELECT max(id) + 1 FROM t_lwu_src);
 
