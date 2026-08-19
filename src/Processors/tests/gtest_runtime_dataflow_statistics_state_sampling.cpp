@@ -511,7 +511,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseArrayStateDoesNotSkipFirstNes
 
     const size_t cache_key = 0x111985 + 11;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*total_rows_to_read_=*/1);
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, array_type, "sparse_array_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
@@ -556,7 +556,7 @@ TEST(RuntimeDataflowStatisticsStateSampling, SparseMapStateDoesNotSkipFirstNeste
 
     const size_t cache_key = 0x111985 + 12;
     {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*rows=*/1);
+        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, /*total_rows_to_read_=*/1);
         Block header;
         header.insert(ColumnWithTypeAndName{nullptr, map_type, "sparse_map_state"});
         updater.recordOutputChunk(Chunk(Columns{std::move(sparse)}, /*num_rows=*/1), header);
