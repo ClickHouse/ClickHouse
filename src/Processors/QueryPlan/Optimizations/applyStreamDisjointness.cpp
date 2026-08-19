@@ -30,6 +30,10 @@ struct StreamDisjointnessProperty
     /// This is the composition of the pass-through expressions between the source and the current node.
     std::optional<ActionsDAG> column_actions;
 
+    /// The per-partition reading that sourced the disjointness; null when the source is a scatter,
+    /// whose stream count is already the full pipeline width.
+    const ReadFromMergeTree * reading = nullptr;
+
     bool isDisjoint() const { return partition_key_actions.has_value(); }
 };
 
@@ -57,7 +61,7 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         if (reading->willOutputEachPartitionThroughSeparatePort())
         {
             const auto & partition_key = reading->getStorageMetadata()->getPartitionKey();
-            return {partition_key.expression->getActionsDAG().clone(), partition_key.column_names, std::nullopt};
+            return {partition_key.expression->getActionsDAG().clone(), partition_key.column_names, std::nullopt, reading};
         }
         return {};
     }
@@ -159,7 +163,17 @@ static StreamDisjointnessProperty applyStreamDisjointness(
         {
             Names partition_by_names = sorting->getPartitionByColumnNames();
 
-            if (settings.window_partitions_independently && partitionDeterminedByKeys(property, partition_by_names))
+            /// Unlike the single-stream reductions (final DISTINCT, LIMIT BY, set fill), the scatter's
+            /// baseline is parallel: it redistributes the streams across all threads. Skipping it caps
+            /// the window processing at the stream count, so when the streams come from per-partition
+            /// reading requested by another feature, the skip must pass the same cost heuristic as a
+            /// window's own per-partition request. A property sourced by a lower window's scatter has
+            /// no reading and needs no check: its stream count is already the full width.
+            const bool profitable = !property.reading || settings.force_window_partitions_independently
+                || property.reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Window);
+
+            if (settings.window_partitions_independently && profitable
+                && partitionDeterminedByKeys(property, partition_by_names))
             {
                 sorting->skipScatterByPartition();
                 return property;
