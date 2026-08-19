@@ -12,6 +12,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True)
 
 BAD_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_handler.xml"
+LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -50,4 +51,48 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure(start_cluster)
         assert "NETWORK_ERROR" not in reported
     finally:
         node.exec_in_container(["bash", "-c", f"rm -f {BAD_CONFIG_IN_CONTAINER}"], user="root")
+        node.start_clickhouse()
+
+
+def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_cluster):
+    # `listen_try` reaches the other exit of the same handler in `createServer`: rather than
+    # reporting the failure it logged a warning about `<listen_host>` and let the server run with
+    # no HTTP interface at all. The setting is read from the config root by name, so it applies
+    # alongside the explicit `<listen_host>` the integration harness supplies.
+    node.stop_clickhouse()
+
+    # The error log carries warnings too (`logger.errorlog_level` defaults to `notice`), which is
+    # the severity of the message this case must not find, and `grep_in_log` globs every rotation
+    # while these instances set `<rotateOnOpen>`. An earlier start's report would therefore be in
+    # the search space and could satisfy the assertions below on its own. The harness greps
+    # `clickhouse-server.log` and `stderr.log` for crashes, so those are left alone.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
+    )
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "listen_try.xml"), LISTEN_TRY_CONFIG_IN_CONTAINER
+    )
+    try:
+        # The startup must fail. It used to succeed here, serving no HTTP.
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG)
+        assert reported != ""
+
+        # Bracket-free for the same reason as in the case above. `consider to` is the distinctive
+        # part of the `<listen_host>` advice that accompanied the discarded error.
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+        assert "consider to" not in reported
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {BAD_CONFIG_IN_CONTAINER} {LISTEN_TRY_CONFIG_IN_CONTAINER}"],
+            user="root",
+        )
         node.start_clickhouse()

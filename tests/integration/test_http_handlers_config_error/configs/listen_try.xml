@@ -1,0 +1,3 @@
+<clickhouse>
+    <listen_try>1</listen_try>
+</clickhouse>
