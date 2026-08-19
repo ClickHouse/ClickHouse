@@ -11,7 +11,6 @@
 
 SET dialect='clickhouse';
 SET mutations_sync = 2;
-SET max_threads = 1;
 
 DROP TABLE IF EXISTS people;
 CREATE TABLE people (id Int32, name String, other String, age Int32, score Float64, seen DateTime, tags Array(String)) ENGINE = MergeTree ORDER BY id;
