@@ -305,7 +305,7 @@ This section is applicable for versions 26.9+.
 
 Two system tables together make memory fragmentation analysis a plain SQL query:
 
-- [`system.jemalloc_bins`](/reference/system-tables/jemalloc_bins) gives the ground truth about wasted memory: for every small size class, the `waste` alias (`curslabs * slab_size - curregs * size`) is the number of bytes held in slabs but not occupied by live regions.
+- [`system.jemalloc_bins`](/reference/system-tables/jemalloc_bins) gives the ground truth about wasted memory: for every small size class, the `waste` alias (`curslabs * slab_size - curregs * size`) is the number of bytes held in slabs but not occupied by live regions. `system.jemalloc_arena_bins` exposes the same counters with one row per (arena, bin); since every slab belongs to a single arena, it locates the waste in a specific arena and is the correct join target for attribution.
 - `system.jemalloc_sampled_allocations` exposes one row per live sampled allocation from the current heap profile (reading the table flushes a fresh profile): the allocating backtrace (`trace`), the age of the allocation (`age_ns`, with the approximate `alloc_time` alias), the requested and usable sizes (`size`, `usize`), the size class (`size_class`, joins to `system.jemalloc_bins.index` for small classes), the arena (`arena`) and the allocating thread (`thr_uid`).
 
 Keep the estimator semantics in mind when interpreting the results:
@@ -317,24 +317,26 @@ Keep the estimator semantics in mind when interpreting the results:
 A slab cannot be released while at least one region in it is live, so long-lived allocations pin slabs and turn churn in the same size class into waste. To find the backtraces that likely pin the most wasteful size classes:
 
 ```sql
--- Top pinner backtraces for the most wasteful size classes.
+-- Top pinner backtraces for the most wasteful (arena, size class) pairs.
 WITH 60e9 AS min_age_ns
 SELECT
+    b.arena,
     b.size AS reg_size,
     b.waste AS class_waste,
     s.est_old_objects,
     s.stack
-FROM system.jemalloc_bins AS b
+FROM system.jemalloc_arena_bins AS b
 INNER JOIN
 (
     SELECT
+        arena,
         size_class,
         sum(weight) AS est_old_objects,
         arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
-    GROUP BY size_class, trace
-) AS s ON s.size_class = b.index
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
 WHERE b.large = 0 AND b.waste > 1048576
 ORDER BY b.waste DESC, s.est_old_objects DESC
 ```
@@ -343,23 +345,26 @@ Symbolization uses `addressToSymbol` and `demangle`, so the query requires `allo
 
 ### Example: generating a fragmentation flame graph {#example-fragmentation-flamegraph}
 
-The same join can attribute each size class's waste to backtraces proportionally to their estimated share of old objects, in FlameGraph-compatible collapsed format:
+A `LEFT JOIN` of the same subquery can attribute each size class's waste to backtraces proportionally to their estimated share of old objects, in FlameGraph-compatible collapsed format. A `(arena, size class)` with waste but no old-enough sample is emitted as an `[unattributed]` frame, so the flame graph totals the full slab waste instead of silently dropping whatever sampling did not cover (an `INNER JOIN` would undercount exactly when coverage is incomplete). Both branches must come from a single read of `system.jemalloc_sampled_allocations` — every read flushes a fresh profile, so two independent subqueries could observe different dumps:
 
 ```sql
 WITH 60e9 AS min_age_ns
-SELECT format('{} {}', s.stack, toUInt64(b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY s.size_class)))
-FROM system.jemalloc_bins AS b
-INNER JOIN
+SELECT format('{} {}',
+    if(s.est_old_objects > 0, s.stack, format('[unattributed];arena_{}_class_{}', toString(b.arena), toString(b.size))),
+    toString(toUInt64(if(s.est_old_objects > 0, b.waste * s.est_old_objects / sum(s.est_old_objects) OVER (PARTITION BY b.arena, b.index), b.waste))))
+FROM system.jemalloc_arena_bins AS b
+LEFT JOIN
 (
     SELECT
+        arena,
         size_class,
         sum(weight) AS est_old_objects,
         arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
-    GROUP BY size_class, trace
-) AS s ON s.size_class = b.index
-WHERE b.large = 0
+    GROUP BY arena, size_class, trace
+) AS s ON s.size_class = b.index AND s.arena = b.arena
+WHERE b.large = 0 AND b.waste > 0
 ```
 
 ```sh
