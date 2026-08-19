@@ -36,6 +36,7 @@
 #include <Processors/Transforms/MemoryBoundMerging.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/VirtualRowTransform.h>
+#include <Storages/MergeTree/MergeTreeSource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -666,7 +667,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// back to the ordinary aggregation-in-order pipeline).
         const bool has_virtual_rows = std::ranges::any_of(pipeline.getProcessors(), [](const auto & processor)
         {
-            return typeid_cast<const VirtualRowTransform *>(processor.get());
+            if (typeid_cast<const VirtualRowTransform *>(processor.get()))
+                return true;
+
+            const auto * source = typeid_cast<const MergeTreeSource *>(processor.get());
+            return source && source->hasVirtualRowConversions();
         });
 
         const bool use_shuffle_in_order
@@ -678,8 +683,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             && transform_params->params.max_rows_to_group_by == 0
             /// Virtual rows steer the ordinary merging transform toward the next primary-key range. The
             /// reshuffle turns one input chunk into separate shard chunks, so it cannot preserve that stream
-            /// metadata for every shard merge. Check the actual pipeline: the setting can be enabled while
-            /// read-in-order planning has deliberately disabled virtual rows for this query.
+            /// metadata for every shard merge. Check both pipeline carriers: `VirtualRowTransform` inserts an
+            /// initial boundary, while `MergeTreeSource` can emit later per-block boundaries directly.
             && !has_virtual_rows
             && max_threads > 1
             && pipeline.getNumStreams() > 1

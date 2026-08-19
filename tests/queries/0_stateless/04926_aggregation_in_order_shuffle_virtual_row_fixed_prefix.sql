@@ -21,6 +21,13 @@ SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') > 0
 FROM (EXPLAIN PIPELINE SELECT b, sum(v) FROM t_aio_shuffle_fixed_prefix WHERE a = 1 GROUP BY b
       SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1);
 
+-- Per-block virtual rows are emitted directly by `MergeTreeSource`, without a
+-- `VirtualRowTransform` in the pipeline. They must disable reshuffling too.
+SELECT countIf(explain LIKE '%BufferedShardByHashTransform%') = 0
+FROM (EXPLAIN PIPELINE SELECT a, b, sum(v) FROM t_aio_shuffle_fixed_prefix GROUP BY a, b
+      SETTINGS max_threads = 4, optimize_aggregation_in_order = 1, aggregation_in_order_shuffle = 1,
+               read_in_order_use_virtual_row_per_block = 1);
+
 SELECT
     (SELECT groupBitXor(cityHash64(b, s))
      FROM (SELECT b, sum(v) s FROM t_aio_shuffle_fixed_prefix WHERE a = 1 GROUP BY b)
