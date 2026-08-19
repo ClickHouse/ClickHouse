@@ -98,7 +98,7 @@ static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
     const auto & context = getContext();
-    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, {auth_header});
+    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, params);
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
@@ -106,8 +106,8 @@ std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const s
     const auto & context = getContext();
     /// Some Unity servers reject a POST whose body has no explicit `Content-Type: application/json`
     /// (they respond with HTTP 500), so set it explicitly.
-    DB::HTTPHeaderEntries headers{auth_header, {"Content-Type", "application/json"}};
-    return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, headers, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
+    DB::HTTPHeaderEntries headers{{"Content-Type", "application/json"}};
+    return makeHTTPRequestAndReadJSON(base_url / route, context, bearer_token, {}, headers, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
 
 bool UnityCatalog::empty() const
@@ -607,7 +607,7 @@ UnityCatalog::UnityCatalog(
     , DB::WithContext(context_)
     , base_url(base_url_)
     , log(getLogger("UnityCatalog(" + catalog_ + ")"))
-    , auth_header("Authorization", "Bearer " + catalog_credential_)
+    , bearer_token(catalog_credential_)
 {
 }
 

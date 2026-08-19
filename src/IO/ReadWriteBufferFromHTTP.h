@@ -255,7 +255,17 @@ public:
 #undef setterMember
 /// NOLINTEND(bugprone-macro-parentheses)
 
+    /// Authenticate with HTTP Basic credentials (no header is sent when they are empty).
     ReadWriteBufferFromHTTPPtr create(const Poco::Net::HTTPBasicCredentials & credentials_);
+
+    /// Authenticate with a bearer token (`Authorization: Bearer <token>`; no header when empty).
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(const std::string & bearer_token_);
+
+    /// Authenticate with the bearer token when it is non-empty, otherwise with the Basic
+    /// credentials: both occupy the `Authorization` header, so a request carries one or the
+    /// other, never both.
+    ReadWriteBufferFromHTTPPtr createWithBearerToken(
+        const std::string & bearer_token_, const Poco::Net::HTTPBasicCredentials & fallback_credentials_);
 };
 
 /// Fills `credentials` from the userinfo component of `uri` (e.g. `http://user:pass@host`).
