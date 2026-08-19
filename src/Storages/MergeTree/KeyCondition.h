@@ -361,7 +361,9 @@ public:
         ///    set_index->getIndexesMapping()[..].key_index,
         ///  * if FUNCTION_POINT_IN_POLYGON: two elements (x, y) describing the point,
         ///    as in pointInPolygon((x, y), ...), or one element if the point is a whole
-        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...).
+        ///    key column of type Tuple of two coordinates, as in pointInPolygon(coord, ...),
+        ///    or its two elements, as in pointInPolygon((coord.1, coord.2), ...). The same
+        ///    applies to pointInEllipses, whose point is its first two arguments.
         std::vector<size_t> key_columns;
 
         /// If a key column is a space filling curve, e.g. mortonEncode(x, y),
@@ -382,8 +384,9 @@ public:
 
         /// For FUNCTION_POINT_IN_POLYGON.
         /// Function name (e.g. 'pointInPolygon') and the polygon.
+        /// For 'pointInEllipses' the stored ring is the union bounding box of the ellipses.
         /// Additionally, `key_columns` has two elements for point coordinates (x, y),
-        /// or one element if the point is a whole key column of Tuple type.
+        /// or one element if the point is a whole key column of Tuple type (or its two elements).
         std::optional<String> point_in_polygon_function_name;
         std::shared_ptr<Polygon> polygon;
 
@@ -500,6 +503,19 @@ private:
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
+
+    /// Resolve the two point-coordinate arguments of a geo function (the elements of
+    /// pointInPolygon's point tuple, or the first two arguments of pointInEllipses) to key
+    /// columns. Fills `out_key_columns` with two entries (x key, y key), or with a single entry
+    /// when the coordinates are the two elements of one tuple-typed key column of two native
+    /// numbers, accessed as `t.1`/`t.2` or by element name (`checkInHyperrectangle` then derives
+    /// the point's bounding box from the range of the tuple key column). Returns false, leaving
+    /// `out_key_columns` empty, when the arguments resolve to neither form.
+    bool resolvePointCoordinateArguments(
+        const RPNBuilderTreeNode & x_argument,
+        const RPNBuilderTreeNode & y_argument,
+        const BuildInfo & info,
+        std::vector<size_t> & out_key_columns) const;
 
     /// Is node the key column, or an argument of a space-filling curve that is a key column,
     ///  or expression in which that column is wrapped by a chain of functions,
