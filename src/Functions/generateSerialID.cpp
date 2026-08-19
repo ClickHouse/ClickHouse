@@ -231,7 +231,7 @@ SELECT generateSerialID('id1')
         )",
         R"(
 ┌─generateSerialID('id1')─┐
-│                        0 │
+│                       0 │
 └─────────────────────────┘
         )"
     },
@@ -242,7 +242,7 @@ SELECT generateSerialID('id1')
         )",
         R"(
 ┌─generateSerialID('id1')─┐
-│                        1 │
+│                       1 │
 └─────────────────────────┘
         )"
     },
@@ -256,11 +256,11 @@ SELECT *, generateSerialID('id1') FROM test_table
         )",
         R"(
 ┌─CounterID─┬─UserID─┬─ver─┬─generateSerialID('id1')─┐
-│         1 │      3 │   3 │                        2 │
-│         1 │      1 │   1 │                        3 │
-│         1 │      2 │   2 │                        4 │
-│         1 │      5 │   5 │                        5 │
-│         1 │      4 │   4 │                        6 │
+│         1 │      3 │   3 │                       2 │
+│         1 │      1 │   1 │                       3 │
+│         1 │      2 │   2 │                       4 │
+│         1 │      5 │   5 │                       5 │
+│         1 │      4 │   4 │                       6 │
 └───────────┴────────┴─────┴─────────────────────────┘
         )"
     },
