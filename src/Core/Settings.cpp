@@ -2865,6 +2865,17 @@ Has no effect for secondary queries.
 
 Affects only the native TCP protocol.
 )", 0) \
+    DECLARE(Bool, run_query_in_background, false, R"(
+If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+
+A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
+
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes and the query log entry is flushed.
+
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
+
+The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
+)", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
 Ignore ON CLUSTER clause for replicated UDF management queries.
