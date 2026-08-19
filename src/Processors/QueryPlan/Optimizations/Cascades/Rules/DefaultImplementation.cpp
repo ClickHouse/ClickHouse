@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
