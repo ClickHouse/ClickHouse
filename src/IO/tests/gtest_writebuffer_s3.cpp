@@ -1064,18 +1064,18 @@ TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadata
     EXPECT_EQ(client->counters.headObject, 0u);
 }
 
-/// Metadata in `extra_headers` is sent to CreateMultipartUpload but not to completion, so an ETag
-/// alone cannot prove that a recovered completion created the requested object.
-TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasMetadataExtraHeader)
+/// Extra headers are not represented by the completed part list, so an ETag alone cannot prove
+/// that a recovered completion created the requested object.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadWhenWriteHasExtraHeader)
 {
-    client = MockS3::Client::CreateClient(bucket, {{"X-Amz-Meta-Write-Id", "new"}});
+    client = MockS3::Client::CreateClient(bucket, {{"X-Write-Id", "new"}});
     setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadAfterCompletingIngection>(client->store));
 
     getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
     getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
 
     EXPECT_THROW({
-        auto buffer = getWriteBuffer("complete_multipart_upload_with_metadata_extra_header");
+        auto buffer = getWriteBuffer("complete_multipart_upload_with_extra_header");
         buffer->write('A');
 
         getAsyncPolicy().setAutoExecute(true);

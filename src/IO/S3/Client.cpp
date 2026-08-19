@@ -260,7 +260,9 @@ std::optional<std::string> expectedMultipartETag(const Aws::S3::Model::Completed
 
 bool Client::hasExtraHeadersRequiringFullWriteIdentity() const
 {
-    return std::ranges::any_of(client_configuration.extra_headers, [](const auto & header) { return isCreateOnlyHeader(header.name); });
+    /// Extra headers can affect the requested write but are not represented by the completed
+    /// part list. Do not recover a lost completion response unless its identity is fully known.
+    return !client_configuration.extra_headers.empty();
 }
 
 std::unique_ptr<Client> Client::create(
