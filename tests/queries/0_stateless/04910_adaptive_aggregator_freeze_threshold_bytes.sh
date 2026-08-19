@@ -17,6 +17,7 @@ $CLICKHOUSE_LOCAL --query "
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
 SET group_by_two_level_threshold = 100000;
+SET max_block_size = 65536;
 SET collect_hash_table_stats_during_aggregation = 0;
 
 -- The byte bound disabled with an unreachable key bound: the tables must never freeze.

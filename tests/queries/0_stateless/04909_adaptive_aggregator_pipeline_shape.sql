@@ -5,10 +5,13 @@
 -- depend on the machine).
 
 -- Pinned against the test runner's settings randomization: the admission needs the feature
--- on, a parallel pipeline, and two-level aggregation enabled.
+-- on, a parallel pipeline, and two-level aggregation enabled; `max_block_size` is pinned
+-- because a large enough randomized value collapses the numbers source into a single stream,
+-- which the admission rejects.
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
 SET group_by_two_level_threshold = 100000;
+SET max_block_size = 65536;
 
 -- An admitted parallel aggregation routes through exactly one store.
 SELECT count() FROM (EXPLAIN PIPELINE SELECT intHash64(number) AS k, count() FROM numbers_mt(1000000) GROUP BY k)
