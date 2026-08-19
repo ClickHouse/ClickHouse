@@ -35,3 +35,8 @@ SELECT now() = now(), c FROM (SELECT now() AS a, now() AS b, a = b AS c);
 
 SELECT '-- rand() agrees within one query, aliased or not';
 SELECT rand() = rand(), c FROM (SELECT rand() AS a, rand() AS b, a = b AS c);
+
+-- The cache spans query scopes, but stateful functions must not share an instance across them. The two
+-- scalar subqueries must each start their own `blockNumber` sequence at zero.
+SELECT '-- stateful functions do not share instances across scopes';
+SELECT (SELECT blockNumber() AS a FROM numbers(1)), (SELECT blockNumber() AS b FROM numbers(1));
