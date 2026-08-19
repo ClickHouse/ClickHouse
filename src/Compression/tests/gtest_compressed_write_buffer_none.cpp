@@ -190,7 +190,7 @@ TEST(CompressedWriteBufferNone, ViolatedExclusivityWithRelocatedOutputIsDetected
     GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
 #else
     std::vector<char> output(2048);
-    WriteBufferFromVector out(output);
+    WriteBufferFromVector<std::vector<char>> out(output);
     CompressedWriteBuffer compressed_out(out, std::make_shared<CompressionCodecNone>(), 1024);
     compressed_out.declareOutBufferExclusive();
 
