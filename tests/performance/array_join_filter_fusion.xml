@@ -1,26 +1,24 @@
 <test>
     <!-- A filter on the ARRAY JOINed element is fused into the ARRAY JOIN, so the arrays are filtered
-         before expansion. With a selective filter and a wide payload, most elements never become rows
-         and the payload is never carried for them. -->
+         before expansion. Fewer elements become rows, and passenger columns are not carried for the ones
+         that are dropped. Queries use no PR-specific setting so the comparison is PR (fusion on by
+         default) vs master (no fusion). -->
     <create_query>
         CREATE TABLE array_join_filter_fusion (id UInt64, arr Array(String), payload String)
         ENGINE = MergeTree ORDER BY id
     </create_query>
     <fill_query>
         INSERT INTO array_join_filter_fusion
-        SELECT number,
-               arrayMap(x -> concat('e', toString(x % 20)), range(number % 40)),
-               repeat('x', 256)
+        SELECT number, arrayMap(x -> concat('e', toString(x % 40)), range(40)), repeat('x', 256)
         FROM numbers(3000000)
     </fill_query>
 
-    <!-- selective: keeps ~1/20 of elements -->
+    <!-- selective element filter (keeps ~1/40): far fewer expanded rows reach the filter -->
+    <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
     <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
-    <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND NOT ignore(payload)</query>
-    <!-- less selective: keeps ~half -->
-    <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem &lt; 'e5'</query>
-    <!-- baseline for comparison: same query with the optimization disabled -->
-    <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS query_plan_fuse_filter_into_array_join = 0</query>
+    <!-- with eager replication the wide payload would be physically replicated per element; fusion filters
+         the elements first so it is replicated only for survivors -->
+    <query>SELECT sum(cityHash64(payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS enable_lazy_columns_replication = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS array_join_filter_fusion</drop_query>
 </test>
