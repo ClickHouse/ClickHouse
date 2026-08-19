@@ -14,6 +14,7 @@
 #include <list>
 #include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 #include <IO/WriteBufferFromString.h>
 
@@ -80,12 +81,24 @@ struct ExplainPlanOptions
     bool compact = false;
     /// Print query plan with pretty formatting
     bool pretty = false;
+    /// Show estimates
+    bool estimates = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
+    /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
+    /// Off by default because the work lands in the probe loop and creates biases in time and parallelism
+    /// durin colleciton
+    bool matches = false;
 
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
+
+struct CostEstimationInfo
+{
+    Float64 cost = 0.0;
+    Float64 rows = 0.0;
+};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.
@@ -183,6 +196,7 @@ public:
     {
         QueryPlanStepPtr step;
         std::vector<Node *> children = {};
+        std::optional<CostEstimationInfo> cost_estimation = std::nullopt;
     };
 
     using Nodes = std::list<Node>;

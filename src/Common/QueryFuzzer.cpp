@@ -3427,7 +3427,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
         {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
-        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes"}},
+        {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes", "single_record"}},
         {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
         {ASTExplainQuery::ExplainKind::QueryPlan,
          {"header",
@@ -4805,6 +4805,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"empty", "notEmpty", "length", "lengthUTF8"},
         /// Array/string containment checks
         {"has",
+         "notHas",
          "hasAll",
          "hasAny",
          "hasToken",
@@ -5215,7 +5216,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// AI function, so it is not grouped for name-swapping.
         {"aiSimilarity"},
         /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
-        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter"},
+        {"aiClassify", "aiExtract", "aiTranslate", "aiFilter", "aiRedact"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
         /// Geo coordinate projections (longitude, latitude[, zone/precision] → Tuple/String)

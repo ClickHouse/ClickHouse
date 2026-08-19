@@ -7,6 +7,8 @@ keywords: ['ClickHouse Cloud', 'التوافق']
 doc_type: 'guide'
 ---
 
+import CloudUnsupportedFeatures from '/snippets/ar/_cloud_unsupported_features.mdx';
+
 يوفّر هذا الدليل نظرة عامة على ما يمكن توقّعه وظيفيًا وتشغيليًا في ClickHouse Cloud. ومع أن ClickHouse Cloud يستند إلى ClickHouse مفتوح المصدر، فقد توجد بعض الاختلافات في البنية وآلية التنفيذ. وقد تجد مقال المدونة هذا حول [كيف أنشأنا ClickHouse Cloud](https://clickhouse.com/blog/building-clickhouse-cloud-from-scratch-in-a-year) مفيدًا وذا صلة كخلفية.
 
 <div id="clickhouse-cloud-architecture">
@@ -38,7 +40,7 @@ doc_type: 'guide'
 
 | ما تحدده                       | ما يستخدمه Cloud                     |
 | ------------------------------ | ------------------------------------ |
-| `MergeTree` (أو بدون engine)   | `SharedMergeTree`                    |
+| `MergeTree` (أو بدون محرك)   | `SharedMergeTree`                    |
 | `ReplacingMergeTree`           | `SharedReplacingMergeTree`           |
 | `SummingMergeTree`             | `SharedSummingMergeTree`             |
 | `AggregatingMergeTree`         | `SharedAggregatingMergeTree`         |
@@ -48,7 +50,7 @@ doc_type: 'guide'
 
 تُحوَّل محركات `Replicated*` إلى مكافئات `Shared*` نفسها. ويظهر هذا الاستبدال في `SHOW CREATE TABLE`، إذ يعرض محرك `Shared*` رغم أن التعليمة التي حددتها استخدمت النسخة العادية.
 
-المحركات التالية مدعومة أيضًا وتُستخدم كما هي مكتوبة:
+محركات الجداول التالية مدعومة أيضًا وتُستخدم كما هي مكتوبة. يختلف محرك الجداول `MySQL` المدعوم عن محرك قواعد البيانات `MySQL` غير المدعوم:
 
 * URL
 * View
@@ -151,9 +153,7 @@ doc_type: 'guide'
 </div>
 
 تمت زيادة هذا الإعداد على مستوى الخادم من القيمة الافتراضية `100` إلى `1000` للسماح بمزيد من التزامن.
-وينتج عن ذلك `عدد النسخ المتماثلة * 1,000` استعلام متزامن لخدمات المستويات المتاحة.
-`1000` استعلام متزامن لخدمة مستوى Basic المقتصرة على نسخة متماثلة واحدة، و`1000+` لمستويي Scale وEnterprise،
-وذلك بحسب عدد النسخ المتماثلة المُهيّأة.
+وينتج عن ذلك `عدد النسخ المتماثلة * 1,000` استعلام متزامن لكل خدمة. تدعم الخدمة ذات النسخة المتماثلة الواحدة ما يصل إلى `1000` استعلام متزامن بغض النظر عن المستوى. تدعم الخدمات متعددة النسخ المتماثلة في مستويي Scale وEnterprise ما يصل إلى `1000` استعلام متزامن لكل نسخة متماثلة.
 
 <div id="max_table_size_to_drop-1000000000000">
   #### `max_table_size_to_drop: 1,000,000,000,000`
@@ -172,6 +172,12 @@ doc_type: 'guide'
 </div>
 
 كجزء من إنشاء خدمة ClickHouse، ننشئ قاعدة بيانات افتراضية ومستخدمًا افتراضيًا يمتلك صلاحيات واسعة على هذه القاعدة. ويمكن لهذا المستخدم الأولي إنشاء مستخدمين إضافيين ومنحهم صلاحيات على قاعدة البيانات هذه. وبخلاف ذلك، لا تتوفر حاليًا إمكانية تمكين ميزات الأمان التالية داخل قاعدة البيانات باستخدام مصادقة Kerberos أو LDAP أو شهادات SSL X.509.
+
+<div id="list-of-unsupported-features">
+  ## قائمة الميزات غير المدعومة
+</div>
+
+<CloudUnsupportedFeatures />
 
 <div id="roadmap">
   ## خريطة الطريق
