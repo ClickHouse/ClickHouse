@@ -348,7 +348,8 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             /// count, a minmax_count or exact-count projection, or a projection that selected no
             /// ranges. No index on those parts would be read
             /// a forced name can never be satisfied here, so throw like a real read would, but
-            /// only when skip indexes are on, matching the scanning path below
+            /// only when skip indexes are on, matching the scanning path below. FINAL always keeps
+            /// its read step, so use_skip_indexes_if_final cannot apply on this path
             const auto & effective_settings = plan_context->getSettingsRef();
             if (effective_settings[Setting::use_skip_indexes])
             {
