@@ -363,8 +363,9 @@ DROP TABLE t_using_left;
 DROP TABLE t_using_right;
 
 -- ----- Subquery alias passed to outer arrayElement -----
--- Outer reference's source is the subquery (QueryNode), not a TableNode. Even if the
--- subquery aliases a Map column under a new name, the outer rewrite must not fire.
+-- The outer reference's source is the subquery (QueryNode), so the regular function-to-
+-- subcolumn pass does not rewrite it directly. `PushSubcolumnsIntoSubqueriesPass` instead
+-- pushes the subcolumn into the subquery projection.
 DROP TABLE IF EXISTS t_subquery_inner;
 CREATE TABLE t_subquery_inner
 (
@@ -380,13 +381,11 @@ INSERT INTO t_subquery_inner VALUES
 SELECT '-- Subquery: outer m[key1] reads through the subquery and returns the right value';
 SELECT id, m['key1'] FROM (SELECT id, m FROM t_subquery_inner) ORDER BY id;
 
-SELECT '-- Subquery: no spurious m.key_key1 ColumnNode is built for the outer reference';
--- Inside the subquery the rewrite is allowed (storage column there); outside, the
--- ColumnNode's source is the subquery's QueryNode and the look-through must bail out.
--- We only assert the value-correctness above and the absence of the rewrite for the
--- outer scope by inspecting the renamed alias `outer_m`.
+SELECT '-- Subquery: outer subcolumn is pushed into the subquery projection';
+-- The rewritten outer expression reads the synthesized subcolumn rather than extracting it
+-- from `outer_m`; only the subcolumn reaches the outer query.
 SELECT count() = 0 FROM (
     EXPLAIN actions = 1 SELECT outer_m['key1'] FROM (SELECT m AS outer_m FROM t_subquery_inner)
-) WHERE explain LIKE '%outer_m.key_key1%';
+) WHERE explain LIKE '%FUNCTION arrayElement%';
 
 DROP TABLE t_subquery_inner;
