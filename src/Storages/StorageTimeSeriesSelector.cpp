@@ -33,6 +33,7 @@
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
+#include <Storages/TimeSeries/timeSeriesMatchersToAST.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -122,6 +123,9 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    /// The outer TimeSeries table is the access-control boundary. The physical samples and tags tables
+    /// are implementation details and may be inner tables without separate SELECT grants.
+    checkTimeSeriesTableAccess(context, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
@@ -185,49 +189,6 @@ VirtualColumnsDescription StorageTimeSeriesSelector::createVirtuals()
 
 namespace
 {
-    /// Makes an AST for the expression referencing a tag value.
-    ASTPtr tagNameToAST(const String & tag_name, const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        if (tag_name == TimeSeriesTagNames::MetricName)
-            return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
-
-        auto it = column_name_by_tag_name.find(tag_name);
-        if (it != column_name_by_tag_name.end())
-            return make_intrusive<ASTIdentifier>(it->second);
-
-        /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(tag_name));
-    }
-
-    ASTPtr matcherToAST(const PrometheusQueryTree::Matcher & matcher, const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        std::string_view function_name;
-        bool add_anchors = false;
-        bool add_not = false;
-
-        auto matcher_type = matcher.matcher_type;
-        switch (matcher_type)
-        {
-            case PrometheusQueryTree::MatcherType::EQ:  function_name = "equals"; break;
-            case PrometheusQueryTree::MatcherType::NE:  function_name = "notEquals"; break;
-            case PrometheusQueryTree::MatcherType::RE:  function_name = "match"; add_anchors = true; break;
-            case PrometheusQueryTree::MatcherType::NRE: function_name = "match"; add_anchors = true; add_not = true; break;
-        }
-
-        String value = matcher.label_value;
-        if (add_anchors)
-        {
-            if (!value.starts_with('^'))
-                value = '^' + value;
-            if (!value.ends_with('$'))
-                value += '$';
-        }
-        ASTPtr res = makeASTFunction(function_name, tagNameToAST(matcher.label_name, column_name_by_tag_name), make_intrusive<ASTLiteral>(value));
-        if (add_not)
-            res = makeASTFunction("not", res);
-        return res;
-    }
-
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
@@ -237,7 +198,7 @@ namespace
     {
         ASTs asts;
         for (const auto & matcher : matchers)
-            asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
+            asts.push_back(timeSeriesMatcherToAST(matcher, column_name_by_tag_name));
 
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
@@ -284,10 +245,10 @@ namespace
             args.push_back(make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName));
             args.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
 
-            for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+            for (const auto & tag : column_name_by_tag_name)
             {
-                args.push_back(make_intrusive<ASTLiteral>(tag_name));
-                args.push_back(make_intrusive<ASTIdentifier>(column_name));
+                args.push_back(make_intrusive<ASTLiteral>(tag.first));
+                args.push_back(timeSeriesTagNameToAST(tag.first, column_name_by_tag_name));
             }
 
             select_list.push_back(makeASTFunction("timeSeriesStoreTags", std::move(args)));
@@ -689,7 +650,7 @@ namespace
             {
                 ASTs other_matcher_asts;
                 for (const auto * matcher : other_matchers)
-                    other_matcher_asts.push_back(matcherToAST(*matcher, column_name_by_tag_name));
+                    other_matcher_asts.push_back(timeSeriesMatcherToAST(*matcher, column_name_by_tag_name));
                 counterexample = makeASTFunction(
                     "or", makeASTFunction("not", makeASTForLogicalAnd(std::move(other_matcher_asts))), std::move(counterexample));
             }
@@ -729,7 +690,7 @@ namespace
 
             try
             {
-                InterpreterSelectQueryAnalyzer interpreter(probe_query, context, SelectQueryOptions{});
+                InterpreterSelectQueryAnalyzer interpreter(probe_query, context, SelectQueryOptions().ignoreAccessCheck());
                 auto io = interpreter.execute();
                 PullingPipelineExecutor executor(io.pipeline);
                 Block block;
@@ -782,13 +743,14 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
+    auto target_context = getTimeSeriesTargetContext(context);
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, target_context));
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, context);
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
+    auto samples_table_id = time_series_storage->getTargetTableID(ViewTarget::Samples, target_context);
+    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, target_context);
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
@@ -804,8 +766,8 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
-    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, context)->getInMemoryMetadataPtr(context, false);
-    auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+    auto samples_table_metadata = time_series_storage->getTargetTable(ViewTarget::Samples, target_context)->getInMemoryMetadataPtr(target_context, false);
+    auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, target_context)->getInMemoryMetadataPtr(target_context, false);
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
         matchers,
@@ -820,10 +782,10 @@ void StorageTimeSeriesSelector::readImpl(
         config.timestamp_data_type,
         min_time_to_filter_ids,
         max_time_to_filter_ids,
-        context,
+        target_context,
         log);
 
-    ContextPtr interpreter_context = context;
+    ContextPtr interpreter_context = target_context;
     if (!whole_metric_id_range_conditions.empty())
     {
         /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
@@ -834,7 +796,7 @@ void StorageTimeSeriesSelector::readImpl(
         /// the same granules through the cheap continuous-range path. Setting
         /// `use_index_for_in_with_subqueries_max_values = 1` makes the set unusable for index
         /// analysis without affecting the row-level filter.
-        auto modified_context = Context::createCopy(context);
+        auto modified_context = Context::createCopy(target_context);
         modified_context->setSetting("use_index_for_in_with_subqueries_max_values", UInt64{1});
         interpreter_context = modified_context;
         LOG_DEBUG(log, "Selector {} matches the whole metric: adding a primary-key range on id and excluding the id set from index analysis",
@@ -858,11 +820,15 @@ void StorageTimeSeriesSelector::readImpl(
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
 
+    /// getConfiguration() checked SELECT on the outer TimeSeries table. The generated query reads the
+    /// physical samples and tags targets, so skip a second access check on those implementation tables.
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
+    options.ignoreAccessCheck();
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, interpreter_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    query_plan.addInterpreterContext(interpreter_context);
 }
 
 }
