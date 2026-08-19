@@ -490,4 +490,3 @@
 
 /* Define to 1 if pthread_init() exists */
 /* #undef HAVE_PTHREAD_INIT */
-
