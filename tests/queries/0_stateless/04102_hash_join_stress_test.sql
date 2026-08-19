@@ -425,16 +425,30 @@ SELECT l.id, l.val, r.id, r.val FROM t_left_dup l ALL FULL JOIN t_right_dup r ON
 
 
 -- ============================================================
--- 14. Verify max_joined_block_rows truncation path (need_replication + early break)
+-- 14. Verify max_joined_block_size_rows truncation: post-hoc split and early break
 -- ============================================================
 
-SELECT '--- ALL LEFT JOIN: many duplicates with max_rows_in_join ---';
-SELECT count() FROM (
-    SELECT l.id, r.val
+-- blockSize() observes truncation; count() is invariant to it. min_joined_block_size_rows/bytes = 0
+-- stops a downstream squash from re-merging the truncated blocks. SETTINGS is outside the subquery,
+-- where an unknown setting name raises UNKNOWN_SETTING instead of being discarded.
+
+SELECT '--- ALL LEFT JOIN: many duplicates with max_joined_block_size_rows ---';
+SELECT count(), if(max(bs) > 100, 'Error: ' || toString(max(bs)), 'Ok') FROM (
+    SELECT blockSize() AS bs, l.id, r.val
     FROM t_left_large l
     ALL LEFT JOIN t_right_large r ON l.id = r.id
-    SETTINGS max_joined_block_rows = 100
-);
+)
+SETTINGS max_joined_block_size_rows = 100, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
+
+-- The residual predicate is always true on this fixture, so cardinality is unchanged;
+-- it routes the join through the additional-filter loop and its early break.
+SELECT '--- ALL LEFT JOIN: residual predicate with max_joined_block_size_rows ---';
+SELECT count(), if(max(bs) > 100, 'Error: ' || toString(max(bs)), 'Ok') FROM (
+    SELECT blockSize() AS bs, l.id, r.val
+    FROM t_left_large l
+    ALL LEFT JOIN t_right_large r ON l.id = r.id AND l.val < r.val
+)
+SETTINGS max_joined_block_size_rows = 100, min_joined_block_size_rows = 0, min_joined_block_size_bytes = 0;
 
 
 -- ============================================================
