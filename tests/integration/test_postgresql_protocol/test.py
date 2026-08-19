@@ -301,7 +301,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
             node.query(f"GRANT SELECT ON system.one TO {name}", password="123")
 
             if name == "user_two_scram":
-                with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
+                with pytest.raises(py_psql.OperationalError, match="Authentication method is not supported"):
                     py_psql.connect(
                         host=node.ip_address,
                         port=server_port,

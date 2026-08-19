@@ -1606,17 +1606,7 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 public:
     bool isSupportedForUser(const String & user_name, Session & session) const override
     {
-        const auto & access_control = session.globalContext()->getAccessControl();
-        if (auto id = access_control.find<User>(user_name))
-        {
-            if (auto user = access_control.tryRead<User>(*id))
-            {
-                for (const auto & auth_method : user->authentication_methods)
-                    if (auth_method.getType() == AuthenticationType::SCRAM_SHA256_PASSWORD)
-                        return true;
-            }
-        }
-        return false;
+        return getScramSalt(user_name, session).has_value();
     }
 
     static String generateNonce()
