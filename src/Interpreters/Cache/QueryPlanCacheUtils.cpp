@@ -31,6 +31,7 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromTableFunctionStep.h>
@@ -62,7 +63,7 @@ Identifier parseTableIdentifier(const std::string & str, const ContextPtr & cont
 namespace
 {
 
-class RemoveQueryPlanCacheIgnoredSettingsMatcher
+class RemoveQueryOutputMatcher
 {
 public:
     struct Data {};
@@ -74,32 +75,20 @@ public:
 
     static void visit(ASTPtr & ast, Data &)
     {
-        if (auto * set_clause = ast->as<ASTSetQuery>())
-        {
-            chassert(!set_clause->is_standalone);
-
-            auto is_ignored_setting = [](const auto & change)
-            {
-                return isSettingIgnoredInQueryPlanCache(change.name);
-            };
-
-            std::erase_if(set_clause->changes, is_ignored_setting);
-        }
-        else
-        {
-            ASTQueryWithOutput::resetOutputASTIfExist(*ast);
-        }
+        ASTQueryWithOutput::resetOutputASTIfExist(*ast);
     }
 };
 
-using RemoveQueryPlanCacheIgnoredSettingsVisitor = InDepthNodeVisitor<RemoveQueryPlanCacheIgnoredSettingsMatcher, true>;
+using RemoveQueryOutputVisitor = InDepthNodeVisitor<RemoveQueryOutputMatcher, true>;
 
 ASTPtr normalizeASTForQueryPlanCache(ASTPtr ast)
 {
     ASTPtr normalized_ast = ast->clone();
 
-    RemoveQueryPlanCacheIgnoredSettingsMatcher::Data visitor_data;
-    RemoveQueryPlanCacheIgnoredSettingsVisitor(visitor_data).visit(normalized_ast);
+    removeSettingsFromQuery(normalized_ast, isSettingIgnoredInQueryPlanCache);
+
+    RemoveQueryOutputMatcher::Data visitor_data;
+    RemoveQueryOutputVisitor(visitor_data).visit(normalized_ast);
 
     return normalized_ast;
 }
