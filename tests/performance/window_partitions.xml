@@ -29,26 +29,26 @@
 
     <!-- Skewed layout (90% of the rows in one partition): the cost heuristic must decline the
          optimization here, so this query pins the absence of a regression. -->
-    <create_query>CREATE TABLE t_skew90_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
+    <create_query>CREATE TABLE t_skew90 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
 
     <!-- No table PARTITION BY: with stacked windows the first sorting scatters and thereby becomes a
          disjointness source, letting the second sorting skip its own scatter. -->
-    <create_query>CREATE TABLE test_plain_{partitions} (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE test_plain (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
 
-    <fill_query>INSERT INTO test_{partitions} SELECT number % 100000, number FROM numbers_mt(30000000)</fill_query>
+    <fill_query>INSERT INTO test_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_{partitions} FINAL</fill_query>
 
-    <fill_query>INSERT INTO test_wide_{partitions} SELECT number % 100000, number, number * 2, number * 3, number * 5, number * 7, number * 11, number * 13, toString(number) FROM numbers_mt(30000000)</fill_query>
+    <fill_query>INSERT INTO test_wide_{partitions} SELECT number % 100000, number, number * 2, number * 3, number * 5, number * 7, number * 11, number * 13, toString(number) FROM numbers_mt(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_wide_{partitions} FINAL</fill_query>
 
-    <fill_query>INSERT INTO test_str_{partitions} SELECT number % 100000, number, randomPrintableASCII(100) FROM numbers_mt(30000000)</fill_query>
+    <fill_query>INSERT INTO test_str_{partitions} SELECT number % 100000, number, randomPrintableASCII(100) FROM numbers_mt(10000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_str_{partitions} FINAL</fill_query>
 
-    <fill_query>INSERT INTO t_skew90_{partitions} SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE t_skew90_{partitions} FINAL</fill_query>
+    <fill_query>INSERT INTO t_skew90 SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew90 FINAL</fill_query>
 
-    <fill_query>INSERT INTO test_plain_{partitions} SELECT number % 100000, number FROM numbers_mt(30000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE test_plain_{partitions} FINAL</fill_query>
+    <fill_query>INSERT INTO test_plain SELECT number % 100000, number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE test_plain FINAL</fill_query>
 
     <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_{partitions} FORMAT Null</query>
 
@@ -68,14 +68,14 @@
     <query>SELECT a, s, count(b) OVER (PARTITION BY a) FROM test_str_{partitions} FORMAT Null</query>
     <query>SELECT a, s, sum(b) OVER (PARTITION BY a ORDER BY b) FROM test_str_{partitions} FORMAT Null</query>
 
-    <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM t_skew90_{partitions} FORMAT Null</query>
+    <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) FROM t_skew90 FORMAT Null</query>
 
     <!-- scatter-as-source: the second window's scatter is skipped without any table PARTITION BY -->
-    <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b), avg(b) OVER (PARTITION BY a ORDER BY b DESC) FROM test_plain_{partitions} FORMAT Null</query>
+    <query>SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b), avg(b) OVER (PARTITION BY a ORDER BY b DESC) FROM test_plain FORMAT Null</query>
 
     <drop_query>DROP TABLE test_{partitions}</drop_query>
     <drop_query>DROP TABLE test_wide_{partitions}</drop_query>
     <drop_query>DROP TABLE test_str_{partitions}</drop_query>
-    <drop_query>DROP TABLE t_skew90_{partitions}</drop_query>
-    <drop_query>DROP TABLE test_plain_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew90</drop_query>
+    <drop_query>DROP TABLE test_plain</drop_query>
 </test>
