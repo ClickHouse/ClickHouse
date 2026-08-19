@@ -456,6 +456,18 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 
     if (!column_in_part)
     {
+        const auto & infos = data_part_info_for_read->getSerializationInfos();
+        if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        {
+            auto type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            NameAndTypePair missed_column{
+                name_pair.first,
+                name_pair.second,
+                type_in_part,
+                name_pair.second.empty() ? type_in_part : type_in_part->getSubcolumnType(name_pair.second)};
+            return IDataType::getSerialization(missed_column);
+        }
+
         NameAndTypePair missed_column{name_pair.first, name_pair.second, required_column.getTypeInStorage(), required_column.type};
         return IDataType::getSerialization(missed_column);
     }
