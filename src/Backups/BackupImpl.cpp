@@ -254,7 +254,8 @@ void BackupImpl::open()
 #if CLICKHOUSE_CLOUD
         metadata_already_published = false;
         if (params.resume)
-            metadata_already_published = BackupResumer(*this, *params.resume).openDestination();
+            metadata_already_published = BackupResumer(*this, *params.resume).openDestination()
+                == BackupResumer::DestinationState::MetadataPublished;
         else
 #endif
         {
