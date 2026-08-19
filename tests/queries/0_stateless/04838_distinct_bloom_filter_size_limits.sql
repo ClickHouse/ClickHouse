@@ -7,17 +7,17 @@ SET distinct_pass_ratio_threshold_for_disabling_bloom_filter = 0.1;
 -- Every pre-DISTINCT stream must process more than one block: Bloom-filter allocation starts
 -- at the beginning of the block after the exact set crosses the activation threshold.
 SET max_threads = 4, max_block_size = 128;
-SET max_bytes_in_distinct = 200000;
+SET max_bytes_in_distinct = 4194304;
 
 -- Use remote shards so the preliminary DISTINCT transform, where this optimization lives,
 -- is exercised. The hash sets alone stay below the limit: with a small filter the query goes through.
 SET distinct_bloom_filter_bytes = 4096;
-SELECT count() FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 4000);
+SELECT count() FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 100000);
 
--- A 1 MiB filter is over the limit on its own, so the very same query must be rejected.
-SET distinct_bloom_filter_bytes = 1048576;
-SELECT count() FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 4000); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
+-- An 8 MiB filter is over the limit on its own, so the very same query must be rejected.
+SET distinct_bloom_filter_bytes = 8388608;
+SELECT count() FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 100000); -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
 -- With `break` the query returns a partial result instead of throwing.
 SET distinct_overflow_mode = 'break';
-SELECT count() BETWEEN 1 AND 4000 FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 4000);
+SELECT count() BETWEEN 1 AND 100000 FROM (SELECT DISTINCT materialize(number) FROM remote('127.0.0.{1,2}', system.numbers) WHERE number < 100000);
