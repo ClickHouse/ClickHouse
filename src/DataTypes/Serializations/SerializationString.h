@@ -2,6 +2,7 @@
 
 #include <Core/MergeTreeSerializationEnums.h>
 #include <DataTypes/Serializations/ISerialization.h>
+#include <base/unit.h>
 
 namespace DB
 {
@@ -20,6 +21,9 @@ struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization
 class SerializationString final : public ISerialization
 {
 public:
+    /// Arbitrary guard against absurd sizes from corrupted input, large enough for any real string.
+    static constexpr size_t MAX_STRING_SIZE = 16_GiB;
+
     explicit SerializationString(MergeTreeStringSerializationVersion version_ = MergeTreeStringSerializationVersion::SINGLE_STREAM);
 
     void serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const override;
