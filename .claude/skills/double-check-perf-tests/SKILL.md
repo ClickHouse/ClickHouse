@@ -202,7 +202,11 @@ run happened rather than today, and keyed by
 with the display name derived from the pinned test tree via
 `perf.py --print-queries` rather than scraped from the report (`report.py`
 writes query text into the table cell unescaped, so a query containing `<`
-and `>` cannot be recovered from the HTML) —
+and `>` cannot be recovered from the HTML). The historical rows come back as
+`JSONEachRow`, not `TSV`: most display names are multi-line — `query_display`
+joins statements with `;\n` and keeps the XML body's own newlines — and TSV
+output re-escapes those, so a TSV-keyed lookup would miss every multi-line
+query and silently drop it to the floor —
 so an edited query body at the same positional index falls back to the floor
 instead of inheriting the learned threshold of the query that used to be
 there. This applies only to rows read from `report.html`; a shard old enough

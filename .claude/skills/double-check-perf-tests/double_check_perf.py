@@ -914,6 +914,15 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
 # The same query ci/jobs/performance_tests.py sends to CIDB before a perf run,
 # with `today()` left as a parameter: the window is anchored on the day the run
 # happened, not on today, so the numbers are the ones that run actually used.
+#
+# JSONEachRow, not TSV, because `query_display_name` is half the lookup key and
+# most of them are multi-line: `query_display` joins statements with ";\n" and
+# keeps the XML body's own newlines and indentation. TSV output re-escapes
+# those to a literal backslash-n, while the other side of the join derives the
+# name from the test tree and holds the real characters, so every multi-line
+# query would miss its historical row and fall back to the bare 0.15 floor --
+# a weaker gate than the one CI used, which is how a noisy demoted query turns
+# into a false CONFIRMED. JSON round-trips the raw string exactly.
 HISTORICAL_THRESHOLDS_QUERY = """\
 SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     any(query_display_name) AS query_display_name
@@ -924,7 +933,7 @@ WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
     AND pr_number = 0
 GROUP BY test, query_index
 HAVING count() > 100
-FORMAT TSV"""
+FORMAT JSONEachRow"""
 
 
 def play_query(query: str, what: str) -> Optional[str]:
@@ -969,12 +978,14 @@ def fetch_historical_thresholds(
         return None
     thresholds: dict[tuple[str, int, str], float] = {}
     for line in out.splitlines():
-        cols = line.split("\t")
-        if len(cols) < 4:
+        if not line.strip():
             continue
         try:
-            thresholds[(cols[0], int(cols[1]), cols[3])] = float(cols[2])
-        except ValueError:
+            row = json.loads(line)
+            key = (row["test"], int(row["query_index"]),
+                   row["query_display_name"])
+            thresholds[key] = float(row["max_diff"])
+        except (ValueError, TypeError, KeyError):
             continue
     return thresholds
 
