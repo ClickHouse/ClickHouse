@@ -22,7 +22,6 @@
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/range/adaptor/map.hpp>
-#include <boost/range/adaptor/reversed.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
 
@@ -800,57 +799,64 @@ UUID IAccessStorage::generateRandomID()
 
 void IAccessStorage::clearConflictsInEntitiesList(std::vector<std::pair<UUID, AccessEntityPtr>> & entities, LoggerPtr log_)
 {
-    std::unordered_map<UUID, size_t> positions_by_id;
-    std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
-    std::vector<size_t> positions_to_remove;
+    std::vector<bool> positions_to_remove(entities.size(), false);
+    bool has_conflicts = false;
 
-    for (size_t pos = 0; pos != entities.size(); ++pos)
     {
-        const auto & [id, entity] = entities[pos];
+        std::unordered_map<UUID, size_t> positions_by_id;
+        std::unordered_map<std::string_view, size_t> positions_by_type_and_name[static_cast<size_t>(AccessEntityType::MAX)];
 
-        if (auto it = positions_by_id.find(id); it == positions_by_id.end())
+        auto mark_conflict = [&](size_t pos, size_t conflicting_pos)
         {
-            positions_by_id[id] = pos;
-        }
-        else if (it->second != pos)
-        {
-            /// Conflict: same ID is used for multiple entities. We will ignore them.
-            positions_to_remove.emplace_back(pos);
-            positions_to_remove.emplace_back(it->second);
-        }
+            positions_to_remove[pos] = true;
+            positions_to_remove[conflicting_pos] = true;
+            has_conflicts = true;
+        };
 
-        std::string_view entity_name = entity->getName();
-        auto & positions_by_name = positions_by_type_and_name[static_cast<size_t>(entity->getType())];
-        if (auto it = positions_by_name.find(entity_name); it == positions_by_name.end())
+        for (size_t pos = 0; pos != entities.size(); ++pos)
         {
-            positions_by_name[entity_name] = pos;
-        }
-        else if (it->second != pos)
-        {
-            /// Conflict: same name and type are used for multiple entities. We will ignore them.
-            positions_to_remove.emplace_back(pos);
-            positions_to_remove.emplace_back(it->second);
+            const auto & [id, entity] = entities[pos];
+
+            auto [id_it, id_inserted] = positions_by_id.emplace(id, pos);
+            if (!id_inserted)
+            {
+                /// Conflict: same ID is used for multiple entities. We will ignore them.
+                mark_conflict(pos, id_it->second);
+            }
+
+            std::string_view entity_name = entity->getName();
+            auto & positions_by_name = positions_by_type_and_name[static_cast<size_t>(entity->getType())];
+            auto [name_it, name_inserted] = positions_by_name.emplace(entity_name, pos);
+            if (!name_inserted)
+            {
+                /// Conflict: same name and type are used for multiple entities. We will ignore them.
+                mark_conflict(pos, name_it->second);
+            }
         }
     }
 
-    if (positions_to_remove.empty())
+    if (!has_conflicts)
         return;
 
-    std::sort(positions_to_remove.begin(), positions_to_remove.end());
-    positions_to_remove.erase(std::unique(positions_to_remove.begin(), positions_to_remove.end()), positions_to_remove.end());
-
-    for (size_t pos : positions_to_remove)
+    size_t write_pos = 0;
+    for (size_t pos = 0; pos != entities.size(); ++pos)
     {
-        LOG_WARNING(
-            log_,
-            "Skipping {} (id={}) due to conflicts with other access entities",
-            entities[pos].second->formatTypeWithName(),
-            toString(entities[pos].first));
+        if (positions_to_remove[pos])
+        {
+            LOG_WARNING(
+                log_,
+                "Skipping {} (id={}) due to conflicts with other access entities",
+                entities[pos].second->formatTypeWithName(),
+                toString(entities[pos].first));
+            continue;
+        }
+
+        if (write_pos != pos)
+            entities[write_pos] = std::move(entities[pos]);
+        ++write_pos;
     }
 
-    /// Remove conflicting entities.
-    for (size_t pos : positions_to_remove | boost::adaptors::reversed) /// Must remove in reversive order.
-        entities.erase(entities.begin() + pos);
+    entities.erase(entities.begin() + write_pos, entities.end());
 }
 
 
