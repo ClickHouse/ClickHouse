@@ -457,8 +457,73 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
+void DatabaseWithOwnTablesBase::setDeferredPopulation(std::function<void(IDatabase &)> populate)
+{
+    std::lock_guard lock(populate_mutex);
+    deferred_populate = std::move(populate);
+    has_deferred_population.store(deferred_populate != nullptr, std::memory_order_release);
+}
+
+void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    if (!has_deferred_population.load(std::memory_order_acquire))
+        return;
+
+    std::unique_lock lock(populate_mutex);
+
+    /// Re-entered from the populator itself, which is attaching tables to this database. Whatever it has
+    /// attached so far is already visible, and waiting for it to finish here would deadlock.
+    if (populating && populating_thread == std::this_thread::get_id())
+        return;
+
+    /// Another thread is populating: wait, so that we never observe a half-filled database.
+    populated.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !populating; });
+
+    if (!deferred_populate)
+        return;
+
+    auto populate = std::move(deferred_populate);
+    deferred_populate = nullptr;
+    populating = true;
+    populating_thread = std::this_thread::get_id();
+    lock.unlock();
+
+    /// Nothing is pending any more once this returns, so subsequent calls take the lock-free fast path. This runs
+    /// even when the populator threw: the eager code path it replaces also ran only once.
+    auto finish = [this]
+    {
+        {
+            std::lock_guard finish_lock(populate_mutex);
+            populating = false;
+            populating_thread = {};
+            has_deferred_population.store(false, std::memory_order_release);
+        }
+        populated.notify_all();
+    };
+
+    try
+    {
+        populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
+    }
+    catch (...)
+    {
+        finish();
+        throw;
+    }
+    finish();
+}
+
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
+    /// Look among the already attached tables first, so that a hit does not force deferred population.
+    /// This is what keeps `system.one` (attached eagerly) from dragging in the whole `system` database.
+    {
+        std::lock_guard lock(mutex);
+        if (tables.contains(table_name))
+            return true;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.contains(table_name);
 }
@@ -471,6 +536,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -486,6 +552,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
     ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
@@ -503,12 +570,21 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
 
 bool DatabaseWithOwnTablesBase::empty() const
 {
+    /// A non-empty table list answers the question without forcing deferred population.
+    {
+        std::lock_guard lock(mutex);
+        if (!tables.empty())
+            return false;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
+    ensurePopulated();
     std::lock_guard lock(mutex);
     return detachTableUnlocked(table_name);
 }
@@ -737,6 +813,16 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
+    /// Look among the already attached tables first, so that a hit does not force deferred population.
+    /// This is what keeps `system.one` (attached eagerly) from dragging in the whole `system` database.
+    {
+        std::lock_guard lock(mutex);
+        auto it = tables.find(table_name);
+        if (it != tables.end())
+            return it->second;
+    }
+
+    ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())
