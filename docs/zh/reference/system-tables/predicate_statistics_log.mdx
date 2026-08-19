@@ -14,7 +14,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   ## 说明
 </div>
 
-包含从 `MergeTree` 表读取数据时收集的样本选择性统计信息。仅当 [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings#predicate_statistics_sample_rate) 大于 `0` 时，才会填充该表。
+包含从 `MergeTree` 表读取数据时收集的样本选择性统计信息。仅当 [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings/other#predicate_statistics_sample_rate) 大于 `0` 时，才会填充该表。
 
 可使用此表查看真实工作负载中用户谓词的选择性，以及经过主键或跳过索引过滤后还剩余多少粒度。这些数据可作为基于工作负载的索引和投影建议的输入。
 
@@ -33,7 +33,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
   ## 采样与开销
 </div>
 
-采样由 [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings#predicate_statistics_sample_rate) 控制：
+采样由 [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings/other#predicate_statistics_sample_rate) 控制：
 
 * `0` 禁用采集。
 * `1` 对每个查询都采样。
@@ -99,5 +99,5 @@ LIMIT 10;
   ## 另请参见
 </div>
 
-* [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings#predicate_statistics_sample_rate)
+* [`predicate_statistics_sample_rate`](/zh/reference/settings/session-settings/other#predicate_statistics_sample_rate)
 * [system.query&#95;log](/zh/reference/system-tables/query_log)
