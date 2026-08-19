@@ -1,0 +1,14 @@
+-- the row filter is in force
+tenant1-own
+-- SET readonly = DEFAULT is rejected
+1
+-- the session is still readonly afterwards
+1
+-- SET max_memory_usage = DEFAULT is rejected
+1
+-- a nested SETTINGS clause cannot lift the row filter
+1
+-- a SQL SECURITY DEFINER view with inner SETTINGS still reads
+3
+-- a SQL SECURITY INVOKER view with inner SETTINGS is now checked
+1
