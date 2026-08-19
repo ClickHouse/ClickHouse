@@ -54,6 +54,8 @@ SELECT k FROM l_num ANTI LEFT JOIN r_empty USING (k) ORDER BY k;
 SELECT k FROM l_num SEMI LEFT JOIN r_empty USING (k) ORDER BY k;
 SELECT '-- several disjuncts';
 SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k OR l.small = r.small;
+SELECT count() FROM l_num AS l SEMI LEFT JOIN r_num AS r ON l.k = r.k OR l.s = r.s;
+SELECT l.k, r.p FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k OR l.n = r.n ORDER BY l.k;
 SELECT '-- mixed join expression keeps every right row';
 SELECT count() FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p SETTINGS enable_analyzer = 1;
 SELECT count() FROM l_num AS l SEMI LEFT JOIN r_num AS r ON l.k = r.k AND l.v < r.p SETTINGS enable_analyzer = 1;
@@ -68,6 +70,8 @@ SELECT k FROM l_num ANTI LEFT JOIN r_num USING (k) ORDER BY k SETTINGS max_bytes
 SELECT '-- nothing may reclaim them, so they are dropped as they are built';
 SELECT k FROM l_num ANTI LEFT JOIN r_num USING (k) ORDER BY k SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, join_algorithm = 'hash';
 SELECT k FROM l_num SEMI LEFT JOIN r_num USING (k) ORDER BY k SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, join_algorithm = 'hash';
+SELECT '-- the same with several disjuncts, where the per-row used flags used to keep them';
+SELECT l.k, r.p FROM l_num AS l ANTI LEFT JOIN r_num AS r ON l.k = r.k OR l.s = r.s ORDER BY l.k SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0, join_algorithm = 'hash';
 EOF
 )
 

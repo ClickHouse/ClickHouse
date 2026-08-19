@@ -6,14 +6,14 @@
         they are built unless another algorithm may take them back out of the join.
     -->
 
-    <create_query>CREATE TABLE join_set_maps_probe (k UInt64) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE join_set_maps_build (k UInt64, p UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_set_maps_probe (k UInt64, k2 UInt64) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE join_set_maps_build (k UInt64, k2 UInt64, p UInt64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE join_set_maps_probe_str (s String) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE join_set_maps_build_str (s String) ENGINE = Memory</create_query>
 
     <!-- A quarter of the probe keys is present on the build side, so both strictnesses emit rows. -->
-    <fill_query>INSERT INTO join_set_maps_probe SELECT number FROM numbers_mt(20000000)</fill_query>
-    <fill_query>INSERT INTO join_set_maps_build SELECT number, number FROM numbers_mt(5000000)</fill_query>
+    <fill_query>INSERT INTO join_set_maps_probe SELECT number, number + 100000000 FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO join_set_maps_build SELECT number, number + 100000000, number FROM numbers_mt(5000000)</fill_query>
     <fill_query>INSERT INTO join_set_maps_probe_str SELECT toString(number) FROM numbers_mt(10000000)</fill_query>
     <fill_query>INSERT INTO join_set_maps_build_str SELECT toString(number) FROM numbers_mt(5000000)</fill_query>
 
@@ -25,6 +25,9 @@
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 10000000000 FORMAT Null</query>
     <!-- A right column is selected: ANTI fills it with defaults, so the set map still fits. -->
     <query>SELECT sum(r.p) FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash' FORMAT Null</query>
+    <!-- Several disjuncts: the join keeps per-row used flags, which a set map does not use, so the
+         right blocks are still dropped. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k OR l.k2 = r.k2 SETTINGS join_algorithm = 'hash' FORMAT Null</query>
     <!-- SEMI qualifies only when nothing of the right side is selected. -->
     <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash' FORMAT Null</query>
     <!-- A `String` key: the cell loses the `RowRef` but keeps the key and its saved hash. -->

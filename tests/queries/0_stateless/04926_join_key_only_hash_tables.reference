@@ -173,6 +173,20 @@
 19
 -- several disjuncts
 0
+7
+1	
+2	
+4	
+5	
+7	
+8	
+10	
+11	
+13	
+14	
+16	
+17	
+19	
 -- mixed join expression keeps every right row
 13
 7
@@ -247,3 +261,17 @@
 12
 15
 18
+-- the same with several disjuncts, where the per-row used flags used to keep them
+1	
+2	
+4	
+5	
+7	
+8	
+10	
+11	
+13	
+14	
+16	
+17	
+19	

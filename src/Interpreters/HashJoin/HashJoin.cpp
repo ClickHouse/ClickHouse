@@ -936,7 +936,16 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
                 nullmap_stored_for_block = true;
             }
 
-            if (!flag_per_row && !is_inserted && !nullmap_stored_for_block)
+            /// Whether anything that outlives the build phase still points into the block. Per-row used
+            /// flags are keyed by the stored block, so they keep it alive - except on a set map, which is
+            /// never `flagged` (see `MapGetter`), so there are no such flags to begin with.
+            const bool block_is_referenced
+                = is_inserted || nullmap_stored_for_block || (flag_per_row && maps_kind != JoinMapsKind::Set);
+            /// Every clause reads its keys out of the block before it goes. Only a set map gets here with
+            /// more than one clause: several clauses always mean `flag_per_row`.
+            const bool last_clause = onexpr_idx + 1 == onexprs.size();
+
+            if (!block_is_referenced && last_clause)
             {
                 doDebugAsserts();
                 LOG_TRACE(log, "Skipping inserting block with {} rows", rows);
