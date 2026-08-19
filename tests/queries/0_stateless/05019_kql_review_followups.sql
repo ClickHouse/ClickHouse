@@ -8,6 +8,7 @@ SET dialect = 'clickhouse';
 SET interval_output_format = 'kusto';
 
 -- Calendar intervals and sub-tick nanosecond intervals are not KQL timespans.
-SELECT toIntervalMonth(1); -- { serverError BAD_ARGUMENTS }
-SELECT toIntervalNanosecond(1); -- { serverError BAD_ARGUMENTS }
+-- Test formatting in the query pipeline so the expected-error annotation can observe it.
+SELECT formatRowNoNewline('TSV', toIntervalMonth(1)); -- { serverError BAD_ARGUMENTS }
+SELECT formatRowNoNewline('TSV', toIntervalNanosecond(1)); -- { serverError BAD_ARGUMENTS }
 SELECT toIntervalNanosecond(100);
