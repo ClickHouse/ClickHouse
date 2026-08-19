@@ -1328,6 +1328,13 @@ SemiAntiJoinSideChecker::SemiAntiJoinSideChecker(
     /// other side would expose a sibling table outside the current ON expression.
     if (resolving_join_on_expression)
     {
+        if (resolving_join_on_expression == &join_node)
+        {
+            skip_left = false;
+            skip_right = false;
+            return;
+        }
+
         if (skip_left && joinSubtreeContains(join_node.getLeftTableExpressionNode().get(), resolving_join_on_expression))
             skip_left = false;
         if (skip_right && joinSubtreeContains(join_node.getRightTableExpressionNode().get(), resolving_join_on_expression))
