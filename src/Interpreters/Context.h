@@ -1226,6 +1226,7 @@ public:
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+    void setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles);
 
     AsyncLoader & getAsyncLoader() const;
 
@@ -1642,6 +1643,7 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
+    ThreadPool & getBackgroundQueryPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;

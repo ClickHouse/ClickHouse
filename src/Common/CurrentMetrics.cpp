@@ -100,6 +100,9 @@
     M(MergeTreeDataSelectExecutorThreads, "Number of threads in the MergeTreeDataSelectExecutor thread pool.") \
     M(MergeTreeDataSelectExecutorThreadsActive, "Number of threads in the MergeTreeDataSelectExecutor thread pool running a task.") \
     M(MergeTreeDataSelectExecutorThreadsScheduled, "Number of queued or active jobs in the MergeTreeDataSelectExecutor thread pool.") \
+    M(BackgroundQueryThreads, "Number of threads in the background query thread pool.") \
+    M(BackgroundQueryThreadsActive, "Number of threads in the background query thread pool running a task.") \
+    M(BackgroundQueryThreadsScheduled, "Number of queued or active jobs in the background query thread pool.") \
     M(BackupsThreads, "Number of threads in the thread pool for BACKUP.") \
     M(BackupsThreadsActive, "Number of threads in thread pool for BACKUP running a task.") \
     M(BackupsThreadsScheduled, "Number of queued or active jobs for BACKUP.") \
