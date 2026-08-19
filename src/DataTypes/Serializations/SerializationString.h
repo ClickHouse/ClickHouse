@@ -7,6 +7,12 @@
 namespace DB
 {
 
+/// Validates a per-row size read from the untrusted `.size` sub-stream against the 16 GiB bound
+/// (the same limit as the single-stream path), throwing TOO_LARGE_STRING_SIZE on a corrupt/desynced
+/// value. Shared by SerializationString and SerializationStringSize so both readers of the `.size`
+/// substream reject corruption identically.
+void checkStringSizeFromSizeStream(UInt64 size);
+
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
     /// Holds full string values when `need_string_data` is true

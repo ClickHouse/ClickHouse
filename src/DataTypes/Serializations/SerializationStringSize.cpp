@@ -7,6 +7,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_READ_ALL_DATA;
+}
+
 SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
     : version(version_)
     , serialization_string(SerializationString::create(version))
@@ -252,6 +257,38 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
 
             addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column_for_cache, num_read_rows);
         }
+    }
+    else
+    {
+        /// Null stream = absent substream: return unchanged, like the String sibling. The short-stream
+        /// check below applies only once a stream was actually read.
+        settings.path.pop_back();
+        return;
+    }
+
+    /// Validate the requested `.size` slice BEFORE the compaction step, symmetric to the String path
+    /// (SerializationString::deserializeBinaryBulkWithSizeStream). The `.size` substream is read with
+    /// `SerializationNumber<UInt64>::deserializeBinaryBulk`, which appends however many values were
+    /// available and returns without demanding the full requested prefix. On a short/truncated stream
+    /// (`num_read_rows < rows_offset + limit`) the compaction below would underflow
+    /// `actual_new_size = size() - rows_offset` when `rows_offset > num_read_rows` and walk past the end
+    /// of `data`; with `rows_offset == 0` it would silently expose fewer `s.size` rows than requested
+    /// instead of rejecting the corrupt part. Reject it loudly.
+    if (num_read_rows < rows_offset + limit)
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "The String size sub-stream produced {} rows but {} were requested. The size and data "
+            "sub-streams are inconsistent; the part is likely truncated or corrupted.",
+            num_read_rows,
+            rows_offset + limit);
+
+    /// Reuse the same per-row 16 GiB bound as the String path so an oversized `.size` entry throws the
+    /// same corruption exception instead of being exposed as `s.size` subcolumn data. The newly read
+    /// values are the last `num_read_rows` entries of `column`.
+    {
+        const auto & size_data = assert_cast<const ColumnUInt64 &>(*column).getData();
+        for (size_t i = size_data.size() - num_read_rows; i != size_data.size(); ++i)
+            checkStringSizeFromSizeStream(size_data[i]);
     }
 
     /// Apply rows_offset if needed. `column` is uniquely owned here (it was cloned above on the cache path

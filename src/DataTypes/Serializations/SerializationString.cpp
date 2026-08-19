@@ -27,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
@@ -621,6 +622,22 @@ SerializationString::SerializationString(MergeTreeStringSerializationVersion ver
 {
 }
 
+/// A per-row size read from the separate `.size` sub-stream is untrusted: a corrupt or desynced
+/// sizes stream would otherwise reach `data.resize()`/`ignore()` and abort in Allocator::checkSize.
+/// Same bound as the single-stream path (deserializeBinaryImpl). Declared in SerializationString.h so
+/// SerializationStringSize (the `s.size` subcolumn reader) rejects the same corruption identically.
+void checkStringSizeFromSizeStream(UInt64 size)
+{
+    static constexpr size_t max_string_size = 16_GiB;
+    if (size > max_string_size)
+        throw Exception(
+            ErrorCodes::TOO_LARGE_STRING_SIZE,
+            "Too large string size: {}. The maximum is: {}. The size and data sub-streams are "
+            "inconsistent; the part is likely truncated or corrupted.",
+            size,
+            max_string_size);
+}
+
 namespace
 {
 
@@ -661,6 +678,8 @@ void serializeStringSizes(const IColumn & column, WriteBuffer & ostr, UInt64 off
     }
 }
 
+/// Precondition: the caller has already bound-checked `sizes[start .. start + rows)` with
+/// `checkStringSizeFromSizeStream`. No per-row check here (would double-check the hot path).
 void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const UInt64 * sizes, size_t start, size_t rows)
 {
     auto & offsets = column_string.getOffsets();
@@ -858,17 +877,64 @@ void SerializationString::deserializeBinaryBulkWithSizeStream(
     size_t bytes_to_skip = 0;
     const auto & sizes_data = assert_cast<const ColumnUInt64 &>(*string_state->size_column).getData();
     size_t prev_size = sizes_data.size() - num_read_rows;
-    for (size_t i = prev_size; i != prev_size + rows_offset; ++i)
-        bytes_to_skip += sizes_data[i];
 
-    appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
-    size_t bytes_to_read = offsets.back() - prev_last_offset;
+    /// The size sub-stream is read with `SerializationNumber<UInt64>::deserializeBinaryBulk`, which
+    /// appends however many `UInt64` values were available and returns without demanding the full
+    /// requested prefix. A short/truncated `.size` stream (`num_read_rows < rows_offset + limit`)
+    /// would then make the skipped-prefix loop index past `sizes_data` (when `rows_offset >
+    /// num_read_rows`) or `appendStringSizesToColumnStringOffsets` underflow `num_read_rows -
+    /// rows_offset`, and with `rows_offset == 0` we would silently deserialize fewer rows than
+    /// requested instead of rejecting the corrupt part. Reject it loudly, symmetric to the short
+    /// data-stream path (`readBigStrict` -> CANNOT_READ_ALL_DATA).
+    if (num_read_rows < rows_offset + limit)
+        throw Exception(
+            ErrorCodes::CANNOT_READ_ALL_DATA,
+            "The String size sub-stream produced {} rows but {} were requested. The size and data "
+            "sub-streams are inconsistent; the part is likely truncated or corrupted.",
+            num_read_rows,
+            rows_offset + limit);
+
+    /// Validate the ENTIRE requested size slice (skipped prefix + appended rows) with the per-row
+    /// bound BEFORE mutating the column. `deserializeBinaryBulkWithSizeStream` mutates `column`
+    /// directly instead of going through the generic clone-and-assign path, so a corrupt size in the
+    /// middle of the range must not leave the caller with committed offsets and no matching chars
+    /// (`offsets.back() > chars.size()`). Because no offset is appended and no `data.resize` runs
+    /// until this loop passes, the column stays internally consistent on the throw path. The skipped
+    /// prefix additionally sums `bytes_to_skip` with checked addition (a bit-63 size would otherwise
+    /// wrap the sum and misalign the data stream instead of throwing).
+    for (size_t i = prev_size; i != prev_size + num_read_rows; ++i)
+    {
+        checkStringSizeFromSizeStream(sizes_data[i]);
+        if (i < prev_size + rows_offset && __builtin_add_overflow(bytes_to_skip, sizes_data[i], &bytes_to_skip))
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Overflow while computing the number of bytes to skip in the String data sub-stream. "
+                "The size and data sub-streams are inconsistent; the part is likely truncated or corrupted.");
+    }
+
+    /// The append + data read below mutate the caller-owned `column` in place (this override does not go
+    /// through the generic clone-and-assign path). Each of `appendStringSizesToColumnStringOffsets` (offsets
+    /// reserve/push), `data.resize`, and `readBigStrict` can throw: a fault-injected MEMORY_LIMIT_EXCEEDED
+    /// from resize, or a short data stream, would otherwise leave the committed offsets with a too-small
+    /// `chars` buffer (`offsets.back() > chars.size()`). Snapshot both buffers and roll back on any throw so
+    /// the column stays internally consistent, mirroring `deserializeBinary`/`deserializeBinaryImpl`.
     auto & data = mutable_string_column.getChars();
-    size_t initial_size = data.size();
-    data.resize(initial_size + bytes_to_read);
-    stream->ignore(bytes_to_skip);
-    stream->readBigStrict(reinterpret_cast<char*>(&data[initial_size]), bytes_to_read);
-    data.resize(initial_size + bytes_to_read);
+    const size_t offsets_size_before = offsets.size();
+    const size_t chars_size_before = data.size();
+    try
+    {
+        appendStringSizesToColumnStringOffsets(mutable_string_column, sizes_data.data(), prev_size + rows_offset, num_read_rows - rows_offset);
+        const size_t bytes_to_read = offsets.back() - prev_last_offset;
+        data.resize(chars_size_before + bytes_to_read);
+        stream->ignore(bytes_to_skip);
+        stream->readBigStrict(reinterpret_cast<char *>(&data[chars_size_before]), bytes_to_read);
+    }
+    catch (...)
+    {
+        offsets.resize_assume_reserved(offsets_size_before);
+        data.resize_assume_reserved(chars_size_before);
+        throw;
+    }
     column = std::move(mutable_column);
     /// Unlike the sizes column above, `column` never receives the skipped `rows_offset` rows (they were
     /// only skipped over in the data stream, not inserted), so it only grew by `num_read_rows - rows_offset`
