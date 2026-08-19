@@ -10,6 +10,9 @@ SET distributed_plan_execute_locally = 1;
 SET distributed_plan_workers_num = 4;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
+-- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so the functional-test
+-- profile's non-zero limit would leave a single-node local aggregation and no distributed read.
+SET max_rows_to_group_by = 0;
 
 DROP TABLE IF EXISTS t_cascades_repl SYNC;
 CREATE TABLE t_cascades_repl (k UInt64, x UInt64)
