@@ -1414,9 +1414,9 @@ void ZooKeeper::deferException(std::exception_ptr exception, std::string_view co
         std::lock_guard lock(deferred_exceptions_mutex);
         deferred_exceptions.emplace_back(std::move(exception), context);
     }
-    catch (...)
+    catch (...) // NOLINT(bugprone-empty-catch)
     {
-        /// Logging must not prevent session cleanup, even under memory pressure.
+        /// Ok: an allocation failure must not prevent session cleanup.
     }
 }
 
