@@ -4973,6 +4973,12 @@ Possible values:
 - `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
 - `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
 - `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+
+For `DELETE FROM ... ON CLUSTER`, every host derives the mode from its own settings, so hosts whose
+profiles set different defaults can run the delete in different modes. Setting it in the session of
+the initiating query overrides that on each host, because the distributed DDL entry carries session
+changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies. A host
+that constrains the setting clamps the value back.
 )", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
