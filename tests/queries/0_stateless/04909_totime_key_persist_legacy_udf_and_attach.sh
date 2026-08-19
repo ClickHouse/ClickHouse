@@ -22,10 +22,20 @@ SELECT 'udf', sorting_key FROM system.tables WHERE database = currentDatabase() 
 CREATE TABLE ${CLICKHOUSE_DATABASE}.t_qualified_key (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 SELECT 'qualified', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_qualified_key';
 
--- `AS` materializes the source definition during CREATE normalization. Rewrite that copied key too.
+-- AS materializes the source definition during CREATE normalization. Rewrite that copied key too.
 CREATE TABLE t_as_source (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
 CREATE TABLE t_as_key AS t_as_source;
 SELECT 'as', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_as_key';
+"
+
+# A clone must retain its source definition verbatim. Unlike plain AS, changing its key spelling
+# makes the subsequent partition copy reject the source and destination as structurally different.
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 -q "
+CREATE TABLE t_clone_source (c0 DateTime) ENGINE = MergeTree() ORDER BY toTime(c0);
+"
+${CLICKHOUSE_CLIENT} --allow_experimental_time_time64_type 1 --use_legacy_to_time 1 --multiquery -q "
+CREATE TABLE t_clone_key CLONE AS t_clone_source;
+SELECT 'clone', sorting_key FROM system.tables WHERE database = currentDatabase() AND name = 't_clone_key';
 "
 
 # A full-definition ATTACH is CREATE-like user input and persists what it is given. The server warns
@@ -91,6 +101,8 @@ DROP TABLE t_attach_key;
 DROP TABLE t_qualified_key;
 DROP TABLE t_as_key;
 DROP TABLE t_as_source;
+DROP TABLE t_clone_key;
+DROP TABLE t_clone_source;
 DROP TABLE t_replayed_key;
 DROP TABLE t_ttl_key;
 DROP TABLE t_on_cluster_key;
