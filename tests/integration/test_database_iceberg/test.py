@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import random
@@ -30,6 +31,7 @@ from pyiceberg.table.sorting import UNSORTED_SORT_ORDER
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_secret_key, minio_access_key
 from helpers.client import QueryRuntimeException
+from helpers.s3_tools import get_file_contents
 from helpers.test_tools import TSV
 
 BASE_URL = "http://rest:8181/v1"

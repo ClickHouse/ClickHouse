@@ -165,6 +165,21 @@ bool icebergTypesEqualIgnoringIds(Poco::Dynamic::Var old_type, Poco::Dynamic::Va
     return oss_old.str() == oss_new.str();
 }
 
+/// The Iceberg spec marks `snapshots`, `metadata-log` and `snapshot-log` as optional, so table
+/// metadata written by another engine may omit any of them - typically for a table that has never
+/// been written to. Return the array, creating an empty one when the field is absent, so that
+/// appending to it does not depend on whoever created the table.
+Poco::JSON::Array::Ptr getOrCreateArray(Poco::JSON::Object::Ptr object, const char * field_name)
+{
+    auto array = object->getArray(field_name);
+    if (array.isNull())
+    {
+        array = new Poco::JSON::Array;
+        object->set(field_name, array);
+    }
+    return array;
+}
+
 /// Allocate the next schema id as max(existing schema ids) + 1 to avoid
 /// collisions when current-schema-id is not the highest in the list.
 Int32 getNextSchemaId(Poco::JSON::Object::Ptr metadata_object)
@@ -192,7 +207,11 @@ Int64 MetadataGenerator::getMaxSequenceNumber()
     if (metadata_object->has(Iceberg::f_last_sequence_number))
         return metadata_object->getValue<Int64>(Iceberg::f_last_sequence_number);
 
-    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    /// `snapshots` is optional: a table with no snapshot history has no sequence number to report.
+    auto snapshots = metadata_object->getArray(Iceberg::f_snapshots);
+    if (snapshots.isNull())
+        return 0;
+
     Int64 max_seq_number = 0;
 
     for (size_t i = 0; i < snapshots->size(); ++i)
@@ -307,7 +326,11 @@ bool MetadataGenerator::isModifyColumnApplied(const String & column_name, DataTy
 
 Poco::JSON::Object::Ptr MetadataGenerator::getParentSnapshot(Int64 parent_snapshot_id)
 {
-    auto snapshots = metadata_object->get(Iceberg::f_snapshots).extract<Poco::JSON::Array::Ptr>();
+    /// `snapshots` is optional: with no snapshot history there is no parent to find.
+    auto snapshots = metadata_object->getArray(Iceberg::f_snapshots);
+    if (snapshots.isNull())
+        return nullptr;
+
     for (size_t i = 0; i < snapshots->size(); ++i)
     {
         const auto snapshot = snapshots->getObject(static_cast<UInt32>(i));
@@ -413,7 +436,7 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         metadata_object->set(Iceberg::f_next_row_id, next_row_id + added_records);
     }
 
-    metadata_object->getArray(Iceberg::f_snapshots)->add(new_snapshot);
+    getOrCreateArray(metadata_object, Iceberg::f_snapshots)->add(new_snapshot);
     metadata_object->set(Iceberg::f_current_snapshot_id, snapshot_id);
 
     if (!metadata_object->has(Iceberg::f_refs))
@@ -434,13 +457,13 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
         Poco::JSON::Object::Ptr new_metadata_item = new Poco::JSON::Object;
         new_metadata_item->set(Iceberg::f_metadata_file, metadata_file_path.serialize());
         new_metadata_item->set(Iceberg::f_timestamp_ms, timestamp);
-        metadata_object->getArray(Iceberg::f_metadata_log)->add(new_metadata_item);
+        getOrCreateArray(metadata_object, Iceberg::f_metadata_log)->add(new_metadata_item);
     }
     {
         Poco::JSON::Object::Ptr new_snapshot_item = new Poco::JSON::Object;
         new_snapshot_item->set(Iceberg::f_metadata_snapshot_id, snapshot_id);
         new_snapshot_item->set(Iceberg::f_timestamp_ms, timestamp);
-        metadata_object->getArray(Iceberg::f_snapshot_log)->add(new_snapshot_item);
+        getOrCreateArray(metadata_object, Iceberg::f_snapshot_log)->add(new_snapshot_item);
     }
 
     if (added_delete_files > 0)
