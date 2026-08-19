@@ -4,10 +4,12 @@
 -- PIPELINE`, asserting only the presence or absence of the store (never counts or layout, which
 -- depend on the machine).
 
--- Pinned against the test runner's settings randomization: the admission needs the feature
--- on, a parallel pipeline, and two-level aggregation enabled; `max_block_size` is pinned
--- because a large enough randomized value collapses the numbers source into a single stream,
--- which the admission rejects.
+-- Pinned against the test runner's settings randomization and the stateless limits profile:
+-- the admission needs the feature on, a parallel pipeline, two-level aggregation enabled, and
+-- no group-by limit (`users.d/limits.yaml` sets `max_rows_to_group_by`, which the admission
+-- rejects); `max_block_size` is pinned because a large enough randomized value collapses the
+-- numbers source into a single stream, which the admission also rejects.
+SET max_rows_to_group_by = 0;
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
 SET group_by_two_level_threshold = 100000;
