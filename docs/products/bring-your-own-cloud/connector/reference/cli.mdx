@@ -212,8 +212,9 @@ Rotate an instance's credentials for one component:
 ```bash
 clicklink clctl scraper access provision --target helm \
   --target-namespace <connector-namespace> \
-  --instance <instance-name> \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
   --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
   --force
 ```
 

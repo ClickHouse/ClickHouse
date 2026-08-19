@@ -103,16 +103,22 @@ printf '%s\n' "$ENROLLMENT_TOKEN" "$CH_ADMIN_PASSWORD" | \
 
 ### ClickHouse users {#rotate-clickhouse-users}
 
-Re-provision the connector's read-only users per instance. On Kubernetes, from your workstation:
+Re-provision the connector's read-only users per instance. On Kubernetes, from your workstation; `--apply-ch-grants` re-applies the regenerated grants in-pod so the new credentials reach ClickHouse (when the admin user has a password, add `--ch-admin-password-stdin` and pipe it in):
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 clicklink clctl scraper access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
-  --instance <instance-name> --server <kubernetes-api-server-url> --force
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
 clicklink clctl troubleshoot access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
-  --instance <instance-name> --server <kubernetes-api-server-url> --force
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
 ```
 
 On a VM, on the host:

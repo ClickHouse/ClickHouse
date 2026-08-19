@@ -87,21 +87,23 @@ networkPolicy:
     - "clickhouse"
 ```
 
-Provision read-only access for each component from your workstation:
+Provision read-only access for each component from your workstation. `--apply-ch-grants` applies the generated ClickHouse grants in-pod via `kubectl exec`; without it the command creates the Kubernetes side only and leaves `ch-grants.sql` on disk for you to apply. When the admin user has a password, add `--ch-admin-password-stdin` and pipe it in.
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
 clicklink clctl scraper access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance analytics --instance-namespace clickhouse \
-  --server <kubernetes-api-server-url>
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
 clicklink clctl troubleshoot access provision --target helm \
   --target-namespace "${CONNECTOR_NAMESPACE}" \
   --instance analytics --instance-namespace clickhouse \
-  --server <kubernetes-api-server-url>
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace clickhouse
 ```
 
-For an operator-managed instance with no SQL-capable admin, add `--ch-user-via cr` and the pod-selection flags (`--ch-pod`, `--ch-pod-namespace`); see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli). Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
+For an operator-managed instance with no SQL-capable admin, swap `--apply-ch-grants` for `--ch-user-via cr` (the pod-selection flags stay); see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli). Then wire the Secret and ServiceAccount pair each command creates into the matching `accessBundles` map and run the `helm upgrade` shown above:
 
 ```yaml
 scraper:
