@@ -15,8 +15,20 @@ namespace DB
   * which makes this schema query-compatible with the wide one.
   */
 
-struct BucketedMetricLogElement : public MetricLogElement
+struct BucketedMetricLogElement
 {
+    time_t event_time{};
+    Decimal64 event_time_microseconds{};
+
+    std::vector<ProfileEvents::Count> profile_events;
+    std::vector<CurrentMetrics::Metric> current_metrics;
+
+    Array histogram_metric;
+    Array histogram_labels;
+    Array histogram_histogram;
+    Array histogram_count;
+    Array histogram_sum;
+
     static std::string name() { return "BucketedMetricLog"; }
     static ColumnsDescription getColumnsDescription();
     static NamesAndAliases getNamesAndAliases();

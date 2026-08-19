@@ -145,10 +145,22 @@ void BucketedMetricLog::stepFunction(const std::chrono::system_clock::time_point
 {
     std::lock_guard lock(previous_profile_events_mutex);
 
-    BucketedMetricLogElement elem;
+    MetricLogElement metric_log_element;
     collectMetricLogElement(
-        elem, current_time, previous_profile_events,
+        metric_log_element, current_time, previous_profile_events,
         getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms]);
+
+    BucketedMetricLogElement elem{
+        .event_time = metric_log_element.event_time,
+        .event_time_microseconds = metric_log_element.event_time_microseconds,
+        .profile_events = std::move(metric_log_element.profile_events),
+        .current_metrics = std::move(metric_log_element.current_metrics),
+        .histogram_metric = std::move(metric_log_element.histogram_metric),
+        .histogram_labels = std::move(metric_log_element.histogram_labels),
+        .histogram_histogram = std::move(metric_log_element.histogram_histogram),
+        .histogram_count = std::move(metric_log_element.histogram_count),
+        .histogram_sum = std::move(metric_log_element.histogram_sum),
+    };
 
     add(std::move(elem));
 }
