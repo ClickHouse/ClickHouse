@@ -24,6 +24,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/JoinNode.h>
@@ -507,15 +508,39 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
     auto join_expression_node = getJoinExpressionFromNode(join_node);
 
     /// `TOLERANCE <expr>` must be a constant: it bounds every probe, so it cannot depend on a row.
+    /// The unit lives in the type, not in the shape of the node. `INTERVAL 5 SECOND` is written as
+    /// `toIntervalSecond(5)` but is constant folded during resolution into a constant whose value is
+    /// 5 and whose type is `IntervalSecond`, so the interval kind has to be read off the result type
+    /// rather than inferred from the node being a function call. A tolerance with a non-interval type
+    /// is a plain number, already in the ASOF key's own units.
     if (join_node.hasTolerance())
     {
-        const auto * tolerance_constant = join_node.getTolerance()->as<ConstantNode>();
-        if (!tolerance_constant)
-            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
-                "TOLERANCE for ASOF JOIN must be a constant expression, got {}",
-                join_node.getTolerance()->formatASTForErrorMessage());
+        const auto & tolerance_node = join_node.getTolerance();
+        auto & join_operator = build_context.join_operator;
 
-        build_context.join_operator.asof_tolerance = tolerance_constant->getValue();
+        std::optional<Field> tolerance_value;
+        if (const auto * tolerance_constant = tolerance_node->as<ConstantNode>())
+        {
+            tolerance_value = tolerance_constant->getValue();
+        }
+        else if (const auto * tolerance_function = tolerance_node->as<FunctionNode>())
+        {
+            const auto & arguments = tolerance_function->getArguments().getNodes();
+            if (arguments.size() == 1)
+                if (const auto * interval_argument = arguments.front()->as<ConstantNode>())
+                    tolerance_value = interval_argument->getValue();
+        }
+
+        if (!tolerance_value)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "TOLERANCE for ASOF JOIN must be a constant number or INTERVAL, got {}",
+                tolerance_node->formatASTForErrorMessage());
+
+        join_operator.asof_tolerance = std::move(tolerance_value);
+
+        const auto tolerance_type = tolerance_node->getResultType();
+        if (const auto * interval_type = typeid_cast<const DataTypeInterval *>(tolerance_type.get()))
+            join_operator.asof_tolerance_interval_kind = interval_type->getKind();
     }
 
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();

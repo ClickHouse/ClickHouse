@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/IntervalKind.h>
 #include <Core/Field.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
@@ -30,9 +31,12 @@ struct JoinOperator
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
 
-    /// Optional `TOLERANCE` bound for ASOF JOIN, as a constant. Bounds how far apart the left and
-    /// the matched right ASOF value may be; matches beyond it are dropped.
+    /// Optional `TOLERANCE` bound for ASOF JOIN. Bounds how far apart the left and the matched right
+    /// ASOF value may be; matches beyond it are dropped. Held as written in the query: a bare number
+    /// is in the ASOF key's own units, while `INTERVAL` also records its kind so that it can be
+    /// converted once the key type (and, for `DateTime64`, its scale) is known.
     std::optional<Field> asof_tolerance = {};
+    std::optional<IntervalKind> asof_tolerance_interval_kind = {};
 
     /// (filter_name, build-side key column name) pairs that HashJoin should publish as
     /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.

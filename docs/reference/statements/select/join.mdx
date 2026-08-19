@@ -336,6 +336,38 @@ For example, consider the following tables:
 It's **not** supported in the [Join](/reference/engines/table-engines/special/join) table engine.
 </Note>
 
+### TOLERANCE {#asof-join-tolerance}
+
+By default `ASOF JOIN` matches the closest row however far away it is, so a row can be matched
+against one from hours or days earlier. An optional `TOLERANCE` clause bounds that distance:
+
+```sql
+SELECT trades.time, trades.price, quotes.bid
+FROM trades
+ASOF LEFT JOIN quotes
+ON trades.symbol = quotes.symbol AND trades.time >= quotes.time
+TOLERANCE INTERVAL 5 SECOND
+```
+
+Only matches within the given distance are returned. The bound is inclusive. With `ASOF LEFT JOIN`
+a row whose closest match is out of tolerance is kept with default or `NULL` values on the right,
+depending on [join_use_nulls](/operations/settings/settings#join_use_nulls); with `ASOF JOIN` it is
+dropped, in the same way as a row with no match at all.
+
+The bound may be written as an `INTERVAL`, which requires the `ASOF` column to be a date or time
+type, or as a plain number, which is taken in the units of the `ASOF` column itself. For a
+`DateTime64(3)` column, `TOLERANCE 5000` and `TOLERANCE INTERVAL 5 SECOND` mean the same thing.
+
+`INTERVAL` bounds in `MONTH`, `QUARTER` or `YEAR` are rejected, because those are not fixed lengths
+of time. A bound finer than the resolution of the `ASOF` column, such as `INTERVAL 1 MICROSECOND`
+against a `DateTime64(3)` column, is also rejected rather than silently rounded.
+
+<Note>
+A join using `TOLERANCE` is not executed by the `full_sorting_merge` algorithm, which cannot measure
+the distance between rows. If `join_algorithm` allows another algorithm, that one is used; if it
+allows only `full_sorting_merge`, the query fails.
+</Note>
+
 ## PASTE JOIN usage {#paste-join-usage}
 
 The result of `PASTE JOIN` is a table that contains all columns from left subquery followed by all columns from the right subquery.

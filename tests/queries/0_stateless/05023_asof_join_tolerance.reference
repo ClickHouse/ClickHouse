@@ -1,0 +1,15 @@
+-- sym 1 is 2s stale and matches, sym 2 is an hour stale and does not
+1	9.5
+2	\N
+-- without TOLERANCE both match, including the stale one
+1	9.5
+2	8.5
+-- INNER drops the out-of-tolerance row instead of nulling it
+1	9.5
+-- the bound is inclusive
+1
+-- one millisecond past the bound is not a match
+0
+-- a bare number is in the units of the ASOF key, here milliseconds
+1
+-- rejections

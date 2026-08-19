@@ -5715,6 +5715,16 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             join_using_node = std::move(join_using_column_node);
         }
     }
+
+    /// `TOLERANCE <expr>` is a scalar bound rather than a predicate over the joined rows, but it still
+    /// has to be resolved: without this `INTERVAL 5 SECOND` stays an unresolved `toIntervalSecond`
+    /// call with no result type, and the planner cannot tell which unit was meant.
+    if (join_node_typed.hasTolerance())
+    {
+        auto tolerance_expression = join_node_typed.getTolerance();
+        resolveExpressionNode(tolerance_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        join_node_typed.getTolerance() = std::move(tolerance_expression);
+    }
 }
 
 /** Try to expand an ordinary (non-materialized, non-parameterized) VIEW into an inline subquery.

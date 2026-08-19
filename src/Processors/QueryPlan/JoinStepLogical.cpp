@@ -1,3 +1,6 @@
+#include <Common/FieldVisitorConvertToNumber.h>
+#include <Common/IntervalKind.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -73,6 +76,7 @@
 
 namespace
 {
+
 constexpr std::string_view join_dummy_result_name = "__join_result_dummy";
 }
 namespace DB
@@ -85,6 +89,69 @@ namespace ErrorCodes
     extern const int INVALID_JOIN_ON_EXPRESSION;
     extern const int INCORRECT_DATA;
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+/// Convert an ASOF `TOLERANCE` into the units of the ASOF key, so that the join implementations can
+/// compare it against key values directly.
+///
+/// A bare number is already in the key's units and passes through. An `INTERVAL` is a duration and
+/// has to be rescaled: `TOLERANCE INTERVAL 5 SECOND` against a `DateTime64(3)` key is 5000, because
+/// that key counts milliseconds.
+///
+/// Two cases are rejected rather than approximated. `MONTH`, `QUARTER` and `YEAR` have no fixed
+/// length, so a bound written in them would silently mean "on average this long". And a duration
+/// that is not a whole number of key units (a microsecond bound against a millisecond column)
+/// cannot be represented, where rounding down to zero would quietly turn into "exact matches only".
+Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<IntervalKind> interval_kind, const DataTypePtr & key_type)
+{
+    /// A negative bound can never be satisfied, so it would silently turn the join into one that
+    /// matches nothing. Checked in floating point purely for the sign, so that fractional tolerances
+    /// against a floating point key are still allowed through unchanged below.
+    if (applyVisitor(FieldVisitorConvertToNumber<Float64>(), tolerance) < 0)
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "TOLERANCE for ASOF JOIN must not be negative");
+
+    if (!interval_kind)
+        return tolerance;
+
+    if (interval_kind->kind == IntervalKind::Kind::Month || interval_kind->kind == IntervalKind::Kind::Quarter
+        || interval_kind->kind == IntervalKind::Kind::Year)
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN cannot be given in {}, because it is not a fixed length of time",
+            interval_kind->toString());
+
+    const Int128 units = applyVisitor(FieldVisitorConvertToNumber<Int128>(), tolerance);
+
+    const Int128 total_nanoseconds = units * interval_kind->toAvgNanoseconds();
+
+    /// Nanoseconds in one unit of the key.
+    Int128 nanoseconds_per_key_unit = 0;
+    WhichDataType which(removeNullable(key_type));
+    if (which.isDateTime64())
+    {
+        const UInt32 scale = getDecimalScale(*removeNullable(key_type));
+        nanoseconds_per_key_unit = 1;
+        for (UInt32 i = scale; i < 9; ++i)
+            nanoseconds_per_key_unit *= 10;
+    }
+    else if (which.isDateTime())
+        nanoseconds_per_key_unit = Int128(1000000000);
+    else if (which.isDate() || which.isDate32())
+        nanoseconds_per_key_unit = Int128(1000000000) * 86400;
+    else
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN was given as an INTERVAL, but the ASOF key has type {}, which is not a date or time. "
+            "Give the tolerance as a plain number in the units of the key instead",
+            key_type->getName());
+
+    if (total_nanoseconds % nanoseconds_per_key_unit != 0)
+        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+            "TOLERANCE for ASOF JOIN is not a whole number of units of the ASOF key of type {}",
+            key_type->getName());
+
+    return Field(static_cast<Int64>(total_nanoseconds / nanoseconds_per_key_unit));
+}
 }
 
 static std::optional<ASOFJoinInequality> operatorToAsofInequality(JoinConditionOperator op)
@@ -1504,7 +1571,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(rhs);
 
             table_join->setAsofInequality(*asof_inequality_op);
-            table_join->setAsofTolerance(join_operator.asof_tolerance);
+            if (join_operator.asof_tolerance)
+                table_join->setAsofTolerance(convertAsofToleranceToKeyUnits(
+                    *join_operator.asof_tolerance, join_operator.asof_tolerance_interval_kind, lhs.getType()));
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())
