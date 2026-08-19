@@ -7,6 +7,7 @@
 1
 -- a nested SETTINGS clause is checked, in a subquery and in a CTE
 -- a nested SETTINGS name = DEFAULT is checked too
+-- a nested SETTINGS clause is checked on every member of a compound query
 -- an unconstrained nested SETTINGS clause still works
 3
 -- a SQL SECURITY DEFINER view with inner SETTINGS still reads

@@ -50,6 +50,13 @@ WITH cte AS (SELECT * FROM t_05019 SETTINGS additional_table_filters = {'t_05019
 SELECT '-- a nested SETTINGS name = DEFAULT is checked too';
 SELECT count() FROM (SELECT * FROM t_05019 SETTINGS max_execution_time = DEFAULT); -- { serverError 452 }
 
+-- A nested compound query carries the clause on one of its member SELECTs, whichever one the parser
+-- attached it to, so every member has to be checked and not just the query as a whole.
+SELECT '-- a nested SETTINGS clause is checked on every member of a compound query';
+SELECT count() FROM (SELECT tenant_id FROM t_05019 UNION ALL SELECT tenant_id FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}); -- { serverError 452 }
+SELECT count() FROM ((SELECT tenant_id FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}) UNION ALL SELECT tenant_id FROM t_05019); -- { serverError 452 }
+SELECT count() FROM (SELECT tenant_id FROM t_05019 INTERSECT SELECT tenant_id FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}); -- { serverError 452 }
+
 SELECT '-- an unconstrained nested SETTINGS clause still works';
 SELECT count() FROM (SELECT * FROM t_05019 SETTINGS max_block_size = 100);
 
