@@ -72,7 +72,7 @@ pub type VortexFFIWriteCallback =
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum VortexFFIQueue {
     /// Decoding, filtering, Arrow export: tasks that use the CPU.
-    Cpu = 0,
+    CPU = 0,
     /// Tasks that call the read callback.
     IO = 1,
 }
@@ -204,7 +204,7 @@ impl HostRuntime {
             }
             // A host thread may be running the same queues in parallel; whoever gets the task runs
             // it, and the waker wakes this thread up when the future can make progress.
-            if self.run(VortexFFIQueue::Cpu, 1) > 0 || self.run(VortexFFIQueue::IO, 1) > 0 {
+            if self.run(VortexFFIQueue::CPU, 1) > 0 || self.run(VortexFFIQueue::IO, 1) > 0 {
                 continue;
             }
             parker.park();
@@ -221,7 +221,7 @@ impl HostRuntime {
 
 impl Executor for HostRuntime {
     fn spawn(&self, future: BoxFuture<'static, ()>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::Cpu, future)
+        self.spawn_on(VortexFFIQueue::CPU, future)
     }
 
     fn spawn_io(&self, future: BoxFuture<'static, ()>) -> AbortHandleRef {
@@ -229,7 +229,7 @@ impl Executor for HostRuntime {
     }
 
     fn spawn_cpu(&self, task: Box<dyn FnOnce() + Send + 'static>) -> AbortHandleRef {
-        self.spawn_on(VortexFFIQueue::Cpu, async move { task() }.boxed())
+        self.spawn_on(VortexFFIQueue::CPU, async move { task() }.boxed())
     }
 
     fn spawn_blocking_io(&self, task: Box<dyn FnOnce() + Send + 'static>) -> AbortHandleRef {
@@ -1403,7 +1403,7 @@ mod tests {
                         while !state.stop.load(Ordering::Relaxed) {
                             let mut error: *mut c_char = std::ptr::null_mut();
                             let cpu = unsafe {
-                                vortex_ffi_runtime_run(runtime, VortexFFIQueue::Cpu, 8, &mut error)
+                                vortex_ffi_runtime_run(runtime, VortexFFIQueue::CPU, 8, &mut error)
                             };
                             let io = unsafe {
                                 vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, 8, &mut error)
@@ -2115,7 +2115,7 @@ mod tests {
             let mut error: *mut c_char = std::ptr::null_mut();
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             while consumer.finished.lock().expect("lock").is_none() {
-                let cpu = vortex_ffi_runtime_run(runtime, VortexFFIQueue::Cpu, 4, &mut error);
+                let cpu = vortex_ffi_runtime_run(runtime, VortexFFIQueue::CPU, 4, &mut error);
                 let io = vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, 4, &mut error);
                 assert!(cpu >= 0 && io >= 0, "a task panicked");
                 let released = consumer.outstanding.swap(0, Ordering::Relaxed);

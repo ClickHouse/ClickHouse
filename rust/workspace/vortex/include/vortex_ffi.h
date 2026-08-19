@@ -77,7 +77,7 @@ struct VortexFFIExpression;
 enum class VortexFFIQueue : int32_t
 {
     /// Decoding, filtering, Arrow export: tasks that use the CPU.
-    Cpu = 0,
+    CPU = 0,
     /// Tasks that call the read callback.
     IO = 1,
 };
