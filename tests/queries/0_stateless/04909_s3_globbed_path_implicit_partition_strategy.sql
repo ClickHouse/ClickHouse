@@ -31,6 +31,16 @@ ENGINE = S3('s3://bucket/test_04909/plain', 'Parquet')
 PARTITION BY d;
 SELECT 4;
 
+SELECT count()
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name = 'test_04909_plain_wildcard'
+    AND create_table_query LIKE '%partition_strategy = \'none\'%';
+
+DETACH TABLE test_04909_plain_wildcard;
+ATTACH TABLE test_04909_plain_wildcard;
+SELECT 6;
+
 DROP TABLE test_04909_glob_hive;
 DROP TABLE test_04909_glob_wildcard;
 DROP TABLE test_04909_plain_wildcard;

@@ -342,6 +342,8 @@ public:
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
+    /// Set when `initPartitionStrategy` evaluates an omitted partition strategy.
+    bool partition_strategy_was_inferred = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the

@@ -203,6 +203,7 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
     /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
     if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
     {
+        partition_strategy_was_inferred = true;
         if (getRawPath().hasPartitionWildcard())
         {
             /// A `{_partition_id}` placeholder in the path is valid only under the `wildcard`

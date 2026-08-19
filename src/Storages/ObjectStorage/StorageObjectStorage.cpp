@@ -35,6 +35,8 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -948,9 +950,39 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+namespace
+{
+bool hasPartitionStrategyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments)
+            continue;
+
+        const auto & children = function->arguments->children;
+        if (children.size() == 2 && children[0]->getColumnName() == "partition_strategy")
+            return true;
+    }
+
+    return false;
+}
+}
+
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+
+    if (configuration->partition_strategy_was_inferred
+        && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
+        && !hasPartitionStrategyArgument(args))
+    {
+        ASTs partition_strategy_args{
+            make_intrusive<ASTIdentifier>("partition_strategy"),
+            make_intrusive<ASTLiteral>("none")};
+        args.push_back(makeASTOperator("equals", std::move(partition_strategy_args)));
+    }
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
