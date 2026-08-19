@@ -106,6 +106,7 @@ namespace Setting
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsBool enable_global_with_statement;
     extern const SettingsBool implicit_transaction;
+    extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsSeconds wait_for_async_insert_timeout;
 }
@@ -1435,11 +1436,23 @@ BlockIO InterpreterInsertQuery::execute()
                 reason = "asynchronous insert queue is not configured";
             else if (!settings[Setting::async_insert] && !table->areAsynchronousInsertsEnabled())
                 reason = "async_insert is disabled for this query and table";
+            /// Async inserts are never used inside a transaction. Checked before the guards that only
+            /// downgrade the query, and with the same contract as the inlined-data path in
+            /// `executeQuery`, so `INSERT ... VALUES` and `INSERT ... SELECT` react to the same
+            /// settings alike: throw, unless the user opted out of the exception.
+            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
+            {
+                if (settings[Setting::throw_on_unsupported_query_inside_transaction])
+                {
+                    if (settings[Setting::implicit_transaction])
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts with 'implicit_transaction' are not supported");
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Async inserts inside transactions are not supported");
+                }
+                reason = "query runs inside a transaction";
+            }
             /// `StorageAlias::isMergeTree` delegates to its target, so the alias needs no unwrapping.
             else if (!table->isMergeTree())
                 reason = "destination table is not a MergeTree-family table";
-            else if (context->getCurrentTransaction() || settings[Setting::implicit_transaction])
-                reason = "query runs inside a transaction";
             else if ((settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto)
                 && !settings[Setting::insert_quorum_parallel])
                 reason = "insert_quorum is enabled without insert_quorum_parallel";
