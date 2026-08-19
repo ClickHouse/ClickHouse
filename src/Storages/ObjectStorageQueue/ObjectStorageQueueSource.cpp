@@ -255,6 +255,13 @@ ObjectStorageQueueSource::FileIterator::next()
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
 
+            for (const auto & object_info : new_batch)
+            {
+                auto object_metadata = object_info->getObjectMetadata();
+                if (object_metadata && object_metadata->is_last_modified_known)
+                    metadata->updateNewestSeenTimestamp(object_metadata->last_modified.epochTime(), storage_id);
+            }
+
             size_t previous_size = new_batch.size();
 
             /// Filter out files which we know we would not need to process.
@@ -1235,6 +1242,12 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.emplace_back(file_metadata);
 
+            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
+                object_metadata && object_metadata->is_last_modified_known)
+            {
+                processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+            }
+
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
             /// them on demand here, once per file, only when _tags is requested. Must run after
             /// emplace_back so a fetch failure fails the already-claimed file through the normal
@@ -1514,14 +1527,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_] : processed_files)
+        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_] : processed_files)
             if (file_state == FileState::Processed)
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1648,7 +1661,7 @@ void ObjectStorageQueueSource::finalizeCommit(
         return;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
     {
         try
         {
@@ -1659,6 +1672,9 @@ void ObjectStorageQueueSource::finalizeCommit(
                     if (insert_succeeded)
                     {
                         file_metadata->finalizeProcessed();
+
+                        if (last_modified)
+                            files_metadata->updateNewestCommittedTimestamp(last_modified, storage_id);
                     }
                     else if (file_metadata->wasProcessingResetWithoutFailure())
                     {

@@ -58,6 +58,18 @@ namespace DimensionalMetrics
         MetricType::Counter
     );
 
+    MetricFamily & ObjectStorageQueueNewestSeenTimestamp = Factory::instance().registerMetric(
+        "object_storage_queue_newest_seen_object_timestamp_seconds",
+        "Unix timestamp of the last-modified time of the newest object seen so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_committed_object_timestamp_seconds to estimate pipeline lag.",
+        {"database", "table"}
+    );
+
+    MetricFamily & ObjectStorageQueueNewestCommittedTimestamp = Factory::instance().registerMetric(
+        "object_storage_queue_newest_committed_object_timestamp_seconds",
+        "Unix timestamp of the last-modified time of the newest object fully processed so far by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Compare against object_storage_queue_newest_seen_object_timestamp_seconds to estimate pipeline lag.",
+        {"database", "table"}
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);
