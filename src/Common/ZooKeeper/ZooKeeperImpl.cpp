@@ -1431,6 +1431,7 @@ void ZooKeeper::logDeferredExceptions()
 
     for (auto & [exception, context] : exceptions)
     {
+        LockMemoryExceptionInThread lock_memory_exception(VariableContext::Global);
         tryLogException(std::move(exception), log, std::string(context));
     }
 }
