@@ -62,9 +62,6 @@ struct JoinSettings
 
     /// The block nested loop join is not one of `join_algorithms`: it executes what no algorithm can.
     bool allow_block_nested_loop_join;
-    /// Hand a keyless outer join to the hash join over a constant key instead, as it was before the
-    /// block nested loop join existed.
-    bool allow_inequality_join_as_cross_join;
 
     UInt64 max_block_size;
 

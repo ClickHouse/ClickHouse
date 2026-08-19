@@ -1058,23 +1058,6 @@ static JoinActionRef concatConditions(
     return result;
 }
 
-/// A constant equi-predicate `__lhs_const = __rhs_const` between the two sides. It makes the hash
-/// join put the whole build side under one key, so every pair of rows is a key match and what
-/// actually decides matching is the residual condition evaluated on those pairs.
-static JoinActionRef makeConstantJoinKey(const JoinExpressionActions & expression_actions)
-{
-    auto actions_dag = expression_actions.getActionsDAG();
-    auto data_type = std::make_shared<DataTypeUInt8>();
-
-    JoinActionRef lhs(&actions_dag->addColumn(data_type->createColumnConst(0, 1), data_type, "__lhs_const"), expression_actions);
-    lhs.setSourceRelations(BitSet().set(0));
-
-    JoinActionRef rhs(&actions_dag->addColumn(data_type->createColumnConst(0, 1), data_type, "__rhs_const"), expression_actions);
-    rhs.setSourceRelations(BitSet().set(1));
-
-    return JoinActionRef::transform({lhs, rhs}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
-}
-
 static bool tryAddDisjunctiveConditions(
     std::vector<JoinActionRef> & join_expressions,
     TableJoin::Clauses & table_join_clauses,
@@ -1528,21 +1511,9 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
             if (!ie_join_description)
             {
-                const bool hash_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+                bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
+                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
-
-                /// How a keyless join was executed before the nested loop operator existed: a constant
-                /// key collapses the build side into a single hash table entry, which the hash join
-                /// walks per probe row. An outer join evaluates the condition there, as its residual
-                /// condition; an `INNER` join takes the whole cartesian product out of the hash join
-                /// and filters it above, the same way the cross join rewrite does. Kept behind a
-                /// setting to compare the paths, and claims the condition before the two below.
-                const bool can_use_constant_join_key = join_settings.allow_inequality_join_as_cross_join
-                    && hash_enabled
-                    && (isInner(join_operator.kind) || isLeftOrRight(join_operator.kind) || isFull(join_operator.kind));
-
-                bool can_convert_to_cross = !can_use_constant_join_key
-                    && (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
 
                 /// The last resort, which needs nothing to be determined about the keys: the whole
                 /// condition is evaluated on candidate pairs inside the nested loop operator.
@@ -1563,22 +1534,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
                 is_disjunctive_condition = tryAddDisjunctiveConditions(
                     join_expression, table_join_clauses, used_expressions, join_settings, planning_context,
-                    join_operator.shared_runtime_filter_descriptors,
-                    !can_convert_to_cross && !can_use_block_nested_loop && !can_use_constant_join_key,
+                    join_operator.shared_runtime_filter_descriptors, !can_convert_to_cross && !can_use_block_nested_loop,
                     error_hint);
 
                 if (!is_disjunctive_condition)
                 {
-                    if (can_use_constant_join_key)
-                    {
-                        join_expression.push_back(makeConstantJoinKey(expression_actions));
-                        if (!addJoinPredicatesToTableJoin(
-                                join_expression, table_join_clauses.emplace_back(), used_expressions, join_settings,
-                                planning_context, join_operator.shared_runtime_filter_descriptors))
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
-                                toString(join_operator.kind), formatJoinCondition(join_expression));
-                    }
-                    else if (can_convert_to_cross)
+                    if (can_convert_to_cross)
                     {
                         join_operator.kind = JoinKind::Cross;
                         join_operator.residual_filter.append_range(join_expression);
