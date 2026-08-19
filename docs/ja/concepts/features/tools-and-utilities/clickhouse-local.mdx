@@ -72,6 +72,13 @@ ClickHouse は、ファイル名の拡張子から、そのファイルがタブ
   ```
 </Tip>
 
+データはローカルに存在する必要はありません。ファイル名の代わりに URL を使用でき、URL スキームに応じて対応するテーブルエンジンが選択されます (`http://` と `https://` は [url](/ja/reference/functions/table-functions/url) 関数のように読み取られ、`s3://` は [s3](/ja/reference/functions/table-functions/s3) 関数のように、`file://` は [file](/ja/reference/functions/table-functions/file) 関数のように読み取られます) ：
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -90,7 +97,7 @@ review_body    Nullable(String)
 review_date    Nullable(Date)
 ```
 
-最も評価の高い製品を見つけてみましょう：
+評価が最も高い製品を見つけてみましょう：
 
 ```bash
 ./clickhouse local -q "SELECT
@@ -398,10 +405,14 @@ clickhouse-local \
 
 `--listen_host`、`--tcp_port`、`--http_port` オプションは、バインド先のアドレスとポートを設定します。デフォルトのポートは、TCP が `9000`、HTTP が `8123` です。
 
+HTTP リスナーは、デフォルトの `clickhouse-server` 設定と同じ許容的なヘッダーで CORS プリフライトリクエストに応答するため、Web アプリケーションはブラウザーからそのままクエリを実行できます。これには、オリジンが `null` である `file://` URL から開かれた Web UI も含まれます。これを制限するには、`--config-file` で渡す設定ファイルで独自の `http_options_response` セクションを定義します。この設定はデフォルトを完全に置き換えます。
+
 <Warning>
   **セキュリティ**
 
   デフォルトでは、`clickhouse-local` は一時ユーザー設定で実行されるため、開かれたリスナーはいずれも認証されません。`users_config` 設定でカスタムの `users.xml` を指定して (たとえば `--config-file` を使用して) ユーザーとアクセス制御を明示的に設定している場合を除き、ループバックアドレス (`127.0.0.1` または `::1`) にバインドしてください。認証なしで非ループバックアドレスで待ち受けると、選択したポートに到達できるすべての相手に、ローカルインスタンスのデータが公開されます。
+
+  ループバックアドレスにもブラウザーから到達できることに注意してください。HTTP リスナーが開いている間は、アクセスしたあらゆる Web ページがローカルインスタンスにクエリを実行でき、デフォルトの CORS ヘッダーにより結果を読み取ることもできます。
 </Warning>
 
 <div id="related-content-1">

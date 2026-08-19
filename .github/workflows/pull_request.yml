@@ -340,12 +340,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -408,12 +406,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1038,12 +1034,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1105,12 +1099,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1172,12 +1164,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1239,12 +1229,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1306,12 +1294,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1373,12 +1359,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1440,12 +1424,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1507,12 +1489,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1574,12 +1554,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1641,12 +1619,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -1688,6 +1664,71 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (loongarch64)' --workflow "PR" --ci --timestamp
 
+  build_wasm64:
+    runs-on: [self-hosted, pr-arm-large]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'QnVpbGQgKHdhc202NCk=') }}
+    name: "Build (wasm64)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build (wasm64)' --workflow "PR" --ci --timestamp
+
   build_arm_fuzzers:
     runs-on: [self-hosted, pr-arm-large]
     needs:
@@ -1708,12 +1749,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2184,6 +2223,49 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, flaky check)' --workflow "PR" --ci --timestamp
 
+  stateless_tests_amd_binary_flaky_check:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYmluYXJ5LCBmbGFreSBjaGVjayk=') }}
+    name: "Stateless tests (amd_binary, flaky check)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_binary, flaky check)' --workflow "PR" --ci --timestamp
+
   integration_tests_amd_asan_ubsan_flaky:
     runs-on: [self-hosted, pr-amd-medium]
     needs:
@@ -2247,12 +2329,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2314,12 +2394,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2381,12 +2459,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2448,12 +2524,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2515,12 +2589,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2562,178 +2634,6 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Bugfix validation (unit tests)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_amd_asan_ubsan_distributed_plan_parallel:
-    runs-on: [self-hosted, pr-amd-large]
-    needs:
-    - build_amd_asan_ubsan
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwp') }}
-    name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, distributed plan, parallel)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3:
-    runs-on: [self-hosted, pr-amd-small-mem]
-    needs:
-    - build_amd_asan_ubsan
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMS8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 1/3)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3:
-    runs-on: [self-hosted, pr-amd-small-mem]
-    needs:
-    - build_amd_asan_ubsan
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMi8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 2/3)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3:
-    runs-on: [self-hosted, pr-amd-small-mem]
-    needs:
-    - build_amd_asan_ubsan
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgMy8zKQ==') }}
-    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, 3/3)' --workflow "PR" --ci --timestamp
-
   stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_wasmedge_parallel_1_3:
     runs-on: [self-hosted, pr-amd-medium]
     needs:
@@ -2755,12 +2655,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2823,12 +2721,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2891,12 +2787,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -2959,12 +2853,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3027,12 +2919,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3095,12 +2985,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3163,12 +3051,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3231,12 +3117,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3299,12 +3183,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3409,12 +3291,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3456,184 +3336,7 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, sequential)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_amd_tsan_parallel:
-    runs-on: [self-hosted, pr-amd-large]
-    needs:
-    - build_amd_tsan
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - style_check
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwp') }}
-    name: "Stateless tests (amd_tsan, parallel)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, parallel)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_sequential_1_2:
-    runs-on: [self-hosted, pr-amd-small]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCwgMS8yKQ==') }}
-    name: "Stateless tests (amd_tsan, sequential, 1/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 1/2)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_sequential_2_2:
-    runs-on: [self-hosted, pr-amd-small]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCwgMi8yKQ==') }}
-    name: "Stateless tests (amd_tsan, sequential, 2/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, sequential, 2/2)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_msan_wasmedge_parallel_1_2:
+  stateless_tests_amd_msan_wasmedge_parallel_1_3:
     runs-on: [self-hosted, pr-amd-large]
     needs:
     - build_amd_asan_ubsan
@@ -3653,12 +3356,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3668,8 +3369,8 @@ jobs:
     - unit_tests_msan_function_prop_fuzzer
     - unit_tests_tsan
     - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAxLzIp') }}
-    name: "Stateless tests (amd_msan, WasmEdge, parallel, 1/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAxLzMp') }}
+    name: "Stateless tests (amd_msan, WasmEdge, parallel, 1/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3698,9 +3399,9 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 1/2)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 1/3)' --workflow "PR" --ci --timestamp
 
-  stateless_tests_amd_msan_wasmedge_parallel_2_2:
+  stateless_tests_amd_msan_wasmedge_parallel_2_3:
     runs-on: [self-hosted, pr-amd-large]
     needs:
     - build_amd_asan_ubsan
@@ -3720,12 +3421,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3735,8 +3434,8 @@ jobs:
     - unit_tests_msan_function_prop_fuzzer
     - unit_tests_tsan
     - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAyLzIp') }}
-    name: "Stateless tests (amd_msan, WasmEdge, parallel, 2/2)"
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAyLzMp') }}
+    name: "Stateless tests (amd_msan, WasmEdge, parallel, 2/3)"
     outputs:
       data: ${{ steps.run.outputs.DATA }}
       pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
@@ -3765,7 +3464,72 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 2/2)' --workflow "PR" --ci --timestamp
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 2/3)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_msan_wasmedge_parallel_3_3:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfbXNhbiwgV2FzbUVkZ2UsIHBhcmFsbGVsLCAzLzMp') }}
+    name: "Stateless tests (amd_msan, WasmEdge, parallel, 3/3)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_msan, WasmEdge, parallel, 3/3)' --workflow "PR" --ci --timestamp
 
   stateless_tests_amd_msan_wasmedge_sequential_1_2:
     runs-on: [self-hosted, pr-amd-small-mem]
@@ -3787,12 +3551,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3854,12 +3616,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3921,12 +3681,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -3988,12 +3746,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4034,341 +3790,6 @@ jobs:
         run: |
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_debug, distributed plan, s3 storage, sequential)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_s3_storage_parallel_1_3:
-    runs-on: [self-hosted, pr-amd-medium]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDEvMyk=') }}
-    name: "Stateless tests (amd_tsan, s3 storage, parallel, 1/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 1/3)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_s3_storage_parallel_2_3:
-    runs-on: [self-hosted, pr-amd-medium]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDIvMyk=') }}
-    name: "Stateless tests (amd_tsan, s3 storage, parallel, 2/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 2/3)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_s3_storage_parallel_3_3:
-    runs-on: [self-hosted, pr-amd-medium]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIDMvMyk=') }}
-    name: "Stateless tests (amd_tsan, s3 storage, parallel, 3/3)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, 3/3)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_s3_storage_sequential_1_2:
-    runs-on: [self-hosted, pr-amd-small-mem]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCwgMS8yKQ==') }}
-    name: "Stateless tests (amd_tsan, s3 storage, sequential, 1/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 1/2)' --workflow "PR" --ci --timestamp
-
-  stateless_tests_amd_tsan_s3_storage_sequential_2_2:
-    runs-on: [self-hosted, pr-amd-small-mem]
-    needs:
-    - build_amd_asan_ubsan
-    - build_amd_debug
-    - build_amd_msan
-    - build_amd_tsan
-    - build_arm_binary
-    - build_arm_tidy
-    - config_workflow
-    - dockers_build_amd
-    - dockers_build_arm
-    - dockers_build_multiplatform_manifest
-    - fast_test
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
-    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
-    - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_arm_binary_parallel
-    - stateless_tests_arm_binary_sequential
-    - style_check
-    - unit_tests_asan_ubsan
-    - unit_tests_asan_ubsan_function_prop_fuzzer
-    - unit_tests_msan
-    - unit_tests_msan_function_prop_fuzzer
-    - unit_tests_tsan
-    - unit_tests_tsan_function_prop_fuzzer
-    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCwgMi8yKQ==') }}
-    name: "Stateless tests (amd_tsan, s3 storage, sequential, 2/2)"
-    outputs:
-      data: ${{ steps.run.outputs.DATA }}
-      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.CHECKOUT_REF }}
-
-      - name: Prepare env script
-        run: |
-          rm -rf ./ci/tmp
-          mkdir -p ./ci/tmp
-          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
-          export PYTHONPATH=./ci:.:
-
-          cat > ./ci/tmp/workflow_job.json << 'EOF'
-          ${{ toJson(job) }}
-          EOF
-          cat > ./ci/tmp/workflow_status.json << 'EOF'
-          ${{ toJson(needs) }}
-          EOF
-          ENV_SETUP_SCRIPT_EOF
-
-      - name: Run
-        id: run
-        run: |
-          . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, 2/2)' --workflow "PR" --ci --timestamp
 
   stateless_tests_arm_binary_parallel:
     runs-on: [self-hosted, pr-arm-medium-cpu]
@@ -4456,6 +3877,330 @@ jobs:
           . ./ci/tmp/praktika_setup_env.sh
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci --timestamp
 
+  stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_asan_ubsan
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGlzdHJpYnV0ZWQgcGxhbiwgcGFyYWxsZWwsIHNlbGVjdGVkIHRlc3RzKQ==') }}
+    name: "Stateless tests (amd_asan_ubsan, distributed plan, parallel, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, distributed plan, parallel, selected tests)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests:
+    runs-on: [self-hosted, pr-amd-small-mem]
+    needs:
+    - build_amd_asan_ubsan
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgc2VxdWVudGlhbCwgc2VsZWN0ZWQgdGVzdHMp') }}
+    name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_asan_ubsan, db disk, distributed plan, sequential, selected tests)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_tsan_parallel_selected_tests:
+    runs-on: [self-hosted, pr-amd-large]
+    needs:
+    - build_amd_tsan
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - style_check
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgcGFyYWxsZWwsIHNlbGVjdGVkIHRlc3RzKQ==') }}
+    name: "Stateless tests (amd_tsan, parallel, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, parallel, selected tests)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_tsan_sequential_selected_tests:
+    runs-on: [self-hosted, pr-amd-small]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgc2VxdWVudGlhbCwgc2VsZWN0ZWQgdGVzdHMp') }}
+    name: "Stateless tests (amd_tsan, sequential, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, sequential, selected tests)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_tsan_s3_storage_parallel_selected_tests:
+    runs-on: [self-hosted, pr-amd-medium]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgcGFyYWxsZWwsIHNlbGVjdGVkIHRlc3RzKQ==') }}
+    name: "Stateless tests (amd_tsan, s3 storage, parallel, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, parallel, selected tests)' --workflow "PR" --ci --timestamp
+
+  stateless_tests_amd_tsan_s3_storage_sequential_selected_tests:
+    runs-on: [self-hosted, pr-amd-small-mem]
+    needs:
+    - build_amd_asan_ubsan
+    - build_amd_debug
+    - build_amd_msan
+    - build_amd_tsan
+    - build_arm_binary
+    - build_arm_tidy
+    - config_workflow
+    - dockers_build_amd
+    - dockers_build_arm
+    - dockers_build_multiplatform_manifest
+    - fast_test
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_1_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_2_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_3_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
+    - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
+    - stateless_tests_amd_debug_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_arm_binary_parallel
+    - stateless_tests_arm_binary_sequential
+    - style_check
+    - unit_tests_asan_ubsan
+    - unit_tests_asan_ubsan_function_prop_fuzzer
+    - unit_tests_msan
+    - unit_tests_msan_function_prop_fuzzer
+    - unit_tests_tsan
+    - unit_tests_tsan_function_prop_fuzzer
+    if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfdHNhbiwgczMgc3RvcmFnZSwgc2VxdWVudGlhbCwgc2VsZWN0ZWQgdGVzdHMp') }}
+    name: "Stateless tests (amd_tsan, s3 storage, sequential, selected tests)"
+    outputs:
+      data: ${{ steps.run.outputs.DATA }}
+      pipeline_status: ${{ steps.run.outputs.pipeline_status || 'undefined' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+
+      - name: Prepare env script
+        run: |
+          rm -rf ./ci/tmp
+          mkdir -p ./ci/tmp
+          cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
+          export PYTHONPATH=./ci:.:
+
+          cat > ./ci/tmp/workflow_job.json << 'EOF'
+          ${{ toJson(job) }}
+          EOF
+          cat > ./ci/tmp/workflow_status.json << 'EOF'
+          ${{ toJson(needs) }}
+          EOF
+          ENV_SETUP_SCRIPT_EOF
+
+      - name: Run
+        id: run
+        run: |
+          . ./ci/tmp/praktika_setup_env.sh
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (amd_tsan, s3 storage, sequential, selected tests)' --workflow "PR" --ci --timestamp
+
   stateless_tests_arm_asan_ubsan_azure_parallel:
     runs-on: [self-hosted, pr-arm-large]
     needs:
@@ -4477,12 +4222,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4545,12 +4288,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4613,12 +4354,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4681,12 +4420,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4749,12 +4486,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -4817,12 +4552,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5142,12 +4875,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5209,12 +4940,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5276,12 +5005,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5343,12 +5070,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5410,12 +5135,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5477,12 +5200,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5544,12 +5265,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5611,12 +5330,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5678,12 +5395,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5745,12 +5460,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5812,12 +5525,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5879,12 +5590,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -5946,12 +5655,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6013,12 +5720,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6080,12 +5785,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6147,12 +5850,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6214,12 +5915,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6281,12 +5980,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6349,12 +6046,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6417,12 +6112,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6485,12 +6178,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6553,12 +6244,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6621,12 +6310,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6689,12 +6376,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6757,12 +6442,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6825,12 +6508,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -6893,12 +6574,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7219,12 +6898,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7293,12 +6970,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7367,12 +7042,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7440,12 +7113,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7513,12 +7184,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7586,12 +7255,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7659,12 +7326,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7726,12 +7391,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7793,12 +7456,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7860,12 +7521,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -7927,12 +7586,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8000,12 +7657,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8068,12 +7723,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8136,12 +7789,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8204,12 +7855,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8272,12 +7921,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8340,12 +7987,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8413,12 +8058,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8480,12 +8123,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8548,12 +8189,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8615,12 +8254,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8682,12 +8319,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8749,12 +8384,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8817,12 +8450,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8884,12 +8515,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -8951,12 +8580,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9024,12 +8651,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9097,12 +8722,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9170,12 +8793,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9243,12 +8864,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9316,12 +8935,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9389,12 +9006,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9462,12 +9077,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9535,12 +9148,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9608,12 +9219,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9681,12 +9290,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9754,12 +9361,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9827,12 +9432,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9900,12 +9503,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -9973,12 +9574,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -10049,10 +9648,8 @@ jobs:
     - integration_tests_amd_llvm_coverage_6_8
     - integration_tests_amd_llvm_coverage_7_8
     - integration_tests_amd_llvm_coverage_8_8
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
     - stateless_tests_amd_llvm_coverage_1_3
     - stateless_tests_amd_llvm_coverage_2_3
@@ -10066,7 +9663,7 @@ jobs:
     - stateless_tests_amd_llvm_coverage_old_analyzer_s3_storage_dbreplicated_wasmedge_sequential_2_2
     - stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel
     - stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -10188,12 +9785,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -10261,12 +9856,10 @@ jobs:
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_4_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_5_6
     - integration_tests_amd_asan_ubsan_db_disk_old_analyzer_6_6
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_debug_parallel
-    - stateless_tests_amd_tsan_parallel
+    - stateless_tests_amd_tsan_parallel_selected_tests
     - stateless_tests_arm_binary_parallel
     - stateless_tests_arm_binary_sequential
     - style_check
@@ -10473,6 +10066,7 @@ jobs:
     - build_s390x
     - build_toolchain_pgo_bolt_aarch64
     - build_toolchain_pgo_bolt_amd64
+    - build_wasm64
     - buzzhouse_amd_debug
     - buzzhouse_amd_msan
     - buzzhouse_amd_tsan
@@ -10546,12 +10140,11 @@ jobs:
     - quick_functional_tests
     - sqllogic_test
     - sqlstorm_test
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_1_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_2_3
-    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_3_3
-    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel
+    - stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_sequential_selected_tests
+    - stateless_tests_amd_asan_ubsan_distributed_plan_parallel_selected_tests
     - stateless_tests_amd_asan_ubsan_flaky_check
     - stateless_tests_amd_binary_excluded_from_llvm
+    - stateless_tests_amd_binary_flaky_check
     - stateless_tests_amd_debug_distributed_plan_s3_storage_parallel
     - stateless_tests_amd_debug_distributed_plan_s3_storage_sequential
     - stateless_tests_amd_debug_flaky_check
@@ -10570,19 +10163,16 @@ jobs:
     - stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_parallel
     - stateless_tests_amd_llvm_coverage_parallelreplicas_s3_storage_sequential
     - stateless_tests_amd_msan_flaky_check
-    - stateless_tests_amd_msan_wasmedge_parallel_1_2
-    - stateless_tests_amd_msan_wasmedge_parallel_2_2
+    - stateless_tests_amd_msan_wasmedge_parallel_1_3
+    - stateless_tests_amd_msan_wasmedge_parallel_2_3
+    - stateless_tests_amd_msan_wasmedge_parallel_3_3
     - stateless_tests_amd_msan_wasmedge_sequential_1_2
     - stateless_tests_amd_msan_wasmedge_sequential_2_2
     - stateless_tests_amd_tsan_flaky_check
-    - stateless_tests_amd_tsan_parallel
-    - stateless_tests_amd_tsan_s3_storage_parallel_1_3
-    - stateless_tests_amd_tsan_s3_storage_parallel_2_3
-    - stateless_tests_amd_tsan_s3_storage_parallel_3_3
-    - stateless_tests_amd_tsan_s3_storage_sequential_1_2
-    - stateless_tests_amd_tsan_s3_storage_sequential_2_2
-    - stateless_tests_amd_tsan_sequential_1_2
-    - stateless_tests_amd_tsan_sequential_2_2
+    - stateless_tests_amd_tsan_parallel_selected_tests
+    - stateless_tests_amd_tsan_s3_storage_parallel_selected_tests
+    - stateless_tests_amd_tsan_s3_storage_sequential_selected_tests
+    - stateless_tests_amd_tsan_sequential_selected_tests
     - stateless_tests_arm_asan_ubsan_azure_parallel
     - stateless_tests_arm_asan_ubsan_azure_sequential
     - stateless_tests_arm_asan_ubsan_targeted
