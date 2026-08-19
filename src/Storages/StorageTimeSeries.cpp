@@ -1,6 +1,7 @@
 #include <Storages/StorageTimeSeries.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -9,6 +10,8 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterRenameQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -18,12 +21,17 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
+#include <Storages/TimeSeries/makeASTSelectFromTimeSeries.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <optional>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
@@ -153,7 +161,9 @@ StorageTimeSeries::StorageTimeSeries(
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
-    storage_metadata.setVirtuals(createVirtuals());
+
+    auto timestamp_type = splitTimeSeriesType(normalized_columns.get(TimeSeriesColumnNames::TimeSeries).type).first;
+    storage_metadata.setVirtuals(createVirtuals(timestamp_type));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -591,25 +601,43 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     }
 }
 
-VirtualColumnsDescription StorageTimeSeries::createVirtuals()
+VirtualColumnsDescription StorageTimeSeries::createVirtuals(const DataTypePtr & timestamp_type)
 {
     VirtualColumnsDescription desc;
     desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
     desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+
+    /// `timestamp` is a filter-only virtual column: it never appears in the output, but a condition on it in
+    /// WHERE selects the time range. The read query pushes such a condition onto the "samples" table (and,
+    /// when enabled, onto the "min_time"/"max_time" columns of the "tags" table). It is `Nullable` because the
+    /// read exposes it via `toNullable(...)`: an unmatched "metrics" FULL JOIN row gets NULL there so the
+    /// re-applied `timestamp` predicate drops it (see `makeMatchingTimestamp`/`findSatisfyingTimestamp`).
+    desc.addPersistent(TimeSeriesColumnNames::Timestamp, makeNullable(timestamp_type), /* codec= */ nullptr, /* comment= */ "");
     return desc;
 }
 
 void StorageTimeSeries::readImpl(
-    QueryPlan & /* query_plan */,
-    const Names & /* column_names */,
+    QueryPlan & query_plan,
+    const Names & column_names,
     const StorageSnapshotPtr & /* storage_snapshot */,
-    SelectQueryInfo & /* query_info */,
-    ContextPtr /* local_context */,
+    SelectQueryInfo & query_info,
+    ContextPtr local_context,
     QueryProcessingStage::Enum /* processed_stage */,
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SELECT is not supported by storage {} yet", getName());
+    /// Run the generated read query on a child context whose settings don't depend on the caller's
+    /// session/profile (see getSettingsForSelectFromTimeSeries).
+    auto read_context = Context::createCopy(local_context);
+    read_context->applySettingsChanges(getSettingsForSelectFromTimeSeries());
+
+    NameSet requested_columns{column_names.begin(), column_names.end()};
+    auto select_query = makeASTSelectFromTimeSeries(*this, requested_columns, query_info, read_context);
+    auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, /*is_subquery=*/false,
+                                      query_info.settings_limit_offset_done);
+    InterpreterSelectQueryAnalyzer interpreter(select_query, read_context, options, column_names);
+    interpreter.addStorageLimits(*query_info.storage_limits);
+    query_plan = std::move(interpreter).extractQueryPlan();
 }
 
 

@@ -1,6 +1,7 @@
 #include <Common/RegexpUtils.h>
 
 #include <algorithm>
+#include <cstring>
 #include <utility>
 #include <vector>
 
@@ -218,6 +219,33 @@ RegexpFixedPrefix extractFixedPrefix(std::string_view regexp)
     return {.prefix = fixed_prefix, .is_perfect = true};
 }
 
+/// Whether `regexp` contains an alternation `|` outside any group and any character class.
+bool hasTopLevelAlternation(std::string_view regexp)
+{
+    int depth = 0;
+    bool in_class = false;
+    /// `i` can be incremented twice per iteration, so the condition must be `<` and not `!=`.
+    for (size_t i = 0; i < regexp.size(); ++i)
+    {
+        char c = regexp[i];
+        if (c == '\\')
+            ++i;  /// skip the escaped character
+        else if (in_class)
+            in_class = (c != ']');
+        else if (c == '[')
+            in_class = true;
+        else if (c == '(')
+            ++depth;
+        else if (c == ')' && depth > 0)
+            --depth;
+        else if (c == '|' && depth == 0)
+            return true;
+    }
+    return false;
+}
+
+constexpr std::string_view metacharacters = ".^$*+?()[]{}|\\";
+
 }
 
 
@@ -230,6 +258,109 @@ RegexpFixedPrefix extractFixedPrefixFromRegularExpression(std::string_view regex
         return {};
 
     return result;
+}
+
+
+String anchorRegularExpression(std::string_view regexp, bool anchor_begin, bool anchor_end)
+{
+    if (!anchor_begin && !anchor_end)
+        return String{regexp};
+
+    String result;
+    result.reserve(regexp.size() + 5);
+
+    if (anchor_begin)
+        result += '^';
+
+    /// Without the group an anchor would bind to a single alternative instead of the whole expression.
+    if (hasTopLevelAlternation(regexp))
+    {
+        result += "(?:";
+        result += regexp;
+        result += ')';
+    }
+    else
+    {
+        result += regexp;
+    }
+
+    if (anchor_end)
+        result += '$';
+
+    return result;
+}
+
+
+std::optional<std::vector<String>> getAllStringsMatchedByRegularExpression(std::string_view regexp)
+{
+    if (!regexp.starts_with('^'))
+        return std::nullopt;
+
+    size_t pos = 1;
+
+    /// The alternation must be wrapped in a group, either "(...)" or "(?:...)".
+    bool in_group = true;
+    if (regexp.substr(pos).starts_with("(?:"))
+        pos += strlen("(?:");
+    else if (regexp.substr(pos).starts_with('('))
+        pos += strlen("(");
+    else
+        in_group = false;
+
+    std::vector<String> matched_strings;
+    String current;
+
+    while (pos != regexp.size())
+    {
+        char c = regexp[pos];
+        if (c == '\\')
+        {
+            /// An escaped metacharacter is a literal character.
+            if (pos + 1 == regexp.size() || metacharacters.find(regexp[pos + 1]) == std::string_view::npos)
+                return std::nullopt;
+            current += regexp[pos + 1];
+            pos += 2;
+        }
+        else if (c == '|')
+        {
+            /// Without a group the anchors would apply to the first and the last alternative only,
+            /// for example "^abc|def$" means "(^abc)|(def$)".
+            if (!in_group)
+                return std::nullopt;
+            matched_strings.push_back(std::move(current));
+            current.clear();
+            ++pos;
+        }
+        else if (c == ')' && in_group)
+        {
+            /// The group must be closed right before the final "$".
+            if (regexp.substr(pos) != ")$")
+                return std::nullopt;
+            matched_strings.push_back(std::move(current));
+            return matched_strings;
+        }
+        else if (c == '$' && !in_group)
+        {
+            /// The "$" must be the last character.
+            if (pos + 1 != regexp.size())
+                return std::nullopt;
+            matched_strings.push_back(std::move(current));
+            return matched_strings;
+        }
+        else if (metacharacters.find(c) != std::string_view::npos)
+        {
+            /// Any other metacharacter means the set of matched strings isn't a fixed list.
+            return std::nullopt;
+        }
+        else
+        {
+            current += c;
+            ++pos;
+        }
+    }
+
+    /// The regular expression is not anchored at the end.
+    return std::nullopt;
 }
 
 }

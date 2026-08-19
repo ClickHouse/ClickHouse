@@ -30,6 +30,7 @@ namespace ErrorCodes
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(Bool, skip_reading_samples_for_timestamp_filter, true, "When a 'timestamp' condition is used only as a filter (not selected, and 'time_series' not requested), skip reading the heavy 'samples' table and rely on the coarser 'min_time'/'max_time' range filter on the 'tags' table. This returns series whose lifespan overlaps the requested window rather than series that actually have a sample in it, and always returns series whose 'min_time'/'max_time' are unset (NULL). Only effective when 'filter_by_min_time_and_max_time' is enabled.", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)

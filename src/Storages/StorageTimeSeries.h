@@ -68,7 +68,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    static VirtualColumnsDescription createVirtuals();
+    static VirtualColumnsDescription createVirtuals(const DataTypePtr & timestamp_type);
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
