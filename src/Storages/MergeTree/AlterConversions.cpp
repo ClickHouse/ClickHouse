@@ -536,16 +536,6 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
 /// reads. The read set must be closed over them: it gates which commands survive `filterMutationCommands`
 /// and which columns the interpreter can resolve expressions against, so a missing dependency leaves the
 /// pending mutation unapplied for this read task and returns the stale stored value.
-///
-/// Three rules govern the walk:
-/// 1. Transitive: the updated column may be reachable only through other MATERIALIZED columns
-///    (`m2 MATERIALIZED m1 + 1` over `m1 MATERIALIZED x + 1` with `x` updated), so the MATERIALIZED
-///    columns in between are read as well.
-/// 2. Reachability-gated: a dependency is added only when an updated column is reachable through it,
-///    so an unrelated chain is neither read nor keeps a command the query does not need alive.
-/// 3. EPHEMERAL-aware: a column reading an EPHEMERAL one is never recalculated outside INSERT, so it is
-///    not read to complete a chain passing through it and keeps its stored value. An EPHEMERAL column
-///    is not readable and appears in the analysis only so that such an expression resolves.
 void AlterConversions::addColumnsRequiredForMaterialized(
     Names & read_columns,
     NameSet & read_columns_set,
@@ -588,9 +578,9 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
     };
 
-    /// Whether a column can be recalculated outside INSERT: it is MATERIALIZED, and its expression reads
-    /// no EPHEMERAL column, which exists only during INSERT. The test is on what the expression reads, not
-    /// on the column itself, matching what `MutationsInterpreter::prepare` skips.
+    /// EPHEMERAL columns exist only during INSERT, so a default reading one is never recalculated. The
+    /// test is on what the expression reads, not on the column itself, as `MutationsInterpreter::prepare`
+    /// does when it skips such a column.
     auto can_recalculate = [&](const String & column_name)
     {
         if (!is_materialized(column_name))
@@ -600,9 +590,8 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
-    /// Whether the interpreter recalculates this column: it can be recalculated, and a dependency either
-    /// is written by a command or is itself recalculated. The written case is tested here rather than by
-    /// recursing, because a written column is usually plain and fails `can_recalculate`; it ends the descent.
+    /// A dependency written by a command is tested here rather than by recursing: a written column is
+    /// usually plain and fails `can_recalculate`, so it ends the descent.
     ///
     /// Memoised. The entry is inserted before descending, so a cycle — which a well-formed default cannot
     /// contain — reads it while still provisional and terminates. Otherwise an entry is only read once
