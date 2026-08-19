@@ -456,8 +456,8 @@ void BackupImpl::writeBackupMetadata()
 #if CLICKHOUSE_CLOUD
     /// A Keeper session can expire while this upload is in flight. The progress fingerprint covers every
     /// input written to the manifest, so a new owner can only publish the same metadata bytes.
-    if (resume_check_owner)
-        resume_check_owner();
+    if (params.resume)
+        params.resume->check_owner();
 #endif
 
     std::unique_ptr<WriteBuffer> out;
@@ -472,7 +472,7 @@ void BackupImpl::writeBackupMetadata()
     *out << "<timestamp>"
 #if CLICKHOUSE_CLOUD
          /// A continued attempt republishes the timestamp of the one it continues, byte for byte.
-         << (timestamp_text.empty() ? toString(LocalDateTime{timestamp}) : timestamp_text)
+         << (params.resume ? params.resume->timestamp_text : toString(LocalDateTime{timestamp}))
 #else
          << toString(LocalDateTime{timestamp})
 #endif
@@ -589,7 +589,7 @@ void BackupImpl::writeBackupMetadata()
     out->finalize();
 
 #if CLICKHOUSE_CLOUD
-    if (resuming)
+    if (params.resume)
         metadata_already_published = true;
 #endif
 
@@ -932,7 +932,7 @@ void BackupImpl::createLockFile()
         }
 #if CLICKHOUSE_CLOUD
         /// A continued attempt is allowed to find its own lock: it is the one that wrote it.
-        if (lock_contents_match && !resuming)
+        if (lock_contents_match && !params.resume)
 #else
         if (lock_contents_match)
 #endif
@@ -1570,8 +1570,8 @@ void BackupImpl::finalizeWriting()
         closeArchive(/* finalize= */ true);
         setCompressedSize();
 #if CLICKHOUSE_CLOUD
-        if (resume_check_owner)
-            resume_check_owner();
+        if (params.resume)
+            params.resume->check_owner();
 #endif
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);

@@ -203,15 +203,6 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
-#if CLICKHOUSE_CLOUD
-    /// Set when this attempt continues an interrupted one; `BackupResumer` fills these in while it
-    /// reopens a destination this backup already owns.
-    bool resuming = false;
-    /// The timestamp the attempt being continued wrote into `.backup`. Empty otherwise.
-    String timestamp_text;
-    /// Throws unless this attempt still owns the progress record. Unset unless resuming.
-    std::function<void()> resume_check_owner;
-#endif
     String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
