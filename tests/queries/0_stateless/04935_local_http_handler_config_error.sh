@@ -101,15 +101,4 @@ $CLICKHOUSE_LOCAL --config-file "$CONFIG" --query "
     SYSTEM STOP LISTEN HTTP;
 " || rc=1
 
-# With no `http_port` the handler configuration is not read at all, so a broken rule does not prevent
-# the rest of the session from running. This locks the port guard that keeps the parse out of the
-# no-listener path.
-cat > "$CONFIG" <<XML
-<clickhouse>
-    <listen_host>127.0.0.1</listen_host>
-    ${BAD_RULE}
-</clickhouse>
-XML
-$CLICKHOUSE_LOCAL --config-file "$CONFIG" --query "SELECT 'accepted: no http_port configured'" || rc=1
-
 exit $rc

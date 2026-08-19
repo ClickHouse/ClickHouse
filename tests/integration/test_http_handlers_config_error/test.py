@@ -8,12 +8,18 @@ cluster = ClickHouseCluster(__file__)
 
 # The broken `<http_handlers>` section is copied in at runtime rather than passed as a
 # `main_configs` entry, because the instance has to come up once with a valid configuration
-# before the failing start can be observed.
-node = cluster.add_instance("node", stay_alive=True)
+# before the failing start can be observed. The TLS material is a `main_configs` entry because it
+# is inert on its own: only the `<openSSL>` section copied in later refers to it.
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/server.crt", "configs/server.key", "configs/dhparam.pem"],
+    stay_alive=True,
+)
 
 BAD_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_handler.xml"
 LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
 NO_HTTP_PORT_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/no_http_port.xml"
+HTTPS_ONLY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/https_only.xml"
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -136,3 +142,47 @@ def test_handler_config_is_not_read_without_an_http_port(start_cluster):
             user="root",
         )
         node.restart_clickhouse()
+
+
+def test_handler_config_error_is_not_reported_as_a_listen_failure_on_https(start_cluster):
+    # The HTTPS listener reads the same `<http_handlers>` section as the HTTP one and is configured
+    # by its own copy of the same code, so it needs its own case. `http_port` is removed here, which
+    # leaves HTTPS as the only listener that reads the section: a failure can then only be
+    # attributed to the HTTPS path.
+    node.stop_clickhouse()
+
+    # An absence is asserted below, so an earlier case's report must not survive in the search
+    # space: `grep_in_log` globs every rotation and these instances set `<rotateOnOpen>`.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
+    )
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "https_only.xml"), HTTPS_ONLY_CONFIG_IN_CONTAINER
+    )
+    try:
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG)
+        assert reported != ""
+
+        # Bracket-free for the same reason as in the cases above: the secure socket was bound
+        # before the factory was built, so the cause used to come back as
+        # `Listen ...:8443 failed: <cause>` re-coded to `NETWORK_ERROR`.
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {BAD_CONFIG_IN_CONTAINER} {HTTPS_ONLY_CONFIG_IN_CONTAINER}",
+            ],
+            user="root",
+        )
+        node.start_clickhouse()
