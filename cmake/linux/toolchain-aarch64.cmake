@@ -16,10 +16,15 @@ set (TOOLCHAIN_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/sysroot/linux-aarch
 
 set (CMAKE_SYSROOT "${TOOLCHAIN_PATH}/aarch64-linux-gnu/libc")
 
-# Only the generated headers and the main include dir; the arch dirs are added
-# per-target where needed, to keep the include order correct while building musl itself.
+# -nostdlibinc drops the sysroot's glibc userspace headers from the default search
+# path; musl's headers are passed explicitly instead, and the kernel (uapi) headers
+# are whitelisted through the kernel-headers symlink directory created in
+# cmake/musl.cmake. Target-specific include directories precede these flags on the
+# compile command line, so they do not disturb the include order while building
+# musl itself.
 set (MUSL_SOURCE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/musl")
-set (MUSL_INCLUDE_FLAGS "-isystem ${CMAKE_BINARY_DIR}/contrib/musl-cmake/include -isystem ${MUSL_SOURCE_PATH}/include")
+set (MUSL_STUB_INCLUDE_PATH "${CMAKE_CURRENT_LIST_DIR}/../../contrib/musl-cmake/include")
+set (MUSL_INCLUDE_FLAGS "-nostdlibinc -isystem ${MUSL_STUB_INCLUDE_PATH} -isystem ${CMAKE_BINARY_DIR}/contrib/musl-cmake/include -isystem ${MUSL_SOURCE_PATH}/include -isystem ${MUSL_SOURCE_PATH}/arch/aarch64 -isystem ${MUSL_SOURCE_PATH}/arch/generic -isystem ${CMAKE_BINARY_DIR}/contrib/musl-cmake/kernel-headers")
 
 # Make sure to ignore global clang configuration files which could influence the
 # build environment using --no-default-config
