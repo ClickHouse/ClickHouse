@@ -174,6 +174,34 @@ def test_merge_queue_jobs_are_filtered_without_cidb(monkeypatch):
     assert calls == [], f"config-time CIDB requests: {calls}"
 
 
+def test_build_profile_diff_skipped_for_docs_only_changes(monkeypatch):
+    _use_fake_info(
+        monkeypatch,
+        changed_files=("docs/en/development/continuous-integration.md",),
+    )
+
+    assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (
+        True,
+        "Skipped, only documentation changed",
+    )
+
+
+@pytest.mark.parametrize(
+    "changed_files",
+    [
+        ("src/Core/Settings.cpp",),
+        (
+            "docs/en/development/continuous-integration.md",
+            "src/Core/Settings.cpp",
+        ),
+    ],
+)
+def test_build_profile_diff_runs_for_non_docs_changes(monkeypatch, changed_files):
+    _use_fake_info(monkeypatch, changed_files=changed_files)
+
+    assert fj.should_skip_job(fj.JobNames.BUILD_PROFILE_DIFF) == (False, "")
+
+
 def test_cidb_outage_changes_no_filter_decision(monkeypatch):
     """A CIDB outage must degrade to "run the default set", not drop the matrix.
 
@@ -314,6 +342,18 @@ def test_get_changed_tests_issues_no_cidb_query(monkeypatch):
     calls = _record_cidb_requests(monkeypatch)
     assert Targeting(info=info).get_changed_tests() == [CHANGED_TEST_NAME]
     assert calls == [], f"config-time CIDB requests: {calls}"
+
+
+def test_ci_script_change_keeps_sequential_selected_tests_job(monkeypatch):
+    _use_fake_info(monkeypatch, changed_files=("ci/jobs/functional_tests.py",))
+
+    assert fj.should_skip_job(
+        "Stateless tests (amd_tsan, sequential, selected tests)"
+    ) == (False, "")
+    assert fj.should_skip_job("Stateless tests (amd_tsan, sequential)") == (
+        True,
+        "Skipped: only CI scripts changed; running stateless batch 1 only",
+    )
 
 
 if __name__ == "__main__":

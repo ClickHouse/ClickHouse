@@ -464,6 +464,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     ICEBERG_ONELAKE,
     ICEBERG_BIGLAKE,
     PAIMON_REST,
+    S3_TABLES,
     ICEBERG_DELTA_SHARING,
 };
 
@@ -518,6 +519,7 @@ DECLARE_SETTING_ENUM(MergeTreeNullableSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeObjectSharedDataSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
+DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
 
@@ -565,6 +567,7 @@ DECLARE_SETTING_ENUM(MergeTreePartMinMaxIndexColumns)
 enum class MergeCoordinatorDistributionAlgorithm : uint64_t
 {
     WATER_FILLING = 0,
+    SAINTE_LAGUE = 1,
 };
 
 DECLARE_SETTING_ENUM(MergeCoordinatorDistributionAlgorithm)

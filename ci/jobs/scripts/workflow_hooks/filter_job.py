@@ -208,6 +208,9 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
+    if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
+        return True, "Skipped, only documentation changed"
+
     # Run Keeper Stress jobs only when there are changes in src/Coordination,
     # tests/stress/keeper, or ci/jobs/keeper_stress_job.py
     if job_name == KEEPER_STRESS_PR_NAME:
@@ -407,7 +410,10 @@ def should_skip_job(job_name):
     ):
         if JobNames.STATELESS in job_name:
             match = re.search(r"(\d)/\d", job_name)
-            if match and match.group(1) != "1" or "sequential" in job_name:
+            if (
+                (match and match.group(1) != "1")
+                or ("sequential" in job_name and "selected tests" not in job_name)
+            ):
                 return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
         if JobNames.INTEGRATION in job_name:

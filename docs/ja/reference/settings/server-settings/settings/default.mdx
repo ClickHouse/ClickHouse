@@ -27,9 +27,14 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 使用できる値は次のとおりです。
 
 * `plaintext_password`
+
 * `sha256_password`
+
 * `double_sha1_password`
+
 * `bcrypt_password`
+
+* **デフォルト:** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -40,6 +45,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </div>
 
 デフォルトの設定プロファイルです。設定プロファイルは、`user_config` 設定で指定したファイルにあります。
+
+* **デフォルト:** `default`
 
 **例**
 
@@ -52,6 +59,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </div>
 
 デフォルトのセッションタイムアウト。単位はSeconds。
+
+* **デフォルト:** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
