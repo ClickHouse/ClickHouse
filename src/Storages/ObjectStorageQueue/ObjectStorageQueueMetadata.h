@@ -3,7 +3,6 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
-#include <set>
 #include <unordered_map>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/Types.h>
@@ -210,13 +209,6 @@ public:
     /// Update the "newest object committed" watermark, see updateNewestSeenTimestamp().
     void updateNewestCommittedTimestamp(time_t timestamp, const StorageID & storage_id);
 
-    /// Mark a file as claimed and not yet finished, for the "oldest open file" metric.
-    /// Call once per file when this server starts processing it.
-    void openFileForProcessing(time_t last_modified, const StorageID & storage_id);
-    /// Mark a file as no longer claimed (finished, permanently failed, or reset for retry).
-    /// Call once per file, matching a prior openFileForProcessing() call with the same `last_modified`.
-    void closeFileForProcessing(time_t last_modified, const StorageID & storage_id);
-
 private:
     void cleanupThreadFunc();
     void cleanupThreadFuncImpl();
@@ -261,13 +253,6 @@ private:
     };
     std::mutex pipeline_lag_watermarks_mutex;
     std::unordered_map<String, PipelineLagWatermarks> pipeline_lag_watermarks;
-
-    /// Last-modified timestamps of files currently claimed and not yet finished by this
-    /// server, for the "oldest open file" metric, see openFileForProcessing(). One multiset
-    /// per table (keyed the same way as `pipeline_lag_watermarks`), since several files can
-    /// be open concurrently (parallel processing threads) and can share a timestamp.
-    std::mutex open_files_mutex;
-    std::unordered_map<String, std::multiset<time_t>> open_files_by_table;
 
     size_t buckets_num;
     std::unique_ptr<ThreadFromGlobalPool> update_registry_thread;

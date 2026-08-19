@@ -77,9 +77,6 @@ Unix timestamp of the last-modified time of the newest object seen so far by an 
 ### `object_storage_queue_newest_committed_object_timestamp_seconds` {#object-storage-queue-newest-committed-object-timestamp-seconds}
 Unix timestamp of the last-modified time of the newest object fully processed so far by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. Subtract from `object_storage_queue_newest_seen_object_timestamp_seconds` to estimate pipeline lag.
 
-### `object_storage_queue_oldest_open_file_timestamp_seconds` {#object-storage-queue-oldest-open-file-timestamp-seconds}
-Unix timestamp of the last-modified time of the oldest object currently claimed and not yet finished (processed, permanently failed, or reset for retry) by an `ObjectStorageQueue` (`S3Queue`/`AzureQueue`) table, labelled by database and table. Set to the current time when nothing is currently claimed. Unlike the lag metrics above, this flags a single file stuck retrying even while other files keep being processed normally.
-
 ## See also {#see-also}
 
 - [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.

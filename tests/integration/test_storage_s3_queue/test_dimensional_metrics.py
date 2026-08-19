@@ -56,9 +56,8 @@ def get_dimensional_metric(node, metric, table_name, extra_where=""):
 
 def test_pipeline_lag_metrics(started_cluster):
     """Smoke test for the per-table pipeline-lag dimensional metrics:
-    object_storage_queue_newest_seen_object_timestamp_seconds,
-    object_storage_queue_newest_committed_object_timestamp_seconds,
-    object_storage_queue_oldest_open_file_timestamp_seconds.
+    object_storage_queue_newest_seen_object_timestamp_seconds and
+    object_storage_queue_newest_committed_object_timestamp_seconds.
     """
     node = started_cluster.instances["instance"]
     table_name = f"dim_metrics_lag_{generate_random_string()}"
@@ -103,16 +102,6 @@ def test_pipeline_lag_metrics(started_cluster):
     # Sanity: the objects were just uploaded, so the watermark should be close to "now",
     # not some stale value left over from a previous test using a shared metadata object.
     assert abs(newest_seen - test_start_time) < 300
-
-    # Nothing is claimed/in-flight anymore, so this must have been reset to "now" at the
-    # moment the last file was closed. It never updates again on its own (no periodic
-    # refresh, only event-driven), so check it right away rather than in a retry loop:
-    # retrying would only let it look staler, never fresher.
-    oldest_open = get_dimensional_metric(
-        node, "object_storage_queue_oldest_open_file_timestamp_seconds", table_name
-    )
-    assert oldest_open > 0
-    assert abs(oldest_open - time.time()) < 180
 
 
 def test_failure_metrics(started_cluster):
