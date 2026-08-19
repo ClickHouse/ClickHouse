@@ -1449,7 +1449,13 @@ StorageFileSource::FilesIterator::FilesIterator(
                 for (auto & path : filter_paths)
                     path += fmt::format("::{}", archive_member_path);
             }
-            VirtualColumnUtils::filterByPathOrFile(filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.assign(filter_sources.size(), archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filter_sources, filter_paths, actions, virtual_columns_, hive_columns_, context_,
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
         }
         else
             deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
@@ -1485,8 +1491,13 @@ String StorageFileSource::FilesIterator::next()
             std::vector<String> filter_paths({path});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.push_back(archive_member_path);
             VirtualColumnUtils::filterByPathOrFile(
-                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext());
+                filtered_files, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, getContext(),
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
             if (filtered_files.empty())
                 continue;
         }

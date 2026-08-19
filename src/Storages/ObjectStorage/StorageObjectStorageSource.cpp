@@ -496,6 +496,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     }
     else
     {
+        Strings keys;
         Strings paths;
         ExpressionActionsPtr deferred_filter_actions;
 
@@ -504,7 +505,6 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         {
             const auto configuration_paths = configuration->getPaths();
 
-            std::vector<std::string> keys;
             keys.reserve(configuration_paths.size());
 
             for (const auto & path: configuration_paths)
@@ -522,6 +522,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
                     path += fmt::format("::{}", configuration->getPathInArchive());
             }
 
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(keys.size(), configuration->getPathInArchive());
+
             /// Unlike `GlobIterator`, which applies its filter while listing objects (that is, when the
             /// pipeline runs), the keys are pruned here, while the pipeline is being built. A set can
             /// still be unbuilt at this point: `ReadFromObjectStorageStep::applyFilters` leaves the sets
@@ -537,7 +541,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                VirtualColumnUtils::filterByPathOrFile(keys, paths, actions, virtual_columns, hive_columns, local_context);
+                VirtualColumnUtils::filterByPathOrFile(
+                    keys, paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
             }
             else
             {
@@ -548,15 +555,15 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         else
         {
             const auto configuration_paths = configuration->getPaths();
-            paths.reserve(configuration_paths.size());
+            keys.reserve(configuration_paths.size());
             for (const auto & path: configuration_paths)
             {
-                paths.emplace_back(path.path);
+                keys.emplace_back(path.path);
             }
         }
 
         iterator = std::make_unique<KeysIterator>(
-            paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            keys, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
             file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
             is_explicit_archive_member ? configuration->getPathInArchive() : String{});
@@ -1942,7 +1949,13 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
             std::vector<String> filter_paths({fs::path(object_namespace) / key});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
-            VirtualColumnUtils::filterByPathOrFile(filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context);
+            std::vector<String> archive_member_names;
+            if (!archive_member_path.empty())
+                archive_member_names.push_back(archive_member_path);
+            VirtualColumnUtils::filterByPathOrFile(
+                filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
+                /*format_settings=*/std::nullopt,
+                archive_member_path.empty() ? nullptr : &archive_member_names);
             if (filtered_keys.empty())
             {
                 if (emit_profile_events)
