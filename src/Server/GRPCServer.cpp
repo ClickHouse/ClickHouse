@@ -838,7 +838,7 @@ namespace
             }
             on_finish_call_callback();
         };
-        call_thread = ThreadFromGlobalPool(runner_function);
+        call_thread = ThreadFromGlobalPool{ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, runner_function};
     }
 
     void Call::run()

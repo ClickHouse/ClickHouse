@@ -1015,7 +1015,16 @@ private:
             ThreadFromGlobalPool thread;
             try
             {
-                thread = ThreadFromGlobalPool{&LoadingDispatcher::doLoading, this, info.name, loading_id, forced_to_reload, min_id_to_finish_loading_dependencies_, true, CurrentThread::getGroup()};
+                thread = ThreadFromGlobalPool{
+                    ThreadFromGlobalPoolScheduleMode::FailIfNoWorker,
+                    &LoadingDispatcher::doLoading,
+                    this,
+                    info.name,
+                    loading_id,
+                    forced_to_reload,
+                    min_id_to_finish_loading_dependencies_,
+                    true,
+                    CurrentThread::getGroup()};
             }
             catch (...)
             {
