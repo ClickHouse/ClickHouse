@@ -209,6 +209,17 @@ namespace ErrorCodes
 
 namespace fs = std::filesystem;
 
+namespace
+{
+
+/// A stub ATTACH carries no definition of its own: the stored metadata owns it.
+bool isShortAttach(const ASTCreateQuery & create)
+{
+    return create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+}
+
+}
+
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
 {
@@ -1702,8 +1713,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     bool is_secondary_query = getContext()->getZooKeeperMetadataTransaction() && !getContext()->getZooKeeperMetadataTransaction()->isInitialQuery();
     auto mode = getLoadingStrictnessLevel(create.attach, /*force_attach*/ false, /*has_force_restore_data_flag*/ false, is_secondary_query || is_restore_from_backup);
 
-    /// A stub ATTACH carries no definition of its own: the stored metadata owns it.
-    const bool is_short_attach = create.attach && (!create.storage || !create.storage->engine) && !create.columns_list;
+    const bool is_short_attach = isShortAttach(create);
 
     if (!is_short_attach && !create.sql_security && create.supportSQLSecurity() && (create.refresh_strategy || !getContext()->getServerSettings()[ServerSetting::ignore_empty_sql_security_in_create_view_query]))
         create.set(create.sql_security, make_intrusive<ASTSQLSecurity>());
@@ -3476,17 +3486,23 @@ BlockIO InterpreterCreateQuery::execute()
     /// metadata is read on the node that executes it. Every distributed route enqueues before that
     /// read, and the worker replaying the entry has no user, so it has full access. Keep the view
     /// spellings local: `ATTACH TABLE` re-attaches a view and demands `CREATE TABLE` up front.
-    if (create.attach && !is_create_database && create.isView() && !create.storage && !create.columns_list)
+    if (!is_create_database && create.isView() && isShortAttach(create))
     {
         auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
             create.database ? create.getDatabase() : getContext()->getCurrentDatabase());
 
         if (!create.cluster.empty()
             || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
+        {
+            String name = create.database
+                ? backQuoteIfNeed(create.getDatabase()) + "." + backQuoteIfNeed(create.getTable())
+                : backQuoteIfNeed(create.getTable());
+
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "ATTACH VIEW {0} is not supported for ON CLUSTER queries and Replicated databases. "
                 "Use 'ATTACH TABLE {0};' instead.",
-                backQuoteIfNeed(create.getTable()));
+                name);
+        }
     }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))

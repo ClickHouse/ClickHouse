@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
-# no-fasttest: needs ZooKeeper for the Replicated database engine.
+# Tags: zookeeper, no-fasttest
+# zookeeper, no-fasttest: needs ZooKeeper for the Replicated database engine.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

@@ -1,3 +1,6 @@
+-- Tags: no-replicated-database
+-- no-replicated-database: the short ATTACH VIEW is rejected in a Replicated database.
+
 CREATE TABLE t (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t VALUES (1);
 
@@ -41,6 +44,9 @@ SELECT formatQuery('ATTACH VIEW v ON CLUSTER test_shard_localhost');
 DETACH VIEW v;
 ATTACH VIEW v ON CLUSTER test_shard_localhost; -- { serverError INCORRECT_QUERY }
 ATTACH MATERIALIZED VIEW v ON CLUSTER test_shard_localhost; -- { serverError INCORRECT_QUERY }
+SET distributed_ddl_entry_format_version = 2;
+ATTACH VIEW v ON CLUSTER test_shard_localhost; -- { serverError INCORRECT_QUERY }
+SET distributed_ddl_entry_format_version = DEFAULT;
 ATTACH TABLE v;
 SELECT * FROM v;
 
