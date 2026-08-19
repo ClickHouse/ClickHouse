@@ -60,7 +60,6 @@
 13
 7
 -- one-byte key
-
 0
 0
 0
@@ -172,7 +171,6 @@
 17
 18
 19
-
 -- several disjuncts
 0
 -- mixed join expression keeps every right row
