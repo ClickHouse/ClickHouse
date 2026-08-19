@@ -1478,14 +1478,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 
         auto columns = block_to_insert.getColumns();
         for (size_t i = 0, s = columns.size(); i < s; ++i)
-        {
-            /// A parsed column's dynamic structure and its limits are not fixed by its type, so the
-            /// result columns built from the header have to take them from the data.
-            if (result_columns[i]->empty())
-                result_columns[i]->takeDynamicStructureFrom(*columns[i]);
-
             result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
-        }
 
         total_rows += block_to_insert.rows();
 

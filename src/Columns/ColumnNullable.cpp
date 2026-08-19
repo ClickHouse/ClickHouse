@@ -1045,9 +1045,9 @@ void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracki
     nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnNullable::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
+void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    nested_column->takeDynamicStructureFromImpl(assert_cast<const ColumnNullable &>(source).getNestedColumn(), exact);
+    nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
 }
 
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const

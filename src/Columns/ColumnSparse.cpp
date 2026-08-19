@@ -950,9 +950,9 @@ void ColumnSparse::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     values->chooseDynamicStructureForMerge(values_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnSparse::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
+void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
 {
-    values->takeDynamicStructureFromImpl(assert_cast<const ColumnSparse &>(source).getValuesColumn(), exact);
+    values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
 }
 
 void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)

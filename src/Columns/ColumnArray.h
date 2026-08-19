@@ -216,7 +216,7 @@ public:
     size_t getNumberOfDimensions() const;
 
     bool hasDynamicStructure() const override { return getData().hasDynamicStructure(); }
-    void takeDynamicStructureFromImpl(const IColumn & source, bool exact) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { data->fixDynamicStructure(); }
 

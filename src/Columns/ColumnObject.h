@@ -205,7 +205,7 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeDynamicStructureFromImpl(const IColumn & source, bool exact) override;
+    void takeExactDynamicStructureFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
@@ -280,6 +280,8 @@ public:
     void setMaxDynamicPaths(size_t max_dynamic_paths_);
     /// Lowers the upper bound on max_dynamic_paths (and max_dynamic_paths with it).
     void setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_);
+    /// Lowers this column's upper bound to the source's, so a parsing limit travels with the data.
+    void takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src);
     void setStatistics(const StatisticsPtr & statistics_) { statistics = statistics_; }
 
     static void serializePathAndValueIntoSharedData(ColumnString * shared_data_paths, ColumnString * shared_data_values, std::string_view path, const ColumnDynamic & column, size_t n);

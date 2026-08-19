@@ -515,8 +515,14 @@ void ColumnObject::setMaxDynamicPaths(size_t max_dynamic_paths_)
 
 void ColumnObject::setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_)
 {
-    if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific upper bound on max_dynamic_paths is allowed only for empty object column");
+    /// Lowering the bound only restricts paths added later, so unlike max_dynamic_paths it doesn't
+    /// require an empty column: the paths already present just have to fit under the new bound.
+    if (max_dynamic_paths_upper_bound_ < dynamic_paths.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot set the upper bound on max_dynamic_paths to {}, the column already has {} dynamic paths",
+            max_dynamic_paths_upper_bound_,
+            dynamic_paths.size());
 
     /// The bound can only be narrowed: widening it back is exactly what it exists to prevent.
     if (max_dynamic_paths_upper_bound_ > max_dynamic_paths_upper_bound)
@@ -528,6 +534,17 @@ void ColumnObject::setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_b
 
     max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound_;
     max_dynamic_paths = std::min(max_dynamic_paths, max_dynamic_paths_upper_bound);
+}
+
+void ColumnObject::takeMaxDynamicPathsUpperBoundFrom(const ColumnObject & src)
+{
+    /// Paths already added cannot be taken back, so the bound cannot go below their number.
+    size_t new_upper_bound = std::max(src.max_dynamic_paths_upper_bound, dynamic_paths.size());
+    if (new_upper_bound >= max_dynamic_paths_upper_bound)
+        return;
+
+    max_dynamic_paths_upper_bound = new_upper_bound;
+    max_dynamic_paths = std::min(max_dynamic_paths, new_upper_bound);
 }
 
 void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<String> & paths)
@@ -730,6 +747,10 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 {
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
 
+    /// A limit that parsing settings put on the source instance rather than on the type has to
+    /// travel with the data, so that aggregating parsed data cannot widen it back.
+    takeMaxDynamicPathsUpperBoundFrom(src_object_column);
+
     /// First, insert typed paths, they must be the same for both columns.
     for (const auto & [path, column] : src_object_column.typed_paths)
         typed_paths[path]->insertFrom(*column, n);
@@ -775,6 +796,9 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// TODO: try to parallelize doInsertRangeFrom over typed/dynamic paths if it makes sense.
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
+
+    /// See the comment in `insertFrom`.
+    takeMaxDynamicPathsUpperBoundFrom(src_object_column);
 
     /// First, insert typed paths, they must be the same for both columns.
     for (const auto & [path, column] : src_object_column.typed_paths)
@@ -2044,15 +2068,15 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     }
 }
 
-void ColumnObject::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
+void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFrom should be called only on empty Object column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
     const auto & source_object = assert_cast<const ColumnObject &>(source);
 
     for (auto & [path, column] : typed_paths)
-        column->takeDynamicStructureFromImpl(*source_object.typed_paths.at(path), exact);
+        column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
 
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
@@ -2060,15 +2084,16 @@ void ColumnObject::takeDynamicStructureFromImpl(const IColumn & source, bool exa
     for (const auto & [path, column] : source_object.getDynamicPaths())
     {
         auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
-        it->second->takeDynamicStructureFromImpl(*column, exact);
+        it->second->takeExactDynamicStructureFrom(*column);
         dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
         sorted_dynamic_paths.insert(it->first);
     }
 
-    if (exact)
-        fixDynamicStructure();
-    else
-        setMaxDynamicPathsUpperBound(source_object.max_dynamic_paths_upper_bound);
+    /// Set max_dynamic_paths to the number of dynamic paths.
+    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    /// max_dynamic_paths_upper_bound is deliberately left alone: lowering it to the same value would
+    /// make `prepareForSquashing` restore max_dynamic_paths to it and so undo this freeze.
+    max_dynamic_paths = dynamic_paths.size();
 }
 
 void ColumnObject::fixDynamicStructure()

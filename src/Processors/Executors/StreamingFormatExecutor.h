@@ -54,10 +54,6 @@ public:
 private:
     void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
 
-    /// A parsed column's dynamic structure and its limits are not fixed by its type, so the result
-    /// columns built from the header have to take them from the data.
-    void takeDynamicStructureFromChunk(const Chunk & chunk);
-
     const Block header;
     const InputFormatPtr format;
     const ErrorCallback on_error;

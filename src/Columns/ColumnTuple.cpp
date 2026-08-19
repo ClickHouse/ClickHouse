@@ -984,11 +984,11 @@ void ColumnTuple::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
         columns[i]->chooseDynamicStructureForMerge(nested_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnTuple::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
+void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
 {
     const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
     for (size_t i = 0; i != columns.size(); ++i)
-        columns[i]->takeDynamicStructureFromImpl(*source_tuple.getColumnPtr(i), exact);
+        columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
 }
 
 
