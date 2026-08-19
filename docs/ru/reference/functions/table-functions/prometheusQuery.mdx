@@ -29,7 +29,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 * `promql_query` - Запрос, написанный в [синтаксисе PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
 * `evaluation_time - Временная метка вычисления. Чтобы вычислить запрос на текущий момент, используйте `now()`в качестве`evaluation&#95;time&#96;.
 
-<div id="returned_value">
+<div id="returned-value">
   ## Возвращаемое значение
 </div>
 
@@ -58,7 +58,7 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 | Категория     | Функции                                                                                          |
 | ------------- | ------------------------------------------------------------------------------------------------ |
-| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
 | Математика    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
 | Тригонометрия | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
 | Дата и время  | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |

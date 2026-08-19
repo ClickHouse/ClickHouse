@@ -148,17 +148,19 @@ Lorsqu&#39;une part de données est écrite avec la sérialisation `with_buckets
 
 1. Le nombre moyen de clés par ligne est calculé à partir des statistiques du block.
 2. Le nombre de buckets est déterminé par la stratégie configurée (voir [Paramètres](#bucketed-map-settings)).
-3. Chaque paire clé-valeur est affectée à un bucket en hachant la clé : `bucket = hash(key) % num_buckets`.
+3. Chaque paire clé-valeur est affectée à un bucket en appliquant un hash à la clé : `bucket = hash(key) % num_buckets`.
 4. Chaque bucket est stocké sous forme de sous-flux indépendant, avec ses propres clés, valeurs et offsets.
 5. Un flux de métadonnées `buckets_info` enregistre le nombre de buckets et les statistiques.
 
 Lorsqu&#39;une requête lit une clé spécifique (`m['key']`), l&#39;optimiseur réécrit l&#39;expression en sous-colonne de clé (`m.key_<serialized_key>`).
 La couche de sérialisation détermine à quel bucket appartient la clé demandée et ne lit que ce bucket sur le disque.
 
-Lorsque la map complète est lue (par ex. `SELECT m`), tous les buckets sont lus puis réassemblés dans la map d&#39;origine. Cette opération est plus lente qu&#39;avec la sérialisation `basic`, en raison de la surcharge liée à la lecture et à la fusion de plusieurs sous-flux.
+Lorsque la map complète est lue (par ex. `SELECT m`), tous les buckets sont lus puis réassemblés dans la map d&#39;origine. Cette opération est plus lente qu&#39;avec la sérialisation `basic`, en raison du surcoût lié à la lecture et à la fusion de plusieurs sous-flux.
 
 <Note>
-  L&#39;ordre des clés dans une valeur de map peut différer de l&#39;ordre d&#39;insertion initial lors de l&#39;utilisation de la sérialisation `with_buckets`. Les clés sont réparties entre les buckets par hachage, puis réassemblées dans l&#39;ordre des buckets, et non dans l&#39;ordre d&#39;insertion. Avec la sérialisation `basic`, l&#39;ordre des clés des maps insérées est conservé.
+  Depuis la version 26.8, la sérialisation `with_buckets` préserve l&#39;ordre d&#39;origine des clés : un sous-flux `bucket_indexes` supplémentaire indique de quel bucket provient chaque paire clé-valeur, afin que la map soit réassemblée dans l&#39;ordre où elle a été écrite plutôt que dans l&#39;ordre des buckets.
+
+  Les parts écrites par des versions antérieures ne contiennent pas ce sous-flux. Leurs maps sont toujours réassemblées dans l&#39;ordre des buckets, et leur ordre de clés d&#39;origine ne peut pas être restauré, car il n&#39;a jamais été stocké sur le disque — réécrire une telle part (par une fusion ou `OPTIMIZE FINAL`) fige l&#39;ordre des buckets qu&#39;elle a actuellement au lieu de récupérer l&#39;ordre d&#39;insertion. Avec la sérialisation `basic`, l&#39;ordre des clés des maps insérées a toujours été conservé.
 </Note>
 
 Le nombre de buckets peut varier d&#39;une part à l&#39;autre. Lorsque des parts avec des nombres de buckets différents sont fusionnées, le nombre de buckets de la nouvelle part est recalculé à partir des statistiques fusionnées. Des parts avec les sérialisations `basic` et `with_buckets` peuvent coexister dans la même table et être fusionnées de manière transparente.
