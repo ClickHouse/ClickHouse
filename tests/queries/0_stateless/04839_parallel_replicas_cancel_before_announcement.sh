@@ -85,6 +85,30 @@ for async_socket in 0 1; do
     done
 done
 
+# `partial_result_on_first_cancel` is inherited by secondary queries, and on the first `Cancel` it
+# makes `processCancel` return without setting `stop_query` - "return what you have" instead of
+# stopping. A replica that has not announced yet has nothing to return, and going on to announce
+# writes into a socket the initiator has already disconnected (`Broken pipe`). Only the asynchronous
+# socket is affected: with the synchronous one the initiator is still blocked reading the
+# announcement, so the write lands.
+partial_query_id="${CLICKHOUSE_DATABASE}_cancel_before_announcement_$$_1_1_partial"
+if $CLICKHOUSE_CLIENT --query_id "$partial_query_id" -q "
+    SELECT k FROM cancel_before_announcement LIMIT 1
+    SETTINGS $SETTINGS
+           , async_socket_for_remote = 1
+           , async_query_sending_for_remote = 1
+           , partial_result_on_first_cancel = 1
+    FORMAT Null
+"; then echo "partial_result_on_first_cancel query_succeeded"; else echo "partial_result_on_first_cancel QUERY_FAILED"; fi
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'partial_result_on_first_cancel did_not_wait ', max(query_duration_ms) < $MAX_INITIATOR_MS
+    FROM system.query_log
+    WHERE current_database = currentDatabase()
+      AND query_id = '$partial_query_id' AND type = 'QueryFinish' AND is_initial_query
+"
+
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT parallel_replicas_delay_announcement"
 $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT slowdown_parallel_replicas_local_plan_read"
 
@@ -105,9 +129,10 @@ done
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 
 # A replica cancelled while still planning must never go on to write its announcement into a socket
-# the initiator has stopped reading.
+# the initiator has stopped reading - which shows up as `Broken pipe` on the replica.
 $CLICKHOUSE_CLIENT -q "
-    SELECT 'no_follower_announced ', countIf(ProfileEvents['MergeTreeAllRangesAnnouncementsSent'] != 0) = 0
+    SELECT 'no_follower_announced ', countIf(ProfileEvents['MergeTreeAllRangesAnnouncementsSent'] != 0) = 0,
+           'no_broken_pipe ', countIf(exception LIKE '%Broken pipe%') = 0
     FROM system.query_log
     WHERE initial_query_id LIKE '${CLICKHOUSE_DATABASE}_cancel_before_announcement_$$_1_%'
       AND NOT is_initial_query AND type != 'QueryStart'

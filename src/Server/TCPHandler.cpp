@@ -819,6 +819,15 @@ void TCPHandler::runImpl()
 
                     std::lock_guard lock(*callback_mutex);
 
+                    /// A `Cancel` during the announcement exchange must stop this replica, not turn into
+                    /// "return what you have": there is no partial result to return before the ranges have
+                    /// even been handed out, and `processCancel` would otherwise return without setting
+                    /// `stop_query`, letting the announcement go out to an initiator that has already
+                    /// disconnected (`Broken pipe`). Secondary queries inherit
+                    /// `partial_result_on_first_cancel` from the initiator, so this has to be turned off
+                    /// explicitly, the same way `readTemporaryTables` does it.
+                    auto off_setting_guard = TurnOffBoolSettingTemporary(query_state->allow_partial_result_on_first_cancel);
+
                     /// The initiator may have given up on this replica while it was planning, and it
                     /// stops waiting for this announcement when it does. Look for the `Cancel` packet
                     /// now rather than at the next interactive-delay tick, so the announcement is not
