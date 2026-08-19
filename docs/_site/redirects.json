@@ -54425,7 +54425,7 @@
   },
   {
     "destination": "/pt-BR/reference/functions/table-functions/prometheusQueryRange",
-    "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange",
+    "source": "/pt-BR/sql-reference/table-functions/prometheusQueryRange"
   },
   {
     "destination": "/reference/statements/create/view",
