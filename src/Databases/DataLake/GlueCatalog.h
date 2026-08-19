@@ -116,10 +116,9 @@ private:
 
     String resolveMetadataPathFromTableLocation(const String & table_location, const TableMetadata & table_metadata) const;
 
-    /// The `metadata_location` parameter exactly as Glue stores it, or nullopt when it cannot be
-    /// read. Deliberately does not derive the value from object storage: a derived path can match
-    /// a metadata file the caller staged before the commit and so report a rejected commit as
-    /// applied.
+    /// The `metadata_location` parameter exactly as Glue stores it, or nullopt when unreadable.
+    /// Never derived from object storage: a derived path matches the metadata file the caller
+    /// staged before the commit, which would report a rejected update as applied.
     std::optional<String> readRawMetadataLocation(const String & namespace_name, const String & table_name) const;
 
     struct ObjectStorageWithPath

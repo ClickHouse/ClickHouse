@@ -758,9 +758,8 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     if (failed)
     {
-        /// The SDK retries UpdateTable, so an earlier attempt may have applied the update while a
-        /// later one failed: the error describes the last attempt, never the first. Read the
-        /// pointer back before looking at the error at all.
+        /// The SDK retries UpdateTable, so the error describes the last attempt, never the first:
+        /// an earlier one may have applied the update. Read the pointer back before the error.
         const auto committed_metadata_location = readRawMetadataLocation(namespace_name, table_name);
 
         if (committed_metadata_location == new_metadata_path)
@@ -772,10 +771,9 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
             return true;
         }
 
-        /// UpdateTable carries no precondition, so a pointer that is not ours is equally consistent
-        /// with "we never committed" and "we committed and a third writer superseded us". Neither
-        /// can be distinguished, so the outcome is unknown and the staged files must be kept. The
-        /// original error is chained so the user still sees what glue said.
+        /// UpdateTable carries no precondition, so a pointer other than this one is equally
+        /// consistent with "never committed" and "committed, then superseded". Indistinguishable,
+        /// so the outcome is unknown, the files stay, and the original error is chained in.
         throw DB::Exception(
             DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
             "Cannot tell whether {} was committed to {}.{}: glue catalog answered \"{}\" ({}) and the table's "

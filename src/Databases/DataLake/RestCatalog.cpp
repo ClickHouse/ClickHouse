@@ -1669,8 +1669,8 @@ void RestCatalog::sendRequest(
         {
             os << body_str;
 
-            /// Runs inside the transport's retried region, after the request has been counted, so a
-            /// test can observe how many attempts the request policy allows.
+            /// Inside the transport's retried region, after the request is counted, so the number
+            /// of attempts the request policy allows is observable.
             fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_fail,
             {
                 throw DB::HTTPException(
@@ -1900,9 +1900,9 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
-    /// The commit is not idempotent: a transport-level retry would re-POST it, and the second
-    /// attempt is rejected by our own `assert-ref-snapshot-id` requirement, which makes the
-    /// received status describe an unknown attempt. One attempt keeps the status meaningful.
+    /// The commit is not idempotent: a transport retry re-POSTs it, and the second attempt is
+    /// rejected by the `assert-ref-snapshot-id` requirement the first one satisfied, so the
+    /// received status describes an unknown attempt. One attempt keeps the status meaningful.
     DB::ReadSettings commit_read_settings = getContext()->getReadSettings();
     commit_read_settings.http_settings.max_tries = 1;
 
@@ -1938,8 +1938,8 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     {
         const auto status = ex.getHTTPStatus();
 
-        /// The server evaluated our `assert-ref-snapshot-id` requirement and rejected it: another
-        /// writer took this version. The staged files are provably unreachable.
+        /// The server rejected the `assert-ref-snapshot-id` requirement: another writer took this
+        /// version, so the staged files are provably unreachable.
         if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
             LOG_TRACE(log, "Lost the commit race for {}.{}: {}", namespace_name, table_name, ex.what());
