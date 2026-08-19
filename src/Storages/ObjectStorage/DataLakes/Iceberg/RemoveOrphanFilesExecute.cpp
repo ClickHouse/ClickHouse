@@ -320,7 +320,7 @@ Pipe executeRemoveOrphanFiles(
         persistent_components.metadata_cache,
         context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
@@ -332,7 +332,7 @@ Pipe executeRemoveOrphanFiles(
         context,
         log,
         compression_method,
-        persistent_components.table_uuid);
+        persistent_components.getTableUuid());
 
     Int32 current_format_version = latest_metadata->getValue<Int32>(f_format_version);
     if (current_format_version < 2)

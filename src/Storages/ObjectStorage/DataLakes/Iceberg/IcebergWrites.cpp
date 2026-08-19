@@ -886,7 +886,7 @@ IcebergStorageSink::IcebergStorageSink(
         persistent_table_components.metadata_cache,
         context_,
         log.get(),
-        persistent_table_components.table_uuid,
+        persistent_table_components.getTableUuid(),
         persistent_table_components.metadata_compression_method,
         /* ignore_explicit_metadata_file_path */ false);
 
@@ -897,7 +897,7 @@ IcebergStorageSink::IcebergStorageSink(
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.getTableUuid());
     metadata_compression_method = compression_method;
     filename_generator = FileNamesGenerator(
         persistent_table_components.path_resolver.getTableLocation(),
@@ -1169,7 +1169,7 @@ bool IcebergStorageSink::initializeMetadata()
                 persistent_table_components.metadata_cache,
                 context,
                 getLogger("IcebergWrites").get(),
-                persistent_table_components.table_uuid,
+                persistent_table_components.getTableUuid(),
                 persistent_table_components.metadata_compression_method,
                 /* ignore_explicit_metadata_file_path */ true);
 
@@ -1185,7 +1185,7 @@ bool IcebergStorageSink::initializeMetadata()
                 context,
                 getLogger("IcebergWrites"),
                 compression_method,
-                persistent_table_components.table_uuid);
+                persistent_table_components.getTableUuid());
             partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             auto partitions_specs = metadata->getArray(Iceberg::f_partition_specs);
 

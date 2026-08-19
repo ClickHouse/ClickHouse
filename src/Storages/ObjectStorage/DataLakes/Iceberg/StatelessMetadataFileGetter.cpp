@@ -105,10 +105,11 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
         return Iceberg::ManifestFileCacheableInfo{std::move(manifest_file_deserializer), bytes_size};
     };
 
-    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
+    auto table_uuid = persistent_table_components.getTableUuid();
+    if (use_iceberg_metadata_cache && table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, filename.serialize()), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -247,9 +248,10 @@ ManifestFileCacheKeys getManifestList(
     };
 
     ManifestFileCacheKeys manifest_file_cache_keys;
-    if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
+    auto table_uuid = persistent_table_components.getTableUuid();
+    if (use_iceberg_metadata_cache && table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(*table_uuid, filename.serialize()), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;

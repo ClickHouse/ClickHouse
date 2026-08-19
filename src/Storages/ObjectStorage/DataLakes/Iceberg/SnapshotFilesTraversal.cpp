@@ -136,7 +136,7 @@ ReachableFilesResult collectReachableFiles(
         persistent_table_components.metadata_cache,
         context,
         log.get(),
-        persistent_table_components.table_uuid,
+        persistent_table_components.getTableUuid(),
         persistent_table_components.metadata_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ true);
@@ -148,7 +148,7 @@ ReachableFilesResult collectReachableFiles(
         context,
         log,
         compression_method,
-        persistent_table_components.table_uuid);
+        persistent_table_components.getTableUuid());
 
     std::unordered_set<String> reachable;
     const auto & resolver = persistent_table_components.path_resolver;

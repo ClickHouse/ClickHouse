@@ -104,6 +104,11 @@ public:
         LoggerPtr metadata_logger);
 
     bool supportsUpdate() const override { return true; }
+
+    /// Refresh the `table-uuid` trusted as a metadata content cache key, so that a table dropped
+    /// and recreated at the same storage root by an external writer is not served the previous
+    /// table's `metadata.json` out of `IcebergMetadataFilesCache`.
+    void update(const ContextPtr & local_context) override;
     bool supportsWrites() const override { return true; }
     bool supportsParallelInsert() const override { return true; }
 

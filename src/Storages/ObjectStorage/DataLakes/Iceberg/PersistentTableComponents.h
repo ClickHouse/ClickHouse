@@ -7,6 +7,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/TrustedTableUuid.h>
 
 namespace DB::Iceberg
 {
@@ -23,8 +24,14 @@ struct PersistentTableComponents
     const String table_location;
     const CompressionMethod metadata_compression_method;
     const String table_path;
-    const std::optional<String> table_uuid;
+    /// Shared, not copied, between all copies of this struct describing the same table, because
+    /// `IcebergMetadata::update` refreshes it when the table may have been replaced in place.
+    const TrustedTableUuidPtr trusted_table_uuid;
     const IcebergPathResolver path_resolver;
+
+    /// The `table-uuid` currently trusted as a metadata content cache key. Always read it
+    /// through this accessor - the value can be refreshed by `IcebergMetadata::update`.
+    std::optional<String> getTableUuid() const { return trusted_table_uuid->get(); }
 
     /// Invalidate cached metadata for this table under both keys we may have used to cache it
     /// (`table_path` and `table_uuid`).
@@ -33,7 +40,7 @@ struct PersistentTableComponents
         if (!metadata_cache)
             return;
         metadata_cache->remove(table_path);
-        if (table_uuid.has_value())
+        if (auto table_uuid = getTableUuid())
             metadata_cache->remove(*table_uuid);
     }
 };

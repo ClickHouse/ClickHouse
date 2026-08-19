@@ -207,6 +207,9 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         }
     }
     auto table_path = configuration->getPathForRead().path;
+    /// The UUID was just read from the metadata file we selected, so that file is already validated.
+    auto trusted_table_uuid = std::make_shared<TrustedTableUuid>(table_uuid);
+    trusted_table_uuid->markValidated(metadata_version, metadata_file_path);
     return PersistentTableComponents{
         .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
@@ -214,7 +217,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .table_location = table_location,
         .metadata_compression_method = compression_method,
         .table_path = table_path,
-        .table_uuid = table_uuid,
+        .trusted_table_uuid = std::move(trusted_table_uuid),
         .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
     };
 }
@@ -228,10 +231,62 @@ std::pair<IcebergDataSnapshotPtr, TableStateSnapshot> IcebergMetadata::getReleva
         persistent_components.metadata_cache,
         context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method,
         force_fetch_latest_metadata);
     return getState(context, metadata_file_path, metadata_version);
+}
+
+void IcebergMetadata::update(const ContextPtr & local_context)
+{
+    auto & trusted_table_uuid = *persistent_components.trusted_table_uuid;
+
+    const auto [metadata_version, metadata_file_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+        object_storage,
+        persistent_components.table_path,
+        data_lake_settings,
+        persistent_components.metadata_cache,
+        local_context,
+        log.get(),
+        persistent_components.getTableUuid(),
+        persistent_components.metadata_compression_method,
+        /*force_fetch_latest_metadata=*/false);
+
+    if (!trusted_table_uuid.needsRevalidation(metadata_version, metadata_file_path))
+        return;
+
+    /// Read the selected metadata file bypassing the UUID-keyed content cache: the whole point of
+    /// this read is that the currently trusted UUID may belong to a previous table at this root,
+    /// so probing the cache with it is exactly what would return the stale content.
+    auto metadata_object = getMetadataJSONObject(
+        metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, std::nullopt);
+
+    std::optional<String> actual_table_uuid;
+    if (metadata_object->has(f_table_uuid))
+        actual_table_uuid = normalizeUuid(metadata_object->getValue<String>(f_table_uuid));
+
+    auto previous_table_uuid = trusted_table_uuid.get();
+    if (trusted_table_uuid.set(actual_table_uuid))
+    {
+        LOG_INFO(
+            log,
+            "Iceberg table at path {} was replaced: table UUID changed from {} to {}. Dropping its cached metadata.",
+            persistent_components.table_path,
+            previous_table_uuid.value_or("no_uuid"),
+            actual_table_uuid.value_or("no_uuid"));
+
+        /// The content cells keyed by the previous UUID are unreachable once the trusted UUID
+        /// moves, but the latest-version cells under the previous UUID and under the table path
+        /// are not - they still point at the replaced table's metadata file - so drop them.
+        if (persistent_components.metadata_cache)
+        {
+            persistent_components.metadata_cache->remove(persistent_components.table_path);
+            if (previous_table_uuid.has_value())
+                persistent_components.metadata_cache->remove(*previous_table_uuid);
+        }
+    }
+
+    trusted_table_uuid.markValidated(metadata_version, metadata_file_path);
 }
 
 IcebergMetadata::IcebergMetadata(
@@ -249,7 +304,7 @@ IcebergMetadata::IcebergMetadata(
     if (persistent_components.metadata_cache && data_lake_settings[DataLakeStorageSetting::iceberg_metadata_async_prefetch_period_ms] != 0)
     {
         background_metadata_prefetch_task = context_->getIcebergSchedulePool()->createTask(
-            StorageID("", persistent_components.table_uuid ? *persistent_components.table_uuid : persistent_components.table_path),
+            StorageID("", persistent_components.getTableUuid().value_or(persistent_components.table_path)),
             "backgroundMetadataPrefetcherThread",
             [this]
             {
@@ -307,7 +362,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
                  interval,
                  watch.elapsedMilliseconds(),
                  persistent_components.table_path,
-                 persistent_components.table_uuid ? *(persistent_components.table_uuid) : "no_uuid",
+                 persistent_components.getTableUuid().value_or("no_uuid"),
                  actual_table_state_snapshot.metadata_version,
                  actual_table_state_snapshot.metadata_file_path);
     }
@@ -600,7 +655,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
     IcebergDataSnapshotPtr data_snapshot;
     TableStateSnapshot table_state_snapshot;
     auto metadata_object = getMetadataJSONObject(
-        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.table_uuid);
+        metadata_path, object_storage, persistent_components.metadata_cache, local_context, log, persistent_components.metadata_compression_method, persistent_components.getTableUuid());
 
     insertRowToLogTable(
         local_context,
@@ -880,7 +935,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        persistent_components.getTableUuid());
     if (!table_state_snapshot.snapshot_id.has_value())
         return nullptr;
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
@@ -921,11 +976,11 @@ IcebergMetadata::IcebergHistory IcebergMetadata::getHistory(ContextPtr local_con
         persistent_components.metadata_cache,
         local_context,
         log.get(),
-        persistent_components.table_uuid,
+        persistent_components.getTableUuid(),
         persistent_components.metadata_compression_method);
 
     auto metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_components.metadata_cache, local_context, log, compression_method, persistent_components.getTableUuid());
     chassert(persistent_components.format_version == metadata_object->getValue<int>(f_format_version));
 
     /// History
@@ -1535,7 +1590,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         local_context,
         log,
         persistent_components.metadata_compression_method,
-        persistent_components.table_uuid);
+        persistent_components.getTableUuid());
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
     auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
@@ -1577,7 +1632,7 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
         .table_location = table_location,
         .metadata_compression_method = metadata_compression_method,
         .table_path = standard_persistent_components.table_path,
-        .table_uuid = standard_persistent_components.table_uuid,
+        .trusted_table_uuid = standard_persistent_components.trusted_table_uuid,
         .path_resolver = IcebergPathResolver(
             table_location,
             standard_persistent_components.table_path,
