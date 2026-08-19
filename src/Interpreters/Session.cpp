@@ -679,6 +679,11 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
     return makeQueryContextImpl(nullptr, &query_client_info);
 }
 
+ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
+{
+    return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
+}
+
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
     // take it from global context, since it outlives the Session and always available.
@@ -686,13 +691,13 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
     return global_context->getSessionLog();
 }
 
-ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
+ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
-    const bool from_session_context = static_cast<bool>(session_context);
+    const bool from_session_context = static_cast<bool>(session_context) && !detached;
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
@@ -712,6 +717,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setClientInfo(*client_info_to_move);
     else if (client_info_to_copy && (client_info_to_copy != &getClientInfo()))
         query_context->setClientInfo(*client_info_to_copy);
+    else if (detached && session_context)
+        query_context->setClientInfo(getClientInfo());
 
     /// Copy current user's name and address if it was authenticated after query_client_info was initialized.
     if (prepared_client_info && !prepared_client_info->current_user.empty())
@@ -767,6 +774,16 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
+
+    if (detached && session_context)
+    {
+        query_context->setCurrentRoles(session_context->getCurrentRoles());
+        query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
+        query_context->setSettings(session_context->getSettingsRef());
+        if (const String database = session_context->getCurrentDatabase(); !database.empty())
+            query_context->setCurrentDatabase(database);
+        query_context->addQueryParameters(session_context->getQueryParameters());
+    }
 
     /// Query context is ready.
     query_context_created = true;
