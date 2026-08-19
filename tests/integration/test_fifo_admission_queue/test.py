@@ -430,6 +430,72 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     pool.join()
 
 
+def test_client_disconnect_while_replacing_query(started_cluster):
+    """
+    Verify that a replacement query whose HTTP client disconnects while the old
+    query is leaving the process list is not admitted for execution.
+
+    The replacement cancels the original query and waits on `query_finished`.
+    Closing its socket immediately after sending the request exercises the
+    post-wakeup liveness check: once the original query disappears, the
+    replacement must stop before it creates a second `QueryStart` entry.
+    """
+    query_id = f"replace_disconnect_{uuid.uuid4().hex[:8]}"
+    pool = Pool(2)
+
+    def run_victim():
+        try:
+            node.query(
+                "SELECT sleep(30) FORMAT Null",
+                settings={"function_sleep_max_microseconds_per_block": 0},
+                query_id=query_id,
+            )
+        except Exception:
+            pass  # Expected: the replacement cancels the victim.
+
+    pool.apply_async(run_victim)
+    wait_for_query_start(node, query_id)
+
+    params = urllib.parse.urlencode({
+        "query": "SELECT 'replacement ran'",
+        "query_id": query_id,
+        "replace_running_query": "1",
+        "replace_running_query_max_wait_ms": "30000",
+    })
+    request = (
+        f"GET /?{params} HTTP/1.1\r\n"
+        f"Host: {node.ip_address}\r\n"
+        f"Connection: close\r\n"
+        f"\r\n"
+    )
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(5)
+    sock.connect((node.ip_address, 8123))
+    sock.sendall(request.encode())
+
+    # Let the server start the replacement and enter its `query_finished` wait.
+    time.sleep(0.1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
+    sock.close()
+
+    try:
+        wait_for_query_finish(node, query_id)
+        node.query("SYSTEM FLUSH LOGS")
+        starts = node.query(
+            f"SELECT count() FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryStart'"
+        ).strip()
+        assert starts == "1", (
+            "Disconnected replacement query was admitted for execution "
+            f"(QueryStart count: {starts})"
+        )
+    finally:
+        node.query(f"KILL QUERY WHERE query_id = '{query_id}' SYNC")
+        pool.close()
+        pool.join()
+
+
 def test_queue_wait_time_profile_event(started_cluster):
     """
     Verify that QueryAdmissionQueueWaitMicroseconds is recorded both globally

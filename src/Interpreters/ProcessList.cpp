@@ -262,8 +262,12 @@ ProcessList::EntryPtr ProcessList::insert(
         if (auto user_process_list = user_to_queries.find(client_info.current_user);
             user_process_list != user_to_queries.end())
         {
-            auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
-            if (running_query != user_process_list->second.queries.end())
+            /// References and pointers to elements of `unordered_map` stay valid after a rehash,
+            /// unlike iterators. `user_to_queries` entries are never erased, so this remains valid
+            /// while `query_finished.wait_*` temporarily releases `mutex`.
+            auto * user_process_list_ptr = &user_process_list->second;
+            auto running_query = user_process_list_ptr->queries.find(client_info.current_query_id);
+            if (running_query != user_process_list_ptr->queries.end())
             {
                 if (!settings[Setting::replace_running_query])
                     throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING, "Query with id = {} is already running.", client_info.current_query_id);
@@ -273,8 +277,8 @@ ProcessList::EntryPtr ProcessList::insert(
                     + std::chrono::milliseconds(replace_running_query_max_wait_ms);
                 auto old_query_finished = [&]
                 {
-                    running_query = user_process_list->second.queries.find(client_info.current_query_id);
-                    if (running_query == user_process_list->second.queries.end())
+                    running_query = user_process_list_ptr->queries.find(client_info.current_query_id);
+                    if (running_query == user_process_list_ptr->queries.end())
                         return true;
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
                     return false;
@@ -312,6 +316,10 @@ ProcessList::EntryPtr ProcessList::insert(
                                         "Query with id = {} is already running and can't be stopped",
                                         client_info.current_query_id);
                     }
+
+                    if (is_alive && !is_alive())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED,
+                                        "Query replacement cancelled: client disconnected while waiting for the old query");
 
                     if (!old_query_finished())
                         throw Exception(ErrorCodes::QUERY_WITH_SAME_ID_IS_ALREADY_RUNNING,
