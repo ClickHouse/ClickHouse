@@ -115,6 +115,8 @@ public:
 
         auto insert_context = Context::createCopy(getContext());
         insert_context->makeQueryContext();
+        if (getContext()->hasQueryContext())
+            insert_context->setQueryAccessInfo(getContext()->getQueryContext()->getQueryAccessInfoPtr());
         addInterpreterContext(insert_context);
 
         /// This sink is one branch of the outer query's `max_insert_threads` fan-out (or its only

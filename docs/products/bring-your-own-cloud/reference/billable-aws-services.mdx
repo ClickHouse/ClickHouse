@@ -26,7 +26,7 @@ These services are provisioned in every BYOC deployment.
 | **Amazon VPC** (VPC, subnets, route tables, security groups, internet gateway) | Network isolation for the data plane. Three private and three public subnets across AZs. | No — VPC resources themselves are free |
 | **NAT Gateway + Elastic IP** (one per AZ) | Outbound internet egress from private subnets (control plane connectivity, image pulls, telemetry). | Yes — per hour + data processing |
 | **VPC Endpoint for S3** (gateway endpoint) | Private S3 access without traversing NAT. | No — gateway endpoints are free |
-| **Elastic Load Balancing (NLB)** | Client traffic ingress to ClickHouse services. Created by the in-cluster AWS Load Balancer Controller. Default: internal-facing. | Yes — per LCU-hour + data processed |
+| **Elastic Load Balancing (NLB)** | Client traffic ingress to ClickHouse services. Created by the in-cluster AWS Load Balancer Controller. Default: internet-facing with an IP access list for ClickHouse-managed VPCs; internal-facing only for customer-managed VPCs. | Yes — per LCU-hour + data processed |
 | **AWS IAM** (roles, policies, OIDC provider, Pod Identity associations) | Cross-account access for ClickHouse Cloud, IRSA for in-cluster controllers (cert-manager, external-dns, load-balancer-controller, cluster-autoscaler, EBS CSI driver, state-exporter). | No |
 | **Amazon CloudWatch Logs** | EKS control plane logs (api, audit, authenticator, controllerManager, scheduler). | Yes — ingestion + storage |
 

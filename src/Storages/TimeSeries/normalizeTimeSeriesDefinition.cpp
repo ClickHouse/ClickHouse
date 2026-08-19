@@ -44,9 +44,10 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsUInt64 samples_index_granularity;
     extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 tags_index_granularity;
     extern const TimeSeriesSettingsMap tags_to_columns;
-    extern const TimeSeriesSettingsBool use_all_tags_column_to_generate_id;
 }
 
 namespace ErrorCodes
@@ -389,25 +390,21 @@ namespace
             case ViewTarget::Samples:
             {
                 /// Column "id" - no DEFAULT in the samples table: the identifier is computed in the "tags"
-                /// inner table because it depends on columns like "metric_name" or "all_tags" which don't
+                /// inner table because it depends on columns like "metric_name" or "tags" which don't
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Auto-created "timestamp" and "value" columns get time-series codecs: under generic LZ4
+                /// Auto-created "timestamp" and "value" columns get compression codecs: under generic LZ4
                 /// near-monotonic millisecond timestamps barely compress and dominate the table size
                 /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
-                /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
-                /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
-                auto make_codec = [](const char * codec_name)
-                {
-                    return makeASTFunction("CODEC",
-                        make_intrusive<ASTIdentifier>(codec_name),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1})));
-                };
+                /// above are compatible with DoubleDelta (DateTime64/DateTime/UInt32). The "value" column
+                /// gets plain ZSTD(3): specialized floating-point codecs such as Gorilla proved unreliable
+                /// in practice. Explicitly declared columns keep whatever the user wrote.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(make_codec("DoubleDelta"));
+                    timestamp_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(make_codec("Gorilla"));
+                    value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
 
                 break;
             }
@@ -426,7 +423,7 @@ namespace
                         auto & new_decl = column->as<ASTColumnDeclaration &>();
                         new_decl.default_specifier = ColumnDefaultSpecifier::Default;
                         new_decl.ephemeral_default = false;
-                        new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(resolved_types.id_type, time_series_settings, table_id));
+                        new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(resolved_types.id_type, table_id));
                         changed = true;
                     }
                 }
@@ -445,17 +442,6 @@ namespace
 
                 add_column_if_missing(TimeSeriesColumnNames::Tags,
                     makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
-
-                /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
-                if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
-                {
-                    if (auto * all_tags_decl = add_column_if_missing(TimeSeriesColumnNames::AllTags,
-                        makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String"))))
-                    {
-                        all_tags_decl->default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                        all_tags_decl->ephemeral_default = true;
-                    }
-                }
 
                 /// Columns "min_time" and "max_time".
                 if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
@@ -607,14 +593,23 @@ namespace
 
                 case ViewTarget::Tags:
                 {
+                    /// Column "id".
                     add_column(TimeSeriesColumnNames::ID, dataTypeToAST(id_type));
-
-                    if (!time_series_settings[TimeSeriesSetting::id_generator].value)
                     {
                         auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                        new_decl.default_specifier = ColumnDefaultSpecifier::Default;
                         new_decl.ephemeral_default = false;
-                        new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(id_type, time_series_settings, table_id));
+                        if (!time_series_settings[TimeSeriesSetting::id_generator].value)
+                        {
+                            /// Function getDefault has changed since the prealpha version,
+                            /// so it can generate different identifiers now.
+                            new_decl.default_specifier = ColumnDefaultSpecifier::Default;
+                            new_decl.setDefaultExpression(TimeSeriesIDGenerator::getDefault(id_type, table_id));
+                        }
+                        else
+                        {
+                            new_decl.default_specifier = ColumnDefaultSpecifier::Empty;
+                            new_decl.resetDefaultExpression();
+                        }
                     }
 
                     add_column(TimeSeriesColumnNames::MetricName,
@@ -631,19 +626,6 @@ namespace
 
                     add_column(TimeSeriesColumnNames::Tags,
                         makeASTDataType("Map", makeASTDataType("LowCardinality", makeASTDataType("String")), makeASTDataType("String")));
-
-                    /// Column "all_tags" is ephemeral - only used to calculate the "id" column.
-                    if (time_series_settings[TimeSeriesSetting::use_all_tags_column_to_generate_id])
-                    {
-                        add_column(TimeSeriesColumnNames::AllTags,
-                            makeASTDataType("Map", makeASTDataType("String"), makeASTDataType("String")));
-
-                        {
-                            auto & new_decl = new_list->children.back()->as<ASTColumnDeclaration &>();
-                            new_decl.default_specifier = ColumnDefaultSpecifier::Ephemeral;
-                            new_decl.ephemeral_default = true;
-                        }
-                    }
 
                     /// Columns "min_time" and "max_time".
                     if (time_series_settings[TimeSeriesSetting::store_min_time_and_max_time])
@@ -709,36 +691,6 @@ namespace
         create_query.set(create_query.columns_list, new_outer_columns);
     }
 
-
-    /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags`/`all_tags` Maps) outside
-    /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
-    /// rows that a background merge collapses together shares the same `id`, hence the same values of
-    /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
-    /// by default (see the `allow_dimensions_outside_sorting_key` setting and
-    /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
-    /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
-    void allowOffKeyDimensionsForAggregatingTagsEngine(ASTStorage & storage)
-    {
-        if (!storage.engine || !storage.engine->name.contains("Aggregating"))
-            return;
-
-        if (storage.settings)
-        {
-            /// Respect an explicit value if the user already set it.
-            for (const auto & change : storage.settings->changes)
-                if (change.name == "allow_dimensions_outside_sorting_key")
-                    return;
-        }
-        else
-        {
-            auto settings_ast = make_intrusive<ASTSetQuery>();
-            settings_ast->is_standalone = false;
-            storage.set(storage.settings, settings_ast);
-        }
-
-        storage.settings->changes.push_back(SettingChange{"allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1))});
-    }
-
     /// Makes the definition of the default engine for an inner table.
     boost::intrusive_ptr<ASTStorage> generateInnerEngine(ViewTarget::Kind target_kind, const TimeSeriesSettings & settings)
     {
@@ -790,6 +742,60 @@ namespace
         }
 
         return storage;
+    }
+
+    /// Whether the SETTINGS clause of an inner table's engine declaration contains the specified setting.
+    bool hasInnerEngineSetting(const ASTStorage & storage, std::string_view name)
+    {
+        return storage.settings && storage.settings->changes.tryGet(name);
+    }
+
+    /// Sets a setting in the SETTINGS clause of an inner table's engine declaration,
+    /// overwriting the existing value if present.
+    void setInnerEngineSetting(ASTStorage & storage, std::string_view name, const Field & value)
+    {
+        if (!storage.settings)
+        {
+            auto settings_ast = make_intrusive<ASTSetQuery>();
+            settings_ast->is_standalone = false;
+            storage.set(storage.settings, settings_ast);
+        }
+        storage.settings->changes.setSetting(name, value);
+    }
+
+    /// Applies engine settings driven by the TimeSeries settings to an inner table's engine,
+    /// whether the engine was generated or specified by the user.
+    void applyInnerEngineSettings(ViewTarget::Kind kind, ASTStorage & storage, const TimeSeriesSettings & settings)
+    {
+        if (!storage.engine)
+            return;
+
+        const auto & engine_name = storage.engine->name;
+
+        /// The `samples_index_granularity` and `tags_index_granularity` settings set `index_granularity`
+        /// of the inner samples and tags tables. A setting set explicitly overrides `index_granularity`
+        /// from the engine declaration. Engines outside the MergeTree family don't support `index_granularity`.
+        if ((kind == ViewTarget::Samples || kind == ViewTarget::Tags) && engine_name.ends_with("MergeTree"))
+        {
+            const auto & index_granularity = settings[(kind == ViewTarget::Samples)
+                ? TimeSeriesSetting::samples_index_granularity
+                : TimeSeriesSetting::tags_index_granularity];
+            if (index_granularity.isChanged() || !hasInnerEngineSetting(storage, "index_granularity"))
+                setInnerEngineSetting(storage, "index_granularity", Field(index_granularity.value));
+        }
+
+        /// The TimeSeries `tags` inner table keeps the tag columns (and the `tags` Map) outside
+        /// the sorting key, but they are functionally dependent on `id`, which is part of it: every group of
+        /// rows that a background merge collapses together shares the same `id`, hence the same values of
+        /// those columns, so this off-key layout is safe here. `AggregatingMergeTree` rejects such a layout
+        /// by default (see the `allow_dimensions_outside_sorting_key` setting and
+        /// https://github.com/ClickHouse/ClickHouse/issues/751), so enable that setting on the inner tags
+        /// engine — both when we generate it and when the user specifies an aggregating engine explicitly.
+        if (kind == ViewTarget::Tags && engine_name.contains("Aggregating")
+            && !hasInnerEngineSetting(storage, "allow_dimensions_outside_sorting_key"))
+        {
+            setInnerEngineSetting(storage, "allow_dimensions_outside_sorting_key", Field(static_cast<UInt64>(1)));
+        }
     }
 
     /// Checks that a target table or an inner-columns list has all the columns required by the
@@ -1078,11 +1084,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                 if (!create_query.getTargetInnerEngine(kind))
                     create_query.setTargetInnerEngine(kind, generateInnerEngine(kind, settings));
 
-                if (kind == ViewTarget::Tags)
-                {
-                    if (auto * tags_engine = create_query.getTargetInnerEngine(kind))
-                        allowOffKeyDimensionsForAggregatingTagsEngine(*tags_engine);
-                }
+                if (auto * inner_engine = create_query.getTargetInnerEngine(kind))
+                    applyInnerEngineSettings(kind, *inner_engine, settings);
             }
         }
     }
