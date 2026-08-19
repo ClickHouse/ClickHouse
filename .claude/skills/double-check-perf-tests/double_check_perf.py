@@ -250,6 +250,18 @@ def normalize_job_name(name: str) -> str:
 # uploads a report, so those shards are kept and simply read.
 NOT_RUN_STATUSES = {"SKIPPED", "PENDING", "RUNNING", "DROPPED"}
 
+# The only baseline this tool can reproduce. CI runs a second flavour of the
+# comparison, `release_base`, which measures against the latest release build
+# and checks out that release's `tests/performance` (see the
+# `compare_against_release` branch of ci/jobs/performance_tests.py). Nothing
+# below is baseline-aware: the left binary is fetched from REFs/master/<sha>,
+# query indices are positional in the tests tree of the commit under test, and
+# the reference-SHA lookup cannot discriminate either, because the
+# `query_metrics_v2` table exposed on play.clickhouse.com carries no
+# `baseline_kind` column to filter on. Reports carrying such a shard are
+# refused rather than half-answered.
+SUPPORTED_BASELINE = "master_head"
+
 
 def get_performance_shards(pr_number: int, sha: str) -> list[PerfShard]:
     pr_json_url = f"{REPORTS_BUCKET}/PRs/{pr_number}/{sha}/result_pr.json"
@@ -2309,6 +2321,29 @@ def main() -> int:
         )
     if not_run:
         log(f"ignoring {len(not_run)} shard(s) that did not run")
+
+    # See SUPPORTED_BASELINE: a `release_base` shard compares a different pair
+    # of binaries over a different tests tree, and merging its rows into the
+    # master_head rerun -- they share the (test, query_index) key -- would
+    # adjudicate them against a binary CI never used. Only the master workflow
+    # schedules that flavour today and its reports live under REFs/, which this
+    # tool does not read, so this is a guard against the day that changes.
+    unsupported = [s for s in shards if s.baseline != SUPPORTED_BASELINE]
+    if unsupported:
+        kinds = ", ".join(
+            f"{k} x{n}" for k, n in sorted(Counter(s.baseline for s in unsupported).items())
+        )
+        die(
+            f"report contains {len(unsupported)} Performance Comparison "
+            f"shard(s) with an unsupported baseline ({kinds}); only "
+            f"{SUPPORTED_BASELINE} can be reproduced locally. Such a shard "
+            "measures against a release build with that release's "
+            "tests/performance checkout, so its query indices and its "
+            "reference binary are not the ones this tool would rerun, and the "
+            "reference-SHA lookup cannot tell the two baselines apart. "
+            "Rerunning would silently adjudicate those queries against the "
+            "wrong pair."
+        )
 
     arch_shards = [s for s in shards if s.arch == perf_arch]
     other_arch_shards = [s for s in shards if s.arch != perf_arch]

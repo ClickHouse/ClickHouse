@@ -21,6 +21,8 @@ skill:
    and found nothing" are different answers, and only the second is a
    verdict. It stops the same way when shards ran but none of their reports
    can be read (expired artifacts).
+   It also stops when any shard carries a baseline other than `master_head`
+   — see the `release_base` limitation below.
 4. For each remaining perf shard, fetches `report.html` and extracts the rows in the
    "Changes in Performance" table (`<tr id="changes-in-performance.<test>.<idx>">`),
    then pulls the timing numbers for those rows from `all-query-metrics.tsv`.
@@ -323,6 +325,20 @@ treated as CI noise.
   on each arch separately; otherwise the AMD rerun of an ARM-only change
   is still useful ("local AMD doesn't reproduce the ARM regression" is a
   meaningful and common verdict).
+- **Only the `master_head` baseline is supported.** CI runs a second flavour
+  of the comparison, `release_base`, which measures against the latest
+  release build and checks out that release's `tests/performance` before
+  running. Nothing in this skill is baseline-aware: the left binary is always
+  fetched from `REFs/master/<ref-sha>/`, query indices are positional in the
+  tests tree of the commit under test, and the reference-SHA lookup cannot
+  discriminate either, because the `query_metrics_v2` table exposed on
+  `play.clickhouse.com` has no `baseline_kind` column to filter on. Rows from
+  the two baselines share the same `(test, query_index)` key, so merging them
+  would adjudicate release-baseline queries against a binary and a query
+  numbering CI never used. The script refuses such a report instead. In
+  practice this is unreachable today — only the master workflow schedules
+  `release_base` (ARM only), and its reports live under `REFs/`, which this
+  skill does not read — so the check is a guard against that changing.
 - Some shards upload `all-query-metrics.tsv.zst` (zstd-compressed) instead
   of plain `.tsv` — the script detects the URL suffix and decompresses on
   the fly (uses the `zstandard` Python package if available, else shells
