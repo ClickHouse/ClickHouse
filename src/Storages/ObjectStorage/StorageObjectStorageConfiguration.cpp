@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/StorageURL.h>
 
 #include <boost/algorithm/string/replace.hpp>
@@ -379,6 +380,11 @@ bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
 {
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorageConfiguration::getMetadataLocationURI() const
+{
+    return Iceberg::makeIcebergLocationURI(getTypeName(), getNamespace(), getRawPath().path);
 }
 
 std::string StorageObjectStorageConfiguration::getPathInArchive() const
