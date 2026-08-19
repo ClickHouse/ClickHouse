@@ -145,24 +145,26 @@ void BucketedMetricLog::stepFunction(const std::chrono::system_clock::time_point
 {
     std::lock_guard lock(previous_profile_events_mutex);
 
-    MetricLogElement metric_log_element;
-    collectMetricLogElement(
-        metric_log_element, current_time, previous_profile_events,
-        getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms]);
+    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
 
-    BucketedMetricLogElement elem{
-        .event_time = metric_log_element.event_time,
-        .event_time_microseconds = metric_log_element.event_time_microseconds,
-        .profile_events = std::move(metric_log_element.profile_events),
-        .current_metrics = std::move(metric_log_element.current_metrics),
-        .histogram_metric = std::move(metric_log_element.histogram_metric),
-        .histogram_labels = std::move(metric_log_element.histogram_labels),
-        .histogram_histogram = std::move(metric_log_element.histogram_histogram),
-        .histogram_count = std::move(metric_log_element.histogram_count),
-        .histogram_sum = std::move(metric_log_element.histogram_sum),
-    };
+    add([&](BucketedMetricLogElement & element)
+    {
+        /// previous_profile_events is guarded by the mutex held above; thread-safety analysis cannot
+        /// see the lock through this callback, so suppress the false positive on this access.
+        MetricLogElement metric_log_element;
+        collectMetricLogElement(
+            metric_log_element, current_time, TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events), show_zero_values);
 
-    add(std::move(elem));
+        element.event_time = metric_log_element.event_time;
+        element.event_time_microseconds = metric_log_element.event_time_microseconds;
+        element.profile_events = std::move(metric_log_element.profile_events);
+        element.current_metrics = std::move(metric_log_element.current_metrics);
+        element.histogram_metric = std::move(metric_log_element.histogram_metric);
+        element.histogram_labels = std::move(metric_log_element.histogram_labels);
+        element.histogram_histogram = std::move(metric_log_element.histogram_histogram);
+        element.histogram_count = std::move(metric_log_element.histogram_count);
+        element.histogram_sum = std::move(metric_log_element.histogram_sum);
+    });
 }
 
 }
