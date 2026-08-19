@@ -186,6 +186,26 @@ def test_build_profile_diff_skipped_for_docs_only_changes(monkeypatch):
     )
 
 
+def test_selected_stateless_tests_skipped_for_docs_only_changes(monkeypatch):
+    _use_fake_info(
+        monkeypatch,
+        changed_files=("docs/products/cloud/features/large-single-replica-services.mdx",),
+    )
+
+    for job in fj.JobConfigs.stateless_tests_selected_pr_jobs:
+        assert fj.should_skip_job(job.name) == (
+            True,
+            "Skipped, only documentation changed",
+        )
+
+
+def test_selected_stateless_tests_run_for_non_docs_changes(monkeypatch):
+    _use_fake_info(monkeypatch, changed_files=("src/Core/Settings.cpp",))
+
+    for job in fj.JobConfigs.stateless_tests_selected_pr_jobs:
+        assert fj.should_skip_job(job.name) == (False, "")
+
+
 @pytest.mark.parametrize(
     "changed_files",
     [

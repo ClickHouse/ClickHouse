@@ -208,7 +208,12 @@ def should_skip_job(job_name):
         print("WARNING: no changed files found for PR - do not filter jobs")
         return False, ""
 
-    if job_name == JobNames.BUILD_PROFILE_DIFF and only_docs(changed_files):
+    # Selected-test jobs are uncached because their selection includes PR-local
+    # state, so digest filtering cannot skip their runners for docs-only changes.
+    if only_docs(changed_files) and (
+        job_name == JobNames.BUILD_PROFILE_DIFF
+        or (job_name.startswith(JobNames.STATELESS) and "selected tests" in job_name)
+    ):
         return True, "Skipped, only documentation changed"
 
     # Run Keeper Stress jobs only when there are changes in src/Coordination,
