@@ -15,8 +15,6 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
-#include <Processors/QueryPlan/RollupStep.h>
-#include <Processors/QueryPlan/CubeStep.h>
 #include <Processors/QueryPlan/ExtremesStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
@@ -143,9 +141,9 @@ String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
 
 /// Returns true if the plan contains a step the distributed pipeline cannot handle yet: WITH TOTALS
-/// (TotalsHaving) needs a separate totals stream that the exchange protocol does not carry,
-/// ROLLUP/CUBE feed subtotals from a step the exchanges do not support, and a PASTE join pairs
-/// rows by position, which no exchange preserves. Such plans stay single-node.
+/// (TotalsHaving) and extremes need a separate stream that the exchange protocol does not carry,
+/// and a PASTE join pairs rows by position, which no exchange preserves. Such plans stay
+/// single-node.
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
 {
     std::vector<const QueryPlan::Node *> stack = {&root};
@@ -154,11 +152,9 @@ bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root)
         const auto * node = stack.back();
         stack.pop_back();
         const auto * step = node->step.get();
-        /// These steps produce non-Main pipe streams (totals/extremes) or rely on a single-node
-        /// aggregation shape; exchanges only carry the Main stream, so keep such plans local.
+        /// These steps produce non-Main pipe streams (totals/extremes); exchanges only carry the
+        /// Main stream, so keep such plans local.
         if (typeid_cast<const TotalsHavingStep *>(step)
-            || typeid_cast<const RollupStep *>(step)
-            || typeid_cast<const CubeStep *>(step)
             || typeid_cast<const ExtremesStep *>(step))
             return true;
         /// A PASTE join pairs rows by position. An exchange below it (e.g. a gather over a
@@ -592,10 +588,18 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         strategy = Shuffle;
 
     /// Shuffle scatters by the full key set, so GROUPING SETS subtotals (over key subsets) would be
-    /// produced in several buckets and duplicated.
+    /// produced in several buckets and duplicated. Partial aggregation has no such problem: every
+    /// worker produces partial states for every grouping set over its share of the data, tagged with
+    /// `__grouping_set`, and the merge combines them per set - the same split the shard-based
+    /// distributed path uses. Shuffle is impossible here, so
+    /// `distributed_plan_force_shuffle_aggregation` cannot apply either.
     if (aggregating_step->isGroupingSets())
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support GROUPING SETS aggregation");
+    {
+        if (!can_use_partial_aggregation)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan does not support GROUPING SETS aggregation in order");
+        strategy = PartialAggregation;
+    }
 
     if (strategy == PartialAggregation)
     {
