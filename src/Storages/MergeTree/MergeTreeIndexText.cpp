@@ -2116,7 +2116,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)
+void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
 
@@ -2152,32 +2152,11 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    auto text_index_version = settings[MergeTreeSetting::text_index_serialization_version];
-
-    /// Reject the explicit contradiction on CREATE TABLE and ALTER ADD INDEX: positions require the `V2_WithPositions`.
-    /// On ATTACH (e.g. under an older `compatibility` default) the index is loaded and written in the version it requires (see `textIndexCreator`).
-    if (!attach && positions && text_index_version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index argument '{}' requires setting 'text_index_serialization_version' to be at least 'v2_with_positions', but it is '{}'",
-            ARGUMENT_POSITIONS, text_index_version.toString());
-    }
-
-    std::optional<String> posting_list_codec_argument = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC);
-    String posting_list_codec_name = posting_list_codec_argument.value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
-    auto posting_list_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
-
-    /// The same principle for a codec given as an index argument: the `V0_Initial` format cannot represent it.
-    if (!attach
-        && posting_list_codec_argument
-        && posting_list_codec
-        && posting_list_codec->getType() != IPostingListCodec::Type::None
-        && text_index_version == MergeTreeTextIndexSerializationVersion::V0_Initial)
-    {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Text index argument '{}' = '{}' requires setting 'text_index_serialization_version' to be at least 'v1_with_codec', but it is 'v0_initial'",
-            ARGUMENT_POSTING_LIST_CODEC, posting_list_codec_name);
-    }
+    /// The `text_index_serialization_version` setting is not validated against the index features:
+    /// it is a preference, and `textIndexCreator` raises it to a version that can represent them.
+    String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
+        .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
+    PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
 
     if (!options.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected text index arguments: {}", fmt::join(std::views::keys(options), ", "));

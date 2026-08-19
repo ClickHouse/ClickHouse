@@ -111,8 +111,8 @@ ALTER TABLE tab_alter MODIFY SETTING text_index_serialization_version = 'v0_init
 INSERT INTO tab_alter SELECT number, 'foo bar' FROM numbers(512);
 SELECT count() FROM tab_alter WHERE hasToken(str, 'bar');
 
-SELECT '-- a posting list codec index argument requires at least the v1_with_codec version';
--- The table-level codec setting is pinned to 'none', so the conflict comes from the index argument alone.
+SELECT '-- a posting list codec index argument also overrides the v0_initial preference';
+-- The table-level codec setting is pinned to 'none', so the bump to 'v1_with_codec' comes from the index argument alone.
 DROP TABLE IF EXISTS tab_codec_arg;
 CREATE TABLE tab_codec_arg
 (
@@ -121,11 +121,14 @@ CREATE TABLE tab_codec_arg
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', posting_list_codec = 'bitpacking')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none'; -- { serverError BAD_ARGUMENTS }
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none';
 
-SELECT '-- phrase search index requires the v2_with_positions version on CREATE';
--- The explicit contradiction is rejected up front: positions cannot be represented
--- in the pinned format, so the combination is likely a user error.
+INSERT INTO tab_codec_arg SELECT number, 'foo bar' FROM numbers(512);
+SELECT count() FROM tab_codec_arg WHERE hasToken(str, 'foo');
+
+SELECT '-- a phrase search index overrides an older version preference on CREATE';
+-- Positions cannot be represented in 'v1_with_codec', so the index
+-- is silently written in 'v2_with_positions' and phrase search works.
 DROP TABLE IF EXISTS tab_positions_pinned;
 CREATE TABLE tab_positions_pinned
 (
@@ -134,9 +137,13 @@ CREATE TABLE tab_positions_pinned
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1)
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
 
-SELECT '-- adding a phrase search index on a table pinned to an older version is also rejected';
+INSERT INTO tab_positions_pinned SELECT number, 'foo bar baz' FROM numbers(512);
+SELECT count() FROM tab_positions_pinned WHERE hasPhrase(str, 'foo bar');
+SELECT count() FROM tab_positions_pinned WHERE hasPhrase(str, 'baz bar');
+
+SELECT '-- adding a phrase search index on a table pinned to an older version';
 DROP TABLE IF EXISTS tab_add_index;
 CREATE TABLE tab_add_index
 (
@@ -144,8 +151,10 @@ CREATE TABLE tab_add_index
     str String
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
-ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1); -- { serverError BAD_ARGUMENTS }
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v1_with_codec', allow_experimental_text_index_phrase_search = 1;
+ALTER TABLE tab_add_index ADD INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha', support_phrase_search = 1);
+INSERT INTO tab_add_index SELECT number, 'foo bar' FROM numbers(512);
+SELECT count() FROM tab_add_index WHERE hasPhrase(str, 'foo bar');
 
 SELECT '-- pinning the version on an existing phrase search table keeps the index writable';
 -- On an existing table the setting is only a preference: the index keeps being written
@@ -160,4 +169,6 @@ DROP TABLE tab_v1_with_codec;
 DROP TABLE tab_v2_with_positions;
 DROP TABLE tab_codec_override;
 DROP TABLE tab_alter;
+DROP TABLE tab_codec_arg;
+DROP TABLE tab_positions_pinned;
 DROP TABLE tab_add_index;
