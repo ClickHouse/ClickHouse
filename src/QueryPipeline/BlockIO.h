@@ -49,6 +49,9 @@ struct BlockIO
     /// When it is true, don't bother sending any non-empty blocks to the out stream
     bool null_format = false;
 
+    /// When it is true, the query was handed over to a background thread and nothing here belongs to the caller
+    bool dispatched = false;
+
     /// Needed to optionally detach from the thread group on destruction
     QueryScope query_scope;
 
