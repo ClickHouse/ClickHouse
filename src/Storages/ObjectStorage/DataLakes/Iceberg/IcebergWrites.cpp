@@ -812,7 +812,6 @@ void generateManifestList(
     /// write the original id-carrying JSON as the avro.schema header for external readers.
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
-    bool wrote_entry = false;
 
     /// Writes the `partitions` field summary of one manifest-list entry. Every manifest written here holds
     /// exactly one partition tuple, so `lower_bound == upper_bound` per partition field; readers use these
@@ -944,7 +943,6 @@ void generateManifestList(
                         if (version > 2)
                             add_field_to_datum(Iceberg::f_manifest_first_row_id);
                         writer.write(new_datum);
-                        wrote_entry = true;
                     });
                 break;
             }
@@ -1002,7 +1000,6 @@ void generateManifestList(
             write_partition_summary(entry, entry_idx);
 
             writer.write(entry_datum);
-            wrote_entry = true;
             continue;
         }
 
@@ -1047,13 +1044,9 @@ void generateManifestList(
         write_partition_summary(entry, entry_idx);
 
         writer.write(entry_datum);
-        wrote_entry = true;
     }
 
-    /// `DataFileWriterBase::close` assumes that the lazy encoder was initialized by a write.
-    /// For an empty manifest list, its destructor writes the Avro header before closing instead.
-    if (wrote_entry)
-        writer.close();
+    writer.close();
 }
 
 IcebergStorageSink::IcebergStorageSink(
