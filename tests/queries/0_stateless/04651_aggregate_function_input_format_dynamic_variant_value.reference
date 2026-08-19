@@ -9,14 +9,14 @@
 7	[1,2]	Array(Int64)
 8	true	Bool
 9		None
-=== Dynamic: string-wrapped composite value is no longer truncated at the comma ===
-10	[1,2]	Array(Int64)
-=== Variant(String, Array(UInt64)): string-wrapped values resolved by the Variant text parse ===
-1	42	String
+=== Dynamic: legacy string-wrapped composite value is truncated at the comma ===
+10	[1	String
+=== Variant(String, Array(UInt64)): legacy string-wrapped values use the CSV parse ===
+1	[42]	Array(UInt64)
 2	hello	String
 3	[]	Array(UInt64)
-6		None
-7	[1,2]	Array(UInt64)
+6	[0]	Array(UInt64)
+7	[1	String
 === Variant(String, Array(UInt64)): native unquoted JSON values ===
 4	[1,2]	Array(UInt64)
 5		None

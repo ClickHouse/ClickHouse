@@ -30,10 +30,9 @@ $$
 $$);
 SELECT id, toString(anyMerge(val)), dynamicType(anyMerge(val)) FROM test_agg_dynamic_value WHERE id > 5 GROUP BY id ORDER BY id;
 
--- Released parsed the string-wrapped content with the argument type's CSV deserialization, which truncated a
--- composite value at the first comma (the string '[1' for "[1, 2]"). The unified deserialization reads the whole
--- token instead, so the wrapped composite forms round-trip.
-SELECT '=== Dynamic: string-wrapped composite value is no longer truncated at the comma ===';
+-- String-wrapped JSON values retain the released CSV parsing, including truncation of a composite value at
+-- its first comma.
+SELECT '=== Dynamic: legacy string-wrapped composite value is truncated at the comma ===';
 INSERT INTO test_agg_dynamic_value SELECT * FROM format(JSONEachRow, 'id UInt64, val AggregateFunction(any, Dynamic)',
 $$
 {"id": 10, "val": "[1, 2]"}
@@ -41,11 +40,9 @@ $$);
 SELECT id, toString(anyMerge(val)), dynamicType(anyMerge(val)) FROM test_agg_dynamic_value WHERE id = 10 GROUP BY id;
 DROP TABLE test_agg_dynamic_value;
 
--- For a Variant with a composite alternative the released per-value CSV parse was degenerate: it turned the
--- wrapped "42" into the array [42] and "NULL" into [0], and truncated "[1, 2]" at the comma into the string '[1'.
--- The unified deserialization resolves the content through the Variant text parse instead, which is the same
--- replacement of the degenerate CSV-field behavior that 'array' mode makes for composite element forms.
-SELECT '=== Variant(String, Array(UInt64)): string-wrapped values resolved by the Variant text parse ===';
+-- For a Variant with a composite alternative, retain the released per-value CSV parse: it turns the wrapped
+-- "42" into the array [42] and "NULL" into [0], and truncates "[1, 2]" at the comma into the string '[1'.
+SELECT '=== Variant(String, Array(UInt64)): legacy string-wrapped values use the CSV parse ===';
 CREATE TABLE test_agg_variant_value (id UInt64, val AggregateFunction(any, Variant(String, Array(UInt64)))) ENGINE = Memory;
 INSERT INTO test_agg_variant_value SELECT * FROM format(JSONEachRow, 'id UInt64, val AggregateFunction(any, Variant(String, Array(UInt64)))',
 $$
