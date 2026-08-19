@@ -4332,6 +4332,28 @@ static void addChildrenBeforeNode(std::vector<const ActionsDAG::Node *> & reorde
 
 void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry) const
 {
+#if USE_EMBEDDED_COMPILER
+    /// A JIT-fused node's getName() is a dump string, not a real function name (#115310) --
+    /// serialize a decompiled clone instead, leaving the original (fused) DAG untouched.
+    bool has_compiled_functions = false;
+    for (const auto & node : nodes)
+    {
+        if (node.is_function_compiled)
+        {
+            has_compiled_functions = true;
+            break;
+        }
+    }
+
+    if (has_compiled_functions)
+    {
+        auto decompiled = clone();
+        decompiled.decompileFunctions();
+        decompiled.serialize(out, registry);
+        return;
+    }
+#endif
+
     size_t nodes_size = nodes.size();
     writeVarUInt(nodes_size, out);
 

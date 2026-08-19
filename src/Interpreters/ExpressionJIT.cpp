@@ -193,6 +193,10 @@ public:
 
     String getName() const override { return name; }
 
+    /// Lets decompileFunctions() below rebuild the un-fused sub-expression when getName()'s
+    /// synthesized dump isn't resolvable, e.g. for a plan about to be serialized (#115310).
+    const CompileDAG & getCompileDAG() const { return dag; }
+
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
     const DataTypePtr & getResultType() const override { return dag.back().result_type; }
@@ -645,6 +649,77 @@ void ActionsDAG::compileFunctions(size_t min_count_to_compile_expression, const 
             node->is_function_compiled = true;
             node->column = nullptr;
         }
+    }
+}
+
+/// Reverse of compileFunctions(): rebuild the real, resolvable sub-expression a JIT-fused
+/// node's getName() can't express as a name (#115310). Called by serialize() on a clone.
+void ActionsDAG::decompileFunctions()
+{
+    std::vector<Node *> compiled_nodes;
+    for (auto & node : nodes)
+        if (node.is_function_compiled)
+            compiled_nodes.push_back(&node);
+
+    for (auto * node : compiled_nodes)
+    {
+        const auto * llvm_function = typeid_cast<const LLVMFunction *>(node->function_base.get());
+        if (!llvm_function)
+            continue;
+
+        const CompileDAG & compile_dag = llvm_function->getCompileDAG();
+
+        /// `node->children` currently holds the real external inputs (the fused sub-expression's
+        /// leaves), in the same order `getCompilableDAG()` built the CompileDAG's INPUT entries.
+        NodeRawConstPtrs leaf_children;
+        leaf_children.swap(node->children);
+
+        std::vector<const Node *> compiled_to_actions(compile_dag.getNodesCount(), nullptr);
+        size_t next_leaf = 0;
+
+        for (size_t i = 0; i < compile_dag.getNodesCount(); ++i)
+        {
+            const auto & compiled_node = compile_dag[i];
+
+            if (compiled_node.type == CompileDAG::CompileType::INPUT)
+            {
+                if (next_leaf >= leaf_children.size())
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Mismatched compiled function inputs while decompiling '{}' for serialization",
+                        node->function_base->getName());
+                compiled_to_actions[i] = leaf_children[next_leaf++];
+            }
+            else if (compiled_node.type == CompileDAG::CompileType::CONSTANT)
+            {
+                compiled_to_actions[i] = &addColumn(compiled_node.column, compiled_node.result_type,
+                    "__decompiled_const_" + std::to_string(nodes.size()));
+            }
+            else
+            {
+                NodeRawConstPtrs args;
+                args.reserve(compiled_node.arguments.size());
+                for (size_t arg_index : compiled_node.arguments)
+                    args.push_back(compiled_to_actions[arg_index]);
+
+                String result_name = compiled_node.function->getName() + "(";
+                for (size_t j = 0; j < args.size(); ++j)
+                {
+                    if (j)
+                        result_name += ", ";
+                    result_name += args[j]->result_name;
+                }
+                result_name += ")";
+
+                compiled_to_actions[i] = &addFunction(compiled_node.function, args, result_name);
+            }
+        }
+
+        const Node * reconstructed = compiled_to_actions[compile_dag.getNodesCount() - 1];
+
+        node->function_base = reconstructed->function_base;
+        node->function = reconstructed->function;
+        node->children = reconstructed->children;
+        node->is_function_compiled = false;
     }
 }
 

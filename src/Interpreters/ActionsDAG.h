@@ -570,6 +570,10 @@ private:
 
 #if USE_EMBEDDED_COMPILER
     void compileFunctions(size_t min_count_to_compile_expression, const std::unordered_set<const Node *> & lazy_executed_nodes = {});
+
+    /// Reverse of compileFunctions(): rebuilds the un-fused sub-expression from a JIT-fused
+    /// node's own CompileDAG, since its getName() is a dump string, not a real one (#115310).
+    void decompileFunctions();
 #endif
 
     bool removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter);
