@@ -3,6 +3,8 @@
 #include <base/defines.h>
 #include <base/extended_types.h>
 
+#include <bit>
+
 #if USE_MULTITARGET_CODE
 #define FAST_HEX_AVX 1
 #define FAST_HEX_AVX2 1
@@ -21,6 +23,38 @@ DECLARE_DEFAULT_CODE(
 template <typename Case>
 static void encodeHexIntImpl(uint8_t * dst, const void * value, size_t num_bytes, Case c)
 {
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        /// The NEON paths below reverse the native byte representation. This is only
+        /// equivalent to encoding the integer value on little-endian architectures.
+        switch (num_bytes)
+        {
+            case 8:
+            {
+                UInt64 v;
+                memcpy(&v, value, 8);
+                heks::encode_integral_naive(dst, v, c);
+                return;
+            }
+            case 16:
+            {
+                UInt128 v;
+                memcpy(&v, value, 16);
+                heks::encode_integral_naive(dst, v, c);
+                return;
+            }
+            case 32:
+            {
+                UInt256 v;
+                memcpy(&v, value, 32);
+                heks::encode_integral_naive(dst, v, c);
+                return;
+            }
+            default:
+                UNREACHABLE();
+        }
+    }
+
     switch (num_bytes)
     {
         case 8:
@@ -65,6 +99,17 @@ static void decodeHexStringImpl(uint8_t * dst, const uint8_t * src, size_t size)
 template <typename Case>
 static void encodeHex16LEImpl(uint8_t * dst, const uint8_t * src, Case)
 {
+    if constexpr (std::endian::native == std::endian::big)
+    {
+        UInt64 high;
+        UInt64 low;
+        memcpy(&high, src + 8, 8);
+        memcpy(&low, src, 8);
+        heks::encode_integral_naive(dst, high, Case{});
+        heks::encode_integral_naive(dst + 16, low, Case{});
+        return;
+    }
+
     constexpr auto case_type = Case::value;
     heks::heks_detail::encodeHexNeon16_impl<case_type, heks::heks_detail::Reverse::Yes128>(dst, src);
 }
