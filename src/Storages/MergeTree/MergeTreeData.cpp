@@ -5092,8 +5092,143 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
     }
 
+    /// Must be collected before the commands are applied below: dropping a column used in a key has to
+    /// be rejected before the key expressions are recalculated, otherwise the recalculation throws first.
+
+    /// Set of columns that shouldn't be altered.
+    NameSet columns_alter_type_forbidden;
+
+    /// Primary key columns can be ALTERed only if they are used in the key as-is
+    /// (and not as a part of some expression) and if the ALTER only affects column metadata.
+    NameSet columns_alter_type_metadata_only;
+
+    /// Columns to check that the type change is safe for partition key.
+    NameSet columns_alter_type_check_safe_for_partition;
+
+    /// Storage column -> its subcolumns used in the primary or partition key (raw names).
+    std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
+
+    const auto & old_columns = old_metadata.getColumns();
+
+    if (old_metadata.hasPartitionKey())
+    {
+        /// Forbid altering columns inside partition key expressions because it can change partition ID format.
+        auto partition_key_expr = old_metadata.getPartitionKey().expression;
+        for (const auto & action : partition_key_expr->getActions())
+        {
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
+        }
+
+        /// But allow to alter columns without expressions under certain condition.
+        for (const String & col : partition_key_expr->getRequiredColumns())
+        {
+            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+            if (storage_column && storage_column->isSubcolumn())
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
+            else
+                columns_alter_type_check_safe_for_partition.insert(col);
+        }
+    }
+
+    if (old_metadata.hasSortingKey())
+    {
+        auto sorting_key_expr = old_metadata.getSortingKey().expression;
+        for (const auto & action : sorting_key_expr->getActions())
+        {
+            for (const auto * child : action.node->children)
+                columns_alter_type_forbidden.insert(child->result_name);
+        }
+        for (const String & col : sorting_key_expr->getRequiredColumns())
+        {
+            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
+            if (storage_column && storage_column->isSubcolumn())
+                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
+            else
+                columns_alter_type_metadata_only.insert(col);
+        }
+
+        /// We don't process sample_by_ast separately because it must be among the primary key columns
+        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
+    }
+    /// All of the above.
+    NameSet columns_in_keys;
+    columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
+    columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
+    columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
+
+    if (!merging_params.sign_column.empty())
+        columns_alter_type_forbidden.insert(merging_params.sign_column);
+
+    bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    /// `ALTER CLEAR COLUMN` is a `DROP_COLUMN` with `clear` set, and it keeps the column in the metadata,
+    /// so it could also be checked in the per-command loop below. It is rejected by the same rule, so both
+    /// are handled here to keep the check in a single place.
+    for (const AlterCommand & command : commands)
+    {
+        if (command.type != AlterCommand::DROP_COLUMN)
+            continue;
+
+        const char * verb = command.clear ? "CLEAR" : "DROP";
+
+        /// A special column of the engine is named by its role, which explains the refusal better than
+        /// "a part of key expression". It has to be checked here as well, because such a column may also
+        /// be used in a key, and then the key check below would answer first with the less precise reason.
+        /// For the commands this loop does not handle the same check runs in the per-command loop below.
+        if (command.column_name == merging_params.version_column)
+            checkSpecialColumn("version", command);
+        else if (command.column_name == merging_params.is_deleted_column)
+            checkSpecialColumn("is_deleted", command);
+        else if (command.column_name == merging_params.sign_column)
+            checkSpecialColumn("sign", command);
+        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
+            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+
+        if (columns_in_keys.contains(command.column_name))
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Trying to ALTER {} key {} column which is a part of key expression",
+                verb,
+                backQuoteIfNeed(command.column_name));
+        }
+
+        if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
+        {
+            throw Exception(
+                ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                "Trying to ALTER {} column {} whose subcolumns ({}) are part of key expression",
+                verb,
+                backQuoteIfNeed(command.column_name),
+                backQuotedList(it->second));
+        }
+
+        /// When shared nested offsets are enabled, a name that is not a column of the table denotes
+        /// the whole Nested group `<name>.*`, and the command affects every column of the group.
+        if (share_nested_offsets && old_columns.hasNested(command.column_name))
+        {
+            std::vector<String> key_columns_in_group;
+            for (const auto & nested_column : old_columns.getNested(command.column_name))
+            {
+                if (columns_in_keys.contains(nested_column.name) || column_to_subcolumns_used_in_keys.contains(nested_column.name))
+                    key_columns_in_group.push_back(nested_column.name);
+            }
+
+            if (!key_columns_in_group.empty())
+            {
+                throw Exception(
+                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                    "Trying to ALTER {} whole Nested group {} whose columns ({}) are part of key expression",
+                    verb,
+                    backQuoteIfNeed(command.column_name),
+                    backQuotedList(key_columns_in_group));
+            }
+        }
+    }
+
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, (*getSettings())[MergeTreeSetting::share_nested_offsets]);
+    commands.apply(new_metadata, local_context, share_nested_offsets);
 
     /// The `Quantize(...)` codec is immutable via ALTER: it cannot be added, removed, or changed, and the TYPE of a
     /// Quantize-coded column cannot be changed either. Both reach `ColumnsDescription::modify` as metadata-only changes
@@ -5259,71 +5394,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 "ALTER TABLE commands are not supported on immutable disk '{}', except for setting and comment alteration",
                 disk->getName());
 
-    /// Set of columns that shouldn't be altered.
-    NameSet columns_alter_type_forbidden;
-
-    /// Primary key columns can be ALTERed only if they are used in the key as-is
-    /// (and not as a part of some expression) and if the ALTER only affects column metadata.
-    NameSet columns_alter_type_metadata_only;
-
-    /// Columns to check that the type change is safe for partition key.
-    NameSet columns_alter_type_check_safe_for_partition;
-
-    /// Storage column -> its subcolumns used in the primary or partition key (raw names).
-    std::unordered_map<String, std::vector<String>> column_to_subcolumns_used_in_keys;
-
-    const auto & old_columns = old_metadata.getColumns();
-
-    if (old_metadata.hasPartitionKey())
-    {
-        /// Forbid altering columns inside partition key expressions because it can change partition ID format.
-        auto partition_key_expr = old_metadata.getPartitionKey().expression;
-        for (const auto & action : partition_key_expr->getActions())
-        {
-            for (const auto * child : action.node->children)
-                columns_alter_type_forbidden.insert(child->result_name);
-        }
-
-        /// But allow to alter columns without expressions under certain condition.
-        for (const String & col : partition_key_expr->getRequiredColumns())
-        {
-            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
-            if (storage_column && storage_column->isSubcolumn())
-                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
-            else
-                columns_alter_type_check_safe_for_partition.insert(col);
-        }
-    }
-
-    if (old_metadata.hasSortingKey())
-    {
-        auto sorting_key_expr = old_metadata.getSortingKey().expression;
-        for (const auto & action : sorting_key_expr->getActions())
-        {
-            for (const auto * child : action.node->children)
-                columns_alter_type_forbidden.insert(child->result_name);
-        }
-        for (const String & col : sorting_key_expr->getRequiredColumns())
-        {
-            auto storage_column = old_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, col);
-            if (storage_column && storage_column->isSubcolumn())
-                column_to_subcolumns_used_in_keys[storage_column->getNameInStorage()].push_back(col);
-            else
-                columns_alter_type_metadata_only.insert(col);
-        }
-
-        /// We don't process sample_by_ast separately because it must be among the primary key columns
-        /// and we don't process primary_key_expr separately because it is a prefix of sorting_key_expr.
-    }
-    if (!merging_params.sign_column.empty())
-        columns_alter_type_forbidden.insert(merging_params.sign_column);
-
-    /// All of the above.
-    NameSet columns_in_keys;
-    columns_in_keys.insert(columns_alter_type_forbidden.begin(), columns_alter_type_forbidden.end());
-    columns_in_keys.insert(columns_alter_type_metadata_only.begin(), columns_alter_type_metadata_only.end());
-    columns_in_keys.insert(columns_alter_type_check_safe_for_partition.begin(), columns_alter_type_check_safe_for_partition.end());
-
     /// We use columns_in_indices to prevent alters that change column data type in a way that requires
     /// reindexing secondary indices (respecting alter_column_secondary_index_mode). But only care about explicit indices
     std::unordered_map<String, String> columns_in_explicit_indices;
@@ -5481,21 +5551,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
-            if (columns_in_keys.contains(command.column_name))
-            {
-                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP key {} column which is a part of key expression", backQuoteIfNeed(command.column_name));
-            }
-
-            if (auto it = column_to_subcolumns_used_in_keys.find(command.column_name); it != column_to_subcolumns_used_in_keys.end())
-            {
-                throw Exception(
-                    ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                    "Trying to ALTER DROP column {} whose subcolumns ({}) are part of key expression",
-                    backQuoteIfNeed(command.column_name),
-                    backQuotedList(it->second));
-            }
-
             if (!command.clear)
             {
                 /// Don't check columns in indices or projections here. If required columns of indices
@@ -5541,7 +5596,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
                 for (const auto & nested_column : nested)
                     dropped_columns.emplace(nested_column.name);
             }
-
         }
         else if (command.type == AlterCommand::RESET_SETTING)
         {
@@ -12694,7 +12748,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     new_data_part->moveMetadataToDedicatedArena();
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
