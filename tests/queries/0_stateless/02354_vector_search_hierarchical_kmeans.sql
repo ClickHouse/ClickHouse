@@ -66,6 +66,14 @@ SELECT hierarchicalKMeans(1.5)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans('4')(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(4, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 SELECT hierarchicalKMeans(4, 16, 20, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+-- Every parameter position goes through the same integer check, so a negative, float, string or NULL
+-- value is rejected wherever it appears, not only in `k`.
+SELECT hierarchicalKMeans(NULL)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, 20, 1000000, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, 20, 1000000, 1.5)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, 20, 1000000, 0, 'x')(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
+SELECT hierarchicalKMeans(4, 16, 20, 1000000, 0, -1)(v) FROM blobs; -- { serverError BAD_ARGUMENTS }
 -- An empty vector would make `dim` zero, which is also the "no rows yet" sentinel.
 SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS }
 -- No comparison against NaN is true, so a non-finite coordinate would collect rows into cluster 0 and can
