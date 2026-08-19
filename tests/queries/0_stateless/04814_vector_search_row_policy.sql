@@ -44,6 +44,16 @@ SELECT count() > 0 FROM (
         SETTINGS vector_search_filter_strategy = 'postfilter')
 WHERE explain LIKE '%vector_similarity%';
 
+-- The planner carries through every table-expression column in the row-policy DAG, including
+-- `vec` for the distance sort. Only the predicate dependencies matter: a policy on `id` must
+-- retain the non-rescoring rewrite and its virtual `_distance` column.
+SELECT 'policy on a non-vector column, no rescoring: uses _distance';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    SELECT id FROM t_04814 ORDER BY cosineDistance(vec, [0., 1.]) LIMIT 1
+        SETTINGS vector_search_with_rescoring = 0)
+WHERE explain LIKE '%_distance%';
+
 DROP ROW POLICY rp_04814 ON t_04814;
 
 -- The policy must participate in the runtime `vector_search_index_fetch_multiplier` compensation as well,

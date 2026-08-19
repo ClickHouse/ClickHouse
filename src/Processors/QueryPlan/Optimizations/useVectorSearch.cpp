@@ -449,7 +449,15 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
                 if (!row_level_filter)
                     continue;
 
-                for (const auto * input : row_level_filter->actions.getInputs())
+                /// The analyzer keeps pass-through table columns among the policy DAG outputs.
+                /// Keep only the actual predicate before checking its dependencies: otherwise the
+                /// vector column used only by the distance sort looks like a policy input.
+                auto pruned_row_level_filter = row_level_filter->actions.clone();
+                pruned_row_level_filter.getOutputs() = {
+                    &pruned_row_level_filter.findInOutputs(row_level_filter->column_name)};
+                pruned_row_level_filter.removeUnusedActions();
+
+                for (const auto * input : pruned_row_level_filter.getInputs())
                 {
                     if (input->result_name == search_column)
                     {
