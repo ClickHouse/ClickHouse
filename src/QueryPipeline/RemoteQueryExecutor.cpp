@@ -475,7 +475,7 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
     connections = create_connections(async_callback);
     AsyncCallbackSetter<IConnections> async_callback_setter(connections.get(), async_callback);
 
-    /// Plan-level execution limits are serialized beginning with version 8. Before that version,
+    /// Plan-level execution limits are serialized beginning with version 10. Before that version,
     /// sending a plan would silently lose them. Use the original SQL request for old replicas: it
     /// carries the query settings and lets the remote server build a plan with the same limits.
     /// This keeps `serialize_query_plan` usable while a cluster is being upgraded.
