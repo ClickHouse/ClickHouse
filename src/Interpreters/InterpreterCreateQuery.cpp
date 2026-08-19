@@ -3493,16 +3493,11 @@ BlockIO InterpreterCreateQuery::execute()
 
         if (!create.cluster.empty()
             || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
-        {
-            String name = create.database
-                ? backQuoteIfNeed(create.getDatabase()) + "." + backQuoteIfNeed(create.getTable())
-                : backQuoteIfNeed(create.getTable());
-
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "ATTACH VIEW {0} is not supported for ON CLUSTER queries and Replicated databases. "
-                "Use 'ATTACH TABLE {0};' instead.",
-                name);
-        }
+                "The short ATTACH {0} is not supported for ON CLUSTER queries and Replicated "
+                "databases, because the stored definition is read on the node that executes the "
+                "query. Replace {0} with TABLE, keeping the rest of the query.",
+                create.is_materialized_view ? "MATERIALIZED VIEW" : "VIEW");
     }
 
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
