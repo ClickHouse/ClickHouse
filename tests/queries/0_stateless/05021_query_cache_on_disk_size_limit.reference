@@ -1,0 +1,6 @@
+-- An oversized query result is not written to disk (0 bytes written expected)
+0
+-- Nothing was stored, so a second process cannot serve the result from disk (0 hits expected)
+0
+-- A result within the limit is written to disk and served from it in a second process (1 hit expected)
+1
