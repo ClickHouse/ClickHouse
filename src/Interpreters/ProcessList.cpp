@@ -810,6 +810,14 @@ ProcessList::EntryPtr ProcessList::insert(
 
         (*process_it)->setProcessListEntry(res);
 
+        /// `ProcessListEntry` now owns the query's admission slot and will either release it
+        /// during normal teardown or account for an early release. Do not leave the rollback
+        /// guard armed across the throttler setup below: those allocations may throw after the
+        /// query is visible in the secondary-limit counters, and releasing the slot without
+        /// pending-teardown accounting would let the next admitted query observe a transient
+        /// overcount and be rejected.
+        admission_rollback.release();
+
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
         user_process_list.user_memory_tracker.setSoftLimit(settings[Setting::memory_overcommit_ratio_denominator_for_user]);
@@ -835,12 +843,6 @@ ProcessList::EntryPtr ProcessList::insert(
                 user_process_list.user_throttler = total_network_throttler;
         }
 
-        /// The query is now fully registered: from here on the admission slot is owned by the
-        /// constructed `ProcessListEntry` (released in its destructor, or earlier in `executeQuery`).
-        /// Only now is it safe to dismiss the rollback guard — if any step above threw after the
-        /// guard was armed (e.g. an allocation failure in `processes.emplace`, `appendTask`, or the
-        /// `Entry` construction), the guard releases the slot and prevents it from leaking.
-        admission_rollback.release();
     }
 
     return res;
