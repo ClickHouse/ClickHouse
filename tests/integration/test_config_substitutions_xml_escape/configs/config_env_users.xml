@@ -18,6 +18,11 @@
     <profile_env_cdata>
         <log_comment from_env="ENV_CDATA_END" />
     </profile_env_cdata>
+    <!-- A value entity-encoded for the old from_env XML parser must now remain literal text,
+         because direct from_env values are escaped and no longer parsed as XML. -->
+    <profile_env_entity_encoded>
+        <log_comment from_env="ENV_ENTITY_ENCODED" />
+    </profile_env_entity_encoded>
     <profile_env_subtree>
         <include from_env="ENV_XML_SUBTREE" />
     </profile_env_subtree>
@@ -38,6 +43,11 @@
           <profile>profile_env_cdata</profile>
           <quota>default</quota>
       </env_cdata>
+      <env_entity_encoded>
+          <password></password>
+          <profile>profile_env_entity_encoded</profile>
+          <quota>default</quota>
+      </env_entity_encoded>
       <env_subtree>
           <password></password>
           <profile>profile_env_subtree</profile>

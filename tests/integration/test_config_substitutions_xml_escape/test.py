@@ -25,6 +25,7 @@ node_env = cluster.add_instance(
         "ENV_XML_SPECIAL": "a&b<c>d",
         "ENV_XML_FRAGMENT": "<a>1</a>",
         "ENV_CDATA_END": "a]]>b",
+        "ENV_ENTITY_ENCODED": "a&amp;b",
         "ENV_XML_SUBTREE": "<log_comment>subtree value</log_comment>",
     },
 )
@@ -182,6 +183,17 @@ def test_config_env_cdata_end_sequence(start_cluster):
     exact original bytes.
     """
     assert get_log_comment(node_env, "env_cdata") == "a]]>b\n"
+
+
+def test_config_env_entity_encoded_stays_literal(start_cluster):
+    """An entity-encoded environment value now resolves to its literal bytes.
+
+    Before this change direct from_env values were reparsed as XML, so `a&amp;b` decoded to
+    `a&b`. Values are now literal text to accept a raw `&`, so a pre-existing entity-encoded
+    value resolves to the literal `a&amp;b` instead. This deliberate upgrade change is documented
+    in configuration-files.mdx; users needing `a&b` must now store that value raw.
+    """
+    assert get_log_comment(node_env, "env_entity_encoded") == "a&amp;b\n"
 
 
 def test_config_env_include_keeps_xml_subtree_behavior(start_cluster):
