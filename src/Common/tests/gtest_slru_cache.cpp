@@ -1,4 +1,5 @@
 #include <iomanip>
+#include <limits>
 #include <gtest/gtest.h>
 #include <Common/CacheBase.h>
 #include <Common/CurrentMetrics.h>
@@ -287,6 +288,58 @@ TEST(SLRUCache, MaxCountDoesNotStarveProbationary)
         slru_cache.getOrSet(100, load_func);
         EXPECT_NE(slru_cache.get(100), nullptr) << "after setMaxCount(4)";
     }
+
+    /// max_entries is an unclamped server setting, so the protected bound must stay computable at
+    /// the extremes of size_t.
+    for (size_t max_count : {std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max() - 1024})
+    {
+        SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                                   max_size_in_bytes, max_count, /*size_ratio*/1.0);
+        slru_cache.getOrSet(7, load_func);
+        EXPECT_NE(slru_cache.get(7), nullptr) << "max_count = " << max_count;
+    }
+}
+
+TEST(SLRUCache, MaxCountProtectedBoundHonoursSizeRatio)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+
+    size_t x = 5;
+    auto load_func = [&] { return std::make_shared<size_t>(x); };
+
+    static constexpr size_t max_size_in_bytes = 1'000'000'000;
+
+    /// The protected bound is size_ratio * max_count, and exactly that many promoted entries
+    /// survive a scan of fresh single-use keys. contains() is used to count them because get()
+    /// would promote and reorder, changing the set being measured.
+    auto count_scan_survivors = [&](size_t max_count, double size_ratio)
+    {
+        SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                                   max_size_in_bytes, max_count, size_ratio);
+
+        for (size_t i = 0; i < max_count; ++i)
+        {
+            slru_cache.getOrSet(static_cast<int>(i), load_func);
+            slru_cache.getOrSet(static_cast<int>(i), load_func);
+        }
+
+        for (size_t j = 0; j < 2 * max_count; ++j)
+            slru_cache.getOrSet(static_cast<int>(1000 + j), load_func);
+
+        size_t survivors = 0;
+        for (size_t i = 0; i < max_count; ++i)
+            survivors += slru_cache.contains(static_cast<int>(i)) ? 1 : 0;
+        return survivors;
+    };
+
+    EXPECT_EQ(count_scan_survivors(4, 0.5), 2u);
+    EXPECT_EQ(count_scan_survivors(8, 0.5), 4u);
+    EXPECT_EQ(count_scan_survivors(8, 0.25), 2u);
+    EXPECT_EQ(count_scan_survivors(4, 0.25), 1u);
+
+    /// A ratio of 1.0 is clamped to max_count - 1, not to max_count.
+    EXPECT_EQ(count_scan_survivors(4, 1.0), 3u);
+    EXPECT_EQ(count_scan_survivors(8, 1.0), 7u);
 }
 
 TEST(SLRUCache, noOnRemoveEntryCallback)
