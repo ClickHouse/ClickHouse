@@ -8716,22 +8716,26 @@ function parseInbandException(text, format)
 /// An HTTP error in a plain `JSONEachRow` / `JSONLines` / `NDJSON` response is a line containing
 /// `{"exception":...}`. These formats deliberately remain absent from `parseInbandException`:
 /// under `200 OK`, such an object can be an ordinary row. The non-OK path knows it is an error,
-/// however, and saves the displayed exception separately. Match the saved display text as well:
-/// transport failures can leave an ordinary row with an `exception` field in the partial body, and
-/// that row must remain raw output with its separate transport error below it on replay.
-function parsePlainHttpExceptionLine(text, display_error)
+/// however, and persists an explicit source discriminator with the snapshot. Transport failures can
+/// leave an ordinary row with an `exception` field in the partial body, and that row must remain raw
+/// output with its separate transport error below it on replay.
+function parsePlainHttpExceptionLine(text)
 {
-    if (typeof display_error !== 'string') return null;
     for (const line of text.split('\n')) {
         if (!line.startsWith('{"exception":')) continue;
         try {
             const parsed = JSON.parse(line);
-            if (parsed.exception === display_error) return parsed.exception;
+            if (typeof parsed.exception === 'string') return parsed.exception;
         } catch (e) {
             return null;
         }
     }
     return null;
+}
+
+function plainHttpExceptionUsesEachRowFormat(format)
+{
+    return new Set(['jsoneachrow', 'jsonstringseachrow', 'jsoncompacteachrow', 'jsoncompactstringseachrow', 'jsonlines', 'ndjson']).has(formatKey(format));
 }
 
 /// Keep a bounded tail of the raw stream, separately from the capped snapshot
@@ -8927,6 +8931,10 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// 100 KB size cap — otherwise a large failed result would restore as a blank tab (see
     /// `renderFailedSnapshot`).
     let response, reply, format, exception_tag, display_error;
+    /// Provenance for the one non-OK response shape whose exception object is an error carrier.
+    /// Do not infer it from body text during snapshot restore: a transport failure can preserve an
+    /// ordinary `JSONEachRow` object with the same exception string as its transport error.
+    let plain_http_each_row_error = false;
     reply = '';
     try {
         if (user_sets_session_framing)
@@ -9172,6 +9180,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                     const parsed = JSON.parse(line);
                     targetResultEl.update(parsed);
                     display_error = typeof parsed.exception === 'string' ? parsed.exception : line;
+                    plain_http_each_row_error = plainHttpExceptionUsesEachRowFormat(format);
                     has_exception = true;
                     break;
                 }
@@ -9194,7 +9203,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
                 highlightQueryError(reply, query, queryStart, tab);
             }
 
-            return { format, exception_tag, reply, display_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
+            return { format, exception_tag, reply, display_error, plain_http_each_row_error, response_ok: false, is_table, is_raw, is_chart, is_image, is_error, is_base64, framing_kind, exception_carrier };
         } else if ((content_type.startsWith('image/') || image_mime) && !content_type.startsWith('text/event-stream')) {
             /// A non-framed image response: the whole body is the image. (A framed image response is
             /// an event stream and is handled below, where the base64 payload is decoded to bytes.)
@@ -9813,6 +9822,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
                 /// transport failure it is the synthetic message (`Network error` / `Query was
                 /// cancelled` / ...) rendered beneath the replayed prefix. See `renderFailedSnapshot`.
                 display_error: result.display_error,
+                /// Persist the non-OK plain each-row carrier provenance. Text equality is not a
+                /// discriminator: a transport-failed partial result can contain the same object.
+                plain_http_each_row_error: !!result.plain_http_each_row_error,
                 ok: result.response_ok,
                 /// A run can fail while `response_ok` stays true (an in-band `{"exception":...}`
                 /// after rows already streamed under 200 OK); persist the failure separately so a
@@ -10134,6 +10146,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
             /// See the single-query save: the rendered error text of a failed statement, so restore can
             /// show it even when the statement's body is dropped by the size cap below.
             display_error: r ? r.display_error : undefined,
+            plain_http_each_row_error: r ? !!r.plain_http_each_row_error : false,
             ok: r ? !!r.response_ok : false,
             error: r ? !!r.is_error : false,
             data,
@@ -10215,7 +10228,7 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
 /// its raw bytes as the error text instead of the generic message. `tag` is `undefined` for legacy
 /// snapshots and for failures with no transport marker (the header is only set when the marker is
 /// written); then matching is skipped, exactly as `parseExceptionMarker` does live.
-function renderFailedSnapshot(el, data, format, tag, display_error) {
+function renderFailedSnapshot(el, data, format, tag, display_error, plain_http_each_row_error) {
     /// The message the live path shows when a transport marker began but no complete, tag-validated
     /// block could be recovered (broken framing / a truncated stream). Kept byte-identical to `postImpl`
     /// so restore reproduces it instead of dumping the raw reply (which holds the truncated marker bytes).
@@ -10245,7 +10258,7 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
     ///   - an HTTP-error response (`!response.ok`) whose body IS the error text: there `postImpl` sets
     ///     `display_error` equal to the saved `data`, so this branch steps aside on the equality and
     ///     the fallthrough below renders `data` as the error alone, without first echoing it as output.
-    const plain_http_exception = parsePlainHttpExceptionLine(data, display_error);
+    const plain_http_exception = plain_http_each_row_error ? parsePlainHttpExceptionLine(data) : null;
     const has_failure_signal_in_data =
         exceptionMarkerStart(data, tag) >= 0 || parseInbandException(data, format) !== null || plain_http_exception !== null;
     if (typeof display_error === 'string' && !has_failure_signal_in_data && display_error !== data) {
@@ -10457,7 +10470,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
     if (!snap.ok) {
         /// Replay any output that streamed before the mid-stream failure, exactly as the live path
         /// left it, with the error rendered beneath (see `renderFailedSnapshot`).
-        renderFailedSnapshot(el, snap.data, format, snap.exception_tag, snap.display_error);
+        renderFailedSnapshot(el, snap.data, format, snap.exception_tag, snap.display_error, snap.plain_http_each_row_error);
         return true;
     }
 
@@ -10820,7 +10833,7 @@ async function materializeResult(tab) {
             /// Replay any output that streamed before the mid-stream failure, exactly as the live
             /// path left it, with the error rendered beneath (see `renderFailedSnapshot`); replayed
             /// table rows need the same layout pass as the success restore below.
-            renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error);
+            renderFailedSnapshot(el, result.data, format, result.exception_tag, result.display_error, result.plain_http_each_row_error);
             if (el.rowCount > 0) el._changeTableLayout();
         } else {
             /// The failure body was not stored (too large with no exception line to keep, or a
@@ -12345,6 +12358,9 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// when the body was dropped by the size cap. Round-trips through browser history /
         /// `IndexedDB` with the snapshot. Undefined for successful runs and legacy entries.
         display_error: stateData.display_error,
+        /// Provenance for a non-OK plain each-row exception object, used by restore instead of
+        /// guessing from equal text in the response body and `display_error`.
+        plain_http_each_row_error: stateData.plain_http_each_row_error ?? false,
         ok: stateData.ok,
         /// Whether the run failed even though `ok` (the HTTP-level success) is true: an in-band
         /// `{"exception":...}` arriving after rows were already streamed under 200 OK. The data
@@ -13708,7 +13724,15 @@ function tokensBeforeInlineInsertPayload(tokens)
                 leading_explain = true;
                 continue;
             }
-            if ((leading_with || leading_explain) && lower !== 'select') continue;
+            /// Once a leading `WITH` / `EXPLAIN` resolves to any other statement, a later table
+            /// or alias named `insert` cannot make it an `INSERT`. Only keep walking while the
+            /// prefix remains unresolved; this list covers the statement starters accepted after
+            /// those prefixes, including `SHOW` / `DESCRIBE` / `EXISTS`.
+            if (leading_with || leading_explain) {
+                if (new Set(['select', 'show', 'describe', 'desc', 'exists', 'create', 'alter', 'drop', 'optimize', 'kill', 'system', 'set', 'use', 'grant', 'revoke', 'check', 'rename', 'truncate', 'backup', 'restore', 'delete', 'update', 'watch']).has(lower))
+                    return tokens;
+                continue;
+            }
             return tokens;
         }
         /// `SELECT`, `WITH`, and `FROM` start the query source of an `INSERT ... SELECT`. Its

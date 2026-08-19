@@ -172,7 +172,10 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
 {
     int depth = 0;
     bool saw_insert = false;
-    bool saw_statement_keyword = false;
+    bool leading_with = false;
+    bool leading_explain = false;
+    int with_depth = -1;
+    bool alias_follows = false;
     bool saw_select_source = false;
     bool select_reads_inline_data = false;
     for (size_t i = 0; i < tokens.size(); ++i)
@@ -183,26 +186,66 @@ std::vector<Tok> tokensBeforeInlineInsertPayload(const std::vector<Tok> & tokens
             select_reads_inline_data = true;
         if (isOpeningBracket(t.type))
         {
+            alias_follows = false;
             ++depth;
             continue;
         }
         if (isClosingBracket(t.type))
         {
+            alias_follows = false;
             if (depth > 0)
                 --depth;
             continue;
         }
         if (depth != 0 || t.type != DB::TokenType::BareWord)
+        {
+            alias_follows = false;
             continue;
+        }
 
         const std::string lower = toLower(t.text);
-        if (!saw_statement_keyword)
+        if (!saw_insert)
         {
-            saw_statement_keyword = true;
-            saw_insert = lower == "insert";
-            if (!saw_insert)
-                return tokens;
-            continue;
+            if (leading_with && depth == with_depth)
+            {
+                if (alias_follows)
+                {
+                    alias_follows = false;
+                    continue;
+                }
+                if (lower == "as")
+                {
+                    alias_follows = true;
+                    continue;
+                }
+                if (i + 1 < tokens.size() && tokens[i + 1].type == DB::TokenType::BareWord && toLower(tokens[i + 1].text) == "as")
+                    continue;
+            }
+            if (lower == "insert")
+            {
+                saw_insert = true;
+                continue;
+            }
+            if (!leading_with && lower == "with")
+            {
+                leading_with = true;
+                with_depth = depth;
+                continue;
+            }
+            if (!leading_with && !leading_explain && lower == "explain")
+            {
+                leading_explain = true;
+                continue;
+            }
+            if (leading_with || leading_explain)
+            {
+                static const std::vector<std::string> non_insert_statement_keywords = {
+                    "select", "show", "describe", "desc", "exists", "create", "alter", "drop", "optimize", "kill", "system", "set", "use", "grant", "revoke", "check", "rename", "truncate", "backup", "restore", "delete", "update", "watch"};
+                if (std::find(non_insert_statement_keywords.begin(), non_insert_statement_keywords.end(), lower) != non_insert_statement_keywords.end())
+                    return tokens;
+                continue;
+            }
+            return tokens;
         }
         if (lower == "select" || lower == "with" || lower == "from")
         {
@@ -328,6 +371,18 @@ TEST(PlayDetectExplicitFormat, RealFormatClause)
     expectFormat("SELECT 1 FORMAT JSON;", "JSON");
     /// The `SETTINGS` clause may follow the `FORMAT` clause.
     expectFormat("SELECT 1 FORMAT TSV SETTINGS max_threads = 1", "TSV");
+}
+
+TEST(PlayDetectExplicitFormat, LeadingWithAndExplainReadOnlyStatementsDoNotBecomeInsert)
+{
+    /// A prefix walk must stop after it has resolved `WITH` / `EXPLAIN` to any non-`INSERT`
+    /// statement. Otherwise an ordinary identifier named `insert` in a later table position makes
+    /// the walker treat the real trailing clause as inline insert input.
+    expectFormat("EXPLAIN AST DESCRIBE TABLE insert FORMAT TabSeparated", "TabSeparated");
+    expectFormat("WITH 1 AS x SHOW CREATE TABLE insert FORMAT TabSeparated", "TabSeparated");
+    expectFormat("WITH 1 AS x EXISTS TABLE insert FORMAT TabSeparated", "TabSeparated");
+    /// The true wrapped `INSERT` case is still an input format, never an output clause.
+    expectFormat("EXPLAIN AST INSERT INTO t FORMAT TabSeparated", std::nullopt);
 }
 
 TEST(PlayDetectExplicitFormat, QuotedFormatNameIsARealClause)
