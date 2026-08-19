@@ -34,6 +34,14 @@ namespace ErrorCodes
 namespace ArrowFlight
 {
 
+CHColumnToArrowColumn::Settings arrowConversionSettings(const ContextPtr & context)
+{
+    return {
+        .output_string_as_string = true,
+        .output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef()),
+        .format_settings = getFormatSettings(context)};
+}
+
 static arrow::Result<std::shared_ptr<arrow::Table>> commandGetSqlInfo(const arrow::flight::protocol::sql::CommandGetSqlInfo & command, bool schema_only)
 {
     arrow::MemoryPool* pool = arrow::default_memory_pool();
@@ -543,7 +551,7 @@ static SQLSet commandGetTables(const arrow::flight::protocol::sql::CommandGetTab
             }
             auto table_schema = CHColumnToArrowColumn::calculateArrowSchema(
                 table_columns, "Arrow", nullptr,
-                {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
+                arrowConversionSettings(query_context));
             auto serialized_res = arrow::ipc::SerializeSchema(*table_schema, arrow::default_memory_pool());
             if (!serialized_res.ok())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to serialize Arrow schema: {}", serialized_res.status().ToString());

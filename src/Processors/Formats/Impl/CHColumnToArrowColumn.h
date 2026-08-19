@@ -37,6 +37,12 @@ public:
         /// What to do with a type having no conversion: reject it, or write one serialized value per row
         /// into an Arrow `utf8`/`binary` column.
         FormatSettings::ArrowUnsupportedTypes output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
+
+        /// Serializes the values of the types above. It has to be the query's own format settings, so that
+        /// the opaque payload is the one the caller's settings ask for - `output_format_binary_write_json_as_string`
+        /// changes the binary encoding of `JSON`, for one - and matches what the native Arrow IPC writer
+        /// produces for the same query. Unused unless `output_unsupported_types` writes an opaque column.
+        FormatSettings format_settings;
     };
 
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(

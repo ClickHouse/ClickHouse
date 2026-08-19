@@ -204,7 +204,6 @@ namespace DB
         arrow::BinaryBuilder & builder = assert_cast<arrow::BinaryBuilder &>(*array_builder);
         const bool as_text = settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT;
         const auto serialization = column_type->getDefaultSerialization();
-        const FormatSettings format_settings;
         arrow::Status status;
 
         for (size_t value_i = start; value_i < end; ++value_i)
@@ -217,9 +216,9 @@ namespace DB
             {
                 WriteBufferFromOwnString value;
                 if (as_text)
-                    serialization->serializeText(*write_column, value_i, value, format_settings);
+                    serialization->serializeText(*write_column, value_i, value, settings.format_settings);
                 else
-                    serialization->serializeBinary(*write_column, value_i, value, format_settings);
+                    serialization->serializeBinary(*write_column, value_i, value, settings.format_settings);
                 status = builder.Append(value.stringView());
             }
             checkStatus(status, write_column->getName(), format_name);

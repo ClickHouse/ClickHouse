@@ -248,10 +248,13 @@ public:
 
         CHColumnToArrowColumn::Settings arrow_settings;
         arrow_settings.output_string_as_string = true;
-        /// Without a context there is no setting to read: reject a type with no Arrow mapping rather than
+        /// Without a context there are no settings to read: reject a type with no Arrow mapping rather than
         /// silently push it to the remote server as opaque bytes.
         if (context)
+        {
             arrow_settings.output_unsupported_types = getArrowUnsupportedTypesMode(context->getSettingsRef());
+            arrow_settings.format_settings = getFormatSettings(context);
+        }
 
         CHColumnToArrowColumn converter(getHeader(), "Arrow", arrow_settings);
         std::shared_ptr<arrow::Table> table;

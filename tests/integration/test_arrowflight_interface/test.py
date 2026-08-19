@@ -628,8 +628,29 @@ def test_doget_unsupported_type_as_text_column():
     assert actual.column("j").to_pylist() == ['{"a":1}']
 
 
+# The opaque payload is produced by the query's own format settings, so a setting that changes how a value
+# serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
+# `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed
+# string, the same encoding `RowBinary` uses.
+def test_doget_unsupported_type_honors_format_settings():
+    node.query("CREATE TABLE mytable (id Int64, j JSON) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, '{"a":1}')""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_command(
+        "SELECT j FROM mytable SETTINGS output_format_binary_write_json_as_string = 1"
+    )
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    actual = reader.read_all()
+
+    assert actual.column("j").to_pylist() == [b'\x07{"a":1}']
+
+
 # Invalid queries are handled too.
-def test_doget_invalid_query():
     client, options = get_client()
 
     descriptor = flight.FlightDescriptor.for_command("BAD QUERY")

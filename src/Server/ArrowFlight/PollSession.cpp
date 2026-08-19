@@ -41,7 +41,7 @@ PollSession::PollSession(
             executor->getHeader().getColumnsWithTypeAndName(),
             "Arrow",
             nullptr,
-            {.output_string_as_string = true, .output_unsupported_types = getArrowUnsupportedTypesMode(query_context->getSettingsRef())});
+            arrowConversionSettings(query_context));
 
         if (schema_modifier)
         {
