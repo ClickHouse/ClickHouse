@@ -23,6 +23,20 @@ ch2 = cluster.add_instance(
     macros={"shard": "1", "replica": "ch2"},
     with_zookeeper=True,
 )
+# A `Replicated` database routes a DELETE through the database log only when it has more than one
+# shard, and the routing is observable only with more than one replica per shard, so the arm below
+# needs four hosts. They take no cluster definition: a `Replicated` database derives its topology
+# from its own Keeper registration rather than from `remote_servers`.
+ch3 = cluster.add_instance(
+    "ch3",
+    user_configs=["configs/users.d/users.xml"],
+    with_zookeeper=True,
+)
+ch4 = cluster.add_instance(
+    "ch4",
+    user_configs=["configs/users.d/users.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -136,6 +150,51 @@ def test_delete_from_on_cluster_replicated_runs_once_per_shard(replicated_table)
             == "1\n"
         )
         assert node.query("SELECT count() FROM tr") == "9\n"
+
+
+@pytest.fixture
+def replicated_database():
+    hosts = (ch1, ch2, ch3, ch4)
+    for node in hosts:
+        node.query("DROP DATABASE IF EXISTS rdb SYNC")
+    for node, shard, replica in zip(hosts, ("s1", "s1", "s2", "s2"), ("r1", "r2", "r1", "r2")):
+        node.query(
+            f"CREATE DATABASE rdb ENGINE = Replicated('/clickhouse/databases/rdb', '{shard}', '{replica}')"
+        )
+    ch1.query(
+        "CREATE TABLE rdb.tr (key UInt64, value UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+    )
+    for node in hosts:
+        node.query("SYSTEM SYNC DATABASE REPLICA rdb")
+    # Give each shard its own rows, so a delete that reaches only one shard is visible as rows that
+    # outlive it rather than being masked by both shards holding the same data.
+    ch1.query("INSERT INTO rdb.tr SELECT number, number FROM numbers(10)")
+    ch3.query("INSERT INTO rdb.tr SELECT number + 100, number FROM numbers(10)")
+    for node in hosts:
+        node.query("SYSTEM SYNC REPLICA rdb.tr")
+    yield
+    for node in hosts:
+        node.query("DROP DATABASE IF EXISTS rdb SYNC")
+
+
+def test_delete_on_replicated_database_runs_once_per_shard(replicated_database):
+    # A multi-shard `Replicated` database replicates the DELETE at database level, so both replicas
+    # of a shard receive it and each would mutate the shared table without leader routing.
+    ch1.query("DELETE FROM rdb.tr WHERE key = 1")
+    for node in (ch1, ch2, ch3, ch4):
+        node.query("SYSTEM SYNC DATABASE REPLICA rdb")
+        node.query("SYSTEM SYNC REPLICA rdb.tr")
+        assert (
+            node.query(
+                "SELECT count() FROM system.mutations WHERE database = 'rdb' AND table = 'tr'"
+            )
+            == "1\n"
+        )
+    for node in (ch1, ch2):
+        assert node.query("SELECT count() FROM rdb.tr") == "9\n"
+    for node in (ch3, ch4):
+        assert node.query("SELECT count() FROM rdb.tr") == "10\n"
 
 
 @pytest.mark.parametrize(
