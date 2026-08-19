@@ -134,12 +134,18 @@ constexpr size_t WORK_BUDGET_PAIRS = 8 * TILE_PAIRS;
 /// the condition sees it as a constant; a narrower one packs build rows in to fill the tile instead.
 constexpr size_t MIN_PROBE_WINDOW_PAIRS = 8192;
 
-/// How many bytes of build blocks a probe stream may keep alive for pairs it has not emitted yet.
-/// The bound is the operator's own: what it limits is one stream's copies of stored blocks, neither
-/// the output chunk (`max_joined_block_size_bytes`) nor the store as a whole (`max_bytes_in_join`,
-/// `max_bytes_before_external_join`). Those bound something else, are 0 by default, and would scale
-/// with the number of probe streams, while the copies have to stay bounded whatever they are.
+/// How many bytes of build blocks the probe streams of one step may keep alive together for pairs they
+/// have not emitted yet. The bound is the operator's own: what it limits is the copies the streams make
+/// of stored blocks, neither the output chunk (`max_joined_block_size_bytes`) nor the store as a whole
+/// (`max_bytes_in_join`, `max_bytes_before_external_join`). Those bound something else, are 0 by
+/// default, and this has to stay bounded whatever they are - and whatever `max_threads` is.
 constexpr size_t MAX_RETAINED_BUILD_BYTES = 4 * 1024 * 1024;
+
+/// What that leaves one of `num_probe_streams` streams.
+size_t maxRetainedBuildBytesPerStream(size_t num_probe_streams)
+{
+    return MAX_RETAINED_BUILD_BYTES / std::max<size_t>(1, num_probe_streams);
+}
 
 }
 
@@ -150,7 +156,8 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     BlockNestedLoopPredicate predicate_,
     size_t max_block_size_,
     size_t max_block_bytes_,
-    JoinAnalyzeMode analyze_mode_)
+    JoinAnalyzeMode analyze_mode_,
+    size_t num_probe_streams_)
     : IProcessor({probe_header_}, {output_header_})
     , probe_header(std::move(probe_header_))
     , output_header(std::move(output_header_))
@@ -159,6 +166,7 @@ BlockNestedLoopProbeTransform::BlockNestedLoopProbeTransform(
     , predicate(std::move(predicate_))
     , max_block_size(max_block_size_)
     , max_block_bytes(max_block_bytes_)
+    , max_retained_build_bytes(maxRetainedBuildBytesPerStream(num_probe_streams_))
     , one_pair_per_probe_row(takesOnePairPerProbeRow(data->getKind(), data->getStrictness()))
     , claim_build_rows(takesOnePairPerBuildRow(data->getKind(), data->getStrictness()))
     , emits_no_pairs(!isCrossOrComma(data->getKind()) && data->getStrictness() == JoinStrictness::Anti)
@@ -588,7 +596,16 @@ bool BlockNestedLoopProbeTransform::hasFullOutputChunk() const
     /// match a few rows in each of them would otherwise pin the whole build side, decompressed and
     /// read back from disk, which is what compressing and spilling it exist to avoid. Cutting the
     /// chunk here releases the blocks its pairs were gathered from.
-    return walk.retained_build_bytes >= MAX_RETAINED_BUILD_BYTES;
+    ///
+    /// The allowance is this stream's share of the step's, so that what the probe phase holds does not
+    /// grow with `max_threads`. Where the store hands the same materialized block to several streams,
+    /// each of them counts those bytes against its own share, which overstates what is held rather
+    /// than under it.
+    ///
+    /// The pairs of a single block are never cut short, however small the share: a block is what the
+    /// store materializes at once, so a stream that may not hold one would emit a chunk per tile
+    /// instead of per block and gain nothing for it.
+    return walk.build_runs.size() > 1 && walk.retained_build_bytes >= max_retained_build_bytes;
 }
 
 size_t BlockNestedLoopProbeTransform::maxOutputChunkRows(size_t row_bytes) const

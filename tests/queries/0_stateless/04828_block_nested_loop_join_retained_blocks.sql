@@ -32,4 +32,19 @@ FROM (SELECT number AS x FROM numbers(1)) l
 LEFT JOIN bnl_ret_build r ON r.y > l.x AND (r.y % 4096) < l.x + 1
 SETTINGS cross_join_min_rows_to_compress = 1, max_memory_usage = '20Mi';
 
+-- Each probe stream materializes the blocks it walks for itself, so what the probe phase holds must
+-- also not grow with the number of them: what a stream may keep alive is its share of an allowance for
+-- the step, and the store keeps its blocks small enough for one of them to be that share. Eight
+-- streams each holding the whole build side would need an order of magnitude more than these caps
+-- allow. `max_block_size = 1` is what gives every stream chunks of its own to walk the store with.
+SELECT 'spilled, 8 streams', count(), sum(cityHash64(r.t))
+FROM (SELECT number AS x FROM numbers(16)) l
+LEFT JOIN bnl_ret_build r ON r.y > l.x AND (r.y % 4096) < l.x + 1
+SETTINGS max_bytes_before_external_join = '1Mi', max_threads = 8, max_block_size = 1, max_memory_usage = '64Mi';
+
+SELECT 'compressed, 8 streams', count(), sum(cityHash64(r.t))
+FROM (SELECT number AS x FROM numbers(16)) l
+LEFT JOIN bnl_ret_build r ON r.y > l.x AND (r.y % 4096) < l.x + 1
+SETTINGS cross_join_min_rows_to_compress = 1, max_threads = 8, max_block_size = 1, max_memory_usage = '40Mi';
+
 DROP TABLE bnl_ret_build;

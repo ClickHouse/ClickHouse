@@ -289,7 +289,8 @@ QueryPipelineBuilderPtr BlockNestedLoopJoinStep::updatePipeline(QueryPipelineBui
             if (stream_type == QueryPipelineBuilder::StreamType::Totals)
                 return std::make_shared<BlockNestedLoopTotalsTransform>(header, output_header, data, probe_totals_are_default);
             return std::make_shared<BlockNestedLoopProbeTransform>(
-                header, output_header, data, probe_predicate, max_block_size, max_block_bytes, analyze_mode);
+                header, output_header, data, probe_predicate, max_block_size, max_block_bytes, analyze_mode,
+                max_streams);
         });
 
         if (keepsUnmatchedBuildRows(kind, strictness))

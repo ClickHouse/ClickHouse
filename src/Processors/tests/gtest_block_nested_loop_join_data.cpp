@@ -411,6 +411,83 @@ TEST(BlockNestedLoopJoinData, CompressionShrinksWhatIsHeldInMemory)
     EXPECT_EQ(storedValues(compressed), compressible);
 }
 
+TEST(BlockNestedLoopJoinData, MaterializedBlocksAreSharedBetweenReaders)
+{
+    const std::vector<UInt64> compressible(4096, 7);
+
+    /// A block the store hands out as it is costs one copy however many readers there are, and a
+    /// compressed or spilled one would cost a copy per reader - the whole build side, once per probe
+    /// stream - if the store did not publish what a reader materialized.
+    auto compressed = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, compressEverything());
+    ASSERT_TRUE(compressed->addBlock(makeBlock(compressible), compressible.size(), 0));
+    compressed->finish();
+    ASSERT_FALSE(compressed->isBlockSharedInMemory(0));
+
+    BuildSideBlockReader first_of_compressed(compressed);
+    BuildSideBlockReader second_of_compressed(compressed);
+    EXPECT_EQ(first_of_compressed.read(0).get(), second_of_compressed.read(0).get());
+
+    auto storage = makeTemporaryStorage();
+    auto spilled = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillEverything(storage.scope));
+    ASSERT_TRUE(spilled->addBlock(makeBlock({1, 2, 3}), 3, 0));
+    spilled->finish();
+    ASSERT_EQ(spilled->getNumSpilledBlocks(), 1);
+
+    BuildSideBlockReader first_of_spilled(spilled);
+    BuildSideBlockReader second_of_spilled(spilled);
+    EXPECT_EQ(first_of_spilled.read(0).get(), second_of_spilled.read(0).get());
+
+}
+
+TEST(BlockNestedLoopJoinData, WhatIsKeptOfMaterializedBlocksIsBounded)
+{
+    auto storage = makeTemporaryStorage();
+    auto data = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, spillEverything(storage.scope));
+
+    /// Eight megabytes in eight blocks: more than the store keeps reachable, so it has to give some
+    /// of them up.
+    const size_t rows_per_block = 1024 * 1024 / sizeof(UInt64);
+    std::vector<UInt64> values(rows_per_block, 11);
+    for (size_t i = 0; i < 8; ++i)
+        ASSERT_TRUE(data->addBlock(makeBlock(values), values.size(), 0));
+    data->finish();
+
+    BuildSideBlockReader reader(data);
+    for (size_t index = 0; index < data->getNumBlocks(); ++index)
+        ASSERT_EQ(reader.read(index)->num_rows, data->getBlockNumRows(index));
+
+    /// The block the walk is on is the reader's own; the ones it has left behind are only reachable
+    /// while they fit in what the store keeps, and the first of eight does not.
+    EXPECT_NE(data->findMaterializedBlock(data->getNumBlocks() - 1), nullptr);
+    EXPECT_EQ(data->findMaterializedBlock(0), nullptr);
+}
+
+TEST(BlockNestedLoopJoinData, BlocksTooLargeToMaterializeAreSliced)
+{
+    /// Comfortably more than the store keeps one block under.
+    const size_t num_rows = 4 * 1024 * 1024 / sizeof(UInt64);
+    std::vector<UInt64> values(num_rows);
+    std::iota(values.begin(), values.end(), 0);
+
+    /// A store that may compress or spill keeps its blocks small, since a block is what a reader
+    /// materializes at once and holds; the rows and their order are unaffected.
+    auto sliced = makeData(JoinKind::Inner, JoinStrictness::All, SizeLimits{}, compressEverything());
+    ASSERT_TRUE(sliced->addBlock(makeBlock(values), num_rows, 0));
+    sliced->finish();
+
+    EXPECT_GT(sliced->getNumBlocks(), 1);
+    EXPECT_EQ(sliced->getTotalRows(), num_rows);
+    EXPECT_EQ(sliced->getRowOffsets().back(), num_rows);
+    EXPECT_EQ(storedValues(sliced), values);
+
+    /// A store that hands its blocks out as they are shares them between the readers, so there is
+    /// nothing for slicing to bound and the block is kept whole.
+    auto whole = makeData();
+    ASSERT_TRUE(whole->addBlock(makeBlock(values), num_rows, 0));
+    whole->finish();
+    EXPECT_EQ(whole->getNumBlocks(), 1);
+}
+
 TEST(BlockNestedLoopJoinData, SpilledBlocksRoundTrip)
 {
     auto storage = makeTemporaryStorage();

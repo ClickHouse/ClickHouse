@@ -104,6 +104,23 @@ std::optional<BuildBlock> compressBuildBlock(const BuildBlock & build_block)
     return BuildBlock{std::move(columns), build_block.num_rows, build_block.index};
 }
 
+/// What one stored block is kept under, in a store that may compress or spill: such a block is
+/// materialized whole on every read, and a probe stream holds what it read, so the largest stored
+/// block is what bounds that. A block arriving larger than this is sliced.
+///
+/// Slicing is not free for the walk over the store: a tile of candidate pairs never spans two stored
+/// blocks, so where the tile packs several build rows - a probe window narrower than
+/// `MIN_PROBE_WINDOW_PAIRS`, which is what an early-exit strictness leaves behind - a smaller block
+/// means a smaller tile and the condition is evaluated more often for the same pairs. Where the probe
+/// window fills a tile on its own, which is the common case, the tile is one build row wide and block
+/// boundaries make no difference at all.
+constexpr size_t MAX_STORED_BUILD_BLOCK_BYTES = 1024 * 1024;
+
+/// How many bytes of materialized blocks the store keeps reachable after the reader that made them
+/// moved on, so that a probe stream lagging behind the others finds them instead of materializing
+/// them again. One block is always kept, however large it is.
+constexpr size_t MAX_MATERIALIZED_WINDOW_BYTES = 4 * 1024 * 1024;
+
 /// The same settings, with the spill directed at a scope of the store's own, so that the bytes and
 /// the files it writes are counted as a join's external data the way `GraceHashJoin` counts its own.
 BlockNestedLoopStoreSettings withJoinTemporaryDataScope(BlockNestedLoopStoreSettings settings)
@@ -180,6 +197,45 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows, size_t stre
         column = recursiveRemoveSparse(column->convertToFullColumnIfConst());
 
     BuildBlock build_block{std::move(columns), num_rows, /*index=*/ 0};
+
+    /// A store that may compress or spill materializes a block whole on every read, and a probe
+    /// stream holds what it read for as long as pairs of it are waiting to be emitted, so a block
+    /// much larger than `MAX_STORED_BUILD_BLOCK_BYTES` would cost that many copies of itself. Slicing
+    /// it here is what bounds them. A store that keeps its blocks as they are hands the same block to
+    /// every reader and needs no slicing.
+    size_t slice_rows = num_rows;
+    if (mayMaterializeBlocks())
+    {
+        if (const size_t bytes_per_row = build_block.allocatedBytes() / num_rows; bytes_per_row != 0)
+            slice_rows = std::clamp<size_t>(MAX_STORED_BUILD_BLOCK_BYTES / bytes_per_row, 1, num_rows);
+    }
+
+    StoreSize store_size;
+    if (slice_rows == num_rows)
+    {
+        store_size = appendBlock(std::move(build_block), stream_index);
+    }
+    else
+    {
+        for (size_t offset = 0; offset < num_rows; offset += slice_rows)
+        {
+            const size_t length = std::min(slice_rows, num_rows - offset);
+            Columns slice;
+            slice.reserve(build_block.columns.size());
+            for (const auto & column : build_block.columns)
+                slice.push_back(column->cut(offset, length));
+            store_size = appendBlock(BuildBlock{std::move(slice), length, /*index=*/ 0}, stream_index);
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
+
+    return size_limits.check(store_size.rows, store_size.bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+}
+
+BlockNestedLoopJoinData::StoreSize BlockNestedLoopJoinData::appendBlock(BuildBlock build_block, size_t stream_index)
+{
+    const size_t num_rows = build_block.num_rows;
     const size_t block_bytes = build_block.allocatedBytes();
 
     const size_t rows_in_join = total_rows.fetch_add(num_rows, std::memory_order_relaxed) + num_rows;
@@ -229,9 +285,7 @@ bool BlockNestedLoopJoinData::addBlock(Block block, size_t num_rows, size_t stre
 
     writeSpilledBlocks(stream_index, std::move(to_spill));
 
-    ProfileEvents::increment(ProfileEvents::JoinBuildTableRowCount, num_rows);
-
-    return size_limits.check(rows_in_join, bytes_in_join, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+    return {rows_in_join, bytes_in_join};
 }
 
 void BlockNestedLoopJoinData::storeBlock(
@@ -374,6 +428,11 @@ void BlockNestedLoopJoinData::finish()
     if (needs_match_flags && offset != 0)
         matched_flags = std::make_unique<std::atomic_bool[]>(offset);
 
+    {
+        std::lock_guard materialized_lock(materialized_mutex);
+        materialized.assign(state->blocks.size(), {});
+    }
+
     /// Nothing more will be written, and the readers can only be created once it is flushed.
     for (const auto & sink : state->spill_sinks)
         if (sink)
@@ -475,6 +534,38 @@ bool BlockNestedLoopJoinData::isBlockSharedInMemory(size_t index) const
     return entry.block != nullptr && !entry.compressed;
 }
 
+BuildBlockPtr BlockNestedLoopJoinData::findMaterializedBlock(size_t index) const
+{
+    std::lock_guard lock(materialized_mutex);
+    chassert(index < materialized.size());
+    return materialized[index].lock();
+}
+
+BuildBlockPtr BlockNestedLoopJoinData::publishMaterializedBlock(size_t index, BuildBlockPtr block)
+{
+    const size_t block_bytes = block->allocatedBytes();
+
+    std::lock_guard lock(materialized_mutex);
+    chassert(index < materialized.size());
+
+    /// Two readers can reach the same block at once, since materializing it happens outside this
+    /// lock. The one that gets here second drops what it made and takes the published block, so that
+    /// the copy the readers share is the same one.
+    if (auto published = materialized[index].lock())
+        return published;
+
+    materialized[index] = block;
+    materialized_window.push_back(block);
+    materialized_window_bytes += block_bytes;
+    while (materialized_window.size() > 1 && materialized_window_bytes > MAX_MATERIALIZED_WINDOW_BYTES)
+    {
+        materialized_window_bytes -= materialized_window.front()->allocatedBytes();
+        materialized_window.pop_front();
+    }
+
+    return block;
+}
+
 BuildSideBlockReader::BuildSideBlockReader(BlockNestedLoopJoinDataPtr data_)
     : data(std::move(data_))
 {
@@ -491,10 +582,25 @@ BuildBlockPtr BuildSideBlockReader::read(size_t index)
     /// or the fast path above would hand out the previous block under the new index.
     current.reset();
     const auto & entry = data->getBlockEntry(index);
-    if (entry.block)
-        current = entry.compressed ? decompressBuildBlock(*entry.block) : entry.block;
+    if (entry.block && !entry.compressed)
+    {
+        current = entry.block;
+    }
+    else if (auto shared = data->findMaterializedBlock(index))
+    {
+        /// Another reader has this block materialized already. A spilled block found this way leaves
+        /// this reader's file cursor behind, so the next block it does have to materialize itself is
+        /// reached by reading forward over the ones it skipped - which publishes them in turn, so no
+        /// reader pays that twice.
+        current = std::move(shared);
+    }
     else
-        current = readSpilledBlock(index, entry.sink_index, entry.spill_ordinal);
+    {
+        auto block = entry.block
+            ? decompressBuildBlock(*entry.block)
+            : readSpilledBlock(index, entry.sink_index, entry.spill_ordinal);
+        current = data->publishMaterializedBlock(index, std::move(block));
+    }
     current_index = index;
     return current;
 }
@@ -520,6 +626,12 @@ BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t sink_i
         next_spill_ordinal = 0;
     }
 
+    /// The blocks of one file are a contiguous range of indexes, since `finish` numbered them in that
+    /// order, so the block at ordinal `o` of this file is at index `index - spill_ordinal + o`. That is
+    /// what lets a skip publish what it reads on the way instead of throwing it away: the reader that
+    /// skips is doing the work the readers behind it would otherwise each repeat.
+    const size_t first_index_of_file = index - spill_ordinal;
+
     Block block;
     while (next_spill_ordinal <= spill_ordinal)
     {
@@ -528,6 +640,13 @@ BuildBlockPtr BuildSideBlockReader::readSpilledBlock(size_t index, size_t sink_i
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Block nested loop join build side is missing the spilled block {} of {}",
                 spill_ordinal, data->getNumSpilledBlocks());
+        if (next_spill_ordinal != spill_ordinal)
+        {
+            const size_t skipped_index = first_index_of_file + next_spill_ordinal;
+            data->publishMaterializedBlock(
+                skipped_index,
+                std::make_shared<const BuildBlock>(BuildBlock{block.getColumns(), block.rows(), skipped_index}));
+        }
         ++next_spill_ordinal;
     }
 

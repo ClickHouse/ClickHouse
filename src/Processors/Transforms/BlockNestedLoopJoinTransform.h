@@ -41,7 +41,10 @@ public:
         BlockNestedLoopPredicate predicate_,
         size_t max_block_size_,
         size_t max_block_bytes_,
-        JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None);
+        JoinAnalyzeMode analyze_mode_ = JoinAnalyzeMode::None,
+        /// How many probe streams the step runs, which decides how much of the build side this one
+        /// may keep alive for pairs it has not emitted yet.
+        size_t num_probe_streams_ = 1);
 
     String getName() const override { return "BlockNestedLoopProbe"; }
 
@@ -156,6 +159,9 @@ private:
     /// Limits on one output chunk; the walk over the build side yields as soon as either is reached.
     const size_t max_block_size;
     const size_t max_block_bytes;
+    /// What this stream may keep alive of a build side it had to materialize, which is the other
+    /// reason to cut an output chunk short.
+    const size_t max_retained_build_bytes;
 
     /// Which of the pairs that satisfy the condition are part of the result, which is what
     /// strictness controls. The two limits are independent: a left-driven `ANY`/`SEMI` takes one

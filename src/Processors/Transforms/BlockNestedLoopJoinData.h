@@ -8,6 +8,7 @@
 #include <QueryPipeline/SizeLimits.h>
 
 #include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -129,6 +130,17 @@ public:
     /// Valid only after `finish`.
     bool isBlockSharedInMemory(size_t index) const;
 
+    /// The materialized form of a compressed or spilled block, if some reader still holds one. Every
+    /// probe stream walks the same blocks, so without this each of them would materialize the whole
+    /// build side for itself.
+    BuildBlockPtr findMaterializedBlock(size_t index) const;
+    /// Publishes a block a reader has just materialized and returns what readers will use for that
+    /// index from now on - the block itself, or the one another reader published first, in which case
+    /// the caller's copy is the one to drop. The most recently published blocks are also held here
+    /// past the reader that made them, bounded by `MAX_MATERIALIZED_WINDOW_BYTES`, so that a stream
+    /// lagging behind the others still finds them.
+    BuildBlockPtr publishMaterializedBlock(size_t index, BuildBlockPtr block);
+
     /// Whether the build side can be moved out of memory at all. A build side of columnless rows
     /// cannot: the `Native` format has no way to persist a bare row count.
     bool canSpill() const;
@@ -201,6 +213,26 @@ private:
     /// so the acquire side of the edge is crossed exactly once per access and in one place.
     const FinishedState & finishedState(const char * what) const;
 
+    /// Whether a stored block may end up compressed or spilled, and so materialized anew on every
+    /// read instead of shared between the readers.
+    bool mayMaterializeBlocks() const
+    {
+        return store_settings.min_rows_to_compress != 0 || store_settings.min_bytes_to_compress != 0
+            || (store_settings.max_bytes_in_memory != 0 && store_settings.tmp_data != nullptr);
+    }
+
+    /// What the whole build side amounted to once a block had been appended to it, which is what the
+    /// size limits are checked against.
+    struct StoreSize
+    {
+        size_t rows = 0;
+        size_t bytes = 0;
+    };
+
+    /// Appends one block, as it arrived or as a slice of a larger one: accounts it, compresses it
+    /// where the thresholds say so, and either keeps it in memory or hands it to the spill.
+    StoreSize appendBlock(BuildBlock build_block, size_t stream_index);
+
     /// Keeps the block in memory. `uncompressed_bytes` is what it takes once decompressed, which is
     /// the shape the spill writes it out in.
     void storeBlock(BuildBlockEntry & entry, size_t index, BuildBlock build_block, bool compressed, size_t uncompressed_bytes)
@@ -239,6 +271,21 @@ private:
 
     /// Written once by `finish`, under the mutex and before the release store to `finished`.
     std::unique_ptr<const FinishedState> finished_state;
+
+    /// Where the readers share what they materialize, which a compressed block and a spilled one both
+    /// are - the first decompressed anew, the second read back from its file. `materialized` is the
+    /// lookup, weak so that a block no reader holds any longer costs nothing; `materialized_window` is
+    /// what keeps the most recent ones reachable after their reader moved on. Allocated by `finish`, so
+    /// a slot is only ever read or written once the block indexes are final.
+    ///
+    /// Nothing keeps the readers in step, and nothing has to: they walk the blocks in the same order
+    /// and are released together, so they ask for the same ones unless their probe chunks drift far
+    /// apart, and a reader that finds nothing here simply materializes its own. What a probe stream may
+    /// hold is bounded either way; the sharing spares the work, it does not carry the bound.
+    mutable std::mutex materialized_mutex;
+    std::vector<std::weak_ptr<const BuildBlock>> materialized TSA_GUARDED_BY(materialized_mutex);
+    std::deque<BuildBlockPtr> materialized_window TSA_GUARDED_BY(materialized_mutex);
+    size_t materialized_window_bytes TSA_GUARDED_BY(materialized_mutex) = 0;
 
     /// One flag per build row, indexed by global row number; allocated by `finish` and only for the
     /// kinds that need it.
