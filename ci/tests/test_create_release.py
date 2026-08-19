@@ -1373,15 +1373,16 @@ def test_prepare_refuses_rereleasing_an_already_released_line(tmp_path):
     assert "already has a release tag" in out
 
 
-def test_bump_retries_onto_advanced_branch_tip(tmp_path):
-    """Non-fast-forward bump: a backport advances ``origin`` mid-release, so the
-    bump must re-sync to origin's new tip, rebuild the bump there, and land
-    patch+1 on top of the backport without discarding it.
+def test_bump_resyncs_onto_advanced_branch_tip(tmp_path):
+    """Real (non-dry-run) patch bump when a backport already advanced ``origin``.
 
-    This is the only test that drives the real (non-dry-run) push path: pushes
-    are redirected from the tokenized ``github.com`` URL to a local bare origin
-    via git ``insteadOf`` plus a fixed ``GH_TOKEN``, so the
-    ``fetch`` / ``reset --hard FETCH_HEAD`` / retry logic actually executes.
+    create_release re-syncs to origin's tip (``fetch`` + ``reset --hard
+    FETCH_HEAD``) before staging the bump, so patch+1 is committed on top of the
+    backport and the push is a fast-forward — the backport is preserved, not
+    discarded. Pushes are redirected from the tokenized ``github.com`` URL to a
+    local bare origin via git ``insteadOf`` plus a fixed ``GH_TOKEN``. (The
+    non-fast-forward rebase-retry inside Git.push — for a backport landing after
+    this resync — is covered by test_push_rebases_onto_advanced_remote.)
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -1500,3 +1501,83 @@ def test_bump_retries_onto_advanced_branch_tip(tmp_path):
         cwd=origin, check=True, capture_output=True, text=True,
     )
     assert "backport landed mid-release" in origin_show("backport.txt")
+
+
+def test_push_rebases_onto_advanced_remote(tmp_path, monkeypatch, capsys):
+    """`Git.push(rebase_retries=...)` heals a non-fast-forward directly.
+
+    The remote advances (a concurrent push) after the local commit is made, so
+    the first push is rejected; the rebase loop must fetch origin, rebase the
+    local commit onto the new tip, and retry. Unlike the create_release path,
+    nothing resyncs before the push here, so the loop is actually exercised —
+    deleting it makes `Git.push(strict=True)` raise and this test fail.
+    """
+    from ci.praktika.git import Git
+
+    origin = tmp_path / "origin.git"
+    work = tmp_path / "work"
+    clone = tmp_path / "clone"
+
+    def g(*args, cwd):
+        subprocess.run(
+            ["git", *args], cwd=cwd, check=True, capture_output=True, text=True
+        )
+
+    ident = ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+
+    g("init", "-q", "--bare", str(origin), cwd=tmp_path)
+    g("init", "-q", "-b", "26.6", str(work), cwd=tmp_path)
+    (work / "f.txt").write_text("base\n", encoding="utf-8")
+    g("add", "-A", cwd=work)
+    g(*ident, "commit", "-q", "-m", "base", cwd=work)
+    g("remote", "add", "origin", str(origin), cwd=work)
+    g("push", "-q", "origin", "26.6", cwd=work)
+
+    # A concurrent push advances origin/26.6 past what `work` has.
+    g("clone", "-q", "-b", "26.6", str(origin), str(clone), cwd=tmp_path)
+    (clone / "backport.txt").write_text("backport\n", encoding="utf-8")
+    g("add", "-A", cwd=clone)
+    g(*ident, "commit", "-q", "-m", "backport", cwd=clone)
+    g("push", "-q", "origin", "HEAD:26.6", cwd=clone)
+    backport_sha = _head_sha(clone)
+
+    # Local commit made on the OLD tip (work never fetched the backport), so the
+    # first push is a non-fast-forward.
+    (work / "version.txt").write_text("bumped\n", encoding="utf-8")
+    g("add", "-A", cwd=work)
+    g(*ident, "commit", "-q", "-m", "bump", cwd=work)
+
+    # Redirect the tokenized github.com push URL to the local bare origin.
+    push_url = "https://x-access-token:faketoken@github.com/test/clickhouse.git"
+    g("config", f"url.{origin}.insteadOf", push_url, cwd=work)
+
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("GH_TOKEN", "faketoken")
+    git_prefix = "git -c user.email=t@t -c user.name=t -c commit.gpgsign=false"
+
+    ok = Git.push(
+        "test/clickhouse",
+        "HEAD:refs/heads/26.6",
+        strict=True,
+        retries=1,
+        rebase_retries=5,
+        git_prefix=git_prefix,
+    )
+    assert ok is True
+    assert "re-syncing and retrying" in capsys.readouterr().out  # the loop ran
+
+    # origin now carries the bump rebased on top of the backport (both preserved).
+    subprocess.run(
+        ["git", "merge-base", "--is-ancestor", backport_sha, "26.6"],
+        cwd=origin,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    for path in ("version.txt", "backport.txt"):
+        assert (
+            subprocess.run(
+                ["git", "show", f"26.6:{path}"], cwd=origin, capture_output=True
+            ).returncode
+            == 0
+        ), f"{path} missing from pushed branch"
