@@ -355,13 +355,28 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     const size_t tile_build_rows = std::min(block_rows - walk.build_row_cursor, build_rows_per_tile);
     const size_t tile_rows = tile_probe_rows * tile_build_rows;
 
-    /// One build row against probe rows nothing has been dropped from: the tile is a range of the chunk
-    /// against a constant, which needs no index columns of its own.
-    const bool probe_window_is_range = tile_build_rows == 1 && walk.active_probe_rows.size() == walk.probe_num_rows;
+    /// A single build row is a constant for the whole tile, so the pairs need no build index of
+    /// their own, and the probe index is the window of the walk itself rather than a value repeated
+    /// per build row.
+    const bool tile_is_single_build_row = tile_build_rows == 1;
+    /// With nothing dropped from the walk on top of that, the probe side is a range of the chunk and
+    /// needs no index at all.
+    const bool probe_window_is_range = tile_is_single_build_row && walk.active_probe_rows.size() == walk.probe_num_rows;
 
     ColumnPtr probe_tile;
     ColumnPtr build_tile;
-    if (!probe_window_is_range)
+    if (tile_is_single_build_row)
+    {
+        if (!probe_window_is_range)
+        {
+            auto probe_tile_indexes = ColumnUInt64::create();
+            probe_tile_indexes->getData().insert(
+                walk.active_probe_rows.begin() + walk.probe_window_cursor,
+                walk.active_probe_rows.begin() + walk.probe_window_cursor + tile_probe_rows);
+            probe_tile = std::move(probe_tile_indexes);
+        }
+    }
+    else
     {
         auto probe_tile_indexes = ColumnUInt64::create();
         auto build_tile_indexes = ColumnUInt64::create();
@@ -397,7 +412,7 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
             condition_inputs.push_back(tile_probe_rows == walk.probe_num_rows
                 ? column
                 : column->cut(walk.probe_window_cursor, tile_probe_rows));
-        else if (!from_probe && tile_build_rows == 1)
+        else if (!from_probe && tile_is_single_build_row)
             condition_inputs.push_back(tileColumnFromSingleRow(column, walk.build_row_cursor, tile_rows));
         else
             condition_inputs.push_back(tileColumn(column, from_probe ? probe_tile : build_tile));
@@ -418,18 +433,26 @@ size_t BlockNestedLoopProbeTransform::matchNextTile()
     FilterDescription matched(*condition.at(0));
     if (const size_t num_matched = matched.countBytesInFilter(); num_matched != 0)
     {
-        if (probe_window_is_range)
+        if (tile_is_single_build_row)
         {
-            /// Pair `i` is probe row `probe_window_cursor + i` against the row the build cursor is on.
-            auto matched_probe_rows = ColumnUInt64::create();
-            auto & matched_probe_values = matched_probe_rows->getData();
-            matched_probe_values.reserve_exact(num_matched);
-            const auto & filter = *matched.data;
-            for (size_t i = 0; i < tile_rows; ++i)
+            /// Every pair of the tile is against the row the build cursor is on.
+            ColumnPtr matched_probe_rows;
+            if (probe_window_is_range)
             {
-                if (filter[i])
-                    matched_probe_values.push_back(walk.probe_window_cursor + i);
+                /// Pair `i` is probe row `probe_window_cursor + i`.
+                auto matched_probe_indexes = ColumnUInt64::create();
+                auto & matched_probe_values = matched_probe_indexes->getData();
+                matched_probe_values.reserve_exact(num_matched);
+                const auto & filter = *matched.data;
+                for (size_t i = 0; i < tile_rows; ++i)
+                {
+                    if (filter[i])
+                        matched_probe_values.push_back(walk.probe_window_cursor + i);
+                }
+                matched_probe_rows = std::move(matched_probe_indexes);
             }
+            else
+                matched_probe_rows = matched.filter(*probe_tile, num_matched);
 
             auto matched_build_rows = ColumnUInt64::create();
             matched_build_rows->getData().resize_fill(num_matched, walk.build_row_cursor);
