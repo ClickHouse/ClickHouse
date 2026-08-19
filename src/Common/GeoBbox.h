@@ -473,7 +473,27 @@ inline std::string geoKindNameOfType(const IDataType & type)
 /// this predicate rejects at this position -- a `Variant` all of whose alternatives are accepted can
 /// never raise, and vetoing pruning for it would cost pruning for nothing. A `Dynamic` can hold any
 /// type at all, so it always fails closed for a predicate that rejects any kind whatsoever.
-inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
+///
+/// "Named" is the operative word: an alternative that carries no custom name of its own -- say a raw
+/// `Tuple(Float64, Float64)` -- is still resolved to a concrete geometry by `callOnGeometryDataType`,
+/// which compares the type STRUCTURALLY and reads that tuple as a `Point`. There is no kind name to
+/// ask `rejectsColumnGeometryKind` about, yet the overload built per row can reject it just the
+/// same, so an unnamed alternative must be treated as an unknown kind and fail closed exactly like a
+/// `Dynamic`, not waved through as "says nothing".
+inline bool rejectsAnyGeometryKind(const IFunctionBase & function, size_t arg_index)
+{
+    /// Probing the geometry kinds tells a predicate that rejects some kind apart from one that
+    /// accepts everything and can never raise on kind grounds -- e.g. a WASM UDF reading raw WKB,
+    /// which keeps its default `rejectsConstGeometryKind` of false and must keep pruning.
+    static constexpr std::array kind_names
+        = {"Point", "Ring", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "String"};
+    return std::ranges::any_of(
+        kind_names, [&](std::string_view kind_name) { return function.rejectsColumnGeometryKind(kind_name, arg_index); });
+}
+
+/// Unwrap the `Nullable`/`LowCardinality` wrappers that carry no kind of their own, so the type
+/// underneath is the one the predicate is actually asked about.
+inline const IDataType & unwrapGeoKindWrappers(const IDataType & type)
 {
     const IDataType * inner = &type;
     while (true)
@@ -486,28 +506,38 @@ inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunc
             break;
     }
 
-    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(inner))
+    return *inner;
+}
+
+/// Whether `type` resolves its geometry kind only at execution time -- a `Dynamic`, or a `Variant`
+/// (`Geometry` is a `Variant` over the geometry kinds).
+inline bool isDeferredGeometryKindType(const IDataType & type)
+{
+    const IDataType & inner = unwrapGeoKindWrappers(type);
+    return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
+}
+
+inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
+{
+    const IDataType & inner = unwrapGeoKindWrappers(type);
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&inner))
     {
         for (const auto & alternative : variant_type->getVariants())
         {
-            /// An alternative with no kind name of its own (e.g. a raw array literal type) is
-            /// interpreted by shape, exactly as it is everywhere else here, and says nothing.
             const auto kind_name = geoKindNameOfType(*alternative);
-            if (!kind_name.empty() && function.rejectsColumnGeometryKind(kind_name, arg_index))
+            /// An unnamed alternative is an unknown kind, not an absent one: see the note above.
+            if (kind_name.empty() ? rejectsAnyGeometryKind(function, arg_index)
+                                  : function.rejectsColumnGeometryKind(kind_name, arg_index))
                 return true;
         }
         return false;
     }
 
-    if (typeid_cast<const DataTypeDynamic *>(inner))
+    if (typeid_cast<const DataTypeDynamic *>(&inner))
     {
-        /// Every kind a predicate could possibly reject is reachable here. Probing the geometry
-        /// kinds is enough to tell a predicate that rejects some kind apart from one (e.g. a WASM
-        /// UDF reading raw WKB) that accepts everything and can never raise on kind grounds.
-        static constexpr std::array kind_names
-            = {"Point", "Ring", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "String"};
-        return std::ranges::any_of(
-            kind_names, [&](std::string_view kind_name) { return function.rejectsColumnGeometryKind(kind_name, arg_index); });
+        /// Every kind a predicate could possibly reject is reachable here.
+        return rejectsAnyGeometryKind(function, arg_index);
     }
 
     return false;
@@ -685,9 +715,26 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         /// reason as the column check above: `pointInPolygon`'s first argument legitimately
         /// accepts an explicitly `Point`-typed constant, exactly as it does an explicitly
         /// `Point`-typed column.
-        if (const auto kind_name = constGeoKindName(*child); !kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
+        const auto kind_name = constGeoKindName(*child);
+        if (!kind_name.empty() && node.function_base->rejectsColumnGeometryKind(kind_name, this_arg_index))
         {
             any_kind_rejected = true;
+            continue;
+        }
+
+        /// A `Dynamic`/`Variant` constant whose stored alternative carries no kind name -- say
+        /// `CAST((500., 500.) AS Tuple(Float64, Float64))::Dynamic` -- is an unknown kind, not an
+        /// absent one, exactly as for a column (see `hasDeferredGeometryKindRejection`). The
+        /// structural shape below can't stand in for the missing name here: `tryExtractConstGeoField`
+        /// flattens the constant to a raw tuple that `extractBboxFromFieldValue` declines without
+        /// poisoning `acc.valid`, so the node would be downgraded to `NotApplicable` -- while the
+        /// per-row overload `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor`
+        /// builds resolves that same tuple as a `Point` through `callOnGeometryDataType` and raises.
+        /// Pruned away by a sibling conjunct, that exception never surfaces. Fail closed instead.
+        if (kind_name.empty() && child->result_type && isDeferredGeometryKindType(*child->result_type)
+            && rejectsAnyGeometryKind(*node.function_base, this_arg_index))
+        {
+            any_deferred_kind_rejection = true;
             continue;
         }
 
