@@ -42,7 +42,9 @@ CREATE TABLE table_gcd_codec_on_negative_integers
 )
 ENGINE = MergeTree
 ORDER BY (symbol, ts)
-/* Force wide parts so system.columns reports per-column compressed/uncompressed bytes. */
+/* Force wide parts: Compact parts store all columns in a single file and track only the
+   whole-part size, so system.columns would report zero compressed/uncompressed bytes for
+   every column and all the per-column ratios computed below would degenerate to 0. */
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO table_gcd_codec_on_negative_integers
@@ -65,10 +67,11 @@ SELECT
 FROM
 (
     SELECT
-        /* Large magnitude for integer types */
-        ((reinterpretAsInt64(rand64()) % 2001) - 1000) * 1000000000000000 AS x_big,
+        /* Large magnitude for integer types. `intHash64` gives deterministic pseudo-random
+           values, so a failure is reproducible. */
+        (toInt64(intHash64(number) % 2001) - 1000) * 1000000000000000 AS x_big,
         /* Small magnitude for decimals */
-        ((reinterpretAsInt64(rand64()) % 2001) - 1000) * 1000 AS x_small
+        (toInt64(intHash64(number + 100000) % 2001) - 1000) * 1000 AS x_small
     FROM numbers(100000)
 );
 

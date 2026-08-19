@@ -89,8 +89,10 @@ namespace
 template <typename T>
 void compressDataForType(const char * source, UInt32 source_size, char * dest, bool is_signed)
 {
-    /// T is always unsigned, shared by signed and unsigned columns of the same width via the
-    /// runtime `is_signed` flag, to avoid doubling the number of template instantiations.
+    /// T must be unsigned even when `is_signed` is true, because the codec's arithmetic needs
+    /// well-defined modulo-2^N semantics, which only unsigned types provide: the magnitude of the
+    /// most negative value (2^(N-1)) does not fit in the signed type, and negating it there would
+    /// be undefined behavior, while `T(0) - val` on unsigned T produces it exactly.
     static_assert(!is_signed_v<T>);
     if (source_size % sizeof(T) != 0)
         throw Exception(ErrorCodes::CANNOT_COMPRESS, "Cannot compress with GCD codec, data size {} is not aligned to {}", source_size, sizeof(T));
@@ -148,9 +150,9 @@ void compressDataForType(const char * source, UInt32 source_size, char * dest, b
         while (cur_source < source_end)
         {
             T val = unalignedLoad<T>(cur_source);
-            T mag = toMagnitude(val);
-            T quotient_magnitude = mag / gcd;
-            T quotient = (is_signed && mag != val) ? T(0) - quotient_magnitude : quotient_magnitude;
+            T magnitude = toMagnitude(val);
+            T quotient_magnitude = magnitude / gcd;
+            T quotient = (is_signed && magnitude != val) ? T(0) - quotient_magnitude : quotient_magnitude;
             unalignedStore<T>(dest, quotient);
             cur_source += sizeof(T);
             dest += sizeof(T);

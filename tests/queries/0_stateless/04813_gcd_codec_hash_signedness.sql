@@ -46,19 +46,21 @@ SETTINGS min_rows_for_wide_part = 1000000000, min_bytes_for_wide_part = 10000000
    only found when the magnitude is computed from the sign-corrected value.
    UInt64: multiples of 10^6, sampled from the upper half of the UInt64 range (top bit set),
    so a value wrongly treated as signed would flip to its two's-complement magnitude and lose
-   the factor-of-5^6 part of the divisor, collapsing the found `gcd` from 10^6 to 64. */
+   the factor-of-5^6 part of the divisor, collapsing the found `gcd` from 10^6 to 64.
+   `intHash64` gives deterministic pseudo-random values, so a failure is reproducible and the
+   single-column tables hold exactly the same values as the combined one. */
 INSERT INTO t_gcd_hash_combined
 SELECT
-    ((reinterpretAsInt64(rand64()) % 2001) - 1000) * 1000000000000000,
-    (9223372036855 + (rand64() % 9223372036854)) * 1000000
+    (toInt64(intHash64(number) % 2001) - 1000) * 1000000000000000,
+    (9223372036855 + (intHash64(number + 100000) % 9223372036854)) * 1000000
 FROM numbers(100000);
 
 INSERT INTO t_gcd_hash_int64_only
-SELECT ((reinterpretAsInt64(rand64()) % 2001) - 1000) * 1000000000000000
+SELECT (toInt64(intHash64(number) % 2001) - 1000) * 1000000000000000
 FROM numbers(100000);
 
 INSERT INTO t_gcd_hash_uint64_only
-SELECT (9223372036855 + (rand64() % 9223372036854)) * 1000000
+SELECT (9223372036855 + (intHash64(number + 100000) % 9223372036854)) * 1000000
 FROM numbers(100000);
 
 SELECT DISTINCT part_type
