@@ -986,7 +986,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change);
+                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
                 any_mt_setting = true;
             }
         }
