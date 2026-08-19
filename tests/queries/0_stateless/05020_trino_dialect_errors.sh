@@ -18,6 +18,7 @@ $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT TRY(1 / 0)" 2>&1 | grep -om1 "NOT_IMPL
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT x FROM UNNEST(ARRAY[1])" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT split('a,b', ',', 2)" 2>&1 | grep -om1 "BAD_ARGUMENTS"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT approx_percentile(number, number / 10) FROM numbers(10)" 2>&1 | grep -om1 "BAD_ARGUMENTS"
+$CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT json_size('{}', concat('$', '.a'))" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
 
 # Multi-statement scripts are split correctly
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT ARRAY[1, 2]; SELECT cardinality(ARRAY['a']);"

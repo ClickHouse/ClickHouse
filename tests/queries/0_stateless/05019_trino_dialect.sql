@@ -138,6 +138,23 @@ SELECT translate('Palhoça', 'ç', 'c');
 SELECT current_timestamp(3) >= now() - 5, localtimestamp(6) >= now() - 5;
 SELECT TIMESTAMP '2020-01-01 00:00:00' AT LOCAL = TIMESTAMP '2020-01-01 00:00:00';
 
+SELECT '-- BETWEEN SYMMETRIC';
+SELECT 3 BETWEEN SYMMETRIC 6 AND 2, 3 BETWEEN SYMMETRIC 2 AND 6, 1 BETWEEN SYMMETRIC 6 AND 2;
+SELECT 3 BETWEEN ASYMMETRIC 2 AND 6, 3 BETWEEN ASYMMETRIC 6 AND 2;
+SELECT 7 NOT BETWEEN SYMMETRIC 6 AND 2;
+SELECT x FROM (VALUES 1, 3, 5) AS t(x) WHERE x BETWEEN SYMMETRIC 4 AND 2 AND x > 0;
+
+SELECT '-- JSON (objects only)';
+SELECT JSON '{"a": [1, 2, 3]}';
+SELECT json_parse('{"a": 1}'), CAST(json_parse('{"a": 1}') AS VARCHAR);
+SELECT json_format(json_parse('{"b": 2, "a": 1}'));
+SELECT json_extract_scalar(json_parse('{"a": {"b": 3}}'), '$.a.b');
+SELECT json_extract('{"a": {"b": [5, 6]}}', '$.a.b'), json_extract(JSON '{"a": {"b": [5, 6]}}', '$.a.b[0]');
+SELECT json_size('{"a": {"b": [5, 6], "c": 1}}', '$.a');
+SELECT json_array_contains('[1, 2, 3]', 2), json_array_contains('["x", "y"]', 'x'), json_array_contains('[true, false]', false);
+SELECT is_json_scalar('1'), is_json_scalar('"abc"'), is_json_scalar('[1, 2]'), is_json_scalar('{"a": 1}');
+SELECT json_query('{"a": [1, 2]}', '$.a'), json_exists('{"a": 1}', '$.a'), json_exists('{"a": 1}', '$.b');
+
 SELECT '-- ClickHouse functions remain accessible';
 SELECT toTypeName(1 = 1), arrayStringConcat(ARRAY['x', 'y'], '/');
 

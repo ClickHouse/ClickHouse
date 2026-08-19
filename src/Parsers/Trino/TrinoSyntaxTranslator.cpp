@@ -384,6 +384,34 @@ private:
                 return;
         }
 
+        /// JSON '{"a": 1}' -> CAST('{"a": 1}' AS JSON). The ClickHouse JSON type
+        /// stores objects, so non-object documents are rejected at execution.
+        if (tokenIsKeyword(token, "JSON") && isTypeAt(i + 1, TokenType::StringLiteral))
+        {
+            changed = true;
+            out += "CAST(";
+            emitToken(tokens[i + 1]);
+            out += "AS JSON) ";
+            i += 2;
+            return;
+        }
+
+        /// BETWEEN ASYMMETRIC is the default BETWEEN; BETWEEN SYMMETRIC orders
+        /// the bounds first: x BETWEEN least(a, b) AND greatest(a, b).
+        if (tokenIsKeyword(token, "BETWEEN") && isKeywordAt(i + 1, "ASYMMETRIC"))
+        {
+            changed = true;
+            emitToken(token);
+            i += 2;
+            return;
+        }
+
+        if (tokenIsKeyword(token, "BETWEEN") && isKeywordAt(i + 1, "SYMMETRIC"))
+        {
+            translateBetweenSymmetric(i, end_idx);
+            return;
+        }
+
         /// TIMESTAMP '2022-11-01 09:08:07.321 [Asia/Tokyo]': the plain ClickHouse
         /// TIMESTAMP literal drops the fractional seconds (it produces DateTime)
         /// and does not understand region time zone names.
@@ -524,6 +552,68 @@ private:
             out += "toDateTime64('" + text + "', " + std::to_string(scale) + ") ";
         i += 2;
         return true;
+    }
+
+    /// Finds where a BETWEEN bound expression ends: the next AND/OR, comma,
+    /// unbalanced closing bracket or clause keyword at the top nesting level.
+    /// CASE ... END counts as nesting (it may contain top-level AND).
+    size_t findBetweenBoundEnd(size_t begin_idx, size_t end_idx) const
+    {
+        size_t depth = 0;
+        for (size_t j = begin_idx; j < end_idx; ++j)
+        {
+            const Token & token = tokens[j];
+            if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket
+                || tokenIsKeyword(token, "CASE"))
+            {
+                ++depth;
+                continue;
+            }
+            if (token.type == TokenType::ClosingRoundBracket || token.type == TokenType::ClosingSquareBracket
+                || tokenIsKeyword(token, "END"))
+            {
+                if (depth == 0)
+                    return j;
+                --depth;
+                continue;
+            }
+            if (depth > 0)
+                continue;
+            if (token.type == TokenType::Comma || token.type == TokenType::Semicolon)
+                return j;
+            if (token.type == TokenType::BareWord)
+            {
+                for (const auto * keyword :
+                     {"AND",  "OR",     "IS",    "NOT",   "IN",     "LIKE",   "ILIKE", "BETWEEN", "AS",     "ASC",
+                      "DESC", "WHERE",  "GROUP", "ORDER", "HAVING", "LIMIT",  "OFFSET", "FETCH",  "SETTINGS", "UNION",
+                      "EXCEPT", "INTERSECT", "FROM", "THEN", "ELSE", "WHEN", "ON", "JOIN", "INNER", "LEFT",
+                      "RIGHT", "FULL", "CROSS", "USING", "PREWHERE", "WINDOW", "FORMAT", "INTO"})
+                    if (tokenIsKeyword(token, keyword))
+                        return j;
+            }
+        }
+        return end_idx;
+    }
+
+    /// x BETWEEN SYMMETRIC a AND b -> x BETWEEN least(a, b) AND greatest(a, b).
+    /// `i` points at the BETWEEN token.
+    void translateBetweenSymmetric(size_t & i, size_t end_idx)
+    {
+        size_t low_begin = i + 2;
+        size_t and_idx = findBetweenBoundEnd(low_begin, end_idx);
+        if (and_idx >= end_idx || !tokenIsKeyword(tokens[and_idx], "AND") || and_idx == low_begin)
+            throwNotSupported(tokens[i], "This form of BETWEEN SYMMETRIC", "");
+        size_t high_begin = and_idx + 1;
+        size_t high_end = findBetweenBoundEnd(high_begin, end_idx);
+        if (high_end == high_begin)
+            throwNotSupported(tokens[i], "This form of BETWEEN SYMMETRIC", "");
+
+        String low = translateSubRange(low_begin, and_idx, /*type_context=*/ false);
+        String high = translateSubRange(high_begin, high_end, /*type_context=*/ false);
+
+        changed = true;
+        out += "BETWEEN least(" + low + ", " + high + ") AND greatest(" + low + ", " + high + ") ";
+        i = high_end;
     }
 
     /// Whether a dot at position `idx` starts a numeric literal (`.06`) rather

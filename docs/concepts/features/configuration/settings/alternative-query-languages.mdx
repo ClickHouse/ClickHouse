@@ -106,10 +106,17 @@ SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
 ```
 
 The translation covers, among other things, `ARRAY[...]` literals, `TRY_CAST`, `UNNEST` (translated to `ARRAY JOIN`),
-`ROW` constructors and types, `VALUES` tables, `OFFSET` before `LIMIT`, and several hundred functions, including
-the ones whose names exist in both systems with different semantics (for example, Trino `length` counts Unicode
-code points and is translated to `lengthUTF8`). ClickHouse functions that do not collide with Trino names remain
-accessible, so both function families can be mixed in one query.
+`ROW` constructors and types, `VALUES` tables, `OFFSET` before `LIMIT`, `BETWEEN SYMMETRIC`, and several hundred
+functions, including the ones whose names exist in both systems with different semantics (for example, Trino `length`
+counts Unicode code points and is translated to `lengthUTF8`). ClickHouse functions that do not collide with Trino
+names remain accessible, so both function families can be mixed in one query.
+
+Trino `JSON` values are mapped to the ClickHouse [`JSON`](/reference/sql-reference/data-types/newjson) type:
+`JSON '...'` literals and `json_parse` become casts to `JSON`, `json_format` becomes `toJSONString`, and the path
+functions (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) are
+translated to their ClickHouse counterparts. Since the ClickHouse `JSON` type stores objects, non-object documents
+(top-level arrays and scalars) are rejected when they are materialized as `JSON` values; the path functions accept
+any JSON text.
 
 Semantics that cannot be fixed by a translation at the query level remain the ClickHouse ones. Most notably,
 the division operator `/` performs integer division in Trino but floating-point division in ClickHouse, and

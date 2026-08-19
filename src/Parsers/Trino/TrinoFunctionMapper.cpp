@@ -111,6 +111,72 @@ ASTs literalToParameters(const ASTFunction & function, const ASTPtr & argument)
     return parameters;
 }
 
+/// Returns the underlying string expression of CAST(x AS JSON) — as produced by
+/// json_parse or a JSON '...' literal — or nullptr. Trino JSON values are mapped
+/// to the ClickHouse JSON type, but the string-based JSONPath functions
+/// (JSON_VALUE, JSONExtract*, ...) do not accept it, so a cast flowing directly
+/// into them is unwrapped back to the JSON text.
+ASTPtr tryUnwrapCastToJSON(const ASTPtr & ast)
+{
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || !function->arguments || function->arguments->children.size() != 2)
+        return nullptr;
+    String name = Poco::toLower(function->name);
+    if (name != "cast" && name != "accuratecastornull")
+        return nullptr;
+    const auto * type = function->arguments->children[1]->as<ASTLiteral>();
+    if (!type || type->value.getType() != Field::Types::String || Poco::toUpper(type->value.safeGet<String>()) != "JSON")
+        return nullptr;
+    return function->arguments->children[0];
+}
+
+void unwrapJSONArgument(ASTs & arguments)
+{
+    if (!arguments.empty())
+        if (ASTPtr unwrapped = tryUnwrapCastToJSON(arguments[0]))
+            arguments[0] = unwrapped;
+}
+
+/// Parses a simple constant JSON path ($.a.b[0]) into JSONExtract*-style
+/// arguments ('a', 'b', 1). Trino array indexes are 0-based, ClickHouse 1-based.
+bool tryParseSimpleJSONPath(const ASTPtr & ast, ASTs & parts)
+{
+    const auto * literal = ast->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return false;
+    const String & path = literal->value.safeGet<String>();
+    if (path.empty() || path[0] != '$')
+        return false;
+
+    parts.clear();
+    size_t pos = 1;
+    while (pos < path.size())
+    {
+        if (path[pos] == '.')
+        {
+            size_t key_begin = ++pos;
+            while (pos < path.size() && (isWordCharASCII(path[pos])))
+                ++pos;
+            if (pos == key_begin)
+                return false;
+            parts.push_back(make_intrusive<ASTLiteral>(path.substr(key_begin, pos - key_begin)));
+        }
+        else if (path[pos] == '[')
+        {
+            size_t index_begin = ++pos;
+            while (pos < path.size() && isNumericASCII(path[pos]))
+                ++pos;
+            if (pos == index_begin || pos == path.size() || path[pos] != ']')
+                return false;
+            parts.push_back(make_intrusive<ASTLiteral>(UInt64(std::stoull(path.substr(index_begin, pos - index_begin)) + 1)));
+            ++pos;
+        }
+        else
+            return false;
+    }
+    return !parts.empty();
+}
+
 void attachParameters(ASTFunction & function, ASTs parameters)
 {
     function.parameters = make_intrusive<ASTExpressionList>();
@@ -208,9 +274,6 @@ const std::unordered_map<String, String> & getRenames()
         /// Regular expressions.
         {"regexp_count", "countMatches"},
         {"regexp_like", "match"},
-
-        /// JSON.
-        {"json_extract_scalar", "JSON_VALUE"},
 
         /// URL.
         {"url_extract_fragment", "fragment"},
@@ -806,6 +869,118 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             if (arguments.size() == 2)
                 arguments.push_back(make_intrusive<ASTLiteral>(Field{}));
             UNUSED(function);
+        }},
+
+        /// JSON. Trino JSON values are mapped to the ClickHouse JSON type (which
+        /// stores objects); the path functions work on JSON text, so casts to
+        /// JSON flowing directly into them are unwrapped by unwrapJSONArgument.
+        {"json_parse", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 1, 1, "(string)");
+            node = makeFunctionWithArguments("CAST", {arguments[0], make_intrusive<ASTLiteral>(String("JSON"))});
+        }},
+        {"json_format", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 1, 1, "(json)");
+            node = makeFunctionWithArguments("toJSONString", {arguments[0]});
+        }},
+        {"json_extract_scalar", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            function.name = "JSON_VALUE";
+        }},
+        {"json_value", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            function.name = "JSON_VALUE";
+        }},
+        {"json_query", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            function.name = "JSON_QUERY";
+        }},
+        {"json_exists", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            function.name = "JSON_EXISTS";
+        }},
+        {"json_extract", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            /// A simple constant path becomes JSONExtractRaw, which returns the
+            /// bare element like Trino. JSON_QUERY handles the general paths but
+            /// wraps the result in an array (the SQL standard ARRAY WRAPPER).
+            ASTs parts;
+            if (tryParseSimpleJSONPath(arguments[1], parts))
+            {
+                ASTs extract_arguments;
+                extract_arguments.push_back(arguments[0]);
+                extract_arguments.insert(extract_arguments.end(), parts.begin(), parts.end());
+                node = makeFunctionWithArguments("JSONExtractRaw", std::move(extract_arguments));
+            }
+            else
+                function.name = "JSON_QUERY";
+        }},
+        {"json_size", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, json_path)");
+            unwrapJSONArgument(arguments);
+            ASTs parts;
+            if (!tryParseSimpleJSONPath(arguments[1], parts))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Trino json_size is translated only with a simple constant JSON path, e.g. '$.a.b[0]'");
+            ASTs length_arguments;
+            length_arguments.push_back(arguments[0]);
+            length_arguments.insert(length_arguments.end(), parts.begin(), parts.end());
+            node = makeFunctionWithArguments("JSONLength", std::move(length_arguments));
+        }},
+        {"is_json_scalar", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 1, 1, "(json)");
+            unwrapJSONArgument(arguments);
+            ASTPtr container_types = makeFunctionWithArguments(
+                "tuple", {make_intrusive<ASTLiteral>(String("Object")), make_intrusive<ASTLiteral>(String("Array"))});
+            node = makeFunctionWithArguments(
+                "and",
+                {makeFunctionWithArguments("isValidJSON", {arguments[0]}),
+                 makeFunctionWithArguments(
+                     "notIn", {makeFunctionWithArguments("JSONType", {arguments[0]->clone()}), container_types})});
+        }},
+        {"json_array_contains", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 2, 2, "(json, value)");
+            unwrapJSONArgument(arguments);
+            const auto * value = arguments[1]->as<ASTLiteral>();
+            if (!value)
+                throwWrongArguments(function, "a constant scalar value");
+            String element_type;
+            ASTPtr needle = arguments[1];
+            switch (value->value.getType())
+            {
+                case Field::Types::String:
+                    element_type = "Array(Nullable(String))";
+                    break;
+                case Field::Types::Bool:
+                    element_type = "Array(Nullable(Bool))";
+                    break;
+                case Field::Types::UInt64:
+                case Field::Types::Int64:
+                case Field::Types::Float64:
+                    element_type = "Array(Nullable(Float64))";
+                    needle = makeFunctionWithArguments("toFloat64", {needle});
+                    break;
+                default:
+                    throwWrongArguments(function, "a constant scalar value");
+            }
+            node = makeFunctionWithArguments(
+                "has",
+                {makeFunctionWithArguments("JSONExtract", {arguments[0], make_intrusive<ASTLiteral>(element_type)}), needle});
         }},
 
         /// Window functions.
