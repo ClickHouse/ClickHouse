@@ -36,7 +36,7 @@ namespace
         new_context->setQueryParameters(context->getQueryParameters());
 
         const auto & database = context->getCurrentDatabase();
-        if (!database.empty() && database != new_context->getCurrentDatabase())
+        if (database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
         new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
@@ -99,7 +99,7 @@ namespace
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
 
-        if (!database.empty() && database != context->getCurrentDatabase())
+        if (database != context->getCurrentDatabase())
             context->setCurrentDatabase(database);
     }
 }

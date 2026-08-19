@@ -2,3 +2,7 @@
 caller
 -- session form
 caller
+-- empty database subquery form
+UNKNOWN_TABLE
+-- empty database session form
+UNKNOWN_TABLE

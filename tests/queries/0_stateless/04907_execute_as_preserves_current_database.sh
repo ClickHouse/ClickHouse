@@ -17,6 +17,7 @@ target="execute_as_target_${CLICKHOUSE_DATABASE}"
 # The connection carries an explicit `--database`, which takes precedence over the caller's
 # `DEFAULT DATABASE`, so the current database of the session has to be set there as well.
 CLICKHOUSE_CLIENT_CALLER=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$caller_database}
+CLICKHOUSE_CLIENT_NO_DATABASE=${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/}
 
 function cleanup()
 {
@@ -47,5 +48,13 @@ $CLICKHOUSE_CLIENT_CALLER --user "${caller}" --query "EXECUTE AS ${target} SELEC
 
 echo "-- session form"
 $CLICKHOUSE_CLIENT_CALLER --user "${caller}" --query "EXECUTE AS ${target}; SELECT value FROM t;"
+
+# An empty current database is a scope as well. It must not be replaced with the target user's
+# default database, which would make the following unqualified name unexpectedly resolve to `target_database`.
+echo "-- empty database subquery form"
+$CLICKHOUSE_CLIENT_NO_DATABASE --user "${caller}" --query "EXECUTE AS ${target} SELECT value FROM t" 2>&1 | grep -o -m 1 "UNKNOWN_TABLE"
+
+echo "-- empty database session form"
+$CLICKHOUSE_CLIENT_NO_DATABASE --user "${caller}" --query "EXECUTE AS ${target}; SELECT value FROM t;" 2>&1 | grep -o -m 1 "UNKNOWN_TABLE"
 
 cleanup
