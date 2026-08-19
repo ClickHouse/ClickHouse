@@ -38,7 +38,7 @@ SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
 db.people.updateMany({"id" : 1}, {"$unset" : {"name" : ""}});
 SET dialect='clickhouse';
-SELECT id, name FROM people ORDER BY id;
+SELECT id, name FROM people ORDER BY id, name;
 
 SET allow_experimental_mongo_dialect = 1;
 SET dialect='mongo';
