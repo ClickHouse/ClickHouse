@@ -632,9 +632,13 @@ def main():
         # builds cross-compile on aarch64 runners, where the wrapper would run
         # under binfmt qemu emulation - baseline x86-64 (amd_compat) survives
         # it, but the x86-64-v3 code in amd_release hits unsupported
-        # instructions (SIGILL).
+        # instructions (SIGILL). amd_compat is the exception: it runs under
+        # the emulation, and no later job consumes its artifact, so skipping
+        # here would leave the published amd64compat wrapper entirely
+        # unexecuted in CI. amd_release needs no such exception - its binary
+        # is exercised by every amd test lane.
         target_is_arm = "amd" not in build_type
-        if target_is_arm == Utils.is_arm():
+        if target_is_arm == Utils.is_arm() or build_type == BuildTypes.AMD_COMPAT:
             smoke_dir = f"{temp_dir}/self_extracting_smoke"
             results.append(
                 Result.from_commands_run(
