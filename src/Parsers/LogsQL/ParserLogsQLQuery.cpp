@@ -82,9 +82,11 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                 return false;
 
             node = std::move(set_node);
-            /// Leave the semicolon for the outer parser, which consumes statement
-            /// delimiters after a successful parse.
-            while (!pos->isEnd() && pos->begin < set_statement_end)
+            /// The outer token stream does not recognize a LogsQL `#comment` without
+            /// whitespace after `#`. Advance it past the complete raw SET statement
+            /// and its LogsQL comment suffix, so the generic end-of-query validation
+            /// does not see the comment as unexpected input.
+            while (!pos->isEnd() && pos->begin < set_end)
                 ++pos;
             return true;
         }

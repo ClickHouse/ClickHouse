@@ -423,7 +423,7 @@ bool isNumberPrefix(const String & text)
         if (rest.empty())
             return false;
     }
-    if (rest.starts_with("inf") || rest.starts_with("Inf"))
+    if (rest == "inf" || rest == "Inf")
         return true;
     return isDigit(rest[0]) || (rest.size() >= 2 && rest[0] == '.' && isDigit(rest[1]));
 }
