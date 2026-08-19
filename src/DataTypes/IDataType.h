@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Core/TypeId.h>
 #include <Common/COW.h>
-#include <DataTypes/IDataType_fwd.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <memory>
@@ -24,19 +23,27 @@ using DataTypeCustomNamePtr = std::unique_ptr<const IDataTypeCustomName>;
 class ReadBuffer;
 class WriteBuffer;
 
+class IDataType;
 struct FormatSettings;
 
 class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using MutableColumnPtr = COW<IColumn>::MutablePtr;
 
-class ColumnConst;
-using ColumnConstPtr = COW<IColumn>::immutable_ptr<ColumnConst>;
-using MutableColumnConstPtr = COW<IColumn>::mutable_ptr<ColumnConst>;
-
 class Field;
 
+using DataTypePtr = std::shared_ptr<const IDataType>;
+using DataTypes = std::vector<DataTypePtr>;
+
 struct NameAndTypePair;
+
+struct DataTypeWithConstInfo
+{
+    DataTypePtr type;
+    bool is_const;
+};
+
+using DataTypesWithConstInfo = std::vector<DataTypeWithConstInfo>;
 
 class SerializationInfo;
 using SerializationInfoPtr = std::shared_ptr<const SerializationInfo>;
@@ -170,8 +177,8 @@ public:
 
     /** Create ColumnConst for corresponding type, with specified size and value.
       */
-    virtual MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const;
-    MutableColumnConstPtr createColumnConstWithDefaultValue(size_t size) const;
+    virtual ColumnPtr createColumnConst(size_t size, const Field & field) const;
+    ColumnPtr createColumnConstWithDefaultValue(size_t size) const;
 
     /** Get default value of data type.
       * It is the "default" default, regardless the fact that a table could contain different user-specified default.

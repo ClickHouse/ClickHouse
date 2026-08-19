@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesIdToGroup(id) converts the specified identifier of a time series to its group index.
 /// Group indices are numbers 0, 1, 2, 3 associated with each unique set of tags in the context of the currently executed query.
-class FunctionTimeSeriesIdToGroup final : public IFunction
+class FunctionTimeSeriesIdToGroup : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesIdToGroup";
@@ -31,12 +31,6 @@ public:
     /// Function timeSeriesIdToGroup returns information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -57,9 +51,22 @@ public:
         TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const override
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
-        auto groups = tags_collector->getGroupByID(arguments[0].column);
+        const auto & id_type = TimeSeriesTagsFunctionHelpers::checkArgumentTypeForID(name, arguments, 0);
+        if (id_type == typeid(UInt64))
+            return executeForIDType<UInt64>(arguments, result_type, input_rows_count);
+        if (id_type == typeid(UInt128))
+            return executeForIDType<UInt128>(arguments, result_type, input_rows_count);
+        UNREACHABLE();
+    }
+
+    template <typename IDType>
+    ColumnPtr executeForIDType(const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t input_rows_count) const
+    {
+        auto ids = TimeSeriesTagsFunctionHelpers::extractIDFromArgument<IDType>(name, arguments, 0);
+
+        auto groups = tags_collector->getGroupByID(ids);
         chassert(groups.size() == input_rows_count);
 
         return TimeSeriesTagsFunctionHelpers::makeColumnForGroup(groups);
@@ -78,7 +85,7 @@ See also function [timeSeriesStoreTags()](/sql-reference/functions/time-series-f
     )";
     FunctionDocumentation::Syntax syntax = "timeSeriesIdToGroup(id)";
     FunctionDocumentation::Arguments arguments = {
-        {"id", "Identifier of a time series. Must be of the same type which was used when calling [timeSeriesStoreTags()](/sql-reference/functions/time-series-functions#timeSeriesStoreTags).", {"Any"}}
+        {"id", "Identifier of a time series.", {"UInt64", "UInt128", "UUID", "FixedString(16)"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
         "Returns a group of tags associated with the identifier `id` of a time series.", {"UInt64"}

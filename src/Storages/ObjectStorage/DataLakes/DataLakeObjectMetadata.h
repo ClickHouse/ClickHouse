@@ -1,5 +1,6 @@
 #pragma once
 #include <Interpreters/ActionsDAG.h>
+#include <Core/Field.h>
 
 namespace DB
 {

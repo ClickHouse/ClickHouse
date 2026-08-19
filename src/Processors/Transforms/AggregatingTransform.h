@@ -121,15 +121,13 @@ public:
     String getName() const override { return "AggregatingTransform"; }
     Status prepare() override;
     void work() override;
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
     void setRowsBeforeAggregationCounter(RowsBeforeStepCounterPtr counter) override { rows_before_aggregation.swap(counter); }
 
 protected:
     void consume(Chunk chunk);
 
 private:
-    size_t getGeneratingStepGroup() const;
-
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
 
