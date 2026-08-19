@@ -1,0 +1,259 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-deployment-options
+title: 'Helm デプロイオプション'
+description: 'Helm を使用した ClickStack の高度なデプロイ構成'
+doc_type: 'guide'
+keywords: ['ClickStack デプロイオプション', '外部 ClickHouse', '外部 OTel', '最小限のデプロイ', 'Helm 構成']
+---
+
+<Warning>
+  **チャート バージョン 2.x**
+
+  このページでは、サブチャートベースの **v2.x** Helm チャートについて説明します。現在も v1.x のインラインテンプレートチャートを使用している場合は、[Helm デプロイオプション (v1.x)](/ja/clickstack/deployment/helm-deployment-options-v1) を参照してください。移行手順については、[アップグレードガイド](/ja/clickstack/deployment/helm-upgrade) を参照してください。
+</Warning>
+
+このガイドでは、Helm を使用した ClickStack の高度なデプロイオプションについて説明します。基本的なインストールについては、[メインの Helm デプロイガイド](/ja/clickstack/deployment/helm) を参照してください。
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickStack の Helm チャートは、複数のデプロイメント構成に対応しています。
+
+* **フルスタック** (デフォルト) — すべてのコンポーネントを含み、operator によって管理されます
+* **外部 ClickHouse** — 既存の ClickHouse クラスターを使用
+* **外部 OTel collector** — 既存の OTel インフラストラクチャを使用
+* **最小構成のデプロイメント** — HyperDX のみを使用し、依存先は外部
+
+<div id="external-clickhouse">
+  ## 外部 ClickHouse
+</div>
+
+既存の ClickHouse クラスター (ClickHouse Cloud を含む) を使用している場合は、組み込みの ClickHouse を無効にして、その外部インスタンスに接続できます。
+
+<div id="external-clickhouse-inline">
+  ### オプション 1: インライン設定 (開発/テスト用)
+</div>
+
+この方法は、手早くテストしたい場合や非本番環境に適しています。接続情報は `hyperdx.config` と `hyperdx.secrets` で指定します。
+
+```yaml
+# values-external-clickhouse.yaml
+clickhouse:
+  enabled: false  # operatorが管理するClickHouseを無効にする
+
+hyperdx:
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-password"
+    CLICKHOUSE_APP_PASSWORD: "your-password"
+
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+```
+
+この設定でインストールします：
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
+```
+
+<div id="external-clickhouse-secret">
+  ### オプション 2: 外部シークレット (本番環境向けに推奨)
+</div>
+
+認証情報を Helm の設定とは分けて管理したい本番環境のデプロイでは:
+
+<div id="create-configuration">
+  #### 設定ファイルを作成する
+</div>
+
+```bash
+# connections.json を作成する
+cat <<EOF > connections.json
+[
+  {
+    "name": "Production ClickHouse",
+    "host": "https://your-production-clickhouse.com",
+    "port": 8123,
+    "username": "hyperdx_user",
+    "password": "your-secure-password"
+  }
+]
+EOF
+
+# sources.json を作成する
+cat <<EOF > sources.json
+[
+  {
+    "from": {
+      "databaseName": "default",
+      "tableName": "otel_logs"
+    },
+    "kind": "log",
+    "name": "Logs",
+    "connection": "Production ClickHouse",
+    "timestampValueExpression": "TimestampTime",
+    "displayedTimestampValueExpression": "Timestamp",
+    "implicitColumnExpression": "Body",
+    "serviceNameExpression": "ServiceName",
+    "bodyExpression": "Body",
+    "eventAttributesExpression": "LogAttributes",
+    "resourceAttributesExpression": "ResourceAttributes",
+    "severityTextExpression": "SeverityText",
+    "traceIdExpression": "TraceId",
+    "spanIdExpression": "SpanId"
+  },
+  {
+    "from": {
+      "databaseName": "default",
+      "tableName": "otel_traces"
+    },
+    "kind": "trace",
+    "name": "Traces",
+    "connection": "Production ClickHouse",
+    "timestampValueExpression": "Timestamp",
+    "displayedTimestampValueExpression": "Timestamp",
+    "implicitColumnExpression": "SpanName",
+    "serviceNameExpression": "ServiceName",
+    "traceIdExpression": "TraceId",
+    "spanIdExpression": "SpanId",
+    "durationExpression": "Duration"
+  }
+]
+EOF
+```
+
+<div id="create-kubernetes-secret">
+  #### Kubernetes シークレットを作成する
+</div>
+
+```bash
+kubectl create secret generic hyperdx-external-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+# ローカルファイルを削除する
+rm connections.json sources.json
+```
+
+<div id="configure-helm-secret">
+  #### シークレットを使用するように Helm を設定する
+</div>
+
+```yaml
+# values-external-clickhouse-secret.yaml
+clickhouse:
+  enabled: false
+
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "hyperdx-external-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
+```
+
+<div id="using-clickhouse-cloud">
+  ### Using ClickHouse Cloud
+</div>
+
+ClickHouse Cloud を使用する場合:
+
+```yaml
+# values-clickhouse-cloud.yaml
+clickhouse:
+  enabled: false
+
+hyperdx:
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-cloud-password"
+    CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
+
+  useExistingConfigSecret: true
+  existingConfigSecret: "clickhouse-cloud-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+<div id="external-otel-collector">
+  ## 外部 OTEL Collector
+</div>
+
+既存の OTEL collector インフラストラクチャがある場合は、サブチャートを無効にします:
+
+```yaml
+# values-external-otel.yaml
+otel-collector:
+  enabled: false  # サブチャートのOTEL collectorを無効にする
+
+hyperdx:
+  otelExporterEndpoint: "http://your-otel-collector:4318"
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
+```
+
+OTel collector のエンドポイントをイングレス経由で公開する手順については、[イングレス設定](/ja/clickstack/deployment/helm-configuration#otel-collector-ingress)を参照してください。
+
+<div id="minimal-deployment">
+  ## 最小構成のデプロイメント
+</div>
+
+既存のインフラストラクチャがある組織では、HyperDX のみをデプロイします。
+
+```yaml
+# values-minimal.yaml
+clickhouse:
+  enabled: false
+
+otel-collector:
+  enabled: false
+
+hyperdx:
+  otelExporterEndpoint: "http://your-otel-collector:4318"
+
+  # オプション1: インライン（テスト用）
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+
+  # オプション2: 外部シークレット（本番環境）
+  # useExistingConfigSecret: true
+  # existingConfigSecret: "my-external-config"
+  # existingConfigConnectionsKey: "connections.json"
+  # existingConfigSourcesKey: "sources.json"
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
+```
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [設定ガイド](/ja/clickstack/deployment/helm-configuration) - APIキー、シークレット、イングレスの設定
+* [クラウド環境へのデプロイ](/ja/clickstack/deployment/helm-cloud) - GKE、EKS、AKS 向けの設定
+* [アップグレードガイド](/ja/clickstack/deployment/helm-upgrade) - v1.x から v2.x への移行
+* [追加マニフェスト](/ja/clickstack/deployment/helm-additional-manifests) - カスタム Kubernetes オブジェクト
+* [Helm メインガイド](/ja/clickstack/deployment/helm) - 基本的なインストール
+* [デプロイオプション (v1.x) ](/ja/clickstack/deployment/helm-deployment-options-v1) - v1.x のデプロイオプション

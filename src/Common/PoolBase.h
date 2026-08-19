@@ -157,7 +157,9 @@ public:
             else
             {
                 auto timeout_ms = std::chrono::milliseconds(timeout);
-                LOG_INFO(log, "No free connections in pool. Waiting {} ms.", timeout_ms.count());
+                /// A finite wait re-enters this loop as soon as it expires, so an unlimited log here
+                /// floods once per timeout per waiter.
+                LOG_INFO(LogFrequencyLimiter(log, 10), "No free connections in pool. Waiting {} ms.", timeout_ms.count());
                 available.wait_for(lock, timeout_ms);
             }
             ProfileEvents::increment(ProfileEvents::ConnectionPoolIsFullMicroseconds, blocked.elapsedMicroseconds());

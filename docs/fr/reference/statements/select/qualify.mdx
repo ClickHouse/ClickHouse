@@ -1,0 +1,39 @@
+---
+description: 'Documentation de la clause QUALIFY'
+sidebarTitle: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
+title: 'Clause QUALIFY'
+doc_type: 'reference'
+---
+
+Permet de filtrer les résultats des fonctions de fenêtre. Elle est similaire à la clause [WHERE](/fr/reference/statements/select/where), mais la différence est que `WHERE` est exécutée avant l’évaluation des fonctions de fenêtre, tandis que `QUALIFY` est exécutée après.
+
+Il est possible de référencer, dans la clause `QUALIFY`, les résultats des fonctions de fenêtre de la clause `SELECT` à l’aide de leur alias. La clause `QUALIFY` peut également filtrer les résultats de fonctions de fenêtre supplémentaires qui ne sont pas renvoyées dans les résultats de la requête.
+
+<div id="limitations">
+  ## Limites
+</div>
+
+`QUALIFY` ne peut pas être utilisé en l&#39;absence de fonctions de fenêtre à évaluer. Utilisez plutôt `WHERE`.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Exemple :
+
+```sql
+SELECT number, COUNT() OVER (PARTITION BY number % 3) AS partition_count
+FROM numbers(10)
+QUALIFY partition_count = 4
+ORDER BY number;
+```
+
+```text
+┌─number─┬─partition_count─┐
+│      0 │               4 │
+│      3 │               4 │
+│      6 │               4 │
+│      9 │               4 │
+└────────┴─────────────────┘
+```

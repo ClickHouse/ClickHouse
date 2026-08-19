@@ -94,15 +94,6 @@ public:
 
     std::string_view getTypeName() const override { return "scheduler"; }
 
-    bool equals(ISchedulerNode * other) override
-    {
-        if (!ISchedulerNode::equals(other))
-            return false;
-        if (auto * _ = dynamic_cast<TimeSharedScheduler *>(other))
-            return true;
-        return false;
-    }
-
     void attachChild(const SchedulerNodePtr & child_base) override
     {
         TimeSharedNodePtr child = std::static_pointer_cast<ITimeSharedNode>(child_base);

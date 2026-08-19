@@ -17,6 +17,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PageCache.h>
+#include <Common/UntrackedMemoryRegistry.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Daemon/BaseDaemon.h>
@@ -1232,36 +1233,62 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
     ///     `loadChecksums` and from `MergeTreeDataPartBuilder::build`),
     ///   - per-table metadata (allocations from `MergeTreeData::setProperties`,
     ///     `resetSerializationHints`, `updateSerializationHints`).
+    new_values["jemalloc.mergetree_arena.count"] = { JemallocMergeTreeArena::getArenaIndices().size(),
+        "Number of dedicated jemalloc arenas for long-lived MergeTree metadata, controlled by the "
+        "`jemalloc_merge_tree_arenas` server setting. 0 means the dedicated arena pool is disabled and "
+        "metadata is allocated in the default per-CPU arenas; 1 is a single shared arena; N > 1 is a "
+        "pool sharded by CPU. See `jemalloc.mergetree_arena.active_bytes`." };
+
     if (JemallocMergeTreeArena::isEnabled())
     {
-        unsigned mergetree_arena = JemallocMergeTreeArena::getArenaIndex();
-        auto mt_pactive = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pactive", mergetree_arena),
-            "jemalloc.mergetree_arena.pactive");
-        auto mt_pdirty = saveJemallocMetricImpl<size_t>(new_values,
-            fmt::format("stats.arenas.{}.pdirty", mergetree_arena),
-            "jemalloc.mergetree_arena.pdirty");
-
-        if (mt_pactive && mt_pdirty)
+        /// Sum across every arena in the pool.
+        size_t mt_pactive = 0;
+        size_t mt_pdirty = 0;
+        bool read_ok = true;
+        for (unsigned arena : JemallocMergeTreeArena::getArenaIndices())
         {
+            size_t pactive = 0;
+            size_t pdirty = 0;
+            if (!Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pactive", arena).c_str(), pactive)
+                || !Jemalloc::tryGetValue(fmt::format("stats.arenas.{}.pdirty", arena).c_str(), pdirty))
+            {
+                read_ok = false;
+                break;
+            }
+            mt_pactive += pactive;
+            mt_pdirty += pdirty;
+        }
+
+        /// Publish only complete sums: a partial prefix would look like a plausible pool total.
+        if (read_ok)
+        {
+            new_values["jemalloc.mergetree_arena.pactive"] = { mt_pactive,
+                "Active pages summed across the dedicated jemalloc MergeTree arena pool." };
+            new_values["jemalloc.mergetree_arena.pdirty"] = { mt_pdirty,
+                "Dirty pages summed across the dedicated jemalloc MergeTree arena pool." };
+
             const size_t page_size = jemalloc_page_size_mib.getValue();
-            new_values["jemalloc.mergetree_arena.active_bytes"] = { *mt_pactive * page_size,
-                "Active bytes in the dedicated jemalloc MergeTree arena. Holds long-lived MergeTree heap "
-                "state: per-part metadata (`NamesAndTypesList`, `SerializationInfoByName`, the "
-                "`serializations` map, `column_name_to_position`, `MergeTreeDataPartChecksums` tree, the "
+            new_values["jemalloc.mergetree_arena.active_bytes"] = { mt_pactive * page_size,
+                "Active bytes summed across the dedicated jemalloc MergeTree arena pool "
+                "(`jemalloc.mergetree_arena.count` arenas). Holds long-lived MergeTree heap "
+                "state: per-part metadata (`SerializationInfoByName`, `MergeTreeDataPartChecksums` tree, the "
                 "`Poco::LRUCache<String, ColumnSize>` delegates inside each `IMergeTreeDataPart`, the "
                 "per-part `ColumnSize`/`IndexSize` maps, `MinMaxIndex`, `VersionMetadataOnDisk`, and the "
-                "`MergeTreeDataPart{Compact,Wide}` object itself) plus per-table metadata "
+                "`MergeTreeDataPart{Compact,Wide}` object itself), metadata shared across parts of a table "
+                "(`NamesAndTypesList`, `column_name_to_position`, the `serializations` map and "
+                "`ColumnsSubstreams`, see `SharedPartColumns.h`) plus per-table metadata "
                 "(`StorageInMemoryMetadata` / `ColumnsDescription` / `VirtualColumnsDescription` clones "
                 "set up by `setProperties`, the `serialization_hints` aggregation, and the "
-                "`columns_descriptions_cache`). Active parts and outdated parts pending cleanup both "
+                "`shared_part_columns_cache`). Active parts and outdated parts pending cleanup both "
                 "contribute. Disjoint from the cache arena and JIT arena. The per-part columns "
                 "`system.parts.primary_key_bytes_in_memory[_allocated]` and "
                 "`system.parts.index_granularity_bytes_in_memory[_allocated]` are subsets of this metric "
-                "(when their values are non-zero — they can also live in `PrimaryIndexCacheBytes` instead, "
-                "which is in the cache arena and not counted here)."};
-            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { *mt_pdirty * page_size,
-                "Dirty bytes in the MergeTree arena that are eligible for purging back to the OS."};
+                "(when their values are non-zero). The primary index is allocated here even when it is "
+                "owned by `PrimaryIndexCache` (deliberate: re-homing it at the cache boundary could fail "
+                "after a part is already committed), so `PrimaryIndexCacheBytes` overlaps with this metric."};
+            new_values["jemalloc.mergetree_arena.dirty_bytes"] = { mt_pdirty * page_size,
+                "Dirty bytes summed across the dedicated jemalloc MergeTree arena pool that are eligible "
+                "for purging back to the OS."};
         }
     }
 #endif
@@ -1344,6 +1371,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     new_values["TrackedMemory"] = { total_memory_tracker.get(), "Memory tracked by ClickHouse (should be equal to MemoryTracking metric), in bytes." };
+    new_values["UntrackedMemory"] = { DB::UntrackedMemoryRegistry::instance().sum(), "Sum of per-thread buffers of recent allocations and deallocations that have not yet been propagated to TrackedMemory."};
 
 #if defined(OS_LINUX)
     if (loadavg)
@@ -2565,12 +2593,16 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         std::lock_guard values_lock(values_mutex);
         values.swap(new_values);
 
-        // These methods look at Asynchronous metrics and add,update or remove warnings
-        // which later get inserted into the system.warnings table:
-        processWarningForMutationStats(new_values);
+        // These methods look at Asynchronous metrics and add, update or remove warnings
+        // which later get inserted into the system.warnings table.
+        // Note: after the swap above, `values` holds the freshly computed metrics and
+        // `new_values` holds the previous cycle's data, so we must read from `values` here.
+        // Passing `new_values` would feed the warning logic the stale snapshot, lagging
+        // system.warnings by one async-metrics cycle (and emitting nothing on the first cycle).
+        processWarningForMutationStats(values);
         // server resource overload warnings
-        processWarningForMemoryOverload(new_values);
-        processWarningForCPUOverload(new_values);
+        processWarningForMemoryOverload(values);
+        processWarningForCPUOverload(values);
     }
 }
 

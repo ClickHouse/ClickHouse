@@ -1,0 +1,118 @@
+---
+description: 'Documentation de la clause DISTINCT'
+sidebarTitle: 'DISTINCT'
+slug: /sql-reference/statements/select/distinct
+title: 'Clause DISTINCT'
+doc_type: 'référence'
+---
+
+Si `SELECT DISTINCT` est spécifié, seules les lignes uniques apparaissent dans le résultat d’une requête. Ainsi, parmi chaque ensemble de lignes parfaitement identiques dans le résultat, une seule est conservée.
+
+Vous pouvez spécifier la liste des colonnes dont les valeurs doivent être uniques : `SELECT DISTINCT ON (column1, column2,...)`. Si les colonnes ne sont pas spécifiées, elles sont toutes prises en compte.
+
+Considérez la table :
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+Utiliser `DISTINCT` sans spécifier de colonnes :
+
+```sql
+SELECT DISTINCT * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+Utilisation de `DISTINCT` avec des colonnes spécifiques :
+
+```sql
+SELECT DISTINCT ON (a,b) * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+<div id="distinct-and-order-by">
+  ## DISTINCT et ORDER BY
+</div>
+
+ClickHouse permet d’utiliser les clauses `DISTINCT` et `ORDER BY` sur des colonnes différentes dans une même requête. La clause `DISTINCT` est exécutée avant la clause `ORDER BY`.
+
+Considérons la table :
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+Sélection de données :
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b ASC;
+```
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+Sélection des données avec un ordre de tri différent :
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b DESC;
+```
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+La ligne `2, 4` a été tronquée avant le tri.
+
+Tenez compte de cette spécificité d’implémentation lors de l’écriture de requêtes.
+
+<div id="null-processing">
+  ## Traitement de NULL
+</div>
+
+`DISTINCT` traite [NULL](/fr/reference/syntax#null) comme si `NULL` était une valeur spécifique, et `NULL==NULL`. Autrement dit, dans les résultats de `DISTINCT`, les différentes combinaisons avec `NULL` n&#39;apparaissent qu&#39;une seule fois. Cela diffère du traitement de `NULL` dans la plupart des autres contextes.
+
+<div id="alternatives">
+  ## Alternatives
+</div>
+
+Il est possible d&#39;obtenir le même résultat en appliquant [GROUP BY](/fr/reference/statements/select/group-by) sur le même ensemble de valeurs que celui spécifié dans la clause `SELECT`, sans utiliser de fonctions d&#39;agrégation. Mais il existe quelques différences par rapport à l&#39;approche `GROUP BY` :
+
+* `DISTINCT` peut être appliqué conjointement avec `GROUP BY`.
+* Lorsque [ORDER BY](/fr/reference/statements/select/order-by) est omis et que [LIMIT](/fr/reference/statements/select/limit) est défini, la requête s&#39;arrête immédiatement après la lecture du nombre requis de lignes distinctes.
+* Les blocs de données sont affichés au fur et à mesure de leur traitement, sans attendre la fin de l&#39;exécution de la requête.

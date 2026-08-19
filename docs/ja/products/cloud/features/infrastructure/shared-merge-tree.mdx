@@ -1,0 +1,123 @@
+---
+slug: /cloud/reference/shared-merge-tree
+sidebarTitle: 'SharedMergeTree'
+title: 'SharedMergeTree テーブルエンジン'
+keywords: ['SharedMergeTree']
+description: 'SharedMergeTree テーブルエンジンについて説明します'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+SharedMergeTree テーブルエンジンファミリーは、共有ストレージ (例: Amazon S3、Google Cloud Storage、MinIO、Azure Blob Storage) 上で動作するよう最適化された、ReplicatedMergeTree エンジンのクラウドネイティブな代替です。各 MergeTree エンジンタイプには対応する SharedMergeTree があり、たとえば SharedReplacingMergeTree は ReplicatedReplacingMergeTree に対応します。
+
+SharedMergeTree テーブルエンジンファミリーは ClickHouse Cloud を支えています。エンドユーザーは、ReplicatedMergeTree ベースのエンジンから SharedMergeTree エンジンファミリーへ移行するために、特に変更を加える必要はありません。さらに、次のような利点があります。
+
+* insert スループットの向上
+* バックグラウンドマージのスループット向上
+* mutation のスループット向上
+* scale-up および scale-down の高速化
+* SELECT クエリに対する、より軽量な強整合性
+
+SharedMergeTree の大きな改善点の 1 つは、ReplicatedMergeTree と比べて、コンピュートとストレージの分離がより進んでいることです。以下は、ReplicatedMergeTree におけるコンピュートとストレージの分離方法を示したものです。
+
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="ReplicatedMergeTree の図" size="md" />
+
+ご覧のとおり、ReplicatedMergeTree ではデータ自体はオブジェクトストレージに保存されますが、メタデータは引き続き各 clickhouse-server 上に保持されます。つまり、レプリケーションを伴うあらゆる操作で、メタデータもすべてのレプリカに複製する必要があります。
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="メタデータ付き ReplicatedMergeTree の図" size="md" />
+
+ReplicatedMergeTree とは異なり、SharedMergeTree ではレプリカ同士が通信する必要はありません。代わりに、すべての通信は共有ストレージと clickhouse-keeper を介して行われます。SharedMergeTree は非同期のリーダーレス レプリケーションを実装しており、協調とメタデータストレージのために clickhouse-keeper を使用します。つまり、サービスの scale-up や scale-down に合わせてメタデータを複製する必要がありません。その結果、レプリケーション、mutation、マージ、scale-up が高速化されます。SharedMergeTree では各テーブルで数百のレプリカを持てるため、分片なしで動的にスケールできます。ClickHouse Cloud では、1 つのクエリにより多くのコンピュートリソースを活用するために、分散クエリ実行のアプローチが採用されています。
+
+<div id="introspection">
+  ## 内部情報の確認
+</div>
+
+ReplicatedMergeTree の内部情報の確認に使われるシステムテーブルのほとんどは SharedMergeTree にもありますが、データやメタデータのレプリケーションは行われないため、`system.replication_queue` と `system.replicated_fetches` は存在しません。ただし、SharedMergeTree にはこれら 2 つのテーブルに対応する代替手段があります。
+
+**system.virtual&#95;parts**
+
+このテーブルは、SharedMergeTree における `system.replication_queue` の代替です。現在の最新のパーツ集合に関する情報に加えて、マージ、mutation、削除されたパーティションなどによって今後生成される進行中のパーツに関する情報も格納します。
+
+**system.shared&#95;merge&#95;tree&#95;fetches**
+
+このテーブルは、SharedMergeTree における `system.replicated_fetches` の代替です。主キーとチェックサムをメモリに取り込む、現在進行中のフェッチに関する情報を含みます。
+
+<div id="enabling-sharedmergetree">
+  ## SharedMergeTree の有効化
+</div>
+
+`SharedMergeTree` はデフォルトで有効になっています。
+
+SharedMergeTree テーブルエンジンをサポートするサービスでは、手動で有効化する必要はありません。これまでと同じ方法でテーブルを作成するだけで、CREATE TABLE クエリで指定したエンジンに対応する SharedMergeTree ベースのテーブルエンジンが自動的に使用されます。
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+これにより、SharedMergeTree テーブルエンジンを使用してテーブル `my_table` が作成されます。
+
+ClickHouse Cloud では `default_table_engine=MergeTree` が設定されているため、`ENGINE=MergeTree` を指定する必要はありません。次のクエリは上記のクエリと同じです。
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ORDER BY key
+```
+
+Replacing、Collapsing、Aggregating、Summing、VersionedCollapsing、または Graphite MergeTree のテーブルを使用している場合は、対応する SharedMergeTree ベースのテーブルエンジンに自動的に変換されます。
+
+```sql
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+```
+
+特定のテーブルでどのテーブルエンジンが使用されているかは、`SHOW CREATE TABLE` で `CREATE TABLE` ステートメントを表示すると確認できます:
+
+```sql
+SHOW CREATE TABLE myFirstReplacingMT;
+```
+
+```sql
+CREATE TABLE default.myFirstReplacingMT
+( `key` Int64, `someCol` String, `eventTime` DateTime )
+ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY key
+```
+
+<div id="settings">
+  ## 設定
+</div>
+
+一部の設定では挙動が大きく変わっています:
+
+* `insert_quorum` -- SharedMergeTree へのすべての insert はクォーラムインサート (共有ストレージに書き込まれる) であるため、SharedMergeTree テーブルエンジンを使用する場合、この設定は不要です。
+* `insert_quorum_parallel` -- SharedMergeTree へのすべての insert はクォーラムインサート (共有ストレージに書き込まれる) であるため、SharedMergeTree テーブルエンジンを使用する場合、この設定は不要です。
+* `select_sequential_consistency` -- クォーラムインサートは不要ですが、`SELECT` クエリで clickhouse-keeper に追加の負荷がかかります
+
+<div id="consistency">
+  ## 整合性
+</div>
+
+SharedMergeTree は、ReplicatedMergeTree よりも優れた軽量な整合性を提供します。SharedMergeTree に insert する際、`insert_quorum` や `insert_quorum_parallel` などの設定を指定する必要はありません。insert はクォーラムインサートであるため、メタデータは ClickHouse-Keeper に保存され、少なくとも ClickHouse-Keeper のクォーラムにレプリケートされます。クラスター内の各レプリカは、ClickHouse-Keeper から新しい情報を非同期に fetch します。
+
+ほとんどの場合、`select_sequential_consistency` や `SYSTEM SYNC REPLICA LIGHTWEIGHT` を使う必要はありません。非同期レプリケーションでほとんどのケースをカバーでき、レイテンシも非常に低く抑えられます。どうしても古い読み取りを防ぐ必要があるまれなケースでは、優先順位の高い順に次の推奨事項に従ってください。
+
+1. 読み取りと書き込みのクエリを同じ session または同じノードで実行している場合、レプリカはすでに最新のメタデータを保持しているため、`select_sequential_consistency` は不要です。
+
+2. 1 つのレプリカに書き込み、別のレプリカから読み取る場合は、`SYSTEM SYNC REPLICA LIGHTWEIGHT` を使用して、そのレプリカに ClickHouse-Keeper からメタデータを fetch させることができます。
+
+3. クエリ設定の一部として `select_sequential_consistency` を使用します。

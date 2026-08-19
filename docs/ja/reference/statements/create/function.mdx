@@ -1,0 +1,86 @@
+---
+description: 'FUNCTION に関するドキュメント'
+sidebarTitle: 'FUNCTION'
+slug: /sql-reference/statements/create/function
+title: 'CREATE FUNCTION - ユーザー定義関数 (UDF)'
+doc_type: 'reference'
+---
+
+ラムダ式からユーザー定義関数 (UDF) を作成します。式は、関数の引数、定数、演算子、またはほかの関数呼び出しのみで構成されている必要があります。
+
+**構文**
+
+```sql
+CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
+```
+
+関数には任意の数のパラメータを指定できます。
+
+いくつかの制約があります。
+
+* 関数名は、ユーザー定義関数およびシステム関数の中で一意である必要があります。
+* 再帰関数は使用できません。
+* 関数内で使用するすべての変数は、パラメータ一覧に指定する必要があります。
+
+これらの制約のいずれかに違反すると、例外が発生します。
+
+**例**
+
+```sql title="Query"
+CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
+SELECT number, linear_equation(number, 2, 1) FROM numbers(3);
+```
+
+```text title="Response"
+┌─number─┬─plus(multiply(2, number), 1)─┐
+│      0 │                            1 │
+│      1 │                            3 │
+│      2 │                            5 │
+└────────┴──────────────────────────────┘
+```
+
+次のクエリでは、ユーザー定義関数内で[条件関数](/ja/reference/functions/regular-functions/conditional-functions)を呼び出しています。
+
+```sql title="Query"
+CREATE FUNCTION parity_str AS (n) -> if(n % 2, 'odd', 'even');
+SELECT number, parity_str(number) FROM numbers(3);
+```
+
+```text title="Response"
+┌─number─┬─if(modulo(number, 2), 'odd', 'even')─┐
+│      0 │ even                                 │
+│      1 │ odd                                  │
+│      2 │ even                                 │
+└────────┴──────────────────────────────────────┘
+```
+
+既存のUDFを置き換える:
+
+```sql title="Query"
+CREATE FUNCTION exampleReplaceFunction AS frame -> frame;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+CREATE OR REPLACE FUNCTION exampleReplaceFunction AS frame -> frame + 1;
+SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
+```
+
+```text title="Response"
+┌─create_query─────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> frame │
+└──────────────────────────────────────────────────────────┘
+
+┌─create_query───────────────────────────────────────────────────┐
+│ CREATE FUNCTION exampleReplaceFunction AS frame -> (frame + 1) │
+└────────────────────────────────────────────────────────────────┘
+```
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+<div id="executable-udfs">
+  ### [実行可能 UDF](/ja/reference/functions/regular-functions/udf).
+</div>
+
+<div id="user-defined-functions-in-clickhouse-cloud">
+  ### [ClickHouse Cloud のユーザー定義関数](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs)
+</div>

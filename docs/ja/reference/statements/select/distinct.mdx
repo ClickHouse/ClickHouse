@@ -1,0 +1,118 @@
+---
+description: 'DISTINCT 句のリファレンス'
+sidebarTitle: 'DISTINCT'
+slug: /sql-reference/statements/select/distinct
+title: 'DISTINCT 句'
+doc_type: 'reference'
+---
+
+`SELECT DISTINCT` を指定すると、クエリ結果には一意の行だけが残ります。つまり、結果内で完全に一致する行の組ごとに、1 行だけが残ります。
+
+一意の値を持つ必要があるカラムの一覧は `SELECT DISTINCT ON (column1, column2,...)` のように指定できます。カラムを指定しない場合は、すべてのカラムが対象になります。
+
+次のテーブルを考えます:
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+カラムを指定せずに `DISTINCT` を使用する場合:
+
+```sql
+SELECT DISTINCT * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 1 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+指定したカラムで `DISTINCT` を使用する:
+
+```sql
+SELECT DISTINCT ON (a,b) * FROM t1;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 1 │ 1 │ 1 │
+│ 2 │ 2 │ 2 │
+│ 1 │ 2 │ 2 │
+└───┴───┴───┘
+```
+
+<div id="distinct-and-order-by">
+  ## DISTINCT と ORDER BY
+</div>
+
+ClickHouse では、1 つのクエリ内で `DISTINCT` 句と `ORDER BY` 句に異なるカラムを指定できます。`DISTINCT` 句は `ORDER BY` 句より先に実行されます。
+
+次のテーブルを考えます。
+
+```text
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 1 │ 2 │
+│ 3 │ 3 │
+│ 2 │ 4 │
+└───┴───┘
+```
+
+データの選択:
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b ASC;
+```
+
+```text
+┌─a─┐
+│ 2 │
+│ 1 │
+│ 3 │
+└───┘
+```
+
+ソート方向を変えてデータを選択する場合:
+
+```sql
+SELECT DISTINCT a FROM t1 ORDER BY b DESC;
+```
+
+```text
+┌─a─┐
+│ 3 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+行 `2, 4` はソート前に除外されました。
+
+クエリを記述する際は、この実装上の特性を考慮してください。
+
+<div id="null-processing">
+  ## NULL の処理
+</div>
+
+`DISTINCT` は、[NULL](/ja/reference/syntax#null) を `NULL` が特定の値であり、`NULL==NULL` であるかのように扱います。つまり、`DISTINCT` の結果では、`NULL` を含む同じ組み合わせは 1 回しか現れません。これは、ほかの多くの文脈での `NULL` の扱いとは異なります。
+
+<div id="alternatives">
+  ## 代替手段
+</div>
+
+集約関数を使用しなくても、`SELECT` 句で指定したものと同じ値の組み合わせに対して [GROUP BY](/ja/reference/statements/select/group-by) を適用すれば、同じ結果を得ることができます。ただし、`GROUP BY` を使う方法とはいくつか異なる点があります。
+
+* `DISTINCT` は `GROUP BY` と組み合わせて使用できます。
+* [ORDER BY](/ja/reference/statements/select/order-by) を省略し、[LIMIT](/ja/reference/statements/select/limit) を指定した場合、必要な数の異なる行を読み込んだ時点で、クエリは直ちに停止します。
+* データブロックは、クエリ全体の実行が完了するのを待たず、処理されるたびに出力されます。

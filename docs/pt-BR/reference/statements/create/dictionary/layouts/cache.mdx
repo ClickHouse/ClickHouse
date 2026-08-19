@@ -1,0 +1,70 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/cache
+title: 'layout de dicionário cache'
+sidebarTitle: 'cache'
+description: 'Armazena um dicionário em um cache em memória de tamanho fixo.'
+doc_type: 'reference'
+---
+
+O tipo de layout de dicionário `cached` armazena o dicionário em um cache com um número fixo de células.
+Essas células contêm elementos usados com frequência.
+
+A chave do dicionário tem o tipo [UInt64](/pt-BR/reference/data-types/int-uint).
+
+Ao buscar em um dicionário, o cache é consultado primeiro. Para cada bloco de dados, todas as chaves que não forem encontradas no cache ou estiverem desatualizadas serão solicitadas da fonte usando `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Os dados recebidos são então gravados no cache.
+
+Se as chaves não forem encontradas no dicionário, uma tarefa de atualização do cache será criada e adicionada à fila de atualização. As propriedades da fila de atualização podem ser controladas com as configurações `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
+
+Para dicionários cache, é possível definir o [lifetime](/pt-BR/reference/statements/create/dictionary/lifetime) de expiração dos dados no cache. Se tiver passado mais tempo do que `lifetime` desde o carregamento dos dados em uma célula, o valor da célula não será usado e a chave expirará. A chave será solicitada novamente na próxima vez em que precisar ser usada. Esse comportamento pode ser configurado com a configuração `allow_read_expired_keys`.
+
+Esta é a menos eficiente de todas as formas de armazenar dicionários. A velocidade do cache depende fortemente da configuração correta e do cenário de uso. Um dicionário do tipo cache tem bom desempenho somente quando as taxas de acerto são altas o suficiente (recomenda-se 99% ou mais). Você pode ver a taxa média de acerto na tabela [system.dictionaries](/pt-BR/reference/system-tables/dictionaries).
+
+Se a configuração `allow_read_expired_keys` for definida como 1, por padrão é 0. Nesse caso, o dicionário poderá oferecer suporte a atualizações assíncronas. Se um cliente solicitar chaves e todas elas estiverem no cache, mas algumas estiverem expiradas, o dicionário retornará as chaves expiradas ao cliente e as solicitará da fonte de forma assíncrona.
+
+Para melhorar o desempenho do cache, use uma subconsulta com `LIMIT` e chame a função com o dicionário externamente.
+
+Todos os tipos de fontes são compatíveis.
+
+Exemplo de configurações:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+    ```
+  </Tab>
+
+  <Tab title="Arquivo de configuração">
+    ```xml
+    <layout>
+        <cache>
+            <!-- O tamanho do cache, em número de células. Arredondado para cima para uma potência de dois. -->
+            <size_in_cells>1000000000</size_in_cells>
+            <!-- Permite ler chaves expiradas. -->
+            <allow_read_expired_keys>0</allow_read_expired_keys>
+            <!-- Tamanho máximo da fila de atualização. -->
+            <max_update_queue_size>100000</max_update_queue_size>
+            <!-- Tempo limite máximo, em milissegundos, para inserir a tarefa de atualização na fila. -->
+            <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+            <!-- Tempo limite máximo de espera, em milissegundos, para a conclusão da tarefa de atualização. -->
+            <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+            <!-- Número máximo de threads para atualização do dicionário cache. -->
+            <max_threads_for_updates>4</max_threads_for_updates>
+        </cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Defina um tamanho de cache grande o suficiente. Você precisará testar para escolher o número de células:
+
+1. Defina algum valor.
+2. Execute consultas até que o cache fique completamente cheio.
+3. Avalie o consumo de memória usando a tabela `system.dictionaries`.
+4. Aumente ou diminua o número de células até atingir o consumo de memória desejado.
+
+<Note>
+  ClickHouse não é recomendado como fonte para este layout. As buscas no dicionário exigem leituras pontuais aleatórias, que não correspondem ao padrão de acesso para o qual o ClickHouse foi otimizado.
+</Note>

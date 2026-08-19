@@ -288,6 +288,16 @@ XML_ParserCreate_MM(const XML_Char *encoding,
 XMLPARSEAPI(XML_Bool)
 XML_ParserReset(XML_Parser parser, const XML_Char *encoding);
 
+/* Poco extension, not present in upstream expat: rebalance the handler-call-depth counter after a
+   C++ exception thrown from a handler unwound out of XML_Parse (skipping the internal
+   afterHandler() bookkeeping). Without this, XML_ParserFree silently refuses to free the parser -
+   it believes a handler is still running - and the whole parser leaks. Call it only when no
+   handler frame of this parser can still be on the stack, i.e. after catching an exception that
+   propagated out of a parse entry point.
+*/
+XMLPARSEAPI(void)
+XML_ResetHandlerCallDepth(XML_Parser parser);
+
 /* atts is array of name/value pairs, terminated by 0;
    names and values are 0 terminated.
 */
@@ -1094,7 +1104,7 @@ XML_SetReparseDeferralEnabled(XML_Parser parser, XML_Bool enabled);
 */
 #  define XML_MAJOR_VERSION 2
 #  define XML_MINOR_VERSION 8
-#  define XML_MICRO_VERSION 1
+#  define XML_MICRO_VERSION 2
 
 #  ifdef __cplusplus
 }

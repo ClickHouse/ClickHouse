@@ -62,8 +62,10 @@ public:
 
     const String & getNameForLogging() const override { return backup_name_for_logging; }
     OpenMode getOpenMode() const override { return open_mode; }
+    std::map<String, String> getEngineSettings() const override;
     time_t getTimestamp() const override { return timestamp; }
     UUID getUUID() const override { return *uuid; }
+    const String & getBackupId() const override { return backup_id; }
     BackupPtr getBaseBackup() const override;
     size_t getNumFiles() const override;
     UInt64 getTotalSize() const override;
@@ -83,13 +85,14 @@ public:
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    void setOriginalEndpointAndNamespaceIfEmpty(const String & endpoint_, const String & namespace_) noexcept override;
 
 private:
     void open();
@@ -108,6 +111,11 @@ private:
 
     String getObjectKey(const String & file_name) const;
     std::unique_ptr<ReadBufferFromFileBase> readFileByObjectKey(const BackupFileInfo & info) const;
+
+    /// Copies a lightweight-snapshot (object-key) entry to the destination through a live write buffer
+    /// and fsyncs it (the optimized object-key copy exposes no buffer to fsync). Reached only in the
+    /// cloud build, where object keys are present; defined unconditionally so it is type-checked everywhere.
+    size_t copyObjectKeyEntryToDiskSynced(const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const;
 
     /// Returns the base backup or null if there is no base backup.
     std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
@@ -157,6 +165,7 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
+    String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
     UInt64 total_size = 0;
@@ -170,6 +179,8 @@ private:
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether metadata has a marker to copy `S3` credentials from this backup locator to the base backup locator.
+    bool base_backup_copy_s3_credentials_from_backup = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

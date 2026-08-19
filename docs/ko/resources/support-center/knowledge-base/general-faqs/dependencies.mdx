@@ -1,0 +1,17 @@
+---
+title: 'ClickHouse를 실행하는 데 필요한 타사 의존성은 무엇입니까?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/dependencies
+description: 'ClickHouse는 자체 포함형이며 런타임 의존성이 없습니다'
+doc_type: 'reference'
+keywords: ['의존성', '타사']
+---
+
+ClickHouse에는 런타임 의존성이 없습니다. 완전히 자체 포함된 단일 바이너리 애플리케이션으로 배포됩니다. 이 애플리케이션은 클러스터의 모든 기능을 제공하고, 쿼리를 처리하며, 클러스터의 worker 노드로 동작하고, RAFT 합의 알고리즘을 제공하는 조정 시스템 역할을 하며, 클라이언트 또는 로컬 쿼리 엔진으로도 동작합니다.
+
+이러한 고유한 아키텍처 덕분에 ClickHouse는 다른 시스템과 차별화됩니다. 다른 시스템은 전용 프런트엔드, 백엔드 또는 집계 노드를 두는 경우가 많지만, ClickHouse는 배포, 클러스터 관리, 모니터링을 더 간단하게 합니다.
+
+<Info>
+  오래전에는 ClickHouse가 분산 클러스터 조정을 위해 ZooKeeper를 필요로 했습니다. 이제는 더 이상 필요하지 않으며, ZooKeeper 사용을 지원하기는 하지만 더 이상 권장되지는 않습니다.
+</Info>

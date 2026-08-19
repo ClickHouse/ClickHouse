@@ -1,0 +1,98 @@
+---
+slug: /integrations/integration-development/building-integrations
+title: 'بناء التكاملات مع ClickHouse'
+sidebarTitle: 'بناء التكاملات'
+description: 'نظرة عامة على الإدخال، والاستهلاك، وبروتوكولات الاتصال، وأعراف مكتبات العملاء لتكاملات ClickHouse.'
+keywords: ['شريك', 'تكامل', 'إدخال', 'استهلاك', 'ClickPipes', 'مكتبات العملاء للغات البرمجة', 'user-agent']
+doc_type: 'guide'
+---
+
+تمنحك هذه الصفحة نظرة عامة على نطاق التكامل لتتمكن من تحديد نطاق أعمال الإدخال والاستهلاك. للتحقق والنشر، تابع إلى [اختبار التكامل الخاص بك](/ar/resources/develop-contribute/integrations/testing-your-integration) و[توثيق التكامل الخاص بك](/ar/resources/develop-contribute/integrations/documenting-your-integration).
+
+<div id="ingestion">
+  ## إدخال البيانات
+</div>
+
+هناك مساران لإدخال البيانات إلى ClickHouse. اختر بينهما بحسب ما إذا كان ينبغي لمنتجك أن يتولى منظومة الإدخال أو أن يفوضها.
+
+<div id="path-a-clickpipes">
+  ### المسار A: ClickPipes (مُدارة، ClickHouse Cloud فقط)
+</div>
+
+إذا كنت تفضّل عدم إنشاء وتشغيل البنية التحتية للإدخال، فإن [ClickPipes](/ar/integrations/clickpipes/home) هي الخدمة المُدارة التي تسحب البيانات من مصادر عميلك إلى خدمة ClickHouse Cloud الخاصة به. ويتولى ClickPipes التحجيم، والمعالجة المتوازية، وإعادات المحاولة، والإبلاغ عن التأخر.
+
+تشمل المصادر المدعومة حاليًا:
+
+* **التدفّق:** Apache Kafka (بما في ذلك MSK وConfluent Cloud وRedpanda وAzure Event Hubs وWarpStream)، Amazon Kinesis
+* **تخزين الكائنات:** Amazon S3 (والمخازن المتوافقة مع S3)، Google Cloud Storage، Azure Blob Storage
+* **CDC:** PostgreSQL، MySQL، MongoDB، BigQuery
+
+<div id="path-b-language-client">
+  ### المسار B: الإدخال ذاتي الإدارة عبر مكتبة عملاء رسمية للغات البرمجة
+</div>
+
+إذا كنت تدير مسار المعالجة بنفسك، فاستخدم إحدى [مكتبات العملاء الرسمية للغات البرمجة](/ar/integrations/language-clients/index). فهي تتولى التسلسل، والتجميع على دفعات، وTLS، والضغط، وإدارة مجمع الاتصالات. أنت تمرّر قيمًا بدائية في وقت التشغيل؛ وتتولى مكتبة العميل تنسيق البيانات على مستوى النقل.
+
+* العملاء الرسميون: بايثون، Go، Java، JavaScript، Rust، C#، C++
+* بروتوكولا النقل كلاهما: HTTP (جميع العملاء) وnative TCP (عملاء Go وC++ فقط)
+* المصادقة: اسم المستخدم وكلمة المرور عبر TLS افتراضيًا؛ كما أن mTLS والمصادقة بشهادة عميل SSL مدعومتان في جميع العملاء الرئيسيين
+* يكون تنسيق البيانات عادةً تفصيلًا تنفيذيًا داخليًا. تحوّل مكتبات العملاء الأنواع في وقت التشغيل إلى تنسيق ClickHouse Native أو RowBinary format. وإذا كنت تُنتج بالفعل Arrow أو Parquet أو JSONEachRow أو تنسيقًا آخر، فإن معظم مكتبات العملاء توفّر واجهة برمجة تطبيقات للبايتات الخام للبيانات المُسلسلة مسبقًا
+* لتحقيق الإنتاجية، اجمع **10K–100K صفًا** في الدفعة واستهدف تقريبًا **عملية insert واحدة في الثانية** كحدٍّ أقصى لعمليات الإدراج المتزامنة. وإذا كان التجميع على دفعات من جهة العميل غير عملي، فاستخدم [عمليات الإدراج غير المتزامنة](/ar/concepts/features/operations/insert/asyncinserts) لنقل التجميع على دفعات إلى الخادم
+
+راجع أيضًا: [عمليات الإدراج المجمّعة](/ar/concepts/features/operations/insert/bulkinserts).
+
+<div id="consumption">
+  ## الاستهلاك
+</div>
+
+ينقل كلٌّ من HTTP وnative TCP الاستعلامات. أما native TCP فهو ثنائي ويضيف عبئًا أقل. ويعمل HTTP عبر موازنات التحميل والوكلاء. كلاهما مدعوم بالكامل؛ فاختر بناءً على البنية التحتية، لا على فجوات الميزات.
+
+* **كود التطبيق:** استخدم [مكتبات العملاء الرسمية للغات البرمجة](/ar/integrations/language-clients/index) نفسها كما في إدخال البيانات
+* **أدوات BI وSQL:** يوفّر ClickHouse رسميًا [برنامج تشغيل JDBC v2](/ar/integrations/language-clients/java/index) (Java) و[برنامج تشغيل ODBC](/ar/concepts/features/interfaces/odbc). ويتكامل Tableau وLooker وPower BI وMetabase وApache Superset وGrafana عبر برامج التشغيل هذه أو عبر موصلات مخصصة تديرها ClickHouse وشركاؤها
+* **تنسيق النتائج:** تتولى البرامج العميلة عادةً عملية التسلسل. ويمكنك طلب Arrow أو Parquet أو تنسيقات عمودية أخرى على الشبكة إذا كان منتجك يحتاج إليها
+
+<div id="result-set-sizing">
+  ### تحديد حجم مجموعة النتائج
+</div>
+
+تعيد معظم الاستعلامات التحليلية مجموعات نتائج صغيرة (التجميعات والملخصات وTop-N)، ونادرًا ما يكون النقل عبر الشبكة هو عنق الزجاجة. يمكن أن تحتوي جداول ClickHouse على مليارات الصفوف، وقد ينقل `SELECT *` غير المقيّد على جدول وقائع كبير تيرابايتات من البيانات. **صِغ الطلب في تطبيقك بعناية:** استخدم `LIMIT`، وترقيم الصفحات، والقراءات المتدفقة، وقوائم أعمدة صريحة. إذا كنت تبني تحليلات موجّهة للمستخدمين، فاعتبر مجموعات النتائج غير المقيّدة مشكلة في تجربة الاستخدام، لا مشكلة في النقل.
+
+يتميّز ClickHouse بنظام أنواع غني: Array وTuple وMap وJSON وNested وLowCardinality وغيرها. وتربط مكتبات العميل الرسمية هذه الأنواع بأنواع لغوية مناسبة لكل لغة. إذا كان منتجك يعرض بيانات ClickHouse للمستخدمين النهائيين، فضع استراتيجية لربط الأنواع في وقت مبكر.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+اختر مسارًا وأنشئ نموذجًا أوليًا بالاعتماد على [نسخة تجريبية من ClickHouse Cloud](https://clickhouse.com/cloud)، ثم سجّل تكاملك في [بوابة الشركاء](https://clickhouse.com/partners).
+
+<div id="user-agent-string-convention">
+  ## الصيغة المتعارف عليها لسلسلة User-Agent
+</div>
+
+يجب على عملاء HTTP تعيين سلسلة `User-Agent` تُعرّف تكاملك. ويحلّل ClickHouse هذه السلسلة على جانب الخادم لتتبّع مستوى الاعتماد، وعرض بيانات القياس عن بُعد الخاصة بالاستخدام، والاستناد إليها في خارطة الطريق.
+
+التنسيق:
+
+```text
+<app_name>/<app_version> <client_name>/<client_version> (<comment>; <key1>: <value1>; <key2>: <value2>)
+```
+
+أمثلة:
+
+* `clickhouse-java/0.8.0`
+* `my-analytics-app/3.1.2 clickhouse-js/1.2.0 (env: staging; region: us-east-1; lv: node/20.10)`
+
+القواعد:
+
+* يجب ألا توجد مسافات في اسم العميل أو الإصدار
+* إذا أدرجت تعليقًا، فيجب أن يأتي أولًا
+* مفاتيح البيانات الوصفية القياسية: `lv` (إصدار اللغة أو إطار العمل)، `os`، `arch`
+* تُبلغ عملاء TCP وعملاء البروتوكول الأصلي عن اسم العميل وإصداره عبر حقول البروتوكول، وليس عبر `User-Agent`
+
+إذا كنت تستخدم JDBC، فراجع [تحديد هوية العميل](/ar/integrations/language-clients/java/jdbc#client-identification) لمعرفة كيفية تعيين برنامج التشغيل لقيمة `User-Agent` والحقول ذات الصلة.
+
+<div id="sandbox-and-trial-access">
+  ## الوصول إلى البيئة المعزولة والفترة التجريبية
+</div>
+
+توفّر [ClickHouse Cloud](https://clickhouse.com/cloud) فترة تجريبية مجانية لأغراض التطوير والتحقق من التكامل. إذا كنت شريكًا في House Mate، يمكنك طلب أرصدة تطوير إضافية عبر [بوابة الشركاء](https://clickhouse.com/partners).

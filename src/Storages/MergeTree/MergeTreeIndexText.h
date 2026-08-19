@@ -4,7 +4,10 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/BitPackedStringArray.h>
+#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
+#include <Common/PODArray.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
 #include <Common/logger_useful.h>
@@ -16,6 +19,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -81,6 +85,7 @@ struct MergeTreeIndexTextParams
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
     ASTPtr preprocessor;
+    ASTPtr postprocessor;
 };
 
 using PostingList = roaring::Roaring;
@@ -151,7 +156,7 @@ struct SortedToken
 {
     std::string_view token;
     PostingListBuilder * postings = nullptr;
-    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `positions` enabled
+    PositionListBuilder * positions = nullptr; /// nullptr unless text index has `support_phrase_search` enabled
 };
 using SortedTokens = std::vector<SortedToken>;
 struct TokenPostingsInfo;
@@ -186,12 +191,14 @@ struct PostingsSerialization
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
 
 private:
+    const IPostingListCodec & resolveCodec(UInt64 header);
+
     PostingListCodecPtr posting_list_codec;
     MergeTreeIndexVersion serialization_version;
 
     /// Reusable buffers to avoid repeated heap allocations during deserialization.
     std::vector<UInt32> raw_postings_buffer;
-    std::vector<char> deserialization_buffer;
+    PaddedPODArray<char> deserialization_buffer;
 };
 
 /// Closed range of rows.
@@ -233,35 +240,47 @@ struct TokenPostingsInfo
 using TokenPostingsInfoPtr = std::shared_ptr<TokenPostingsInfo>;
 using TokenToPostingsInfosMap = absl::flat_hash_map<String, TokenPostingsInfoPtr>;
 
-struct DictionaryBlockBase
-{
-    ColumnPtr tokens;
-
-    DictionaryBlockBase() = default;
-    explicit DictionaryBlockBase(ColumnPtr tokens_) : tokens(std::move(tokens_)) {}
-
-    bool empty() const;
-    size_t size() const;
-    size_t upperBound(std::string_view token) const;
-};
-
-struct DictionaryBlock : public DictionaryBlockBase
+struct DictionaryBlock
 {
     DictionaryBlock() = default;
     DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_);
 
+    bool empty() const;
+    size_t size() const;
+
+    ColumnPtr tokens;
     std::vector<TokenPostingsInfo> token_infos;
     UInt64 tokens_format = 0;
 };
 
-struct DictionarySparseIndex : public DictionaryBlockBase
+class DictionarySparseIndex
 {
+public:
     DictionarySparseIndex() = default;
     DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offsets_in_file_);
+
+    bool empty() const { return size() == 0; }
+    size_t size() const;
+    size_t upperBound(std::string_view token) const;
+
+    std::string_view getToken(size_t idx) const;
     UInt64 getOffsetInFile(size_t idx) const;
     size_t memoryUsageBytes() const;
 
-    ColumnPtr offsets_in_file;
+    /// Returns the raw tokens column. Throws if tokens were bit-packed by optimize.
+    ColumnPtr getTokensColumn() const;
+    /// Returns the raw offsets column. Throws if offsets were bit-packed by optimize.
+    ColumnPtr getOffsetsColumn() const;
+
+    /// Decomposes the tokens column into chars and bit-packed offsets
+    /// and bit-packs the offsets in file to reduce memory usage.
+    void optimize();
+
+private:
+    /// Tokens and offsets in the dictionary file to the beginning of each block.
+    /// Stored as raw columns after creation and bit-packed after optimize.
+    std::variant<ColumnPtr, BitPackedStringArray> tokens;
+    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
 };
 
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;
@@ -299,6 +318,8 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
+    /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
+    static void checkTokenSize(size_t token_size);
     static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
@@ -346,15 +367,10 @@ public:
     bool empty() const override { return is_empty; }
     size_t memoryUsageBytes() const override;
 
-    bool hasAnyQueryTokens(const TextSearchQuery & query) const;
-    bool hasAnyQueryPatterns(const TextSearchQuery & query) const;
-
-    bool hasAllQueryTokens(const TextSearchQuery & query) const;
-    bool hasAllQueryTokensOrEmpty(const TextSearchQuery & query) const;
-
     const TextIndexAnalyzer & getAnalyzer() const { return *analyzer; }
 
     void setCurrentRange(RowsRange range) { current_range = std::move(range); }
+    const std::optional<RowsRange> & getCurrentRange() const { return current_range; }
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
@@ -368,8 +384,6 @@ public:
         const String & index_id_for_caches);
 
 private:
-    bool hasAnyTokensImpl(const TextSearchQuery & query) const;
-
     /// Reads dictionary blocks and analyzes them for tokens.
     void analyzeDictionaryForTokens(const DictionarySparseIndex & sparse_index, PostingsSerialization & postings_serialization, MergeTreeIndexReaderStream & dictionary_stream, MergeTreeIndexDeserializationState & state);
     /// Reads dictionary blocks and analyzes them for patterns.
@@ -436,6 +450,9 @@ struct MergeTreeIndexGranuleTextWritable : public IMergeTreeIndexGranule
 struct ITokenizer;
 using TokenizerPtr = const ITokenizer *;
 
+class MergeTreeIndexTextPostprocessor;
+struct MergeTreeIndexTextInlineFilter;
+
 struct MergeTreeIndexTextGranuleBuilder
 {
     MergeTreeIndexTextGranuleBuilder(
@@ -445,6 +462,9 @@ struct MergeTreeIndexTextGranuleBuilder
 
     /// Extracts tokens from the document and adds them to the granule.
     void addDocument(std::string_view document);
+    // Adds a document to the granule. The document is inserted directly as a single token.
+    void addToken(std::string_view token, UInt32 token_position);
+
     void incrementCurrentRow();
     void setCurrentRow(size_t row) { current_row = row; }
 
@@ -468,10 +488,16 @@ struct MergeTreeIndexTextGranuleBuilder
     /// Position data for phrase query support.
     /// Only allocated when params.positions is true.
     std::unique_ptr<TokenToPositionListMap> position_map;
+    /// Fast path for IN/NOT IN filter-only postprocessors: when set, addToken drops a token before inserting it,
+    /// so dropped tokens allocate no map entry and build no postings. Non-owning.
+    const MergeTreeIndexTextInlineFilter * postprocessor_drop_filter = nullptr;
 };
 
 class MergeTreeIndexTextPreprocessor;
 using MergeTreeIndexTextPreprocessorPtr = std::shared_ptr<MergeTreeIndexTextPreprocessor>;
+
+class MergeTreeIndexTextPostprocessor;
+using MergeTreeIndexTextPostprocessorPtr = std::shared_ptr<MergeTreeIndexTextPostprocessor>;
 
 struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
 {
@@ -480,7 +506,8 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
         MergeTreeIndexTextParams params_,
         TokenizerPtr tokenizer_,
         const IPostingListCodec * posting_list_codec_,
-        MergeTreeIndexTextPreprocessorPtr preprocessor_);
+        MergeTreeIndexTextPreprocessorPtr preprocessor_,
+        MergeTreeIndexTextPostprocessorPtr postprocessor_);
 
     ~MergeTreeIndexAggregatorText() override = default;
 
@@ -490,12 +517,22 @@ struct MergeTreeIndexAggregatorText final : IMergeTreeIndexAggregator
     void setCurrentRow(size_t row) { granule_builder.setCurrentRow(row); }
     UInt64 getNumProcessedTokens() const { return granule_builder.num_processed_tokens; }
 
+private:
+    /// Iterates over a ColumnArray(String) slice and calls addDocument<tokenize> on each element.
+    template <bool tokenize>
+    void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
+
     String index_column_name;
     MergeTreeIndexTextParams params;
+    /// A private clone of the index tokenizer when it is stateful (e.g. the Japanese or sparse-grams
+    /// tokenizers), so concurrent aggregators do not share mutable parsing state; null otherwise.
+    std::shared_ptr<const ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
-    const IPostingListCodec * posting_list_codec = nullptr;
     MergeTreeIndexTextGranuleBuilder granule_builder;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// True when the postprocessor is an IN/NOT IN filter handled by the per-distinct-token drop fast path.
+    bool use_postprocessor_drop_fast_path = false;
 };
 
 class MergeTreeIndexText final : public IMergeTreeIndex
@@ -514,10 +551,7 @@ public:
     bool isTextIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(
-        const MergeTreeDataPartChecksums & checksums,
-        const std::string & path_prefix,
-        const IDataPartStorage * storage) const override;
+    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
@@ -530,6 +564,9 @@ public:
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
     MergeTreeIndexTextPreprocessorPtr preprocessor;
+    MergeTreeIndexTextPostprocessorPtr postprocessor;
+    /// Name of the index expression rewritten as `optimize_empty_string_comparisons` rewrites queries.
+    std::optional<String> normalized_index_column_name;
 };
 
 }

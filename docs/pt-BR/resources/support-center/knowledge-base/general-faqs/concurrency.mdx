@@ -1,0 +1,15 @@
+---
+title: 'O ClickHouse oferece suporte a consultas frequentes e concorrentes?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/concurrency
+description: 'O ClickHouse oferece suporte a alto QPS e alta concorrência'
+doc_type: 'reference'
+keywords: ['concorrência', 'QPS']
+---
+
+O ClickHouse foi projetado para aplicações analíticas em tempo real que podem atender usuários externos diretamente. Ele pode atender consultas analíticas com baixa latência (menos de 10 milissegundos) e alta concorrência (ultrapassando 10.000 consultas por segundo) em bancos de dados na escala de petabytes, combinando dados históricos e inserções em tempo real.
+
+Isso é possível graças a uma estrutura de índices eficiente, ao cache flexível e a configurações disponíveis, como projeções e visões materializadas.
+
+O Controle de Acesso Baseado em Funções nativo, as quotas de uso de recursos, os limites configuráveis de complexidade de consulta e o agendador de workload tornam o ClickHouse ideal como camada de serviço sobre dados analíticos.

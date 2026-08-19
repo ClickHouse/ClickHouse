@@ -1,0 +1,54 @@
+---
+description: 'Системная таблица с активными в данный момент наблюдениями ZooKeeper,
+  зарегистрированными этим сервером ClickHouse.'
+keywords: ['системная таблица', 'zookeeper_watches']
+slug: /operations/system-tables/zookeeper_watches
+title: 'system.zookeeper_watches'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Показывает текущие активные [наблюдения](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches), зарегистрированные этим сервером ClickHouse на узлах ZooKeeper (включая вспомогательные экземпляры ZooKeeper). Каждая строка соответствует одному наблюдению.
+
+<div id="columns">
+  ## Столбцы
+</div>
+
+* `zookeeper_name` ([String](/ru/reference/data-types/string)) — Имя подключения к ZooKeeper (`default` для основного подключения или имя вспомогательного подключения).
+* `create_time` ([DateTime](/ru/reference/data-types/datetime)) — Время создания наблюдения.
+* `create_time_microseconds` ([DateTime64](/ru/reference/data-types/datetime64)) — Время создания наблюдения с микросекундной точностью.
+* `path` ([String](/ru/reference/data-types/string)) — Путь в ZooKeeper, за которым ведётся наблюдение.
+* `session_id` ([Int64](/ru/reference/data-types/int-uint)) — Идентификатор сеанса подключения, зарегистрировавшего наблюдение.
+* `request_xid` ([Int64](/ru/reference/data-types/int-uint)) — XID запроса, создавшего наблюдение.
+* `op_num` ([Enum](/ru/reference/data-types/enum)) — Тип запроса, создавшего наблюдение.
+* `watch_type` ([Enum8](/ru/reference/data-types/enum)) — Тип наблюдения. Возможные значения:
+  * `Children` — наблюдение за изменениями в списке дочерних узлов (задаётся операциями `List`).
+  * `Exists` — наблюдение за созданием или удалением узла.
+  * `Data` — наблюдение за изменениями данных узла (задаётся операциями `Get`).
+
+Пример:
+
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+**См. также**
+
+* [ZooKeeper](/ru/guides/oss/best-practices/tips#zookeeper)
+* [Руководство по ZooKeeper](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

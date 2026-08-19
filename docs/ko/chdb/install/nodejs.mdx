@@ -1,0 +1,205 @@
+---
+title: 'Node.js용 chDB'
+sidebarTitle: 'Node.js'
+slug: /chdb/install/nodejs
+description: 'Node.js에서 chDB를 설치하고 사용하는 방법'
+keywords: ['chdb', 'nodejs', 'javascript', '내장', 'clickhouse', 'sql', 'olap']
+doc_type: 'guide'
+---
+
+chDB-node는 chDB용 Node.js 바인딩을 제공하며, 외부 의존성 없이 Node.js 애플리케이션에서 ClickHouse 쿼리를 직접 실행할 수 있도록 합니다.
+
+<div id="installation">
+  ## 설치
+</div>
+
+```bash
+npm install chdb
+```
+
+<div id="usage">
+  ## 사용법
+</div>
+
+chDB-node는 두 가지 쿼리 모드를 지원합니다. 간단한 작업에는 독립 실행형 쿼리를, 데이터베이스 상태를 유지해야 할 때는 세션 기반 쿼리를 사용합니다.
+
+<div id="standalone-queries">
+  ### 독립 실행형 쿼리
+</div>
+
+지속적으로 상태를 유지할 필요가 없는 간단한 일회성 쿼리의 경우:
+
+```javascript
+const { query } = require("chdb");
+
+// 기본 쿼리
+const result = query("SELECT version()", "CSV");
+console.log("ClickHouse version:", result);
+
+// 여러 컬럼 쿼리
+const multiResult = query("SELECT 'Hello' as greeting, 'chDB' as engine, 42 as answer", "CSV");
+console.log("Multi-column result:", multiResult);
+
+// 수학 연산
+const mathResult = query("SELECT 2 + 2 as sum, pi() as pi_value", "JSON");
+console.log("Math result:", mathResult);
+
+// 시스템 정보
+const systemInfo = query("SELECT * FROM system.functions LIMIT 5", "Pretty");
+console.log("System functions:", systemInfo);
+```
+
+<div id="session-based-queries">
+  ### 세션 기반 쿼리
+</div>
+
+```javascript
+const { Session } = require("chdb");
+
+// 영구 저장소로 세션 생성
+const session = new Session("./chdb-node-data");
+
+try {
+    // 데이터베이스 및 테이블 생성
+    session.query(`
+        CREATE DATABASE IF NOT EXISTS myapp;
+        CREATE TABLE IF NOT EXISTS myapp.users (
+            id UInt32,
+            name String,
+            email String,
+            created_at DateTime DEFAULT now()
+        ) ENGINE = MergeTree() ORDER BY id
+    `);
+
+    // 샘플 데이터 삽입
+    session.query(`
+        INSERT INTO myapp.users (id, name, email) VALUES 
+        (1, 'Alice', 'alice@example.com'),
+        (2, 'Bob', 'bob@example.com'),
+        (3, 'Charlie', 'charlie@example.com')
+    `);
+
+    // 다양한 포맷으로 데이터 쿼리
+    const csvResult = session.query("SELECT * FROM myapp.users ORDER BY id", "CSV");
+    console.log("CSV Result:", csvResult);
+
+    const jsonResult = session.query("SELECT * FROM myapp.users ORDER BY id", "JSON");
+    console.log("JSON Result:", jsonResult);
+
+    // 집계 쿼리
+    const stats = session.query(`
+        SELECT 
+            COUNT(*) as total_users,
+            MAX(id) as max_id,
+            MIN(created_at) as earliest_signup
+        FROM myapp.users
+    `, "Pretty");
+    console.log("User Statistics:", stats);
+
+} finally {
+    // 세션을 반드시 정리
+    session.cleanup(); // 데이터베이스 파일을 삭제합니다
+}
+```
+
+<div id="processing-external-data">
+  ### 외부 데이터 처리
+</div>
+
+```javascript
+const { Session } = require("chdb");
+
+const session = new Session("./data-processing");
+
+try {
+    // URL에서 CSV 데이터 처리
+    const result = session.query(`
+        SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT "UserID") as unique_users
+        FROM url('https://datasets.clickhouse.com/hits/hits.csv', 'CSV') 
+        LIMIT 1000
+    `, "JSON");
+    
+    console.log("External data analysis:", result);
+
+    // 외부 데이터로 테이블 생성
+    session.query(`
+        CREATE TABLE web_analytics AS
+        SELECT * FROM url('https://datasets.clickhouse.com/hits/hits.csv', 'CSV')
+        LIMIT 10000
+    `);
+
+    // 가져온 데이터 분석
+    const analysis = session.query(`
+        SELECT 
+            toDate("EventTime") as date,
+            COUNT(*) as events,
+            COUNT(DISTINCT "UserID") as unique_users
+        FROM web_analytics
+        GROUP BY date
+        ORDER BY date
+        LIMIT 10
+    `, "Pretty");
+    
+    console.log("Daily analytics:", analysis);
+
+} finally {
+    session.cleanup();
+}
+```
+
+<div id="error-handling">
+  ## 오류 처리
+</div>
+
+chDB로 작업할 때는 항상 오류를 적절하게 처리하세요:
+
+```javascript
+const { query, Session } = require("chdb");
+
+// 독립 실행형 쿼리에 대한 오류 처리
+function safeQuery(sql, format = "CSV") {
+    try {
+        const result = query(sql, format);
+        return { success: true, data: result };
+    } catch (error) {
+        console.error("Query error:", error.message);
+        return { success: false, error: error.message };
+    }
+}
+
+// 예시 사용법
+const result = safeQuery("SELECT invalid_syntax");
+if (result.success) {
+    console.log("Query result:", result.data);
+} else {
+    console.log("Query failed:", result.error);
+}
+
+// 세션에 대한 오류 처리
+function safeSessionQuery() {
+    const session = new Session("./error-test");
+    
+    try {
+        // 잘못된 구문으로 인해 오류가 발생합니다
+        const result = session.query("CREATE TABLE invalid syntax", "CSV");
+        console.log("Unexpected success:", result);
+    } catch (error) {
+        console.error("Session query error:", error.message);
+    } finally {
+        // 오류가 발생하더라도 항상 정리 작업을 수행합니다
+        session.cleanup();
+    }
+}
+
+safeSessionQuery();
+```
+
+<div id="github-repository">
+  ## GitHub 리포지토리
+</div>
+
+* **GitHub 리포지토리**: [chdb-io/chdb-node](https://github.com/chdb-io/chdb-node)
+* **이슈 및 지원**: 이슈는 [GitHub 리포지토리](https://github.com/chdb-io/chdb-node/issues)에 보고하세요
+* **NPM 패키지**: [npm의 chdb](https://www.npmjs.com/package/chdb)

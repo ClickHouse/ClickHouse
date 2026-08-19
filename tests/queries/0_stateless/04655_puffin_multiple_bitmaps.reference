@@ -1,0 +1,12 @@
+--- multi_bitmap_keys.puffin ---
+11660	1	4294967296019998	10187824320688416318	1	[0,1,1000000]
+--- per key ---
+0	3	1	100
+1	4990	4294967306	4294972295
+1000000	6667	4294967296000000	4294967296019998
+--- bitmap_keys_out_of_order.puffin ---
+keys must be sorted in ascending order
+--- bitmap_keys_duplicate.puffin ---
+keys must be sorted in ascending order
+--- bitmap_count_exceeds_data.puffin ---
+truncated while reading key

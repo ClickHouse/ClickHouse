@@ -1,0 +1,72 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMap'
+title: 'avgMap'
+description: 'مثال على استخدام المُركِّب avgMap'
+keywords: ['avg', 'map', 'مُركِّب', 'أمثلة', 'avgMap']
+sidebarTitle: 'avgMap'
+doc_type: 'مرجع'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Map`](/ar/reference/functions/aggregate-functions/combinators#-map) على الدالة [`avg`](/ar/reference/functions/aggregate-functions/avg)
+لحساب المتوسط الحسابي للقيم في `Map` وفقًا لكل مفتاح، باستخدام دالة المُركِّب التجميعي `avgMap`.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سننشئ جدولًا يخزّن رموز الحالة وعدد مرات ظهورها عبر فترات زمنية مختلفة،
+بحيث يتضمن كل صف قيمة من النوع Map تربط رموز الحالة بعدد مرات ظهور كل منها. سنستخدم
+`avgMap` لحساب متوسط عدد مرات الظهور لكل رمز حالة ضمن كل فترة زمنية.
+
+```sql title="Query"
+CREATE TABLE metrics(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO metrics VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [15, 25, 35])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [45, 55, 65])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [75, 85, 95])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [105, 115, 125]));
+
+SELECT
+    timeslot,
+    avgMap(status),
+FROM metrics
+GROUP BY timeslot;
+```
+
+ستحسب الدالة `avgMap` متوسط التكرار لكل رمز حالة ضمن كل فاصل زمني. على سبيل المثال:
+
+* في الفاصل الزمني &#39;2000-01-01 00:00:00&#39;:
+  * الحالة &#39;a&#39;: 15
+  * الحالة &#39;b&#39;: 25
+  * الحالة &#39;c&#39;: (35 + 45) / 2 = 40
+  * الحالة &#39;d&#39;: 55
+  * الحالة &#39;e&#39;: 65
+* في الفاصل الزمني &#39;2000-01-01 00:01:00&#39;:
+  * الحالة &#39;d&#39;: 75
+  * الحالة &#39;e&#39;: 85
+  * الحالة &#39;f&#39;: (95 + 105) / 2 = 100
+  * الحالة &#39;g&#39;: (115 + 125) / 2 = 120
+
+```response title="Response"
+   ┌────────────timeslot─┬─avgMap(status)───────────────────────┐
+1. │ 2000-01-01 00:01:00 │ {'d':75,'e':85,'f':100,'g':120}      │
+2. │ 2000-01-01 00:00:00 │ {'a':15,'b':25,'c':40,'d':55,'e':65} │
+   └─────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`avg`](/ar/reference/functions/aggregate-functions/avg)
+* [`Map combinator`](/ar/reference/functions/aggregate-functions/combinators#-map)

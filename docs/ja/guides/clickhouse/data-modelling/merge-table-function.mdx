@@ -1,0 +1,235 @@
+---
+slug: /guides/developer/merge-table-function
+sidebarTitle: 'merge テーブル関数'
+title: 'merge テーブル関数'
+description: '複数のテーブルを同時にクエリできます。'
+doc_type: 'reference'
+keywords: ['merge', 'テーブル関数', 'クエリパターン', 'テーブルエンジン', 'データアクセス']
+---
+
+[merge テーブル関数](/ja/reference/functions/table-functions/merge)を使用すると、複数のテーブルを並列にクエリできます。
+これは、一時的な [Merge](/ja/reference/engines/table-engines/special/merge) テーブルを作成し、各テーブルのカラムのユニオンを取り、共通の型を導出することで、そのテーブルの構造を決定します。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/b4YfRhD9SSI?si=MuoDwDWeikAV5ttk" title="YouTube 動画プレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="setup-tables">
+  ## テーブルをセットアップする
+</div>
+
+[Jeff Sackmann&#39;s tennis dataset](https://github.com/JeffSackmann/tennis_atp) を使って、この関数の使い方を見ていきます。
+1960年代までさかのぼる試合を含む CSVファイルを処理しますが、年代ごとに少し異なるスキーマを作成します。
+また、1990年代のデータには追加のカラムもいくつか加えます。
+
+インポート用のステートメントを以下に示します。
+
+```sql
+CREATE OR REPLACE TABLE atp_matches_1960s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1968..1969}.csv')
+SETTINGS schema_inference_make_columns_nullable=0, 
+         schema_inference_hints='winner_seed Nullable(String), loser_seed Nullable(UInt8)';
+
+CREATE OR REPLACE TABLE atp_matches_1970s ORDER BY tourney_id AS 
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1970..1979}.csv')
+SETTINGS schema_inference_make_columns_nullable=0, 
+         schema_inference_hints='winner_seed Nullable(UInt8), loser_seed Nullable(UInt8)';
+
+CREATE OR REPLACE TABLE atp_matches_1980s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1980..1989}.csv')
+SETTINGS schema_inference_make_columns_nullable=0,
+         schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16)';
+
+CREATE OR REPLACE TABLE atp_matches_1990s ORDER BY tourney_id AS
+SELECT tourney_id, surface, winner_name, loser_name, winner_seed, loser_seed, splitByWhitespace(score) AS score,
+       toBool(arrayExists(x -> position(x, 'W/O') > 0, score))::Nullable(bool) AS walkover,
+       toBool(arrayExists(x -> position(x, 'RET') > 0, score))::Nullable(bool) AS retirement
+FROM url('https://raw.githubusercontent.com/JeffSackmann/tennis_atp/refs/heads/master/atp_matches_{1990..1999}.csv')
+SETTINGS schema_inference_make_columns_nullable=0,
+         schema_inference_hints='winner_seed Nullable(UInt16), loser_seed Nullable(UInt16), surface Enum(\'Hard\', \'Grass\', \'Clay\', \'Carpet\')';
+```
+
+<div id="schema-multiple-tables">
+  ## 複数テーブルのスキーマ
+</div>
+
+次のクエリを実行すると、各テーブルのカラムとその型を横に並べて一覧表示できるため、違いを確認しやすくなります。
+
+```sql
+SELECT * EXCEPT(position) FROM (
+    SELECT position, name,
+       any(if(table = 'atp_matches_1960s', type, null)) AS 1960s,
+       any(if(table = 'atp_matches_1970s', type, null)) AS 1970s,
+       any(if(table = 'atp_matches_1980s', type, null)) AS 1980s,
+       any(if(table = 'atp_matches_1990s', type, null)) AS 1990s
+    FROM system.columns
+    WHERE database = currentDatabase() AND table LIKE 'atp_matches%'
+    GROUP BY ALL
+    ORDER BY position ASC
+)
+SETTINGS output_format_pretty_max_value_width=25;
+```
+
+```text
+┌─name────────┬─1960s────────────┬─1970s───────────┬─1980s────────────┬─1990s─────────────────────┐
+│ tourney_id  │ String           │ String          │ String           │ String                    │
+│ surface     │ String           │ String          │ String           │ Enum8('Hard' = 1, 'Grass'⋯│
+│ winner_name │ String           │ String          │ String           │ String                    │
+│ loser_name  │ String           │ String          │ String           │ String                    │
+│ winner_seed │ Nullable(String) │ Nullable(UInt8) │ Nullable(UInt16) │ Nullable(UInt16)          │
+│ loser_seed  │ Nullable(UInt8)  │ Nullable(UInt8) │ Nullable(UInt16) │ Nullable(UInt16)          │
+│ score       │ String           │ Array(String)   │ Array(String)    │ Array(String)             │
+│ walkover    │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ            │ ᴺᵁᴸᴸ             │ Nullable(Bool)            │
+│ retirement  │ ᴺᵁᴸᴸ             │ ᴺᵁᴸᴸ            │ ᴺᵁᴸᴸ             │ Nullable(Bool)            │
+└─────────────┴──────────────────┴─────────────────┴──────────────────┴───────────────────────────┘
+```
+
+違いを見ていきましょう。
+
+* 1970s では、`winner_seed` の型が `Nullable(String)` から `Nullable(UInt8)` に、`score` の型が `String` から `Array(String)` に変わります。
+* 1980s では、`winner_seed` と `loser_seed` の型が `Nullable(UInt8)` から `Nullable(UInt16)` に変わります。
+* 1990s では、`surface` の型が `String` から `Enum('Hard', 'Grass', 'Clay', 'Carpet')` に変わり、`walkover` と `retirement` のカラムが追加されます。
+
+<div id="querying-multiple-tables">
+  ## merge を使った複数テーブルのクエリ
+</div>
+
+John McEnroe が第1シードの相手に勝利した試合を見つけるクエリを書いてみましょう：
+
+```sql
+SELECT loser_name, score
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1;
+```
+
+```text
+┌─loser_name────┬─score───────────────────────────┐
+│ Bjorn Borg    │ ['6-3','6-4']                   │
+│ Bjorn Borg    │ ['7-6','6-1','6-7','5-7','6-4'] │
+│ Bjorn Borg    │ ['7-6','6-4']                   │
+│ Bjorn Borg    │ ['4-6','7-6','7-6','6-4']       │
+│ Jimmy Connors │ ['6-1','6-3']                   │
+│ Ivan Lendl    │ ['6-2','4-6','6-3','6-7','7-6'] │
+│ Ivan Lendl    │ ['6-3','3-6','6-3','7-6']       │
+│ Ivan Lendl    │ ['6-1','6-3']                   │
+│ Stefan Edberg │ ['6-2','6-3']                   │
+│ Stefan Edberg │ ['7-6','6-2']                   │
+│ Stefan Edberg │ ['6-2','6-2']                   │
+│ Jakob Hlasek  │ ['6-3','7-6']                   │
+└───────────────┴─────────────────────────────────┘
+```
+
+次に、それらの試合のうち、McEnroe が第3シード以下だったものに絞り込むとします。
+ただし、`winner_seed` はテーブルごとに使われているデータ型が異なるため、これは少し厄介です。
+
+```sql
+SELECT loser_name, score, winner_seed
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1
+AND multiIf(
+  variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
+  variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
+  variantElement(winner_seed, 'String')::UInt16 >= 3
+);
+```
+
+[`variantType`](/ja/reference/functions/regular-functions/other-functions#variantType) 関数を使用して各行の `winner_seed` の型を確認し、続いて [`variantElement`](/ja/reference/functions/regular-functions/other-functions#variantElement) で実際の値を取り出します。
+型が `String` の場合は数値にキャストしてから比較します。
+クエリの実行結果を以下に示します。
+
+```text
+┌─loser_name────┬─score─────────┬─winner_seed─┐
+│ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────┴───────────────┴─────────────┘
+```
+
+<div id="which-table-merge">
+  ## merge を使用する場合、行はどのテーブルから来ているのでしょうか？
+</div>
+
+行がどのテーブルに由来するのかを知りたい場合はどうすればよいでしょうか。
+これには、次のクエリに示すように `_table` 仮想カラムを使用できます。
+
+```sql
+SELECT _table, loser_name, score, winner_seed
+FROM merge('atp_matches*')
+WHERE winner_name = 'John McEnroe'
+AND loser_seed = 1
+AND multiIf(
+  variantType(winner_seed) = 'UInt8', variantElement(winner_seed, 'UInt8') >= 3,
+  variantType(winner_seed) = 'UInt16', variantElement(winner_seed, 'UInt16') >= 3,
+  variantElement(winner_seed, 'String')::UInt16 >= 3
+);
+```
+
+```text
+┌─_table────────────┬─loser_name────┬─score─────────┬─winner_seed─┐
+│ atp_matches_1970s │ Bjorn Borg    │ ['6-3','6-4'] │ 3           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-3'] │ 6           │
+│ atp_matches_1980s │ Stefan Edberg │ ['7-6','6-2'] │ 4           │
+│ atp_matches_1980s │ Stefan Edberg │ ['6-2','6-2'] │ 7           │
+└───────────────────┴───────────────┴───────────────┴─────────────┘
+```
+
+この仮想カラムは、`walkover`カラムの値を数えるクエリの一部として使うこともできます:
+
+```sql
+SELECT _table, walkover, count()
+FROM merge('atp_matches*')
+GROUP BY ALL
+ORDER BY _table;
+```
+
+```text
+┌─_table────────────┬─walkover─┬─count()─┐
+│ atp_matches_1960s │ ᴺᵁᴸᴸ     │    7542 │
+│ atp_matches_1970s │ ᴺᵁᴸᴸ     │   39165 │
+│ atp_matches_1980s │ ᴺᵁᴸᴸ     │   36233 │
+│ atp_matches_1990s │ true     │     128 │
+│ atp_matches_1990s │ false    │   37022 │
+└───────────────────┴──────────┴─────────┘
+```
+
+`walkover` カラムは、`atp_matches_1990s` を除くすべてで `NULL` になっていることがわかります。
+そのため、`walkover` カラムが `NULL` の場合は、`score` カラムに文字列 `W/O` が含まれているかどうかを確認するようにクエリを更新する必要があります:
+
+```sql
+SELECT _table,
+   multiIf(
+     walkover IS NOT NULL,
+     walkover,
+     variantType(score) = 'Array(String)',
+     toBool(arrayExists(
+        x -> position(x, 'W/O') > 0,
+        variantElement(score, 'Array(String)')
+     )),
+     variantElement(score, 'String') LIKE '%W/O%'
+   ),
+   count()
+FROM merge('atp_matches*')
+GROUP BY ALL
+ORDER BY _table;
+```
+
+`score` の基底型が `Array(String)` の場合は、配列内を走査して `W/O` を探す必要があります。一方、型が `String` の場合は、文字列内で `W/O` を検索するだけで済みます。
+
+```text
+┌─_table────────────┬─multiIf(isNo⋯, '%W/O%'))─┬─count()─┐
+│ atp_matches_1960s │ true                     │     242 │
+│ atp_matches_1960s │ false                    │    7300 │
+│ atp_matches_1970s │ true                     │     422 │
+│ atp_matches_1970s │ false                    │   38743 │
+│ atp_matches_1980s │ true                     │      92 │
+│ atp_matches_1980s │ false                    │   36141 │
+│ atp_matches_1990s │ true                     │     128 │
+│ atp_matches_1990s │ false                    │   37022 │
+└───────────────────┴──────────────────────────┴─────────┘
+```
