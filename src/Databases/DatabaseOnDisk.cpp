@@ -27,6 +27,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageTimeSeries.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -524,6 +525,15 @@ void DatabaseOnDisk::renameTable(
     StoragePtr table = getTable(table_name, local_context);
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
+
+    if (this != &to_database)
+    {
+        if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+        {
+            if (time_series->hasInnerTables())
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot move TimeSeries table with inner tables to other database");
+        }
+    }
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
