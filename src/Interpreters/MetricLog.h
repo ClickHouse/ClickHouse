@@ -16,10 +16,6 @@ namespace DB
 {
 
 /** MetricLog is a log of metric values measured at regular time interval.
-  *
-  * Profile events and current metrics are stored in a fixed number of bucket columns
-  * of type Map(Enum16(...), Int64), and every metric also has an ALIAS column
-  * (e.g. `ProfileEvent_Query`) that extracts its value from the corresponding bucket.
   */
 
 struct MetricLogElement
@@ -28,7 +24,7 @@ struct MetricLogElement
     Decimal64 event_time_microseconds{};
 
     std::vector<ProfileEvents::Count> profile_events;
-    std::vector<CurrentMetrics::Value> current_metrics;
+    std::vector<CurrentMetrics::Metric> current_metrics;
 
     Array histogram_metric;
     Array histogram_labels;
@@ -38,7 +34,7 @@ struct MetricLogElement
 
     static std::string name() { return "MetricLog"; }
     static ColumnsDescription getColumnsDescription();
-    static NamesAndAliases getNamesAndAliases();
+    static NamesAndAliases getNamesAndAliases() { return {}; }
     void appendToBlock(MutableColumns & columns) const;
 };
 
@@ -54,5 +50,13 @@ private:
     std::vector<ProfileEvents::Count> previous_profile_events TSA_GUARDED_BY(previous_profile_events_mutex) = std::vector<ProfileEvents::Count>(ProfileEvents::end());
     mutable std::mutex previous_profile_events_mutex;
 };
+
+/// Fills a metric log element: per-interval increments of profile events, current metric values
+/// and histogram snapshots. Shared by MetricLog and BucketedMetricLog.
+void collectMetricLogElement(
+    MetricLogElement & elem,
+    std::chrono::system_clock::time_point current_time,
+    std::vector<ProfileEvents::Count> & previous_profile_events,
+    bool show_zero_values_in_histograms);
 
 }

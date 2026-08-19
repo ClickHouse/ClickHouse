@@ -43,12 +43,10 @@ def start_cluster():
         cluster.shutdown()
 
 def test_table_rotation(start_cluster):
-    # default wide mode: bucketed Map columns plus per-metric aliases
+    # default wide mode
     node1.query("SYSTEM FLUSH LOGS")
     assert int(node1.query("select count() from system.metric_log").strip()) > 0
     assert "ProfileEvent_Query" in node1.query("SHOW CREATE TABLE system.metric_log")
-    assert "Map(Enum16(" in node1.query("SHOW CREATE TABLE system.metric_log")
-    assert int(node1.query("select sum(ProfileEvent_Query) from system.metric_log").strip()) > 0
 
     node1.replace_in_config(LOG_PATH, ">wide<", ">transposed<")
 
@@ -69,6 +67,39 @@ def test_table_rotation(start_cluster):
 
     node1.replace_in_config(LOG_PATH, ">transposed<", ">wide<")
     node1.restart_clickhouse()
+
+
+def test_bucketed_schema(start_cluster):
+    # default wide mode
+    node2.query("SYSTEM FLUSH LOGS")
+    assert int(node2.query("select count() from system.metric_log").strip()) > 0
+    assert "ProfileEvent_Query" in node2.query("SHOW CREATE TABLE system.metric_log")
+
+    node2.replace_in_config(LOG_PATH, ">wide<", ">bucketed<")
+
+    # bucketed mode: a single Map(Enum16(...), Int64) column with bucketed serialization and per-metric aliases
+    node2.restart_clickhouse()
+
+    node2.query("SYSTEM FLUSH LOGS")
+
+    create_query = node2.query("SHOW CREATE TABLE system.metric_log")
+    assert "`metrics` Map(Enum16(" in create_query
+    assert "map_serialization_version = 'with_buckets'" in create_query
+    assert "max_buckets_in_map = 128" in create_query
+    assert "map_buckets_strategy = 'constant'" in create_query
+    assert "ALIAS metrics['ProfileEvent_Query']" in create_query
+
+    assert int(node2.query("select count() from system.metric_log").strip()) > 0
+    assert int(node2.query("select max(length(metrics)) from system.metric_log").strip()) > 0
+    # aliases read from the map; a missing key reads as zero
+    assert int(node2.query("select sum(ProfileEvent_Query) from system.metric_log").strip()) > 0
+    assert int(node2.query("select max(CurrentMetric_GlobalThread) from system.metric_log").strip()) > 0
+
+    # the old wide table was rotated
+    assert int(node2.query("select count() from system.metric_log_0").strip()) > 0
+
+    node2.replace_in_config(LOG_PATH, ">bucketed<", ">wide<")
+    node2.restart_clickhouse()
 
 
 def insert_into_transposed_metric_log(node, table_name, size):

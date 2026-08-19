@@ -30,6 +30,7 @@
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/MetricLog.h>
 #include <Interpreters/TransposedMetricLog.h>
+#include <Interpreters/BucketedMetricLog.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
@@ -213,15 +214,16 @@ std::shared_ptr<TSystemLog> createSystemLog(
         /// STORAGE POLICY expr is retained for backward compatible.
         String storage_policy = config.getString(config_prefix + ".storage_policy", "");
         String settings = config.getString(config_prefix + ".settings", "");
-        if (!storage_policy.empty() || !settings.empty())
-        {
-            log_settings.engine += " SETTINGS";
-            /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
-            if (!storage_policy.empty())
-                log_settings.engine += " storage_policy = " + quoteString(storage_policy);
-            if (!settings.empty())
-                log_settings.engine += (storage_policy.empty() ? " " : ", ") + settings;
-        }
+        /// Some logs add engine settings to the default table definition
+        /// (e.g. the bucketed Map serialization for the 'bucketed' schema of metric_log).
+        String merged_settings = TSystemLog::getDefaultEngineSettings();
+        if (!storage_policy.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + "storage_policy = " + quoteString(storage_policy);
+        /// If 'storage_policy' is repeated, the 'settings' configuration is preferred.
+        if (!settings.empty())
+            merged_settings += String(merged_settings.empty() ? "" : ", ") + settings;
+        if (!merged_settings.empty())
+            log_settings.engine += " SETTINGS " + merged_settings;
     }
 
     /// Validate engine definition syntax to prevent some configuration errors.
@@ -275,22 +277,29 @@ std::shared_ptr<TSystemLog> createSystemLog(
         if (schema == "wide")
             return std::make_shared<TSystemLog>(context, log_settings);
 
+        if (schema != "transposed" && schema != "transposed_with_wide_view" /* compatibility */ && schema != "bucketed")
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide', 'transposed' and 'bucketed' are supported", schema);
+
         return {};
     }
-    else if (std::is_same_v<TSystemLog, TransposedMetricLog>)
+    else if constexpr (std::is_same_v<TSystemLog, TransposedMetricLog>)
     {
         auto schema = config.getString(config_prefix + ".schema_type", "wide");
         if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
-        {
             return std::make_shared<TSystemLog>(context, log_settings);
-        }
-        else if (schema != "wide")
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown schema type {} for metric_log table, only 'wide' and 'transposed'", schema);
-        }
-    }
-    return std::make_shared<TSystemLog>(context, log_settings);
 
+        return {};
+    }
+    else if constexpr (std::is_same_v<TSystemLog, BucketedMetricLog>)
+    {
+        auto schema = config.getString(config_prefix + ".schema_type", "wide");
+        if (schema == "bucketed")
+            return std::make_shared<TSystemLog>(context, log_settings);
+
+        return {};
+    }
+    else
+        return std::make_shared<TSystemLog>(context, log_settings);
 }
 
 
@@ -323,11 +332,15 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
 
 /// NOLINTEND(bugprone-macro-parentheses)
 
-    if (metric_log == nullptr && config.has("metric_log")
-        && (config.getString("metric_log.schema_type", "wide") == "transposed" || config.getString("metric_log.schema_type", "wide") == "transposed_with_wide_view"))
+    if (metric_log == nullptr && config.has("metric_log"))
     {
-        transposed_metric_log = createSystemLog<TransposedMetricLog>(
-            global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        auto schema = config.getString("metric_log.schema_type", "wide");
+        if (schema == "transposed" || schema == "transposed_with_wide_view" /* compatibility */)
+            transposed_metric_log = createSystemLog<TransposedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", TransposedMetricLog::DESCRIPTION);
+        else if (schema == "bucketed")
+            bucketed_metric_log = createSystemLog<BucketedMetricLog>(
+                global_context, "system", "metric_log", config, "metric_log", BucketedMetricLog::DESCRIPTION);
     }
 
     bool should_prepare = global_context->getServerSettings()[ServerSetting::prepare_system_log_tables_on_startup];
@@ -359,6 +372,13 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
                                                                 DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
         transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+    }
+
+    if (bucketed_metric_log)
+    {
+        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+        bucketed_metric_log->startCollect(ThreadName::BUCKETED_METRIC_LOG, collect_interval_milliseconds);
     }
 
     if (error_log)
