@@ -405,9 +405,9 @@ bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const
     return false;
 }
 
-/// True when the element name is a bare ordinal that no file schema carries: an unnamed tuple names
-/// its elements "1", "2", ... while a source reading them from a file matches the flattened
-/// `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
+/// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
+/// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
+/// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
 bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
 {
     if (tuple.hasExplicitNames())
