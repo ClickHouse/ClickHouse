@@ -487,13 +487,6 @@ public:
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
-
-    /// A UDF declared without `DETERMINISTIC` may return a different value for the same input even
-    /// within one query: the shipped `get_block_size` module returns a value that depends on how the
-    /// data is split into blocks. Such a value must not be hoisted, reordered or used as a key. The
-    /// executable-UDF sibling reports the same thing.
-    bool isDeterministicInScopeOfQuery() const override { return user_defined_function->getIsDeterministic(); }
-
     bool isSpatialPredicate() const override
     {
         auto val = user_defined_function->getSettings().getValue("is_spatial_predicate");
@@ -501,7 +494,6 @@ public:
             return val.safeGet<bool>();
         return val.safeGet<UInt64>() != 0;
     }
-
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /* arguments */) const override { return false; }
     size_t getNumberOfArguments() const override { return user_defined_function->getArguments().size(); }
 
