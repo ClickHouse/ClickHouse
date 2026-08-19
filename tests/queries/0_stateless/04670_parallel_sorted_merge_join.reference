@@ -13,3 +13,6 @@ full_use_nulls	1
 asof_not_sharded	1
 asof_merge_join	1
 asof_result	1
+pure_asof_sorted_merge	1
+pure_asof_parallel_merge	1
+pure_asof_parallel_not_sharded	1

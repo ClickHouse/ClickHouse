@@ -92,5 +92,17 @@ SELECT 'asof_result',
     (SELECT (sum(l.a + r.b), count()) FROM psmj_left AS l ASOF INNER JOIN psmj_right AS r ON l.id = r.id AND l.a > r.b SETTINGS join_algorithm = 'parallel_sorted_merge,hash')
   = (SELECT (sum(l.a + r.b), count()) FROM psmj_left AS l ASOF INNER JOIN psmj_right AS r ON l.id = r.id AND l.a > r.b SETTINGS join_algorithm = 'hash');
 
+-- A pure `ASOF` join has no equality keys, so the inequality key itself must be probed for in-order
+-- eligibility. Both sorted variants select the merge join; the parallel variant still degrades to a
+-- single stream because ASOF joins cannot be sharded by primary-key ranges.
+SELECT 'pure_asof_sorted_merge', countIf(explain LIKE '%MergeJoinTransform%') >= 1
+FROM (EXPLAIN PIPELINE SELECT l.id FROM psmj_left AS l ASOF LEFT JOIN psmj_right AS r ON l.id >= r.id SETTINGS join_algorithm = 'sorted_merge,hash', max_threads = 4);
+
+SELECT 'pure_asof_parallel_merge', countIf(explain LIKE '%MergeJoinTransform%') >= 1
+FROM (EXPLAIN PIPELINE SELECT l.id FROM psmj_left AS l ASOF LEFT JOIN psmj_right AS r ON l.id >= r.id SETTINGS join_algorithm = 'parallel_sorted_merge,hash', max_threads = 4);
+
+SELECT 'pure_asof_parallel_not_sharded', countIf(explain LIKE '%Sharding:%') = 0
+FROM (EXPLAIN actions = 1 SELECT l.id FROM psmj_left AS l ASOF LEFT JOIN psmj_right AS r ON l.id >= r.id SETTINGS join_algorithm = 'parallel_sorted_merge,hash', max_threads = 4);
+
 DROP TABLE psmj_left;
 DROP TABLE psmj_right;

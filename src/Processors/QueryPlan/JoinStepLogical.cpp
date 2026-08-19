@@ -1233,15 +1233,14 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
     if (!FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(join_operator.kind, join_operator.strictness))
         return false;
 
-    /// Collect the equality key pairs the same way `addJoinPredicatesToTableJoin` will during
-    /// physicalization, in the same order (the merge-join sort description is the keys in clause order).
+    /// Collect the join key pairs in the same order physicalization uses for its merge-join sort
+    /// description: equality keys first, followed by the `ASOF` inequality key.
     /// The raw operand names are used - without the type-cast wrapping the physicalization may add. A
     /// conversion can change the input order (for example, `Enum` to `String`), so do not predict an
     /// in-order read if the operands do not already have equal types. This is deliberately conservative:
     /// it can make a monotonic conversion fall through, but it cannot select `sorted_merge` when the
     /// physical sort needs a full re-sort. The null-safe `tuple` wrapping is different:
-    /// it applies to every nullable `<=>` key, so those joins are excluded below outright. An `ASOF`
-    /// inequality key is appended last in the clause, so leaving it out keeps the probed prefix valid.
+    /// it applies to every nullable `<=>` key, so those joins are excluded below outright.
     ///
     /// Anything that is not such a two-sided key predicate makes the join unsupported by the merge
     /// algorithm and therefore ineligible: a one-sided `ON` condition (e.g. `ON l.k = r.k AND r.flag = 1`)
@@ -1275,8 +1274,6 @@ bool JoinStepLogical::inputsCanBeReadInJoinKeyOrder(const QueryPlan::Node & node
             return false;
         if (!lhs.getType()->equals(*rhs.getType()))
             return false;
-        if (!is_equality)
-            continue;
         left_keys.push_back(lhs.getColumnName());
         right_keys.push_back(rhs.getColumnName());
     }
