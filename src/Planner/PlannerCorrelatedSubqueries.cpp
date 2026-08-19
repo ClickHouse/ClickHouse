@@ -14,8 +14,11 @@
 #include <Core/Settings.h>
 
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/getLeastSupertype.h>
 
+#include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 
 #include <Interpreters/ActionsDAG.h>
@@ -48,6 +51,7 @@
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <fmt/format.h>
 
@@ -137,6 +141,24 @@ CorrelatedPlanStepMap buildCorrelatedPlanStepMap(QueryPlan & correlated_query_pl
     return result;
 }
 
+/// A column name with its type for equivalence tracking. The planner assigns unique names
+/// to columns, so hash and equality use only the name. The type is a payload used by the
+/// substitution to build a conversion between the types of equivalent columns.
+struct ColumnWithType
+{
+    String name;
+    DataTypePtr type;
+
+    bool operator==(const ColumnWithType & other) const { return name == other.name; }
+};
+
+struct ColumnWithTypeHash
+{
+    size_t operator()(const ColumnWithType & column) const { return std::hash<String>{}(column.name); }
+};
+
+using ColumnEquivalenceClasses = EquivalenceClasses<ColumnWithType, ColumnWithTypeHash>;
+
 struct DecorrelationContext
 {
     const CorrelatedSubquery & correlated_subquery;
@@ -146,11 +168,61 @@ struct DecorrelationContext
     CorrelatedPlanStepMap correlated_plan_steps;
     /// Equivalence classes stack for subqueries. Equivalence classes should not be propagated
     /// to the subqueries of the JOIN or UNION steps.
-    std::vector<EquivalenceClasses<String>> equivalence_class_stack;
+    std::vector<ColumnEquivalenceClasses> equivalence_class_stack;
     /// Whether the optimizer will turn the referenced input subplan into an in-memory ChunkBuffer.
     /// Decided once here (see decorrelateQueryPlan); buildLogicalJoin uses it to pick the join kind.
     bool uses_in_memory_buffer = false;
 };
+
+/// Conversion applied to an equivalent column to obtain exactly the correlated column type.
+enum class ConversionRule : UInt8
+{
+    Exact,               /// Same type: plain alias.
+    ToNullable,          /// Nullability-only difference, the correlated type is Nullable.
+    AssumeNotNull,       /// Nullability-only difference, the correlated type is not Nullable; needs a NULL pre-filter.
+    LosslessCast,        /// Numeric cast to a least supertype equal to the correlated type; cannot fail.
+    AccurateCastOrNull,  /// Exactness-checking numeric cast; needs a pre-filter of NULL cast results.
+};
+
+/// Lower is better: an exact match needs no conversion, a lossless conversion needs no pre-filter.
+size_t conversionRank(ConversionRule rule)
+{
+    switch (rule)
+    {
+        case ConversionRule::Exact:
+            return 0;
+        case ConversionRule::ToNullable:
+        case ConversionRule::LosslessCast:
+            return 1;
+        case ConversionRule::AssumeNotNull:
+        case ConversionRule::AccurateCastOrNull:
+            return 2;
+    }
+}
+
+/// A renaming of a correlated column to an equivalent column of the decorrelated subplan.
+struct ExpressionRenaming
+{
+    const ActionsDAG::Node * source;
+    String correlated_name;
+    DataTypePtr correlated_type;
+    ConversionRule rule;
+};
+
+/// Builds accurateCastOrNull(node, 'TypeName'): NULL for values that do not convert exactly,
+/// the result type is Nullable(target_type).
+const ActionsDAG::Node & addAccurateCastOrNull(
+    ActionsDAG & dag,
+    const ActionsDAG::Node & node,
+    const DataTypePtr & target_type,
+    const ContextPtr & query_context)
+{
+    auto type_name = target_type->getName();
+    auto type_name_column = DataTypeString().createColumnConst(0, type_name);
+    /// The name is prefixed to avoid a collision with a column of the subplan header.
+    const auto & type_name_node = dag.addColumn(std::move(type_name_column), std::make_shared<DataTypeString>(), "__correlated_cast_type_" + type_name);
+    return dag.addFunction(FunctionFactory::instance().get("accurateCastOrNull", query_context), {&node, &type_name_node}, {});
+}
 
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
@@ -167,6 +239,7 @@ QueryPlan decorrelateQueryPlan(
 
         if (settings[Setting::correlated_subqueries_substitute_equivalent_expressions])
         {
+            const auto & query_context = context.planner_context->getQueryContext();
             const auto & decorrelated_plan_header = node->step->getOutputHeader();
             ActionsDAG dag(decorrelated_plan_header->getNamesAndTypesList());
             auto & outputs = dag.getOutputs();
@@ -176,32 +249,164 @@ QueryPlan decorrelateQueryPlan(
                 decorrelated_nodes_names[output->result_name] = output;
 
             /// Find possible renamings for all correlated columns
-            std::vector<std::pair<const ActionsDAG::Node *, const String &>> expression_renamings;
+            std::vector<ExpressionRenaming> expression_renamings;
             for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
             {
-                auto equivalence_class = context.equivalence_class_stack.back().getClass(correlated_column_identifier);
-                if (equivalence_class)
+                /// Hash and equality use only the name, so the type may be left empty for the lookup.
+                auto equivalence_class = context.equivalence_class_stack.back().getClass(ColumnWithType{correlated_column_identifier, nullptr});
+                if (!equivalence_class)
+                    continue;
+
+                /// The type of the correlated placeholder. The substituted column must have exactly
+                /// this type: decorrelated DAGs above declare it for their inputs, and a column of a
+                /// different runtime type would be a logical error during execution.
+                DataTypePtr correlated_type;
+                for (const auto & member : *equivalence_class)
                 {
-                    for (const auto & column_name : *equivalence_class)
+                    if (member.name == correlated_column_identifier)
                     {
-                        auto it = decorrelated_nodes_names.find(column_name);
-                        if (it != decorrelated_nodes_names.end())
-                        {
-                            expression_renamings.emplace_back(it->second, correlated_column_identifier);
-                            break;
-                        }
+                        correlated_type = member.type;
+                        break;
                     }
                 }
+                chassert(correlated_type != nullptr);
+                if (!correlated_type)
+                    continue;
+
+                std::optional<ExpressionRenaming> best_renaming;
+                for (const auto & member : *equivalence_class)
+                {
+                    auto it = decorrelated_nodes_names.find(member.name);
+                    if (it == decorrelated_nodes_names.end())
+                        continue;
+                    /// Harden against a name collision with an unrelated column of the subplan.
+                    if (!it->second->result_type->equals(*member.type))
+                        continue;
+
+                    std::optional<ConversionRule> rule;
+                    if (member.type->equals(*correlated_type))
+                        rule = ConversionRule::Exact;
+                    else if (removeNullable(member.type)->equals(*removeNullable(correlated_type)))
+                        rule = correlated_type->isNullable() ? ConversionRule::ToNullable : ConversionRule::AssumeNotNull;
+                    else if (isNativeNumber(removeNullable(member.type)) && isNativeNumber(removeNullable(correlated_type)))
+                    {
+                        auto supertype = tryGetLeastSupertype(DataTypes{member.type, correlated_type});
+                        if (supertype && supertype->equals(*correlated_type))
+                            rule = ConversionRule::LosslessCast;
+                        else
+                            rule = ConversionRule::AccurateCastOrNull;
+                    }
+
+                    if (!rule)
+                        continue;
+
+                    if (!best_renaming || conversionRank(*rule) < conversionRank(best_renaming->rule))
+                        best_renaming = ExpressionRenaming{it->second, correlated_column_identifier, correlated_type, *rule};
+
+                    if (best_renaming->rule == ConversionRule::Exact)
+                        break;
+                }
+
+                if (best_renaming)
+                    expression_renamings.push_back(std::move(*best_renaming));
             }
 
             /// If all columns from outer query have equivalent expressions in the current subplan,
             /// we can safely replace them and avoid introduction of CROSS JOIN.
             if (context.correlated_subquery.correlated_column_identifiers.size() == expression_renamings.size())
             {
-                for (const auto & [from, to] : expression_renamings)
-                    outputs.push_back(&dag.addAlias(*from, to));
+                auto & function_factory = FunctionFactory::instance();
+
+                bool needs_prefilter = false;
+                for (const auto & renaming : expression_renamings)
+                {
+                    const ActionsDAG::Node * substituted = nullptr;
+                    switch (renaming.rule)
+                    {
+                        case ConversionRule::Exact:
+                            substituted = &dag.addAlias(*renaming.source, renaming.correlated_name);
+                            break;
+                        case ConversionRule::ToNullable:
+                            substituted = &dag.addAlias(
+                                dag.addFunction(function_factory.get("toNullable", query_context), {renaming.source}, {}),
+                                renaming.correlated_name);
+                            break;
+                        case ConversionRule::AssumeNotNull:
+                            needs_prefilter = true;
+                            substituted = &dag.addAlias(
+                                dag.addFunction(function_factory.get("assumeNotNull", query_context), {renaming.source}, {}),
+                                renaming.correlated_name);
+                            break;
+                        case ConversionRule::LosslessCast:
+                            substituted = &dag.addCast(*renaming.source, renaming.correlated_type, renaming.correlated_name, query_context);
+                            break;
+                        case ConversionRule::AccurateCastOrNull:
+                        {
+                            needs_prefilter = true;
+                            const auto * casted = &addAccurateCastOrNull(dag, *renaming.source, removeNullable(renaming.correlated_type), query_context);
+                            if (!renaming.correlated_type->isNullable())
+                                casted = &dag.addFunction(function_factory.get("assumeNotNull", query_context), {casted}, {});
+                            substituted = &dag.addAlias(*casted, renaming.correlated_name);
+                            break;
+                        }
+                    }
+
+                    chassert(substituted->result_type->equals(*renaming.correlated_type));
+                    outputs.push_back(substituted);
+                }
 
                 auto result_plan = context.correlated_query_plan.extractSubplan(node);
+
+                if (needs_prefilter)
+                {
+                    /// Rows whose member value is NULL or does not convert exactly to the correlated
+                    /// type can never satisfy the recorded equality (a top-level AND-conjunct of an
+                    /// ancestor FilterStep), so they are dropped up front. This is required for
+                    /// correctness: assumeNotNull of such a value would produce the nested default
+                    /// value and, with correlated identifiers used as aggregation keys, merge such
+                    /// rows into a genuine group.
+                    ActionsDAG filter_dag(decorrelated_plan_header->getNamesAndTypesList());
+                    ActionsDAG::NodeRawConstPtrs conditions;
+                    std::unordered_set<String> deduplicated_conditions;
+                    for (const auto & renaming : expression_renamings)
+                    {
+                        if (renaming.rule != ConversionRule::AssumeNotNull && renaming.rule != ConversionRule::AccurateCastOrNull)
+                            continue;
+
+                        DataTypePtr cast_target;
+                        String condition_key = renaming.source->result_name;
+                        if (renaming.rule == ConversionRule::AccurateCastOrNull)
+                        {
+                            /// The same member may be converted to different types for different
+                            /// correlated columns, so the target type is a part of the key.
+                            cast_target = removeNullable(renaming.correlated_type);
+                            condition_key += '\0';
+                            condition_key += cast_target->getName();
+                        }
+                        if (!deduplicated_conditions.insert(condition_key).second)
+                            continue;
+
+                        const ActionsDAG::Node * checked = &filter_dag.findInOutputs(renaming.source->result_name);
+                        if (cast_target)
+                            checked = &addAccurateCastOrNull(filter_dag, *checked, cast_target, query_context);
+                        conditions.push_back(&filter_dag.addFunction(function_factory.get("isNotNull", query_context), {checked}, {}));
+                    }
+
+                    const auto * filter_condition = conditions.front();
+                    if (conditions.size() > 1)
+                        filter_condition = &filter_dag.addFunction(function_factory.get("and", query_context), std::move(conditions), {});
+
+                    /// An explicit unique name: an auto-generated function name could collide with an
+                    /// existing column of the subplan header.
+                    String filter_column_name = "__correlated_not_null_" + context.correlated_subquery.action_node_name;
+                    filter_dag.getOutputs().push_back(&filter_dag.addAlias(*filter_condition, filter_column_name));
+
+                    auto filter_step = std::make_unique<FilterStep>(
+                        result_plan.getCurrentHeader(), std::move(filter_dag), filter_column_name, /*remove_filter_column_=*/true);
+                    filter_step->setStepDescription("Filter values of expressions equivalent to correlated columns that cannot match");
+                    result_plan.addStep(std::move(filter_step));
+                }
+
                 auto renaming_step = std::make_unique<ExpressionStep>(result_plan.getCurrentHeader(), std::move(dag));
                 renaming_step->setStepDescription("Renaming correlated columns to equivalent expressions in subquery");
                 result_plan.addStep(std::move(renaming_step));
@@ -372,13 +577,23 @@ QueryPlan decorrelateQueryPlan(
                         "Correlated subquery equality predicate must have exactly two arguments, but has {}",
                         arguments.size());
 
-                if (!arguments[0]->result_type->equals(*arguments[1]->result_type))
+                const auto & lhs_type = arguments[0]->result_type;
+                const auto & rhs_type = arguments[1]->result_type;
+
+                /// Substitution can compensate for a nullability difference (the equality rejects NULLs),
+                /// and for native-number pairs with a least supertype: for them `equals` is mathematically
+                /// exact (so equivalence is transitive across a class) and accurateCastOrNull is
+                /// exactness-checking. Anything else (Decimal vs Float, String vs FixedString, ...) has
+                /// comparison semantics that are not consistent with CAST, so it is not recorded.
+                bool nullability_only_difference = removeNullable(lhs_type)->equals(*removeNullable(rhs_type));
+                bool safe_number_pair = isNativeNumber(removeNullable(lhs_type)) && isNativeNumber(removeNullable(rhs_type))
+                    && tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) != nullptr;
+                if (!nullability_only_difference && !safe_number_pair)
                     continue;
 
-                const auto & lhs = arguments[0]->result_name;
-                const auto & rhs = arguments[1]->result_name;
-
-                context.equivalence_class_stack.back().add(lhs, rhs);
+                context.equivalence_class_stack.back().add(
+                    ColumnWithType{arguments[0]->result_name, lhs_type},
+                    ColumnWithType{arguments[1]->result_name, rhs_type});
             }
         }
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
@@ -769,7 +984,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses<String>{} }
+                .equivalence_class_stack = { ColumnEquivalenceClasses{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -817,7 +1032,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses<String>{} }
+                .equivalence_class_stack = { ColumnEquivalenceClasses{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
