@@ -278,8 +278,7 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
     if (strictness != JoinStrictness::Unspecified && strictness != JoinStrictness::All)
         return 0;
 
-    /// Merging a condition whose operands have different types adds a cast that makes the key `_CAST(key, ...)`.
-    /// This can make prepared join storage fail because it no longer recognizes the key.
+    /// Merging a condition can make a prepared join storage fail because it no longer recognizes the key.
     auto is_storage_join = child_node->children.size() == 2
         && typeid_cast<JoinStepLogicalLookup *>(child_node->children.back()->step.get()) != nullptr;
     if (is_storage_join)
