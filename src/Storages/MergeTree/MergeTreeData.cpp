@@ -10374,15 +10374,21 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
 
+        struct OverlappingParts
+        {
+            DataPartsVector covered_parts;
+            DataPartPtr covering_part;
+        };
+
         /// Collect covered parts and call addNewPartAndRemoveCovered before NOEXCEPT_SCOPE,
         /// because lockRemovalTID inside addNewPartAndRemoveCovered can throw SERIALIZATION_ERROR.
-        std::vector<DataPartsVector> covered_parts_for_commit;
-        covered_parts_for_commit.reserve(precommitted_parts.size());
+        std::vector<OverlappingParts> overlapping_parts_for_commit;
+        overlapping_parts_for_commit.reserve(precommitted_parts.size());
 
         NonTransactionalMarkedAsRemovedTracker marked_removed_parts_to_cleanup(data, txn, data.log);
 
         size_t num_covered_parts_processed = 0;
-        DataPartsVector covered_parts;
+        OverlappingParts overlapping_parts;
         const auto cleanup = [&]() -> size_t
         {
             size_t num_errors = 0;
@@ -10391,9 +10397,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             /// Try to cleanup parts from the current iteration if any.
             /// NonTransactionalMarkedAsRemovedTracker::addParts may throw on vector resize, so we
             /// clean up marked parts straight from the covered_parts vector.
-            auto end = covered_parts.begin();
+            auto end = overlapping_parts.covered_parts.begin();
             std::advance(end, num_covered_parts_processed);
-            num_errors += marked_removed_parts_to_cleanup.cleanup(covered_parts.begin(), end);
+            num_errors += marked_removed_parts_to_cleanup.cleanup(overlapping_parts.covered_parts.begin(), end);
             if (num_errors > 0)
             {
                 LOG_ERROR(data.log, "Failed to cleanup {} parts: they are still active but marked as removed "
@@ -10407,8 +10413,9 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             for (const auto & part : precommitted_parts)
             {
                 num_covered_parts_processed = 0;
-                DataPartPtr covering_part;
-                covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+                overlapping_parts = {};
+                overlapping_parts.covered_parts =
+                    data.getActivePartsToReplace(part->info, part->name, overlapping_parts.covering_part, acquired_parts_lock);
 
                 if (txn)
                 {
@@ -10427,21 +10434,26 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                         fmt::join(getPartsNames(covered_outdated_parts), ", "));
                     data.filterVisibleDataParts(covered_outdated_parts, txn->getSnapshot(), txn->tid);
 
-                    std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
+                    std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(),
+                        std::back_inserter(overlapping_parts.covered_parts));
                 }
 
                 /// Call addNewPartAndRemoveCovered only if there's no covering part.
                 /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-                if (!covering_part)
+                if (!overlapping_parts.covering_part)
                 {
-                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn, num_covered_parts_processed);
-                    marked_removed_parts_to_cleanup.addParts(covered_parts);
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(),
+                        part,
+                        overlapping_parts.covered_parts,
+                        txn,
+                        num_covered_parts_processed);
+                    marked_removed_parts_to_cleanup.addParts(overlapping_parts.covered_parts);
                     /// All marked covered parts are now tracked by the tracker, so no need to cleanup parts
                     /// from the covered_parts vector if anything throws later.
                     num_covered_parts_processed = 0;
                 }
 
-                covered_parts_for_commit.push_back(std::move(covered_parts));
+                overlapping_parts_for_commit.push_back(std::move(overlapping_parts));
             }
         }
         catch (Exception & e)
@@ -10474,8 +10486,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             size_t part_idx = 0;
             for (const auto & part : precommitted_parts)
             {
-                DataPartPtr covering_part;
-                covered_parts = data.getActivePartsToReplace(part->info, part->name, covering_part, acquired_parts_lock);
+                const auto [covered_parts, covering_part] = std::move(overlapping_parts_for_commit[part_idx]);
                 if (covering_part)
                 {
                     /// It's totally fine for zero-level parts, because of possible race condition between ReplicatedMergeTreeSink and
@@ -10493,8 +10504,6 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 {
                     /// Use the covered parts computed before NOEXCEPT_SCOPE.
                     /// addNewPartAndRemoveCovered was already called above (before NOEXCEPT_SCOPE).
-                    covered_parts = std::move(covered_parts_for_commit[part_idx]);
-
                     total_covered_parts.insert(total_covered_parts.end(), covered_parts.begin(), covered_parts.end());
                     for (const auto & covered_part : covered_parts)
                     {
