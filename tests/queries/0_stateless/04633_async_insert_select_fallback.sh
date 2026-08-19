@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# No tags needed: the non-parallel-quorum guard fires on `async_insert` and
-# `insert_quorum_parallel=0` regardless of replication, so a plain MergeTree suffices.
+# Tags: long
+#   long: close to 3 minutes in flaky tests
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -75,8 +75,8 @@ ${CLICKHOUSE_CLIENT} -q "
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_async_sel_quorum"
 
-# Transaction fallback is not tested here: MergeTree does not support transactions, so
-# such an insert throws NOT_IMPLEMENTED before the async eligibility check ever runs.
+# Transactions are covered by 04633_async_insert_select_transaction.sql: they need an experimental
+# server config, and an async insert inside one throws instead of falling back silently.
 
 # Case 4: a trivial INSERT ... SELECT with more rows than max_block_size still routes through
 # the async queue as one block, since `applyTrivialInsertSelectOptimization` raises the
