@@ -2739,6 +2739,14 @@ Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPL
 `EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
+    DECLARE(Bool, explain_syntax_single_record, true, R"(
+Return `EXPLAIN SYNTAX` output as a single record (with embedded newlines) instead of one record per line, so the result is a single, recoverable row (for example, `SELECT count() FROM (EXPLAIN SYNTAX ...)` returns `1`).
+
+Specifying the `single_record` option explicitly in the `EXPLAIN SYNTAX` statement (for example, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) always overrides this setting.
+
+Set to `false` to restore the pre-26.8 one-record-per-line output, or set `compatibility` to any version older than `26.8`.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
@@ -5634,7 +5642,7 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSVRaw;
 ```
 
 Result:
