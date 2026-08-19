@@ -158,7 +158,7 @@ public:
         return {};
     }
 
-    static constexpr UInt16 FORMAT_VERSION = 2;
+    static constexpr UInt16 FORMAT_VERSION = 3;
     static constexpr bool DateTime64Supported = true;
 };
 
