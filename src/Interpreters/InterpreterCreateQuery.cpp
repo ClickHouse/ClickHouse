@@ -1983,7 +1983,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// replicas re-derive the key type from the stored text. This must happen after normalization:
     /// `CREATE TABLE ... AS` materializes copied columns and key expressions only there. A replayed
     /// definition (short attach, metadata load, backup restore) already records its spelling.
-    if (!create.attach_short_syntax && !is_restore_from_backup
+    if (!create.attach_short_syntax && !create.is_clone_as && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         replaceLegacyToTimeInCreateQuery(query_ptr);
 
