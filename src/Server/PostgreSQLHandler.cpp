@@ -1295,7 +1295,7 @@ SELECT * FROM VALUES(
     /// by hashing the name, consistently with `relnamespace` in `pg_class` below.
     /// The offset 16384 mirrors PostgreSQL, where oids below 16384 are reserved for
     /// the system, so synthesized oids cannot collide with the well-known ones.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_namespace SQL SECURITY DEFINER AS
+    execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_namespace ENGINE = Memory AS
 SELECT * FROM VALUES(
     'oid UInt32, nspname String',
     (11,    'pg_catalog'),
@@ -1313,7 +1313,7 @@ FROM system.databases)");
     /// The rest are the tables of the current database - the analog of the PostgreSQL
     /// search path - which makes commands like `\d` in psql list the actual tables.
     /// `relam` is the access method: 2 (`heap`) for tables and 0 for views, as in PostgreSQL.
-    execute_query(R"(CREATE TEMPORARY VIEW IF NOT EXISTS pg_class SQL SECURITY DEFINER AS
+    execute_query(R"(CREATE TEMPORARY TABLE IF NOT EXISTS pg_class ENGINE = Memory AS
 SELECT * FROM VALUES(
     'oid UInt32, relname String, relnamespace UInt32, relowner UInt32, relam UInt32, relkind String',
     (1259, '', 11, 10, 2, 'r'),
