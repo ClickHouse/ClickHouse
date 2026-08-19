@@ -6,3 +6,4 @@ schema announces=yes accepts=yes origins=exact
 jemalloc announces=yes accepts=yes origins=exact
 processors-profile announces=yes accepts=yes origins=exact
 binary announces=yes accepts=yes origins=exact
+play docs_relay=yes direct_docs_opener=no

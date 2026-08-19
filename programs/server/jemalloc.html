@@ -2652,7 +2652,11 @@ SETTINGS jemalloc_enable_profiler = 1,
             }
         }
 
+        /// Each load owns a generation, so a response from the connection that preceded a
+        /// `postMessage` handover cannot overwrite the fresh statistics or error state.
+        let statsLoadGeneration = 0;
         async function loadStats(isManualRefresh = false) {
+            const generation = ++statsLoadGeneration;
             if (!isKeeper) readConnectionParams();
             const loading = document.getElementById('loading');
             const content = document.getElementById('content');
@@ -2675,6 +2679,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                     statsText = await response.text();
                 }
+                if (generation != statsLoadGeneration) return;
                 const stats = parseJemallocStats(statsText);
                 document.getElementById('timestamp').textContent = new Date().toLocaleString();
                 renderOverviewMetrics(stats.overview);
@@ -2693,6 +2698,7 @@ SETTINGS jemalloc_enable_profiler = 1,
                     content.style.display = 'block';
                 }
             } catch (error) {
+                if (generation != statsLoadGeneration) return;
                 console.error('Error loading stats:', error);
                 errorDiv.textContent = `Error: ${error.message}`;
                 errorDiv.style.display = 'block';

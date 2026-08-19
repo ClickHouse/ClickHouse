@@ -23,3 +23,8 @@ do
         && ! echo "$content" | grep -qF "endsWith('.clickhouse.cloud')" && echo exact || echo loose)
     echo "${page} announces=${announces} accepts=${accepts} origins=${origins}"
 done
+
+content=$(${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_PORT_HTTP_PROTO}://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/play")
+relay=$(echo "$content" | grep -qF "clickhouse-docs-relay-ready" && echo yes || echo no)
+direct_docs_opener=$(echo "$content" | grep -qF "window.open(docs_icon.href" && echo yes || echo no)
+echo "play docs_relay=${relay} direct_docs_opener=${direct_docs_opener}"

@@ -97,8 +97,12 @@
         });
 
         let cached_tiles = {};
+        /// Every request captures this value. A connection handover increments it, so late
+        /// responses from the former server cannot populate the new cache or repaint the map.
+        let connection_generation = 0;
 
         async function render(coords, tile) {
+            const generation = connection_generation;
             const sql = `
                 WITH
                     bitShiftLeft(1::UInt64, 5 - {z:UInt8})::UInt64 AS zoom_factor,
@@ -136,8 +140,11 @@
 
                 const response = await fetch(request_url, { method: 'POST', body: sql });
 
+                if (generation != connection_generation) return;
+
                 if (!response.ok) {
                     const text = await response.text();
+                    if (generation != connection_generation) return;
                     let err = document.getElementById('error');
                     err.textContent = text;
                     err.style.display = 'block';
@@ -145,8 +152,11 @@
                 }
 
                 buf = await response.arrayBuffer();
+                if (generation != connection_generation) return;
                 cached_tiles[key] = buf;
             }
+
+            if (generation != connection_generation) return;
 
             let ctx = tile.getContext('2d');
             let image = ctx.createImageData(1024, 1024);
@@ -265,6 +275,7 @@
         }
 
         function showPopup(x, y) {
+            const generation = connection_generation;
             let addr_int = hilbertEncode(x, y) / 2n;
 
             current_requested_addr = addr_int;
@@ -281,7 +292,7 @@
                     let name = o.rows ? o.data[0].name : 'nothing';
                     let line = o.rows ? o.data[0].line : '';
 
-                    if (addr_int == current_requested_addr) {
+                    if (generation == connection_generation && addr_int == current_requested_addr) {
                         popup.setContent(`<p><b>${addr_hex}</b></p><p>${name}</p><p>${line}</p>`);
                     }
                 }));
@@ -334,6 +345,7 @@
         /// `url` is optional and defaults to the one already configured; the credentials are always
         /// replaced wholesale, so that none of them can outlive the connection they belong to.
         function applyConnectionFromHost(data) {
+            ++connection_generation;
             if (data.url !== undefined) {
                 host = data.url;
                 /// The handed-over server may be a different origin than this page's, and the
