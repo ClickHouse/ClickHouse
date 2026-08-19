@@ -256,19 +256,25 @@ ObjectStorageQueueSource::FileIterator::next()
                 LOG_TEST(log, "Filtered files: {} -> {} by path or filename", paths.size(), new_batch.size());
             }
 
-            for (const auto & object_info : new_batch)
-            {
-                auto object_metadata = object_info->getObjectMetadata();
-                if (object_metadata && object_metadata->is_last_modified_known)
-                    metadata->updateNewestSeenTimestamp(object_metadata->last_modified.epochTime(), storage_id);
-            }
-
             size_t previous_size = new_batch.size();
 
             /// Filter out files which we know we would not need to process.
             filterProcessableFiles(new_batch);
 
             LOG_TEST(log, "Filtered processed and failed files: {} -> {}", previous_size, new_batch.size());
+
+            /// Update the "seen" watermark only from files this table will actually process:
+            /// updating it before filterProcessableFiles() would also count objects already
+            /// resolved (processed/failed, e.g. kept around by after_processing=KEEP) and, in
+            /// hash-ring mode, objects owned by a different consumer - neither of which this
+            /// table will ever commit, which would otherwise make the lag estimate a false
+            /// positive (e.g. right after a restart, before anything has been committed yet).
+            for (const auto & object_info : new_batch)
+            {
+                auto object_metadata = object_info->getObjectMetadata();
+                if (object_metadata && object_metadata->is_last_modified_known)
+                    metadata->updateNewestSeenTimestamp(object_metadata->last_modified.epochTime(), storage_id);
+            }
 
             if (!new_batch.empty()
                 && enable_hash_ring_filtering
@@ -571,8 +577,24 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
         if (!file_metadata)
         {
             file_metadata = metadata->getFileMetadata(object_info->getPath(), bucket_info);
-            if (!file_metadata->trySetProcessing())
-                continue;
+            try
+            {
+                if (!file_metadata->trySetProcessing())
+                    continue;
+            }
+            catch (const zkutil::KeeperException & e)
+            {
+                /// A plain `false` return from trySetProcessing() is a normal outcome (someone
+                /// else already claimed/resolved this file); this catches a genuine Keeper
+                /// communication failure escaping after retries are exhausted. Covers both the
+                /// default (non-hash-ring-batched) claim path and Ordered mode's bucketed path,
+                /// which both funnel through this same call when a bucket has no cached file
+                /// metadata yet (see bucket_info.keys.emplace_back(object_info, nullptr) above).
+                DimensionalMetrics::add(
+                    DimensionalMetrics::ObjectStorageQueueFailures,
+                    {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
+                throw;
+            }
         }
 
         if (file_deletion_on_processed_enabled && !object_storage->exists(StoredObject(object_info->getPath())))
@@ -1262,15 +1284,30 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     auto metadata_with_tags = object_info_for_tags->getObjectMetadata();
                     if (metadata_with_tags && metadata_with_tags->tags.empty())
                     {
-                        fiu_do_on(FailPoints::object_storage_queue_fail_tags_fetch, {
-                            throw Exception(
-                                ErrorCodes::UNKNOWN_EXCEPTION,
-                                "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
-                        });
+                        try
+                        {
+                            fiu_do_on(FailPoints::object_storage_queue_fail_tags_fetch, {
+                                throw Exception(
+                                    ErrorCodes::UNKNOWN_EXCEPTION,
+                                    "Failpoint-triggered tag fetch failure for file: {}", file_metadata->getPath());
+                            });
 
-                        metadata_with_tags->tags
-                            = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
-                        object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+                            metadata_with_tags->tags
+                                = object_storage->getObjectMetadata(object_info_for_tags->getPath(), /*with_tags=*/true).tags;
+                            object_info_for_tags->setObjectMetadata(*metadata_with_tags);
+                        }
+                        catch (...)
+                        {
+                            /// This file's rows were never pulled, so this is a read-path
+                            /// failure, not an insert failure: tag it the same way the
+                            /// pull-error handler below does, so prepareCommitRequests later
+                            /// labels it "read" instead of "insert". Rethrow immediately -
+                            /// only the label changes, not how this failure is handled.
+                            processed_files.back().state = FileState::ErrorOnRead;
+                            processed_files.back().exception_during_read = getCurrentExceptionMessage(true);
+                            processed_files.back().exception_during_read_code = getCurrentExceptionCode();
+                            throw;
+                        }
                     }
                 }
             }
@@ -1813,26 +1850,41 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     const auto & settings = getContext()->getSettingsRef();
     Coordination::Error code = {};
     size_t try_num = 0;
-    zk_retry.retryLoop([&]
+    try
     {
-        if (zk_retry.isRetry())
+        zk_retry.retryLoop([&]
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
-        }
-        ++try_num;
-        code = zk_client->tryMulti(requests, responses);
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-            if (code == Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS,
-                    "Simulated connection loss after successful commit");
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            code = zk_client->tryMulti(requests, responses);
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                if (code == Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromMessage(
+                        Coordination::Error::ZCONNECTIONLOSS,
+                        "Simulated connection loss after successful commit");
+            });
         });
-    });
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// See the analogous catch in StorageObjectStorageQueue::commit(): this covers
+        /// retries exhausted on a hardware error, which previously went uncounted entirely.
+        DimensionalMetrics::add(
+            DimensionalMetrics::ObjectStorageQueueFailures,
+            {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+        throw;
+    }
 
     if (code != Coordination::Error::ZOK)
     {
+        DimensionalMetrics::add(
+            DimensionalMetrics::ObjectStorageQueueFailures,
+            {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(code))});
         if (try_num > 1)
             setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);

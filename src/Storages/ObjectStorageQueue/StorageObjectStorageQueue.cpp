@@ -1208,32 +1208,48 @@ void StorageObjectStorageQueue::commit(
     std::optional<Coordination::Error> code;
     Coordination::Responses responses;
     size_t try_num = 0;
-    zk_retry.retryLoop([&]
+    try
     {
-        if (zk_retry.isRetry())
+        zk_retry.retryLoop([&]
         {
-            LOG_TRACE(
-                log, "Failed to commit processed files at try {}/{}, will retry",
-                try_num, toString(settings[Setting::keeper_max_retries].value));
-        }
-        ++try_num;
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-        });
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
-            throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
-        });
+            if (zk_retry.isRetry())
+            {
+                LOG_TRACE(
+                    log, "Failed to commit processed files at try {}/{}, will retry",
+                    try_num, toString(settings[Setting::keeper_max_retries].value));
+            }
+            ++try_num;
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_once, {
+                throw zkutil::KeeperException::fromMessage(Coordination::Error::ZCONNECTIONLOSS, "Failed to commit processed files");
+            });
 
-        auto zk_client = getZooKeeper();
-        code = zk_client->tryMulti(requests, responses);
+            auto zk_client = getZooKeeper();
+            code = zk_client->tryMulti(requests, responses);
 
-        fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
-            if (code == Coordination::Error::ZOK)
-                throw zkutil::KeeperException::fromMessage(
-                    Coordination::Error::ZCONNECTIONLOSS,
-                    "Simulated connection loss after successful commit");
+            fiu_do_on(FailPoints::object_storage_queue_fail_commit_after_success, {
+                if (code == Coordination::Error::ZOK)
+                    throw zkutil::KeeperException::fromMessage(
+                        Coordination::Error::ZCONNECTIONLOSS,
+                        "Simulated connection loss after successful commit");
+            });
         });
-    });
+    }
+    catch (const zkutil::KeeperException & e)
+    {
+        /// Retries were exhausted on a hardware error (e.g. ZCONNECTIONLOSS repeatedly):
+        /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
+        /// `code` below is never set and this never reaches the `!code.has_value()` branch
+        /// (previously dead code: that branch could never actually be reached).
+        /// NOTE: if a retry succeeds but lands on a different non-OK code (the "failed after
+        /// operation" case below), the label there reflects that later code, not this one.
+        DimensionalMetrics::add(
+            DimensionalMetrics::ObjectStorageQueueFailures,
+            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+        throw;
+    }
 
     if (!code.has_value())
     {
