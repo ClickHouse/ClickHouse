@@ -15,23 +15,7 @@
 2
 1
 0
-SELECT number
-FROM
-(
-    SELECT number
-    FROM t
-    ORDER BY number DESC
-    OFFSET 3
-)
-WHERE less(number, 18)
+SELECT number\nFROM\n(\n    SELECT number\n    FROM t\n    ORDER BY number DESC\n    OFFSET 3\n)\nWHERE less(number, 18)
 1
 3
-SELECT number
-FROM
-(
-    SELECT number
-    FROM t
-    ORDER BY number ASC
-    LIMIT 5
-)
-WHERE modulo(number, 2)
+SELECT number\nFROM\n(\n    SELECT number\n    FROM t\n    ORDER BY number ASC\n    LIMIT 5\n)\nWHERE modulo(number, 2)

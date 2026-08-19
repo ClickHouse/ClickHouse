@@ -56,6 +56,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
+#include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -1303,8 +1304,88 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
+        ///
+        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
+        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
+        /// synchronous delivery, but anything already queued waits until the threads run again).
+        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
+        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
+        /// during a normal startup.
+        std::exception_ptr remap_exception;
+        size_t remapped_size = 0;
+#if USE_JEMALLOC
+        bool jemalloc_background_threads_were_enabled = false;
+#endif
+        {
+            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
+            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
+            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
+            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
+            BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+#if USE_JEMALLOC
+            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
+            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
+            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
+            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
+            /// joins* every background thread before returning, so after this call they are fully quiesced.
+            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
+            /// left untouched, so re-enabling restores the configured limit.
+            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
+                && jemalloc_background_threads_were_enabled)
+                Jemalloc::setBackgroundThreads(false);
+#endif
+
+            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
+            /// may already have written a record into the signal pipe, and the listener thread would execute the
+            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
+            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
+            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
+            stopSignalListener();
+
+            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
+            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
+            stopAsyncLoggingThreads();
+
+            /// At this point the process is single-threaded again and all handled signals are blocked,
+            /// so no code other than this thread can possibly run while the text segment is rewritten.
+            try
+            {
+                remapped_size = remapExecutable();
+            }
+            catch (...)
+            {
+                remap_exception = std::current_exception();
+            }
+        }
+
+#if USE_JEMALLOC
+        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
+        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
+        /// for the same reason the logging threads are: the allocator must be back in its configured
+        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
+        /// server settings, so a failure to restore would not go unnoticed.
+        if (jemalloc_background_threads_were_enabled)
+            Jemalloc::setBackgroundThreads(true);
+#endif
+
+        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
+        /// running would keep accepting messages into queues that no consumer drains. open() tears the
+        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
+        /// synchronously, so the exception propagating out of Server::main still reaches the log.
+        startAsyncLoggingThreads();
+
+        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
+        /// A pending signal delivered when the mask was restored above only writes a record into the signal
+        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        startSignalListener();
+
+        if (remap_exception)
+            std::rethrow_exception(remap_exception);
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])
@@ -3648,6 +3729,7 @@ try
                 }
             }
 
+            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3671,6 +3753,7 @@ try
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
+            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
@@ -3681,11 +3764,15 @@ try
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
+            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
+
+            if (!joined_background_queries)
+                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks)
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3695,7 +3782,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// No leak check: remaining connection handlers or refresh tasks still own memory
+                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
             }

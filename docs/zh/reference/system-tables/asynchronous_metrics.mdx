@@ -809,6 +809,18 @@ ClickHouse Keeper 中键的内存分配区域大小，单位为字节。
 
 ClickHouse Keeper 中最后一条已提交日志的索引。
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+最近一次在本地观测到的无 leader 时间窗口的耗时 (毫秒) ，该窗口在此 ClickHouse Keeper 实例成为 leader 时结束。未出现已采样无 leader 状态的领导权转移不会被记录。如果此实例不是当前活跃的 leader，或没有已记录的已完成窗口，则为 `0`。
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+此 ClickHouse Keeper leader 最近一次在本地观测到、且已结束的无 leader 时间窗口的耗时，单位为毫秒。如果此实例不是当前活跃的 leader，或未记录已结束的无 leader 时间窗口，则为 `0`。
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>

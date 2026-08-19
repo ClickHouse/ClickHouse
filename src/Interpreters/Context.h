@@ -407,6 +407,12 @@ protected:
 
     String insert_format; /// Format, used in insert query.
 
+    /// Filters supplied out-of-band by the HTTP interface (URL path filters, repeated `?filter=`
+    /// parameters, unrecognized URL parameters as filters), already combined with `AND`. Kept
+    /// separate from the `filter` setting so it composes with — rather than being overwritten by —
+    /// an in-query `SETTINGS filter = ...` clause when query-construction settings are applied.
+    String http_combined_filter;
+
     TemporaryTablesMapping external_tables_mapping;
     mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
@@ -1188,6 +1194,9 @@ public:
     String getInsertFormat() const;
     void setInsertFormat(const String & name);
 
+    const String & getHTTPCombinedFilter() const;
+    void setHTTPCombinedFilter(const String & filter);
+
     MultiVersion<Macros>::Version getMacros() const;
     void setMacros(std::unique_ptr<Macros> && macros);
 
@@ -1216,6 +1225,7 @@ public:
 
     /// Returns the current constraints (can return null).
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
+    void setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles);
 
     AsyncLoader & getAsyncLoader() const;
 
@@ -1627,6 +1637,7 @@ public:
 
     ThreadPool & getBuildVectorSimilarityIndexThreadPool() const;
     ThreadPool & getIcebergCatalogThreadpool() const;
+    ThreadPool & getBackgroundQueryPool() const;
 
     /// Settings for MergeTree background tasks stored in config.xml
     BackgroundTaskSchedulingSettings getBackgroundProcessingTaskSchedulingSettings() const;
@@ -2016,6 +2027,10 @@ private:
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
     void setCurrentDatabaseWithLock(const String & name, const std::lock_guard<ContextSharedMutex> & lock);
+
+    /// Keep the `database` setting in sync with an out-of-band change of the current database.
+    /// Must be called with the context mutex held.
+    void mirrorCurrentDatabaseIntoSetting(const String & name);
 
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source);
 
