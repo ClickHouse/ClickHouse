@@ -119,6 +119,7 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
     /// This processor took the file over: the state is ours again.
     file_status->onProcessing();
     file_status->processed_rows = 5;
+    ASSERT_EQ(file_status->processingByAnotherProcessorSince(*foreign_processing_observers), 0);
 
     auto contender = makeFileMetadata(file_status, metadata_ref_count);
     contender->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
@@ -187,6 +188,20 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversFollowChangedCapaci
     observers.setMaxEntries(1);
     ASSERT_EQ(observers.get("data/first.csv"), 0);
     ASSERT_EQ(observers.get("data/second.csv"), 2);
+}
+
+TEST(ObjectStorageQueueFileStatus, ForeignProcessingObserversAllowUnlimitedEntries)
+{
+    ObjectStorageQueueIFileMetadata::ForeignProcessingObservers observers(0);
+
+    observers.set("data/first.csv", 1);
+    observers.set("data/second.csv", 2);
+    observers.setMaxEntries(0);
+    observers.set("data/third.csv", 3);
+
+    ASSERT_EQ(observers.get("data/first.csv"), 1);
+    ASSERT_EQ(observers.get("data/second.csv"), 2);
+    ASSERT_EQ(observers.get("data/third.csv"), 3);
 }
 
 /// The pre-Keeper state gate must keep a locally owned `Processing` state terminal.

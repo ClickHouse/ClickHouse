@@ -24,11 +24,12 @@ class ObjectStorageQueueIFileMetadata
 public:
     /// Per-table foreign-node observations. This must stay outside `FileStatus`: file
     /// statuses are held in a byte-accounted cache and their weight cannot grow after
-    /// insertion. The registry is bounded by the table's metadata-cache entry limit.
+    /// insertion. The registry follows the table's metadata-cache entry limit, where
+    /// zero means unlimited.
     class ForeignProcessingObservers
     {
     public:
-        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(max_entries_ ? max_entries_ : 10000) {}
+        explicit ForeignProcessingObservers(size_t max_entries_) : max_entries(max_entries_) {}
 
         void set(const String & path, time_t since);
         time_t get(const String & path) const;

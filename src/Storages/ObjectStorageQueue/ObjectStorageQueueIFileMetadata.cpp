@@ -111,7 +111,7 @@ void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::set(const Stri
         return;
     }
 
-    if (observations.size() == max_entries)
+    if (max_entries && observations.size() == max_entries)
     {
         observations.erase(lru.back());
         lru.pop_back();
@@ -135,8 +135,8 @@ time_t ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::get(const St
 void ObjectStorageQueueIFileMetadata::ForeignProcessingObservers::setMaxEntries(size_t max_entries_)
 {
     std::lock_guard lock(mutex);
-    max_entries = max_entries_ ? max_entries_ : 10000;
-    while (observations.size() > max_entries)
+    max_entries = max_entries_;
+    while (max_entries && observations.size() > max_entries)
     {
         observations.erase(lru.back());
         lru.pop_back();
@@ -177,7 +177,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onTerminalStateByAnotherProces
 
 time_t ObjectStorageQueueIFileMetadata::FileStatus::processingByAnotherProcessorSince(const ForeignProcessingObservers & observers) const
 {
-    return observers.get(path);
+    return isProcessingByAnotherProcessor() ? observers.get(path) : 0;
 }
 
 bool ObjectStorageQueueIFileMetadata::FileStatus::shouldRetryProcessing(const ForeignProcessingObservers & observers, time_t ttl_sec) const
