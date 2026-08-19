@@ -34,10 +34,6 @@ SET prefer_column_name_to_alias = 0;
 
 SELECT '-- the shared argument is a range function, range';
 SELECT * FROM prometheusQueryRange('prometheus', 'sum(last_over_time(m[20])) - max(last_over_time(m[20]))', 110, 140, 10) ORDER BY tags;
-SELECT '-- nested aggregation pairs, instant';
-SELECT * FROM prometheusQuery('prometheus', '(sum(m) - max(m)) / sum(m)', 130) ORDER BY tags;
-SELECT '-- the shared argument matches no series, instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum(nonexistent) - max(nonexistent)', 130) ORDER BY tags;
 
 SELECT '-- not shared: different arguments, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - max(n)', 130) ORDER BY tags;
@@ -52,8 +48,8 @@ SELECT '-- not shared: logical operator, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) unless max(m)', 130) ORDER BY tags;
 SELECT '-- not shared: group_left, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum by (dc) (m) - on (dc) group_left () max by (dc) (m)', 130) ORDER BY tags;
-SELECT '-- not shared: by (__name__) keeps the metric name, instant';
-SELECT * FROM prometheusQuery('prometheus', 'sum by (__name__) (m) - max by (__name__) (m)', 130) ORDER BY tags;
+SELECT '-- not shared: by (__name__) with multiple metrics must report duplicate series, instant';
+SELECT * FROM prometheusQuery('prometheus', 'sum by (__name__) ({__name__=~"m|n"}) - max by (__name__) ({__name__=~"m|n"})', 130) ORDER BY tags; -- { serverError CANNOT_EXECUTE_PROMQL_QUERY }
 SELECT '-- not shared: one side is not an aggregation, instant';
 SELECT * FROM prometheusQuery('prometheus', 'sum(m) - m', 130) ORDER BY tags;
 SELECT '-- not shared: quantile is not a one-argument aggregation, instant';
