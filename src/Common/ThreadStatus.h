@@ -89,13 +89,11 @@ public:
 
     const Int32 os_threads_nice_value;
 
-    /// A borrowed child group (materialized view / async-insert flush) parents its `memory_tracker`
-    /// and `performance_counters` at the parent group's trackers via RAW pointers. Retain a shared_ptr
-    /// to the parent so those trackers cannot be freed while any thread is still attached to this child
-    /// group — otherwise a detached task (e.g. an S3 upload scheduled via `threadPoolCallbackRunnerUnsafe`)
-    /// that attaches the child group can walk a freed parent tracker chain (use-after-free, B90). Null for
-    /// a top-level query/background group, whose parent is a process-lifetime tracker (user/total/background).
-    ThreadGroupPtr parent_thread_group;
+    /// Borrowed child groups parent their `memory_tracker` and `performance_counters` at the parent
+    /// group's trackers through raw pointers. Materialized-view children also copy cancellation callbacks
+    /// that capture the parent `ThreadGroup` through raw `this`. Keep the parent alive until after the child
+    /// and its trackers are destroyed. Null for top-level query and background groups.
+    const ThreadGroupPtr parent_thread_group;
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
