@@ -279,14 +279,13 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DEBUG,
-            provides=[ArtifactNames.CH_AMD_DEBUG, ArtifactNames.DEB_AMD_DEBUG],
+            provides=[ArtifactNames.CH_AMD_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.AMD_ASAN_UBSAN,
             provides=[
                 ArtifactNames.CH_AMD_ASAN_UBSAN,
-                ArtifactNames.DEB_AMD_ASAN_UBSAN,
                 ArtifactNames.UNITTEST_AMD_ASAN_UBSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -295,7 +294,6 @@ class JobConfigs:
             parameter=BuildTypes.AMD_TSAN,
             provides=[
                 ArtifactNames.CH_AMD_TSAN,
-                ArtifactNames.DEB_AMD_TSAN,
                 ArtifactNames.UNITTEST_AMD_TSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -304,7 +302,6 @@ class JobConfigs:
             parameter=BuildTypes.AMD_MSAN,
             provides=[
                 ArtifactNames.CH_AMD_MSAN,
-                ArtifactNames.DEB_AMD_MSAN,
                 ArtifactNames.UNITTEST_AMD_MSAN,
             ],
             runs_on=RunnerLabels.ARM_LARGE,
@@ -316,28 +313,22 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DEBUG,
-            provides=[ArtifactNames.CH_ARM_DEBUG, ArtifactNames.DEB_ARM_DEBUG],
+            provides=[ArtifactNames.CH_ARM_DEBUG],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_ASAN_UBSAN,
-            provides=[
-                ArtifactNames.CH_ARM_ASAN_UBSAN,
-                ArtifactNames.DEB_ARM_ASAN_UBSAN,
-            ],
+            provides=[ArtifactNames.CH_ARM_ASAN_UBSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_TSAN,
-            provides=[
-                ArtifactNames.CH_ARM_TSAN,
-                ArtifactNames.DEB_ARM_TSAN,
-            ],
+            provides=[ArtifactNames.CH_ARM_TSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_MSAN,
-            provides=[ArtifactNames.CH_ARM_MSAN, ArtifactNames.DEB_ARM_MSAN],
+            provides=[ArtifactNames.CH_ARM_MSAN],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -401,7 +392,7 @@ class JobConfigs:
     cfi_build_job = common_build_job_config.parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_CFI,
-            provides=[ArtifactNames.CH_AMD_CFI, ArtifactNames.DEB_AMD_CFI],
+            provides=[ArtifactNames.CH_AMD_CFI],
             runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
@@ -421,7 +412,7 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_cfi",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_CFI],
+            requires=[ArtifactNames.CH_AMD_CFI],
         ),
     )
     # sccache-warmup builds (MasterCI only): compile amd_release / arm_release
@@ -476,12 +467,18 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
-            provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_AMD_DARWIN_BIN,
+                ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
-            provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_ARM_DARWIN_BIN,
+                ArtifactNames.CH_ARM_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -522,6 +519,11 @@ class JobConfigs:
         Job.ParamSet(
             parameter=BuildTypes.LOONGARCH64,
             provides=[ArtifactNames.CH_LOONGARCH64],
+            runs_on=RunnerLabels.ARM_LARGE,
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.WASM64,
+            provides=[ArtifactNames.CH_WASM64],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -628,14 +630,6 @@ class JobConfigs:
             requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
     )
-    # Merge-queue drift guard: reruns the PR's new/changed stateless tests on
-    # the merge group state (the PR merged with the current `master`), so a PR
-    # whose last CI run predates test-infrastructure changes on `master` (e.g.
-    # a new randomized setting in `tests/clickhouse-test`) is bounced from the
-    # queue instead of breaking `master`. Runs on the `amd_binary` build the
-    # merge queue produces anyway; merge-queue runs use a reduced iteration
-    # count and time budget (see `ci/jobs/functional_tests.py`) to keep queue
-    # latency bounded.
     stateless_tests_flaky_mq_jobs = common_ft_job_config.parametrize(
         Job.ParamSet(
             parameter="amd_binary, flaky check",
@@ -648,6 +642,61 @@ class JobConfigs:
             parameter="arm_asan_ubsan, targeted",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
+    # Most sanitizer flavors of the functional tests for pull requests. They run only
+    # the tests selected for the change (`selected tests`, see
+    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
+    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
+    # workflow keeps running in every flavor. What is left in a pull request is
+    # the full suite in the debug and plain binary flavors, plus the stress
+    # tests, which run the functional tests under every sanitizer with heavy
+    # concurrency and randomized settings and find more than a plain functional
+    # run does. See ClickHouse/ClickHouse#114725.
+    #
+    # The selection is a few hundred tests, so the batches of the full-suite jobs
+    # are collapsed into a single job per flavor. The runner labels and the
+    # timeout are kept as they are for the corresponding full-suite jobs: the
+    # test runner sizes its worker pool from the CPU count, and a sanitizer
+    # flavor that needs a large-memory runner for the full suite needs it for a
+    # subset as well. If test selection cannot be fetched, the job fails instead
+    # of silently running a weaker unbatched fallback configuration.
+    # The selection is computed from PR-local state (including failed tests
+    # from earlier jobs) that is not part of a repository digest. Reusing a
+    # cached result could therefore skip a different selection; keep these
+    # jobs uncached.
+    selected_ft_job_config = common_ft_job_config.copy()
+    selected_ft_job_config.digest_config = None
+    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
@@ -1016,52 +1065,52 @@ class JobConfigs:
         Job.ParamSet(
             parameter="amd_debug",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_DEBUG],
+            requires=[ArtifactNames.CH_AMD_DEBUG],
         ),
         Job.ParamSet(
             parameter="amd_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
         Job.ParamSet(
             parameter="amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
+            requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="arm_release",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_RELEASE],
+            requires=[ArtifactNames.CH_ARM_RELEASE],
         ),
         Job.ParamSet(
             parameter="arm_debug",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_DEBUG],
+            requires=[ArtifactNames.CH_ARM_DEBUG],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_asan_ubsan, s3",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_ASAN_UBSAN],
+            requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
         ),
         Job.ParamSet(
             parameter="arm_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_TSAN],
+            requires=[ArtifactNames.CH_ARM_TSAN],
         ),
         Job.ParamSet(
             parameter="arm_msan",
             runs_on=RunnerLabels.FUNC_TESTER_ARM,
-            requires=[ArtifactNames.DEB_ARM_MSAN],
+            requires=[ArtifactNames.CH_ARM_MSAN],
         ),
     )
     # might be heavy on azure - run only on master
@@ -1069,12 +1118,12 @@ class JobConfigs:
         Job.ParamSet(
             parameter="azure, amd_msan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_MSAN],
+            requires=[ArtifactNames.CH_AMD_MSAN],
         ),
         Job.ParamSet(
             parameter="azure, amd_tsan",
             runs_on=RunnerLabels.FUNC_TESTER_AMD,
-            requires=[ArtifactNames.DEB_AMD_TSAN],
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     upgrade_test_jobs = Job.Config(
@@ -1781,4 +1830,31 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+
+    sign_macos_binary_jobs = Job.Config(
+        name=JobNames.SIGN_MACOS,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/utils+--network=host+root",
+        timeout=3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=build_digest_config.include_paths
+            + [
+                "./ci/jobs/sign_macos_binary.py",
+                "./ci/jobs/scripts/sign_macos_binary",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            requires=[ArtifactNames.CH_AMD_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_AMD_DARWIN_SIGNED],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_DARWIN,
+            requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
+        ),
     )
