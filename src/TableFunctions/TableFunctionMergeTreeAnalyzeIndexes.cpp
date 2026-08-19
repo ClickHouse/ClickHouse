@@ -109,6 +109,8 @@ private:
 
     void parseArgumentsUUID(const ASTs & args_func, ContextPtr context);
     void parseArgumentsDatabaseTable(const ASTs & args_func, ContextPtr context);
+    /// Parses the arguments after the table identity: condition, parts_array, projection, optimizations.
+    void parseTrailingArguments(ASTs & args, ContextPtr context, size_t condition_index);
 
     /// 2 features will benefit from distributed index load + analysis:
     /// a) vector search with large vector indexes
@@ -156,29 +158,7 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsUUID(const ASTs & args_
     args[0] = evaluateConstantExpressionAsLiteral(args[0], context);
     auto uuid = parseFromString<UUID>(checkAndGetLiteralArgument<String>(args[0], "UUID"));
 
-    if (args.size() > 1)
-        predicate = args[1]->clone();
-
-    if (args.size() > 2)
-        parts = extractParts(args[2], context);
-
-    /// The projection argument is recognized by argument count alone (4 - projection,
-    /// 5 - optimization pair, 6 - both), and servers unaware of it reject counts 4 and 6,
-    /// which keeps mixed-version distributed index analysis fail-closed.
-    size_t optimization_index = 3;
-    if (args.size() == 4 || args.size() == 6)
-    {
-        args[3] = evaluateConstantExpressionAsLiteral(args[3], context);
-        projection_name = checkAndGetLiteralArgument<String>(args[3], "projection");
-        optimization_index = 4;
-    }
-
-    if (args.size() > optimization_index)
-    {
-        if (args.size() != optimization_index + 2)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
-        parseArgumentsForOptimizations(args, context, optimization_index);
-    }
+    parseTrailingArguments(args, context, /*condition_index=*/ 1);
 
     source_table_id = StorageID{/*database=*/ "", /*table=*/ "", uuid};
 }
@@ -196,21 +176,29 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
     args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(args[1], context);
     auto table = checkAndGetLiteralArgument<String>(args[1], "table");
 
-    if (args.size() > 2)
-        predicate = args[2]->clone();
+    parseTrailingArguments(args, context, /*condition_index=*/ 2);
 
-    if (args.size() > 3)
-        parts = extractParts(args[3], context);
+    source_table_id = StorageID{database, table};
+}
 
-    /// The projection argument is recognized by argument count alone (5 - projection,
-    /// 6 - optimization pair, 7 - both), and servers unaware of it reject counts 5 and 7,
-    /// which keeps mixed-version distributed index analysis fail-closed.
-    size_t optimization_index = 4;
-    if (args.size() == 5 || args.size() == 7)
+void TableFunctionMergeTreeAnalyzeIndexes::parseTrailingArguments(ASTs & args, ContextPtr context, size_t condition_index)
+{
+    if (args.size() > condition_index)
+        predicate = args[condition_index]->clone();
+
+    size_t parts_index = condition_index + 1;
+    if (args.size() > parts_index)
+        parts = extractParts(args[parts_index], context);
+
+    /// The projection argument is recognized by argument count alone (either it is the last
+    /// argument, or the optimization pair follows it), and servers unaware of it reject those
+    /// counts, which keeps mixed-version distributed index analysis fail-closed.
+    size_t optimization_index = parts_index + 1;
+    if (args.size() == optimization_index + 1 || args.size() == optimization_index + 3)
     {
-        args[4] = evaluateConstantExpressionAsLiteral(args[4], context);
-        projection_name = checkAndGetLiteralArgument<String>(args[4], "projection");
-        optimization_index = 5;
+        args[optimization_index] = evaluateConstantExpressionAsLiteral(args[optimization_index], context);
+        projection_name = checkAndGetLiteralArgument<String>(args[optimization_index], "projection");
+        ++optimization_index;
     }
 
     if (args.size() > optimization_index)
@@ -219,8 +207,6 @@ void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsDatabaseTable(const AST
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Not enough arguments: no args_array for optimization");
         parseArgumentsForOptimizations(args, context, optimization_index);
     }
-
-    source_table_id = StorageID{database, table};
 }
 
 void TableFunctionMergeTreeAnalyzeIndexes::parseArgumentsForOptimizations(const ASTs & args, ContextPtr context, size_t start_index)
