@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -456,6 +457,62 @@ inline std::string geoKindNameOfType(const IDataType & type)
     return {};
 }
 
+/// Whether the geometry kind stored in `type` is only decided at execution time, and the predicate
+/// may well reject it there. A `Dynamic` column, or a `Variant` (`Geometry` is a `Variant` over the
+/// geometry kinds), carries no single declared kind an `ActionsDAG` node could be asked about: which
+/// overload runs -- and therefore whether it raises `ILLEGAL_TYPE_OF_ARGUMENT` -- is settled per row.
+/// Such an argument must fail closed for the whole conjunction. It is guaranteed to be evaluated on
+/// every surviving row under `short_circuit_function_evaluation = 'disable'`, so it raises as soon as
+/// a rejected kind is actually seen -- but if a sibling conjunct on the indexed column pruned every
+/// granule first, `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor` return an
+/// empty result without ever building the raising overload, and the query answers `0` instead of
+/// surfacing the exception. That is the very exception hiding the constant-side checks above avoid,
+/// only reached across columns.
+///
+/// A `Variant` names its alternatives, so it fails closed only when at least one of them is a kind
+/// this predicate rejects at this position -- a `Variant` all of whose alternatives are accepted can
+/// never raise, and vetoing pruning for it would cost pruning for nothing. A `Dynamic` can hold any
+/// type at all, so it always fails closed for a predicate that rejects any kind whatsoever.
+inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
+{
+    const IDataType * inner = &type;
+    while (true)
+    {
+        if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(inner))
+            inner = low_cardinality_type->getDictionaryType().get();
+        else if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(inner))
+            inner = nullable_type->getNestedType().get();
+        else
+            break;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(inner))
+    {
+        for (const auto & alternative : variant_type->getVariants())
+        {
+            /// An alternative with no kind name of its own (e.g. a raw array literal type) is
+            /// interpreted by shape, exactly as it is everywhere else here, and says nothing.
+            const auto kind_name = geoKindNameOfType(*alternative);
+            if (!kind_name.empty() && function.rejectsColumnGeometryKind(kind_name, arg_index))
+                return true;
+        }
+        return false;
+    }
+
+    if (typeid_cast<const DataTypeDynamic *>(inner))
+    {
+        /// Every kind a predicate could possibly reject is reachable here. Probing the geometry
+        /// kinds is enough to tell a predicate that rejects some kind apart from one (e.g. a WASM
+        /// UDF reading raw WKB) that accepts everything and can never raise on kind grounds.
+        static constexpr std::array kind_names
+            = {"Point", "Ring", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon", "String"};
+        return std::ranges::any_of(
+            kind_names, [&](std::string_view kind_name) { return function.rejectsColumnGeometryKind(kind_name, arg_index); });
+    }
+
+    return false;
+}
+
 inline std::string constGeoKindName(const ActionsDAG::Node & node)
 {
     const auto * variant_type = typeid_cast<const DataTypeVariant *>(node.result_type.get());
@@ -543,6 +600,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     bool has_extra_non_constant = false;
     bool any_extraction_failed = false;
     bool any_kind_rejected = false;
+    bool any_deferred_kind_rejection = false;
     /// Paired with the argument position it came from, needed by `treatsConstTupleAsPoint` below
     /// to tell `pointInPolygon`'s own point argument apart from its polygon-component arguments.
     struct ConstGeoField
@@ -562,6 +620,16 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         const size_t this_arg_index = arg_index++;
         if (child->type == ActionsDAG::ActionType::INPUT)
         {
+            /// Checked for EVERY input, accepted or not: `accept_input` rejecting a `Dynamic`/
+            /// `Variant` column is precisely the case that used to fall through to
+            /// `has_extra_non_constant` and let a sibling conjunct prune the exception away.
+            if (child->result_type
+                && hasDeferredGeometryKindRejection(*child->result_type, *node.function_base, this_arg_index))
+            {
+                any_deferred_kind_rejection = true;
+                continue;
+            }
+
             if (!input_child && accept_input(*child))
             {
                 /// A column explicitly typed as a geometry kind this predicate is guaranteed to
@@ -636,7 +704,7 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
     /// *different* geometry column), so an invalid constant geometry here must still veto pruning
     /// for the whole conjunction -- otherwise pruning could proceed using only an unrelated,
     /// valid conjunct's bbox, silently hiding the exception this conjunct is guaranteed to raise.
-    if (any_extraction_failed || any_kind_rejected)
+    if (any_extraction_failed || any_kind_rejected || any_deferred_kind_rejection)
         return NodeBboxStatus::Failed;
 
     if (const_fields.empty())
