@@ -15,64 +15,64 @@ SET max_rows_to_group_by = 0;
 -- Heavy eviction across aggregation methods.
 
 SELECT 'UInt32 key (key32)';
-SELECT k, count(), sum(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number AS v FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SELECT k, count(), sum(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number AS v FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04501_engage_01';
 
 SELECT 'UInt32 key, DESC';
-SELECT k, count() FROM (SELECT toUInt32(number % 1000) AS k FROM numbers(2000)) GROUP BY k ORDER BY k DESC LIMIT 10;
+SELECT k, count() FROM (SELECT toUInt32(number % 1000) AS k FROM numbers(2000)) GROUP BY k ORDER BY k DESC LIMIT 10 SETTINGS log_comment = '04501_engage_02';
 
 SELECT 'UInt64 key (key64)';
-SELECT k, count() FROM (SELECT toUInt64(999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SELECT k, count() FROM (SELECT toUInt64(999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04501_engage_03';
 
 SELECT 'Int32 key with negatives';
-SELECT k, count() FROM (SELECT toInt32(499 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SELECT k, count() FROM (SELECT toInt32(499 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04501_engage_04';
 
 SELECT 'Float64 key with nan';
-SELECT k, count() FROM (SELECT if(number % 1000 = 500, nan, toFloat64(999 - (number % 1000))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10;
+SELECT k, count() FROM (SELECT if(number % 1000 = 500, nan, toFloat64(999 - (number % 1000))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04501_engage_05';
 
 SELECT 'Float64 key with nan, DESC';
-SELECT k, count() FROM (SELECT if(number % 1000 = 500, nan, toFloat64(number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k DESC LIMIT 3;
+SELECT k, count() FROM (SELECT if(number % 1000 = 500, nan, toFloat64(number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k DESC LIMIT 3 SETTINGS log_comment = '04501_engage_06';
 
 SELECT 'Float32 key';
-SELECT k, count() FROM (SELECT toFloat32(999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT toFloat32(999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_07';
 
 SELECT 'DateTime key';
-SELECT k, count() FROM (SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + (999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + (999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_08';
 
 SELECT 'Date key (key16, no hash-table pruning)';
-SELECT k, count() FROM (SELECT toDate('2020-01-01') + (999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT toDate('2020-01-01') + (999 - (number % 1000)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_09';
 
 SELECT 'String key';
-SELECT k, count() FROM (SELECT concat('key_', leftPad(toString(999 - (number % 1000)), 4, '0')) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT concat('key_', leftPad(toString(999 - (number % 1000)), 4, '0')) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_10';
 
 SELECT 'FixedString key';
-SELECT k, count() FROM (SELECT toFixedString(leftPad(toString(999 - (number % 1000)), 4, '0'), 4) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT toFixedString(leftPad(toString(999 - (number % 1000)), 4, '0'), 4) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_11';
 
 SELECT 'LowCardinality(String) key';
-SELECT k, count() FROM (SELECT toLowCardinality(concat('key_', leftPad(toString(999 - (number % 1000)), 4, '0'))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT toLowCardinality(concat('key_', leftPad(toString(999 - (number % 1000)), 4, '0'))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_12';
 
 SELECT 'Nullable(UInt32) key, NULLS LAST (null slot is evicted)';
-SELECT k, count() FROM (SELECT if(number % 1000 = 500, NULL, toNullable(toUInt32(999 - (number % 1000)))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC NULLS LAST LIMIT 5;
+SELECT k, count() FROM (SELECT if(number % 1000 = 500, NULL, toNullable(toUInt32(999 - (number % 1000)))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC NULLS LAST LIMIT 5 SETTINGS log_comment = '04501_engage_13';
 
 SELECT 'Nullable(UInt32) key, NULLS FIRST (null slot stays in the heap)';
-SELECT k, count() FROM (SELECT if(number % 1000 = 500, NULL, toNullable(toUInt32(999 - (number % 1000)))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 5;
+SELECT k, count() FROM (SELECT if(number % 1000 = 500, NULL, toNullable(toUInt32(999 - (number % 1000)))) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC NULLS FIRST LIMIT 5 SETTINGS log_comment = '04501_engage_14';
 
 SELECT 'Tuple key (single serialized GROUP BY column)';
-SELECT k, count() FROM (SELECT (toUInt32(999 - (number % 1000)), toString(number % 2)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
+SELECT k, count() FROM (SELECT (toUInt32(999 - (number % 1000)), toString(number % 2)) AS k FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5 SETTINGS log_comment = '04501_engage_15';
 
 SELECT 'Composite fixed key (UInt32, UInt16)';
-SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toUInt16(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10;
+SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toUInt16(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10 SETTINGS log_comment = '04501_engage_16';
 
 SELECT 'Composite serialized key (UInt32, String)';
-SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toString(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10;
+SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toString(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10 SETTINGS log_comment = '04501_engage_17';
 
 SELECT 'Composite nullable key (Nullable(UInt32), String)';
-SELECT a, b, count() FROM (SELECT if(number % 1000 = 995, NULL, toNullable(toUInt32(99 - intDiv(number % 1000, 10)))) AS a, toString(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC NULLS LAST, b ASC LIMIT 10;
+SELECT a, b, count() FROM (SELECT if(number % 1000 = 995, NULL, toNullable(toUInt32(99 - intDiv(number % 1000, 10)))) AS a, toString(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC NULLS LAST, b ASC LIMIT 10 SETTINGS log_comment = '04501_engage_18';
 
 SELECT 'Composite LowCardinality key (LowCardinality(String), UInt32)';
-SELECT a, b, count() FROM (SELECT toLowCardinality(leftPad(toString(99 - intDiv(number % 1000, 10)), 3, '0')) AS a, toUInt32(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10;
+SELECT a, b, count() FROM (SELECT toLowCardinality(leftPad(toString(99 - intDiv(number % 1000, 10)), 3, '0')) AS a, toUInt32(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10 SETTINGS log_comment = '04501_engage_19';
 
 SELECT 'Prefix mode (ORDER BY is a prefix of GROUP BY, no hash-table pruning)';
-SELECT * FROM (SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toUInt16(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC LIMIT 10) ORDER BY a, b;
+SELECT * FROM (SELECT a, b, count() FROM (SELECT toUInt32(99 - intDiv(number % 1000, 10)) AS a, toUInt16(number % 10) AS b FROM numbers(2000)) GROUP BY a, b ORDER BY a ASC LIMIT 10) ORDER BY a, b SETTINGS log_comment = '04501_engage_20';
 
 SELECT 'Stateful aggregate under eviction (uniqExact)';
 SELECT k, uniqExact(v) FROM (SELECT toUInt32(999 - (number % 1000)) AS k, number % 3 AS v FROM numbers(2000)) GROUP BY k ORDER BY k ASC LIMIT 5;
@@ -125,6 +125,12 @@ SYSTEM FLUSH LOGS query_log;
 SELECT sum(ProfileEvents['AggregationTopKRowsSkipped']) > 0, sum(ProfileEvents['AggregationTopKKeysEvicted']) > 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select';
+
+SELECT 'per_family_engagement';
+SELECT log_comment, max(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04501_engage_%'
+GROUP BY log_comment ORDER BY log_comment;
 
 -- Keys that are bitwise distinct yet compare equal (-0.0 vs +0.0, NaNs with
 -- different payloads) tie under ORDER BY: the heap must never evict a key tied

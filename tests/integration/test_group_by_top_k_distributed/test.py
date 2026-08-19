@@ -394,6 +394,11 @@ def test_distributed_remote_composite_prefix(start_cluster):
     )
     _assert_same_result(node1, query)
 
+    # The pushdown must reach the followers' partial aggregation for the
+    # prefix shape, not just leave the results equal.
+    plan = _follower_plan(node1, query, {"enable_parallel_replicas": 0})
+    assert "Top-K:" in plan, f"prefix mode did not reach the followers:\n{plan}"
+
 
 def test_distributed_remote_no_order_by(start_cluster):
     """`GROUP BY k LIMIT N` (no ORDER BY) over a Distributed table.

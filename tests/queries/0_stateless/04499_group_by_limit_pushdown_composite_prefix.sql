@@ -648,3 +648,13 @@ DROP TABLE gt_trailing_collate;
 DROP TABLE gt_trailing_duplicate_key;
 DROP TABLE gt_aliased_key;
 DROP TABLE gt_aliased_key_order_by_position;
+
+SELECT 'prefix mode: annotated and engaged';
+SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
+    SELECT k1, k2, count() FROM (SELECT intDiv(99999 - number, 10) AS k1, number % 7 AS k2 FROM numbers(100000)) GROUP BY k1, k2 ORDER BY k1 ASC LIMIT 10);
+SELECT k1, k2, count() FROM (SELECT intDiv(99999 - number, 10) AS k1, number % 7 AS k2 FROM numbers(100000)) GROUP BY k1, k2 ORDER BY k1 ASC LIMIT 10
+SETTINGS log_comment = '04499_engage_prefix' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT max(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04499_engage_prefix';

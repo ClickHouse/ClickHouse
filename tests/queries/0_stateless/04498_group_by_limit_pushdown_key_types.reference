@@ -35,3 +35,14 @@ low_cardinality_key64
 low_cardinality_key_string
 optimization_applied_guard
 1
+per_family_engagement
+04498_engage_fixed_string	1
+04498_engage_float64	1
+04498_engage_key32	1
+04498_engage_key64	1
+04498_engage_keys128	1
+04498_engage_keys256	1
+04498_engage_low_cardinality	1
+04498_engage_nullable	1
+04498_engage_serialized	1
+04498_engage_string	1

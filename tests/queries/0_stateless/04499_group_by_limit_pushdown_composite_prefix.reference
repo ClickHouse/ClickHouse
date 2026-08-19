@@ -35,3 +35,6 @@ order by longer than group by: still optimized
 1
 non-key sort column before a key: not optimized
 0
+prefix mode: annotated and engaged
+1
+1

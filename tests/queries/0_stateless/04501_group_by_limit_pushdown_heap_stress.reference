@@ -180,6 +180,27 @@ consecutive-key cache after eviction: result matches optimization off
 10
 heap_engaged_guard
 1	1
+per_family_engagement
+04501_engage_01	1
+04501_engage_02	1
+04501_engage_03	1
+04501_engage_04	1
+04501_engage_05	1
+04501_engage_06	1
+04501_engage_07	1
+04501_engage_08	1
+04501_engage_09	1
+04501_engage_10	1
+04501_engage_11	1
+04501_engage_12	1
+04501_engage_13	1
+04501_engage_14	1
+04501_engage_15	1
+04501_engage_16	1
+04501_engage_17	1
+04501_engage_18	1
+04501_engage_19	1
+04501_engage_20	1
 alternating negative and positive zero, stateful aggregate, LIMIT 1
 0	5
 same result without the optimization

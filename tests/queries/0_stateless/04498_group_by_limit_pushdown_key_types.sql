@@ -847,6 +847,23 @@ DROP TABLE t_gbylimit_str;
 SELECT 'optimization_applied_guard';
 SELECT count() FROM (EXPLAIN actions = 1 SELECT number AS k FROM numbers(100) GROUP BY k ORDER BY k LIMIT 5) WHERE explain LIKE '%Top-K%';
 
+SELECT 'per_family_engagement';
+SELECT k, count() FROM (SELECT toUInt32(99999 - number) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_key32' FORMAT Null;
+SELECT k, count() FROM (SELECT toUInt64(99999 - number) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_key64' FORMAT Null;
+SELECT a, b, count() FROM (SELECT toUInt64(99999 - number) AS a, toUInt64(number % 3) AS b FROM numbers(100000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10 SETTINGS log_comment = '04498_engage_keys128' FORMAT Null;
+SELECT a, b, c, d, count() FROM (SELECT toUInt64(99999 - number) AS a, toUInt64(number % 3) AS b, toUInt64(number % 5) AS c, toUInt64(number % 7) AS d FROM numbers(100000)) GROUP BY a, b, c, d ORDER BY a ASC, b ASC, c ASC, d ASC LIMIT 10 SETTINGS log_comment = '04498_engage_keys256' FORMAT Null;
+SELECT k, count() FROM (SELECT toFloat64(99999 - number) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_float64' FORMAT Null;
+SELECT k, count() FROM (SELECT leftPad(toString(99999 - number), 6, '0') AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_string' FORMAT Null;
+SELECT k, count() FROM (SELECT toFixedString(leftPad(toString(99999 - number), 6, '0'), 6) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_fixed_string' FORMAT Null;
+SELECT a, b, count() FROM (SELECT leftPad(toString(99999 - number), 6, '0') AS a, toUInt32(number % 3) AS b FROM numbers(100000)) GROUP BY a, b ORDER BY a ASC, b ASC LIMIT 10 SETTINGS log_comment = '04498_engage_serialized' FORMAT Null;
+SELECT k, count() FROM (SELECT if(number % 100 = 7, NULL, toNullable(toUInt32(99999 - number))) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC NULLS LAST LIMIT 10 SETTINGS log_comment = '04498_engage_nullable' FORMAT Null;
+SELECT k, count() FROM (SELECT toLowCardinality(leftPad(toString(9999 - (number % 10000)), 5, '0')) AS k FROM numbers(100000)) GROUP BY k ORDER BY k ASC LIMIT 10 SETTINGS log_comment = '04498_engage_low_cardinality' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, max(ProfileEvents['AggregationTopKRowsSkipped'] + ProfileEvents['AggregationTopKKeysEvicted']) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '04498_engage_%'
+GROUP BY log_comment ORDER BY log_comment;
+
 DROP TABLE gt_key8;
 DROP TABLE gt_key16;
 DROP TABLE gt_key32;
