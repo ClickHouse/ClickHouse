@@ -117,6 +117,18 @@ a+b
 2	b
 11	A
 12	B
+-- literals: TIMESTAMP with fraction and zone, DECIMAL, .5 without leading zero
+2022-11-01 09:08:07.321
+2024-01-01 12:00:00
+86400123
+123.45	123.45
+1
+-- more standard forms
+foo	abcd
+-20
+Palhoca
+1	1
+1
 -- ClickHouse functions remain accessible
 UInt8	x/y
 -- switching back

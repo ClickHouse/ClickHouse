@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace DB
@@ -350,6 +351,48 @@ private:
             return;
         }
 
+        /// TRIM('x' FROM s) -> TRIM(BOTH 'x' FROM s) and TRIM(LEADING FROM s) ->
+        /// TRIM(LEADING ' ' FROM s): ClickHouse accepts only the full form.
+        if (tokenIsKeyword(token, "TRIM") && isTypeAt(i + 1, TokenType::OpeningRoundBracket))
+        {
+            if (isTypeAt(i + 2, TokenType::StringLiteral) && isKeywordAt(i + 3, "FROM"))
+            {
+                changed = true;
+                emitToken(token);
+                emitToken(tokens[i + 1]);
+                emitText("BOTH");
+                i += 2;
+                return;
+            }
+            if ((isKeywordAt(i + 2, "LEADING") || isKeywordAt(i + 2, "TRAILING") || isKeywordAt(i + 2, "BOTH"))
+                && isKeywordAt(i + 3, "FROM"))
+            {
+                changed = true;
+                emitToken(token);
+                emitToken(tokens[i + 1]);
+                emitToken(tokens[i + 2]);
+                emitText("' '");
+                i += 3;
+                return;
+            }
+        }
+
+        /// DECIMAL '123.45' -> CAST('123.45' AS Decimal(5, 2)).
+        if (tokenIsKeyword(token, "DECIMAL") && isTypeAt(i + 1, TokenType::StringLiteral))
+        {
+            if (translateDecimalLiteral(i))
+                return;
+        }
+
+        /// TIMESTAMP '2022-11-01 09:08:07.321 [Asia/Tokyo]': the plain ClickHouse
+        /// TIMESTAMP literal drops the fractional seconds (it produces DateTime)
+        /// and does not understand region time zone names.
+        if (tokenIsKeyword(token, "TIMESTAMP") && isTypeAt(i + 1, TokenType::StringLiteral))
+        {
+            if (translateTimestampLiteral(i))
+                return;
+        }
+
         /// nan() and infinity() -> the nan and inf literals (in ClickHouse these
         /// are literal keywords, so a function-call form does not even parse).
         if ((tokenIsKeyword(token, "NAN") || tokenIsKeyword(token, "INFINITY"))
@@ -393,6 +436,94 @@ private:
 
         emitToken(token);
         ++i;
+    }
+
+    /// DECIMAL '123.45' -> CAST('123.45' AS Decimal(5, 2)). Returns false when
+    /// the literal is not a plain decimal number (then it is left as-is).
+    bool translateDecimalLiteral(size_t & i)
+    {
+        const Token & literal = tokens[i + 1];
+        if (literal.size() < 2)
+            return false;
+        std::string_view text(literal.begin + 1, literal.size() - 2);
+
+        size_t digits = 0;
+        size_t scale = 0;
+        bool seen_dot = false;
+        size_t pos_in_text = 0;
+        if (pos_in_text < text.size() && (text[pos_in_text] == '+' || text[pos_in_text] == '-'))
+            ++pos_in_text;
+        for (; pos_in_text < text.size(); ++pos_in_text)
+        {
+            char c = text[pos_in_text];
+            if (c == '.' && !seen_dot)
+            {
+                seen_dot = true;
+            }
+            else if (isNumericASCII(c))
+            {
+                ++digits;
+                if (seen_dot)
+                    ++scale;
+            }
+            else
+                return false;
+        }
+        if (digits == 0 || digits > 76)
+            return false;
+
+        changed = true;
+        out += "CAST(";
+        emitToken(literal);
+        out += "AS Decimal(" + std::to_string(digits) + ", " + std::to_string(scale) + ")) ";
+        i += 2;
+        return true;
+    }
+
+    /// TIMESTAMP '<date> <time>[.fraction][ <zone>]' with a fractional part or a
+    /// named time zone -> toDateTime64 / parseDateTime64BestEffort. Returns false
+    /// when the plain ClickHouse TIMESTAMP literal handles the value already.
+    bool translateTimestampLiteral(size_t & i)
+    {
+        const Token & literal = tokens[i + 1];
+        if (literal.size() < 2)
+            return false;
+        String text(literal.begin + 1, literal.size() - 2);
+
+        /// Split into date, time and an optional zone part.
+        std::vector<String> parts;
+        size_t start = 0;
+        while (start < text.size())
+        {
+            size_t space = text.find(' ', start);
+            if (space == String::npos)
+                space = text.size();
+            if (space > start)
+                parts.push_back(text.substr(start, space - start));
+            start = space + 1;
+        }
+        if (parts.size() < 2 || parts.size() > 3 || text.find('\'') != String::npos || text.find('\\') != String::npos)
+            return false;
+
+        size_t scale = 0;
+        if (size_t dot = parts[1].find('.'); dot != String::npos)
+            scale = std::min<size_t>(9, parts[1].size() - dot - 1);
+
+        bool has_named_zone = parts.size() == 3 && isAlphaASCII(parts[2][0]);
+        bool has_offset = parts.size() == 3 && !has_named_zone;
+
+        if (scale == 0 && !has_named_zone)
+            return false;
+
+        changed = true;
+        if (has_named_zone)
+            out += "toDateTime64('" + parts[0] + " " + parts[1] + "', " + std::to_string(scale) + ", '" + parts[2] + "') ";
+        else if (has_offset)
+            out += "parseDateTime64BestEffort('" + text + "', " + std::to_string(scale) + ") ";
+        else
+            out += "toDateTime64('" + text + "', " + std::to_string(scale) + ") ";
+        i += 2;
+        return true;
     }
 
     /// Whether a dot at position `idx` starts a numeric literal (`.06`) rather

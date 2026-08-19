@@ -124,6 +124,20 @@ INSERT INTO t_05019 SELECT x + 10, upper(s) FROM t_05019;
 SELECT x, s FROM t_05019 ORDER BY x;
 DROP TABLE t_05019;
 
+SELECT '-- literals: TIMESTAMP with fraction and zone, DECIMAL, .5 without leading zero';
+SELECT TIMESTAMP '2022-11-01 09:08:07.321';
+SELECT TIMESTAMP '2024-01-01 12:00:00 Asia/Tokyo';
+SELECT date_diff('millisecond', TIMESTAMP '2022-10-31 09:08:07.198', TIMESTAMP '2022-11-01 09:08:07.321');
+SELECT DECIMAL '123.45', CAST(DECIMAL '123.45' AS VARCHAR);
+SELECT 3 BETWEEN .06 - 0.01 AND .5 * 10;
+
+SELECT '-- more standard forms';
+SELECT trim('!' FROM '!foo!'), trim(LEADING FROM '  abcd');
+SELECT bitwise_not(19);
+SELECT translate('Palhoça', 'ç', 'c');
+SELECT current_timestamp(3) >= now() - 5, localtimestamp(6) >= now() - 5;
+SELECT TIMESTAMP '2020-01-01 00:00:00' AT LOCAL = TIMESTAMP '2020-01-01 00:00:00';
+
 SELECT '-- ClickHouse functions remain accessible';
 SELECT toTypeName(1 = 1), arrayStringConcat(ARRAY['x', 'y'], '/');
 

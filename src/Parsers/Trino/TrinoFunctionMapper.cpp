@@ -145,6 +145,7 @@ const std::unordered_map<String, String> & getRenames()
         {"substr", "substringUTF8"},
         {"substring", "substringUTF8"},
         {"title_case", "initcapUTF8"},
+        {"translate", "translateUTF8"},
         {"upper", "upperUTF8"},
         {"from_utf8", "toValidUTF8"},
 
@@ -223,7 +224,6 @@ const std::unordered_map<String, String> & getRenames()
 
         /// Bitwise.
         {"bitwise_and", "bitAnd"},
-        {"bitwise_not", "bitNot"},
         {"bitwise_or", "bitOr"},
         {"bitwise_xor", "bitXor"},
         {"bitwise_left_shift", "bitShiftLeft"},
@@ -516,11 +516,23 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"timezone", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
-            /// Trino timezone(x) returns the zone of the value; the zero-argument
-            /// ClickHouse timezone() (the session zone) corresponds to Trino
-            /// current_timezone() and is handled by a rename.
-            requireArguments(function, arguments, 1, 1, "(timestamp)");
+            /// Trino timezone(x) returns the zone of the value. The zero-argument
+            /// form is left alone: it is the ClickHouse timeZone() (the session
+            /// zone), which the parser itself generates when desugaring AT LOCAL.
+            if (arguments.size() != 1)
+                return;
             function.name = "timezoneOf";
+        }},
+        {"current_timestamp", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            /// current_timestamp(p): the precision argument requires now64.
+            if (arguments.size() == 1)
+                function.name = "now64";
+        }},
+        {"localtimestamp", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
+        {
+            requireArguments(function, arguments, 0, 1, "([precision])");
+            function.name = arguments.empty() ? "now" : "now64";
         }},
         {"timezone_hour", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
@@ -628,6 +640,13 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
 
         /// Bitwise.
+        {"bitwise_not", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// Trino bitwise functions operate on 64-bit two's complement; without
+            /// the cast a small literal keeps its narrow unsigned type.
+            requireArguments(function, arguments, 1, 1, "(value)");
+            node = makeFunctionWithArguments("bitNot", {makeFunctionWithArguments("toInt64", {arguments[0]})});
+        }},
         {"bitwise_right_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             /// Trino wants a logical (zero-fill) shift; ClickHouse shifts signed types arithmetically.
