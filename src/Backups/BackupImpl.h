@@ -112,8 +112,7 @@ private:
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
 #if CLICKHOUSE_CLOUD
-    /// Both are reached only while continuing an interrupted backup.
-    bool publishedMetadataMatchesUUID() const TSA_REQUIRES(mutex);
+    /// Reached only while continuing an interrupted backup, whose manifest is already published.
     void recalculateMetadataCounters() TSA_REQUIRES(mutex);
 #endif
     void readBackupMetadata() TSA_REQUIRES(mutex);

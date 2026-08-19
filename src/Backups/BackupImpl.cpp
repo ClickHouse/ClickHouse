@@ -23,13 +23,11 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/StdStreamFromReadBuffer.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <IO/copyData.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Poco/SAX/InputSource.h>
 #include <Poco/SAX/SAXParser.h>
 #include <Poco/SAX/XMLReader.h>
 
@@ -606,32 +604,6 @@ bool BackupImpl::hasPublishedMetadata() const
 {
     std::lock_guard lock{mutex};
     return metadata_already_published;
-}
-
-
-bool BackupImpl::publishedMetadataMatchesUUID() const
-{
-    const size_t metadata_size = writer->getFileSize(".backup");
-    StdIStreamFromReadBuffer metadata_stream(writer->readFile(".backup", metadata_size), metadata_size);
-    Poco::XML::InputSource input_source(metadata_stream);
-
-    std::optional<UUID> metadata_uuid;
-    BackupMetadataHandler handler;
-    handler.on_header = [&](const BackupMetadataHandler::Fields & fields)
-    {
-        auto it = fields.find("uuid");
-        if (it == fields.end())
-            throw Exception(ErrorCodes::BACKUP_DAMAGED, "Backup {} metadata has no UUID", backup_name_for_logging);
-        metadata_uuid = parse<UUID>(it->second);
-    };
-
-    Poco::XML::SAXParser xml_parser;
-    xml_parser.setContentHandler(&handler);
-    xml_parser.setFeature(Poco::XML::XMLReader::FEATURE_NAMESPACE_PREFIXES, true);
-    xml_parser.parse(&input_source);
-    if (handler.saved_exception)
-        std::rethrow_exception(handler.saved_exception);
-    return metadata_uuid == uuid;
 }
 
 
