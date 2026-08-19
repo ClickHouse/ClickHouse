@@ -20,7 +20,7 @@ The `PCAP` format reads network packet capture files - both the classic
 `pcap` format and the newer `pcapng` format - and produces one row per packet.
 Each packet is dissected up to the transport layer (L2-L4), so that Ethernet,
 IPv4/IPv6 and TCP/UDP header fields are available as typed columns that can be
-queried with SQL.
+queried with SQL. It is available on Linux builds.
 
 Parsing is performed with the `libtins` library, which reads the capture
 container through `libpcap`. Only reading of capture files is supported; live

@@ -9,8 +9,8 @@
 
 # ENABLE_PCAP is declared in contrib/CMakeLists.txt (before libpcap-cmake).
 
-if (NOT ENABLE_PCAP)
-    message(STATUS "Not using libtins (PCAP input format)")
+if (NOT ENABLE_PCAP OR NOT OS_LINUX)
+    message(STATUS "Not using libtins (the PCAP input format is supported only on Linux)")
     return()
 endif()
 

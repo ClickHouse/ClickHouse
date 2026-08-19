@@ -12,8 +12,8 @@
 # This target is only enabled when the PCAP input format (libtins) is enabled;
 # the option lives in libtins-cmake and libpcap is added before it.
 
-if (NOT ENABLE_PCAP)
-    message(STATUS "Not using libpcap")
+if (NOT ENABLE_PCAP OR NOT OS_LINUX)
+    message(STATUS "Not using libpcap (the PCAP input format is supported only on Linux)")
     return()
 endif()
 
