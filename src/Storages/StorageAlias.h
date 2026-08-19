@@ -231,7 +231,7 @@ public:
         if (!target)
             return std::nullopt;
 
-        return target->getSerializationHints();
+        return target->tryGetSerializationHints();
     }
 
     bool hasAutomaticLowCardinalitySerialization() const override

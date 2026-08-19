@@ -389,7 +389,15 @@ std::optional<SerializationInfoByName> StorageMerge::tryGetSerializationHints() 
         if (auto hints = table->tryGetSerializationHints())
         {
             if (result)
-                result->add(*hints);
+            {
+                for (const auto & [name, info] : *hints)
+                {
+                    if (auto it = result->find(name); it != result->end())
+                        it->second->add(*info);
+                    else
+                        result->emplace(name, info->clone());
+                }
+            }
             else
                 result.emplace(std::move(*hints));
         }
