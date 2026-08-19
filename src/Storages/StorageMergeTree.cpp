@@ -1791,7 +1791,8 @@ bool StorageMergeTree::merge(
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
     PreformattedMessage & out_disable_reason,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    ContextPtr query_context)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
@@ -1826,7 +1827,7 @@ bool StorageMergeTree::merge(
         /// Copying a vector of columns `deduplicate by columns.
         IExecutableTask::TaskResultCallback f = [](bool) {};
         auto task = std::make_shared<MergePlainMergeTreeTask>(
-            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_select_result.value(), table_lock_holder, f);
+            *this, metadata_snapshot, deduplicate, deduplicate_by_columns, cleanup, merge_select_result.value(), table_lock_holder, f, std::move(query_context));
 
         task->setCurrentTransaction(MergeTreeTransactionHolder{}, MergeTreeTransactionPtr{txn});
 
@@ -2395,7 +2396,8 @@ bool StorageMergeTree::optimize(
                     cleanup,
                     txn,
                     disable_reason,
-                    local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
+                    local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions],
+                    local_context))
             {
                 constexpr auto message = "Cannot OPTIMIZE table: {}";
                 LOG_INFO(log, message, disable_reason.text);
@@ -2422,7 +2424,8 @@ bool StorageMergeTree::optimize(
                 cleanup,
                 txn,
                 disable_reason,
-                local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions]))
+                local_context->getSettingsRef()[Setting::optimize_skip_merged_partitions],
+                local_context))
         {
             constexpr auto message = "Cannot OPTIMIZE table: {}";
             LOG_INFO(log, message, disable_reason.text);
