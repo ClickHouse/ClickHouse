@@ -31,6 +31,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & /*arguments*/) const override { return getTransactionIDDataType(); }
 
+    /// Reads the executing node's transaction state.
     bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionID>(context); }
@@ -46,6 +47,7 @@ class FunctionTransactionLatestSnapshot final : public FunctionConstantBase<Func
     }
 public:
     static constexpr auto name = "transactionLatestSnapshot";
+    /// Reads the executing node's transaction state.
     bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionLatestSnapshot>(context); }
@@ -61,6 +63,7 @@ class FunctionTransactionOldestSnapshot final : public FunctionConstantBase<Func
     }
 public:
     static constexpr auto name = "transactionOldestSnapshot";
+    /// Reads the executing node's transaction state.
     bool isServerConstant() const override { return true; }
 
     static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionTransactionOldestSnapshot>(context); }

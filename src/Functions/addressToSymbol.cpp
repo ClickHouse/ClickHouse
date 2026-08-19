@@ -49,6 +49,7 @@ public:
         return 1;
     }
 
+    /// Resolved against the executing node's own binary, like `buildId`.
     bool isDeterministic() const override { return false; }
     bool isServerConstant() const override { return true; }
 

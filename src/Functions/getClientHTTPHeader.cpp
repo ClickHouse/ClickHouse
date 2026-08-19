@@ -44,6 +44,7 @@ public:
 
     bool isDeterministic() const override { return false; }
 
+    /// Read per executing node, so two nodes can disagree.
     bool isServerConstant() const override { return true; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
