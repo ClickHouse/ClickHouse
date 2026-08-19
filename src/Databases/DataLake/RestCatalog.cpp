@@ -49,6 +49,7 @@
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -78,10 +79,12 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_transport_fail[];
     extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_predispatch_fail[];
 }
 
 namespace ProfileEvents
 {
+    extern const Event ReadWriteBufferFromHTTPRequestsSent;
     extern const Event OneLakeAccessTokenRequests;
     extern const Event OneLakeAccessTokenRequestFailures;
     extern const Event OneLakeAccessTokenRequestMicroseconds;
@@ -1665,7 +1668,7 @@ void RestCatalog::sendRequest(
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str, &endpoint](std::ostream & os)
+        out_stream_callback = [body_str, endpoint](std::ostream & os)
         {
             os << body_str;
 
@@ -1908,6 +1911,13 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     const Int64 new_snapshot_id = new_snapshot->getValue<Int64>("snapshot-id");
 
+    /// Counted in `ReadWriteBufferFromHTTP::callImpl` on a connected socket immediately before the
+    /// request is written, so an unchanged value proves nothing of this commit reached the catalog.
+    const auto requests_sent_before
+        = DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent];
+    const auto nothing_was_dispatched = [&]
+    { return DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent] == requests_sent_before; };
+
     try
     {
         /// Models a request the catalog rejects outright, so the commit never takes effect.
@@ -1919,6 +1929,12 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
                 Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
                 "Injected rejection",
                 "");
+        });
+
+        /// Models a failure raised before the request is dispatched, e.g. minting an access token.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_predispatch_fail,
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Injected pre-dispatch failure");
         });
 
         sendRequest(
@@ -1955,6 +1971,11 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const Poco::Exception & ex)
     {
+        /// A commit that never reached the catalog cannot have taken effect, so it keeps its own
+        /// error and the caller's usual cleanup of the files staged for it.
+        if (nothing_was_dispatched())
+            throw;
+
         /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so a transport failure can
         /// arrive as a plain Poco exception. Nothing may escape unclassified.
         classifyAmbiguousCommit(

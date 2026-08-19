@@ -2015,10 +2015,10 @@ def test_glue_commit_unknown_keeps_files(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
 
-def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
-    # The pointer is NOT ours, so the commit cannot be confirmed. Reconciling through a helper that
-    # derives the location from object storage would find the metadata file staged before the
-    # commit and wrongly report success, so this must fail with an unknown outcome.
+def test_glue_commit_rejected_keeps_error(started_cluster):
+    # An error glue refuses to retry was answered definitively, so the update did not take effect:
+    # the original error must survive rather than being reported as an unknown outcome. Same
+    # contract as the REST twin test_catalog_commit_definite_rejection_keeps_error.
     node = started_cluster.instances["node1"]
     root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
         started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
@@ -2031,7 +2031,8 @@ def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
 
-    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected rejection" in error, error
 
     # The pointer never advanced, and the previous snapshot is untouched.
     after = _glue_metadata_location(started_cluster, root_namespace, table_name)

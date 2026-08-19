@@ -2194,6 +2194,13 @@ def _s3_uri_exists(minio_client, s3_uri):
         return False
 
 
+def _manifest_lists_in_storage(started_cluster, table_name):
+    """Manifest lists under the table's own prefix. A manifest list is named `snap-<id>-...`, so a
+    commit that was cleaned up leaves none behind."""
+    objects = list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/metadata/")
+    return sorted(name for name in objects if name.startswith("snap-"))
+
+
 def _current_snapshot(catalog, root_namespace, table_name):
     snapshot = catalog.load_table(f"{root_namespace}.{table_name}").current_snapshot()
     assert snapshot is not None
@@ -2333,6 +2340,48 @@ def test_catalog_commit_definite_rejection_keeps_error(started_cluster):
     assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
     assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
     assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+
+
+def test_catalog_commit_pre_dispatch_keeps_error(started_cluster):
+    # A failure raised before the commit request reaches the catalog (minting an access token, for
+    # example) cannot have committed anything, so it must keep its own error instead of being
+    # reported as an unknown outcome, and the files staged for it must be cleaned up. Reporting it
+    # as unknown would both hide the actionable error and leak a full set of files on every retry.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_commit_predispatch_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # Created through ClickHouse so the table owns its storage prefix, which is what makes the
+    # manifest-list listing below a statement about this commit and not about the whole warehouse.
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+
+    before = _current_snapshot(catalog, root_namespace, table_name)
+    manifest_lists_before = _manifest_lists_in_storage(started_cluster, table_name)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_predispatch_fail")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_predispatch_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected pre-dispatch failure" in error, error
+
+    # The commit never reached the catalog, so the table is unchanged and still readable.
+    after = _current_snapshot(catalog, root_namespace, table_name)
+    assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
+    assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+    # Nothing was committed, so no manifest list of an attempted commit may be left behind.
+    assert _manifest_lists_in_storage(started_cluster, table_name) == manifest_lists_before
 
 
 def test_catalog_commit_unknown_keeps_files_on_delete(started_cluster):
