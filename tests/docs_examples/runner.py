@@ -302,8 +302,8 @@ def load_examples(client):
 
 
 def normalize(text):
-    """Compare responses up to trailing whitespace, which Markdown does not preserve reliably."""
-    return "\n".join(line.rstrip() for line in text.strip().splitlines())
+    """Keep response bytes intact, including `TSV` separators and empty rows."""
+    return text
 
 
 # The scratch databases and sessions carry a name unique to this run, so that concurrent

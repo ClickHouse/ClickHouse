@@ -26,6 +26,11 @@ def test_global_object_detection_ignores_other_functions():
     assert not make_example("SELECT generateUUIDv4()").creates_global_objects
 
 
+def test_normalize_preserves_tsv_empty_fields_and_blank_rows():
+    assert runner.normalize("a\t\nb") != runner.normalize("a\nb")
+    assert runner.normalize("\n") != runner.normalize("")
+
+
 def test_client_does_not_retry_a_request_after_a_transport_error(monkeypatch):
     class FailingConnection:
         requests = 0
