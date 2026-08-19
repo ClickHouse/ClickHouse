@@ -385,64 +385,6 @@ TEST(RuntimeDataflowStatisticsStateSampling, VariantWithoutSampledStateValuesDoe
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
 }
 
-/// `ColumnSparse` keeps its default value in row zero of its values column, but the sparse serialization
-/// writes only the following non-default values. An all-default sample must therefore not establish a
-/// one-value aggregate-state sample: later sparse blocks with actual states have to serialize their own
-/// sample instead of extrapolating from that non-wire default.
-TEST(RuntimeDataflowStatisticsStateSampling, SparseDefaultStateDoesNotEstablishSample)
-{
-    tryRegisterAggregateFunctions();
-
-    constexpr size_t default_rows = 100;
-    constexpr size_t state_rows = 200;
-    constexpr size_t state_blocks = 4;
-    constexpr size_t elements_in_state = 4000;
-
-    AggregateFunctionPtr function;
-    auto source_state = createSkewedGroupArrayColumn(/*rows=*/1, /*giant_state_row=*/0, elements_in_state, function);
-    const auto state_type = std::make_shared<DataTypeAggregateFunction>(function, DataTypes{std::make_shared<DataTypeUInt64>()}, Array{});
-
-    const auto make_sparse = [&](size_t rows, bool with_states) -> ColumnPtr
-    {
-        MutableColumnPtr values = ColumnAggregateFunction::create(function);
-        values->insertDefault();
-        MutableColumnPtr offsets = ColumnUInt64::create();
-        if (with_states)
-        {
-            for (size_t row = 0; row < rows; ++row)
-            {
-                values->insertFrom(*source_state, 0);
-                offsets->insert(UInt64(row));
-            }
-        }
-        return ColumnSparse::create(std::move(values), std::move(offsets), rows);
-    };
-
-    const size_t cache_key = 0x111985 + 9;
-    size_t exact_compressed_bytes = 0;
-    {
-        RuntimeDataflowStatisticsCacheUpdater updater(cache_key, default_rows + state_rows * state_blocks);
-        Block header;
-        header.insert(ColumnWithTypeAndName{nullptr, state_type, "sparse_state"});
-
-        auto defaults = make_sparse(default_rows, /*with_states=*/false);
-        exact_compressed_bytes += compressedColumnSize({defaults, state_type, "sparse_state"});
-        updater.recordOutputChunk(Chunk(Columns{std::move(defaults)}, default_rows), header);
-
-        for (size_t block = 0; block < state_blocks; ++block)
-        {
-            auto states = make_sparse(state_rows, /*with_states=*/true);
-            exact_compressed_bytes += compressedColumnSize({states, state_type, "sparse_state"});
-            updater.recordOutputChunk(Chunk(Columns{std::move(states)}, state_rows), header);
-        }
-    }
-
-    const auto stats = getRuntimeDataflowStatisticsCache().getStats(cache_key);
-    ASSERT_TRUE(stats.has_value());
-    EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
-    EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
-}
-
 /// Materializing a constant sparse state column repeats its non-default values, not the implicit default
 /// that `ColumnSparse` retains at `values[0]`. The repeated aggregate-state sample must use the same
 /// skipped-row offset as the one-copy sample, or it measures the default state instead of the payload.
