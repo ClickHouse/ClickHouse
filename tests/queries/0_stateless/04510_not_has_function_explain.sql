@@ -85,7 +85,7 @@ DROP TABLE test_nullable_null_set;
 DROP TABLE IF EXISTS test_string_null_set;
 CREATE TABLE test_string_null_set (k String) ENGINE = MergeTree
 ORDER BY k
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_string_null_set VALUES ('a'), ('b');
 
@@ -93,6 +93,16 @@ SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)
 SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
 SELECT count() FROM test_string_null_set WHERE NOT has([CAST(NULL, 'Nullable(String)')], k);
 SELECT count() FROM test_string_null_set WHERE notHas([CAST(NULL, 'Nullable(String)')], k);
+-- An untyped NULL element arrives as `Nothing` rather than `Nullable`, so it reaches the rule
+-- through a different conversion than the CAST forms above.
+SELECT count() FROM test_string_null_set WHERE has([NULL], k);
+SELECT count() FROM test_string_null_set WHERE has([NULL], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_string_null_set WHERE notHas([NULL], k);
+SELECT count() FROM test_string_null_set WHERE notHas([NULL], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_string_null_set WHERE NOT has([NULL], k);
+SELECT count() FROM test_string_null_set WHERE NOT has([NULL], k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_string_null_set WHERE has(['a', NULL], k);
+SELECT count() FROM test_string_null_set WHERE has(['a', NULL], k) SETTINGS use_primary_key = 0;
 SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k);
 SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
 SELECT count() FROM test_string_null_set WHERE has(['z', CAST(NULL, 'Nullable(String)')], k);
@@ -106,29 +116,83 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_stri
 
 DROP TABLE test_string_null_set;
 
+-- Dynamic and Variant carry a NULL through a discriminator instead of a null map, and a String
+-- target can hold neither. The empty-string key row is what makes the poisoning observable: a NULL
+-- that decayed to '' would enter the set as a real element and prune that row away.
+DROP TABLE IF EXISTS test_dynamic_null_set;
+CREATE TABLE test_dynamic_null_set (k String) ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_dynamic_null_set VALUES ('');
+INSERT INTO test_dynamic_null_set VALUES ('a');
+
+SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST([NULL], 'Array(Dynamic)'), k);
+SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST([NULL], 'Array(Dynamic)'), k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_dynamic_null_set WHERE has(CAST([NULL], 'Array(Dynamic)'), k);
+SELECT count() FROM test_dynamic_null_set WHERE has(CAST([NULL], 'Array(Dynamic)'), k) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST(['a', NULL], 'Array(Dynamic)'), k);
+SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST(['a', NULL], 'Array(Dynamic)'), k) SETTINGS use_primary_key = 0;
+
+SET transform_null_in = 1;
+SELECT count() FROM test_dynamic_null_set WHERE k NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Variant(String, UInt8))')));
+SELECT count() FROM test_dynamic_null_set WHERE k NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Variant(String, UInt8))'))) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_dynamic_null_set WHERE k IN (SELECT arrayJoin(CAST([NULL], 'Array(Variant(String, UInt8))')));
+SELECT count() FROM test_dynamic_null_set WHERE k IN (SELECT arrayJoin(CAST([NULL], 'Array(Variant(String, UInt8))'))) SETTINGS use_primary_key = 0;
+SET transform_null_in = 0;
+
+SELECT count() FROM test_dynamic_null_set WHERE has(CAST(['a'], 'Array(Dynamic)'), k);
+
+DROP TABLE test_dynamic_null_set;
+
+-- A NULL-free Dynamic element keeps its set index, so only the unrepresentable NULL loses the fast
+-- path. Selecting the key rather than count() keeps the read off the exact-count projection.
+DROP TABLE IF EXISTS test_dynamic_prune;
+CREATE TABLE test_dynamic_prune (k String) ENGINE = MergeTree
+ORDER BY k
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_dynamic_prune SELECT toString(number) FROM numbers(16);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_dynamic_prune WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_dynamic_prune WHERE has(['3'], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_dynamic_prune WHERE has(CAST(['3'], 'Array(Dynamic)'), k);
+
+DROP TABLE test_dynamic_prune;
+
 -- Array and Map elements reach the same rule by recursion on their nested types.
 DROP TABLE IF EXISTS test_array_null_set;
 CREATE TABLE test_array_null_set (a Array(String)) ENGINE = MergeTree
 ORDER BY a
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1;
 
-INSERT INTO test_array_null_set VALUES (['x']);
+INSERT INTO test_array_null_set SELECT [toString(number)] FROM numbers(16);
 
 SELECT count() FROM test_array_null_set WHERE has([CAST([NULL], 'Array(Nullable(String))')], a);
-SELECT count() FROM test_array_null_set WHERE has([['x', NULL]], a);
-SELECT count() FROM test_array_null_set WHERE has([['x']], a);
+SELECT count() FROM test_array_null_set WHERE has([['3', NULL]], a);
+SELECT count() FROM test_array_null_set WHERE has([['3']], a);
+
+-- An Array or Map key cannot be inside Nullable, so a Nullable-nested element gives up the set
+-- index even when it holds no NULL: the plain element below prunes, this one scans. Results stay
+-- correct either way, so only the pruning is traded for the correctness fix above.
+SELECT count() FROM test_array_null_set WHERE has([CAST(['3'], 'Array(Nullable(String))')], a);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_array_null_set WHERE has([CAST(['3'], 'Array(Nullable(String))')], a)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_array_null_set WHERE has([['3']], a)) WHERE explain LIKE '%Granules:%/%';
 
 DROP TABLE test_array_null_set;
 
 DROP TABLE IF EXISTS test_map_null_set;
 CREATE TABLE test_map_null_set (m Map(String, String)) ENGINE = MergeTree
 ORDER BY m
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1;
 
-INSERT INTO test_map_null_set VALUES (map('k', 'v'));
+INSERT INTO test_map_null_set SELECT map('k', toString(number)) FROM numbers(16);
 
 SELECT count() FROM test_map_null_set WHERE has([map('k', NULL)], m);
-SELECT count() FROM test_map_null_set WHERE has([map('k', 'v')], m);
+SELECT count() FROM test_map_null_set WHERE has([map('k', '3')], m);
+SELECT count() FROM test_map_null_set WHERE has([CAST(map('k', '3'), 'Map(String, Nullable(String))')], m);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_map_null_set WHERE has([CAST(map('k', '3'), 'Map(String, Nullable(String))')], m)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_map_null_set WHERE has([map('k', '3')], m)) WHERE explain LIKE '%Granules:%/%';
 
 DROP TABLE test_map_null_set;
 
@@ -137,7 +201,7 @@ DROP TABLE test_map_null_set;
 DROP TABLE IF EXISTS test_chain_null_set;
 CREATE TABLE test_chain_null_set (k String) ENGINE = MergeTree
 ORDER BY lower(k)
-SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SETTINGS index_granularity = 1;
 
 INSERT INTO test_chain_null_set VALUES ('A'), ('B');
 
@@ -151,7 +215,7 @@ DROP TABLE test_chain_null_set;
 DROP TABLE IF EXISTS test_nullable_string_key;
 CREATE TABLE test_nullable_string_key (k Nullable(String)) ENGINE = MergeTree
 ORDER BY k
-SETTINGS allow_nullable_key = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
 
 INSERT INTO test_nullable_string_key VALUES (NULL), ('a');
 

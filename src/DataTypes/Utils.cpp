@@ -224,14 +224,16 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         case TypeIndex::QBit:
             return to_which_type.isQBit();
         case TypeIndex::Object:
-        case TypeIndex::Variant:
-        case TypeIndex::Dynamic:
         {
             if (to_which_type.isString())
                 return true;
 
             return false;
         }
+        case TypeIndex::Variant:
+        case TypeIndex::Dynamic:
+            /// Both encode NULL via NULL_DISCRIMINATOR, which no non-Nullable target can represent.
+            return false;
         case TypeIndex::String:
         case TypeIndex::Set:
         case TypeIndex::Interval:
