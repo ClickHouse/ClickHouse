@@ -75,30 +75,17 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
 
--- Symbolize a bounded sample of the rows instead of all of them. A short period can make this
--- query produce tens of thousands of samples on a slow sanitizer runner, and symbolization costs
--- about a millisecond per row there (`addressToLine` walks DWARF), so symbolizing every sample made
--- this verification query read 94887 rows in 318 seconds in the flaky check until it was killed with
--- `Estimated query execution time (1385.003 seconds) is too long. Maximum: 600` (`TOO_SLOW`).
--- 1000 rows keep the work bounded without weakening the check: about 70% of this query's samples
--- carry a `Source` frame (measured locally: 281 of 410), and when fewer than 1000 samples were
--- delivered the `LIMIT` takes all of them, exactly as before. The `query_id` filter sits inside the
--- `LIMIT` subquery, so other queries' samples are never symbolized either. Filter `trace_type` so
--- only real time profiler samples count.
-SELECT count() > 0 FROM
-(
-    SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
-    FROM
-    (
-        SELECT trace
-        FROM system.trace_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-            AND trace_type = 'Real'
-            AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
-        LIMIT 1000
-    )
-)
-WHERE symbol LIKE '%Source%';
+-- Check the frames symbolized by `trace_log` itself instead of resolving the addresses again in the
+-- verification query. A short period can produce tens of thousands of rows on a slow runner, and
+-- calling `addressToLine` for every selected address costs about a millisecond per row in CI. The
+-- redundant work made concurrent copies of this test build a backlog that eventually timed out in
+-- `SYSTEM FLUSH LOGS`. `symbols` checks the same end-to-end symbolization result without that extra
+-- DWARF lookup. The `query_id` and `trace_type` filters keep the oracle specific to this sub-test.
+SELECT countIf(hasSubstr(arrayStringConcat(symbols, '\\n'), 'NumbersRangedSource')) > 0
+FROM system.trace_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND trace_type = 'Real'
+    AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test real time query profiler numbers_mt%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1);
 
 -- Keep the CPU sub-test's counter oracle independent of the 1-second serverwide profilers too.
 SET query_profiler_cpu_time_period_ns = 1e7;
@@ -116,19 +103,10 @@ FROM system.query_log
 WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' AND type = 'QueryFinish'
 ORDER BY event_time DESC LIMIT 1;
 
--- Bounded the same way as the sub-test above, and filtered to CPU profiler samples: without the
--- `trace_type` filter even a serverwide real time sample could satisfy this check.
-SELECT count() > 0 FROM
-(
-    SELECT addressToLine(arrayJoin(trace) AS addr) || '#' || demangle(addressToSymbol(addr)) AS symbol
-    FROM
-    (
-        SELECT trace
-        FROM system.trace_log
-        WHERE event_date >= yesterday() AND event_time >= now() - 600
-            AND trace_type = 'CPU'
-            AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1)
-        LIMIT 1000
-    )
-)
-WHERE symbol LIKE '%Source%';
+-- Check the stored symbolized frames as above. Filtering to CPU samples prevents a serverwide real
+-- time sample from satisfying this oracle.
+SELECT countIf(hasSubstr(arrayStringConcat(symbols, '\\n'), 'NumbersRangedSource')) > 0
+FROM system.trace_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600
+    AND trace_type = 'CPU'
+    AND query_id = (SELECT query_id FROM system.query_log WHERE current_database = currentDatabase() AND query LIKE '%test cpu time query profiler%' AND query NOT LIKE '%system%' ORDER BY event_time DESC LIMIT 1);
