@@ -636,6 +636,7 @@ def test_non_mergetree_fixture_is_not_rewritten_by_the_scanner():
 FIRST_KEYWORD_CASES = [
     ("plain", "CREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
     ("leading_whitespace", "\n\t  SELECT 1", "SELECT"),
+    ("lexer_control_whitespace", "\f\vCREATE\fTABLE t (a UInt64) ENGINE = Memory", "CREATE"),
     ("dash_comment", "-- note\nCREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
     ("slash_line_comment", "// note\nCREATE TABLE t (a UInt64) ENGINE = Memory", "CREATE"),
     ("mysql_comment", "# note\nDROP TABLE t", "DROP"),
@@ -675,3 +676,10 @@ FIRST_KEYWORD_CASES = [
 )
 def test_first_keyword(sql, expected):
     assert first_keyword(sql) == expected
+
+
+@pytest.mark.parametrize("whitespace", ["\f", "\v"])
+def test_strip_setting_accepts_lexer_control_whitespace(whitespace):
+    query = f"CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS {SETTING}{whitespace}={whitespace}0, index_granularity = 8192"
+    expected = "CREATE TABLE t (a UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192"
+    assert strip_setting_from_query(query, SETTING, {"0", "false"}) == expected

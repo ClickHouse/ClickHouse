@@ -15,6 +15,8 @@ therefore lives in this small importable module (rather than nested inside the
 covered by unit tests in ``ci/tests/test_strip_setting_from_query.py``.
 """
 
+WHITESPACE = " \t\r\n\f\v"
+
 
 def is_word_at(text, pos, word):
     """Case-insensitive word-boundary match of `word` at `pos`."""
@@ -71,7 +73,7 @@ def skip_whitespace_and_comments(text, pos):
     """Advance `pos` past whitespace and comments (see `comment_end`)."""
     length = len(text)
     while pos < length:
-        if text[pos] in " \t\r\n":
+        if text[pos] in WHITESPACE:
             pos += 1
             continue
         after_comment = comment_end(text, pos)
@@ -94,7 +96,7 @@ def first_keyword(sql):
     pos = skip_whitespace_and_comments(sql, 0)
     end = pos
     while end < len(sql):
-        if sql[end] in (" ", "\t", "\n", "\r", "(", ";") or comment_end(sql, end) is not None:
+        if sql[end] in WHITESPACE or sql[end] in "(;" or comment_end(sql, end) is not None:
             break
         end += 1
     return sql[pos:end].upper()
@@ -455,7 +457,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
         if depth == 0 and i > value_start and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords):
             # Leave the whitespace before the keyword in place so the
             # preceding token is not glued to the trailing clause.
-            while i > value_start and query[i - 1] in " \t\r\n":
+            while i > value_start and query[i - 1] in WHITESPACE:
                 i -= 1
             break
         i += 1
@@ -520,7 +522,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     # so the next entry is not left with a stray leading separator.
     if cut_start == name_start and i < n and query[i] == ",":
         i += 1
-        while i < n and query[i] in " \t\r\n":
+        while i < n and query[i] in WHITESPACE:
             i += 1
 
     stripped = query[:cut_start] + query[i:]
@@ -548,7 +550,7 @@ def strip_setting_from_query(query, setting_name, allowed_values=None):
     rest = skip_whitespace_and_comments(stripped, after_keyword)
     if rest >= len(stripped) or stripped[rest] == ";":
         lead = settings_pos
-        while lead > 0 and stripped[lead - 1] in " \t\r\n":
+        while lead > 0 and stripped[lead - 1] in WHITESPACE:
             lead -= 1
         stripped = stripped[:lead] + stripped[rest:]
     elif any(is_word_at(stripped, rest, kw) for kw in trailing_clause_keywords):
