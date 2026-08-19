@@ -1,5 +1,6 @@
 up_recall_no_hints: OK
 meta_up_recall_no_hints: OK
+restore_current_down_navigates_history: OK
 down_navigates_history: OK
 same_text_recall_down_navigates_history: OK
 edit_after_recall_shows_hints: OK

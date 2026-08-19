@@ -158,6 +158,17 @@ def main():
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
 
+    # Ctrl-G restores the currently recalled history entry after an edit. It is another whole
+    # line display, so Down must return to the scratch line rather than navigate the hint list.
+    history = make_history_file("restore_current", ["SELECT concatAssumeInjec"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "restore_current_down_navigates_history",
+        [b"SELECT 111 AS rand", b"\x1b[A", b"t", b"\x07", b"\x1b[B", b"\r"],
+        lambda o: re.search(r"(?:│\s*111\s*│|\x1b\[\?25h111\r?\n)", o) is not None,
+    )
+
     # 2. Up, Up, Down walks the history (the entries end in "rand", which has many hint
     #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
     #    so its result (222) is printed. The result can use either Pretty or TabSeparated output

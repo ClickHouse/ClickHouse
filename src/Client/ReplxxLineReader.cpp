@@ -525,6 +525,8 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     rx.bind_key(Replxx::KEY::PAGE_UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
     rx.bind_key(Replxx::KEY::meta('>'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
     rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
+    rx.bind_key(Replxx::KEY::control('G'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE_CURRENT, code); });
+    rx.bind_key(Replxx::KEY::meta('g'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_RESTORE, code); });
     rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
     rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
     rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
