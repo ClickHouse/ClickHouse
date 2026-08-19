@@ -10295,6 +10295,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
             /// `active()`: a run finishing in a cell the user merely scrolled away from inside the
             /// visible tab has not finished "while away".
             tab.completed = tab.id !== activeTabId;
+            tab.completedCell = tab.completed ? cell : null;
             saveHistory({
                 query: history_query_text || query,
                 resultQuery: query,
@@ -10381,6 +10382,7 @@ async function postSingle(cell, posted_request_num, query, history_query_text, p
     /// wrongly show its completion check-mark. Keyed on the TAB, not on `active()`: a run finishing
     /// in a cell the user merely scrolled away from has not finished "while away".
     tab.completed = tab.id !== activeTabId;
+    tab.completedCell = tab.completed ? cell : null;
     updateTabIndicator(tab);
     updateCellStatus(cell);
 
@@ -10607,6 +10609,7 @@ async function postMulti(cell, posted_request_num, parsed, paramValuesSnapshot, 
     /// As in the single-query path, only mark "finished while away" when this tab is inactive at
     /// the moment the run completes; a foreground finish must not badge the tab on the next switch.
     tab.completed = tab.id !== activeTabId;
+    tab.completedCell = tab.completed ? cell : null;
     updateTabIndicator(tab);
     updateCellStatus(cell);
 
@@ -11806,6 +11809,7 @@ function tabRuntimeDefaults() {
         inFlight: false,        /// a query is currently running in this tab
         runCell: null,          /// the cell the in-flight run renders into (captured at `beginFlight`)
         completed: false,       /// a query finished while this tab was inactive (check-mark / cross on its title)
+        completedCell: null,    /// the cell that finished while this tab was inactive (owns the completion outcome)
         barEl: null,            /// cached tab-bar row + indicator nodes (see renderTabBar/updateTabIndicator)
         spinnerEl: null,
         checkEl: null,
@@ -12745,6 +12749,7 @@ function syncActiveTabChrome() {
     const tab = getActiveTab();
     if (!tab) return;
     tab.completed = false;   /// opening a tab clears its "finished while away" check-mark
+    tab.completedCell = null;
 
     if (tab.inFlight) {
         document.getElementById('run').innerText = 'Stop';
@@ -13246,9 +13251,10 @@ function renderTabBar() {
 function updateTabIndicator(tab) {
     if (!tab.barEl) return;
     const isActive = tab.id === activeTabId;
-    /// The bar summarizes the tab, so it follows the cell that is actually running; with
-    /// nothing in flight it reports the cell the editor is in.
-    const cell = tab.runCell || activeCell(tab);
+    /// Once `endFlight` clears `runCell`, retain the cell that actually completed until the
+    /// inactive-tab notification is consumed. Using the currently edited cell here would turn a
+    /// failed background run into a green check (or the reverse) after a cell switch.
+    const cell = tab.runCell || tab.completedCell || activeCell(tab);
 
     if (tab.spinnerEl) tab.spinnerEl.style.display = tab.inFlight ? 'inline-block' : 'none';
     /// A finished-while-inactive tab shows a green check (success) or a red cross (the query
@@ -13661,6 +13667,12 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
         result: tab.result || null,
         tabId: tab.id,
         tabName: tab.title,
+        /// A history entry can outlive the tab it describes: Close tab followed by Back must
+        /// restore the complete notebook, not just the editor cell represented by `query`.
+        /// The snapshots are plain data (`serializeCell` omits DOM and transient run state), so
+        /// they are safe for the browser's structured-clone history state.
+        cells: tab.cells.map(serializeCell),
+        activeCellId: tab.activeCellId,
         /// The notebook cell this entry describes. Restored by `window.onpopstate` BEFORE the
         /// entry's query and result are written through the tab's cell accessors: without it,
         /// Back would push an older cell's query into whichever cell happens to be active.
@@ -13951,6 +13963,13 @@ function resolveTabForState(state) {
     if (!tab) {
         const title = state.tabId ? uniqueTitle(state.tabName) : state.tabName;
         tab = makeTab(title, state.query);
+        /// Modern history entries retain the entire notebook so Back/Forward can recreate a
+        /// closed tab without dropping its sibling query and text cells. Legacy entries have no
+        /// `cells` field and intentionally keep the single-cell fallback from `makeTab`.
+        if (Array.isArray(state.cells) && state.cells.length) {
+            tab.activeCellId = state.activeCellId || state.cellId || null;
+            attachCells(tab, deserializeCells(state));
+        }
         tabs.push(tab);
     }
     return tab;
@@ -14271,6 +14290,7 @@ function beginFlight(tab, launchInteractionGen) {
     tab.runCell = cell;
     tab.inFlight = true;
     tab.completed = false;
+    tab.completedCell = null;
     cell.progressPhase = 'running';
     /// Drop any progress snapshot left by the previous run in this cell. Otherwise a rerun would
     /// inherit the old fill (via `updateTabIndicator` below) until the first new `query-progress`
