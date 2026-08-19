@@ -1966,7 +1966,7 @@ When enabled, the aggregator maintains a bounded heap of the top `K` keys seen s
 
 The optimization is disabled when the requested `LIMIT` is higher than [query_plan_max_limit_for_top_k_optimization](#query_plan_max_limit_for_top_k_optimization) or than the hard cap of `100000`, because the memory and CPU cost of the heap grows with the requested `LIMIT`.
 
-The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, `ORDER BY ... COLLATE`, `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
+The optimization is skipped for query shapes where pruning groups could change the result, including `WITH TOTALS`, `HAVING`, `QUALIFY`, window functions, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, a `COLLATE` on any of the matched `GROUP BY` keys (a `COLLATE` on a later `ORDER BY` column past the full key prefix cannot affect which groups qualify, so it does not disable the optimization), `ORDER BY` on an aggregate or on anything that is not a leading prefix of the `GROUP BY` keys, and when `max_rows_to_group_by` or `exact_rows_before_limit` is set.
 
 Possible values:
 
