@@ -39,7 +39,7 @@ ColumnsDescription QueryPlanLogElement::getColumnsDescription() {
         {"event_date", std::make_shared<DataTypeDate>(), "Query end date."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Query end time."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query end time with microseconds precision."},
-        {"query_start_time", std::make_shared<DataTypeDateTime64>(6), "Query start time with microseconds precision."},
+        {"query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Query start time with microseconds precision."},
         {"query_id", std::make_shared<DataTypeString>(), "ID of the query."},
         {"query_string", std::make_shared<DataTypeString>(), "String of the query."},
         {"query_duration_ms", std::make_shared<DataTypeUInt64>(), "Query duration in ms."},
