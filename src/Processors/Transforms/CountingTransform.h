@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/InsertProfileEventsSource.h>
 #include <IO/Progress.h>
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Access/EnabledQuota.h>
@@ -18,12 +19,6 @@ class ThreadStatus;
 class CountingTransform final : public ExceptionKeepingTransform
 {
 public:
-    enum class InsertSource : uint8_t
-    {
-        Direct,
-        MaterializedView,
-    };
-
     explicit CountingTransform(
         SharedHeader header,
         std::optional<InsertSource> source_,
