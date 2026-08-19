@@ -493,7 +493,7 @@ hasAllTokens(input, needles)
 
 * `input` — A coluna de entrada. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Array(String)`](/pt-BR/reference/data-types/array) ou [`Array(FixedString)`](/pt-BR/reference/data-types/array)
 * `needles` — tokens a serem buscados. [`String`](/pt-BR/reference/data-types/string) ou [`Array(String)`](/pt-BR/reference/data-types/array)
-* `tokenizer` — O tokenizador a ser usado. Os argumentos válidos são `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` e `array`. Opcional; se não for definido explicitamente, o valor padrão é `splitByNonAlpha`. [`const String`](/pt-BR/reference/data-types/string)
+* `tokenizer` — O tokenizador a ser usado. Os argumentos válidos são `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` e `array`. Opcional; se não for definido explicitamente, o valor padrão é `splitByNonAlpha`. [`const String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -523,7 +523,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Especifique os needles a serem pesquisados exatamente como estão (sem tokenização) em um array**
+**Especifique needles a serem pesquisados exatamente como estão (sem tokenização) em um array**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -689,7 +689,7 @@ Retorna 1 se pelo menos um token da string ou array `needle` corresponder à str
 
 <Note>
   A coluna `input` deve ter um [índice de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) definido para um desempenho ideal.
-  Se nenhum índice de texto estiver definido, a função realiza uma varredura exaustiva da coluna, que é várias ordens de magnitude mais lenta que uma busca no índice.
+  Se nenhum índice de texto estiver definido, a função realiza uma varredura exaustiva da coluna, que é várias ordens de magnitude mais lenta que uma consulta por índice.
 </Note>
 
 Antes de realizar a busca, a função tokeniza
@@ -723,7 +723,7 @@ hasAnyTokens(input, needles)
 
 * `input` — A coluna de entrada. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable) ou [`Nullable(FixedString)`](/pt-BR/reference/data-types/nullable) ou [`Array(String)`](/pt-BR/reference/data-types/array) ou [`Array(FixedString)`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(String))`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/pt-BR/reference/data-types/array)
 * `needles` — tokens a serem procurados. [`String`](/pt-BR/reference/data-types/string) ou [`Array(String)`](/pt-BR/reference/data-types/array)
-* `tokenizer` — O tokenizador a ser utilizado. Os argumentos válidos são `splitByNonAlpha`, `splitByString`, `asciiCJK`, `ngrams`, `sparseGrams` e `array`. Opcional; se não for definido explicitamente, o valor padrão é `splitByNonAlpha`. [`const String`](/pt-BR/reference/data-types/string)
+* `tokenizer` — O tokenizador a ser utilizado. Os argumentos válidos são `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` e `array`. Opcional; se não for definido explicitamente, o valor padrão é `splitByNonAlpha`. [`const String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -753,7 +753,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Especifique os needles a serem pesquisados exatamente como estão (sem tokenização) em um array**
+**Especifique needles a serem pesquisados como estão (sem tokenização) em um array**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -912,7 +912,7 @@ Verifica se o `input` contém todos os tokens da `phrase` em ordem consecutiva.
 
 Antes da pesquisa, a função tokeniza os argumentos `input` e `phrase` usando o tokenizador especificado para o índice de texto.
 Se a coluna não tiver nenhum índice de texto definido, o tokenizador `splitByNonAlpha` será usado — a menos que um tokenizador seja fornecido como terceiro argumento opcional.
-O argumento `tokenizer` deve ser um de `splitByNonAlpha`, `splitByString`, `ngrams` ou `asciiCJK`.
+O argumento `tokenizer` deve ser um de `splitByNonAlpha`, `splitByString`, `ngrams`, `asciiCJK` ou `icu`.
 
 <Note>
   Quando um índice de texto define um [pré-processador](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por exemplo, `lowerUTF8`), `hasPhrase` o aplica tanto a `input` quanto a `phrase` antes da tokenização.
