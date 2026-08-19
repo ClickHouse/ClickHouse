@@ -1,0 +1,40 @@
+--- row_number() OVER (PARTITION BY p ORDER BY a), local ---
+0	5000	12502500	5000
+1	5000	12502500	5000
+2	5000	12502500	5000
+3	5000	12502500	5000
+--- row_number() OVER (PARTITION BY p ORDER BY a), plan_based = 1 ---
+0	5000	12502500	5000
+1	5000	12502500	5000
+2	5000	12502500	5000
+3	5000	12502500	5000
+--- running sum within a partition, local ---
+0	0	0
+0	4	28
+0	8	84
+1	1	7
+1	5	42
+1	9	105
+2	2	14
+2	6	56
+2	10	126
+3	3	21
+3	7	70
+3	11	147
+--- running sum within a partition, plan_based = 1 ---
+0	0	0
+0	4	28
+0	8	84
+1	1	7
+1	5	42
+1	9	105
+2	2	14
+2	6	56
+2	10	126
+3	3	21
+3	7	70
+3	11	147
+--- explain: has_remote_read, sort_not_shipped ---
+1	1
+--- explain pipeline: scatter_by_partition, parallel_window ---
+1	1
