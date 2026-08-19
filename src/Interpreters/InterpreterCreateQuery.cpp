@@ -105,6 +105,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
+#include <Parsers/ASTWithAlias.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -208,6 +209,25 @@ namespace ErrorCodes
 }
 
 namespace fs = std::filesystem;
+
+namespace
+{
+
+void removeGeneratedScalarSubqueryAliases(IAST & ast)
+{
+    if (auto * with_alias = ast.as<ASTWithAlias>(); with_alias
+        && with_alias->preferAliasToColumnName()
+        && startsWith(with_alias->alias, "_subquery_"))
+    {
+        with_alias->setAlias({});
+        with_alias->setPreferAliasToColumnName(false);
+    }
+
+    for (auto & child : ast->children)
+        removeGeneratedScalarSubqueryAliases(*child);
+}
+
+}
 
 InterpreterCreateQuery::InterpreterCreateQuery(const ASTPtr & query_ptr_, ContextMutablePtr context_)
     : WithMutableContext(context_), query_ptr(query_ptr_)
@@ -1924,6 +1944,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     /// Set and retrieve list of columns, indices and constraints. Set table engine if needed. Rewrite query in canonical way.
     TableProperties properties = getTablePropertiesAndNormalizeCreateQuery(create, mode);
+
+    /// Analysis gives scalar subqueries generated aliases on a cloned view query. Do not persist
+    /// those transient aliases after SQL UDF expansion: the view is analyzed again when read.
+    if (create.select && create.isView())
+        removeGeneratedScalarSubqueryAliases(*create.select);
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
