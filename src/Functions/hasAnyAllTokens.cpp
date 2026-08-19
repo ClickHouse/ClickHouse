@@ -463,7 +463,7 @@ This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAnyTokens = R"(
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 )";
     FunctionDocumentation::Arguments arguments_hasAnyTokens = {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
@@ -671,7 +671,7 @@ This inconsistency is tolerated to improve the usability of full-text search.
 :::
     )";
     FunctionDocumentation::Syntax syntax_hasAllTokens = R"(
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
         {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},

@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
@@ -158,7 +159,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 {
     DistributionDescription dist;
     dist.node_count = node_count;
-    addAlternative(std::make_shared<PartialAggregationStrategy>(), dist, dist);
+    addAlternative(strategySingleton<PartialAggregationStrategy>(), dist, dist);
 }
 
 /// Local - gather all input to one node, aggregate there.
@@ -166,7 +167,7 @@ void AggregationImplementation::StrategyEnumerator::addPartialAggregation(size_t
 void AggregationImplementation::StrategyEnumerator::addLocalAggregation()
 {
     DistributionDescription single_node;    /// node_count=1 (default)
-    addAlternative(std::make_shared<LocalAggregationStrategy>(), single_node, single_node,
+    addAlternative(strategySingleton<LocalAggregationStrategy>(), single_node, single_node,
         fmt::format("Local {}", agg_step.getStepDescription()));
 }
 
@@ -186,7 +187,7 @@ void AggregationImplementation::StrategyEnumerator::addShuffleAggregation(size_t
     for (const auto & key : agg_step.getParams().keys)
         by_keys.columns.push_back({key});
 
-    addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_keys, by_keys,
+    addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_keys, by_keys,
         fmt::format("Shuffle {}", agg_step.getStepDescription()));
 }
 
@@ -204,7 +205,7 @@ void AggregationImplementation::StrategyEnumerator::addSingleKeyShuffleAggregati
             by_single_key.node_count = candidate_node_count;
             by_single_key.columns.push_back({single_key});
 
-            addAlternative(std::make_shared<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
+            addAlternative(strategySingleton<ShuffleAggregationStrategy>(), by_single_key, by_single_key,
                 fmt::format("Shuffle (by {}) {}", single_key, agg_step.getStepDescription()));
         }
     }
@@ -222,7 +223,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
+    const size_t cluster_node_count = memo.getContext().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;
@@ -251,7 +252,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
-    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation
+    const bool only_shuffle = memo.getContext().distributed_plan_force_shuffle_aggregation
         && strategies.isShuffleApplicable() && !candidate_node_counts.empty();
 
     if (!only_shuffle)
@@ -288,7 +289,7 @@ bool TwoStageAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
         /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
         /// whenever the shuffle strategy is available (the aggregation has group keys).
-        !(memo.getEnvironment().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
+        !(memo.getContext().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
 }
 
 std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -311,7 +312,7 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     /// ascending order. Force the partial step to emit them that way; otherwise a parallel
     /// flush unites several bucket sequences into one exchange stream out of order and the
     /// merge emits some groups twice.
-    if (memo.getEnvironment().distributed_aggregation_memory_efficient)
+    if (memo.getContext().distributed_aggregation_memory_efficient)
         partial_step->setShouldProduceResultsInBucketOrder(true);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
@@ -328,7 +329,7 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
         /*final_=*/true,
-        memo.getEnvironment().distributed_aggregation_memory_efficient,
+        memo.getContext().distributed_aggregation_memory_efficient,
         agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),
@@ -343,6 +344,8 @@ std::vector<GroupExpressionPtr> TwoStageAggregationTransformation::applyImpl(Gro
     GroupExpressionPtr partial_expr = std::make_shared<GroupExpression>(std::move(partial_step_ptr));
     auto merge_expr = addTwoStageSplit(memo, expression, std::move(partial_expr), std::move(merge_step_ptr), {});
 
+    if (!merge_expr)
+        return {};
     return {merge_expr};
 }
 
