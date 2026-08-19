@@ -2375,14 +2375,14 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
         {
             {
                 auto internal_context = make_internal_context();
-                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true}).second;
+                auto detach = executeQuery(detach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
                 executeTrivialBlockIO(detach, internal_context);
                 detached = true;
             }
 
             {
                 auto internal_context = make_internal_context();
-                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
                 executeTrivialBlockIO(attach, internal_context);
             }
         }
@@ -2411,7 +2411,7 @@ static void reattachTablesUsedInQuery(const ASTPtr & query, ContextMutablePtr co
                 try
                 {
                     auto internal_context = make_internal_context();
-                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true}).second;
+                    auto attach = executeQuery(attach_query, internal_context, QueryFlags{.internal = true, .inherit_process_list_element = true}).second;
                     executeTrivialBlockIO(attach, internal_context);
                 }
                 catch (...)
@@ -3942,7 +3942,7 @@ static BlockIO executeQueryImpl(
         }
 
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
-        if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
+        if (!flags.inherit_process_list_element && !(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
             process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);

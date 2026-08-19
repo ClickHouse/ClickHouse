@@ -349,8 +349,11 @@ void StorageMergeTree::shutdown(bool)
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         /// Same for the cleanup thread: `flushAndPrepareForShutdown()` never runs again once `flush_called`
         /// is set, so a cleanup thread re-armed by a racing `startup()` must be stopped here as well.
-        /// (The destructor stops the assignees explicitly after `shutdown(false)` returns.)
+        /// A failed `startup()` reaches this branch through its exception handler, so stop the assignees too.
         cleanup_thread.stop();
+        background_operations_assignee.finish();
+        background_moves_assignee.finish();
+        background_streaming_assignee.finish();
         return;
     }
 
