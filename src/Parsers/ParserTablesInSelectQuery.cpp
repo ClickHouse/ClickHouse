@@ -342,10 +342,20 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             }
         }
 
+        /// Optional `TOLERANCE <expr>`, only meaningful for ASOF JOIN. The strictness check is left
+        /// to analysis, so that a misplaced TOLERANCE reports a clear error instead of a syntax error.
+        if (ParserKeyword(Keyword::TOLERANCE).ignore(pos, expected))
+        {
+            if (!ParserExpression().parse(pos, table_join->tolerance_expression, expected))
+                return false;
+        }
+
         if (table_join->using_expression_list)
             table_join->children.emplace_back(table_join->using_expression_list);
         if (table_join->on_expression)
             table_join->children.emplace_back(table_join->on_expression);
+        if (table_join->tolerance_expression)
+            table_join->children.emplace_back(table_join->tolerance_expression);
 
         res->table_join = table_join;
     }

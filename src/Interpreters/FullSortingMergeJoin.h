@@ -91,6 +91,12 @@ public:
         if (table_join->getMixedJoinExpression())
             return false;
 
+        /// `MergeJoinAlgorithm` matches ASOF rows through `IColumn::compareAt`, which reports ordering
+        /// but not distance, so it cannot enforce an ASOF `TOLERANCE` bound. Decline rather than
+        /// silently return matches that are further away than the query asked for.
+        if (table_join->getAsofTolerance().has_value())
+            return false;
+
         bool support_storage = !table_join->isSpecialStorage();
 
         const auto & on_expr = table_join->getOnlyClause();

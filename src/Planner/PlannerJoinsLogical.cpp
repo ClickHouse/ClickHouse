@@ -506,6 +506,18 @@ std::unique_ptr<JoinStepLogical> buildJoinStepLogical(
 
     auto join_expression_node = getJoinExpressionFromNode(join_node);
 
+    /// `TOLERANCE <expr>` must be a constant: it bounds every probe, so it cannot depend on a row.
+    if (join_node.hasTolerance())
+    {
+        const auto * tolerance_constant = join_node.getTolerance()->as<ConstantNode>();
+        if (!tolerance_constant)
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "TOLERANCE for ASOF JOIN must be a constant expression, got {}",
+                join_node.getTolerance()->formatASTForErrorMessage());
+
+        build_context.join_operator.asof_tolerance = tolerance_constant->getValue();
+    }
+
     const auto & query_settings = build_context.planner_context->getQueryContext()->getSettingsRef();
     const auto & join_algorithms = query_settings[Setting::join_algorithm];
 

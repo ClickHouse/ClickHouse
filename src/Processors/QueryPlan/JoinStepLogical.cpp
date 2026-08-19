@@ -1504,6 +1504,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
             used_expressions.push_back(rhs);
 
             table_join->setAsofInequality(*asof_inequality_op);
+            table_join->setAsofTolerance(join_operator.asof_tolerance);
             table_join_clauses.front().addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
         }
         if (found_asof_predicate_it == join_expression.end())

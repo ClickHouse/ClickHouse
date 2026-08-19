@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Core/Joins.h>
 #include <Interpreters/JoinExpressionActions.h>
 
@@ -28,6 +29,10 @@ struct JoinOperator
     /// but residual filter is used to filter rows after join.
     /// For INNER JOINs, residual filter is the same as expression
     std::vector<JoinActionRef> residual_filter = {};
+
+    /// Optional `TOLERANCE` bound for ASOF JOIN, as a constant. Bounds how far apart the left and
+    /// the matched right ASOF value may be; matches beyond it are dropped.
+    std::optional<Field> asof_tolerance = {};
 
     /// (filter_name, build-side key column name) pairs that HashJoin should publish as
     /// shared FixedHashMap runtime filters. Set by the joinRuntimeFilter optimizer pass.
