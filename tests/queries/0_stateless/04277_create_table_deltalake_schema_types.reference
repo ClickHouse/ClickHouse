@@ -21,6 +21,8 @@ Decimal(50, 2): rejected
 LowCardinality(String): rejected
 DateTime('UTC'): rejected
 DateTime64(6, 'UTC'): rejected
+Tuple(): rejected
+Array(Tuple()): rejected
 reserved-virtual-column:
 _path: rejected
 _path: no orphan _delta_log
