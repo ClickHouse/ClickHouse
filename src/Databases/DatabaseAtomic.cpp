@@ -266,6 +266,9 @@ void DatabaseAtomic::dropDetachedTable(
     chassert(detached_table->getStorageID().getDatabaseName() == drop_info.storage_id.getDatabaseName());
     chassert(detached_table->getStorageID().getTableName() == drop_info.storage_id.getTableName());
     chassert(detached_table->getStorageID().uuid == drop_info.storage_id.uuid);
+
+    detached_table->dropInnerTableIfAny(sync, local_context);
+
     commitDropDetachedTableMetadata(local_context, table_name, drop_info);
     finishDropDetachedTable(table_name, sync, detached_table, dependency_cleanup, drop_info);
 }

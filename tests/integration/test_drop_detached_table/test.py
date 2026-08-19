@@ -302,6 +302,100 @@ def test_drop_detached_cancel_keeps_detached_table_attachable(start_cluster):
         )
 
 
+def test_drop_detached_cancel_keeps_timeseries_inner_tables_attachable(start_cluster):
+    table_name = "test_drop_detached_cancel_keeps_timeseries_inner_tables_attachable"
+    select_query_id = f"{table_name}_select"
+    drop_query_id = f"{table_name}_drop"
+    time_series_settings = {"allow_experimental_time_series_table": 1}
+    drop_detached_settings = {
+        "allow_experimental_drop_detached_table": 1,
+        "allow_experimental_time_series_table": 1,
+    }
+
+    replica1.query(f"CREATE TABLE {table_name} ENGINE = TimeSeries", settings=time_series_settings)
+    replica1.query(
+        f"INSERT INTO {table_name} (metric_name, tags, time_series) "
+        "VALUES ('metric', map(), [(toDateTime64(1, 3), 1.)])",
+        settings=time_series_settings,
+    )
+
+    select_query = replica1.get_query_request(
+        f"""
+        SELECT sleepEachRow(3) FROM {table_name}
+        SETTINGS max_threads=1, function_sleep_max_microseconds_per_block=0
+        FORMAT Null
+        """,
+        settings=time_series_settings,
+        query_id=select_query_id,
+        ignore_error=True,
+        timeout=30,
+    )
+    select_finished = False
+
+    try:
+        wait_query_started(replica1, select_query_id)
+        replica1.query(f"DETACH TABLE {table_name} PERMANENTLY", settings=time_series_settings)
+
+        drop_query = replica1.get_query_request(
+            f"DROP DETACHED TABLE {table_name} SYNC",
+            settings=drop_detached_settings,
+            query_id=drop_query_id,
+            ignore_error=True,
+            timeout=30,
+        )
+
+        try:
+            wait_query_started(replica1, drop_query_id)
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{drop_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+            )
+            _, drop_error = drop_query.get_answer_and_error()
+            assert "QUERY_WAS_CANCELLED" in drop_error or "was cancelled" in drop_error
+        finally:
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{drop_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+                ignore_error=True,
+            )
+
+        assert_detached_table_count(replica1, table_name, "1")
+        replica1.query(
+            f"KILL QUERY WHERE query_id = '{select_query_id}' ASYNC FORMAT Null",
+            timeout=10,
+            ignore_error=True,
+        )
+        select_query.get_answer_and_error()
+        select_finished = True
+
+        # `ATTACH` does not create the inner targets, so this also verifies that cancellation
+        # did not drop them while the outer TimeSeries table remained detached.
+        replica1.query(f"ATTACH TABLE {table_name}", settings=time_series_settings)
+        replica1.query(
+            f"INSERT INTO {table_name} (metric_name, tags, time_series) "
+            "VALUES ('metric', map(), [(toDateTime64(2, 3), 2.)])",
+            settings=time_series_settings,
+        )
+    finally:
+        if not select_finished:
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{select_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+                ignore_error=True,
+            )
+            select_query.get_answer_and_error()
+        replica1.query(
+            f"DROP TABLE IF EXISTS {table_name} SYNC",
+            settings=time_series_settings,
+            ignore_error=True,
+        )
+        replica1.query(
+            f"DROP DETACHED TABLE IF EXISTS {table_name} SYNC",
+            settings=drop_detached_settings,
+            ignore_error=True,
+        )
+
+
 def test_force_drop_flag_bypasses_detached_table_size_limit(start_cluster):
     table_name = "test_force_drop_flag_bypasses_detached_table_size_limit"
     create_detached_table(replica1, table_name, rows=1000)

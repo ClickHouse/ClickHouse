@@ -500,8 +500,6 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
         return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
     }
 
-    detached_table->dropInnerTableIfAny(query.sync, context_);
-
     if (query.sync)
         uuid_to_wait = detached_table_uuid;
 
