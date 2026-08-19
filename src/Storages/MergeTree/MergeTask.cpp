@@ -806,7 +806,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     global_ctx->new_data_part->is_temp = global_ctx->parent_part == nullptr;
 
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     global_ctx->new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
@@ -2803,6 +2803,25 @@ public:
             });
         }
 #endif
+    }
+
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<MergePartsStep>(
+            input_headers.front(),
+            sort_description,
+            partition_and_sorting_required_columns,
+            merging_params,
+            rows_sources_temporary_file_name,
+            filter_column_name,
+            merge_block_size_rows,
+            merge_block_size_bytes,
+            max_dynamic_subcolumns,
+            blocks_are_granules_size,
+            sorting_queue_strategy,
+            cleanup,
+            time_of_merge
+        );
     }
 
     void updateOutputHeader() override
