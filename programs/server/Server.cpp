@@ -687,28 +687,18 @@ bool isWildcardListenHost(const std::string & listen_host)
 
 /// gRPC treats `::` and `0.0.0.0` as one family-agnostic wildcard: for either of them it binds a
 /// dual-stack `::` socket and falls back to `0.0.0.0` only on a host without IPv6 (see
-/// `add_wildcard_addrs_to_server` in `contrib/grpc`). A second gRPC-based listener for the same port
-/// is therefore not a separate listener at all - it tries to bind the very same socket address, and
-/// either silently shares the port with the first one (plain gRPC keeps `SO_REUSEPORT` enabled, so
-/// each of the two servers ends up serving a random half of the connections) or fails with
-/// `EADDRINUSE` (Arrow Flight disables `SO_REUSEPORT`). So only the first wildcard `listen_host` of
-/// such a group gets a server; this function returns that host if `listen_host` is already covered.
-std::optional<std::string> findWildcardListenHostForGRPC(
-    const std::string & listen_host, const char * port_name, const std::vector<ProtocolServerAdapter> & servers)
+/// `add_wildcard_addrs_to_server` in `contrib/grpc`). A wildcard listener therefore overlaps every
+/// listener on that port, not only another wildcard listener. Normalize the gRPC-based listeners to
+/// the first wildcard address so a configuration such as `127.0.0.1`, `0.0.0.0`, `::1` creates one
+/// listener instead of creating overlapping sockets. This applies independently to each gRPC-based
+/// port because all such ports use the same `listen_host` configuration.
+Strings getGRPCListenHosts(const Strings & listen_hosts)
 {
-    if (!isWildcardListenHost(listen_host))
-        return {};
+    const auto wildcard_it = std::ranges::find_if(listen_hosts, isWildcardListenHost);
+    if (wildcard_it == listen_hosts.end())
+        return listen_hosts;
 
-    for (const auto & server : servers)
-    {
-        /// An exactly equal `listen_host` is a plain duplicate in the configuration, which
-        /// `createServer` skips on its own.
-        if (!server.isStopping() && server.getPortName() == port_name && server.getListenHost() != listen_host
-            && isWildcardListenHost(server.getListenHost()))
-            return server.getListenHost();
-    }
-
-    return {};
+    return {*wildcard_it};
 }
 #endif
 
@@ -4014,6 +4004,9 @@ void Server::createServers(
     const ServerType & server_type)
 {
     const Settings & settings = global_context->getSettingsRef();
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
     http_params->setTimeout(settings[Setting::http_receive_timeout]);
@@ -4176,32 +4169,23 @@ void Server::createServers(
         }
 
 #if USE_ARROWFLIGHT
-        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT))
+        if (server_type.shouldStart(ServerType::Type::ARROW_FLIGHT)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "arrowflight_port";
-            /// See the comment on `findWildcardListenHostForGRPC`.
-            if (auto wildcard_listen_host = findWildcardListenHostForGRPC(listen_host, port_name, servers))
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                LOG_INFO(&logger(), "Not creating a second {} listener for <listen_host>{}</listen_host>: for a wildcard "
-                    "address Arrow Flight binds a dual-stack socket accepting both IPv6 and IPv4, so this port is already "
-                    "served by the listener for <listen_host>{}</listen_host>", port_name, listen_host, *wildcard_listen_host);
-            }
-            else
-            {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::ServerSocket socket;
-                    auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
-                    socket.setReceiveTimeout(Poco::Timespan());
-                    socket.setSendTimeout(settings[Setting::send_timeout]);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "Arrow Flight compatibility protocol: " + address.toString(),
-                        std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
-                        true);
-                });
-            }
+                Poco::Net::ServerSocket socket;
+                auto address = socketBindListen(server_settings, socket, listen_host, port, /* secure = */ true);
+                socket.setReceiveTimeout(Poco::Timespan());
+                socket.setSendTimeout(settings[Setting::send_timeout]);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "Arrow Flight compatibility protocol: " + address.toString(),
+                    std::unique_ptr<IGRPCServer>(new ArrowFlightServer(*this, makeSocketAddress(listen_host, port, &logger()))),
+                    true);
+            });
         }
 #endif
 
@@ -4321,28 +4305,19 @@ void Server::createServers(
         }
 
 #if USE_GRPC
-        if (server_type.shouldStart(ServerType::Type::GRPC))
+        if (server_type.shouldStart(ServerType::Type::GRPC)
+            && std::ranges::find(grpc_listen_hosts, listen_host) != grpc_listen_hosts.end())
         {
             port_name = "grpc_port";
-            /// See the comment on `findWildcardListenHostForGRPC`.
-            if (auto wildcard_listen_host = findWildcardListenHostForGRPC(listen_host, port_name, servers))
+            createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
             {
-                LOG_INFO(&logger(), "Not creating a second {} listener for <listen_host>{}</listen_host>: for a wildcard "
-                    "address gRPC binds a dual-stack socket accepting both IPv6 and IPv4, so this port is already served "
-                    "by the listener for <listen_host>{}</listen_host>", port_name, listen_host, *wildcard_listen_host);
-            }
-            else
-            {
-                createServer(config, listen_host, port_name, listen_try, start_servers, servers, [&](UInt16 port) -> ProtocolServerAdapter
-                {
-                    Poco::Net::SocketAddress server_address(listen_host, port);
-                    return ProtocolServerAdapter(
-                        listen_host,
-                        port_name,
-                        "gRPC protocol: " + server_address.toString(),
-                        std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
-                });
-            }
+                Poco::Net::SocketAddress server_address(listen_host, port);
+                return ProtocolServerAdapter(
+                    listen_host,
+                    port_name,
+                    "gRPC protocol: " + server_address.toString(),
+                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+            });
         }
 #endif
         if (server_type.shouldStart(ServerType::Type::PROMETHEUS))

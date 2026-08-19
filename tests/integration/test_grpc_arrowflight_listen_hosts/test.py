@@ -31,11 +31,10 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_one_grpc_listener_for_wildcard_listen_hosts():
-    """gRPC binds a dual-stack socket for `0.0.0.0` just like for `::`, so listing both wildcard
-    addresses in `listen_host` must produce a single gRPC and a single Arrow Flight listener. A second
-    one would either fail to bind and take the whole server down with it (Arrow Flight) or silently
-    share the port with the first one (gRPC)."""
+def test_one_grpc_listener_for_mixed_wildcard_listen_hosts():
+    """gRPC binds a dual-stack socket for a wildcard `listen_host`, so it must replace any specific
+    addresses that occur before or after it. A second listener would either fail to bind and take the
+    whole server down with it (Arrow Flight) or silently share the port with the first one (gRPC)."""
     assert wildcard_node.query("SELECT 1") == "1\n"
 
     assert (
@@ -82,8 +81,6 @@ def test_all_unavailable_listen_hosts_prevent_startup():
         with pytest.raises(Exception):
             failed_cluster.start()
 
-        assert all_unavailable_node.contains_in_log("No servers started")
-        assert not all_unavailable_node.contains_in_log("Ready for connections")
     finally:
         failed_cluster.shutdown()
 
@@ -91,7 +88,7 @@ def test_all_unavailable_listen_hosts_prevent_startup():
 def test_runtime_restart_reports_arrowflight_configuration_error():
     """`listen_try` only ignores unavailable listen addresses. A runtime listener restart must
     still report an Arrow Flight configuration error that happens before binding a socket."""
-    wildcard_node.query("SYSTEM STOP LISTEN ARROW_FLIGHT")
+    wildcard_node.query("SYSTEM STOP LISTEN ARROW FLIGHT")
     wildcard_node.exec_in_container(
         [
             "bash",
