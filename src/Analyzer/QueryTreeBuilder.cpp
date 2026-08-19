@@ -321,6 +321,16 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         /// first: the reset installs the compiled-in default, which would otherwise clear a constraint
         /// just as `SET name = DEFAULT` did. A reset must leave the setting `changed = false`, so it
         /// cannot be expressed as an explicit change.
+        ///
+        /// Known limitation: unlike `changes` above, the reset is applied only to this node's context
+        /// and is not recorded on the `QueryNode`, which carries `settings_changes` alone. So the reset
+        /// is invisible to everything that reads a subquery's settings off the query tree rather than
+        /// off its context: `QueryNode::toAST` drops it (a secondary query sent to another shard,
+        /// `EXPLAIN QUERY TREE`), the tree hash does not distinguish it, and the `hasSettingsChanges`
+        /// gates in `Planner::shouldUseQueryCacheForSubquery` and in the table-function execution-context
+        /// switch in `QueryAnalyzer` do not fire for it. That matches the behaviour before this check
+        /// existed, when the clause was dropped outright, and fixing it needs a `default_settings`
+        /// carrier on `QueryNode` plus hashing and serialization support, which is out of scope here.
         if (!set_query.default_settings.empty())
         {
             updated_context->checkSettingsConstraintsForDefaults(set_query.default_settings, SettingSource::QUERY);
