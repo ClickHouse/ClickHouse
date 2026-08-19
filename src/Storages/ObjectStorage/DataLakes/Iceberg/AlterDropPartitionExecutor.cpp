@@ -223,7 +223,10 @@ std::optional<AlterDropPartitionExecutor::SnapshotState> AlterDropPartitionExecu
     SnapshotState state;
 
     {
-        auto [snapshot, table_state] = metadata.getRelevantState(context, /*force_fetch_latest_metadata=*/true);
+        auto [snapshot, table_state] = metadata.getRelevantState(
+            context,
+            /*force_fetch_latest_metadata=*/true,
+            /*ignore_explicit_metadata_file_path=*/true);
         if (!snapshot)
             return std::nullopt;
 
