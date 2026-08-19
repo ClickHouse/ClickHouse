@@ -511,9 +511,9 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     });
 
     /// Ordered mode: while a smaller file of the same ordering domain is held by a foreign
-    /// `processing` node, later files are dropped for this pass — committing one would
-    /// advance the `processed` pointer past the held file and lose it forever.
-    /// The next listing pass re-lists them.
+    /// `processing` node, later files are held until the blocker is resolved — committing one
+    /// would advance the `processed` pointer past the held file and lose it forever.
+    std::unordered_set<std::string> blocked_by_foreign_held_file;
     if (mode == ObjectStorageQueueMode::ORDERED)
     {
         std::erase_if(paths, [&](const std::string & path) TSA_REQUIRES(next_mutex)
@@ -522,6 +522,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
                 return false;
 
             LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", path);
+            blocked_by_foreign_held_file.insert(path);
             return true;
         });
     }
@@ -543,6 +544,12 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             metadata->getFilenameParser(),
             terminal_states,
             log);
+
+    for (auto & object : objects)
+    {
+        if (blocked_by_foreign_held_file.contains(object->getPath()))
+            blocked_files_per_domain[getOrderingDomain(object->getPath())].push_back(std::move(object));
+    }
 
     /// The states found terminal in keeper are terminal for the file status cache
     /// (`system.s3queue_metadata_cache`) as well: without this a file committed by another
@@ -581,6 +588,9 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
     result.reserve(paths_set.size());
     for (auto & object : objects)
     {
+        if (!object)
+            continue;
+
         if (paths_set.contains(object->getPath()))
             result.push_back(std::move(object));
         else if (skipped_foreign_processing.contains(object->getPath()))
@@ -691,7 +701,22 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
 
     it->second.erase(path);
     if (it->second.empty())
+    {
+        const auto domain = it->first;
         foreign_held_files_per_domain.erase(it);
+        recheckBlockedFilesForDomain(domain);
+    }
+}
+
+void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(const OrderingDomain & domain)
+{
+    const auto it = blocked_files_per_domain.find(domain);
+    if (it == blocked_files_per_domain.end())
+        return;
+
+    LOG_TEST(log, "Rechecking {} files after a foreign-held file in their ordering domain was resolved", it->second.size());
+    std::move(it->second.begin(), it->second.end(), std::back_inserter(foreign_processing_files_to_recheck));
+    blocked_files_per_domain.erase(it);
 }
 
 bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)
@@ -851,11 +876,15 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             {
                 /// A smaller file of the same ordering domain is held by a foreign
                 /// `processing` node: processing this file would advance the `processed`
-                /// pointer past the held file and lose it forever. Drop the file for
-                /// this pass; the next listing pass re-lists it.
+                /// pointer past the held file and lose it forever. Keep it pending until
+                /// the blocker resolves, then put it through filtering again.
                 LOG_TEST(log, "Skipping file {}: a smaller file of its ordering domain is processed by another processor", object_info->getPath());
                 if (file_metadata)
                     file_metadata->resetProcessing();
+                {
+                    std::lock_guard lock(next_mutex);
+                    blocked_files_per_domain[getOrderingDomain(object_info->getPath())].push_back(std::move(object_info));
+                }
                 continue;
             }
         }

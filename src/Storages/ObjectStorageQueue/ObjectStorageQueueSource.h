@@ -133,11 +133,19 @@ public:
         std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
 
         /// Ordered mode only. An ordering domain is the scope of one `processed` pointer:
-        /// a bucket, and a partition within it when partitioning is used. Committing a file
-        /// declares every smaller path of its domain processed, so while a file of the domain
+        /// a bucket, and a partition within it when partitioning is used.
+        using OrderingDomain = std::pair<Bucket, std::string>;
+
+        /// Ordered mode only. Later files dropped while a smaller foreign-held file
+        /// blocks their ordering domain. Once the last blocker of a domain resolves,
+        /// put these files back through the regular filtering path instead of waiting
+        /// for the object-storage listing to start another full pass.
+        std::map<OrderingDomain, ObjectInfos> blocked_files_per_domain TSA_GUARDED_BY(next_mutex);
+
+        /// Ordered mode only. Committing a file declares every smaller path of its domain
+        /// processed, so while a file of the domain
         /// is held by a foreign `processing` node, later files of the domain must not be
         /// processed: the pointer would advance past the held file and lose it forever.
-        using OrderingDomain = std::pair<Bucket, std::string>;
         std::map<OrderingDomain, std::set<std::string>> foreign_held_files_per_domain TSA_GUARDED_BY(next_mutex);
 
         /// Ordered mode only. Files handed out to a processing thread whose `trySetProcessing`
@@ -151,6 +159,7 @@ public:
         OrderingDomain getOrderingDomain(const std::string & path) const;
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
+        void recheckBlockedFilesForDomain(const OrderingDomain & domain) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
 
         void registerUnresolvedSetProcessing(const std::string & path);
