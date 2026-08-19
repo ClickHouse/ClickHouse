@@ -11,7 +11,8 @@ Attaches a table, a view or a dictionary, for example, when moving a database to
 **Syntax**
 
 ```sql
-ATTACH TABLE|[MATERIALIZED] VIEW|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name ...
 ```
 
 The query does not create data on disk, but assumes that data is already in the appropriate places, and just adds information about the specified table, view, dictionary or database to the server. After executing the `ATTACH` query, the server will know about the existence of the table, view, dictionary or database.

@@ -1835,7 +1835,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// silently take the stored kind.
         if (create.isView() && create_query.is_window_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Cannot ATTACH VIEW {0}.{1}, it is a WindowView. Use 'ATTACH TABLE {1};' instead",
+                "Cannot ATTACH VIEW {}.{}, it is a WindowView. Replace VIEW with TABLE, keeping the "
+                "rest of the query",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
         /// `getRequiredAccess` ran on the stub, which has no definition, so nothing the stored
