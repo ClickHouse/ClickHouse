@@ -628,6 +628,27 @@ def test_doget_unsupported_type_as_text_column():
     assert actual.column("j").to_pylist() == ['{"a":1}']
 
 
+# An opaque type nested in a container is tagged on its own child field, so a client can recognize it
+# wherever it appears rather than only at the top level.
+def test_doget_nested_unsupported_type_is_tagged():
+    node.query("CREATE TABLE mytable (id Int64, a Array(JSON), t Tuple(j JSON)) ORDER BY id")
+    node.query("""INSERT INTO mytable VALUES (10, ['{"a":1}'], tuple('{"b":2}'))""")
+
+    client, options = get_client()
+
+    descriptor = flight.FlightDescriptor.for_path("mytable")
+    flight_info = client.get_flight_info(descriptor, options)
+    ticket = flight_info.endpoints[0].ticket
+
+    reader = client.do_get(ticket, options)
+    schema = reader.read_all().schema
+
+    for child in [schema.field("a").type.field(0), schema.field("t").type.field(0)]:
+        assert child.type == pa.binary()
+        assert child.metadata[b"ARROW:extension:name"] == b"clickhouse.opaque"
+        assert child.metadata[b"ARROW:extension:metadata"] == b"JSON"
+
+
 # The opaque payload is produced by the query's own format settings, so a setting that changes how a value
 # serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
 # `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed
