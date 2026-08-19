@@ -1574,6 +1574,45 @@ TEST(MergeTreeDeduplicationLog, AddPartEnforcesWindowOnSuccess)
     std::filesystem::remove_all(work_dir);
 }
 
+/// A long-lived block used to pin every later successful ADD/DROP pair in the
+/// retained log history. Those records have no rollback garbage, so raw and effective
+/// counts are equal, but they no longer contribute to the live deduplication map and
+/// must eventually be compacted away.
+TEST(MergeTreeDeduplicationLog, SuccessfulAddDropChurnIsCompactedAway)
+{
+    const std::string work_dir = "tmp/gtest_dedup_log_successful_churn_compaction/";
+    std::filesystem::remove_all(work_dir);
+    std::filesystem::create_directories(work_dir);
+
+    const std::string logs_dir = work_dir + "dedup_logs";
+    auto count_logs = [&]() -> size_t
+    {
+        return std::distance(std::filesystem::directory_iterator(logs_dir), std::filesystem::directory_iterator());
+    };
+
+    auto disk = std::make_shared<DiskLocal>("healthy", work_dir);
+    const MergeTreeDataFormatVersion format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
+    auto part = [&](const String & name) { return MergeTreePartInfo::fromPartName(name, format_version); };
+    MergeTreeDeduplicationLog log("dedup_logs", /*deduplication_window=*/ 2, format_version, disk);
+    log.load();
+
+    log.addPart({"block1"}, part("all_1_1_0"));
+    for (size_t i = 2; i <= 6; ++i)
+    {
+        const auto suffix = std::to_string(i) + "_" + std::to_string(i) + "_0";
+        log.addPart({"block" + std::to_string(i)}, part("all_" + suffix));
+        log.dropPart(part("all_" + suffix));
+    }
+
+    /// The live map contains only block1. Without the effective-history trigger, all
+    /// records since block1 would survive because raw and effective counts are equal.
+    EXPECT_EQ(count_logs(), 1u);
+    EXPECT_FALSE(log.addPart({"block1"}, part("all_9_9_0")).empty());
+
+    log.shutdown();
+    std::filesystem::remove_all(work_dir);
+}
+
 /// Regression test: rolled-back operations leave (ADD, rollback) record pairs that
 /// cancel out on replay but that dropOutdatedLogs cannot reclaim - the rollback
 /// record sits in a newer file while the record it cancels sits in an older file

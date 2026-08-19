@@ -577,7 +577,13 @@ void MergeTreeDeduplicationLog::compactIfNeeded()
     /// Once the disk recovers, retry compaction even when the raw/effective gap is
     /// small: otherwise the marker stays armed forever and a later restart discards
     /// both the previously committed history and records written after recovery.
-    if (!history_diverged && total_raw <= total_effective + 2 * rotate_interval)
+    /// Successful ADD/DROP churn has no raw/effective gap, but its DROP records still
+    /// do not contribute to the final map. Keep only a small bounded amount of such
+    /// obsolete effective history too; otherwise one long-lived block pins its oldest
+    /// file and every later add/drop pair is retained and replayed forever.
+    const bool has_excess_rollback_garbage = total_raw > total_effective + 2 * rotate_interval;
+    const bool has_excess_obsolete_history = total_effective > deduplication_map.size() + 2 * rotate_interval;
+    if (!history_diverged && !has_excess_rollback_garbage && !has_excess_obsolete_history)
         return;
 
     compact();
