@@ -11,6 +11,8 @@
 #include <Core/DecimalFunctions.h>
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -306,6 +308,26 @@ public:
                 size_t num_values = (*values_offsets)[i] - values_base_offset;
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
+
+                bool row_has_no_nulls = !null_map;
+                if (null_map)
+                {
+                    auto row_null_map_begin = null_map->begin() + values_base_offset;
+                    row_has_no_nulls = std::none_of(row_null_map_begin, row_null_map_begin + num_steps, [](UInt8 is_null) { return is_null != 0; });
+                }
+
+                if (row_has_no_nulls)
+                {
+                    res_values->insertRangeFrom(*values, values_base_offset, num_steps);
+                    for (size_t j = 0; j != num_steps; ++j)
+                    {
+                        TimestampType timestamp = static_cast<TimestampType>(static_cast<Int64>(static_cast<UInt64>(start_timestamp) + j * step));
+                        res_timestamps->insert(timestamp);
+                    }
+
+                    res_offsets->insert(res_timestamps->size());
+                    continue;
+                }
             }
 
             for (size_t j = 0; j != num_steps; ++j)
