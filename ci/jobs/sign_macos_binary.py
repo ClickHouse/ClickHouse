@@ -3,6 +3,7 @@ import json
 import os
 import struct
 import subprocess
+import urllib.request
 from pathlib import Path
 
 from ci.praktika.info import Info
@@ -26,9 +27,10 @@ NOTARY_P8 = TEMP_DIR / "notary_key.p8"
 NOTARY_API_KEY_JSON = TEMP_DIR / "notary_api_key.json"
 
 KMS_KEY_ARN = (
-    "arn:aws:kms:us-east-1:640168457429:key/6b675f39-8cf0-4380-8668-425dc7548086"
+    "arn:aws:kms:us-east-1:445567100269:key/mrk-9742178ad5054c8ba662fb073b62aac8"
 )
 KMS_REGION = "us-east-1"
+SIGNING_ROLE_ARN = "arn:aws:iam::445567100269:role/release_signing"
 PKCS11_TOKEN_LABEL = "clickhouse_macos_signing"
 
 APPLE_TEAM_ID = "ZNDB5FJ8ZW"
@@ -43,6 +45,41 @@ NOTARY_ISSUER_ID = "b17e8d0b-6b5d-4063-9a1d-24d9baa80daf"
 NOTARY_KEY_ID = "99QTC6XVSW"
 
 MAX_SIZE_GROWTH_BYTES = 32 * 1024 * 1024
+
+
+def assume_signing_role():
+    # Exchange the GitHub Actions OIDC token for short-lived signing creds.
+    # The workflow already grants id-token via permissions: write-all.
+    req_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+    req_tok = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
+    request = urllib.request.Request(
+        f"{req_url}&audience=sts.amazonaws.com",
+        headers={"Authorization": f"Bearer {req_tok}"},
+    )
+    web_identity_token = json.loads(urllib.request.urlopen(request).read().decode())[
+        "value"
+    ]
+    TEMP_DIR.mkdir(parents=True, exist_ok=True)
+    token_file = TEMP_DIR / "gh_oidc_token"
+    token_file.write_text(web_identity_token)
+    creds = json.loads(
+        subprocess.check_output(
+            [
+                "aws", "sts", "assume-role-with-web-identity",
+                "--role-arn", SIGNING_ROLE_ARN,
+                "--role-session-name", "macos-signing",
+                "--web-identity-token", f"file://{token_file}",
+                "--region", KMS_REGION,
+                "--query", "Credentials",
+                "--output", "json",
+            ]
+        )
+    )
+    token_file.unlink(missing_ok=True)
+    os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
+    os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
+    os.environ["AWS_SESSION_TOKEN"] = creds["SessionToken"]
+    print("Assumed signing role via GitHub OIDC")
 
 
 def report_tooling():
@@ -237,6 +274,7 @@ def main():
     print(f"Build type [{args.build_type}], job [{Info().job_name}]")
 
     steps = [
+        ("assume signing role", assume_signing_role),
         ("report tooling", report_tooling),
         ("configure KMS module", configure_kms_module),
         ("check certificate against key", check_certificate_matches_key),
