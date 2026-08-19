@@ -33,8 +33,8 @@ public:
 
     void addValues(const AsynchronousMetricValues &);
 
-    /// This table is usually queried for fixed metric name (and, for key-value metrics, a fixed key).
-    static const char * getDefaultOrderBy() { return "metric, key, event_date, event_time"; }
+    /// This table is usually queried for a fixed metric name and a time range.
+    static const char * getDefaultOrderBy() { return "metric, event_date, event_time, key"; }
 };
 
 }
