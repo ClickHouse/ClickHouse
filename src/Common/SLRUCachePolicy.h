@@ -291,8 +291,12 @@ private:
     {
         if (max_count == 0)
             return 0;
-        const size_t protected_count = static_cast<size_t>(static_cast<double>(max_count) * std::max(0.0, std::min(1.0, size_ratio)));
-        return std::min(protected_count, max_count - 1);
+
+        const size_t max_protected_count = max_count - 1;
+        const double protected_count = static_cast<double>(max_count) * std::max(0.0, std::min(1.0, size_ratio));
+        if (protected_count >= static_cast<double>(max_protected_count))
+            return max_protected_count;
+        return static_cast<size_t>(protected_count);
     }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
