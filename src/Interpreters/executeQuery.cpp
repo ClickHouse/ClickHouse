@@ -74,6 +74,8 @@
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
+#include <Interpreters/QueryPlanLog.h>
+#include <Interpreters/QueryPlanProfiler.h>
 #include <Interpreters/QueryLog.h>
 #include <IO/AsyncReadCounters.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -734,7 +736,8 @@ static void logQueryFinishImpl(
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
     bool log_as_internal,
-    std::chrono::system_clock::time_point time)
+    std::chrono::system_clock::time_point time,
+    const std::shared_ptr<QueryPlanProfiler> & plan_profiler)
 {
     const Settings & settings = context->getSettingsRef();
     auto log_queries = settings[Setting::log_queries];
@@ -836,6 +839,9 @@ static void logQueryFinishImpl(
 
     if (!query_pipeline_finalized_info.processors_profile_infos.empty())
         logProcessorProfile(context, query_pipeline_finalized_info.processors_profile_infos, query_pipeline_finalized_info.pipeline_dump);
+
+    if (plan_profiler && plan_profiler->hasQueryPlan())
+        logQueryPlan(context, *plan_profiler, elem, QueryPlanLogElement::QUERY_FINISH);
 }
 
 void logQueryFinish(
@@ -851,7 +857,7 @@ void logQueryFinish(
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now, nullptr);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -2737,6 +2743,7 @@ static BlockIO executeQueryImpl(
         StreamLocalLimits limits;
         std::shared_ptr<const EnabledQuota> quota;
         std::unique_ptr<IInterpreter> interpreter;
+        std::shared_ptr<QueryPlanProfiler> plan_profiler;
 
         bool async_insert = false;
         auto * queue = context->tryGetAsynchronousInsertQueue();
@@ -2925,6 +2932,8 @@ static BlockIO executeQueryImpl(
                 if (out_ast)
                     interpreter = InterpreterFactory::instance().get(out_ast, context, SelectQueryOptions(stage).setInternal(internal));
 
+                plan_profiler = QueryPlanProfiler::createIfEnabled(context, internal);
+
                 const auto & query_settings = context->getSettingsRef();
                 if (interpreter && context->getCurrentTransaction() && query_settings[Setting::throw_on_unsupported_query_inside_transaction])
                 {
@@ -2997,6 +3006,11 @@ static BlockIO executeQueryImpl(
                     }
 
                     res = interpreter->execute();
+
+                    if (plan_profiler)
+                        if (auto * analyzer_interpreter = dynamic_cast<InterpreterSelectQueryAnalyzer *>(interpreter.get()))
+                            plan_profiler->setQueryPlan(std::move(*analyzer_interpreter).extractQueryPlan());
+
                     /// If it is a non-internal SELECT query, and active (write) use of the query cache is enabled, then add a processor on
                     /// top of the pipeline which stores the result in the query cache.
                     if (checkCanWriteQueryResultCache(out_ast, context))
@@ -3135,11 +3149,12 @@ static BlockIO executeQueryImpl(
                                     internal,
                                     log_as_internal,
                                     implicit_tcl_executor,
+                                    plan_profiler,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time, plan_profiler);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {

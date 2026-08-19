@@ -11,8 +11,19 @@
 #include <base/getFQDNOrHostName.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ClickHouseRevision.h>
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/QueryLogElement.h>
+#include <Interpreters/QueryPlanProfiler.h>
 
-namespace DB {
+namespace DB
+{
+
+namespace Setting
+{
+extern const SettingsUInt64 query_plan_max_step_description_length;
+}
+
 ColumnsDescription QueryPlanLogElement::getColumnsDescription() {
     auto query_status_datatype = std::make_shared<DataTypeEnum8>(
     DataTypeEnum8::Values
@@ -56,4 +67,30 @@ void QueryPlanLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insertData(ascii_plan.data(), ascii_plan.size());
     columns[i++]->insert(status);
 }
+
+void logQueryPlan(const ContextPtr & context,
+                  const QueryPlanProfiler & profiler,
+                  const QueryLogElement & elem,
+                  QueryPlanLogElement::Status status)
+{
+    auto query_plan_log = context->getQueryPlanLog();
+    if (!query_plan_log)
+        return;
+
+    const auto max_description_length = context->getSettingsRef()[Setting::query_plan_max_step_description_length];
+
+    QueryPlanLogElement plan_elem;
+    plan_elem.event_time = elem.event_time;
+    plan_elem.event_time_microseconds = elem.event_time_microseconds;
+    plan_elem.query_start_time = elem.query_start_time_microseconds;
+    plan_elem.query_id = elem.client_info.current_query_id;
+    plan_elem.query_string = elem.query;
+    plan_elem.query_duration_ms = elem.query_duration_ms;
+    plan_elem.normalized_query_hash = elem.normalized_query_hash;
+    plan_elem.ascii_plan = profiler.renderAsciiPlan(max_description_length);
+    plan_elem.status = status;
+
+    query_plan_log->add([&](QueryPlanLogElement & element) { element = std::move(plan_elem); });
+}
+
 }

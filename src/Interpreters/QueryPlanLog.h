@@ -4,9 +4,13 @@
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
 #include <base/types.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
+
+class QueryPlanProfiler;
+struct QueryLogElement;
 
 struct QueryPlanLogElement
 {
@@ -40,4 +44,9 @@ class QueryPlanLog : public SystemLog<QueryPlanLogElement>
 public:
     using SystemLog<QueryPlanLogElement>::SystemLog;
 };
+
+void logQueryPlan(const ContextPtr & context,
+                  const QueryPlanProfiler & profiler,
+                  const QueryLogElement & elem,
+                  QueryPlanLogElement::Status status);
 }
