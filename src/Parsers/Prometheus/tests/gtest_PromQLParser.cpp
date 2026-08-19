@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 
 #include <fmt/format.h>
@@ -98,6 +99,60 @@ TEST(PromQLParser, InvalidQuotedSelectorIdentifiers)
         size_t error_pos = 0;
         EXPECT_FALSE(query_tree.tryParse(query, 3, &error_message, &error_pos)) << query;
         EXPECT_FALSE(error_message.empty()) << query;
+    }
+}
+
+
+TEST(PromQLParser, PrometheusRequestTimestampDecimalSyntax)
+{
+    for (const auto * const timestamp : {"1.2.3", "1..0", "..1"})
+    {
+        PrometheusQueryParsingUtil::RequestTimestampType parsed_timestamp;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(PrometheusQueryParsingUtil::tryParsePrometheusRequestTimestamp(
+            timestamp, 3, parsed_timestamp, &error_message, &error_pos))
+            << timestamp;
+    }
+
+    for (const auto * const timestamp : {"1e3", "1.5e3", "1e+3", "1e-3"})
+    {
+        PrometheusQueryParsingUtil::RequestTimestampType parsed_timestamp;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(PrometheusQueryParsingUtil::tryParsePrometheusRequestTimestamp(
+            timestamp, 3, parsed_timestamp, &error_message, &error_pos))
+            << timestamp << ": " << error_message;
+    }
+}
+
+
+TEST(PromQLParser, MetricSelectorParsing)
+{
+    for (const auto * const selector : {"cpu_usage", R"({host="server1"})", R"(cpu_usage{host="server1"})"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_TRUE(query_tree.tryParseMetricSelector(selector, 3, &error_message, &error_pos))
+            << selector << ": " << error_message;
+        ASSERT_NE(query_tree.getRoot(), nullptr);
+        EXPECT_EQ(query_tree.getRoot()->node_type, PrometheusQueryTree::NodeType::InstantSelector);
+    }
+
+    for (const auto * const selector : {
+             "(cpu_usage)",
+             R"(((cpu_usage{host="server1"})))",
+             "cpu_usage[5m]",
+             "cpu_usage offset 5m",
+             "cpu_usage @ 1700000000",
+             "sum(cpu_usage)"})
+    {
+        PrometheusQueryTree query_tree;
+        String error_message;
+        size_t error_pos = 0;
+        EXPECT_FALSE(query_tree.tryParseMetricSelector(selector, 3, &error_message, &error_pos)) << selector;
+        EXPECT_FALSE(error_message.empty()) << selector;
     }
 }
 
