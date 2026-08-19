@@ -82,6 +82,15 @@ bloom_filter over Map(Enum, ...) keys
 1
 0
 0
+1
+0
+0
+bloom_filter over Map(..., Enum) values
+1
+0
+0
+0
+0
 type wrappers
 Nullable(Enum8)
 1
@@ -100,6 +109,8 @@ b	0	1	0	1
 \N	\N	\N	0	1
 validate_enum_literals_in_operators = 1 still rejects
 a member literal still uses each skip index
+1
+1
 1
 1
 1

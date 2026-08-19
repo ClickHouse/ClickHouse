@@ -12,6 +12,7 @@ DROP TABLE IF EXISTS t_set;
 DROP TABLE IF EXISTS t_bf;
 DROP TABLE IF EXISTS t_bf_arr;
 DROP TABLE IF EXISTS t_bf_map;
+DROP TABLE IF EXISTS t_bf_map_val;
 DROP TABLE IF EXISTS t_null;
 DROP TABLE IF EXISTS t_enum16;
 
@@ -129,6 +130,20 @@ INSERT INTO t_bf_map VALUES (map('a', 1), 1), (map('b', 2), 2);
 SELECT count() FROM t_bf_map WHERE mapContains(m, 'a');
 SELECT count() FROM t_bf_map WHERE mapContains(m, '4');
 SELECT count() FROM t_bf_map WHERE mapContains(m, '4') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map WHERE mapContainsKey(m, 'a');
+SELECT count() FROM t_bf_map WHERE mapContainsKey(m, '4');
+SELECT count() FROM t_bf_map WHERE mapContainsKey(m, '4') SETTINGS use_skip_indexes = 0;
+
+-- mapContainsValue reads the element type from getValueType() rather than getKeyType(), so the
+-- value side of a Map is a separate carrier from the key side above.
+SELECT 'bloom_filter over Map(..., Enum) values';
+CREATE TABLE t_bf_map_val (m Map(String, Enum8('a' = 1, 'b' = 2)), v UInt64, INDEX i mapValues(m) TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY v;
+INSERT INTO t_bf_map_val VALUES (map('k', 'a'), 1), (map('k', 'b'), 2);
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, 'a');
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, '4');
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, '4') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, 'zzz');
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, 'zzz') SETTINGS use_skip_indexes = 0;
 
 SELECT 'type wrappers';
 -- LowCardinality(Enum) is intentionally absent: DataTypeEnum does not override
@@ -178,6 +193,8 @@ SELECT count() FROM t_bf_arr WHERE has(a, 'a')      SETTINGS force_data_skipping
 SELECT count() FROM t_bf_arr WHERE hasAny(a, ['a']) SETTINGS force_data_skipping_indices = 'i';
 SELECT count() FROM t_bf_arr WHERE hasAll(a, ['a']) SETTINGS force_data_skipping_indices = 'i';
 SELECT count() FROM t_bf_map WHERE mapContains(m, 'a') SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_map WHERE mapContainsKey(m, 'a') SETTINGS force_data_skipping_indices = 'i';
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, 'a') SETTINGS force_data_skipping_indices = 'i';
 
 SELECT 'a non-member literal declines the index instead of throwing';
 -- enable_analyzer = 1 where the predicate is a bare scalar comparison: the old analyzer folds it
@@ -188,6 +205,8 @@ SELECT count() FROM t_bf_arr WHERE has(a, '4')      SETTINGS force_data_skipping
 SELECT count() FROM t_bf_arr WHERE hasAny(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_bf_arr WHERE hasAll(a, ['4']) SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM t_bf_map WHERE mapContains(m, '4') SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_map WHERE mapContainsKey(m, '4') SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_bf_map_val WHERE mapContainsValue(m, '4') SETTINGS force_data_skipping_indices = 'i'; -- { serverError INDEX_NOT_USED }
 -- set(N) decides usability structurally (MergeTreeIndexConditionSet::isUseless is
 -- actions == nullptr), not from a KeyCondition atom, so it stays usable for a non-member
 -- literal and evaluates the predicate over the stored set instead. Asserting that it still
@@ -211,5 +230,6 @@ DROP TABLE t_set;
 DROP TABLE t_bf;
 DROP TABLE t_bf_arr;
 DROP TABLE t_bf_map;
+DROP TABLE t_bf_map_val;
 DROP TABLE t_null;
 DROP TABLE t_enum16;
