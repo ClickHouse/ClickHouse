@@ -262,7 +262,9 @@ static NameSet getRemovedStatistics(const StorageMetadataPtr & metadata_snapshot
 static NameSet collectIndicesRebuiltByMutation(
     const MergeTreeData::DataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
-    const MutationCommands & commands)
+    const MutationCommands & commands,
+    bool suitable_for_ttl_optimization,
+    bool materialize_ttl_recalculate_only)
 {
     NameSet rebuilt;
 
@@ -281,6 +283,24 @@ static NameSet collectIndicesRebuiltByMutation(
         if (auto alter = command.ast(); alter && alter->update_assignments)
             for (const auto & child : alter->update_assignments->children)
                 updated_columns.insert(child->as<ASTAssignment &>().column_name);
+
+        if (command.type != MutationCommand::Type::MATERIALIZE_TTL
+            || materialize_ttl_recalculate_only
+            || suitable_for_ttl_optimization)
+            continue;
+
+        if (metadata_snapshot->hasRowsTTL()
+            || metadata_snapshot->hasAnyRowsWhereTTL()
+            || metadata_snapshot->hasAnyGroupByTTL())
+        {
+            rebuilds_every_index = true;
+            continue;
+        }
+
+        /// `MutationsInterpreter` marks each column that has a column TTL as a `TTL_TARGET`.
+        /// Its dependency calculation subsequently rebuilds skip indices that depend on them.
+        for (const auto & [column_name, _] : metadata_snapshot->getColumns().getColumnTTLs())
+            updated_columns.insert(column_name);
     }
 
     StorageInMemoryMetadata::HasDependencyCallback has_dependency =
@@ -756,7 +776,12 @@ static void splitAndModifyMutationCommands(
                 if (command.type == MutationCommand::Type::DROP_INDEX)
                     indices_being_dropped.insert(command.column_name);
 
-            auto rebuilt_indices = collectIndicesRebuiltByMutation(part, metadata_snapshot, commands);
+            auto rebuilt_indices = collectIndicesRebuiltByMutation(
+                part,
+                metadata_snapshot,
+                commands,
+                suitable_for_ttl_optimization,
+                (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only]);
 
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {

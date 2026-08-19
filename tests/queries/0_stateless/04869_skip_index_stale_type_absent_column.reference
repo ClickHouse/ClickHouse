@@ -97,3 +97,14 @@
 0
 64
 64
+-- 31. a sibling index rebuilt by MATERIALIZE TTL does not keep the column absent
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64

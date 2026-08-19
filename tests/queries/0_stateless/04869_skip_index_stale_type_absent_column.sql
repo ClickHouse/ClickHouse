@@ -343,6 +343,34 @@ SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '150' SETTINGS use_skip_inde
 SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '';
 SELECT count() FROM t_sibling_ttl_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
 
+SELECT '-- 31. a sibling index rebuilt by MATERIALIZE TTL does not keep the column absent';
+-- Unlike case 30, the command itself is MATERIALIZE TTL. Its column TTL target rewrites g and
+-- therefore idx_old, while MATERIALIZE INDEX builds idx_new in the same mutation.
+DROP TABLE IF EXISTS t_sibling_materialize_ttl_rebuilt;
+CREATE TABLE t_sibling_materialize_ttl_rebuilt (k UInt64, d DateTime, c String TTL d + INTERVAL 1 SECOND,
+    g String TTL d + INTERVAL 100 YEAR, INDEX idx_old (c, g) TYPE set(100) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY k
+SETTINGS index_granularity = 4, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_sibling_materialize_ttl_rebuilt SELECT number, '2000-01-01 00:00:00', toString(number * 3), toString(number) FROM numbers(64);
+ALTER TABLE t_sibling_materialize_ttl_rebuilt MATERIALIZE TTL SETTINGS mutations_sync = 2, alter_sync = 2;
+SELECT count() = 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_materialize_ttl_rebuilt' AND active AND column = 'c';
+ALTER TABLE t_sibling_materialize_ttl_rebuilt MODIFY COLUMN c REMOVE TTL SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialize_ttl_rebuilt ADD INDEX idx_new c TYPE set(100) GRANULARITY 1 SETTINGS alter_sync = 2;
+ALTER TABLE t_sibling_materialize_ttl_rebuilt MATERIALIZE TTL, MATERIALIZE INDEX idx_new
+    SETTINGS mutations_sync = 2, alter_sync = 2;
+SYSTEM STOP MERGES t_sibling_materialize_ttl_rebuilt;
+SELECT count() > 0 FROM system.parts_columns WHERE database = currentDatabase() AND table = 't_sibling_materialize_ttl_rebuilt' AND active AND column = 'c';
+SELECT count() = 64 FROM t_sibling_materialize_ttl_rebuilt WHERE g != '';
+SELECT countIf(data_uncompressed_bytes > 0) FROM system.data_skipping_indices WHERE database = currentDatabase() AND table = 't_sibling_materialize_ttl_rebuilt';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_new') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '150'
+    SETTINGS ignore_data_skipping_indices = 'idx_old') WHERE extract(explain, 'Granules: (\d+/\d+)') = '0/16';
+SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '150';
+SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '150' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '';
+SELECT count() FROM t_sibling_materialize_ttl_rebuilt WHERE c = '' SETTINGS use_skip_indexes = 0;
+
 DROP TABLE t_absent_col;
 DROP TABLE t_pre_add_index;
 DROP TABLE t_materialized_index;
@@ -357,3 +385,4 @@ DROP TABLE t_rematerialize_absent;
 DROP TABLE t_two_indices_absent;
 DROP TABLE t_sibling_rebuilt;
 DROP TABLE t_sibling_ttl_rebuilt;
+DROP TABLE t_sibling_materialize_ttl_rebuilt;
