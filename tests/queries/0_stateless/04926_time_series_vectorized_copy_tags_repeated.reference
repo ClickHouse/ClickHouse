@@ -26,4 +26,4 @@ timeSeriesCopyTags vectorized repeated sparse pairs:
 4	[('dest','0'),('src','24')]
 
 timeSeriesCopyTags vectorized repeated pairs with identical results:
-3	1	[[('src','same')]]
+3	1	[[]]
