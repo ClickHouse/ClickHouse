@@ -46,6 +46,7 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -78,6 +79,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_response_lost[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_transport_fail[];
+    extern const char iceberg_catalog_commit_transport_net_fail[];
     extern const char iceberg_catalog_commit_rejected[];
     extern const char iceberg_catalog_commit_predispatch_fail[];
 }
@@ -1683,6 +1685,13 @@ void RestCatalog::sendRequest(
                     "Injected transport failure",
                     "");
             });
+
+            /// Same site, but a plain Poco type: a connection dropped mid-request reaches the
+            /// caller as one of these, carrying no HTTP status to classify the attempt by.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_net_fail,
+            {
+                throw Poco::Net::NetException("Injected net failure");
+            });
         };
     }
 
@@ -1952,6 +1961,11 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const DB::HTTPException & ex)
     {
+        /// A commit that never reached the catalog cannot have taken effect, whatever type reports
+        /// it: it keeps its own error and the caller's usual cleanup of the files staged for it.
+        if (nothing_was_dispatched())
+            throw;
+
         const auto status = ex.getHTTPStatus();
 
         /// The server rejected the `assert-ref-snapshot-id` requirement: another writer took this
@@ -1971,13 +1985,11 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const Poco::Exception & ex)
     {
-        /// A commit that never reached the catalog cannot have taken effect, so it keeps its own
-        /// error and the caller's usual cleanup of the files staged for it.
         if (nothing_was_dispatched())
             throw;
 
         /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so a transport failure can
-        /// arrive as a plain Poco exception. Nothing may escape unclassified.
+        /// arrive as a plain Poco exception carrying no status. Nothing may escape unclassified.
         classifyAmbiguousCommit(
             namespace_name, table_name, new_snapshot_id, DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", ex.displayText()));
     }

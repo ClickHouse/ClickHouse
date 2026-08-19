@@ -2015,6 +2015,34 @@ def test_glue_commit_unknown_keeps_files(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
 
+def test_glue_commit_read_back_raising_keeps_files(started_cluster):
+    # Same unknown outcome when the read-back raises instead of answering: an exception there says
+    # nothing about whether UpdateTable applied, so it must not reach the caller as its own error,
+    # which the caller would read as a proven failure and delete the committed snapshot's files.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_read_back_raises_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_throw")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_throw")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The read-back's own error must not replace the glue error the user can act on.
+    assert "Injected lost response" in error, error
+
+    # The commit did land, so the pointer names the new metadata file; it must still exist.
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
 def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
     # UpdateTable carries no precondition and the SDK retries it, so a failure whose pointer is not
     # ours is indistinguishable from "committed, then superseded": the outcome is unknown and the

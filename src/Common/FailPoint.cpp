@@ -230,7 +230,9 @@ static struct InitFiu
     REGULAR(iceberg_slow_manifest_read) \
     REGULAR(iceberg_catalog_commit_response_lost) \
     REGULAR(iceberg_catalog_commit_reconcile_fail) \
+    REGULAR(iceberg_catalog_commit_reconcile_throw) \
     REGULAR(iceberg_catalog_commit_transport_fail) \
+    REGULAR(iceberg_catalog_commit_transport_net_fail) \
     REGULAR(iceberg_catalog_commit_rejected) \
     REGULAR(iceberg_catalog_commit_predispatch_fail) \
     REGULAR(storage_cluster_read_sleep) \

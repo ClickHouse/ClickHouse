@@ -67,6 +67,7 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
     extern const char iceberg_catalog_commit_response_lost[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_rejected[];
 }
 
@@ -689,23 +690,41 @@ std::optional<String> GlueCatalog::readRawMetadataLocation(const String & namesp
         return std::nullopt;
     });
 
-    Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(namespace_name);
-    request.SetName(table_name);
-
-    auto outcome = glue_client->GetTable(request);
-    if (!outcome.IsSuccess())
+    /// A read that cannot answer leaves the commit outcome unknown, so it must not surface as an
+    /// error: callers read any other error as a proven failure and delete the files staged for it.
+    try
     {
-        LOG_DEBUG(log, "Could not read back {}.{} from glue catalog: {}", namespace_name, table_name, outcome.GetError().GetMessage());
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_throw,
+        {
+            throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected read-back failure");
+        });
+
+        Aws::Glue::Model::GetTableRequest request;
+        request.SetDatabaseName(namespace_name);
+        request.SetName(table_name);
+
+        auto outcome = glue_client->GetTable(request);
+        if (!outcome.IsSuccess())
+        {
+            LOG_DEBUG(log, "Could not read back {}.{} from glue catalog: {}", namespace_name, table_name, outcome.GetError().GetMessage());
+            return std::nullopt;
+        }
+
+        const auto & parameters = outcome.GetResult().GetTable().GetParameters();
+        auto it = parameters.find("metadata_location");
+        if (it == parameters.end())
+            return std::nullopt;
+
+        return String(it->second);
+    }
+    catch (...)
+    {
+        LOG_DEBUG(
+            log,
+            "Could not read back {}.{} from glue catalog: {}",
+            namespace_name, table_name, DB::getCurrentExceptionMessage(false));
         return std::nullopt;
     }
-
-    const auto & parameters = outcome.GetResult().GetTable().GetParameters();
-    auto it = parameters.find("metadata_location");
-    if (it == parameters.end())
-        return std::nullopt;
-
-    return String(it->second);
 }
 
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
