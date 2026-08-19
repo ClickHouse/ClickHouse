@@ -12,6 +12,7 @@ namespace Setting
     extern const SettingsBool aggregation_in_order_shuffle;
     extern const SettingsUInt64 aggregation_in_order_shuffle_max_buffered_bytes;
     extern const SettingsBool read_in_order_use_virtual_row;
+    extern const SettingsBool read_in_order_use_virtual_row_per_block;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
@@ -34,6 +35,7 @@ BuildQueryPipelineSettings::BuildQueryPipelineSettings(ContextPtr from)
     aggregation_in_order_shuffle = from->getSettingsRef()[Setting::aggregation_in_order_shuffle];
     aggregation_in_order_shuffle_max_buffered_bytes = from->getSettingsRef()[Setting::aggregation_in_order_shuffle_max_buffered_bytes];
     read_in_order_use_virtual_row = from->getSettingsRef()[Setting::read_in_order_use_virtual_row];
+    read_in_order_use_virtual_row_per_block = from->getSettingsRef()[Setting::read_in_order_use_virtual_row_per_block];
     aggregation_memory_efficient_merge_threads = from->getSettingsRef()[Setting::aggregation_memory_efficient_merge_threads];
     min_outstreams_per_resize_after_split = from->getSettingsRef()[Setting::min_outstreams_per_resize_after_split];
     max_streams_for_union_step = from->getSettingsRef()[Setting::max_streams_for_union_step];

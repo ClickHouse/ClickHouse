@@ -686,6 +686,9 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             /// metadata for every shard merge. Check both pipeline carriers: `VirtualRowTransform` inserts an
             /// initial boundary, while `MergeTreeSource` can emit later per-block boundaries directly.
             && !has_virtual_rows
+            /// Per-block virtual rows are installed after aggregation planning, so they are not always visible
+            /// in the processor graph yet. Do not reshuffle because it cannot retain these boundaries.
+            && !settings.read_in_order_use_virtual_row_per_block
             && max_threads > 1
             && pipeline.getNumStreams() > 1
             /// The reshuffle wires an intermediate graph of `num_streams * num_shards`
