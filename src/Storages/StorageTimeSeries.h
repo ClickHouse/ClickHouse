@@ -139,4 +139,12 @@ private:
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
 std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr storage);
 
+/// Builds the internal context used by TimeSeries table functions to read their target tables.
+/// The caller must check the logical TimeSeries table first.
+ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context);
+
+/// Checks the logical TimeSeries table and target-table row policies before a table function or
+/// protocol reads its targets.
+void checkTimeSeriesTableAccess(const ContextPtr & context, const StorageID & time_series_storage_id);
+
 }

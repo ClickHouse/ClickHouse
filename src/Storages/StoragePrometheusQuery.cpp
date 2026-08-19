@@ -103,6 +103,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     }
 
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
+    checkTimeSeriesTableAccess(context, time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
@@ -196,10 +197,10 @@ void StoragePrometheusQuery::readImpl(
     /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
     /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
     /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
-    auto query_context = context;
-    if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
+    auto query_context = getTimeSeriesTargetContext(context);
+    if (!query_context->getSettingsRef()[Setting::enable_materialized_cte].changed)
     {
-        auto context_copy = Context::createCopy(context);
+        auto context_copy = Context::createCopy(query_context);
         context_copy->setSetting("enable_materialized_cte", true);
         query_context = context_copy;
     }
@@ -207,6 +208,7 @@ void StoragePrometheusQuery::readImpl(
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);
     query_plan = std::move(interpreter).extractQueryPlan();
+    query_plan.addInterpreterContext(query_context);
 }
 
 }

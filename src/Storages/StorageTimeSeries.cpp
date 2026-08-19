@@ -1,5 +1,8 @@
 #include <Storages/StorageTimeSeries.h>
 
+#include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRolesInfo.h>
+#include <Access/EnabledRowPolicies.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
@@ -650,6 +653,97 @@ std::shared_ptr<const StorageTimeSeries> storagePtrToTimeSeries(ConstStoragePtr 
 }
 
 
+void checkTimeSeriesTableAccess(const ContextPtr & context, const StorageID & time_series_storage_id)
+{
+    context->checkAccess(AccessType::SELECT, time_series_storage_id);
+
+    const auto row_policy_filter = context->getRowPolicyFilter(
+        time_series_storage_id.getDatabaseName(), time_series_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Row policies on TimeSeries table {} are not supported by table functions or the Prometheus HTTP API",
+            time_series_storage_id.getNameForLogs());
+    }
+
+    /// The generated queries below intentionally run in a context without the caller's user and
+    /// row-policy state. Do not silently broaden an existing policy on one of the physical target
+    /// tables when entering that context: policy propagation would require defining how policies
+    /// on the implementation tables map to the logical TimeSeries object. Until that mapping exists,
+    /// reject the privileged path instead of bypassing the policy.
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
+    for (const auto target_kind : StorageTimeSeries::getTargetKinds())
+    {
+        const auto target_table_id = time_series_storage->tryGetTargetTableID(target_kind, context);
+        if (target_table_id.empty())
+            continue;
+
+        const auto target_row_policy_filter = context->getRowPolicyFilter(
+            target_table_id.getDatabaseName(), target_table_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        if (target_row_policy_filter && !target_row_policy_filter->isAlwaysTrue())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Row policies on TimeSeries target table {} are not supported by table functions or the Prometheus HTTP API",
+                target_table_id.getNameForLogs());
+        }
+    }
+}
+
+
+ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context)
+{
+    /// Target tables are implementation details of the logical TimeSeries table. The logical
+    /// table's access and row-policy checks are performed before this context is created, so the
+    /// target query can use the same security model as SQL SECURITY NONE views without exposing
+    /// the inner table names to the caller.
+    auto target_context = Context::createCopy(context->getGlobalContext());
+    target_context->setClientInfo(context->getClientInfo());
+    if (context->getUserID())
+        target_context->getClientInfo().current_roles = context->getRolesInfo()->getCurrentRolesNames();
+    target_context->makeQueryContext();
+    if (context->hasQueryContext())
+        target_context->setQueryContext(context->getQueryContext());
+
+    const auto database = context->getCurrentDatabase();
+    if (!database.empty() && database != target_context->getCurrentDatabase())
+        target_context->setCurrentDatabase(database);
+
+    target_context->applySettingsChanges(context->getSettingsRef().changes());
+    target_context->setInsertionTable(
+        context->getInsertionTable(),
+        context->getInsertionTableColumnNames(),
+        context->getInsertionTableColumnsDescription());
+    target_context->setProgressCallback(context->getProgressCallback());
+    target_context->setProcessListElement(context->getProcessListElement());
+    target_context->setNormalizedQueryHash(context->getNormalizedQueryHash());
+    target_context->setJoinAnalyzeMode(context->getJoinAnalyzeMode());
+
+    if (context->getCurrentTransaction())
+        target_context->setCurrentTransaction(context->getCurrentTransaction());
+
+    if (context->getZooKeeperMetadataTransaction())
+        target_context->initZooKeeperMetadataTransaction(context->getZooKeeperMetadataTransaction());
+
+    /// Preserve callbacks used by parallel-replica and cluster-function reads.
+    if (context->canUseTaskBasedParallelReplicas() && context->hasMergeTreeAllRangesCallback())
+    {
+        target_context->setMergeTreeAllRangesCallback(context->getMergeTreeAllRangesCallback());
+        target_context->setMergeTreeReadTaskCallback(context->getMergeTreeReadTaskCallback());
+        target_context->setBlockMarshallingCallback(context->getBlockMarshallingCallback());
+    }
+
+    if (context->hasClusterFunctionReadTaskCallback())
+        target_context->setClusterFunctionReadTaskCallback(context->getClusterFunctionReadTaskCallback());
+
+    if (context->hasQueryContext())
+        target_context->setQueryAccessInfo(context->getQueryContext()->getQueryAccessInfoPtr());
+
+    return target_context;
+}
+
+
 void registerStorageTimeSeries(StorageFactory & factory);
 void registerStorageTimeSeries(StorageFactory & factory)
 {
@@ -1078,6 +1172,41 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+
+## Prometheus-compatible HTTP API {#prometheus-http-api}
+
+A `TimeSeries` table can be exposed through a Prometheus-compatible HTTP API configured under the `prometheus` section of the server configuration. The `/api/v1/series` endpoint returns the matching series together with their full label set (the metric name as `__name__` plus all tags).
+
+The configured outer `TimeSeries` table is the access-control boundary for these HTTP endpoints and the `timeSeriesSamples`, `timeSeriesTags`, and `timeSeriesMetrics` table functions. Callers need `SELECT` on the outer table; `SELECT` on an inner target table alone is not sufficient. Existing configurations that grant access only to inner target tables must grant access to the outer `TimeSeries` table. Row policies on the outer table or on its target tables are not supported by these interfaces and are rejected instead of being silently bypassed.
+
+The `match[]` parameter is a Prometheus series selector: a bare metric name, for example `/api/v1/series?match[]=cpu_usage`, or a full instant selector with label matchers, for example `/api/v1/series?match[]=cpu_usage{host="server1"}` or `/api/v1/series?match[]={host=~"server.*"}`. The `=`, `!=`, `=~`, and `!~` matchers are supported, and regular expressions are anchored on both sides, as in Prometheus. A non-legacy label name can be written as a quoted string literal in a selector, for example `/api/v1/series?match[]={"http.status_code"="200"}`. The parameter can be repeated; the result is the union of the series matched by each selector.
+
+The `/api/v1/series` endpoint requires at least one non-empty `match[]` selector, so a request without a selector never runs an unbounded scan over the whole `tags` table. The optional `limit` parameter caps the number of returned series (`0` means no limit, which is also the default); a truncated response carries the Prometheus warning `results truncated due to limit`. The `/api/v1/query` and `/api/v1/query_range` endpoints accept the same parameter to cap vector and matrix results.
+
+The optional `start` and `end` parameters restrict the result to series whose time range (`min_time`/`max_time`) overlaps the requested interval when both `store_min_time_and_max_time` and `filter_by_min_time_and_max_time` are enabled. Prometheus allows `/api/v1/series` filtering to be approximate, so if either setting is disabled, or the `tags` target has no maintained bounds, the endpoint returns the matching series without applying the time filter instead of rejecting the request.
+
+Tags moved into separate columns via the `tags_to_columns` setting are included in the result. The endpoint reads the [tags](#tags-table) target table and deduplicates by series identity.
+
+Configure a handler of type `query` for the endpoint:
+
+```xml
+<prometheus>
+    <port>9363</port>
+    <handlers>
+        <my_rule>
+            <url>/api/v1/series</url>
+            <handler>
+                <type>query</type>
+                <table>default.prometheus</table>
+            </handler>
+        </my_rule>
+    </handlers>
+</prometheus>
+```
+
+:::note
+Each `match[]` value must be an instant series selector. A range selector (for example `cpu_usage[5m]`) or any other PromQL expression is rejected, as are the empty selector `{}`, an explicitly empty `match[]` value (for example `?match[]=`), and a selector whose matchers all match the empty label value (for example `{host=~".*"}`). At least one matcher must narrow the set of series.
+:::
 
 # Functions {#functions}
 
