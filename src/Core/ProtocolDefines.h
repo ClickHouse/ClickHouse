@@ -91,7 +91,9 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
 /// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 8;
+/// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
+/// or `WITH CUBE` can be shipped under `make_distributed_plan`.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
