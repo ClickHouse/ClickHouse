@@ -552,7 +552,6 @@ void AlterConversions::addColumnsRequiredForMaterialized(
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
 {
-    NameSet required_source_columns;
     const auto & columns_desc = metadata_snapshot->getColumns();
     auto source_columns = columns_desc.getAllPhysical();
 
@@ -636,23 +635,20 @@ void AlterConversions::addColumnsRequiredForMaterialized(
 
         for (const auto & dependency : get_dependencies(column_name))
         {
-            /// An EPHEMERAL column cannot be read, and one already required has already been queued.
-            if (ephemeral_columns.contains(dependency) || required_source_columns.contains(dependency))
+            /// An EPHEMERAL column cannot be read, and one already in the read set needs nothing: it is
+            /// either a column the query asked for or one an earlier step of this walk added, and either
+            /// way it has been queued.
+            if (ephemeral_columns.contains(dependency) || read_columns_set.contains(dependency))
                 continue;
 
             if (all_updated_columns.contains(dependency)
                 || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column)))
             {
-                required_source_columns.insert(dependency);
+                read_columns_set.insert(dependency);
+                read_columns.push_back(dependency);
                 columns_to_visit.push(dependency);
             }
         }
-    }
-
-    for (const auto & column_name : required_source_columns)
-    {
-        if (read_columns_set.emplace(column_name).second)
-            read_columns.push_back(column_name);
     }
 }
 
