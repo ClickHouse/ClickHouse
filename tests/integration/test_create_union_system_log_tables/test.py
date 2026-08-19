@@ -152,6 +152,26 @@ def test_stable_across_restarts(start_cluster):
     assert uuid_before == uuid_after
 
 
+def test_stable_with_non_default_create_settings(start_cluster):
+    node3.query("SYSTEM FLUSH LOGS query_log")
+    uuid_before = node3.query(
+        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
+    )
+
+    # These session settings must not affect the internally-created union table.
+    node3.query(
+        "SYSTEM FLUSH LOGS query_log",
+        settings={"flatten_nested": 0, "data_type_default_nullable": 1},
+    )
+    assert node3.query("DESCRIBE TABLE system.all_query_log") == node3.query(
+        "DESCRIBE TABLE system.query_log"
+    )
+    uuid_after = node3.query(
+        "SELECT uuid FROM system.tables WHERE database = 'system' AND name = 'all_query_log'"
+    )
+    assert uuid_before == uuid_after
+
+
 def test_cluster(start_cluster):
     node1.query("SELECT 'test_cluster_marker_node1'")
     node1.query("SYSTEM FLUSH LOGS query_log")
