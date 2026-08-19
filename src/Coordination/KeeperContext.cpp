@@ -297,11 +297,8 @@ const KeeperFeatureFlags & KeeperContext::getFeatureFlags() const
 
 SnapshotVersion KeeperContext::getWriteSnapshotVersion() const
 {
-    const uint64_t version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
-    if (version < SnapshotVersion::V6 || version > MAX_SUPPORTED_SNAPSHOT_VERSION)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported write snapshot version {} (must be between {} and {})",
-            version, SnapshotVersion::V6, MAX_SUPPORTED_SNAPSHOT_VERSION);
-    return static_cast<SnapshotVersion>(version);
+    const auto & settings = getCoordinationSettings();
+    return static_cast<SnapshotVersion>(settings[CoordinationSetting::write_snapshot_version].value);
 }
 
 void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
