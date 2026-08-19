@@ -877,6 +877,7 @@ struct HierarchicalKMeansData
             ours.swap(samples);
             samples.insert(other.samples.begin(), other.samples.end());
             seen = other.seen;
+            rng = other.rng;
             /// Bounded by the rows actually held rather than by `seen`. The two are equal here - a side with
             /// `seen <= cap` never dropped anything - but indexing `ours` by its own length is the version
             /// that stays in bounds if that ever stops holding.
