@@ -2,6 +2,10 @@ no join
 0	[]	[]	[]	[]
 single inner join
 1	['HASH']	['INNER']	['ALL']	[]
+join executed with its sides swapped
+1	['HASH']	['LEFT']	['ALL']	[]
+1	['HASH']	['RIGHT']	['ALL']	[]
+1	['HASH']	['RIGHT']	['ALL']	[]
 three tables, two joins
 2	['HASH']	['INNER']	['ALL']	[]
 cross join
@@ -19,7 +23,7 @@ parallel full sorting merge
 1	['PARALLEL_FULL_SORTING_MERGE']	['INNER']	['ALL']	[]
 ie join
 1	['IE_JOIN']	['INNER']	['ALL']	[]
-1	['IE_JOIN']	['RIGHT']	['ANTI']	[]
+1	['IE_JOIN']	['LEFT']	['ANTI']	[]
 explain reports the joins of the pipeline it builds
 1	['HASH']	['INNER']	['ALL']	[]
 1	['HASH']	['INNER']	['ALL']	[]

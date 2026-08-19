@@ -134,7 +134,12 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
     if (pipelines.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinStep expects two input pipelines, got {}", pipelines.size());
 
-    QueryExecutionCounters::addExecutedJoin(query_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
+    /// `system.query_log` reports the join as it is executed, and a right-side SEMI/ANTI join is executed
+    /// as its left-side mirror, so report the mirrored kind for it. The strictness is not mirrored: SEMI
+    /// stays SEMI and ANTI stays ANTI, only the side changes.
+    const auto executed_kind = swap_inputs ? reverseJoinKind(query_kind) : query_kind;
+
+    QueryExecutionCounters::addExecutedJoin(executed_kind, query_strictness, toString(JoinAlgorithm::IE_JOIN));
 
     if (swap_inputs)
         std::swap(pipelines[0], pipelines[1]);

@@ -62,6 +62,27 @@ WHERE current_database = currentDatabase()
   AND log_comment LIKE '04891\_join\_count\_inner%'
 ORDER BY log_comment;
 
+SELECT 'join executed with its sides swapped';
+-- `query_plan_join_swap_table` lets the optimizer execute the join the other way around, building the
+-- hash table from the left table instead of the right one. That reverses the kind of the join it runs,
+-- and the reported kind is the executed one, so a RIGHT JOIN of the query text is reported as LEFT.
+SELECT count() FROM t1 RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null
+SETTINGS log_comment = '04891_join_count_swap_a_right_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1;
+SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a FORMAT Null
+SETTINGS log_comment = '04891_join_count_swap_b_left_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 1;
+-- The same RIGHT JOIN without the swap, which reports the kind of the query text.
+SELECT count() FROM t1 RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null
+SETTINGS log_comment = '04891_join_count_swap_c_right_not_swapped', join_algorithm = 'hash', query_plan_join_swap_table = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT used_number_of_joins, used_join_algorithms, used_join_kinds, used_join_strictness, spilled_to_disk
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_swap%'
+ORDER BY log_comment;
+
 SELECT 'three tables, two joins';
 -- The arrays hold distinct values, so they report a single element each while the count is 2.
 SELECT count() FROM t1 JOIN t2 ON t1.a = t2.a JOIN t3 ON t2.a = t3.a FORMAT Null SETTINGS log_comment = '04891_join_count_two', join_algorithm = 'hash';
@@ -172,8 +193,8 @@ SELECT 'ie join';
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_ie_inner', join_algorithm = 'ie_join,hash';
--- A right-side ANTI join is executed as its left-side mirror, with the input pipelines swapped. The
--- reported kind must still be the one the query asked for.
+-- A right-side ANTI join is executed as its left-side mirror, with the input pipelines swapped, and the
+-- reported kind is the executed one, so it is LEFT rather than the RIGHT of the query text.
 SELECT count() FROM (SELECT number AS t FROM numbers(10)) i1 RIGHT ANTI JOIN (SELECT number AS t_lo, number + 5 AS t_hi FROM numbers(10)) i2 ON i1.t >= i2.t_lo AND i1.t <= i2.t_hi
 FORMAT Null
 SETTINGS log_comment = '04891_join_count_ie_right_anti', join_algorithm = 'ie_join,hash';

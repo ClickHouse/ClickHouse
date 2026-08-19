@@ -159,8 +159,8 @@ ColumnsDescription QueryLogElement::getColumnsDescription()
 
         {"used_number_of_joins", std::make_shared<DataTypeUInt64>(), "The number of physical joins in the query pipeline that was built for this query. It is collected from the pipeline, so it reflects the joins that are left after all optimizations, not the number of JOIN clauses in the query text. A query that builds a pipeline without running it, such as EXPLAIN PIPELINE, reports the joins of the query it explains."},
         {"used_join_algorithms", array_low_cardinality_string, "Algorithms of the joins in the query pipeline: 'HASH', 'PARALLEL_HASH', 'GRACE_HASH', 'PARTIAL_MERGE', 'FULL_SORTING_MERGE', 'PARALLEL_FULL_SORTING_MERGE', 'IE_JOIN', 'DIRECT', 'PASTE' and 'CONSTANT'. This is the algorithm that was chosen to execute each join, not the algorithms that the join_algorithm setting allows. An algorithm can be replaced by another one in the middle of execution, in which case both are reported."},
-        {"used_join_kinds", array_low_cardinality_string, "Kind of the joins present in the query."},
-        {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins present in the query."},
+        {"used_join_kinds", array_low_cardinality_string, "Kinds of the joins in the query pipeline, as they were executed."},
+        {"used_join_strictness", array_low_cardinality_string, "Strictness of the joins in the query pipeline."},
         {"spilled_to_disk", array_low_cardinality_string, "Operators that wrote data to temporary files on disk (processing in external memory) during query execution, sorted and deduplicated. An empty array means the query ran fully in memory."},
 
         {"transaction_id", getTransactionIDDataType(), "The identifier of the transaction in scope of which this query was executed."},
