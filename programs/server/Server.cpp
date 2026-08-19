@@ -4445,6 +4445,9 @@ void Server::updateServers(
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);
     const auto listen_try = getListenTry(config, server_settings);
+#if USE_GRPC || USE_ARROWFLIGHT
+    const auto grpc_listen_hosts = getGRPCListenHosts(listen_hosts);
+#endif
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -4521,7 +4524,14 @@ void Server::updateServers(
             }
 
             if (!has_host)
-                has_host = std::find(listen_hosts.begin(), listen_hosts.end(), server->getListenHost()) != listen_hosts.end();
+            {
+                const auto & server_listen_hosts =
+#if USE_GRPC || USE_ARROWFLIGHT
+                    (port_name == "grpc_port" || port_name == "arrowflight_port") ? grpc_listen_hosts :
+#endif
+                    listen_hosts;
+                has_host = std::find(server_listen_hosts.begin(), server_listen_hosts.end(), server->getListenHost()) != server_listen_hosts.end();
+            }
             bool has_port = !config.getString(port_name, "").empty();
             bool force_restart = is_http && !isSameConfiguration(previous_config, config, handlers_key);
             if (force_restart)

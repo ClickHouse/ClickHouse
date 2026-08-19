@@ -1,0 +1,6 @@
+<clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+
+    <grpc_port>9200</grpc_port>
+    <arrowflight_port>8889</arrowflight_port>
+</clickhouse>

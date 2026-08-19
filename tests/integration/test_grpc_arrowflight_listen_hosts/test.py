@@ -10,6 +10,11 @@ wildcard_node = cluster.add_instance(
     main_configs=["configs/wildcard_hosts.xml"],
 )
 
+reload_node = cluster.add_instance(
+    "reload_node",
+    main_configs=["configs/reload_hosts.xml"],
+)
+
 unavailable_node = cluster.add_instance(
     "unavailable_node",
     main_configs=["configs/unavailable_host.xml"],
@@ -71,6 +76,41 @@ def test_unavailable_listen_host_does_not_prevent_startup():
     assert (
         len(unavailable_node.grep_in_log("Listening for gRPC protocol").splitlines())
         == 1
+    )
+
+
+def test_runtime_reload_normalizes_grpc_listen_hosts():
+    """Reloading from a specific address to a wildcard must replace the existing gRPC-based
+    listener. Keeping the old listener while adding the wildcard one recreates the overlapping
+    socket issue that startup normalization avoids."""
+    assert reload_node.query("SELECT 1") == "1\n"
+
+    reload_node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            """cat > /etc/clickhouse-server/config.d/reload_hosts.xml <<'EOF'
+<clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+    <listen_host>0.0.0.0</listen_host>
+
+    <grpc_port>9200</grpc_port>
+    <arrowflight_port>8889</arrowflight_port>
+</clickhouse>
+EOF""",
+        ]
+    )
+    reload_node.query("SYSTEM RELOAD CONFIG")
+
+    assert reload_node.query("SELECT 1") == "1\n"
+    assert len(reload_node.grep_in_log("Listening for gRPC protocol").splitlines()) == 2
+    assert (
+        len(
+            reload_node.grep_in_log(
+                "Listening for Arrow Flight compatibility protocol"
+            ).splitlines()
+        )
+        == 2
     )
 
 
