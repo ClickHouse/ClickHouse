@@ -220,16 +220,14 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         if (operator_node->by || operator_node->without)
             builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
 
-        /// Drop empty-values rows.
-        /// If the input has no rows then quantileExactInclusiveForEach(...)([]) returns [], but the number of values
-        /// in array must always match the number of steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID),
-        /// so we just drop such rows.
-        builder.having = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
-
         aggregation_query = builder.getSelectQuery();
     }
 
     /// Step 2: rename `new_group` back to `group`.
+    /// Drop empty-values rows after the rename so `notEmpty(values)` cannot resolve to the
+    /// pre-aggregation input column when prefer_column_name_to_alias is enabled.
+    /// Empty arrays from quantileExactInclusiveForEach(...)([]) must also be dropped so the
+    /// values array length matches the steps in SQLQueryPiece (see StoreMethod::VECTOR_GRID).
     {
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(aggregation_query), SQLSubqueryType::TABLE});
 
@@ -238,6 +236,7 @@ SQLQueryPiece applyAggregationOperatorQuantile(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
         builder.select_list.back()->setAlias(ColumnNames::Group);
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+        builder.where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
         res.select_query = builder.getSelectQuery();
     }
