@@ -2432,14 +2432,24 @@ function activePinnedColumns() {
     return tab ? tab.pinnedColumns : {};
 }
 
-/// The sort the user chose in a result's column headers (`tab.sortColumns`, see `makeTab`) is an
-/// ORDERED array of `{name, desc}` entries, one per sort key. Unlike the color modes and the pinned
-/// columns above, it is not display state: it is sent as the `order` query-construction setting,
-/// which the server materializes by wrapping the query as a derived table with an `ORDER BY`, so the
-/// rows themselves come back sorted and a change re-runs the query. Like them it is PER TAB, shared
-/// by reference with the tab's result element (`_sortColumns`) and therefore always mutated in place,
-/// and it is persisted with the tab's result snapshot and mirrored into the URL / history. The
-/// helpers below serialize, quote and bind it; the header controls live in `QueryResultElement`.
+/// ----- Result shape (sorting, filtering, pagination) --------------------------------------------
+/// The sort, the per-column filters and the page a result is shown in are the RESULT SHAPE. Unlike
+/// the color modes and the pinned columns above, this is not display state: it is sent as the
+/// query-construction settings (`order`, `filter`, `limit` + `page`), which the server materializes
+/// by wrapping the query as a derived table with an outer `ORDER BY` / `WHERE` / `LIMIT`, so the rows
+/// themselves come back shaped and every change re-runs the query. Like them it is PER TAB (see
+/// `makeTab`):
+///
+///   `tab.sortColumns` - ORDERED array of `{name, desc}`, one per sort key, in `ORDER BY` order;
+///   `tab.filters`     - column name -> filter SUFFIX, the predicate text that follows the quoted
+///                       column name (`> 100`, `IS NULL`, `LIKE '%a%'`), so one representation serves
+///                       the header input, the cell menus, the header display and the URL;
+///   `tab.pagination`  - `{page, size}`; `page` 0 means pagination is not active.
+///
+/// All three are shared by reference with the tab's result element(s) (`_sortColumns` / `_filters` /
+/// `_pagination`) and are therefore always mutated IN PLACE, and all three are persisted with the
+/// tab's result snapshot and mirrored into the URL / history. They are bound to ONE statement
+/// (`tab.shapeQuery`, see `shapeQueryKey`), because they name that statement's columns.
 
 /// Validate a `sort_columns` payload read back from a URL, a history entry, or a stored snapshot
 /// into the in-memory shape. Anything malformed is dropped rather than trusted: the value ends up in
@@ -2457,13 +2467,51 @@ function sanitizeSortColumns(value) {
     return out;
 }
 
+/// Validate a `filters` payload the same way: a plain object of column name -> non-empty suffix
+/// string. The suffixes are user-authored SQL, passed to the server as written (a bad one is reported
+/// by the server like any other syntax error), but the SHAPE of the payload is checked here so a
+/// malformed URL cannot make the header controls or the request builder throw.
+function sanitizeFilters(value) {
+    const out = {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) { return out; }
+    for (const [name, suffix] of Object.entries(value)) {
+        if (name === '' || typeof suffix !== 'string' || suffix.trim() === '') { continue; }
+        out[name] = suffix;
+    }
+    return out;
+}
+
+/// Validate a `{page, size}` pagination payload. `page` 0 (the default) means pagination is not
+/// active; an active page needs a positive size, since the page is translated into `limit` + `page`
+/// and the server rejects `page` without `limit`. Anything else resolves to "not active" rather than
+/// to a request that cannot run.
+function sanitizePagination(value) {
+    const page = Math.floor(Number(value && value.page)) || 0;
+    const size = Math.floor(Number(value && value.size)) || 0;
+    if (page < 1 || size < 1) { return { page: 0, size: 0 }; }
+    return { page, size };
+}
+
 /// Quote a column name as a ClickHouse identifier. Back-quoting (with the `\` escapes the lexer
 /// accepts inside back-quotes) is what makes an arbitrary result column name - `count()`, `a + b`,
-/// a name with a space - usable as a sort key: the `order` setting takes a full `ORDER BY` expression
-/// list, so the name is passed as a quoted identifier rather than through the simpler `sort` setting,
-/// which accepts bare identifiers only.
+/// a name with a space - usable as a sort or filter key: `order` and `filter` take full expressions,
+/// so the name is passed as a quoted identifier rather than through the simpler `sort` setting, which
+/// accepts bare identifiers only.
 function backQuoteIdentifier(name) {
     return '`' + name.replace(/\\/g, '\\\\').replace(/`/g, '\\`') + '`';
+}
+
+/// Quote a value as a ClickHouse string literal.
+function quoteStringLiteral(value) {
+    return "'" + String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
+}
+
+/// Escape the `LIKE` pattern metacharacters in a value, so a substring/prefix/suffix filter built
+/// from a cell matches that value literally: a `%` or `_` inside it must not act as a wildcard. The
+/// escape character of the pattern language is `\`, which therefore has to be escaped too; the result
+/// is then quoted as an ordinary string literal (which escapes those backslashes again).
+function escapeLikePattern(value) {
+    return String(value).replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
 /// The `ORDER BY` expression list for a sort, as the `order` setting takes it, or '' for no sort.
@@ -2472,19 +2520,31 @@ function sortOrderExpression(sortColumns) {
     return sortColumns.map(entry => backQuoteIdentifier(entry.name) + (entry.desc ? ' DESC' : ' ASC')).join(', ');
 }
 
-/// The identity a sort is bound to: the producing statement, up to the trailing delimiter and
-/// surrounding whitespace. A sort names the columns of one specific result, so it must not leak onto
-/// a different statement - `ORDER BY` on a column that statement does not have is an error, not a
-/// no-op - and `resolveSortForRun` drops it whenever the statement about to run is not the one the
-/// sort was made on.
+/// The `WHERE` expression for the per-column filters, as the `filter` setting takes it, or '' for no
+/// filter. Each column contributes its quoted name followed by its suffix, parenthesized so a suffix
+/// containing `OR` cannot swallow the neighbouring columns, and the columns are combined with `AND`.
+function filterExpression(filters) {
+    const parts = [];
+    for (const [name, suffix] of Object.entries(filters || {})) {
+        if (typeof suffix !== 'string' || suffix.trim() === '') { continue; }
+        parts.push('(' + backQuoteIdentifier(name) + ' ' + suffix.trim() + ')');
+    }
+    return parts.join(' AND ');
+}
+
+/// The identity the result shape is bound to: the producing statement, up to the trailing delimiter
+/// and surrounding whitespace. A shape names the columns of one specific result, so it must not leak
+/// onto a different statement - an `ORDER BY` or `WHERE` on a column that statement does not have is
+/// an error, not a no-op - and `resolveShapeForRun` drops it whenever the statement about to run is
+/// not the one the shape was made on.
 ///
 /// The normalization is needed because the two launch paths spell the same statement differently:
 /// `getQueryUnderCursor` returns it with its trailing `;` and whitespace, `splitAllQueries` returns
-/// it trimmed, and a run started by a sort click goes through the latter (the previous run left the
-/// statement selected in the editor). A trailing `;` after trimming is always the statement
+/// it trimmed, and a run started from the result view goes through the latter (the previous run left
+/// the statement selected in the editor). A trailing `;` after trimming is always the statement
 /// delimiter: a `;` inside a string literal or a comment cannot be the last character of a
 /// syntactically complete statement.
-function sortQueryKey(query) {
+function shapeQueryKey(query) {
     return String(query === undefined || query === null ? '' : query).trim().replace(/;+\s*$/, '').trim();
 }
 
@@ -2509,33 +2569,69 @@ function applySortToggle(list, name, desc, shift) {
     }
 }
 
-/// The `order` expression for a run of `query` in `tab`, dropping a sort that belongs to a different
-/// statement (see `sortQueryKey`) and re-binding the tab's sort to the statement now being run.
-function resolveSortForRun(tab, query) {
-    if (sortQueryKey(tab.sortQuery) !== sortQueryKey(query)) {
-        /// In place: the array is aliased by the tab's result element(s).
-        tab.sortColumns.length = 0;
-        tab.sortQuery = query;
-    }
-    return sortOrderExpression(tab.sortColumns);
+/// Stop paginating, IN PLACE (the object is aliased - see the note above). Changing the sort or a
+/// filter changes WHICH rows the result has and in what order, so the page the user was on no longer
+/// denotes the same slice of it: the result goes back to its first (unpaginated) page rather than to
+/// an arbitrary offset into different rows.
+function resetPagination(pagination) {
+    pagination.page = 0;
+    pagination.size = 0;
 }
 
-/// Re-run the query behind `el`'s result so the server returns it in the sort just chosen in its
-/// header. This goes through the ordinary launch path (`postOne`, exactly as Ctrl+Enter does) rather
-/// than resubmitting the recorded producing query, so the run is bound to the editor, the history
-/// and the parameters the same way every other run is - there is no second, differently-behaving way
-/// to execute a query. The statement that path picks is the one that produced this result whenever
-/// the editor still holds it (the previous run left it selected), which is the case for a sort click;
-/// if the editor has been edited since, the edit is what runs, and `resolveSortForRun` then drops the
-/// sort as belonging to a statement that is no longer there.
-function rerunForSort(el) {
+/// Clear a tab's whole result shape, IN PLACE (see the aliasing note above).
+function clearResultShape(tab) {
+    tab.sortColumns.length = 0;
+    for (const name of Object.keys(tab.filters)) { delete tab.filters[name]; }
+    resetPagination(tab.pagination);
+}
+
+/// The query-construction URL parameters that give a run its result shape: the sort as `order`, the
+/// per-column filters as `filter`, and the selected page as `limit` + `page` (`page` is sugar over
+/// `offset`, which the server computes as `limit * (page - 1)`; it rejects `page` without `limit`,
+/// which `sanitizePagination` guarantees). Empty when the tab has no shape, so an unshaped run sends
+/// nothing extra.
+function shapeUrlParams(tab) {
+    let params = '';
+    const order = sortOrderExpression(tab.sortColumns);
+    if (order) { params += '&order=' + encodeURIComponent(order); }
+    const filter = filterExpression(tab.filters);
+    if (filter) { params += '&filter=' + encodeURIComponent(filter); }
+    if (tab.pagination.page >= 1 && tab.pagination.size >= 1) {
+        params += '&limit=' + encodeURIComponent(tab.pagination.size);
+        params += '&page=' + encodeURIComponent(tab.pagination.page);
+    }
+    return params;
+}
+
+/// The shape parameters for a run of `query` in `tab`, dropping a shape that belongs to a different
+/// statement (see `shapeQueryKey`) and re-binding the tab's shape to the statement now being run.
+function resolveShapeForRun(tab, query) {
+    if (shapeQueryKey(tab.shapeQuery) !== shapeQueryKey(query)) {
+        clearResultShape(tab);
+        tab.shapeQuery = query;
+    }
+    return shapeUrlParams(tab);
+}
+
+/// Commit a result-shape change made in `el`'s result view - a sort, a filter, a page - by persisting
+/// it and re-running the query so the server returns the newly shaped result.
+///
+/// The re-run goes through the ordinary launch path (`postOne`, exactly as Ctrl+Enter does) rather
+/// than resubmitting the recorded producing query, so it is bound to the editor, the history and the
+/// parameters the same way every other run is - there is no second, differently-behaving way to
+/// execute a query. The statement that path picks is the one that produced this result whenever the
+/// editor still holds it (the previous run left it selected), which is the case for a click in the
+/// result view; if the editor has been edited since, the edit is what runs, and `resolveShapeForRun`
+/// then drops the shape as belonging to a statement that is no longer there.
+function commitResultShape(el) {
     const tab = el._ownerTab;
     if (!tab) { return; }
-    /// Bind the sort to the exact statement whose header was clicked, so the launch below applies it.
-    tab.sortQuery = el._queryText;
+    /// Bind the shape to the exact statement whose result was acted on, so the launch below applies it.
+    tab.shapeQuery = el._queryText;
+    persistResultShape();
     /// Only the active tab's panel is visible, so a click can only ever come from it; `postOne` acts
     /// on the active tab, so refuse to launch anything for a background tab rather than run the wrong
-    /// one. The chosen sort is already persisted and applies to that tab's next run.
+    /// one. The chosen shape is already persisted and applies to that tab's next run.
     if (tab.id !== activeTabId) { return; }
     postOne();
 }
@@ -2556,6 +2652,23 @@ class QueryResultElement extends HTMLElement
 
     /// The glyph used to render SQL NULL values (superscript "NULL").
     static _NULL_TEXT = 'ᴺᵁᴸᴸ';
+
+    /// The funnel that opens a filter, in a column header and on the selected cell, and the play
+    /// triangle of the button that applies a typed filter. Inline SVG rather than an emoji (unlike the
+    /// pushpin and rainbow of the older header icons): both need to read as controls of the same
+    /// family as the copy icon, and to take the surrounding text color in either theme.
+    static _FUNNEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
+    static _PLAY_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
+
+    /// A cell whose value is longer than this offers no filter menu: a filter on a whole paragraph is
+    /// not something anyone means to click, and the operator labels would sit under an unreadable
+    /// tooltip. The header input still accepts any expression for such a column.
+    static _MAX_CELL_FILTER_LENGTH = 100;
+
+    /// How many pages before the current one the pager lists. The number of pages is unknown (counting
+    /// the rows would mean a second query), so the pager shows a window ending one page after the
+    /// current one, plus an ellipsis for everything beyond it.
+    static _PAGER_PREVIOUS_PAGES = 10;
 
     constructor()
     {
@@ -2877,14 +2990,14 @@ class QueryResultElement extends HTMLElement
                    that column, ascending or descending. Unlike pinning and color coding - which are
                    pure display state - sorting reshapes the result, so it re-runs the query with an
                    "order" query-construction setting; it is therefore offered only for the queries
-                   the server can wrap that way (see queryIsSortable), which the "sortable" class on
+                   the server can wrap that way (see queryIsShapeable), which the "shapeable" class on
                    the table marks. Where it is not offered the arrows are removed outright
                    (display: none also takes them out of the tab order), rather than merely dimmed.
 
                    The group is laid out as a flex row of fixed size, so the two arrows keep their
                    places whether or not they are visible and the header does not reflow when a sort
                    is activated. It sits where the colorize toggle normally sits; that toggle is
-                   shifted left below to make room, unconditionally for a sortable table, so
+                   shifted left below to make room, unconditionally for a shapeable table, so
                    revealing the icons on hover never moves them.
                    No backticks in this comment: this style block lives inside a JS template literal. */
                 .sort-toggles
@@ -2899,12 +3012,12 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                 }
 
-                #data-table:not(.sortable) .sort-toggles
+                #data-table:not(.shapeable) .sort-toggles
                 {
                     display: none;
                 }
 
-                #data-table.sortable .colorize-toggle
+                #data-table.shapeable .colorize-toggle
                 {
                     right: 2.5rem;
                 }
@@ -2964,6 +3077,318 @@ class QueryResultElement extends HTMLElement
                         opacity: 0.55;
                         pointer-events: auto;
                     }
+                }
+
+                /* A sorted column shows both of its arrows without hovering: the active one so the
+                   sort is visible, the other because reversing it is the likeliest next action. */
+                th.sorted-column .sort-toggle
+                {
+                    opacity: 0.55;
+                    pointer-events: auto;
+                }
+
+                /* Funnel icon in a column header that opens the filter input for that column. Sits
+                   left of the colorize toggle, and behaves like the sort arrows: revealed on header
+                   hover or its own keyboard focus, always visible on a coarse pointer, and removed
+                   outright (which also takes it out of the tab order) where the query-construction
+                   settings do not apply. */
+                .filter-toggle
+                {
+                    position: absolute;
+                    top: 50%;
+                    right: 3.7rem;
+                    transform: translateY(-50%);
+                    opacity: 0;
+                    pointer-events: none;
+                    cursor: pointer;
+                    line-height: 1;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    color: inherit;
+                }
+
+                .filter-toggle svg
+                {
+                    display: block;
+                    width: 1em;
+                    height: 1em;
+                }
+
+                th:hover .filter-toggle,
+                th .filter-toggle:focus-visible
+                {
+                    opacity: 0.55;
+                    pointer-events: auto;
+                }
+
+                th .filter-toggle:hover
+                {
+                    opacity: 0.85;
+                    pointer-events: auto;
+                }
+
+                @media (hover: none), (pointer: coarse)
+                {
+                    .filter-toggle
+                    {
+                        opacity: 0.55;
+                        pointer-events: auto;
+                    }
+                }
+
+                /* The filter in effect on a column, shown under its name for as long as it is set:
+                   the rows on screen are a subset of the result, and that must never be invisible.
+                   The text reopens the input on it, the cross removes it; both re-run the query. */
+                .filter-state
+                {
+                    display: none;
+                    align-items: baseline;
+                    justify-content: center;
+                    gap: 0.2rem;
+                    max-width: 100%;
+                    font-size: 85%;
+                    font-weight: normal;
+                    color: var(--link-color);
+                }
+
+                th.filtered-column .filter-state
+                {
+                    display: flex;
+                }
+
+                .filter-text
+                {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    cursor: pointer;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    font: inherit;
+                    color: inherit;
+                }
+
+                .filter-reset
+                {
+                    flex: none;
+                    cursor: pointer;
+                    background: none;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    font: inherit;
+                    color: inherit;
+                    opacity: 0.7;
+                }
+
+                .filter-reset:hover
+                {
+                    opacity: 1;
+                }
+
+                /* The filter input, revealed in place under the header cell it belongs to. Built once
+                   with the header and only shown/hidden, so what the user typed survives a click
+                   elsewhere. The apply button is glued to the input: one box, no gap, a single outer
+                   border, so it reads as "type here, then press this". */
+                .filter-popover
+                {
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    left: -1px;
+                    z-index: 1;
+                    font-weight: normal;
+                    border: 1px solid var(--border-color-selected);
+                    background: var(--element-background-color);
+                }
+
+                th.filter-open .filter-popover
+                {
+                    display: flex;
+                }
+
+                .filter-input
+                {
+                    width: 12rem;
+                    max-width: 40vw;
+                    padding: 0.15rem 0.3rem;
+                    border: none;
+                    outline: none;
+                    font: inherit;
+                    font-size: 90%;
+                    color: var(--text-color);
+                    background: var(--element-background-color);
+                }
+
+                .filter-apply
+                {
+                    flex: none;
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    padding: 0 0.3rem;
+                    margin: 0;
+                    border: none;
+                    border-left: 1px solid var(--border-color);
+                    font: inherit;
+                    color: inherit;
+                    background: var(--table-header-color);
+                }
+
+                .filter-apply svg
+                {
+                    display: block;
+                    width: 0.9em;
+                    height: 0.9em;
+                }
+
+                .filter-apply:hover
+                {
+                    background: var(--border-color);
+                }
+
+                /* Funnel icon on the selected cell, next to the copy icon, that offers the comparisons
+                   that filter by this cell's value. Created only for the selected cell (see
+                   _appendCellFilterButton) rather than for every cell, so a large result does not
+                   carry a hundred thousand unused buttons. Mirrors the .cell-copy geometry: above the
+                   cell, and to the side for the first body row, where the sticky header would cover it.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                .cell-filter
+                {
+                    position: absolute;
+                    bottom: 100%;
+                    right: calc(1.5em + 0.25rem);
+                    padding: 0.25rem;
+                    width: fit-content;
+                    cursor: pointer;
+                    filter: invert(1);
+                    background-color: var(--element-background-color);
+                    z-index: 1;
+                }
+
+                .cell-filter svg
+                {
+                    display: block;
+                    width: 1em;
+                    height: 1em;
+                }
+
+                thead + tbody tr:first-child .cell-filter
+                {
+                    bottom: auto;
+                    right: auto;
+                    left: 100%;
+                    top: calc(1.5em + 0.25rem);
+                }
+
+                thead + tbody tr:first-child td:last-child .cell-filter
+                {
+                    left: auto;
+                    right: 100%;
+                }
+
+                /* The comparisons offered for the selected cell's value, opened by the funnel above and
+                   anchored to it. A row of small buttons rather than a dropdown: there are at most six
+                   and every one is a single click away. */
+                .cell-filter-menu
+                {
+                    display: flex;
+                    position: absolute;
+                    bottom: calc(100% + 1.5em + 0.5rem);
+                    right: -1px;
+                    z-index: 2;
+                    border: 1px solid var(--border-color-selected);
+                    background: var(--element-background-color);
+                    white-space: nowrap;
+                }
+
+                thead + tbody tr:first-child .cell-filter-menu
+                {
+                    bottom: auto;
+                    right: auto;
+                    left: calc(100% + 1.5em + 0.5rem);
+                    top: calc(1.5em + 0.25rem);
+                }
+
+                thead + tbody tr:first-child td:last-child .cell-filter-menu
+                {
+                    left: auto;
+                    right: calc(100% + 1.5em + 0.5rem);
+                }
+
+                .cell-filter-op
+                {
+                    cursor: pointer;
+                    padding: 0.15rem 0.35rem;
+                    margin: 0;
+                    border: none;
+                    border-left: 1px solid var(--border-color);
+                    font: inherit;
+                    font-size: 90%;
+                    color: inherit;
+                    background: var(--element-background-color);
+                }
+
+                .cell-filter-op:first-child
+                {
+                    border-left: none;
+                }
+
+                .cell-filter-op:hover
+                {
+                    background: var(--table-header-color);
+                }
+
+                /* The pager under the table. Hidden (and empty) unless the result is paginated or was
+                   cut off at the display limit - see renderPagination, which is what makes it
+                   visible; there is nothing to page through otherwise. */
+                #pagination
+                {
+                    display: none;
+                    align-items: baseline;
+                    flex-wrap: wrap;
+                    gap: 0.3rem;
+                    padding: 0.35rem 0;
+                    color: var(--misc-text-color);
+                }
+
+                .page-btn
+                {
+                    cursor: pointer;
+                    padding: 0.1rem 0.35rem;
+                    margin: 0;
+                    border: 1px solid var(--border-color);
+                    font: inherit;
+                    color: var(--link-color);
+                    background: var(--element-background-color);
+                }
+
+                .page-btn:hover
+                {
+                    background: var(--table-header-color);
+                }
+
+                /* The page being shown is not a link to anywhere: it reads as the current position. */
+                .page-btn.current
+                {
+                    cursor: default;
+                    font-weight: bold;
+                    color: var(--text-color);
+                    background: var(--table-header-color);
+                }
+
+                .page-input
+                {
+                    width: 5rem;
+                    padding: 0.1rem 0.3rem;
+                    font: inherit;
+                    color: var(--text-color);
+                    background: var(--element-background-color);
+                    border: 1px solid var(--border-color-selected);
                 }
 
                 /* Per-column color coding compares values across rows; with no more than a single
@@ -3350,6 +3775,7 @@ class QueryResultElement extends HTMLElement
                 <div id="data_div">
                     <table class="monospace shadow" id="data-table"></table>
                     <pre class="monospace shadow" id="data-unparsed"></pre>
+                    <div class="monospace" id="pagination"></div>
                 </div>
                 <img id="image" class="shadow" alt="Query result image">
                 <div id="chart"></div>
@@ -3444,6 +3870,7 @@ class QueryResultElement extends HTMLElement
 
         this._dataDiv = this.shadowRoot.getElementById('data_div');
         this._dataTable = this.shadowRoot.getElementById('data-table');
+        this._pager = this.shadowRoot.getElementById('pagination');
         this._dataUnparsed = this.shadowRoot.getElementById('data-unparsed');
         this._image = this.shadowRoot.getElementById('image');
         this._chart = this.shadowRoot.getElementById('chart');
@@ -3459,6 +3886,17 @@ class QueryResultElement extends HTMLElement
         /// Date/DateTime columns are colorable by their numeric (time) value, but are kept
         /// separate from `_column_is_number` so they stay left-aligned and unformatted.
         this._column_is_date = {};
+        /// Whether a column holds plain text, i.e. whether a filter on it takes a string literal and a
+        /// substring/prefix/suffix filter (a `LIKE` pattern) is meaningful. Deliberately only the true
+        /// string types: a `Date`, a `UUID` or an `Enum` also arrives as text, but `LIKE` rejects those
+        /// types outright, so a cell menu offering `contains` there would only produce a failing query.
+        this._column_is_string = {};
+        /// Whether a column can hold NULL. Needed to tell a real NULL from data on the page's own
+        /// default format: `JSONCompactStrings…` renders a NULL as the same superscript glyph the page
+        /// displays it with (the server's plain-text NULL representation) rather than as a JSON null,
+        /// so the value alone cannot say which it is - but that glyph in a non-nullable column always
+        /// is data. See `_cellIsNull`.
+        this._column_is_nullable = {};
         this._extremes = {};
         this._totals = null;
         this._header = {};
@@ -3481,20 +3919,25 @@ class QueryResultElement extends HTMLElement
         /// run within the same tab, and pointing at the owning tab's `pinnedColumns`), so pinning a
         /// column in one tab never re-lays-out another tab's identically-named columns.
         this._pinnedColumns = {};
-        /// The sort the result is (re)produced with: an ORDERED array of `{name, desc}` entries, one
-        /// per sort key, in `ORDER BY` order. Unlike `_colorModes` / `_pinnedColumns` this is not
-        /// display state - it is turned into the `order` query-construction setting of the request
-        /// (see `sortOrderExpression`), so changing it re-runs the query. Points at the owning tab's
-        /// `sortColumns` array, which is why it is always mutated IN PLACE.
+        /// The RESULT SHAPE this result is (re)produced with - the sort, the per-column filters and
+        /// the page (see the result-shape helpers above). Unlike `_colorModes` / `_pinnedColumns` this
+        /// is not display state: it becomes the `order` / `filter` / `limit` + `page`
+        /// query-construction settings of the request, so changing any of it re-runs the query. Each
+        /// points at the owning tab's own object, which is why all three are always mutated IN PLACE.
         this._sortColumns = [];
-        /// Whether this result's producing query is one the `order` setting can shape (a `SELECT` /
-        /// `UNION`, see `queryIsSortable`) AND this element is its tab's single result element.
-        /// Resolved asynchronously from `_queryText` by `_refreshSortAvailability`, which mirrors it
-        /// into the `sortable` class of the table; the sort arrows exist only while it holds.
-        this._sortable = false;
-        /// Generation counter for the asynchronous `_refreshSortAvailability` above, so a resolution
+        this._filters = {};
+        this._pagination = { page: 0, size: 0 };
+        /// Whether this result's producing query is one the query-construction settings can shape (a
+        /// `SELECT` / `UNION`, see `queryIsShapeable`) AND this element is its tab's single result
+        /// element. Resolved asynchronously from `_queryText` by `_refreshShapeAvailability`, which
+        /// mirrors it into the `shapeable` class of the table; the sort arrows, the filter controls and
+        /// the pager exist only while it holds.
+        this._shapeable = false;
+        /// Generation counter for the asynchronous `_refreshShapeAvailability` above, so a resolution
         /// for a superseded query text cannot overwrite a newer one.
-        this._sort_availability_token = 0;
+        this._shape_availability_token = 0;
+        /// The column whose header filter input is open, or null. Only one is open at a time.
+        this._open_filter_column = null;
         /// Set when a result finished rendering into this element while its tab was hidden: the
         /// width/height-measuring layout passes (`transposeIfNeeded` / `_changeTableLayout`) read
         /// `offsetWidth`/`offsetHeight`, which are 0 for a `display:none` panel and would freeze
@@ -3555,7 +3998,7 @@ class QueryResultElement extends HTMLElement
     /// Every path that shows a result in this element - a live run and both restore paths (the tab's
     /// own snapshot and a history entry) - stamps the producing query here, so this is also the one
     /// place from which the sort availability can be (re)resolved for whatever is displayed.
-    set queryText(v) { this._queryText = v; this._refreshSortAvailability(); }
+    set queryText(v) { this._queryText = v; this._refreshShapeAvailability(); }
     get rawText() { return this._dataUnparsed.textContent; }
 
     _clearElement(elem)
@@ -3591,6 +4034,10 @@ class QueryResultElement extends HTMLElement
         /// the toggles follow the default hover behavior instead of staying hidden because the
         /// previous result had at most a single row.
         this._dataTable.classList.remove('hide-colorize-toggle');
+        /// The pager describes the result that is going away; `renderPagination` puts back the one the
+        /// new result needs. The open filter input goes with the header it lived in.
+        this._clearElement(this._pager);
+        this._open_filter_column = null;
 
         this._extremes = {};
         this._totals = null;
@@ -3654,10 +4101,14 @@ class QueryResultElement extends HTMLElement
         {
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
+            this._removeCellFilterControls(this._current_selected_cell);
         }
         this._current_selected_cell = td;
         td.classList.add('td-selected');
         td.parentElement.classList.add('tr-selected');
+        /// The filter funnel belongs to the selected cell only, so it is built here and taken away
+        /// again above (and in `clearSelection`) when the selection moves on.
+        this._appendCellFilterButton(td);
         (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
         td.tabIndex = -1;
         td.focus({ preventScroll: true });
@@ -3671,6 +4122,7 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.classList.remove('td-selected');
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
             this._current_selected_cell.removeAttribute('tabindex');
+            this._removeCellFilterControls(this._current_selected_cell);
         }
         this._current_selected_cell = null;
         this._scheduleCategoricalEmphasis();
@@ -3711,6 +4163,12 @@ class QueryResultElement extends HTMLElement
                 is_link = true;
             }
         }
+
+        /// The cell's value as text, kept on the element (a plain property, so nothing is serialized
+        /// into the DOM) for the filter menu the cell offers while it is selected: `innerText` would
+        /// have to be read back through the rendering, which the digit grouping of a long number and
+        /// the `white-space` handling of a multi-line value both distort.
+        td._filterText = text;
 
         let node = document.createTextNode(text);
         if (is_link)
@@ -3822,9 +4280,12 @@ class QueryResultElement extends HTMLElement
             const unwrapped_type = this._unwrapScalarType(elem.type);
             this._column_is_number[elem.name] = !!unwrapped_type.match(/^(U?Int|Decimal|Float|BFloat)/);
             this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
+            this._column_is_string[elem.name] = !!unwrapped_type.match(/^(String|FixedString)/);
+            this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
             this._appendSortToggles(th, elem.name);
+            this._appendFilterControls(th, elem.name);
 
             this._appendHeaderResizer(th);
             /// Base header z-index: left columns are highest so a column's type-hint tooltip
@@ -4186,8 +4647,8 @@ class QueryResultElement extends HTMLElement
 
     /// Add the pair of arrows at the right of a column header that sort the result by that column.
     /// Real <button>s, so they are keyboard-reachable (Tab) and keyboard-activatable (Enter/Space)
-    /// for free, like the pin toggle. Whether they are offered at all is decided by the `sortable`
-    /// class of the table (see `_refreshSortAvailability`), not per button, so a header rendered
+    /// for free, like the pin toggle. Whether they are offered at all is decided by the `shapeable`
+    /// class of the table (see `_refreshShapeAvailability`), not per button, so a header rendered
     /// before the asynchronous availability check resolves does not need to be revisited.
     _appendSortToggles(th, name)
     {
@@ -4225,6 +4686,10 @@ class QueryResultElement extends HTMLElement
         const entry = index < 0 ? null : this._sortColumns[index];
         const rank = (index >= 0 && this._sortColumns.length > 1) ? QueryResultElement._superscript(index + 1) : '';
         th.setAttribute('aria-sort', entry ? (entry.desc ? 'descending' : 'ascending') : 'none');
+        /// A sorted column shows BOTH its arrows without hovering, not only the active one: the other
+        /// direction is the one thing the user is most likely to want next, and having to find the
+        /// header again to reveal it would hide the obvious move.
+        th.classList.toggle('sorted-column', !!entry);
         for (const button of th.querySelectorAll('.sort-toggle'))
         {
             const desc = button.classList.contains('sort-desc');
@@ -4268,39 +4733,432 @@ class QueryResultElement extends HTMLElement
     /// re-run the query with the new sort.
     _toggleSort(name, desc, shift)
     {
-        /// The arrows are hidden (and out of the tab order) unless sorting applies, but guard anyway:
-        /// a stale header from the previous, sortable result can still be on screen while the current
-        /// query text is not sortable.
-        if (!this._sortable) { return; }
+        /// The arrows are hidden (and out of the tab order) unless shaping applies, but guard anyway:
+        /// a stale header from the previous, shapeable result can still be on screen while the current
+        /// query text is not.
+        if (!this._shapeable) { return; }
         /// `this._sortColumns` IS the owning tab's array (see the constructor), and `applySortToggle`
         /// mutates it in place, so every element of the tab sees the new sort.
         applySortToggle(this._sortColumns, name, desc, shift);
+        /// A different order is a different first page (see `resetPagination`).
+        resetPagination(this._pagination);
         this.refreshSortIndicators();
-        persistSortColumns();
-        rerunForSort(this);
+        commitResultShape(this);
     }
 
-    /// Resolve whether sorting applies to what this element currently shows, and mirror the answer
-    /// into the `sortable` class that gates the arrows.
+    /// Resolve whether the result shape (sorting, filtering, pagination) applies to what this element
+    /// currently shows, and mirror the answer into the `shapeable` class that gates its controls.
     ///
-    /// Sorting re-runs the query with the `order` query-construction setting, which the server
-    /// materializes by wrapping the query as a derived table. That only happens for a result-producing
-    /// `SELECT` / `UNION`: for anything else (`SHOW`, `DESCRIBE`, `EXPLAIN`, a write) the setting is
-    /// silently ignored, so offering the arrows there would produce an unsorted result under an active
-    /// sort indicator. Sorting is also restricted to the tab's single result element: a multi-query
-    /// ("Run all") run sends one request per statement and the sort is chosen by column name, so
-    /// applying it to the whole run would push an `ORDER BY` onto the statements that have no such
-    /// column and fail them.
-    async _refreshSortAvailability()
+    /// Shaping re-runs the query with the `order` / `filter` / `limit` + `page` query-construction
+    /// settings, which the server materializes by wrapping the query as a derived table. That only
+    /// happens for a result-producing `SELECT` / `UNION`: for anything else (`SHOW`, `DESCRIBE`,
+    /// `EXPLAIN`, a write) the settings are silently ignored, so offering the controls there would
+    /// produce an unshaped result under an active sort/filter indicator. Shaping is also restricted to
+    /// the tab's single result element: a multi-query ("Run all") run sends one request per statement
+    /// while a shape names the columns of ONE result, so applying it to the whole run would push an
+    /// `ORDER BY` / `WHERE` onto the statements that have no such column and fail them.
+    async _refreshShapeAvailability()
     {
         const query = this._queryText;
-        const token = ++this._sort_availability_token;
+        const token = ++this._shape_availability_token;
         const single_result = !!this._ownerTab && this._ownerTab.resultEl === this;
-        const sortable = !!query && single_result && await queryIsSortable(query);
+        const shapeable = !!query && single_result && await queryIsShapeable(query);
         /// A newer query text was stamped while the lexer was awaited; its own resolution wins.
-        if (token !== this._sort_availability_token) { return; }
-        this._sortable = sortable;
-        this._dataTable.classList.toggle('sortable', sortable);
+        if (token !== this._shape_availability_token) { return; }
+        this._shapeable = shapeable;
+        this._dataTable.classList.toggle('shapeable', shapeable);
+        /// The header controls are revealed by that class alone, but the pager is BUILT only when
+        /// shaping applies, and this resolution can land after the result has finished rendering (the
+        /// lexer is awaited, so the answer always arrives a microtask late at best). Re-render it, which
+        /// is idempotent and a no-op until there is a table to page.
+        this.renderPagination();
+    }
+
+    /// The hint shown in a column's empty filter input: the shape of a predicate that fits the
+    /// column's type. Nothing for the other types, where neither a comparison against a number nor a
+    /// `LIKE` pattern is the obvious first thing to write - the input still accepts any expression.
+    _filterHint(name)
+    {
+        if (this._column_is_number[name]) { return '> 10'; }
+        if (this._column_is_string[name]) { return "LIKE '%test%'"; }
+        return '';
+    }
+
+    /// Add a column header's filter controls: the funnel that opens the input, the input itself (with
+    /// its glued apply button), and the display of the filter in effect. All three are built with the
+    /// header and only shown or hidden afterwards, so what the user typed survives a click elsewhere
+    /// and the filter in effect never has to be re-derived from the DOM.
+    _appendFilterControls(th, name)
+    {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'filter-toggle';
+        toggle.innerHTML = QueryResultElement._FUNNEL_ICON;
+        const toggle_label = 'Filter by this column (re-runs the query)';
+        toggle.title = toggle_label;
+        toggle.setAttribute('aria-label', toggle_label);
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._toggleFilterInput(th, name);
+        });
+        /// Do not let pressing the icon start a column-resize drag or a text selection.
+        toggle.addEventListener('mousedown', (e) => e.stopPropagation());
+        th.appendChild(toggle);
+
+        const state = document.createElement('span');
+        state.className = 'filter-state';
+        const text = document.createElement('button');
+        text.type = 'button';
+        text.className = 'filter-text';
+        text.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this._openFilterInput(th, name);
+        });
+        text.addEventListener('mousedown', (e) => e.stopPropagation());
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'filter-reset';
+        reset.textContent = '✕';
+        const reset_label = 'Remove this filter (re-runs the query)';
+        reset.title = reset_label;
+        reset.setAttribute('aria-label', reset_label);
+        reset.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.setColumnFilter(name, '');
+        });
+        reset.addEventListener('mousedown', (e) => e.stopPropagation());
+        state.appendChild(text);
+        state.appendChild(reset);
+        th.appendChild(state);
+
+        const popover = document.createElement('span');
+        popover.className = 'filter-popover';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.className = 'filter-input';
+        input.placeholder = this._filterHint(name);
+        input.setAttribute('aria-label', 'Filter expression for the column ' + name);
+        /// Every key pressed in the input stays in the input: the page binds global shortcuts
+        /// (Ctrl+Enter to run, `~` for the terminal, ...) on the document, and typing a filter must
+        /// not fire them. Enter applies, Escape abandons the edit.
+        input.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') { this.setColumnFilter(name, input.value); }
+            else if (e.key === 'Escape') { this._closeFilterInput(); }
+        });
+        input.addEventListener('keyup', (e) => e.stopPropagation());
+        input.addEventListener('click', (e) => e.stopPropagation());
+        input.addEventListener('mousedown', (e) => e.stopPropagation());
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.className = 'filter-apply';
+        apply.innerHTML = QueryResultElement._PLAY_ICON;
+        const apply_label = 'Apply this filter (re-runs the query)';
+        apply.title = apply_label;
+        apply.setAttribute('aria-label', apply_label);
+        apply.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.setColumnFilter(name, input.value);
+        });
+        apply.addEventListener('mousedown', (e) => e.stopPropagation());
+        popover.appendChild(input);
+        popover.appendChild(apply);
+        th.appendChild(popover);
+
+        this._updateFilterControls(th, name);
+    }
+
+    /// Paint one column header's filter controls for the filter currently in effect on it.
+    _updateFilterControls(th, name)
+    {
+        const suffix = this._filters[name] || '';
+        th.classList.toggle('filtered-column', suffix !== '');
+        const text = th.querySelector('.filter-text');
+        if (text)
+        {
+            text.textContent = suffix;
+            const label = 'Filter on this column: ' + name + ' ' + suffix + ' (click to edit)';
+            text.title = label;
+            text.setAttribute('aria-label', label);
+        }
+        const input = th.querySelector('.filter-input');
+        /// Leave the input alone while it is open - the user may be part-way through editing it - and
+        /// otherwise keep it showing the filter in effect, so reopening it edits instead of retypes.
+        if (input && this._open_filter_column !== name) { input.value = suffix; }
+    }
+
+    /// Repaint every column header's filter controls. Cheap (O(columns)) and idempotent.
+    refreshFilterIndicators()
+    {
+        if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
+        for (let j = 0; j < this._header.length; ++j)
+        {
+            const th = this._dataTable.tHead.children[j + 1];
+            if (th) { this._updateFilterControls(th, this._header[j].name); }
+        }
+    }
+
+    _toggleFilterInput(th, name)
+    {
+        if (this._open_filter_column === name) { this._closeFilterInput(); }
+        else { this._openFilterInput(th, name); }
+    }
+
+    /// Reveal one column's filter input, seeded with the filter in effect on it, and put the caret in
+    /// it. Only one input is open at a time, so opening one closes the previous.
+    _openFilterInput(th, name)
+    {
+        this._closeFilterInput();
+        this._open_filter_column = name;
+        th.classList.add('filter-open');
+        const input = th.querySelector('.filter-input');
+        if (input)
+        {
+            input.value = this._filters[name] || '';
+            input.focus();
+            input.select();
+        }
+    }
+
+    _closeFilterInput()
+    {
+        if (this._open_filter_column === null) { return; }
+        this._open_filter_column = null;
+        if (!this._dataTable.tHead) { return; }
+        for (const th of this._dataTable.tHead.children) { th.classList.remove('filter-open'); }
+    }
+
+    /// Set (or, for an empty expression, remove) the filter on one column and re-run the query with
+    /// it. `suffix` is the predicate text that follows the column name, which is what the header input
+    /// takes and what the cell menus produce, so a filter set from a cell and one typed in the header
+    /// are the same thing - and one replaces the other on that column.
+    setColumnFilter(name, suffix)
+    {
+        if (!this._shapeable) { return; }
+        const value = String(suffix === undefined || suffix === null ? '' : suffix).trim();
+        this._closeFilterInput();
+        /// In place: `_filters` is the owning tab's object, aliased by every element of the tab.
+        if (value === '') { delete this._filters[name]; }
+        else { this._filters[name] = value; }
+        /// A different set of rows is a different first page (see `resetPagination`).
+        resetPagination(this._pagination);
+        this.refreshFilterIndicators();
+        commitResultShape(this);
+    }
+
+    /// The comparisons offered for the selected cell's value, or an empty list when filtering by this
+    /// value is not something a menu can offer: an array/tuple/map (whose rendered JSON is not a value
+    /// the column can be compared against), a long string (a whole paragraph is not a useful filter),
+    /// or a type where the operators below would not type-check.
+    ///
+    /// Every value arrives as text (the page requests a `JSONStrings…` format), so a numeric column's
+    /// literal is the text itself - a column the server typed as a number cannot spell anything that
+    /// is not a number - while a string column's is quoted, and the substring/prefix/suffix options
+    /// become `LIKE` patterns with the value's own `%` and `_` escaped so they match literally.
+    _cellFilterOptions(name, is_null, text)
+    {
+        /// A NULL is filterable whatever the column's type is, and only with the null predicates:
+        /// `= NULL` is never true.
+        if (is_null)
+        {
+            return [{ label: 'IS NULL', suffix: 'IS NULL' }, { label: 'IS NOT NULL', suffix: 'IS NOT NULL' }];
+        }
+        if (this._column_is_number[name])
+        {
+            return ['=', '!=', '>', '<', '>=', '<='].map(op => ({ label: op, suffix: op + ' ' + text }));
+        }
+        if (this._column_is_string[name] && text.length <= QueryResultElement._MAX_CELL_FILTER_LENGTH)
+        {
+            const literal = quoteStringLiteral(text);
+            const pattern = escapeLikePattern(text);
+            return [
+                { label: '=', suffix: '= ' + literal },
+                { label: '!=', suffix: '!= ' + literal },
+                { label: 'startsWith', suffix: 'LIKE ' + quoteStringLiteral(pattern + '%') },
+                { label: 'endsWith', suffix: 'LIKE ' + quoteStringLiteral('%' + pattern) },
+                { label: 'contains', suffix: 'LIKE ' + quoteStringLiteral('%' + pattern + '%') },
+            ];
+        }
+        return [];
+    }
+
+    /// Add the funnel button to the cell that has just become the selected one, next to its copy icon.
+    /// Built here rather than with the cell so that a result of a hundred thousand cells does not
+    /// carry a hundred thousand buttons that only one of them can ever show; `_removeCellFilterControls`
+    /// takes it away again when the selection moves on.
+    _appendCellFilterButton(td)
+    {
+        if (!this._shapeable) { return; }
+        if (!Array.isArray(this._header) || !this._dataTable.tHead) { return; }
+        /// The leading row-number cell is at index 0, so data column `j` is at cell index `j + 1`.
+        const column = this._header[td.cellIndex - 1];
+        if (!column) { return; }
+        const text = td._filterText || '';
+        const options = this._cellFilterOptions(column.name, this._cellIsNull(td, column.name, text), text);
+        if (options.length === 0) { return; }
+
+        const button = document.createElement('span');
+        button.className = 'cell-filter';
+        button.innerHTML = QueryResultElement._FUNNEL_ICON;
+        const label = 'Filter by this value';
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.onclick = (e) => {
+            e.stopPropagation();
+            this._toggleCellFilterMenu(td, column.name, options);
+        };
+        td.appendChild(button);
+    }
+
+    /// Whether a cell holds SQL NULL. `data-is-null` is set from the original value when the row
+    /// arrives as JSON (`_renderCell`), but the page's own default format is a `JSONCompactStrings…`
+    /// one, where the server writes a NULL as its plain-text representation - the very glyph this page
+    /// displays NULLs with - inside an ordinary JSON string, so nothing marks the cell. Fall back to
+    /// that glyph, which can only be data in a column that cannot hold NULL at all.
+    _cellIsNull(td, name, text)
+    {
+        if ('isNull' in td.dataset) { return true; }
+        return !!this._column_is_nullable[name] && text === QueryResultElement._NULL_TEXT;
+    }
+
+    _removeCellFilterControls(td)
+    {
+        for (const el of td.querySelectorAll('.cell-filter, .cell-filter-menu')) { el.remove(); }
+    }
+
+    /// Open (or close again) the comparison menu for the selected cell. Built on demand and thrown
+    /// away with the selection, like the funnel that opens it.
+    _toggleCellFilterMenu(td, name, options)
+    {
+        const open = td.querySelector('.cell-filter-menu');
+        if (open) { open.remove(); return; }
+        const menu = document.createElement('span');
+        menu.className = 'cell-filter-menu';
+        for (const option of options)
+        {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'cell-filter-op';
+            item.textContent = option.label;
+            const label = 'Keep only the rows where ' + name + ' ' + option.suffix + ' (re-runs the query)';
+            item.title = label;
+            item.setAttribute('aria-label', label);
+            item.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.setColumnFilter(name, option.suffix);
+            });
+            item.addEventListener('mousedown', (e) => e.stopPropagation());
+            menu.appendChild(item);
+        }
+        td.appendChild(menu);
+    }
+
+    /// How many rows one page holds: exactly as many as this result can display before it truncates
+    /// (`_max_rows`, or fewer for a wide result capped by `_max_cells`). Deriving the page size from
+    /// the display limit is what makes the first page of a truncated result the page the user is
+    /// already looking at, so paging on from it is continuous. It depends only on the column count, so
+    /// it is the same for every page of the same query.
+    _pageSize()
+    {
+        const columns = Array.isArray(this._header) ? this._header.length : 0;
+        if (columns <= 0) { return 0; }
+        return Math.max(1, Math.min(this._max_rows, Math.floor(this._max_cells / columns)));
+    }
+
+    /// (Re)render the pager under the table.
+    ///
+    /// It appears when there is something to page through: the result was cut off at the display limit
+    /// (so there are more rows than are shown), or the result is already paginated (in which case each
+    /// page is exactly full, so nothing is "cut off" any more and only this keeps the pager). The total
+    /// number of pages is unknown - the server is not asked to count the rows - so the pager offers the
+    /// ten previous pages, the current one, the next one, and an ellipsis that takes a page number.
+    renderPagination()
+    {
+        this._clearElement(this._pager);
+        if (!this._shapeable) { return; }
+        /// Only a normal tabular result pages: no header (raw text, a chart, an image, an error) or no
+        /// header row (the vertical single-row layout) means there is nothing to page through.
+        if (!Array.isArray(this._header) || this._header.length === 0 || !this._dataTable.tHead) { return; }
+        const active = this._pagination.page >= 1;
+        if (!active && !this._incomplete_result) { return; }
+
+        const current = active ? this._pagination.page : 1;
+        const first = Math.max(1, current - QueryResultElement._PAGER_PREVIOUS_PAGES);
+        this._pager.style.display = 'flex';
+        this._pager.appendChild(document.createTextNode('Page:'));
+        for (let page = first; page <= current + 1; ++page)
+        {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = page === current ? 'page-btn current' : 'page-btn';
+            button.textContent = String(page);
+            if (page === current)
+            {
+                button.setAttribute('aria-current', 'page');
+                button.disabled = true;
+            }
+            else
+            {
+                button.title = 'Show page ' + page + ' (re-runs the query)';
+                button.addEventListener('click', (e) => { e.stopPropagation(); this._goToPage(page); });
+            }
+            this._pager.appendChild(button);
+        }
+        this._appendPageJump();
+    }
+
+    /// The trailing ellipsis of the pager: the number of pages is unknown, so instead of listing them
+    /// it turns into an input for any page number. The number is taken when the input loses focus (as
+    /// Enter does, by blurring it), so it is committed once however the user leaves the field.
+    _appendPageJump()
+    {
+        const jump = document.createElement('button');
+        jump.type = 'button';
+        jump.className = 'page-btn';
+        jump.textContent = '…';
+        const label = 'Go to a page by number';
+        jump.title = label;
+        jump.setAttribute('aria-label', label);
+        jump.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.inputMode = 'numeric';
+            input.className = 'page-input';
+            input.placeholder = 'page';
+            input.setAttribute('aria-label', label);
+            /// Keep every key in the input: the page binds global shortcuts on the document.
+            input.addEventListener('keydown', (ev) => {
+                ev.stopPropagation();
+                if (ev.key === 'Enter') { input.blur(); }
+                else if (ev.key === 'Escape') { input.value = ''; input.blur(); }
+            });
+            input.addEventListener('keyup', (ev) => ev.stopPropagation());
+            input.addEventListener('blur', () => {
+                const page = Math.floor(Number(input.value.trim()));
+                /// A blur with nothing usable typed just puts the ellipsis back, so an accidental
+                /// click costs nothing.
+                if (page >= 1) { this._goToPage(page); }
+                else { this.renderPagination(); }
+            });
+            jump.replaceWith(input);
+            input.focus();
+        });
+        this._pager.appendChild(jump);
+    }
+
+    /// Show one page of the result: the page becomes the `page` construction setting and the display
+    /// limit its `limit`, and the query is re-run. An already paginated result keeps the page size it
+    /// started with, so the pages stay the same slices for the whole session.
+    _goToPage(page)
+    {
+        if (!this._shapeable) { return; }
+        const size = this._pagination.size >= 1 ? this._pagination.size : this._pageSize();
+        if (!(page >= 1) || size < 1) { return; }
+        /// In place: `_pagination` is the owning tab's object, aliased by every element of the tab.
+        this._pagination.page = page;
+        this._pagination.size = size;
+        commitResultShape(this);
     }
 
     /// The sequence of color coding modes available for a column, in cycling order. Value columns
@@ -4825,6 +5683,12 @@ class QueryResultElement extends HTMLElement
         const table = this._dataTable;
         if (this._totals) { return false; }
         if (!Array.isArray(this._header) || this._header.length == 0) { return false; }
+        /// A result the user has shaped keeps its horizontal layout even when it would otherwise be
+        /// shown vertically. The vertical layout drops the header row, and with it the only controls
+        /// that can change or clear the sort and the filters - so a filter matching nothing (an empty
+        /// result, which is shown vertically) would leave the user with no way to take it off again.
+        /// `_renderEmptyResultRow` shows the marker the vertical layout would have shown.
+        if (this._hasResultShape()) { return false; }
         if (table.rows.length > 1) { return false; }
         /// An empty result (no data rows) is shown vertically too, so `transposeIfNeeded` can
         /// render its `empty result` marker; this does not depend on the column count.
@@ -4834,8 +5698,46 @@ class QueryResultElement extends HTMLElement
         return table.rows[0].cells.length > 5;
     }
 
+    /// Whether this result carries a user-chosen shape (see the result-shape helpers): a sort, a
+    /// filter, or a selected page.
+    _hasResultShape()
+    {
+        return this._sortColumns.length > 0
+            || Object.keys(this._filters).length > 0
+            || this._pagination.page >= 1;
+    }
+
+    /// Show the "empty result" marker as an ordinary row spanning the table, for a shaped result that
+    /// came back empty and therefore keeps its header (see `_willTranspose`) instead of being replaced
+    /// by the vertical layout that would otherwise carry the marker.
+    _renderEmptyResultRow()
+    {
+        const tbody = this._dataTable.tBodies[0];
+        if (!tbody || tbody.rows.length > 0) { return; }
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        /// One cell across every data column plus the leading row-number column.
+        td.colSpan = this._header.length + 1;
+        td.className = 'empty-result';
+        const div = document.createElement('div');
+        div.className = 'empty-result';
+        div.appendChild(document.createTextNode('empty result'));
+        td.appendChild(div);
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+    }
+
     transposeIfNeeded()
     {
+        /// A shaped result stays horizontal (see `_willTranspose`); when it is empty it still needs the
+        /// marker the vertical layout would have drawn.
+        if (this._hasResultShape() && !this._totals
+            && Array.isArray(this._header) && this._header.length > 0
+            && this._dataTable.rows.length === 0)
+        {
+            this._renderEmptyResultRow();
+            return;
+        }
         if (!this._willTranspose()) { return; }
         let table = this._dataTable;
 
@@ -4925,6 +5827,9 @@ class QueryResultElement extends HTMLElement
             /// Render totals before coloring, so the totals row is colored too.
             this.renderTotals();
             this.applyColumnColors();
+            /// No pager under a failed run: there are no further pages of a query that did not finish,
+            /// and its shape is dropped by the caller anyway (see `postSingle`).
+            this._clearElement(this._pager);
             if (measureNow) { this.transposeIfNeeded(); this._changeTableLayout(); }
             else { this._pendingTranspose = true; this._pendingChangeLayout = true; }
         }
@@ -6355,15 +7260,28 @@ if (pinned_columns_from_url) {
     try { url_pinned_columns = JSON.parse(pinned_columns_from_url) || {}; } catch (e) { /* ignore malformed */ }
 }
 
-/// Restore the column sort from the URL, like the two above - but this one shapes the ROWS: an
-/// auto-run (`run=1`) link re-runs its query with it as the `order` setting, so the shared link
-/// reproduces the sorted result. The payload is validated (`sanitizeSortColumns`) rather than trusted:
-/// it ends up in an `ORDER BY` of the request.
+/// Restore the result shape - the sort, the per-column filters and the page - from the URL, like the
+/// two above, but this one shapes the ROWS: an auto-run (`run=1`) link re-runs its query with it as the
+/// `order` / `filter` / `limit` + `page` settings, so the shared link reproduces the shaped result. The
+/// payloads are validated rather than trusted: they end up in an `ORDER BY` / `WHERE` / `LIMIT` of the
+/// request.
 let url_sort_columns = [];
 const sort_columns_from_url = current_url.searchParams.get('sort_columns');
 if (sort_columns_from_url) {
     try { url_sort_columns = sanitizeSortColumns(JSON.parse(sort_columns_from_url)); } catch (e) { /* ignore malformed */ }
 }
+
+let url_filters = {};
+const filters_from_url = current_url.searchParams.get('filters');
+if (filters_from_url) {
+    try { url_filters = sanitizeFilters(JSON.parse(filters_from_url)); } catch (e) { /* ignore malformed */ }
+}
+
+/// The page and its size travel as two plain numbers, so a hand-written `?page=` works.
+const url_pagination = sanitizePagination({
+    page: current_url.searchParams.get('page'),
+    size: current_url.searchParams.get('page_size'),
+});
 
 let url_elem = document.getElementById('url');
 let user_elem = document.getElementById('user');
@@ -9130,7 +10048,7 @@ function parseInbandExceptionFromTail(tail, format)
 /// not be re-read here, or a tab switch + database/connection edit during that await (or between the
 /// sequential statement groups of a "Run all") would send this run's already-snapshotted query to a
 /// different database, server or identity.
-async function postImpl(tab, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, order_expr = '')
+async function postImpl(tab, posted_request_num, query, targetResultEl, abortController, paramValuesSnapshot, query_database, connection, queryStart, shape_params = '')
 {
     /// The connection tuple (server address, user, password) is snapshotted once per run by the
     /// caller and passed in, rather than read live from the inputs here. Otherwise, in a
@@ -9154,13 +10072,15 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// If the user selected a database in the panel, use it as the default database.
     if (query_database) url += '&database=' + encodeURIComponent(query_database);
 
-    /// The column sort chosen in the result header, as the `order` query-construction setting: the
-    /// server materializes it on the parsed query by wrapping it as a derived table with an outer
-    /// `ORDER BY`, so it composes with whatever the query already is (a `UNION`, a trailing `FORMAT`,
-    /// its own `ORDER BY` / `LIMIT`) instead of this page having to rewrite the query text. Empty
-    /// unless the run is a single statement the setting applies to (see `resolveSortForRun`), so a
-    /// multi-statement run never pushes one statement's sort key onto the others.
-    if (order_expr) url += '&order=' + encodeURIComponent(order_expr);
+    /// The result shape chosen in the result view - the sort, the filters and the page - as the
+    /// `order` / `filter` / `limit` + `page` query-construction settings (see `shapeUrlParams`). The
+    /// server materializes them on the parsed query by wrapping it as a derived table with an outer
+    /// `ORDER BY` / `WHERE` / `LIMIT`, so they compose with whatever the query already is (a `UNION`, a
+    /// trailing `FORMAT`, its own `ORDER BY` / `LIMIT`) instead of this page having to rewrite the
+    /// query text. Empty unless the run is a single statement the settings apply to (see
+    /// `resolveShapeForRun`), so a multi-statement run never pushes one statement's shape onto the
+    /// others.
+    url += shape_params;
 
     for (const [name, value] of Object.entries(paramValuesSnapshot))
     {
@@ -9885,6 +10805,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             /// widths, so it is deferred when the tab is hidden (see `applyDeferredLayout`).
             if (is_table) targetResultEl.renderTotals();
             targetResultEl.applyColumnColors();
+            targetResultEl.renderPagination();
             if (is_table) {
                 if (tab.id === activeTabId) targetResultEl.transposeIfNeeded();
                 else targetResultEl._pendingTranspose = true;
@@ -10112,22 +11033,24 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     tab.progressPhase = 'running';
     if (active()) { paintDownloadCopy(tab); progressEl.start(); }
 
-    /// The sort chosen in this tab's result header, but only while it still belongs to the statement
-    /// being run - `resolveSortForRun` drops a sort left over from a different statement, which would
-    /// otherwise put an `ORDER BY` on a column this query does not have and fail it.
-    const order_expr = resolveSortForRun(tab, query);
+    /// The result shape chosen in this tab's result view, but only while it still belongs to the
+    /// statement being run - `resolveShapeForRun` drops a shape left over from a different statement,
+    /// which would otherwise put an `ORDER BY` or a `WHERE` on a column this query does not have and
+    /// fail it.
+    const shape_params = resolveShapeForRun(tab, query);
 
     tab.controller = new AbortController();
-    const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart, order_expr);
+    const result = await postImpl(tab, posted_request_num, query, el, tab.controller, paramValuesSnapshot, query_database, connection, queryStart, shape_params);
 
     if (result.cancelled) return;
 
     if (result.is_error || !result.response_ok) {
-        /// A failed run rendered no table, so its header - the only place the sort can be changed - is
-        /// not on screen. Drop the sort rather than leave the user with an unreachable one they cannot
-        /// clear: it may well be what failed the query (an ambiguous column name, or a server too old
-        /// for the `order` setting), and the error itself is still reported in full below.
-        tab.sortColumns.length = 0;
+        /// A failed run rendered no table, so its header and pager - the only places the result shape
+        /// can be changed - are not on screen. Drop the shape rather than leave the user with an
+        /// unreachable one they cannot clear: it may well be what failed the query (an ambiguous column
+        /// name, a filter that does not type-check, or a server too old for these settings), and the
+        /// error itself is still reported in full below.
+        clearResultShape(tab);
         tab.logoVisible = false;
         tab.progressPhase = 'error';
         tab.failed = true;
@@ -10204,9 +11127,9 @@ async function postSingle(tab, posted_request_num, query, history_query_text, pa
     tab.copyVisible = result.is_raw;
     tab.downloadQuery = query;
     tab.downloadParams = paramValuesSnapshot;
-    /// The download re-runs this query, so it has to carry the same `order` setting or it would export
-    /// the rows in a different order than the result on screen.
-    tab.downloadOrder = order_expr;
+    /// The download re-runs this query, so it has to carry the same construction settings or it would
+    /// export different rows, or the same rows in a different order, than the result on screen.
+    tab.downloadShape = shape_params;
     /// Record the database and connection this run produced its result against, so a later download
     /// (possibly after switching tabs, so `paintDownloadCopy` mirrors these into the shared
     /// `last_*_for_download`) reproduces the result against the same database/server/user rather than
@@ -10300,13 +11223,13 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
     const query_url = connection.url;
     const query_user = connection.user;
 
-    /// A multi-statement run is not sortable: it sends one request per statement while a sort names
-    /// the columns of ONE result, so applying it would push an `ORDER BY` onto statements that have no
-    /// such column. The results it renders therefore offer no sort arrows (see
-    /// `_refreshSortAvailability`), and this run drops whatever sort a previous single-statement run
-    /// in this tab left behind, so nothing stale is persisted with its snapshot.
-    tab.sortColumns.length = 0;
-    tab.sortQuery = null;
+    /// A multi-statement run cannot be shaped: it sends one request per statement while a sort, a
+    /// filter or a page names the columns of ONE result, so applying it would push an `ORDER BY` or a
+    /// `WHERE` onto statements that have no such column. The results it renders therefore offer no
+    /// shape controls (see `_refreshShapeAvailability`), and this run drops whatever shape a previous
+    /// single-statement run in this tab left behind, so nothing stale is persisted with its snapshot.
+    clearResultShape(tab);
+    tab.shapeQuery = null;
 
     tab.downloadVisible = false;
     tab.copyVisible = false;
@@ -10337,6 +11260,8 @@ async function postMulti(tab, posted_request_num, parsed, paramValuesSnapshot, e
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
         el._sortColumns = tab.sortColumns;
+        el._filters = tab.filters;
+        el._pagination = tab.pagination;
         el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         resultElements.push(el);
@@ -10658,6 +11583,7 @@ function renderFailedSnapshot(el, data, format, tag, display_error) {
         if (el.rowCount > 0) {
             el.renderTotals();
             el.applyColumnColors();
+            el.renderPagination();
             el.transposeIfNeeded();
         } else {
             el.clear();
@@ -10789,6 +11715,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
             /// turn mirrors the live success path (no single-query layout pass; see `postMulti`).
             if (is_table) el.renderTotals();
             el.applyColumnColors();
+            el.renderPagination();
             if (is_table) el.transposeIfNeeded();
             if (is_table) el.expandSingleValueIfNeeded();
         }
@@ -10854,6 +11781,7 @@ async function renderSnapshotIntoElement(el, snap, tab, matToken) {
         /// includes) is colored on the first paint too.
         if (is_table) el.renderTotals();
         el.applyColumnColors();
+        el.renderPagination();
         if (is_table) el.transposeIfNeeded();
         if (is_table) el.expandSingleValueIfNeeded();
     }
@@ -10922,29 +11850,42 @@ function persistPinnedColumns() {
     scheduleSave();
 }
 
-/// Persist the column sort the same way `persistPinnedColumns` persists the pinned columns: onto the
+/// Persist the result shape the same way `persistPinnedColumns` persists the pinned columns: onto the
 /// active tab's result snapshot, the URL, and the current history entry, so reloads, shares, and
-/// Back/Forward keep it. For the sort this also makes the URL reproduce the RESULT and not just its
-/// presentation: an auto-run (`run=1`) link carrying `sort_columns` re-runs the query with the same
-/// `order` setting, so the rows come back in the order the link was shared in.
-function persistSortColumns() {
+/// Back/Forward keep it. For the shape this also makes the URL reproduce the RESULT and not just its
+/// presentation: an auto-run (`run=1`) link carrying it re-runs the query with the same construction
+/// settings, so the rows come back sorted, filtered and paged as they were when the link was shared.
+function persistResultShape() {
     const tab = getActiveTab();
     const sort = tab ? tab.sortColumns : [];
-    if (tab && tab.result) tab.result.sort_columns = sort;
-    const url = new URL(window.location);
-    if (sort.length > 0) {
-        url.searchParams.set('sort_columns', JSON.stringify(sort));
-    } else {
-        url.searchParams.delete('sort_columns');
+    const filters = tab ? tab.filters : {};
+    const pagination = tab ? tab.pagination : { page: 0, size: 0 };
+    if (tab && tab.result) {
+        tab.result.sort_columns = sort;
+        tab.result.filters = filters;
+        tab.result.pagination = pagination;
     }
-    /// Keep the tabs state shape: fold the sort into the entry's nested `result` when it has one
+    const url = new URL(window.location);
+    const set = (name, value) => {
+        if (value === null) url.searchParams.delete(name);
+        else url.searchParams.set(name, value);
+    };
+    set('sort_columns', sort.length > 0 ? JSON.stringify(sort) : null);
+    set('filters', Object.keys(filters).length > 0 ? JSON.stringify(filters) : null);
+    /// The page and its size travel as two plain numbers rather than one blob: a hand-edited
+    /// `?page=` is the natural way to jump to a page from outside the UI.
+    const paginated = pagination.page >= 1 && pagination.size >= 1;
+    set('page', paginated ? String(pagination.page) : null);
+    set('page_size', paginated ? String(pagination.size) : null);
+    /// Keep the tabs state shape: fold the shape into the entry's nested `result` when it has one
     /// (matching how the restore path reads it back via `state.result || state`), else at the top
     /// level for a legacy flat entry.
     const cur = history.state;
     if (cur) {
+        const shape = { sort_columns: sort, filters: filters, pagination: pagination };
         const next = cur.result
-            ? { ...cur, result: { ...cur.result, sort_columns: sort } }
-            : { ...cur, sort_columns: sort };
+            ? { ...cur, result: { ...cur.result, ...shape } }
+            : { ...cur, ...shape };
         try {
             history.replaceState(next, document.title, url.toString());
         } catch (e) {
@@ -10977,6 +11918,8 @@ async function restoreMultiQuery(snapshot, tab, matToken) {
         el._colorModes = tab.colorModes;
         el._pinnedColumns = tab.pinnedColumns;
         el._sortColumns = tab.sortColumns;
+        el._filters = tab.filters;
+        el._pagination = tab.pagination;
         el._ownerTab = tab;
         tab.multiContainer.appendChild(el);
         elements.push(el);
@@ -11118,21 +12061,26 @@ async function materializeResult(tab) {
     /// paint. The element shares the tab's pinned-columns object, mirroring the color modes above.
     tab.pinnedColumns = result.pinned_columns || {};
     el._pinnedColumns = tab.pinnedColumns;
-    /// Restore the sort the snapshotted rows were produced with, so the header arrows show what the
-    /// restored result is actually sorted by. It stays bound to the producing query (`sortQuery`), so
-    /// re-running that exact statement reproduces the sort while anything else drops it.
+    /// Restore the shape the snapshotted rows were produced with, so the header arrows, the filter
+    /// indicators and the pager show what the restored result actually is. It stays bound to the
+    /// producing query (`shapeQuery`), so re-running that exact statement reproduces the shape while
+    /// anything else drops it.
     tab.sortColumns = sanitizeSortColumns(result.sort_columns);
-    tab.sortQuery = result.query ?? null;
+    tab.filters = sanitizeFilters(result.filters);
+    tab.pagination = sanitizePagination(result.pagination);
+    tab.shapeQuery = result.query ?? null;
     el._sortColumns = tab.sortColumns;
+    el._filters = tab.filters;
+    el._pagination = tab.pagination;
 
     clearPanel(tab);
     tab.downloadVisible = false;
     tab.copyVisible = false;
     tab.downloadQuery = result.query || '';
     tab.downloadParams = result.params || {};
-    /// The download re-runs the producing query, so it must carry the shown sort too or it would
-    /// export the same rows in a different order than the result on screen.
-    tab.downloadOrder = sortOrderExpression(tab.sortColumns);
+    /// The download re-runs the producing query, so it must carry the shown shape too or it would
+    /// export different rows, or the same rows in a different order, than the result on screen.
+    tab.downloadShape = shapeUrlParams(tab);
     /// Graph detection keys off the producing query, so a snapshot still renders as a graph
     /// even if the editor query was changed without rerunning.
     el.queryText = result.query ?? tab.query;
@@ -11277,6 +12225,7 @@ async function materializeResult(tab) {
         /// Render totals before coloring, so the totals row is colored on first paint too.
         if (is_table) el.renderTotals();
         el.applyColumnColors();
+        el.renderPagination();
         if (is_table) el.transposeIfNeeded();
         if (is_table) el.expandSingleValueIfNeeded();
         if (is_table) el._changeTableLayout();
@@ -11557,10 +12506,12 @@ function tabRuntimeDefaults() {
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
         sortColumns: [],        /// column sort of this tab's result, in ORDER BY order (shared with its element)
-        sortQuery: null,        /// statement `sortColumns` was chosen on (see `sortQueryKey`); null for none
+        filters: {},            /// per-column filters of this tab's result (shared with its element)
+        pagination: { page: 0, size: 0 },  /// selected page of this tab's result; page 0 = not paginated
+        shapeQuery: null,       /// statement the result shape was chosen on (see `shapeQueryKey`); null for none
         downloadQuery: '',      /// query the download button should re-run for this tab
         downloadParams: {},
-        downloadOrder: '',      /// `order` expression the download must reproduce the shown sort with
+        downloadShape: '',      /// construction-setting URL params the download reproduces the shown shape with
         downloadDatabase: '',   /// database the download should target (the producing connection)
         downloadUrl: '',        /// server address the download reproduces against (producing connection)
         downloadUser: '',       /// user the download reproduces against (producing connection)
@@ -11641,6 +12592,8 @@ function getOrCreatePanel(tab) {
     el._colorModes = tab.colorModes;
     el._pinnedColumns = tab.pinnedColumns;
     el._sortColumns = tab.sortColumns;
+    el._filters = tab.filters;
+    el._pagination = tab.pagination;
     /// The element's log/metric packets mark availability on this tab (see `_markLogsAvailable`).
     el._ownerTab = tab;
     panel.appendChild(el);
@@ -11687,9 +12640,9 @@ function paintDownloadCopy(tab) {
     document.getElementById('copy-div').style.display = tab.copyVisible ? 'block' : 'none';
     last_query_for_download = tab.downloadQuery || '';
     last_params_for_download = tab.downloadParams || {};
-    /// The `order` setting the shown result was produced with, so the exported file is sorted the same
-    /// way the table on screen is.
-    last_order_for_download = tab.downloadOrder || '';
+    /// The construction settings the shown result was produced with, so the exported file holds the
+    /// same rows in the same order as the table on screen.
+    last_shape_for_download = tab.downloadShape || '';
     /// Target the download at the database and connection that produced this tab's result (see the
     /// download handler / `last_url_for_download`), so switching tabs and downloading reproduces the
     /// active tab's own result rather than whatever the previous tab or the live inputs point at.
@@ -12334,7 +13287,7 @@ async function persist() {
 /// reloaded `run=1` URL reproduces the displayed result instead of replaying against a different
 /// database or server.
 /// `fromRun` marks an entry that a genuine run produced (see `writeHistoryEntry`).
-function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, sortColumns, user, server_address, database) {
+function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns, shape, user, server_address, database) {
     const out = [];
     if (user) out.push('user=' + encodeURIComponent(user));
     /// Only carry `run=1` for an entry whose query/params were produced by a genuine run and
@@ -12369,11 +13322,21 @@ function buildHistoryParams(params, tabName, fromRun, colorModes, pinnedColumns,
     if (pinnedColumns && Object.keys(pinnedColumns).length > 0) {
         out.push('pinned_columns=' + encodeURIComponent(JSON.stringify(pinnedColumns)));
     }
-    /// The column sort, likewise - but unlike the two above it also shapes the ROWS: an auto-run
-    /// (`run=1`) link re-runs the query with it as the `order` setting, so the shared link reproduces
-    /// the result itself and not only how it is displayed.
+    /// The result shape, likewise - but unlike the two above it also shapes the ROWS: an auto-run
+    /// (`run=1`) link re-runs the query with it as the `order` / `filter` / `limit` + `page` settings,
+    /// so the shared link reproduces the result itself and not only how it is displayed.
+    const sortColumns = shape && shape.sort_columns;
     if (sortColumns && sortColumns.length > 0) {
         out.push('sort_columns=' + encodeURIComponent(JSON.stringify(sortColumns)));
+    }
+    const filters = shape && shape.filters;
+    if (filters && Object.keys(filters).length > 0) {
+        out.push('filters=' + encodeURIComponent(JSON.stringify(filters)));
+    }
+    const pagination = shape && shape.pagination;
+    if (pagination && pagination.page >= 1 && pagination.size >= 1) {
+        out.push('page=' + encodeURIComponent(pagination.page));
+        out.push('page_size=' + encodeURIComponent(pagination.size));
     }
     if (tabName) out.push('tab=' + encodeURIComponent(tabName));
     return out;
@@ -12588,15 +13551,21 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// must not clobber the saved ones.
     let color_modes = tab.result && tab.result.color_modes;
     let pinned_columns = tab.result && tab.result.pinned_columns;
-    let sort_columns = tab.result && tab.result.sort_columns;
+    let shape = tab.result && {
+        sort_columns: tab.result.sort_columns,
+        filters: tab.result.filters,
+        pagination: tab.result.pagination,
+    };
     if (tab.materialized) {
         color_modes = tab.colorModes;
         pinned_columns = tab.pinnedColumns;
-        sort_columns = tab.sortColumns;
+        shape = { sort_columns: tab.sortColumns, filters: tab.filters, pagination: tab.pagination };
         if (tab.result) {
             tab.result.color_modes = tab.colorModes;
             tab.result.pinned_columns = tab.pinnedColumns;
             tab.result.sort_columns = tab.sortColumns;
+            tab.result.filters = tab.filters;
+            tab.result.pagination = tab.pagination;
         }
     }
     /// `stamp_run` (rather than the raw `fromRun`) drops `run=1` when the live connection/database
@@ -12604,7 +13573,7 @@ function writeHistoryEntry(tab, titleForDoc, forceReplace, fromRun, recorded) {
     /// on reload would not reproduce it (and must not fire a write against the wrong server/database).
     /// The producing user/server/database are serialized into the URL and stamped into the state so
     /// Back/Forward can restore this entry's `database=` only while the live connection still matches.
-    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, sort_columns, entry_user, entry_server, entry_database);
+    const history_params = buildHistoryParams(recorded_params, tab.title, stamp_run, color_modes, pinned_columns, shape, entry_user, entry_server, entry_database);
     let history_url = window.location.pathname;
     if (history_params.length > 0) history_url += '?' + history_params.join('&');
     history_url += '#' + toBase64(recorded_query);
@@ -12775,10 +13744,12 @@ function saveHistory(stateData, titleForDoc, tab) {
         /// Pinned columns in effect when this result was produced; travels with the snapshot so
         /// re-activating the tab (or navigating / reloading) restores them, like `color_modes`.
         pinned_columns: tab.pinnedColumns,
-        /// The column sort this result was produced with (the `order` setting of its request), so the
-        /// restored rows and the sort its header shows stay consistent, and a download or an auto-run
-        /// link reproduces the same order.
+        /// The shape this result was produced with (the construction settings of its request), so the
+        /// restored rows and the sort, filters and page its controls show stay consistent, and a
+        /// download or an auto-run link reproduces the same rows in the same order.
         sort_columns: tab.sortColumns,
+        filters: tab.filters,
+        pagination: tab.pagination,
         /// The run identity that produced this result (see `run_epoch`). A completing run still owns
         /// its tab here (the caller bailed on a superseding `reqNum`), so `tab.launchRunId` is this
         /// run's. Lets `window.onpopstate` recognize the mid-run history entry this run wrote —
@@ -13104,6 +14075,8 @@ window.onpopstate = function(event) {
             color_modes: flat.color_modes || {},
             pinned_columns: flat.pinned_columns || {},
             sort_columns: sanitizeSortColumns(flat.sort_columns),
+            filters: sanitizeFilters(flat.filters),
+            pagination: sanitizePagination(flat.pagination),
             elapsed_ns: flat.elapsed_ns,
         };
     } else {
@@ -14538,7 +15511,7 @@ const WRITE_STATEMENT_KEYWORDS = new Set([
 /// The statement kind of one statement, given as its significant lexer tokens: the upper-cased
 /// keyword that says what the statement IS, or null when the walk cannot name one. Shared by
 /// `statementIsReadOnly` (the no-framing retry gate and the `Run all` parallelizable/barrier
-/// classification) and `queryIsSortable` (whether the result header may offer sorting), so all of
+/// classification) and `queryIsShapeable` (whether the result header may offer sorting), so all of
 /// them resolve the statement kind the same way.
 ///
 /// The leading keyword is not enough: ClickHouse allows a query to begin with a `WITH` (CTE) clause,
@@ -14628,18 +15601,18 @@ function statementIsReadOnly(tokens)
 /// `EXPLAIN` the setting applies to the EXPLAINED query (changing the plan that is printed) rather
 /// than sorting the printed plan. Offering the header arrows for any of those would leave an active
 /// sort indicator over a result that is not sorted.
-const SORTABLE_STATEMENT_KEYWORDS = new Set(['SELECT', 'FROM']);
+const SHAPEABLE_STATEMENT_KEYWORDS = new Set(['SELECT', 'FROM']);
 
 /// Whether the result of `query` may be sorted by re-running it with an `order` setting. Without the
 /// lexer the statement kind cannot be resolved (the text-level fallback used elsewhere resolves only
 /// a leading keyword, and a leading `WITH` hides the real one), so sorting is simply not offered:
 /// unlike the parallelization and retry gates, which must decide something either way, this only
 /// withholds an optional affordance.
-async function queryIsSortable(query)
+async function queryIsShapeable(query)
 {
     const tokens = await tokenizeOrNull(query);
     if (tokens === null) { return false; }
-    return SORTABLE_STATEMENT_KEYWORDS.has(statementKeyword(tokens.filter(t => t.significant)));
+    return SHAPEABLE_STATEMENT_KEYWORDS.has(statementKeyword(tokens.filter(t => t.significant)));
 }
 
 /// Best-effort text-level fallback for `statementIsReadOnly`, used only when WebAssembly - hence
@@ -16630,9 +17603,11 @@ activeTabId = tabs[0].id;
 tabs[0].colorModes = url_color_modes;
 tabs[0].pinnedColumns = url_pinned_columns;
 tabs[0].sortColumns = url_sort_columns;
-/// The sort belongs to the statement the link carries, which is what a `run=1` load auto-runs, so
-/// bind it to that text (`resolveSortForRun` would otherwise drop it as belonging to another query).
-tabs[0].sortQuery = tabs[0].query;
+tabs[0].filters = url_filters;
+tabs[0].pagination = url_pagination;
+/// The shape belongs to the statement the link carries, which is what a `run=1` load auto-runs, so
+/// bind it to that text (`resolveShapeForRun` would otherwise drop it as belonging to another query).
+tabs[0].shapeQuery = tabs[0].query;
 /// Build the active tab's panel now (synchronously), so the `resultEl` alias exists before any
 /// connection check / early render runs, matching the pre-tabs invariant that it always existed.
 setActivePanel(tabs[0]);
@@ -16737,9 +17712,11 @@ async function reconcileStartup() {
                     colorModes: (r.result && r.result.color_modes) || {},
                     pinnedColumns: (r.result && r.result.pinned_columns) || {},
                     sortColumns: sanitizeSortColumns(r.result && r.result.sort_columns),
-                    /// The sort belongs to the statement that produced the stored result, so it is
-                    /// re-applied only by a run of that exact statement (see `resolveSortForRun`).
-                    sortQuery: (r.result && r.result.query) ?? null,
+                    filters: sanitizeFilters(r.result && r.result.filters),
+                    pagination: sanitizePagination(r.result && r.result.pagination),
+                    /// The shape belongs to the statement that produced the stored result, so it is
+                    /// re-applied only by a run of that exact statement (see `resolveShapeForRun`).
+                    shapeQuery: (r.result && r.result.query) ?? null,
                 });
             } else {
                 pruned_blank_ids.add(r.id);
@@ -17002,18 +17979,24 @@ async function reconcileStartup() {
                 /// place (keeping every aliasing element bound to the same object) alongside the modes.
                 for (const k of Object.keys(t.pinnedColumns)) delete t.pinnedColumns[k];
                 Object.assign(t.pinnedColumns, url_pinned_columns);
-                /// The column sort likewise, bound to the URL's query (the one a `run=1` load
-                /// auto-runs) so the deferred run reproduces the link's sorted result. Spliced in
+                /// The result shape likewise, bound to the URL's query (the one a `run=1` load
+                /// auto-runs) so the deferred run reproduces the link's shaped result. Written in
                 /// place for the same aliasing reason as above.
                 t.sortColumns.length = 0;
                 t.sortColumns.push(...url_sort_columns);
-                t.sortQuery = url_query;
+                for (const k of Object.keys(t.filters)) delete t.filters[k];
+                Object.assign(t.filters, url_filters);
+                t.pagination.page = url_pagination.page;
+                t.pagination.size = url_pagination.size;
+                t.shapeQuery = url_query;
                 const els = t.resultEl ? [t.resultEl] : [];
                 if (t.multiContainer) for (const el of t.multiContainer.querySelectorAll('query-result')) els.push(el);
                 for (const el of els) {
                     el._colorModes = t.colorModes; el.applyColumnColors();
                     el._pinnedColumns = t.pinnedColumns; el.applyPinnedColumns();
                     el._sortColumns = t.sortColumns; el.refreshSortIndicators();
+                    el._filters = t.filters; el.refreshFilterIndicators();
+                    el._pagination = t.pagination; el.renderPagination();
                 }
             }
         }
@@ -17301,10 +18284,10 @@ document.getElementById('copy-div').addEventListener('click', function() {
 // Download functionality
 let last_query_for_download = '';
 let last_params_for_download = {};
-/// The `order` query-construction setting behind the downloadable result: the column sort the user
-/// chose in the result header (snapshotted at run time and on restore, like the query itself), so
-/// Download re-runs the query with the same `ORDER BY` and the file matches the visible table.
-let last_order_for_download = '';
+/// The query-construction URL parameters behind the downloadable result: the sort, the filters and
+/// the page the user chose in the result view (snapshotted at run time and on restore, like the query
+/// itself), so Download re-runs the query with the same shape and the file matches the visible table.
+let last_shape_for_download = '';
 /// The default database that produced the downloadable result (snapshotted at run time and on
 /// restore), so Download stays tied to the displayed result even if the panel selection changes.
 let last_database_for_download = '';
@@ -17489,7 +18472,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     if (user) url += '&user=' + encodeURIComponent(user);
     if (password) url += '&password=' + encodeURIComponent(password);
     if (last_database_for_download) url += '&database=' + encodeURIComponent(last_database_for_download);
-    if (last_order_for_download) url += '&order=' + encodeURIComponent(last_order_for_download);
+    url += last_shape_for_download;
 
     for (const [name, value] of Object.entries(last_params_for_download))
     {

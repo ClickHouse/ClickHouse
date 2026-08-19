@@ -10,7 +10,7 @@
 
 /** Regression coverage for the `statementKeyword` logic in `programs/server/play.html` and its
   * consumers: `statementIsReadOnly` (behind `queryIsReadOnly` and `splitAllQueries`) and
-  * `queryIsSortable`.
+  * `queryIsShapeable`.
   *
   * The Web UI retries a query without framing when the server rejects the page's `EventStream`
   * request, but a side-effecting statement (`INSERT`, DDL) may already have run before returning a
@@ -32,13 +32,13 @@
   * Instead we reproduce the token-walking algorithm here on top of the real `DB::Lexer`. The lexer
   * (the part most likely to evolve) is shared; only the small detection below is a port. Keep this
   * in sync with `statementKeyword` / `statementIsReadOnly` / `queryIsReadOnly` / `splitAllQueries` /
-  * `queryIsSortable` in `programs/server/play.html`.
+  * `queryIsShapeable` in `programs/server/play.html`.
   *
   * The same statement-kind resolution also decides whether the result table offers per-column
   * sorting: sorting re-runs the query with the `order` query-construction setting, which the server
   * materializes only for a `SELECT` / `UNION` (it wraps it as a derived table with an outer
   * `ORDER BY`). Offering the arrows for a statement the setting does not shape would leave an active
-  * sort indicator over an unsorted result, so `queryIsSortable` accepts a strictly narrower set of
+  * sort indicator over an unsorted result, so `queryIsShapeable` accepts a strictly narrower set of
   * statement kinds than the read-only classification does.
   */
 
@@ -112,7 +112,7 @@ bool isClosingBracket(DB::TokenType type)
 /// Faithful port of `statementKeyword` from play.html: resolves the statement kind of one statement
 /// given as its significant tokens, or an empty string when the walk cannot name one. Shared - there
 /// as here - by `statementIsReadOnly` (the `queryIsReadOnly` retry gate and the `splitAllQueries`
-/// per-statement `is_select` classification) and `queryIsSortable` (the result header sort arrows).
+/// per-statement `is_select` classification) and `queryIsShapeable` (the result header sort arrows).
 std::string statementKeyword(const std::vector<Tok> & tokens)
 {
     for (size_t i = 0; i + 1 < tokens.size(); ++i)
@@ -200,17 +200,17 @@ bool queryIsReadOnly(const std::string & query)
     return statementIsReadOnly(tokenizeSignificant(query));
 }
 
-/// Mirror of `SORTABLE_STATEMENT_KEYWORDS` in play.html.
-const std::set<std::string> sortable_statement_keywords = {"SELECT", "FROM"};
+/// Mirror of `SHAPEABLE_STATEMENT_KEYWORDS` in play.html.
+const std::set<std::string> shapeable_statement_keywords = {"SELECT", "FROM"};
 
-/// Faithful port of `queryIsSortable` from play.html (the WebAssembly-available branch): whether the
+/// Faithful port of `queryIsShapeable` from play.html (the WebAssembly-available branch): whether the
 /// result header may offer the sort arrows, i.e. whether the server parses the statement into an
 /// `ASTSelectWithUnionQuery` and can therefore wrap it with an outer `ORDER BY` for the `order`
 /// query-construction setting. Narrower than read-only: `SHOW` / `DESCRIBE` / `EXISTS` / `EXPLAIN`
 /// are read-only yet not wrappable that way.
-bool queryIsSortable(const std::string & query)
+bool queryIsShapeable(const std::string & query)
 {
-    return sortable_statement_keywords.contains(statementKeyword(tokenizeSignificant(query)));
+    return shapeable_statement_keywords.contains(statementKeyword(tokenizeSignificant(query)));
 }
 
 /// Faithful port of the `splitAllQueries` splitting-and-classification loop from play.html
@@ -395,24 +395,24 @@ TEST(PlayQueryIsReadOnly, LargeQueryIsTokenizedWithoutALimit)
         (std::vector<bool>{true, false, true}));
 }
 
-TEST(PlayQueryIsReadOnly, SortableIsNarrowerThanReadOnly)
+TEST(PlayQueryIsReadOnly, ShapeableIsNarrowerThanReadOnly)
 {
     /// The statement kinds the `order` query-construction setting shapes: the result header may offer
     /// the sort arrows exactly for these.
-    EXPECT_TRUE(queryIsSortable("SELECT number FROM numbers(10)"));
-    EXPECT_TRUE(queryIsSortable("  \n/* c */ select 1"));
-    EXPECT_TRUE(queryIsSortable("(SELECT 1) UNION ALL (SELECT 2)"));
-    EXPECT_TRUE(queryIsSortable("FROM numbers(10) SELECT number"));
+    EXPECT_TRUE(queryIsShapeable("SELECT number FROM numbers(10)"));
+    EXPECT_TRUE(queryIsShapeable("  \n/* c */ select 1"));
+    EXPECT_TRUE(queryIsShapeable("(SELECT 1) UNION ALL (SELECT 2)"));
+    EXPECT_TRUE(queryIsShapeable("FROM numbers(10) SELECT number"));
     /// The real statement kind behind a CTE list decides, exactly as for the read-only walk.
-    EXPECT_TRUE(queryIsSortable("WITH y AS (SELECT 1) SELECT * FROM y"));
-    EXPECT_TRUE(queryIsSortable("WITH 1 AS select SELECT select"));
+    EXPECT_TRUE(queryIsShapeable("WITH y AS (SELECT 1) SELECT * FROM y"));
+    EXPECT_TRUE(queryIsShapeable("WITH 1 AS select SELECT select"));
 
     /// Read-only but NOT wrappable by the `order` setting: the server would silently ignore it, so
     /// the arrows must not be offered (they would indicate a sort the rows do not have).
     for (const auto & query : {"SHOW TABLES", "DESCRIBE TABLE t", "DESC t", "EXISTS TABLE t", "EXPLAIN SELECT 1"})
     {
         EXPECT_TRUE(queryIsReadOnly(query)) << query;
-        EXPECT_FALSE(queryIsSortable(query)) << query;
+        EXPECT_FALSE(queryIsShapeable(query)) << query;
     }
 
     /// Writes and statements of an unresolved kind are neither read-only nor sortable.
@@ -424,6 +424,6 @@ TEST(PlayQueryIsReadOnly, SortableIsNarrowerThanReadOnly)
           "SET max_threads = 1"})
     {
         EXPECT_FALSE(queryIsReadOnly(query)) << query;
-        EXPECT_FALSE(queryIsSortable(query)) << query;
+        EXPECT_FALSE(queryIsShapeable(query)) << query;
     }
 }
