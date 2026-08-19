@@ -203,6 +203,9 @@ struct Settings
     static Field castValueUtil(std::string_view name, const Field & value);
     static String valueToStringUtil(std::string_view name, const Field & value);
     static Field stringToValueUtil(std::string_view name, const String & str);
+    /// Compiled-in default value of a built-in setting, as the `Field` that `setDefaultValue` installs.
+    /// Throws `UNKNOWN_SETTING` for a name that is not a built-in setting, so callers gate on `hasBuiltin`.
+    static Field getDefaultValue(std::string_view name);
     static bool hasBuiltin(std::string_view name);
     static std::string_view resolveName(std::string_view name);
     static void checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfiguration & config, const String & config_path);

@@ -9466,6 +9466,15 @@ String Settings::getDefaultValueString(std::string_view name) const
     return impl->getDefaultValueString(name);
 }
 
+Field Settings::getDefaultValue(std::string_view name)
+{
+    /// Defaults are compile-time constants, so one shared instance is enough. Note it is deliberately
+    /// not adjusted by the `compatibility` setting: `setDefaultValue` installs the compiled-in default
+    /// too, so a value checked through here is exactly the value a reset installs.
+    static const Settings default_settings;
+    return default_settings.get(name);
+}
+
 bool Settings::tryGet(std::string_view name, Field & value) const
 {
     return impl->tryGet(name, value);
