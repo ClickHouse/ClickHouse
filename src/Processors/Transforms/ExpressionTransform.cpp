@@ -11,6 +11,14 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char expression_transform_before_expression_pause[];
+    extern const char expression_transform_pause[];
+    extern const char converting_transform_before_expression_pause[];
+    extern const char converting_transform_pause[];
+}
+
 Block ExpressionTransform::transformHeader(const Block & header, const ActionsDAG & expression)
 {
     return expression.updateHeader(header);
