@@ -149,14 +149,14 @@ If no conditions are met for a data part, ClickHouse uses the `lz4` compression.
 </compression>
 ```
 
+## config-file {#config-file}
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
+
 ## config_reload_interval_ms {#config_reload_interval_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Yes" />
 How often clickhouse will reload config and check for new changes
-
-## config-file {#config-file}
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Points to the server config file.
 
 ## core_dump {#core_dump}
 
