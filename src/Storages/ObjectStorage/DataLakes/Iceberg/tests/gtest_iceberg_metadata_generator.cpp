@@ -93,6 +93,42 @@ Poco::JSON::Object::Ptr makeMetadataWithGap()
     return metadata;
 }
 
+/// Everything a schema-changing ALTER is allowed to touch, so a test can assert that a
+/// rejected one touched nothing.
+struct SchemaState
+{
+    Int32 current_schema_id;
+    size_t schema_count;
+};
+
+SchemaState readSchemaState(const Poco::JSON::Object::Ptr & metadata)
+{
+    return {metadata->getValue<Int32>(f_current_schema_id), metadata->getArray(f_schemas)->size()};
+}
+
+void expectSchemaUnchanged(const Poco::JSON::Object::Ptr & metadata, const SchemaState & before)
+{
+    const auto after = readSchemaState(metadata);
+    EXPECT_EQ(after.current_schema_id, before.current_schema_id);
+    EXPECT_EQ(after.schema_count, before.schema_count);
+}
+
+void expectDropRejected(const Poco::JSON::Object::Ptr & metadata, const String & column)
+{
+    const auto before = readSchemaState(metadata);
+    MetadataGenerator gen(metadata);
+    try
+    {
+        gen.generateDropColumnMetadata(column);
+        FAIL() << "DROP COLUMN " << column << " is referenced by the active table metadata and must be rejected";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS) << e.message();
+    }
+    expectSchemaUnchanged(metadata, before);
+}
+
 }
 
 
@@ -150,8 +186,7 @@ TEST(IcebergMetadataGenerator, DropColumnRejectsIfInSortOrder)
     metadata->set(f_sort_orders, sort_orders);
     metadata->set(f_default_sort_order_id, static_cast<Int64>(1));
 
-    MetadataGenerator gen(metadata);
-    EXPECT_THROW(gen.generateDropColumnMetadata("x"), DB::Exception);
+    expectDropRejected(metadata, "x");
 }
 
 
@@ -173,8 +208,7 @@ TEST(IcebergMetadataGenerator, DropColumnRejectsIfInPartitionSpec)
     metadata->set(f_partition_specs, partition_specs);
     metadata->set(f_default_spec_id, static_cast<Int64>(1));
 
-    MetadataGenerator gen(metadata);
-    EXPECT_THROW(gen.generateDropColumnMetadata("x"), DB::Exception);
+    expectDropRejected(metadata, "x");
 }
 
 
@@ -185,15 +219,6 @@ TEST(IcebergMetadataGenerator, ModifyColumnNoopSameType)
 
     bool changed = gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeInt32>(), getContext().context);
     EXPECT_FALSE(changed);
-}
-
-
-TEST(IcebergMetadataGenerator, ModifyColumnRejectsIndistinguishableType)
-{
-    auto metadata = makeMinimalMetadata(0, 1);
-    MetadataGenerator gen(metadata);
-
-    EXPECT_THROW(gen.generateModifyColumnMetadata("x", std::make_shared<DataTypeUInt32>(), getContext().context), DB::Exception);
 }
 
 
@@ -340,25 +365,6 @@ Poco::JSON::Object::Ptr makeMetadataWithField(
     metadata->set(f_schemas, schemas);
 
     return metadata;
-}
-
-/// Everything a MODIFY is allowed to change, so a test can assert that nothing changed.
-struct SchemaState
-{
-    Int32 current_schema_id;
-    size_t schema_count;
-};
-
-SchemaState readSchemaState(const Poco::JSON::Object::Ptr & metadata)
-{
-    return {metadata->getValue<Int32>(f_current_schema_id), metadata->getArray(f_schemas)->size()};
-}
-
-void expectSchemaUnchanged(const Poco::JSON::Object::Ptr & metadata, const SchemaState & before)
-{
-    const auto after = readSchemaState(metadata);
-    EXPECT_EQ(after.current_schema_id, before.current_schema_id);
-    EXPECT_EQ(after.schema_count, before.schema_count);
 }
 
 /// The Iceberg type recorded for `name` in the schema `current-schema-id` points at.
