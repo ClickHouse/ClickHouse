@@ -292,8 +292,8 @@ bool addDelayedMaterializingCTEsStepForUnbuiltCTEs(QueryPlan & plan)
     MaterializedCTESet read_ctes;
     MaterializedCTESet materialized_ctes;
 
-    /// Only `node->children` is walked, never `getChildPlans`: a step in a nested plan is not
-    /// dominated by a step added at this plan's root, and such a plan gates its own readers.
+    /// The walk covers this plan's own node tree; plans a step exposes through `getChildPlans`
+    /// are outside it.
     std::stack<QueryPlan::Node *> stack;
     stack.push(root);
     while (!stack.empty())
