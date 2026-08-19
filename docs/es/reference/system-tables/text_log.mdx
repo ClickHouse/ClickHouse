@@ -28,7 +28,7 @@ Contiene registros de registro. El nivel de registro que se envía a esta tabla 
 * `event_time_microseconds` ([DateTime64(6)](/es/reference/data-types/datetime64)) — Hora de la entrada con precisión de microsegundos.
 * `thread_name` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del hilo desde el que se realizó el registro.
 * `thread_id` ([UInt64](/es/reference/data-types/int-uint)) — ID del hilo del sistema operativo.
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/es/reference/data-types/enum)) — Nivel de la entrada. Valores posibles: 1 o &#39;Fatal&#39;, 2 o &#39;Critical&#39;, 3 o &#39;Error&#39;, 4 o &#39;Warning&#39;, 5 o &#39;Notice&#39;, 6 o &#39;Information&#39;, 7 o &#39;Debug&#39;, 8 o &#39;Trace&#39;.
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/es/reference/data-types/enum)) — Nivel de la entrada. Valores posibles: 1 o &#39;Fatal&#39;, 2 o &#39;Critical&#39;, 3 o &#39;Error&#39;, 4 o &#39;Warning&#39;, 5 o &#39;Notice&#39;, 6 o &#39;Information&#39;, 7 o &#39;Debug&#39;, 8 o &#39;Trace&#39;, 9 o &#39;Test&#39;.
 * `query_id` ([String](/es/reference/data-types/string)) — ID de la consulta.
 * `logger_name` ([LowCardinality(String)](/es/reference/data-types/lowcardinality)) — Nombre del logger (p. ej., DDLWorker).
 * `message` ([String](/es/reference/data-types/string)) — El mensaje en sí.
@@ -64,7 +64,6 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
-microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

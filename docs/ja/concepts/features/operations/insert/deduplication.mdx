@@ -350,4 +350,4 @@ FROM hackernews_views_vcmt
 
 挿入された行が重複排除されない理由の 1 つとして、`INSERT` ステートメント内で非冪等な関数や式を使用していることが挙げられます。たとえば、`createdAt DateTime64(3) DEFAULT now()` というカラム定義を含む行を挿入している場合、各行の `createdAt` カラムには一意のデフォルト値が入るため、行は必ず一意になります。MergeTree / ReplicatedMergeTree テーブルエンジンは、挿入される各行ごとに一意のチェックサムが生成されるため、それらを重複行として判別できません。
 
-この場合は、同じバッチを複数回 insert しても同じ行が再度挿入されないように、各バッチに対して独自の `insert_deduplication_token` を指定できます。この設定の使い方の詳細については、[`insert_deduplication_token` のドキュメント](/ja/reference/settings/session-settings#insert_deduplication_token)を参照してください。
+この場合は、同じバッチを複数回 insert しても同じ行が再度挿入されないように、各バッチに対して独自の `insert_deduplication_token` を指定できます。この設定の使い方の詳細については、[`insert_deduplication_token` のドキュメント](/ja/reference/settings/session-settings/insert#insert_deduplication_token)を参照してください。
