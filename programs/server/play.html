@@ -6170,11 +6170,12 @@ checkURL(true);
     /// to a docs page opened for the old server.
     let docs_windows = [];
 
-    /// A plain click opens a same-origin relay instead of the configured docs page directly. The
-    /// relay displays docs in an iframe and hands over the password there. Thus an arbitrary
-    /// configured docs server never receives a live `window.opener` to this `/play` page, while
-    /// the password still never appears in a URL. Modified and middle clicks keep the anchor's
-    /// native `noopener` path (connecting as `?user=` with no password).
+    /// A plain click opens a same-origin relay instead of the configured docs page directly when
+    /// that docs page accepts credentials from this page's origin. The relay displays docs in an
+    /// iframe and hands over the password there. Thus an arbitrary configured docs server never
+    /// receives a live `window.opener` to this `/play` page, while the password still never
+    /// appears in a URL. A target outside the exact trusted-origin list keeps the anchor's native
+    /// `noopener` path (connecting as `?user=` with no password), as do modified and middle clicks.
     docs_icon.addEventListener('click', (event) => {
         if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
         let origin;
@@ -6183,6 +6184,7 @@ checkURL(true);
         } catch (e) {
             return; /// Unparsable configured URL: leave the navigation to the anchor.
         }
+        if (!isTrustedHostOrigin(origin)) return;
         const relay_url = new URL(window.location.pathname, window.location.href);
         relay_url.searchParams.set('docs_relay', docs_icon.href);
         const win = window.open(relay_url.href, '_blank');
@@ -7979,13 +7981,14 @@ function applyConnectionFromHost(data) {
         const relay_opener = window.opener;
         if (docs_url && relay_opener) {
             let credentials = null;
+            let docs_frame_ready = false;
             const docs_frame = document.createElement('iframe');
             docs_frame.src = docs_url.href;
             docs_frame.referrerPolicy = 'no-referrer';
             docs_frame.style.cssText = 'border: 0; height: 100vh; width: 100vw;';
 
             function sendRelayCredentials() {
-                if (!credentials) return;
+                if (!credentials || !docs_frame_ready) return;
                 docs_frame.contentWindow.postMessage({
                     type: 'clickhouse-credentials',
                     url: credentials.url,
@@ -7999,10 +8002,12 @@ function applyConnectionFromHost(data) {
                     && event.data && event.data.type === 'clickhouse-docs-relay-credentials'
                     && event.data.docs_url === docs_url.href && event.data.docs_origin === docs_url.origin) {
                     credentials = event.data;
+                    sendRelayCredentials();
                     return;
                 }
                 if (event.source === docs_frame.contentWindow && event.origin === docs_url.origin
                     && event.data && event.data.type === 'clickhouse-hello') {
+                    docs_frame_ready = true;
                     sendRelayCredentials();
                 }
             });
