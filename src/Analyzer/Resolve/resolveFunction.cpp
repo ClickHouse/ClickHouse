@@ -235,6 +235,23 @@ bool isComparisonOfEarlyShortCircuitScalar(const FunctionNode & function)
     return other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
 }
 
+bool hasUnsafeEarlyShortCircuitScalarUsage(const QueryTreeNodePtr & node, bool placeholder_is_allowed = false)
+{
+    if (isEarlyShortCircuitScalarPlaceholder(node))
+        return !placeholder_is_allowed;
+
+    if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
+        return hasUnsafeEarlyShortCircuitScalarUsage(constant->getSourceExpression());
+
+    const auto * function = node->as<FunctionNode>();
+    const bool is_safe_comparison = function && isComparisonOfEarlyShortCircuitScalar(*function);
+    for (const auto & child : node->getChildren())
+        if (child && hasUnsafeEarlyShortCircuitScalarUsage(child, is_safe_comparison))
+            return true;
+
+    return false;
+}
+
 bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, bool is_root = true)
 {
     if (const auto * constant = node->as<ConstantNode>(); constant && constant->hasSourceExpression())
@@ -244,7 +261,9 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
     {
         /// The root is the logical function being folded. It is short-circuit by definition,
         /// although it deliberately reports false for lazy execution of itself.
-        if (!is_root)
+        const auto & function_name = function->getFunctionName();
+        const bool is_nested_logical = function_name == "and" || function_name == "or";
+        if (!is_root && !is_nested_logical)
         {
             if (auto function_base = function->getFunction())
             {
@@ -458,6 +477,49 @@ bool comparisonWithScalarHasNonLiteralOtherSide(const FunctionNode & function)
 
     const auto * other_constant = arguments[first_is_scalar ? 1 : 0]->as<ConstantNode>();
     return !other_constant || !other_constant->isDeterministic() || other_constant->hasSourceExpression();
+}
+
+bool isStrictSafeLogicalTree(
+    const QueryTreeNodePtr & node,
+    const IdentifierResolveScope & scope)
+{
+    if (const auto * constant = node->as<ConstantNode>())
+        return constant->isDeterministic() && !constant->hasSourceExpression()
+            && isNativeNumber(removeNullable(constant->getResultType()));
+
+    const auto * function = node->as<FunctionNode>();
+    if (!function)
+        return false;
+
+    const auto & name = function->getFunctionName();
+    if (name == "and" || name == "or")
+    {
+        for (const auto & argument : function->getArguments().getNodes())
+            if (!isStrictSafeLogicalTree(argument, scope))
+                return false;
+        return true;
+    }
+
+    const bool is_comparison = name == "equals" || name == "notEquals"
+        || name == "less" || name == "greater"
+        || name == "lessOrEquals" || name == "greaterOrEquals";
+    if (!is_comparison)
+        return false;
+
+    const auto & arguments = function->getArguments().getNodes();
+    if (arguments.size() != 2)
+        return false;
+
+    const auto * first_query = arguments[0]->as<QueryNode>();
+    const auto * second_query = arguments[1]->as<QueryNode>();
+    if ((first_query != nullptr) == (second_query != nullptr))
+        return false;
+
+    const auto * scalar_query = first_query ? first_query : second_query;
+    const auto & other_argument = arguments[first_query ? 1 : 0];
+    const auto * other_constant = other_argument->as<ConstantNode>();
+    return isSafeCountScalarSubqueryForEarlyShortCircuit(*scalar_query, scope)
+        && other_constant && other_constant->isDeterministic() && !other_constant->hasSourceExpression();
 }
 
 bool hasScopeDependentNodesForEarlyShortCircuit(
@@ -999,6 +1061,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)
     {
         auto short_circuit_result = getEarlyShortCircuitResultForAndOr(node, function_name);
+        const bool is_strict_safe_logical_tree = isStrictSafeLogicalTree(node, scope);
         if (short_circuit_result
             && !hasScopeDependentNodesForEarlyShortCircuit(node, scope)
             && !hasUnsafeFunctionForEarlyShortCircuit(node, scope.context, scope))
@@ -1054,10 +1117,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 type_inference_succeeded = false;
             }
 
-            if (type_inference_succeeded
-                && !hasAggregateFunctionNodes(node_for_type_inference)
-                && !hasFunctionNode(node_for_type_inference, "arrayJoin")
-                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference))
+            const bool post_resolution_is_safe = !hasFunctionNode(node_for_type_inference, "arrayJoin")
+                && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
+                && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference);
+            if (type_inference_succeeded && (is_strict_safe_logical_tree || post_resolution_is_safe))
             {
                 auto result_type = node_for_type_inference->getResultType();
                 auto result_column = result_type->createColumnConst(1, static_cast<UInt8>(*short_circuit_result));

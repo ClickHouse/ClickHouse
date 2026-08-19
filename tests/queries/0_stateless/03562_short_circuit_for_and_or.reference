@@ -11,6 +11,7 @@ Test with nested OR and AND
 0
 true
 false
+1
 Test type-dependent functions use resolved argument types
 1
 1
@@ -56,5 +57,7 @@ Check the read_rows of the above queries to ensure that the short circuit is wor
 1
 1
 1
+1
+10001
 Test folded scalar subquery in an aggregate projection
 1	10000

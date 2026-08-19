@@ -2,7 +2,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <Columns/ColumnTuple.h>
 #include <Analyzer/Resolve/IdentifierResolveScope.h>
-#include <Analyzer/AggregationUtils.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/QueryNode.h>
@@ -79,31 +78,6 @@ bool subtreeHasViewSource(const IQueryTreeNode * node, const Context & context)
     return false;
 }
 
-bool scalarSubqueryCardinalityIsProven(const QueryNode & query)
-{
-    /// Aggregation without GROUP BY produces at most one row (HAVING may remove it).
-    if (!query.hasGroupBy() && hasAggregateFunctionNodes(query.getProjectionNode()))
-        return true;
-
-    if (!query.hasLimit() || query.isLimitWithTies())
-        return false;
-
-    const auto * limit = query.getLimit()->as<ConstantNode>();
-    if (!limit)
-        return false;
-
-    const auto value = limit->getValue();
-    if (value.getType() == Field::Types::UInt64)
-        return value.safeGet<UInt64>() <= 1;
-    if (value.getType() == Field::Types::Int64)
-    {
-        const auto signed_value = value.safeGet<Int64>();
-        return signed_value >= 0 && signed_value <= 1;
-    }
-
-    return false;
-}
-
 }
 
 /// Evaluate scalar subquery and perform constant folding if scalar subquery does not have constant value
@@ -139,8 +113,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             && !table_function_arguments_in_resolve_process
             && !parameterized_view_arguments_in_resolve_process);
 
-    if (early_short_circuit_type_inference_in_process
-        && (execute_for_exists || !query_node || !scalarSubqueryCardinalityIsProven(*query_node)))
+    if (early_short_circuit_type_inference_in_process && (execute_for_exists || !query_node))
     {
         /// Type-only analysis cannot validate scalar cardinality or determine the runtime value
         /// of EXISTS. Keep resolving the clone for its type, but prevent the early fold.
