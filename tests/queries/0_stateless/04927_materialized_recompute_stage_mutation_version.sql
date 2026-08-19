@@ -1,3 +1,6 @@
+-- Tags: no-shared-catalog
+-- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will
+-- continue to merge and can materialize the mutation this test needs to stay pending
 -- The per-level MATERIALIZED recompute stages belong to the pending UPDATE, so they have to carry
 -- its mutation version: on-fly reads derive the patch-visibility window from consecutive stages'
 -- versions, and without a version the patch becomes visible to the level stages, which then
