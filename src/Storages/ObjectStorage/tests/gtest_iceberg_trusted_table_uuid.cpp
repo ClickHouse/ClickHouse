@@ -48,10 +48,10 @@ TEST(IcebergTrustedTableUuid, RevalidatesWhenPathChangesAtSameVersion)
 TEST(IcebergTrustedTableUuid, PublishesTheRefreshedUuid)
 {
     TrustedTableUuid uuid("11111111-1111-1111-1111-111111111111");
-    EXPECT_EQ(uuid.get(), std::optional<DB::String>("11111111-1111-1111-1111-111111111111"));
+    EXPECT_EQ(uuid.get(), std::optional<String>("11111111-1111-1111-1111-111111111111"));
 
     EXPECT_TRUE(uuid.set("22222222-2222-2222-2222-222222222222"));
-    EXPECT_EQ(uuid.get(), std::optional<DB::String>("22222222-2222-2222-2222-222222222222"));
+    EXPECT_EQ(uuid.get(), std::optional<String>("22222222-2222-2222-2222-222222222222"));
 
     /// Setting the same value again is not a change, so callers can tell a genuine
     /// replacement from an ordinary revalidation that confirmed the current value.
