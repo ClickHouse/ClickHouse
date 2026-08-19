@@ -124,10 +124,6 @@ public:
 
     QueryPlanStepPtr clone() const override;
 
-    /// Copy that runs as the partial aggregation under a distributed merge: not final, and when
-    /// the merge is memory-efficient the copy produces its result in bucket order.
-    QueryPlanStepPtr cloneAsPartial(bool produce_results_in_order_of_bucket_number) const;
-
     void enableMemoryBoundMerging() { memory_bound_merging_of_aggregation_results_enabled = true; }
 
     /// AggregatingStep does not contain any ActionDAGs.
@@ -140,6 +136,7 @@ public:
     void setStatsCacheKey(UInt64 stats_cache_key) { params.stats_collecting_params.setKey(stats_cache_key); }
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
+    void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }

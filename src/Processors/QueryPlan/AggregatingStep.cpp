@@ -1362,28 +1362,6 @@ QueryPlanStepPtr AggregatingStep::clone() const
     );
 }
 
-QueryPlanStepPtr AggregatingStep::cloneAsPartial(bool produce_results_in_order_of_bucket_number) const
-{
-    return std::make_unique<AggregatingStep>(
-        input_headers.front(),
-        params,
-        grouping_sets_params,
-        /* final */ false,
-        max_block_size,
-        aggregation_in_order_max_block_bytes,
-        merge_threads,
-        temporary_data_merge_threads,
-        storage_has_evenly_distributed_read,
-        group_by_use_nulls,
-        sort_description_for_merging,
-        group_by_sort_description,
-        produce_results_in_order_of_bucket_number,
-        memory_bound_merging_of_aggregation_results_enabled,
-        explicit_sorting_required_for_aggregation_in_order,
-        enable_sharding_aggregator
-    );
-}
-
 void AggregatingStep::setFinal(bool new_value)
 {
     if (new_value == final)

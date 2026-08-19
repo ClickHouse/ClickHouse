@@ -260,11 +260,13 @@ public:
             const bool memory_efficient_aggregation = optimization_settings.distributed_aggregation_memory_efficient
                 && grouping_sets_params.empty() && !aggregating_step->getOutputHeader()->has("__grouping_set");
 
-            /// Convert Aggregation step to partial aggregation. The memory-efficient merge consumes each
-            /// input as a stream of buckets in ascending order, so the partial aggregation must produce
-            /// its result in bucket order (see `AggregatingStep::cloneAsPartial`).
+            /// The memory-efficient merge consumes each input as a stream of buckets in ascending
+            /// order, so the partial aggregation must produce its result in bucket order.
             auto & partial_aggregation_node = nodes.emplace_back();
-            partial_aggregation_node.step = aggregating_step->cloneAsPartial(memory_efficient_aggregation);
+            partial_aggregation_node.step = aggregating_step->clone();
+            auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
+            partial_aggregation_step->setFinal(false);
+            partial_aggregation_step->setProduceResultsInBucketOrder(memory_efficient_aggregation);
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
