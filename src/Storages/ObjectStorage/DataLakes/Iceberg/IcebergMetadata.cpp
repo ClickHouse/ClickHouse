@@ -874,49 +874,42 @@ void IcebergMetadata::createInitial(
         throw;
     }
 
-    bool success = false;
     String filename_version_hint;
-    SCOPE_EXIT({
-        if (!success)
+    try
+    {
+        if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
         {
-            try
+            auto version_hint_path = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
+            writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
+            filename_version_hint = version_hint_path;
+        }
+
+        if (catalog)
+        {
+            auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
+                + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+            if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
             {
-                object_storage->removeObjectIfExists(StoredObject(filename));
-                if (!filename_version_hint.empty())
-                    object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                /// `IF NOT EXISTS`, and another client registered this table first. `TABLE_ALREADY_EXISTS`
+                /// lets `InterpreterCreateQuery` tell that nothing was created, so `CREATE TABLE IF NOT
+                /// EXISTS ... AS SELECT` does not fill the other client's table.
+                throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists in the catalog", namespace_name, table_name);
             }
         }
-    });
-
-    if (configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_use_version_hint].value)
-    {
-        auto version_hint_path = configuration_ptr->getRawPath().path + "metadata/version-hint.text";
-        writeMessageToFile("1", version_hint_path, object_storage, local_context, "*", "");
-        filename_version_hint = version_hint_path;
     }
-
-    if (catalog)
+    catch (...)
     {
-        auto catalog_filename = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/"
-            + configuration_ptr->getRawPath().path + "metadata/" + metadata_file_name;
-        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
-        if (!catalog->createTable(namespace_name, table_name, catalog_filename, metadata_content_object, compression_method, if_not_exists))
-        {
-            /// `IF NOT EXISTS`, and another client registered this table in the shared catalog first. The
-            /// metadata file written above belongs to no table, so leave `success` false and let the scope
-            /// guard remove it. Reporting the lost race as `TABLE_ALREADY_EXISTS` also lets
-            /// `InterpreterCreateQuery` tell that nothing was created, so `CREATE TABLE IF NOT EXISTS ...
-            /// AS SELECT` does not fill the table the other client created.
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Table {}.{} already exists in the catalog", namespace_name, table_name);
-        }
+        /// A leftover `.metadata.json` makes the next `CREATE` report an existing table although nothing
+        /// was registered in the catalog, so the rollback fails closed: a failed removal propagates in
+        /// place of the original exception, which is logged here.
+        tryLogCurrentException(__PRETTY_FUNCTION__, "Removing the files of the Iceberg table that failed to be created");
+        object_storage->removeObjectIfExists(StoredObject(filename));
+        if (!filename_version_hint.empty())
+            object_storage->removeObjectIfExists(StoredObject(filename_version_hint));
+        throw;
     }
-
-    success = true;
 }
 
 Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTableStateSnapshot(
