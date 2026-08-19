@@ -129,13 +129,13 @@ $CLICKHOUSE_CLIENT --enable_analyzer=0  -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0" |
-    grep -o "Filter column: and(notEquals(y, 2), notEquals(x, 0))\|ARRAY JOIN x\|Filter column: notEquals(y, 2)"
+    grep -o "Element filter column: and(notEquals(y, 2), notEquals(x, 0))\|ARRAY JOIN x\|Filter column: notEquals(y, 2)"
 echo "> (analyzer) filter is split, one part is filtered before ARRAY JOIN"
 $CLICKHOUSE_CLIENT --enable_analyzer=1 -q "
     explain actions = 1 select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
     ) array join x where y != 2 and x != 0" |
-    grep -o "Filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
+    grep -o "Element filter column: and(notEquals(__table2.y, 2_UInt8), notEquals(__array_join_exp_1, 0_UInt8))\|ARRAY JOIN __array_join_exp_1\|Filter column: notEquals(__table2.y, 2_UInt8)"
 $CLICKHOUSE_CLIENT -q "
     select x, y from (
         select range(number) as x, number + 1 as y from numbers(3)
