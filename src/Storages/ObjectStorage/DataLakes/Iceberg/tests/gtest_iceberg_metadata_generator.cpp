@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 
+#include <Common/Exception.h>
 #include <Common/tests/gtest_global_context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,6 +17,11 @@
 
 using namespace DB;
 using namespace DB::Iceberg;
+
+namespace DB::ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
 
 namespace
 {
@@ -281,6 +287,202 @@ TEST(IcebergMetadataGenerator, RenameColumnAppliedDetectsCommittedRename)
     EXPECT_TRUE(gen.isRenameColumnApplied("y", "w"));
     /// A rename to a different target name is not what this ALTER asked for.
     EXPECT_FALSE(gen.isRenameColumnApplied("y", "v"));
+}
+
+/// The tests below describe the stored schema directly instead of producing it with the
+/// generator, so that they check what the Iceberg metadata says rather than whether two
+/// functions in this class agree with each other.
+namespace
+{
+
+Poco::JSON::Object::Ptr makeStructType(const String & field_name, const String & field_type, Int32 field_id)
+{
+    auto type = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    type->set(f_type, "struct");
+
+    auto fields = Poco::JSON::Array::Ptr(new Poco::JSON::Array);
+    auto field = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    field->set(f_id, field_id);
+    field->set(f_name, field_name);
+    field->set(f_required, true);
+    field->set(f_type, field_type);
+    fields->add(field);
+    type->set(f_fields, fields);
+
+    return type;
+}
+
+/// Metadata whose current schema holds exactly one field with the given Iceberg type.
+Poco::JSON::Object::Ptr makeMetadataWithField(
+    const String & name, const Poco::Dynamic::Var & iceberg_type, bool required, Int32 last_column_id = 1)
+{
+    auto metadata = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    metadata->set(f_format_version, 2);
+    metadata->set(f_current_schema_id, 0);
+    metadata->set(f_last_column_id, last_column_id);
+
+    auto field = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    field->set(f_id, 1);
+    field->set(f_name, name);
+    field->set(f_required, required);
+    field->set(f_type, iceberg_type);
+
+    auto fields = Poco::JSON::Array::Ptr(new Poco::JSON::Array);
+    fields->add(field);
+
+    auto schema = Poco::JSON::Object::Ptr(new Poco::JSON::Object);
+    schema->set(f_schema_id, 0);
+    schema->set(f_type, "struct");
+    schema->set(f_fields, fields);
+
+    auto schemas = Poco::JSON::Array::Ptr(new Poco::JSON::Array);
+    schemas->add(schema);
+    metadata->set(f_schemas, schemas);
+
+    return metadata;
+}
+
+/// Everything a MODIFY is allowed to change, so a test can assert that nothing changed.
+struct SchemaState
+{
+    Int32 current_schema_id;
+    size_t schema_count;
+};
+
+SchemaState readSchemaState(const Poco::JSON::Object::Ptr & metadata)
+{
+    return {metadata->getValue<Int32>(f_current_schema_id), metadata->getArray(f_schemas)->size()};
+}
+
+void expectSchemaUnchanged(const Poco::JSON::Object::Ptr & metadata, const SchemaState & before)
+{
+    const auto after = readSchemaState(metadata);
+    EXPECT_EQ(after.current_schema_id, before.current_schema_id);
+    EXPECT_EQ(after.schema_count, before.schema_count);
+}
+
+/// The Iceberg type recorded for `name` in the schema `current-schema-id` points at.
+Poco::Dynamic::Var findCurrentFieldType(const Poco::JSON::Object::Ptr & metadata, const String & name)
+{
+    auto current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
+    auto schemas = metadata->getArray(f_schemas);
+    for (UInt32 i = 0; i < schemas->size(); ++i)
+    {
+        auto schema = schemas->getObject(i);
+        if (schema->getValue<Int32>(f_schema_id) != current_schema_id)
+            continue;
+        auto fields = schema->getArray(f_fields);
+        for (UInt32 j = 0; j < fields->size(); ++j)
+        {
+            auto field = fields->getObject(j);
+            if (field->getValue<String>(f_name) == name)
+                return field->get(f_type);
+        }
+    }
+    return {};
+}
+
+void expectModifyRejected(
+    const Poco::JSON::Object::Ptr & metadata, const String & column, const DataTypePtr & requested_type)
+{
+    const auto before = readSchemaState(metadata);
+    MetadataGenerator gen(metadata);
+    try
+    {
+        gen.generateModifyColumnMetadata(column, requested_type, getContext().context);
+        FAIL() << "MODIFY COLUMN " << column << " " << requested_type->getName()
+               << " cannot be recorded in Iceberg and must be rejected";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS) << e.message();
+    }
+    /// The point of rejecting is that the caller must not go on to persist a ClickHouse
+    /// schema the Iceberg metadata does not reflect.
+    expectSchemaUnchanged(metadata, before);
+}
+
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnAppliedRecognisesTypeAlreadyInSchema)
+{
+    /// The schema already says `long`, so a MODIFY to Int64 has taken effect.
+    auto metadata = makeMetadataWithField("x", "long", /* required */ true);
+    EXPECT_TRUE(MetadataGenerator(metadata).isModifyColumnApplied("x", std::make_shared<DataTypeInt64>()));
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnAppliedRejectsTypeNotYetInSchema)
+{
+    auto metadata = makeMetadataWithField("x", "int", /* required */ true);
+    EXPECT_FALSE(MetadataGenerator(metadata).isModifyColumnApplied("x", std::make_shared<DataTypeInt64>()));
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnAppliedDistinguishesNullability)
+{
+    auto nullable_int = makeNullable(std::make_shared<DataTypeInt32>());
+
+    auto required_field = makeMetadataWithField("x", "int", /* required */ true);
+    EXPECT_FALSE(MetadataGenerator(required_field).isModifyColumnApplied("x", nullable_int));
+
+    auto optional_field = makeMetadataWithField("x", "int", /* required */ false);
+    EXPECT_TRUE(MetadataGenerator(optional_field).isModifyColumnApplied("x", nullable_int));
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnAppliedRecognisesTypesIcebergCannotDistinguish)
+{
+    /// The case this predicate exists for: a catalog applied Int32 -> UInt64 but reported
+    /// the commit as failed. Iceberg records Int64 and UInt64 alike as `long`, so a retry
+    /// must recognise the change as already present instead of reporting a failure.
+    auto metadata = makeMetadataWithField("x", "long", /* required */ true);
+    EXPECT_TRUE(MetadataGenerator(metadata).isModifyColumnApplied("x", std::make_shared<DataTypeUInt64>()));
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnAppliedFalseForColumnNotInSchema)
+{
+    auto metadata = makeMetadataWithField("x", "int", /* required */ true);
+    EXPECT_FALSE(MetadataGenerator(metadata).isModifyColumnApplied("absent", std::make_shared<DataTypeInt32>()));
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnRejectsIndistinguishablePrimitiveType)
+{
+    /// Int32 and UInt32 are both Iceberg `int`, so the requested change is unrecordable.
+    auto metadata = makeMetadataWithField("x", "int", /* required */ true);
+    expectModifyRejected(metadata, "x", std::make_shared<DataTypeUInt32>());
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnRejectsIndistinguishableComplexType)
+{
+    /// Same for a nested type: Tuple(a Int32) and Tuple(a UInt32) are one Iceberg struct.
+    auto metadata = makeMetadataWithField("t", makeStructType("a", "int", 2), /* required */ true, /* last_column_id */ 2);
+    auto requested = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt32>()}, Names{"a"});
+    expectModifyRejected(metadata, "t", requested);
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnToTypeAlreadyInSchemaAddsNoSchema)
+{
+    auto metadata = makeMetadataWithField("x", "int", /* required */ true);
+    const auto before = readSchemaState(metadata);
+
+    EXPECT_FALSE(MetadataGenerator(metadata).generateModifyColumnMetadata(
+        "x", std::make_shared<DataTypeInt32>(), getContext().context));
+    expectSchemaUnchanged(metadata, before);
+}
+
+TEST(IcebergMetadataGenerator, ModifyColumnWideningRecordsTheNewTypeInANewSchema)
+{
+    auto metadata = makeMetadataWithField("x", "int", /* required */ true);
+    const auto before = readSchemaState(metadata);
+
+    EXPECT_TRUE(MetadataGenerator(metadata).generateModifyColumnMetadata(
+        "x", std::make_shared<DataTypeInt64>(), getContext().context));
+
+    const auto after = readSchemaState(metadata);
+    EXPECT_EQ(after.schema_count, before.schema_count + 1);
+    EXPECT_NE(after.current_schema_id, before.current_schema_id);
+
+    auto stored_type = findCurrentFieldType(metadata, "x");
+    ASSERT_TRUE(stored_type.isString());
+    EXPECT_EQ(stored_type.extract<String>(), "long");
 }
 
 #endif
