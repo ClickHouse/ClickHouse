@@ -12,6 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the choice is reproducible. Six series are used; each has a single sample at the evaluation time.
 
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
+DROP TABLE IF EXISTS ts;
+DROP TABLE IF EXISTS ts_data;
+DROP TABLE IF EXISTS ts_tags;
+DROP TABLE IF EXISTS ts_metrics;
+
 CREATE TABLE ts_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float64) ENGINE = MergeTree ORDER BY (id, timestamp);
 CREATE TABLE ts_tags (
     id UUID,
