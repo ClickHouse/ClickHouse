@@ -9,3 +9,6 @@
 -- a nested SETTINGS name = DEFAULT is checked too
 -- an unconstrained nested SETTINGS clause still works
 3
+-- a SQL SECURITY DEFINER view with inner SETTINGS still reads
+3
+-- a SQL SECURITY INVOKER view with inner SETTINGS is checked
