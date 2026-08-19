@@ -68,25 +68,28 @@ std::optional<UInt64> parseHexAddress(std::string_view & src)
 
 }
 
-std::vector<UInt64> parseJemallocStackAddresses(std::string_view line)
+std::vector<UInt64> parseJemallocStackAddresses(std::string_view line, bool * fully_parsed)
 {
     std::vector<UInt64> result;
-    if (line.empty() || line[0] != '@')
-        return result;
-
-    std::string_view sv(line.data() + 1, line.size() - 1);
-    bool first = true;
-    while (!sv.empty())
+    std::string_view sv = line;
+    if (!sv.empty() && sv[0] == '@')
     {
-        trimLeft(sv);
-        if (sv.empty())
-            break;
-        auto address = parseHexAddress(sv);
-        if (!address.has_value())
-            break;
-        result.push_back(first ? *address : *address - 1);
-        first = false;
+        sv.remove_prefix(1);
+        bool first = true;
+        while (!sv.empty())
+        {
+            trimLeft(sv);
+            if (sv.empty())
+                break;
+            auto address = parseHexAddress(sv);
+            if (!address.has_value())
+                break;
+            result.push_back(first ? *address : *address - 1);
+            first = false;
+        }
     }
+    if (fully_parsed)
+        *fully_parsed = sv.empty();
     return result;
 }
 

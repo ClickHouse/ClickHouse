@@ -124,6 +124,7 @@
 #endif
 #include <Storages/System/StorageSystemJemalloc.h>
 #include <Storages/System/StorageSystemJemallocProfileText.h>
+#include <Storages/System/StorageSystemJemallocSampledAllocations.h>
 #include <Storages/System/StorageSystemJemallocStats.h>
 #if USE_NURAFT
 #include <Storages/System/StorageSystemKeeperCluster.h>
@@ -337,6 +338,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemUserProcesses>(context, system_database, "user_processes", "This system table can be used to get overview of memory usage and ProfileEvents of users.");
     attachNoDescription<StorageSystemJemallocBins>(context, system_database, "jemalloc_bins", "Contains information about memory allocations done via jemalloc allocator in different size classes (bins) aggregated from all arenas. These statistics might not be absolutely accurate because of thread local caching in jemalloc. For small size classes the slab columns (`slab_size`, `nonfull_slabs` and the `waste` alias) measure memory lost to slab fragmentation.");
     attachNoDescription<StorageSystemJemallocProfileText>(context, system_database, "jemalloc_profile_text", "Displays the symbolized jemalloc heap profile. Run 'SYSTEM JEMALLOC FLUSH PROFILE' to generate a profile first.");
+    attachNoDescription<StorageSystemJemallocSampledAllocations>(context, system_database, "jemalloc_sampled_allocations", "One row per live sampled allocation from the jemalloc heap profiler; reading the table flushes a fresh heap profile. Only threads with the profiler armed contribute (`jemalloc_enable_profiler` setting or `jemalloc_enable_global_profiler` config); each row represents roughly `weight` similar allocations.");
     attach<StorageSystemJemallocStats>(context, system_database, "jemalloc_stats", "Returns jemalloc statistics in a single row with a single column. Equivalent to SYSTEM JEMALLOC STATS command.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::S3>>(context, system_database, "s3queue_metadata_cache", "Contains in-memory state of S3Queue metadata and currently processed rows per file.");
     attachNoDescription<StorageSystemObjectStorageQueueMetadataCache<ObjectStorageType::Azure>>(context, system_database, "azure_queue_metadata_cache", "Contains in-memory state of AzureQueue metadata and currently processed rows per file.");
