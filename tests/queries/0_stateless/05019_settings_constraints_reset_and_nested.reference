@@ -1,0 +1,11 @@
+-- constraint is in force on the direct forms
+-- SET name = DEFAULT must not clear a CONST constraint
+10
+-- resetting a setting that already holds its default stays allowed
+0
+-- a custom setting pinned CONST must not be erasable
+1
+-- a nested SETTINGS clause is checked, in a subquery and in a CTE
+-- a nested SETTINGS name = DEFAULT is checked too
+-- an unconstrained nested SETTINGS clause still works
+3
