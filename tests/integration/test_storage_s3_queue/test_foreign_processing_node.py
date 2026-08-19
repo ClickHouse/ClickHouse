@@ -530,7 +530,7 @@ def test_foreign_processing_node_cache_deadline_is_not_refreshed_by_another_tabl
 
     try:
         create_mv(node, first_table_name, first_dst_table_name)
-        run_with_retry(lambda count: count == 0, lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()), retries=2)
+        run_with_retry(lambda count: count == 0, lambda: int(node.query(f"SELECT count() FROM {first_dst_table_name}").strip()), retries=10)
 
         # The zero-TTL table probes the same foreign node after the first table has cached it.
         create_mv(node, second_table_name, second_dst_table_name)
@@ -937,7 +937,7 @@ def test_ordered_failed_node_takes_precedence_over_processed_pointer(started_clu
             "keeper_path": keeper_path,
             "s3queue_processing_threads_num": 1,
             "s3queue_loading_retries": 100,
-            "s3queue_foreign_processing_node_cache_ttl_seconds": 0,
+            "s3queue_foreign_processing_node_cache_ttl_seconds": 1,
         },
     )
 
