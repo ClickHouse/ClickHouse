@@ -7106,6 +7106,12 @@ void StorageReplicatedMergeTree::alter(
             mutation_entry.source_replica = replica_name;
             mutation_entry.commands = std::move(maybe_mutation_commands);
 
+            /// `ALTER_METADATA` mutations are persisted through the same ZooKeeper path as
+            /// direct mutations. Pin the scope here as well, otherwise a pending `CLEAR COLUMN
+            /// ... IN PARTITION` entry would retain its original partition literal and could
+            /// become unparsable after a safe partition-key type change.
+            rewritePartitionScopeToIds(mutation_entry.commands, query_context);
+
             int32_t mutations_version = 0;
             if (maybe_mutations_version_after_logs_pull.has_value())
             {
