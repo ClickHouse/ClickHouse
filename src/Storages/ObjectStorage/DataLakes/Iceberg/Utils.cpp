@@ -1192,11 +1192,11 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
                     }
                     else
                     {
-                        LOG_DEBUG(
-                            log,
-                            "Metadata file {} has no table-uuid field, skipping it during table-uuid-based selection",
+                        Int64 format_version = metadata_file_object->getValue<Int64>(Iceberg::f_format_version);
+                        throw Exception(
+                            format_version == 1 ? ErrorCodes::BAD_ARGUMENTS : ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                            "Table UUID is not specified in some metadata files for table by path {}",
                             metadata_file_path);
-                        continue;
                     }
                 }
                 else
