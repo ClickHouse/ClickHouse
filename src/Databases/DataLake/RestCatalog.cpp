@@ -77,6 +77,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_response_lost[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_transport_fail[];
+    extern const char iceberg_catalog_commit_rejected[];
 }
 
 namespace ProfileEvents
@@ -1909,6 +1910,17 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
 
     try
     {
+        /// Models a request the catalog rejects outright, so the commit never takes effect.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                "Injected rejection",
+                "");
+        });
+
         sendRequest(
             *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, commit_read_settings);
 

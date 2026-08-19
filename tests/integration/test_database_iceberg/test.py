@@ -2303,26 +2303,27 @@ def test_catalog_commit_single_attempt(started_cluster):
 
 def test_catalog_commit_definite_rejection_keeps_error(started_cluster):
     # A status the transport never retries proves the commit did not take effect, so the original
-    # error must survive rather than being reported as an unknown outcome.
+    # error must survive rather than being reported as an unknown outcome, and the pre-existing
+    # cleanup of the staged files stays correct.
     node = started_cluster.instances["node1"]
-    test_ref = f"test_commit_rejected_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
-    catalog = load_catalog_impl(started_cluster)
-    catalog.create_namespace(root_namespace)
-    create_table(catalog, root_namespace, table_name, DEFAULT_SCHEMA, PartitionSpec(), DEFAULT_SORT_ORDER)
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-
-    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
-    node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'AAA', 1.0, 2.0, tuple('bot'));", settings=write_settings)
-
-    # Dropping the table behind ClickHouse's back makes the catalog answer the commit with 404,
-    # which `isRetriableHTTPError` classifies as definite.
-    catalog.drop_table(f"{root_namespace}.{table_name}")
-
-    error = node.query_and_get_error(
-        f"INSERT INTO {table_ref} VALUES (NULL, 'BBB', 1.0, 2.0, tuple('bot'));", settings=write_settings
+    catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
+        started_cluster, node, f"test_commit_rejected_{uuid.uuid4()}"
     )
+    before = _current_snapshot(catalog, root_namespace, table_name)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_rejected")
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
+
     assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "Injected rejection" in error, error
+
+    # The commit never took effect, so the table is unchanged and still readable.
+    after = _current_snapshot(catalog, root_namespace, table_name)
+    assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
+    assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
