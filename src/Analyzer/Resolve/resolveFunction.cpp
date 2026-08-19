@@ -2125,10 +2125,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         ///
         /// `getSetting` and `rowNumberInAllBlocks` are non-deterministic but must NOT be shared: the cache
         /// is global across scopes, and e.g. `SETTINGS` can change `getSetting`'s result for every scope.
+        ///
+        /// The hash ignores aliases. An alias renames an expression and never changes the value the
+        /// `FunctionBase` captures, so `randConstant() AS x, randConstant() AS y` must share what
+        /// `randConstant(), randConstant()` shares. What separates two calls is their arguments, which
+        /// the hash still covers: `randConstant(1)` and `randConstant(2)` keep their own values, and that
+        /// is the documented way to ask for two different constants in one query.
         if (function && !function->isDeterministic()
             && function_name != "getSetting" && function_name != "rowNumberInAllBlocks")
         {
-            auto hash = function_node_ptr->getTreeHash();
+            auto hash = function_node_ptr->getTreeHash({ .compare_aliases = false });
             function_base_cache = &functions_cache[hash];
         }
     }
