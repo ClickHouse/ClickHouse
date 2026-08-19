@@ -264,7 +264,8 @@ static NameSet collectIndicesRebuiltByMutation(
     const StorageMetadataPtr & metadata_snapshot,
     const MutationCommands & commands,
     bool suitable_for_ttl_optimization,
-    bool materialize_ttl_recalculate_only)
+    bool materialize_ttl_recalculate_only,
+    const ContextPtr & context)
 {
     NameSet rebuilt;
 
@@ -313,6 +314,61 @@ static NameSet collectIndicesRebuiltByMutation(
         return true;
     };
 
+    /// `MutationsInterpreter` also rewrites MATERIALIZED columns that depend on a directly updated
+    /// column. Include that closure before asking for ordinary column dependencies: an index can be
+    /// rebuilt solely because it reads one of those MATERIALIZED columns.
+    if (!updated_columns.empty())
+    {
+        const auto & columns = metadata_snapshot->getColumns();
+        NamesAndTypesList all_columns = columns.getAllPhysical();
+        std::unordered_set<String> ephemeral_columns;
+        for (const auto & column : columns.getEphemeral())
+        {
+            ephemeral_columns.insert(column.name);
+            all_columns.push_back(column);
+        }
+
+        std::unordered_map<String, NameSet> materialized_dependencies;
+        const auto & part_columns = part->getColumnsDescription();
+        for (const auto & column : columns)
+        {
+            if (column.default_desc.kind != ColumnDefaultKind::Materialized
+                || !column.default_desc.expression
+                || !part_columns.has(column.name))
+                continue;
+
+            auto expression = column.default_desc.expression->clone();
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(expression, all_columns);
+            auto syntax_result = TreeRewriter(context).analyze(expression, all_columns);
+            auto required_columns = syntax_result->requiredSourceColumns();
+
+            if (std::ranges::any_of(required_columns, [&](const auto & dependency)
+                { return ephemeral_columns.contains(dependency); }))
+                continue;
+
+            materialized_dependencies.emplace(
+                column.name,
+                NameSet(required_columns.begin(), required_columns.end()));
+        }
+
+        NameSet reachable = updated_columns;
+        bool found_affected_materialized = true;
+        while (found_affected_materialized)
+        {
+            found_affected_materialized = false;
+            for (const auto & [column, dependencies] : materialized_dependencies)
+            {
+                if (reachable.contains(column)
+                    || !std::ranges::any_of(dependencies, [&](const auto & dependency) { return reachable.contains(dependency); }))
+                    continue;
+
+                reachable.insert(column);
+                updated_columns.insert(column);
+                found_affected_materialized = true;
+            }
+        }
+    }
+
     /// An index is rebuilt when one of its columns is written. Beyond the columns the commands name,
     /// that is the closure over the metadata's dependencies: a column whose TTL expression this
     /// mutation updates is expired by it, and appears nowhere else.
@@ -356,7 +412,8 @@ static void splitAndModifyMutationCommands(
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
     bool suitable_for_ttl_optimization,
-    LoggerPtr log)
+    LoggerPtr log,
+    const ContextPtr & context)
 {
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
@@ -781,7 +838,8 @@ static void splitAndModifyMutationCommands(
                 metadata_snapshot,
                 commands,
                 suitable_for_ttl_optimization,
-                (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only]);
+                (*part->storage.getSettings())[MergeTreeSetting::materialize_ttl_recalculate_only],
+                context);
 
             for (const auto & index : metadata_snapshot->getSecondaryIndices())
             {
@@ -4114,7 +4172,8 @@ bool MutateTask::prepare()
         ctx->for_interpreter,
         ctx->for_file_renames,
         suitable_for_ttl_optimization,
-        ctx->log);
+        ctx->log,
+        ctx->context);
 
     ctx->stage_progress = std::make_unique<MergeStageProgress>(1.0);
 

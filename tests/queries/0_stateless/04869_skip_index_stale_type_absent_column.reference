@@ -108,3 +108,13 @@
 0
 64
 64
+-- 32. a sibling index rebuilt through a MATERIALIZED column does not keep the column absent
+1
+1
+2
+1
+1
+0
+0
+64
+64
