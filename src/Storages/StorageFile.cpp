@@ -2038,7 +2038,8 @@ void StorageFile::setStorageMetadata(CommonArguments args)
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info).second;
+            format_name = getTableStructureAndFormatFromFile(
+                paths, compression_method, format_settings, args.getContext(), archive_info, user_files_volume).second;
         /// We don't allow special columns in File storage.
         if (!args.columns.hasOnlyOrdinary())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table engine File doesn't support special columns like MATERIALIZED, ALIAS or EPHEMERAL");

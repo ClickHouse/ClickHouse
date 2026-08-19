@@ -417,6 +417,24 @@ def test_s3_schema_inference_from_disk():
     assert result.strip() == "3"
 
 
+def test_s3_schema_inference_for_table_function_metadata():
+    """Metadata and automatic-format inference for `file` must keep the policy
+    volume, because neither path can use host-local `stat` for an S3 object."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_infer_metadata', 'CSVWithNames', 'a UInt64, b String') "
+        "SELECT number, toString(number) FROM numbers(3)"
+    )
+
+    describe = node_s3.query("DESCRIBE TABLE file('s3_infer_metadata', 'CSVWithNames')")
+    assert "a\t" in describe, describe
+    assert "b\t" in describe, describe
+
+    result = node_s3.query(
+        "SELECT count() FROM file('s3_infer_metadata', 'auto', 'a UInt64, b String')"
+    )
+    assert result.strip() == "3", result
+
+
 def test_local_partitioned_insert_rejected():
     """`INSERT ... PARTITION BY` must be rejected with a clear error under user_files_policy
     until disk-aware partitioned writes are implemented (silent fall-through to the local

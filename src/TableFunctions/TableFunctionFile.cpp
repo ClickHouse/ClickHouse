@@ -180,9 +180,11 @@ ColumnsDescription TableFunctionFile::getActualTableStructure(ContextPtr context
 
         ColumnsDescription columns;
         if (format == "auto")
-            columns = StorageFile::getTableStructureAndFormatFromFile(file_source->paths, compression_method, std::nullopt, context, file_source->archive_info).first;
+            columns = StorageFile::getTableStructureAndFormatFromFile(
+                file_source->paths, compression_method, std::nullopt, context, file_source->archive_info, file_source->user_files_volume).first;
         else
-            columns = StorageFile::getTableStructureFromFile(format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info);
+            columns = StorageFile::getTableStructureFromFile(
+                format, file_source->paths, compression_method, std::nullopt, context, file_source->archive_info, file_source->user_files_volume);
 
         auto sample_path = file_source->paths.empty() ? String{} : file_source->paths.front();
 

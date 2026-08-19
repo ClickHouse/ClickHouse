@@ -47,22 +47,27 @@ StorageFileCluster::StorageFileCluster(
     StorageInMemoryMetadata storage_metadata;
 
     /// The archive syntax (e.g. "archive*.zip::file.parquet") is not supported by function fileCluster() yet.
-    paths = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false).paths;
+    auto file_source = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false);
+    paths = std::move(file_source.paths);
+    user_files_volume = std::move(file_source.user_files_volume);
 
     if (columns_.empty())
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context);
+            std::tie(columns, format_name) = StorageFile::getTableStructureAndFormatFromFile(
+                paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume);
         else
-            columns = StorageFile::getTableStructureFromFile(format_name, paths, compression_method, std::nullopt, context);
+            columns = StorageFile::getTableStructureFromFile(
+                format_name, paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context).second;
+            format_name = StorageFile::getTableStructureAndFormatFromFile(
+                paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume).second;
         storage_metadata.setColumns(columns_);
     }
 
