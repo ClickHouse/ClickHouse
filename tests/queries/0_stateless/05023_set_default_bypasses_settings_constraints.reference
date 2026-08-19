@@ -14,4 +14,5 @@ a reset that changes nothing is still allowed
 allowed
 settings without a declared default are unaffected
 custom setting reset
+Cannot modify 'SQL_probe_05023' setting in readonly mode
 unknown setting ignored

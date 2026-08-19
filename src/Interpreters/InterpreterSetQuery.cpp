@@ -68,37 +68,6 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
         reject(name);
 }
 
-/// Describes `SET <name> = DEFAULT` as the change it effectively is, so that the settings constraints
-/// can be checked against it.
-///
-/// A reset is not a `SettingChange`, so it used to reach `Context::resetSettingsToDefaultValue`
-/// without passing `SettingsConstraints` at all, and could be used to escape a constraint: with
-/// `max_threads = 4 MAX 4` in the profile, `SET max_threads = 8` was rejected while
-/// `SET max_threads = DEFAULT` silently raised the value to the built-in default. The same held for a
-/// `CONST` constraint and for readonly mode, where `SET readonly = DEFAULT` left readonly mode even
-/// though `SET readonly = 0` was rejected.
-///
-/// A default that equals the current value is dropped by the check itself (`getNewValueToCheck`), so
-/// resetting a setting that was never changed stays allowed in all of those cases.
-SettingsChanges changesForDefaultSettings(const std::vector<String> & names)
-{
-    SettingsChanges changes;
-    if (names.empty())
-        return changes;
-
-    /// The defaults do not depend on the session, so a default-constructed `Settings` holds exactly
-    /// the state that the reset produces.
-    const Settings defaults;
-    changes.reserve(names.size());
-    for (const auto & name : names)
-    {
-        /// Only a built-in setting can carry a constraint (`SettingsConstraints` resolves names
-        /// through `Settings`), and a custom setting is dropped by the reset rather than restored.
-        if (Settings::hasBuiltin(name))
-            changes.emplace_back(name, defaults.get(name));
-    }
-    return changes;
-}
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -114,9 +83,7 @@ BlockIO InterpreterSetQuery::execute()
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     /// Checked before anything is applied, so that a violation leaves the whole statement without effect.
-    const auto default_changes = changesForDefaultSettings(ast.default_settings);
-    if (!default_changes.empty())
-        getContext()->checkSettingsConstraints(default_changes, SettingSource::QUERY);
+    getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -136,9 +103,7 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-        const auto default_changes = changesForDefaultSettings(ast.default_settings);
-        if (!default_changes.empty())
-            getContext()->checkSettingsConstraints(default_changes, SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);
