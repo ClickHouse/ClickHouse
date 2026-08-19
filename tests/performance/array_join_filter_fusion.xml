@@ -1,0 +1,26 @@
+<test>
+    <!-- A filter on the ARRAY JOINed element is fused into the ARRAY JOIN, so the arrays are filtered
+         before expansion. With a selective filter and a wide payload, most elements never become rows
+         and the payload is never carried for them. -->
+    <create_query>
+        CREATE TABLE array_join_filter_fusion (id UInt64, arr Array(String), payload String)
+        ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO array_join_filter_fusion
+        SELECT number,
+               arrayMap(x -> concat('e', toString(x % 20)), range(number % 40)),
+               repeat('x', 256)
+        FROM numbers(3000000)
+    </fill_query>
+
+    <!-- selective: keeps ~1/20 of elements -->
+    <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7'</query>
+    <query>SELECT count() FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' AND NOT ignore(payload)</query>
+    <!-- less selective: keeps ~half -->
+    <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem &lt; 'e5'</query>
+    <!-- baseline for comparison: same query with the optimization disabled -->
+    <query>SELECT sum(cityHash64(elem, payload)) FROM array_join_filter_fusion ARRAY JOIN arr AS elem WHERE elem = 'e7' SETTINGS query_plan_fuse_filter_into_array_join = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_filter_fusion</drop_query>
+</test>
