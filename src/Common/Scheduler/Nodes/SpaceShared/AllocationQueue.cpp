@@ -310,12 +310,13 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // higher score is evicted first. When every reservation shares the same `oom_score` this reduces
     // to the largest `fair_key` - exactly what `running_allocations.rbegin()` selected before - so the
     // default eviction order is unchanged.
-    ResourceAllocation * victim_ptr = nullptr;
+    // running_allocations is non-empty (checked above), so begin() is valid; seeding the search with it
+    // (rather than a null pointer) also makes it obvious to the static analyzer that the result is never null.
+    ResourceAllocation * victim_ptr = &*running_allocations.begin();
     for (ResourceAllocation & candidate : running_allocations)
     {
-        if (!victim_ptr
-            || std::tie(candidate.oom_score, candidate.fair_key, candidate.unique_id)
-             > std::tie(victim_ptr->oom_score, victim_ptr->fair_key, victim_ptr->unique_id))
+        if (std::tie(candidate.oom_score, candidate.fair_key, candidate.unique_id)
+          > std::tie(victim_ptr->oom_score, victim_ptr->fair_key, victim_ptr->unique_id))
             victim_ptr = &candidate;
     }
     ResourceAllocation & victim = *victim_ptr;

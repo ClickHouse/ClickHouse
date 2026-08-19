@@ -63,7 +63,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
-    extern const SettingsInt64 oom_score;
+    extern const SettingsInt32 oom_score;
 }
 
 namespace ErrorCodes

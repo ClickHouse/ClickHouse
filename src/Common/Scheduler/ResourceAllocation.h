@@ -24,7 +24,7 @@ class AllocationQueue;
 class ResourceAllocation : public boost::noncopyable
 {
 public:
-    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {}, Int64 oom_score_ = 0)
+    explicit ResourceAllocation(IAllocationQueue & queue_, const String & id_ = {}, Int32 oom_score_ = 0)
         : queue(queue_), id(id_), oom_score(oom_score_), increase(*this), decrease(*this)
     {}
 
@@ -46,7 +46,7 @@ public:
 
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
-    Int64 const oom_score; /// Eviction priority: higher values are evicted first under memory pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
+    Int32 const oom_score; /// Eviction priority: higher values are evicted first under memory pressure (0 by default). Immutable after construction, so the scheduler thread can read it safely.
 
 private:
     friend class AllocationQueue;

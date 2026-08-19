@@ -497,7 +497,7 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int64 oom_score_ = 0)
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 oom_score_ = 0)
         : ResourceAllocation(*queue_, name_, oom_score_)
     {
         if (initial_size > 0)
