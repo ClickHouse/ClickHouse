@@ -3522,7 +3522,7 @@ BlockIO InterpreterCreateQuery::execute()
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "ATTACH AS [NOT] REPLICATED is not supported for ON CLUSTER queries");
 
-        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version];
+        auto on_cluster_version = getContext()->getSettingsRef()[Setting::distributed_ddl_entry_format_version].value;
         if (is_create_database || on_cluster_version < DDLLogEntry::NORMALIZE_CREATE_ON_INITIATOR_VERSION)
         {
             /// Authorize here: this is the last point that still runs as the real user, and worker legs
@@ -3543,6 +3543,7 @@ BlockIO InterpreterCreateQuery::execute()
                         "CREATE TABLE ... AS or CLONE AS ON CLUSTER with distributed_ddl_entry_format_version = {} "
                         "and use_legacy_to_time = 1 is not supported",
                         on_cluster_version);
+                }
 
                 normalizeLegacyToTimeInCreateQuery(query_ptr, getContext());
             }
