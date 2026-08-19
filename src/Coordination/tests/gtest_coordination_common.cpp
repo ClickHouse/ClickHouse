@@ -8,6 +8,7 @@
 namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsBool use_lsmt_storage;
+    extern const CoordinationSettingsBool storage_memory_only;
 }
 
 DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB::CoordinationSettings> settings)
@@ -15,6 +16,8 @@ DB::KeeperContextPtr makeKeeperContext(bool use_lsmt_storage, std::shared_ptr<DB
     if (!settings)
         settings = std::make_shared<DB::CoordinationSettings>();
     (*settings)[DB::CoordinationSetting::use_lsmt_storage] = use_lsmt_storage;
+    /// These tests don't set a data disk; the on-disk LSMT path is covered by gtest_keeper_storage.
+    (*settings)[DB::CoordinationSetting::storage_memory_only] = true;
     /// Intentionally minimal: callers add setLocalLogsPreprocessed/disks/digest as they need them.
     return std::make_shared<DB::KeeperContext>(true, settings);
 }
