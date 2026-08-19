@@ -110,6 +110,12 @@ ${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=INSERT%20INTO%20t%20VALUES%20(
 echo "--- no insert when an HTTP body accompanies a polyglot INSERT (expect: 107 6) ---"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
 
+# A leading CTE does not change that this is an `INSERT`: keep its body separate from the URL query
+# so it is rejected as external data instead of becoming extra inline VALUES rows.
+${CLICKHOUSE_CURL} -sS -X POST "${poly_url}&query=WITH%20cte%20AS%20(SELECT%201)%20INSERT%20INTO%20t%20VALUES%20(10)" -d ',(11)' 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+echo "--- no insert when an HTTP body accompanies a CTE-wrapped polyglot INSERT (expect: 107 6) ---"
+$CLICKHOUSE_CLIENT -q "SELECT sum(x), count() FROM t"
+
 # The client parses the transpiled SQL only to classify the query, but it must do so with the same
 # parser flags the server uses to execute it (see `executeQuery`). Otherwise a query the server
 # accepts is rejected locally before it is ever sent: with `implicit_select`, a bare expression is

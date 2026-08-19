@@ -1341,8 +1341,9 @@ void HTTPHandler::processQuery(
     QueryFlags query_flags;
     /// Streaming `INSERT` needs the parser to stop at the end of the URL-provided query so the
     /// request body stays intact for the input format. Only enable this when the URL query
-    /// alone already begins with an `INSERT` statement, otherwise we would break the legacy
-    /// behavior of splitting SQL text between the `query` parameter and the request body.
+    /// alone contains an `INSERT` statement at its top level, otherwise we would break the legacy
+    /// behavior of splitting SQL text between the `query` parameter and the request body. A CTE
+    /// before the `INSERT` is part of the same statement and has to use the streaming-safe path too.
     /// Leading whitespace and SQL comments are skipped so that forms like `/*trace*/ INSERT ...`
     /// also take the streaming-safe parse path.
     auto url_query_starts_with_insert = [&query]()
@@ -1351,15 +1352,39 @@ void HTTPHandler::processQuery(
         Token token = lexer.nextToken();
         while (!token.isSignificant() && !token.isEnd() && !token.isError())
             token = lexer.nextToken();
-        if (token.type != TokenType::BareWord)
-            return false;
-        static constexpr std::string_view kw = "INSERT";
-        if (static_cast<size_t>(token.end - token.begin) != kw.size())
-            return false;
-        for (size_t j = 0; j < kw.size(); ++j)
-            if (toUpperIfAlphaASCII(token.begin[j]) != kw[j])
+        const auto is_keyword = [](const Token & token, std::string_view keyword)
+        {
+            if (token.type != TokenType::BareWord || static_cast<size_t>(token.end - token.begin) != keyword.size())
                 return false;
-        return true;
+
+            for (size_t j = 0; j < keyword.size(); ++j)
+                if (toUpperIfAlphaASCII(token.begin[j]) != keyword[j])
+                    return false;
+
+            return true;
+        };
+
+        if (is_keyword(token, "INSERT"))
+            return true;
+        if (!is_keyword(token, "WITH"))
+            return false;
+
+        size_t parentheses_depth = 0;
+        while (!token.isEnd() && !token.isError())
+        {
+            token = lexer.nextToken();
+            if (!token.isSignificant())
+                continue;
+
+            if (token.type == TokenType::OpeningRoundBracket)
+                ++parentheses_depth;
+            else if (token.type == TokenType::ClosingRoundBracket && parentheses_depth)
+                --parentheses_depth;
+            else if (parentheses_depth == 0 && is_keyword(token, "INSERT"))
+                return true;
+        }
+
+        return false;
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
