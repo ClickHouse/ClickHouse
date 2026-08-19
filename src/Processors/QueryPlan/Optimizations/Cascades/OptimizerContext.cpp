@@ -33,7 +33,11 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, Optimizati
     addRule(createDefaultImplementation());
     addRule(createDistributionPassthrough());
     addRule(createTwoStageAggregationTransformation());
-    addRule(createAggregationPushdown());
+    /// Registered conditionally: the rule can never apply when the setting is off,
+    /// and OptimizerContext is built per query, so the gate belongs here.
+    if (memo.getEnvironment().cascades_aggregation_pushdown
+        && !memo.getEnvironment().distributed_plan_force_shuffle_aggregation)
+        addRule(createAggregationPushdown());
     addRule(createAggregationImplementation());
     addRule(createLocalReadImplementation());
     addRule(createParallelReadImplementation());

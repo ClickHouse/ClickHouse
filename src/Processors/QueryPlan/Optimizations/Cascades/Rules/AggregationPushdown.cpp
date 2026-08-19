@@ -173,9 +173,6 @@ std::optional<MatchedJoin> resolveJoinUnderAggregation(const GroupExpression & e
 
 bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
 {
-    if (!memo.getEnvironment().cascades_aggregation_pushdown)
-        return false;
-
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     if (!agg_step || expression->strategy != nullptr)
         return false;
@@ -194,11 +191,6 @@ bool AggregationPushdown::checkPattern(GroupExpressionPtr expression, const Expr
     /// Global aggregation is not safe: an empty join output yields one global row originally,
     /// but zero rows through partial + merge.
     if (params.keys.empty())
-        return false;
-
-    /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split whenever
-    /// the shuffle strategy is available (the aggregation has group keys, checked above).
-    if (memo.getEnvironment().distributed_plan_force_shuffle_aggregation)
         return false;
 
     auto match = resolveJoinUnderAggregation(*expression, memo);
