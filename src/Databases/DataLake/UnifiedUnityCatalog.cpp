@@ -550,25 +550,27 @@ CatalogTables UnifiedUnityCatalog::getTablesForSchema(const std::string & schema
             std::tie(json, json_str) = getJSONRequest(TABLES_ENDPOINT, params);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-            if (!hasValueAndItsNotNone("tables", object))
-                return tables;
-
-            auto tables_object = object->get("tables").extract<Poco::JSON::Array::Ptr>();
-            if (!tables_object)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-            for (size_t i = 0; i < tables_object->size(); ++i)
+            /// A page may be empty (the "tables" field is omitted) while more pages exist,
+            /// so fall through to the next_page_token check.
+            if (hasValueAndItsNotNone("tables", object))
             {
-                const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                const auto table_name = current_table_json->get("name").extract<String>();
-                auto qualified_name = schema + "." + table_name;
-                tables.push_back(CatalogTable{
-                    .name = qualified_name,
-                    .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN,
-                });
+                auto tables_object = object->get("tables").extract<Poco::JSON::Array::Ptr>();
+                if (!tables_object)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
-                if (limit && tables.size() >= limit)
-                    break;
+                for (size_t i = 0; i < tables_object->size(); ++i)
+                {
+                    const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                    const auto table_name = current_table_json->get("name").extract<String>();
+                    auto qualified_name = schema + "." + table_name;
+                    tables.push_back(CatalogTable{
+                        .name = qualified_name,
+                        .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN,
+                    });
+
+                    if (limit && tables.size() >= limit)
+                        break;
+                }
             }
 
             if (limit && tables.size() >= limit)
@@ -614,24 +616,29 @@ ICatalog::Namespaces UnifiedUnityCatalog::getSchemas(const std::string & base_pr
             std::tie(json, json_str) = getJSONRequest(SCHEMAS_ENDPOINT, params);
             const Poco::JSON::Object::Ptr & object = json.extract<Poco::JSON::Object::Ptr>();
 
-            auto schemas_object = object->get("schemas").extract<Poco::JSON::Array::Ptr>();
-            if (!schemas_object)
-                throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
-
-            for (size_t i = 0; i < schemas_object->size(); ++i)
+            /// A page may be empty (the "schemas" field is omitted) while more pages exist,
+            /// so fall through to the next_page_token check.
+            if (hasValueAndItsNotNone("schemas", object))
             {
-                auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
-                chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
-                auto schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
+                auto schemas_object = object->get("schemas").extract<Poco::JSON::Array::Ptr>();
+                if (!schemas_object)
+                    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Cannot parse result");
 
-                if (schema_name.schema_name.starts_with(base_prefix))
-                    schemas.push_back(schema_name.schema_name);
+                for (size_t i = 0; i < schemas_object->size(); ++i)
+                {
+                    auto schema_info = schemas_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
+                    chassert(schema_info->get("catalog_name").extract<String>() == warehouse);
+                    auto schema_name = parseFullSchemaName(schema_info->get("full_name").extract<String>());
 
-                if (limit && schemas.size() > limit)
-                    break;
+                    if (schema_name.schema_name.starts_with(base_prefix))
+                        schemas.push_back(schema_name.schema_name);
+
+                    if (limit && schemas.size() >= limit)
+                        break;
+                }
             }
 
-            if (limit && schemas.size() > limit)
+            if (limit && schemas.size() >= limit)
                 break;
 
             if (hasValueAndItsNotNone("next_page_token", object))
