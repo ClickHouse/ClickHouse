@@ -24,14 +24,16 @@ settings="use_query_cache = true, query_cache_on_disk_cache_name = 'cache_for_qu
 
 run() # user, query_id, query, extra settings
 {
-    ${CLICKHOUSE_CLIENT} --user "$1" --query_id "$2" --query "$3 SETTINGS ${settings}${4:+, $4}" > /dev/null
+    # --database so that both users run with the test database as the current database: it is part of the cache key, and the style
+    # check requires the `system.query_log` lookups below to be restricted to the current database.
+    ${CLICKHOUSE_CLIENT} --user "$1" --database "${CLICKHOUSE_DATABASE}" --query_id "$2" --query "$3 SETTINGS ${settings}${4:+, $4}" > /dev/null
 }
 
 hits() # query_id
 {
     ${CLICKHOUSE_CLIENT} --query "
         SELECT ProfileEvents['QueryCacheOnDiskHits'] FROM system.query_log
-        WHERE query_id = '$1' AND type = 'QueryFinish'
+        WHERE current_database = currentDatabase() AND query_id = '$1' AND type = 'QueryFinish'
         ORDER BY event_time_microseconds DESC LIMIT 1
     "
 }
