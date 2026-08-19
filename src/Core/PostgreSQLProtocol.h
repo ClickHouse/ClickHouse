@@ -19,6 +19,7 @@
 #include <Access/Credentials.h>
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -1518,11 +1519,12 @@ public:
 
 class ScrambleSHA256Auth : public AuthenticationMethod
 {
-    const AuthenticationData * getScramAuthenticationMethod(const String & user_name, Session & session) const
+    std::optional<String> getScramSalt(const String & user_name, Session & session) const
     {
         const auto & access_control = session.globalContext()->getAccessControl();
         const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        const AuthenticationData * scram_authentication_method = nullptr;
+        std::optional<String> expired_scram_salt;
+        std::optional<String> live_scram_salt;
         if (auto id = access_control.find<User>(user_name))
         {
             if (auto user = access_control.tryRead<User>(*id))
@@ -1534,17 +1536,21 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 
                     const auto valid_until = auth_method.getValidUntil();
                     if (valid_until && now > valid_until)
+                    {
+                        if (!expired_scram_salt)
+                            expired_scram_salt = auth_method.getSalt();
                         continue;
+                    }
 
                     /// PostgreSQL SCRAM cannot represent a second factor or choose between several salts.
-                    if (auth_method.getOneTimePassword() || scram_authentication_method)
-                        return nullptr;
+                    if (auth_method.getOneTimePassword() || live_scram_salt)
+                        return std::nullopt;
 
-                    scram_authentication_method = &auth_method;
+                    live_scram_salt = auth_method.getSalt();
                 }
             }
         }
-        return scram_authentication_method;
+        return live_scram_salt ? live_scram_salt : expired_scram_salt;
     }
 
     static size_t findPatternPosition(const String & key, const String & pattern)
@@ -1600,7 +1606,17 @@ class ScrambleSHA256Auth : public AuthenticationMethod
 public:
     bool isSupportedForUser(const String & user_name, Session & session) const override
     {
-        return getScramAuthenticationMethod(user_name, session) != nullptr;
+        const auto & access_control = session.globalContext()->getAccessControl();
+        if (auto id = access_control.find<User>(user_name))
+        {
+            if (auto user = access_control.tryRead<User>(*id))
+            {
+                for (const auto & auth_method : user->authentication_methods)
+                    if (auth_method.getType() == AuthenticationType::SCRAM_SHA256_PASSWORD)
+                        return true;
+            }
+        }
+        return false;
     }
 
     static String generateNonce()
@@ -1670,12 +1686,11 @@ public:
         auth_message += fmt::format("n={},r={}", parseUsername(rsp->sasl_mechanism), client_nonce);
         auto nonce = client_nonce + server_nonce;
 
-        const auto * scram_authentication_method = getScramAuthenticationMethod(user_name, session);
-        if (!scram_authentication_method)
+        const auto salt = getScramSalt(user_name, session);
+        if (!salt)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "PostgreSQL protocol does not support this `scram_sha256_password` authentication configuration");
 
-        const String salt = scram_authentication_method->getSalt();
-        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, salt, num_iterations);
+        auto sasl_continue_message = fmt::format("r={},s={},i={}", nonce, *salt, num_iterations);
         mt.send(Messaging::AuthenticationSASLContinue(sasl_continue_message), true);
         auth_message += "," + sasl_continue_message;
         auto rsp_continue = mt.receive<Messaging::SASLResponse>();

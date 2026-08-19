@@ -293,6 +293,7 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
         "user_two_scram": "scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_plaintext_and_two_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
         "user_expired_then_live_scram": "scram_sha256_password BY 'expired' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
+        "user_expired_only_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01'",
     }
     try:
         for name, methods in users.items():
@@ -301,6 +302,17 @@ def test_scram_user_with_multiple_auth_methods(started_cluster):
 
             if name == "user_two_scram":
                 with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
+                    py_psql.connect(
+                        host=node.ip_address,
+                        port=server_port,
+                        user=name,
+                        password="p123",
+                        database="system",
+                    )
+                continue
+
+            if name == "user_expired_only_scram":
+                with pytest.raises(py_psql.OperationalError, match="Invalid user or password"):
                     py_psql.connect(
                         host=node.ip_address,
                         port=server_port,
