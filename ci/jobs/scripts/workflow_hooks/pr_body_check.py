@@ -1,6 +1,7 @@
 import re
 import sys
 
+from ci.jobs.scripts.check_style.clickhouse_spelling import clickhouse_misspellings
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import (
     BOT_AUTHORS,
     NO_CHANGELOG_REQUIRED_LABELS,
@@ -11,24 +12,9 @@ from ci.praktika.gh import GH
 from ci.praktika.info import Info
 
 
-CLICKHOUSE_CORRECT_SPELLINGS = ("ClickHouse", "clickhouse", "CLICKHOUSE")
-CLICKHOUSE_ANY_SPELLING_RE = re.compile(
-    r"[Cc][Ll][Ii][Cc][Kk][_-]?[Hh][Oo][Uu][Ss][Ee]"
-    r"|(?<![A-Za-z])[Cc][Ll][Ii][Cc][Kk] [Hh][Oo][Uu][Ss][Ee](?![A-Za-z])"
-)
-URL_RE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s\"'`)\]}<>]*")
-
-
 def check_clickhouse_spelling(entry: str) -> str:
     """Reject non-canonical product-name spellings in a changelog entry."""
-    entry = URL_RE.sub("", entry)
-    misspellings = sorted(
-        {
-            match.group(0)
-            for match in CLICKHOUSE_ANY_SPELLING_RE.finditer(entry)
-            if match.group(0) not in CLICKHOUSE_CORRECT_SPELLINGS
-        }
-    )
+    misspellings = sorted(set(clickhouse_misspellings(entry)))
     if misspellings:
         return "The product name is spelled `ClickHouse`: " + ", ".join(misspellings)
     return ""
@@ -71,7 +57,8 @@ def check_changelog_entry(category, pr_body: str) -> str:
             while i < len(lines) and lines[i]:
                 entry_lines.append(lines[i])
                 i += 1
-            entry = " ".join(entry_lines)
+            raw_entry = " ".join(entry_lines)
+            entry = raw_entry
             # Don't accept changelog entries like '...'.
             entry = re.sub(r"[#>*_.\- ]", "", entry)
             # Don't accept changelog entries like 'Close #12345'.
@@ -83,7 +70,7 @@ def check_changelog_entry(category, pr_body: str) -> str:
     if not entry:
         error = f"Changelog entry required for category '{category}'"
     else:
-        error = check_clickhouse_spelling(entry)
+        error = check_clickhouse_spelling(raw_entry)
     return error
 
 
