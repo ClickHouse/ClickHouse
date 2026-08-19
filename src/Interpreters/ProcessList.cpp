@@ -842,7 +842,6 @@ ProcessList::EntryPtr ProcessList::insert(
             else if (settings[Setting::max_network_bandwidth_for_all_users])
                 user_process_list.user_throttler = total_network_throttler;
         }
-
     }
 
     return res;
