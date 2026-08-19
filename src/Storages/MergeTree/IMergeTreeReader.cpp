@@ -433,10 +433,16 @@ NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & requir
     {
         const auto & infos = data_part_info_for_read->getSerializationInfos();
         DataTypePtr type_in_part = required_column.getTypeInStorage();
+        DataTypePtr requested_type_in_part = required_column.type;
         if (const auto * missing = infos.getMissingColumnInfo(name_pair.first); missing && !missing->type_name.empty())
+        {
             type_in_part = DataTypeFactory::instance().get(missing->type_name);
+            requested_type_in_part = name_pair.second.empty()
+                ? type_in_part
+                : type_in_part->getSubcolumnType(name_pair.second);
+        }
 
-        return NameAndTypePair{name_pair.first, name_pair.second, type_in_part, required_column.type};
+        return NameAndTypePair{name_pair.first, name_pair.second, type_in_part, requested_type_in_part};
     }
 
     return *column_in_part;
