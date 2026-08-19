@@ -52,8 +52,10 @@ static void fillJemallocBins(MutableColumns & res_columns)
         auto nmalloc = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.nmalloc", MALLCTL_ARENAS_ALL, bin).c_str());
 
         auto nregs = getJeMallocValue(fmt::format("arenas.bin.{}.nregs", bin).c_str());
+        auto slab_size = getJeMallocValue(fmt::format("arenas.bin.{}.slab_size", bin).c_str());
         auto curslabs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curslabs", MALLCTL_ARENAS_ALL, bin).c_str());
         auto curregs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.curregs", MALLCTL_ARENAS_ALL, bin).c_str());
+        auto nonfull_slabs = getJeMallocValue(fmt::format("stats.arenas.{}.bins.{}.nonfull_slabs", MALLCTL_ARENAS_ALL, bin).c_str());
 
         size_t col_num = 0;
         res_columns.at(col_num++)->insert(bin_index);
@@ -65,6 +67,8 @@ static void fillJemallocBins(MutableColumns & res_columns)
         res_columns.at(col_num++)->insert(nregs);
         res_columns.at(col_num++)->insert(curslabs);
         res_columns.at(col_num++)->insert(curregs);
+        res_columns.at(col_num++)->insert(slab_size);
+        res_columns.at(col_num++)->insert(nonfull_slabs);
     }
 
     /// Bins for large allocations
@@ -82,6 +86,8 @@ static void fillJemallocBins(MutableColumns & res_columns)
         res_columns.at(col_num++)->insert(nmalloc);
         res_columns.at(col_num++)->insert(ndalloc);
 
+        res_columns.at(col_num++)->insertDefault();
+        res_columns.at(col_num++)->insertDefault();
         res_columns.at(col_num++)->insertDefault();
         res_columns.at(col_num++)->insertDefault();
         res_columns.at(col_num++)->insertDefault();
@@ -128,11 +134,14 @@ ColumnsDescription StorageSystemJemallocBins::getColumnsDescription()
         { "nregs",          std::make_shared<DataTypeInt64>(), "Number of regions per slab."},
         { "curslabs",       std::make_shared<DataTypeInt64>(), "Current number of slabs."},
         { "curregs",        std::make_shared<DataTypeInt64>(), "Current number of regions for this size class."},
+        { "slab_size",      std::make_shared<DataTypeUInt64>(), "Size of each slab in bytes. Zero for large size classes, which are not slab-based."},
+        { "nonfull_slabs",  std::make_shared<DataTypeInt64>(), "Current number of slabs that contain at least one free region. Zero for large size classes."},
     };
 
     description.setAliases({
         {"availregs", std::make_shared<DataTypeUInt64>(), "nregs * curslabs"},
         {"util", std::make_shared<DataTypeFloat64>(), "curregs / availregs"},
+        {"waste", std::make_shared<DataTypeUInt64>(), "curslabs * slab_size - curregs * size"},
     });
 
     return description;
