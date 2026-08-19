@@ -2716,6 +2716,14 @@ Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPL
 `EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
+    DECLARE(Bool, explain_syntax_single_record, true, R"(
+Return `EXPLAIN SYNTAX` output as a single record (with embedded newlines) instead of one record per line, so the result is a single, recoverable row (for example, `SELECT count() FROM (EXPLAIN SYNTAX ...)` returns `1`).
+
+Specifying the `single_record` option explicitly in the `EXPLAIN SYNTAX` statement (for example, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) always overrides this setting.
+
+Set to `false` to restore the pre-26.8 one-record-per-line output, or set `compatibility` to any version older than `26.8`.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
@@ -2851,6 +2859,17 @@ Used for shadow traffic, benchmarks, and fuzzing.
 Has no effect for secondary queries.
 
 Affects only the native TCP protocol.
+)", 0) \
+    DECLARE(Bool, run_query_in_background, false, R"(
+If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+
+A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
+
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes and the query log entry is flushed.
+
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
+
+The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 )", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
@@ -4095,6 +4114,12 @@ Maximum delay in milliseconds between retries during backup and restore operatio
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
 Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
 )", 0) \
+    DECLARE(Bool, resumable_backup_from_snapshot, false, R"(
+Enables resumable `BACKUP FROM SNAPSHOT`: a failed attempt can be rerun without recopying the
+entries of batches that already completed. Only available in ClickHouse Cloud, for directory-style
+`S3` and `AzureBlobStorage` destinations. Enabling it in ClickHouse open-source builds, where
+`BACKUP FROM SNAPSHOT` itself is unavailable, makes `BACKUP` fail with `WRONG_BACKUP_SETTINGS`.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
 )", 0) \
@@ -5605,7 +5630,7 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSVRaw;
 ```
 
 Result:
