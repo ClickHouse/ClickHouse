@@ -64,7 +64,7 @@ ENGINE = NATS(nats_config_credentials, nats_credentials = 'user JWT and seed', n
 -- existing-metadata replay. Therefore its destination override is rejected.
 ATTACH TABLE nats_file_with_url_override_from_existing_metadata UUID 'c6d2423a-9ab2-4a37-8e56-10e479541001' (key UInt64)
 ENGINE = NATS(nats_config_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
-DROP TABLE nats_file_with_url_override_from_existing_metadata;
+DROP TABLE IF EXISTS nats_file_with_url_override_from_existing_metadata;
 
 -- SQL named collections stay mutable after a table is created. Create a table while its collection
 -- is valid, then replay its stored metadata with a short `ATTACH` after adding a credential-file
@@ -92,6 +92,13 @@ ENGINE = NATS(nats_config_basic_credentials); -- { serverError CANNOT_CONNECT_NA
 CREATE TABLE nats_global_basic_credentials (key UInt64) ENGINE = NATS
 SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1; -- { serverError CANNOT_CONNECT_NATS }
+
+-- A table-level authentication method suppresses all global fallback methods. Otherwise the
+-- global user/password and this token would both be serialized in the `CONNECT` frame.
+CREATE TABLE nats_token_over_global_basic_credentials (key UInt64) ENGINE = NATS
+SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
+    nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
+    nats_token = 'token'; -- { serverError CANNOT_CONNECT_NATS }
 
 CREATE TABLE nats_basic_credentials_with_url_override (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
