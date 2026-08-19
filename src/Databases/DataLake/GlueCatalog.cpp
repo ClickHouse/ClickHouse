@@ -746,29 +746,20 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
                              : glue_client->UpdateTable(request);
 
     bool failed = !response.IsSuccess();
-    /// Whether glue itself reports the failure as one worth another attempt. A retryable failure may
-    /// have been preceded by an attempt that applied the update; a final one refused every attempt.
-    bool retryable = failed && response.GetError().ShouldRetry();
     String error_message = failed ? String(response.GetError().GetMessage()) : String();
     String error_name = failed ? String(response.GetError().GetExceptionName()) : String();
 
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
     {
         failed = true;
-        retryable = true;
         error_message = "Injected lost response";
         error_name = "InjectedFault";
     });
 
-    /// A failure glue refuses to retry was answered definitively, so the update cannot have been
-    /// applied. Keep the original error so the caller cleans up the files staged for it.
-    if (failed && !retryable)
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", error_message);
-
     if (failed)
     {
-        /// The SDK retries UpdateTable, so the error describes the last attempt, never the first:
-        /// an earlier one may have applied the update. Read the pointer back before the error.
+        /// Every failed outcome is reconciled: the SDK retries UpdateTable, so the error describes
+        /// the last attempt and an earlier one may have applied the update.
         const auto committed_metadata_location = readRawMetadataLocation(namespace_name, table_name);
 
         if (committed_metadata_location == new_metadata_path)

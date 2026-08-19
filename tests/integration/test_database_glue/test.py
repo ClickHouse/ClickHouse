@@ -2015,10 +2015,18 @@ def test_glue_commit_unknown_keeps_files(started_cluster):
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
 
 
-def test_glue_commit_rejected_keeps_error(started_cluster):
-    # An error glue refuses to retry was answered definitively, so the update did not take effect:
-    # the original error must survive rather than being reported as an unknown outcome. Same
-    # contract as the REST twin test_catalog_commit_definite_rejection_keeps_error.
+def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
+    # UpdateTable carries no precondition and the SDK retries it, so a failure whose pointer is not
+    # ours is indistinguishable from "committed, then superseded": the outcome is unknown and the
+    # staged files are kept. The retryability glue reports on the final error cannot narrow this,
+    # because it describes the last attempt only.
+    #
+    # This is the opposite contract to the REST twin test_catalog_commit_definite_rejection_keeps_error,
+    # which asserts the original error survives. REST pins http_settings.max_tries = 1 for the commit,
+    # so a received REST status describes the only attempt; glue has no equivalent per-request pin.
+    #
+    # Reconciling through a helper that derives the location from object storage would find the
+    # metadata file staged before the commit and wrongly report success, so this must fail.
     node = started_cluster.instances["node1"]
     root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
         started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
@@ -2031,7 +2039,8 @@ def test_glue_commit_rejected_keeps_error(started_cluster):
     finally:
         node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
 
-    assert "UNKNOWN_STATUS_OF_TRANSACTION" not in error, error
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The original glue error must still be readable, so the user keeps the actionable detail.
     assert "Injected rejection" in error, error
 
     # The pointer never advanced, and the previous snapshot is untouched.
