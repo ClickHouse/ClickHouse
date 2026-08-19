@@ -238,6 +238,9 @@
         },
       },
       searchSettings: {
+        // `aiApiBaseUrl` is also the fallback search backend. Keep search on
+        // Inkeep while routing only AI chat to the ClickHouse endpoint above.
+        searchApiBaseUrl: 'https://api.inkeep.com',
         placeholder: 'Search ClickHouse docs...',
         defaultQuery: initialQuery,
         // Wait 300ms after the last keystroke before firing a search request,
