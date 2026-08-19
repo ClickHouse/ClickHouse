@@ -3,6 +3,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -47,6 +48,9 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     if (all_inputs.empty())
         return 0;
 
+    const bool was_filter_const_before = !filter->removesFilterColumn()
+        && filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column->isConst();
+
     auto split = expression.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -71,6 +75,17 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     }
     else
     {
+        /// Removing the element conjuncts can leave the residual filter column constant (e.g. it was
+        /// ANDed with a NULL literal). Mirror filterPushDown and materialize it, so parent steps don't
+        /// see a stale non-const header.
+        if (!was_filter_const_before)
+        {
+            auto header_after = expression.updateHeader(*array_join_output);
+            const auto * filter_column_after = header_after.findByName(filter->getFilterColumnName());
+            if (filter_column_after && filter_column_after->column && filter_column_after->column->isConst())
+                expression.addOrReplaceInOutputs(
+                    expression.materializeNode(expression.findInOutputs(filter->getFilterColumnName()), false));
+        }
         filter->updateInputHeader(array_join_output);
     }
 
