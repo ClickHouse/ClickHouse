@@ -167,6 +167,18 @@ Chunk NATSSource::generateImpl()
             return {};
         }
 
+        /// A JetStream pull subscription survives a reconnect client side, but the server has
+        /// discarded the pull request it was waiting for. Direct reads do not return the consumer
+        /// to `StorageNATS` until this source is destroyed, so recover it here instead of waiting
+        /// for the background streaming task to notice it.
+        if (consumer->needsResubscribe())
+        {
+            consumer->unsubscribe(/*finish_queue=*/false);
+            consumer->dropBuffered();
+            consumer->subscribe();
+            unsubscribe_on_destroy = true;
+        }
+
         if (consumer->isConsumerStopped() || !checkTimeLimit())
             break;
 

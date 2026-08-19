@@ -1159,6 +1159,37 @@ def test_nats_jet_stream_resumes_consuming_after_broker_hard_kill(nats_cluster):
     _publish_and_expect("test_subject", range(100, 110), total_expected)
 
 
+def test_nats_jet_stream_direct_select_resumes_after_broker_hard_kill(nats_cluster):
+    # Unlike the materialized-view path, a direct SELECT owns its consumer until the query ends.
+    # Keep that query waiting on a parked pull request, then hard-kill the broker: a reconnect
+    # restores the NATS `SUB`, but not the JetStream pull request. The source must therefore
+    # re-subscribe itself before the message published after the reconnect can arrive.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer"))
+
+    instance.query(
+        """
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n';
+        """
+    )
+
+    select = instance.get_query_request(
+        "SELECT key FROM test.consume SETTINGS stream_like_engine_allow_direct_select = 1, rabbitmq_max_wait_ms = 20000",
+        timeout=30,
+    )
+    _wait_for_parked_pull_request()
+    _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+    asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
+    assert TSV(select.get_answer()) == TSV("42\\n")
+
+
 def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):
     # A one-shot recovery would pass the single-restart test above, so require it to work twice.
     _setup_restart_table("test_subject", "test_consumer")
