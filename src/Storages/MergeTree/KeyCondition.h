@@ -79,7 +79,8 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
-        bool skip_analysis_ = false); /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
+        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -497,6 +498,9 @@ private:
         const ExpressionActionsPtr key_expr;
         /// All intermediate columns are used to calculate key_expr.
         const NameSet key_subexpr_names;
+        /// If true, an `IN` atom whose set is not built yet is declined instead of building it.
+        /// Analysis passes that are not allowed to execute a user subquery set this.
+        const bool require_ready_sets = false;
     };
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out);
