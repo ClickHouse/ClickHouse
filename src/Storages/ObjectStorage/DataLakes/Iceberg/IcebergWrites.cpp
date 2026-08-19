@@ -640,7 +640,6 @@ void generateManifestList(
     /// write the original id-carrying JSON as the avro.schema header for external readers.
     writer.setMetadata(Iceberg::f_avro_schema, schema_representation);
     writer.setMetadata(Iceberg::f_format_version, std::to_string(version));
-    bool wrote_entry = false;
 
     for (size_t entry_idx = 0; entry_idx < manifest_entry_names.size(); ++entry_idx)
     {
@@ -729,7 +728,6 @@ void generateManifestList(
             }
 
             writer.write(entry_datum);
-            wrote_entry = true;
             continue;
         }
 
@@ -776,7 +774,6 @@ void generateManifestList(
         setVersionedField(entry, 0, Iceberg::f_deleted_rows_count);
 
         writer.write(entry_datum);
-        wrote_entry = true;
     }
 
     /// Copy entries from the parent snapshot's manifest list: `use_previous_snapshots` copies all, `carry_forward_manifest_paths` copies only the listed manifests.
@@ -851,17 +848,13 @@ void generateManifestList(
                             add_field_to_datum(Iceberg::f_min_sequence_number);
                         }
                         writer.write(new_datum);
-                        wrote_entry = true;
                     });
                 break;
             }
         }
     }
 
-    /// `DataFileWriterBase::close` assumes that the lazy encoder was initialized by a write.
-    /// For an empty manifest list, its destructor writes the Avro header before closing instead.
-    if (wrote_entry)
-        writer.close();
+    writer.close();
 }
 
 IcebergStorageSink::IcebergStorageSink(
