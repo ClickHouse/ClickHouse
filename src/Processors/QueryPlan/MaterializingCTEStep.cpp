@@ -3,6 +3,8 @@
 
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
+#include <Storages/StorageMemory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/Logger.h>
 #include <Common/logger_useful.h>
@@ -279,6 +281,58 @@ void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedC
 
     removeDelayedMaterializingCTEsStepIf(
         plan, [&](DelayedMaterializingCTEsStep & step) { return step.eraseCTEs(ctes_to_remove); });
+}
+
+bool addDelayedMaterializingCTEsStepForUnbuiltCTEs(QueryPlan & plan)
+{
+    auto * root = plan.getRootNode();
+    if (!root)
+        return false;
+
+    MaterializedCTESet read_ctes;
+    MaterializedCTESet materialized_ctes;
+
+    /// Only `node->children` is walked, never `getChildPlans`: a step in a nested plan is not
+    /// dominated by a step added at this plan's root, and such a plan gates its own readers.
+    std::stack<QueryPlan::Node *> stack;
+    stack.push(root);
+    while (!stack.empty())
+    {
+        auto * node = stack.top();
+        stack.pop();
+
+        if (auto * read_from_memory = typeid_cast<ReadFromMemoryStorageStep *>(node->step.get()))
+        {
+            if (auto * storage = typeid_cast<StorageMemory *>(read_from_memory->getStorage().get()))
+                if (auto cte = storage->getMaterializedCTE())
+                    read_ctes.insert(std::move(cte));
+        }
+        else if (auto * delayed = typeid_cast<DelayedMaterializingCTEsStep *>(node->step.get()))
+        {
+            for (const auto & cte : delayed->getCTEs())
+                materialized_ctes.insert(cte);
+        }
+
+        for (auto * child : node->children)
+            stack.push(child);
+    }
+
+    std::vector<MaterializedCTEPtr> ctes;
+    for (const auto & cte : read_ctes)
+    {
+        if (materialized_ctes.contains(cte) || cte->isBuilt())
+            continue;
+        /// A CTE with no plan was claimed elsewhere; one temporary table takes one writer.
+        if (!cte->plan)
+            continue;
+        ctes.push_back(cte);
+    }
+
+    if (ctes.empty())
+        return false;
+
+    plan.addStep(std::make_unique<DelayedMaterializingCTEsStep>(plan.getCurrentHeader(), std::move(ctes)));
+    return true;
 }
 
 }

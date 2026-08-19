@@ -17,6 +17,7 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
+#include <Processors/QueryPlan/MaterializingCTEStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -464,6 +465,9 @@ void FutureSetFromSubquery::buildSetInplace(const ContextPtr & context)
     if (!plan)
         return;
 
+    /// No gate outside a standalone pipeline can reach its readers.
+    addDelayedMaterializingCTEsStepForUnbuiltCTEs(*plan);
+
     auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));
@@ -649,6 +653,9 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         /// the destructive fallback `build` moved the resources into `plan`, which outlives this scope, so the
         /// ordering is safe there too.
         {
+            /// Both branches above run standalone, so neither has a gate outside it.
+            addDelayedMaterializingCTEsStepForUnbuiltCTEs(*plan);
+
             auto builder = plan->buildQueryPipeline(makeInplaceBuildOptimizationSettings(context), BuildQueryPipelineSettings(context));
             auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             pipeline.complete(std::make_shared<EmptySink>(std::make_shared<const Block>(Block())));

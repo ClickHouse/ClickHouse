@@ -112,6 +112,8 @@ public:
     /// node can be spliced out of the plan.
     bool eraseCTEs(const MaterializedCTESet & ctes_to_erase);
 
+    const std::vector<MaterializedCTEPtr> & getCTEs() const { return ctes; }
+
 private:
     void updateOutputHeader() override { output_header = getInputHeaders().front(); }
 
@@ -134,5 +136,14 @@ void removeAllDelayedMaterializingCTEsStep(QueryPlan & plan);
 /// plan from claiming a CTE that the outer query references as well — see the
 /// comment at the call site.
 void removeDelayedMaterializingCTEsStepFor(QueryPlan & plan, const MaterializedCTESet & ctes_to_remove);
+
+/// Push a `DelayedMaterializingCTEsStep` onto `plan` covering every materialized CTE that
+/// `plan`'s node tree reads while no step in that tree materializes it, and that still holds
+/// its subquery plan. Returns true if a step was added.
+///
+/// `plan` must be about to be built into a standalone pipeline: the step becomes the root, which
+/// is what makes it dominate every reader in the tree. Readers reachable only through
+/// `getChildPlans` are not covered - such a plan gates its own readers.
+bool addDelayedMaterializingCTEsStepForUnbuiltCTEs(QueryPlan & plan);
 
 }
