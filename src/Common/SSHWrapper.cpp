@@ -8,8 +8,6 @@
 #    include <cstdlib>
 #    include <cctype>
 #    include <cstring>
-#    include <fstream>
-#    include <fnmatch.h>
 #    include <pwd.h>
 #    include <unistd.h>
 
@@ -114,34 +112,7 @@ String expandIdentityFileName(std::string_view pattern, const String & home_dire
     return result;
 }
 
-bool matchesHostPattern(const String & patterns, const String & host)
-{
-    bool matched = false;
-    size_t pattern_begin = 0;
-    while (pattern_begin < patterns.size())
-    {
-        pattern_begin = patterns.find_first_not_of(" \t\r\n", pattern_begin);
-        if (pattern_begin == String::npos)
-            break;
-
-        size_t pattern_end = patterns.find_first_of(" \t\r\n", pattern_begin);
-        String pattern = patterns.substr(pattern_begin, pattern_end - pattern_begin);
-        if (pattern.starts_with('!'))
-        {
-            if (fnmatch(pattern.c_str() + 1, host.c_str(), 0) == 0)
-                return false;
-        }
-        else
-            matched |= fnmatch(pattern.c_str(), host.c_str(), 0) == 0;
-
-        if (pattern_end == String::npos)
-            break;
-        pattern_begin = pattern_end + 1;
-    }
-    return matched;
-}
-
-String expandSSHConfigEnvironmentVariables(std::string_view value)
+std::optional<String> expandSSHConfigEnvironmentVariables(std::string_view value)
 {
     String result;
     for (size_t i = 0; i < value.size(); ++i)
@@ -159,7 +130,7 @@ String expandSSHConfigEnvironmentVariables(std::string_view value)
             variable_begin += 1;
             variable_end = value.find('}', variable_begin);
             if (variable_end == String::npos)
-                throw Exception(ErrorCodes::LIBSSH_ERROR, "Invalid environment variable reference in IdentityAgent: {}", value);
+                return std::nullopt;
             i = variable_end;
         }
         else
@@ -177,58 +148,10 @@ String expandSSHConfigEnvironmentVariables(std::string_view value)
         String variable_name = String(value.substr(variable_begin, variable_end - variable_begin));
         const char * variable_value = std::getenv(variable_name.c_str()); // NOLINT(concurrency-mt-unsafe)
         if (variable_value == nullptr)
-            throw Exception(ErrorCodes::LIBSSH_ERROR, "Environment variable {} referenced by IdentityAgent is not set", variable_name);
+            return std::nullopt;
         result += variable_value;
     }
     return result;
-}
-
-std::optional<String> findSSHAgentSocketPathInConfig(const String & config_file, const String & host, const String & home_directory)
-{
-    std::ifstream input(config_file);
-    if (!input)
-        return std::nullopt;
-
-    /// Global directives apply to every host. Like OpenSSH, use the first value
-    /// obtained for an option, so a later matching Host section cannot override it.
-    bool applies = true;
-    String line;
-    while (std::getline(input, line))
-    {
-        size_t comment = line.find('#');
-        if (comment != String::npos)
-            line.resize(comment);
-
-        size_t keyword_begin = line.find_first_not_of(" \t\r\n");
-        if (keyword_begin == String::npos)
-            continue;
-
-        size_t keyword_end = line.find_first_of(" \t\r\n", keyword_begin);
-        String keyword = line.substr(keyword_begin, keyword_end - keyword_begin);
-        String argument;
-        if (keyword_end != String::npos)
-        {
-            size_t argument_begin = line.find_first_not_of(" \t\r\n", keyword_end);
-            if (argument_begin != String::npos)
-                argument = line.substr(argument_begin);
-        }
-        if (keyword == "Host")
-        {
-            applies = matchesHostPattern(argument, host);
-        }
-        else if (applies && keyword == "IdentityAgent")
-        {
-            if (argument == "none")
-                return String{};
-            if (argument == "SSH_AUTH_SOCK")
-            {
-                const char * socket_path = std::getenv("SSH_AUTH_SOCK"); // NOLINT(concurrency-mt-unsafe)
-                return socket_path ? String(socket_path) : String{};
-            }
-            return expandIdentityFileName(expandSSHConfigEnvironmentVariables(argument), home_directory, host);
-        }
-    }
-    return std::nullopt;
 }
 
 /// Passed to libssh, which calls it only if the private key turns out to be encrypted.
@@ -438,11 +361,39 @@ std::vector<String> getSSHIdentityFiles(const String & host)
 
 std::optional<String> getSSHAgentSocketPath(const String & host)
 {
+    /// Parse `IdentityAgent` with the same libssh configuration parser as `IdentityFile`.
+    /// This keeps matching `Host` and `Match` sections, `Include`, and keyword syntax consistent.
+    ssh_session session = ssh_new();
+    if (session == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot create an SSH session");
+    SCOPE_EXIT({ ssh_free(session); });
+
+    if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the host of an SSH session: {}", ssh_get_error(session));
+
     String home_directory = getHomeDirectory();
     for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
-        if (auto socket_path = findSSHAgentSocketPathInConfig(config_file, host, home_directory))
-            return socket_path;
-    return std::nullopt;
+        if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
+            throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot parse the SSH configuration file {}: {}", config_file, ssh_get_error(session));
+
+    char * configured_socket_path = nullptr;
+    if (ssh_options_get(session, SSH_OPTIONS_IDENTITY_AGENT, &configured_socket_path) != SSH_OK)
+        return std::nullopt;
+    std::unique_ptr<char, SSHStringDeleter> configured_socket_path_ptr(configured_socket_path);
+
+    String socket_path = configured_socket_path_ptr.get();
+    if (socket_path == "none")
+        return String{};
+    if (socket_path == "SSH_AUTH_SOCK")
+    {
+        const char * environment_socket_path = std::getenv("SSH_AUTH_SOCK"); // NOLINT(concurrency-mt-unsafe)
+        return environment_socket_path ? String(environment_socket_path) : String{};
+    }
+
+    auto expanded_socket_path = expandSSHConfigEnvironmentVariables(socket_path);
+    if (!expanded_socket_path)
+        return std::nullopt;
+    return expandIdentityFileName(*expanded_socket_path, home_directory, host);
 }
 
 }
