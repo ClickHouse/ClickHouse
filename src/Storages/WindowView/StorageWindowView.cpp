@@ -410,6 +410,47 @@ namespace
         addTimeStrictly(0, kind, num_units, time_zone);
     }
 
+    /// A non-throwing counterpart of `checkIntervalAdvancesTime` used when loading legacy
+    /// metadata. Such metadata may contain an interval that no longer fits `DateTime32`.
+    bool intervalAdvancesTime(IntervalKind::Kind kind, Int64 num_units, const DateLUTImpl & time_zone)
+    {
+        constexpr UInt32 max_datetime32 = std::numeric_limits<UInt32>::max();
+        constexpr UInt32 max_day_num = max_datetime32 / 86400;
+
+        switch (kind)
+        {
+            case IntervalKind::Kind::Second:
+                if (num_units > max_datetime32)
+                    return false;
+                break;
+            case IntervalKind::Kind::Minute:
+                if (num_units > max_datetime32 / 60)
+                    return false;
+                break;
+            case IntervalKind::Kind::Hour:
+                if (num_units > max_datetime32 / 3600)
+                    return false;
+                break;
+            case IntervalKind::Kind::Day:
+                if (num_units > max_day_num)
+                    return false;
+                break;
+            case IntervalKind::Kind::Week:
+            case IntervalKind::Kind::Month:
+            case IntervalKind::Kind::Quarter:
+            case IntervalKind::Kind::Year:
+                if (addTime(0, kind, num_units, time_zone) > max_day_num)
+                    return false;
+                break;
+            case IntervalKind::Kind::Nanosecond:
+            case IntervalKind::Kind::Microsecond:
+            case IntervalKind::Kind::Millisecond:
+                return false;
+        }
+
+        return addTime(0, kind, num_units, time_zone) > 0;
+    }
+
     class AddingAggregatedChunkInfoTransform final : public ISimpleTransform
     {
     public:
@@ -1400,7 +1441,9 @@ StorageWindowView::StorageWindowView(
         /// Old metadata can contain an interval that no longer advances `DateTime32`.
         /// Keep it attach-compatible; the first runtime advancement fails closed in
         /// `threadFuncFireProc`.
-        next_fire_signal = validate_intervals ? getWindowUpperBound(now()) : now();
+        next_fire_signal = !validate_intervals && !intervalAdvancesTime(slide_kind, slide_num_units, *time_zone)
+            ? now()
+            : getWindowUpperBound(now());
     }
 
     std::exchange(has_inner_table, true);
