@@ -685,6 +685,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
         /// fact that reading in order was requested by the plan optimizer.
         if (reading_step->getPreferMultipleStreams())
             set_reading->setPreferMultipleStreams();
+        set_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
         if (reading_step->isReadInOrderRequestedByPlanOptimizer())
             set_reading->setReadInOrderRequestedByPlanOptimizer();
 
