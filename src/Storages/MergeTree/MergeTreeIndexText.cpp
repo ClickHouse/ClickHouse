@@ -1794,8 +1794,6 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
     const ColumnArray * column_array = assert_cast<const ColumnArray *>(column.get());
     const IColumn & column_data = column_array->getData();
     const IColumn::Offsets & column_offsets = column_array->getOffsets();
-    /// isNullable() is false for LowCardinality(Nullable), so use the helper that also
-    /// covers it, otherwise getDataAt() below throws on NULL array elements.
     const bool data_is_nullable = isColumnNullableOrLowCardinalityNullable(column_data);
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
@@ -1906,12 +1904,8 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
 {
-    for (const auto & [column, _] : getColumnsWithTypesRequiredForIndexCalc())
-        if (part.isSystemColumnInvalidated(column))
-            return {0, {}};
-
     if (!indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
         return {0, {}};
 

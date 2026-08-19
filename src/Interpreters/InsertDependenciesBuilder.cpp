@@ -1503,6 +1503,12 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
     }
 
     chassert(storage);
+
+    /// `InterpreterInsertQuery` refreshes only the root target; do the same here, once per storage, in the parent view's context.
+    /// Views are skipped: only a non-view `current` has a view parent, and a regular root table is keyed as `root_view` (`{}`).
+    if (current != init_table_id && !storage->isView() && !metadata_snapshots.contains(current))
+        storage->updateExternalDynamicMetadataIfExists(insert_contexts.at(parent));
+
     auto metadata = storage->getInMemoryMetadataPtr(init_context, false);
     auto * materialized_view = dynamic_cast<StorageMaterializedView *>(storage.get());
 

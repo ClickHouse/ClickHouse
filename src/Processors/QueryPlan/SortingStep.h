@@ -120,6 +120,9 @@ public:
     bool allowsUnorderedOutput() const { return allow_unordered_output; }
     void setAllowUnorderedOutput() { allow_unordered_output = true; }
 
+    bool isPartialTopN() const { return is_partial_top_n; }
+    void setPartialTopN() { is_partial_top_n = true; }
+
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
@@ -218,6 +221,12 @@ private:
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
+
+    /// A distributed plan can split a top-N sort in two stages: each node keeps its local
+    /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
+    /// This flag marks the first stage. It only tells the optimizer what the sort is for (like
+    /// `is_sorting_for_merge_join`); the executed sort is the same, so it is not serialized.
+    bool is_partial_top_n = false;
 
     UInt64 limit;
     bool always_read_till_end = false;
