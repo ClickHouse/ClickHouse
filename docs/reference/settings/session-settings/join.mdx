@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}]}]}/>
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "direct,parallel_hash,hash"},{"label": "`hash` and `parallel_hash` are now aliases of the same join class. Listing one or the other does not control how parallel the join is. The default list is unchanged."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "direct,parallel_hash,hash"},{"label": "'default' was deprecated in favor of explicitly specified join algorithms, also parallel_hash is now preferred over hash"}]}]}/>
 
 Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
@@ -46,11 +46,11 @@ Possible values:
 
  When using the `hash` algorithm, the right part of `JOIN` is uploaded into RAM.
 
+ `hash` and `parallel_hash` are aliases of the same join class. Listing one or the other does not control how parallel the join is. Parallelism is chosen automatically from the join kind, `parallel_hash_join_threshold`, and `max_threads`.
+
 - parallel_hash
 
- A variation of `hash` join that splits the data into buckets and builds several hashtables instead of one concurrently to speed up this process.
-
- When using the `parallel_hash` algorithm, the right part of `JOIN` is uploaded into RAM.
+ Same as `hash`.
 
 - partial_merge
 

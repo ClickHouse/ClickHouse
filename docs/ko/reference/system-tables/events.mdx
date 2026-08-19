@@ -3052,11 +3052,53 @@ Global Thread 풀에서 스레드를 제거해 크기가 줄어든 총 횟수를
 
 쿼리 실행 스레드에서 발생한 하드 페이지 폴트 수입니다. 값이 높으면 서버에서 스왑을 비활성화하지 않았거나, 메모리 압박이 매우 큰 상황에서 ClickHouse 실행 파일의 메모리 페이지가 축출되었거나, 테이블 데이터에 대해 &#39;mmap&#39; 읽기 메서드가 정상적으로 사용되고 있음을 의미합니다.
 
+<div id="hashjoinbuildinsertmicroseconds">
+  ### HashJoinBuildInsertMicroseconds
+</div>
+
+HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.
+
+<div id="hashjoinbuildlockwaitmicroseconds">
+  ### HashJoinBuildLockWaitMicroseconds
+</div>
+
+HashJoin build-side: time spent yielding in insertIntoSlots while waiting for a slot mutex. A subset of HashJoinBuildInsertMicroseconds.
+
+<div id="hashjoinbuildmicroseconds">
+  ### HashJoinBuildMicroseconds
+</div>
+
+Time spent in the HashJoin build phase (adding right-side blocks plus onBuildPhaseFinish), summed over all build threads.
+
+<div id="hashjoinbuildscattermicroseconds">
+  ### HashJoinBuildScatterMicroseconds
+</div>
+
+HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.
+
 <div id="hashjoinpreallocatedelementsinhashtables">
   ### HashJoinPreallocatedElementsInHashTables
 </div>
 
 해시 조인용 해시 테이블에 미리 할당된 요소 수입니다.
+
+<div id="hashjoinprobegathermicroseconds">
+  ### HashJoinProbeGatherMicroseconds
+</div>
+
+HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.
+
+<div id="hashjoinprobelookupmicroseconds">
+  ### HashJoinProbeLookupMicroseconds
+</div>
+
+HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
+
+<div id="hashjoinprobemicroseconds">
+  ### HashJoinProbeMicroseconds
+</div>
+
+Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.
 
 <div id="hedgedrequestschangereplica">
   ### HedgedRequestsChangeReplica
