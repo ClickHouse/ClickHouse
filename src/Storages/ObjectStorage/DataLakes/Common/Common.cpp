@@ -58,9 +58,10 @@ std::vector<String> listFiles(
 bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
 {
     ProfileEvents::increment(ProfileEvents::DeltaLakeDeltaLogExistenceChecks);
-    /// The trailing slash on the `_delta_log/` prefix excludes sibling prefixes like `_delta_log_backup/`.
     const auto delta_log_dir = (std::filesystem::path(path) / "_delta_log").string() + "/";
-    return object_storage.existsOrHasAnyChild(delta_log_dir);
+    RelativePathsWithMetadata files;
+    object_storage.listObjects(delta_log_dir, files, /* max_keys */ 1);
+    return !files.empty();
 }
 
 String resolvePathInsideTable(const String & table_path, const String & relative_path)

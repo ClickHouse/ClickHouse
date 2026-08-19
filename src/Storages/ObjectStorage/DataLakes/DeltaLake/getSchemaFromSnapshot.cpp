@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Core/TypeId.h>
 #include <Common/Exception.h>
+#include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
 
 #include <DataTypes/DataTypeArray.h>
@@ -638,7 +639,8 @@ struct DeltaJSONSchemaVisitor
     };
 
     std::unordered_map<size_t, std::vector<Node>> lists;
-    size_t counter = 0;
+    /// List id 0 is reserved by the kernel FFI for "None", so allocate ids starting from 1.
+    size_t counter = 1;
     std::exception_ptr exception;
 
     std::vector<Node> & listAt(size_t id)
@@ -651,6 +653,7 @@ struct DeltaJSONSchemaVisitor
 
     Poco::Dynamic::Var buildType(const Node & node) const
     {
+        checkStackSize();
         switch (node.kind)
         {
             case Node::Kind::Primitive:
@@ -972,9 +975,16 @@ static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_ty
             return;
         }
         case DB::TypeIndex::Tuple:
-            for (const auto & element : assert_cast<const DB::DataTypeTuple &>(*type).getElements())
+        {
+            const auto & elements = assert_cast<const DB::DataTypeTuple &>(*type).getElements();
+            if (elements.empty())
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "DeltaLake does not support an empty Tuple/struct type for CREATE TABLE");
+            for (const auto & element : elements)
                 validateClickHouseTypeForDeltaCreate(element);
             return;
+        }
         default:
             /// Throws `NOT_IMPLEMENTED` for any leaf type that cannot round-trip through Delta metadata.
             DB::DeltaLakeMetadata::classifyDeltaPrimitive(type);

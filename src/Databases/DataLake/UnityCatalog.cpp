@@ -87,7 +87,8 @@ static std::string deltaPrimitiveToUnityTypeName(const std::string & delta_type)
     if (delta_type == "float")   return "FLOAT";
     if (delta_type == "double")  return "DOUBLE";
     if (delta_type == "date")    return "DATE";
-    if (delta_type == "timestamp" || delta_type == "timestamp_ntz") return "TIMESTAMP";
+    if (delta_type == "timestamp")     return "TIMESTAMP";
+    if (delta_type == "timestamp_ntz") return "TIMESTAMP_NTZ";
     if (delta_type == "string")  return "STRING";
     if (delta_type == "binary")  return "BINARY";
     if (delta_type.starts_with("decimal(")) return "DECIMAL";

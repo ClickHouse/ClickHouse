@@ -175,7 +175,19 @@ void registerDeltaTableInCatalog(
         /// A concurrent creator may have registered this table between the pre-CREATE existence check and
         /// now. For `IF NOT EXISTS`, treat an existing catalog entry as success (a no-op) rather than
         /// surfacing the registration conflict.
-        if (if_not_exists && catalog->existsTable(namespace_name, table_name))
+        bool already_registered = false;
+        if (if_not_exists)
+        {
+            try
+            {
+                already_registered = catalog->existsTable(namespace_name, table_name);
+            }
+            catch (...)
+            {
+                /// Ok: the create error above is the important one; ignore a failure to probe existence.
+            }
+        }
+        if (already_registered)
         {
             LOG_DEBUG(
                 getLogger("DeltaLakeCatalogRegistration"),
