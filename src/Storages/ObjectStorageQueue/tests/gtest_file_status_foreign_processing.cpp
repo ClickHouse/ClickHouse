@@ -119,7 +119,7 @@ TEST(ObjectStorageQueueFileStatus, ForeignProcessingHintIsClearedByLocalProcessi
     /// This processor took the file over: the state is ours again.
     file_status->onProcessing();
     file_status->processed_rows = 5;
-    ASSERT_EQ(file_status->processingByAnotherProcessorSince(*foreign_processing_observers), 0);
+    ASSERT_FALSE(file_status->isProcessingByAnotherProcessor());
 
     auto contender = makeFileMetadata(file_status, metadata_ref_count);
     contender->afterSetProcessing(/* success */ false, FileStatus::State::Processing);
