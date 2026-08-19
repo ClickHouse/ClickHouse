@@ -16,7 +16,7 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO ${table} SELECT number FROM numbers(100);
     DROP USER IF EXISTS ${user_a}, ${user_b};
     CREATE USER ${user_a}, ${user_b};
-    GRANT SELECT ON ${table} TO ${user_a}, ${user_b};
+    GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${user_a}, ${user_b};
 "
 
 # `cache_for_query_results` is the filesystem cache preconfigured for tests, see tests/config/config.d/query_result_cache_on_disk.xml
@@ -24,9 +24,9 @@ settings="use_query_cache = true, query_cache_on_disk_cache_name = 'cache_for_qu
 
 run() # user, query_id, query, extra settings
 {
-    # --database so that both users run with the test database as the current database: it is part of the cache key, and the style
-    # check requires the `system.query_log` lookups below to be restricted to the current database.
-    ${CLICKHOUSE_CLIENT} --user "$1" --database "${CLICKHOUSE_DATABASE}" --query_id "$2" --query "$3 SETTINGS ${settings}${4:+, $4}" > /dev/null
+    # ${CLICKHOUSE_CLIENT} already selects the test database, so both users run with it as their current database: it is part of the
+    # cache key, and it is what restricts the `system.query_log` lookups below.
+    ${CLICKHOUSE_CLIENT} --user "$1" --query_id "$2" --query "$3 SETTINGS ${settings}${4:+, $4}" > /dev/null
 }
 
 hits() # query_id
