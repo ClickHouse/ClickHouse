@@ -3019,7 +3019,7 @@ class QueryResultElement extends HTMLElement
 
                 #data-table.shapeable .colorize-toggle
                 {
-                    right: 2.5rem;
+                    right: 1.8rem;
                 }
 
                 /* An inactive arrow stays invisible - but, being a real <button>, in the tab order -
@@ -3087,6 +3087,33 @@ class QueryResultElement extends HTMLElement
                     pointer-events: auto;
                 }
 
+                /* Every header icon is absolutely positioned over the column name, which the name of a
+                   narrow column runs under. Draw a halo of the header background around each glyph so
+                   the two stay legible instead of merging into each other. A drop-shadow rather than a
+                   text-shadow: it also applies to the colour-emoji icons (the pushpin and the
+                   rainbow), for which the browser ignores text-shadow, and to the inline SVG of the
+                   funnel. Three stacked passes of a 1px blur make the halo opaque enough to cut a
+                   letter behind the glyph, while staying invisible against the plain header.
+                   No backticks in this comment: this style block lives inside a JS template literal. */
+                .pin-toggle,
+                .colorize-toggle,
+                .sort-toggle,
+                .filter-toggle
+                {
+                    filter: drop-shadow(0 0 1px var(--table-header-color))
+                            drop-shadow(0 0 1px var(--table-header-color))
+                            drop-shadow(0 0 1px var(--table-header-color))
+                            drop-shadow(0 0 1px var(--table-header-color))
+                            drop-shadow(0 0 1px var(--table-header-color));
+                }
+
+                /* The funnel is an outline shape, so a halo alone would still leave the letter behind it
+                   showing through its hollow middle. Fill the interior with the header background too. */
+                .filter-toggle svg polygon
+                {
+                    fill: var(--table-header-color);
+                }
+
                 /* Funnel icon in a column header that opens the filter input for that column. Sits
                    left of the colorize toggle, and behaves like the sort arrows: revealed on header
                    hover or its own keyboard focus, always visible on a coarse pointer, and removed
@@ -3096,7 +3123,7 @@ class QueryResultElement extends HTMLElement
                 {
                     position: absolute;
                     top: 50%;
-                    right: 3.7rem;
+                    right: 3.25rem;
                     transform: translateY(-50%);
                     opacity: 0;
                     pointer-events: none;
@@ -4801,8 +4828,11 @@ class QueryResultElement extends HTMLElement
             e.stopPropagation();
             this._toggleFilterInput(th, name);
         });
-        /// Do not let pressing the icon start a column-resize drag or a text selection.
-        toggle.addEventListener('mousedown', (e) => e.stopPropagation());
+        /// Do not let pressing the icon start a column-resize drag or a text selection, and do not let
+        /// it take the focus: an open input closes when it loses focus (see the popover below), so a
+        /// focus-stealing press would close the input a moment before its own click could toggle it -
+        /// which for this button would then reopen what the user meant to close.
+        toggle.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
         th.appendChild(toggle);
 
         const state = document.createElement('span');
@@ -4814,7 +4844,7 @@ class QueryResultElement extends HTMLElement
             e.stopPropagation();
             this._openFilterInput(th, name);
         });
-        text.addEventListener('mousedown', (e) => e.stopPropagation());
+        text.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
         const reset = document.createElement('button');
         reset.type = 'button';
         reset.className = 'filter-reset';
@@ -4826,13 +4856,24 @@ class QueryResultElement extends HTMLElement
             e.stopPropagation();
             this.setColumnFilter(name, '');
         });
-        reset.addEventListener('mousedown', (e) => e.stopPropagation());
+        reset.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
         state.appendChild(text);
         state.appendChild(reset);
         th.appendChild(state);
 
         const popover = document.createElement('span');
         popover.className = 'filter-popover';
+        /// Clicking or tabbing away abandons the edit and puts the input away again, so a stray click
+        /// does not leave an input standing open over the result. `focusout` (which bubbles, unlike
+        /// `blur`) with the focus landing outside the popover is exactly "the user went elsewhere":
+        /// moving to the apply button inside it is not. The guard on the open column matters because
+        /// hiding an already-open input to open another one also fires this, and that late event must
+        /// not close the input that has just replaced it.
+        popover.addEventListener('focusout', (e) => {
+            if (this._open_filter_column !== name) { return; }
+            if (e.relatedTarget && popover.contains(e.relatedTarget)) { return; }
+            this._closeFilterInput();
+        });
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'filter-input';
@@ -4860,7 +4901,9 @@ class QueryResultElement extends HTMLElement
             e.stopPropagation();
             this.setColumnFilter(name, input.value);
         });
-        apply.addEventListener('mousedown', (e) => e.stopPropagation());
+        /// Leave the focus in the input (see the toggle above): pressing this must apply the filter, not
+        /// first close the input the filter is being read from.
+        apply.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
         popover.appendChild(input);
         popover.appendChild(apply);
         th.appendChild(popover);
@@ -5072,6 +5115,11 @@ class QueryResultElement extends HTMLElement
     /// page is exactly full, so nothing is "cut off" any more and only this keeps the pager). The total
     /// number of pages is unknown - the server is not asked to count the rows - so the pager offers the
     /// ten previous pages, the current one, the next one, and an ellipsis that takes a page number.
+    ///
+    /// The next page is offered only while the current one is FULL. A page that came back short is the
+    /// end of the result: there is nothing on the page after it, so offering it would only lead to an
+    /// empty one. (A page that is exactly the last full one still offers a next page - telling those
+    /// apart would mean counting the rows of the whole result.)
     renderPagination()
     {
         this._clearElement(this._pager);
@@ -5083,10 +5131,12 @@ class QueryResultElement extends HTMLElement
         if (!active && !this._incomplete_result) { return; }
 
         const current = active ? this._pagination.page : 1;
+        const size = active ? this._pagination.size : this._pageSize();
+        const last = this.rowCount >= size ? current + 1 : current;
         const first = Math.max(1, current - QueryResultElement._PAGER_PREVIOUS_PAGES);
         this._pager.style.display = 'flex';
         this._pager.appendChild(document.createTextNode('Page:'));
-        for (let page = first; page <= current + 1; ++page)
+        for (let page = first; page <= last; ++page)
         {
             const button = document.createElement('button');
             button.type = 'button';
