@@ -71,8 +71,11 @@ struct Driver
     /// `prepare` and `work` are protected, drive them through the public interface of the base class.
     IProcessor * proc = nullptr;
     std::vector<std::unique_ptr<OutputPort>> feeders;
+    std::vector<InputPort *> in_ports;
     std::unique_ptr<InputPort> consumer;
-    IProcessor::UpdatedInputPorts all_inputs;
+    /// The executor reports only the ports whose edge has really changed, see `ExecutingGraph::updateNode`.
+    /// Reporting all of them would let the transform observe states which never happen in a real pipeline.
+    std::vector<size_t> updated_inputs;
     std::vector<Int32> pushed;
     IProcessor::Status last_status = IProcessor::Status::NeedData;
 
@@ -94,7 +97,7 @@ struct Driver
         consumer->setNeeded();
 
         for (auto & in : transform->getInputs())
-            all_inputs.push_back(&in);
+            in_ports.push_back(&in);
     }
 
     void step()
@@ -103,7 +106,11 @@ struct Driver
         {
             consumer->setNeeded();
             IProcessor::UpdatedOutputPorts updated_outputs{&transform->getOutputs().front()};
-            last_status = proc->prepare(all_inputs, updated_outputs);
+            IProcessor::UpdatedInputPorts updated_inputs_ports;
+            for (auto input : updated_inputs)
+                updated_inputs_ports.push_back(in_ports[input]);
+            updated_inputs.clear();
+            last_status = proc->prepare(updated_inputs_ports, updated_outputs);
 
             while (consumer->hasData())
             {
@@ -124,13 +131,27 @@ struct Driver
     void send(size_t input, Int32 bucket, std::vector<Int32> ooo = {})
     {
         feeders[input]->push(makeBucketChunk(bucket, std::move(ooo)));
+        updated_inputs.push_back(input);
+        step();
+    }
+
+    void finishInput(size_t input)
+    {
+        feeders[input]->finish();
+        updated_inputs.push_back(input);
         step();
     }
 
     void finish()
     {
-        for (auto & feeder : feeders)
-            feeder->finish();
+        for (size_t input = 0; input < feeders.size(); ++input)
+        {
+            if (!feeders[input]->isFinished())
+            {
+                feeders[input]->finish();
+                updated_inputs.push_back(input);
+            }
+        }
         for (int i = 0; i < 20; ++i)
             step();
     }
@@ -147,28 +168,24 @@ struct Driver
 }
 
 /// An input can send several chunks of the same bucket, the producer converts the aggregation variants
-/// of a bucket one by one. A bucket must not be pushed while an input is still at it: the chunks of it
-/// which arrive after the push are merged and pushed a second time, and the keys of the bucket are
-/// returned twice.
-TEST(GroupingAggregatedOOO, BucketNotPushedWhileAnInputIsStillAtIt)
+/// of a bucket one by one. A bucket must not be pushed while an input can still send more of it: the
+/// chunks which arrive after the push are merged and pushed a second time, and the keys of the bucket
+/// are returned twice.
+///
+/// The producer here postponed buckets 6 and 7, and resolves them in order, so it reports 7 as still
+/// delayed when it sends 6. Nothing above bucket 7 is ever sent, which is what keeps `current_bucket`
+/// behind it and lets the transform push while an input is at the bucket.
+TEST(GroupingAggregatedOOO, BucketNotPushedWhileAnInputCanStillSendIt)
 {
     Driver d(2);
 
-    /// Both inputs postpone bucket 1 and send bucket 3, so bucket 1 is delayed and not pushed in order.
-    d.send(0, 3, {1});
-    d.send(1, 3, {1});
-    /// Input 0 resolves bucket 1 and is done.
-    d.send(0, 1);
-    d.feeders[0]->finish();
-    d.step();
-    /// Input 1 resolves bucket 1 as well: nothing delays the bucket any more and every input is AT it,
-    /// but input 1 still has the rest of the same bucket to send.
-    d.send(1, 1);
-    /// Nothing is sent for a moment: this is when the transform pushes the bucket.
-    d.step();
-    /// The rest of bucket 1 from input 1.
-    d.send(1, 1);
-    d.send(1, 4);
+    d.send(0, 6, {7});
+    d.send(1, 6, {7});
+    /// Both resolve bucket 7, so nothing delays it any more and every input is AT it.
+    d.send(0, 7);
+    d.send(1, 7);
+    /// The rest of bucket 7 from input 0.
+    d.send(0, 7);
     d.finish();
 
     for (auto [bucket, count] : d.counts())
@@ -188,8 +205,7 @@ TEST(GroupingAggregatedOOO, FinishedInputDoesNotHoldADelayedBucket)
     d.send(1, 3, {1});
     /// Input 0 resolves bucket 1 and ends right on it.
     d.send(0, 1);
-    d.feeders[0]->finish();
-    d.step();
+    d.finishInput(0);
     /// Input 1 resolves bucket 1 and moves past it. Nothing can send anything of bucket 1 any more.
     d.send(1, 1);
     d.send(1, 4);
@@ -225,21 +241,21 @@ TEST(GroupingAggregatedOOO, HighestBucketDelayedIsStillPushedOnce)
 
 /// Only the highest bucket waits for the inputs to finish. A delayed bucket below it is pushed as soon
 /// as every input has read a bucket after it, without waiting for the end of the query.
-TEST(GroupingAggregatedOOO, DelayedBucketBelowTheHighestIsPushedBeforeTheEnd)
+TEST(GroupingAggregatedOOO, DelayedBucketIsPushedBeforeTheEnd)
 {
     Driver d(2);
 
-    d.send(0, 0, {254});
-    d.send(1, 0, {254});
-    d.send(0, 254);
-    d.send(1, 254);
-    d.send(0, 255);
-    d.send(1, 255);
-    d.step();
+    /// Both inputs postpone bucket 1 and send bucket 2, then resolve bucket 1, then move past it.
+    d.send(0, 2, {1});
+    d.send(1, 2, {1});
+    d.send(0, 1);
+    d.send(1, 1);
+    d.send(0, 3);
+    d.send(1, 3);
 
-    /// The inputs are still open here.
-    EXPECT_EQ(d.counts()[254], 1) << "bucket 254 is not pushed while the inputs are open, a delayed bucket "
-                                  << "has to be pushed as soon as every input has read a bucket after it";
+    /// Both inputs are still open here.
+    EXPECT_EQ(d.counts()[1], 1) << "bucket 1 is not pushed while the inputs are open, a delayed bucket has "
+                                << "to be pushed as soon as every input has read a bucket after it";
 
     d.finish();
     for (auto [bucket, count] : d.counts())
