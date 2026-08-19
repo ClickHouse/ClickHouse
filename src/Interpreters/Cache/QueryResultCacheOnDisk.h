@@ -76,6 +76,10 @@ private:
 
     ProbeResult probeExistingEntry(const FileCacheKey & cache_key) const;
 
+    /// Reads the entry stored under `cache_key`, if there is a usable one. Returns std::nullopt if the entry does not exist, is stale,
+    /// was partially evicted, is unreadable, or is not accessible to the user in `key`, so that the caller can try another key.
+    std::optional<QueryResultCacheReader> tryCreateReader(const QueryResultCache::Key & key, const FileCacheKey & cache_key) const;
+
     FileCachePtr file_cache;
     const bool enable_reads;
     const bool enable_writes;

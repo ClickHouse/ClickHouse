@@ -789,17 +789,40 @@ void QueryResultCacheWriter::finalizeWrite()
         query_result->chunks = std::move(squashed_chunks);
     }
 
+    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
+    {
+        size_t res = 0;
+        for (const auto & chunk : entry.chunks)
+            res += chunk.getNumRows();
+        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
+        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
+        return res;
+    };
+
     if (!skip_disk_insert)
     {
-        /// The on-disk cache serializes the chunks in Native format, which requires the generic (full, non-const) column
-        /// representation. Note: this must happen before the columnar in-memory compression below.
-        for (auto & chunk : query_result->chunks)
-        {
-            removeSpecialColumnRepresentations(chunk);
-            convertToFullIfConst(chunk);
-        }
+        /// The maximum entry size applies to both backends, so it must be checked before writing on disk. The in-memory backend
+        /// checks it again further below, after the columnar compression which may bring an entry back under the limit.
+        const size_t entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
+        const size_t entry_size_in_rows = count_rows_in_chunks(*query_result);
 
-        on_disk_cache->write(key, *query_result); /// best-effort, logs instead of throwing
+        if ((entry_size_in_bytes > max_entry_size_in_bytes) || (entry_size_in_rows > max_entry_size_in_rows))
+        {
+            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because the query result is too big, query result size: {} (maximum size: {}), query result size in rows: {} (maximum size: {}), query: {}",
+                    formatReadableSizeWithBinarySuffix(entry_size_in_bytes, 0), formatReadableSizeWithBinarySuffix(max_entry_size_in_bytes, 0), entry_size_in_rows, max_entry_size_in_rows, doubleQuoteString(key.query_string));
+        }
+        else
+        {
+            /// The on-disk cache serializes the chunks in Native format, which requires the generic (full, non-const) column
+            /// representation. Note: this must happen before the columnar in-memory compression below.
+            for (auto & chunk : query_result->chunks)
+            {
+                removeSpecialColumnRepresentations(chunk);
+                convertToFullIfConst(chunk);
+            }
+
+            on_disk_cache->write(key, *query_result); /// best-effort, logs instead of throwing
+        }
     }
 
     if (skip_memory_insert)
@@ -827,16 +850,6 @@ void QueryResultCacheWriter::finalizeWrite()
     }
 
     /// Check more reasons why the entry must not be cached.
-
-    auto count_rows_in_chunks = [](const QueryResultCache::Entry & entry)
-    {
-        size_t res = 0;
-        for (const auto & chunk : entry.chunks)
-            res += chunk.getNumRows();
-        res += entry.totals.has_value() ? entry.totals->getNumRows() : 0;
-        res += entry.extremes.has_value() ? entry.extremes->getNumRows() : 0;
-        return res;
-    };
 
     size_t new_entry_size_in_bytes = QueryResultCache::EntryWeight()(*query_result);
     size_t new_entry_size_in_rows = count_rows_in_chunks(*query_result);

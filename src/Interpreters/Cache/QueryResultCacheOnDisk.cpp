@@ -77,7 +77,11 @@ constexpr UInt32 ENTRY_FORMAT_VERSION = 1;
 constexpr size_t FIXED_HEADER_SIZE = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32) + sizeof(UInt64) + sizeof(UInt64) + sizeof(UInt64);
 constexpr size_t TOTAL_SIZE_OFFSET_IN_FIXED_HEADER = sizeof(ENTRY_MAGIC) + sizeof(UInt32) + sizeof(UInt32);
 
-FileCacheKey makeFileCacheKey(const QueryResultCache::Key & key)
+/// The key of a shared entry depends on the query only, so that every user can find it. The key of a non-shared entry additionally
+/// depends on the access context, so that the entry of one user (or of one role set of the same user) neither shadows nor can be
+/// overwritten by the entry of another one. Note that the in-memory query result cache instead keeps a single entry per query and
+/// rejects it on read if it turns out to be inaccessible.
+FileCacheKey makeFileCacheKey(const QueryResultCache::Key & key, bool is_shared)
 {
     /// Salt the hash so that keys of the on-disk query result cache cannot intersect with other keys in the same filesystem cache
     /// (those are typically derived from storage paths).
@@ -86,6 +90,17 @@ FileCacheKey makeFileCacheKey(const QueryResultCache::Key & key)
     hash.update(key.ast_hash.low64);
     hash.update(key.ast_hash.high64);
     hash.update(key.is_subquery);
+    hash.update(is_shared);
+    if (!is_shared)
+    {
+        hash.update(key.user_id.has_value());
+        if (key.user_id)
+            hash.update(key.user_id->toUnderType());
+        /// The roles are compared as an ordered sequence, same as in the in-memory query result cache.
+        hash.update(key.current_user_roles.size());
+        for (const auto & role : key.current_user_roles)
+            hash.update(role.toUnderType());
+    }
     return FileCacheKey::fromKey(hash.get128());
 }
 
@@ -207,12 +222,13 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
 
 bool QueryResultCacheOnDisk::containsFreshEntry(const QueryResultCache::Key & key) const
 {
-    return probeExistingEntry(makeFileCacheKey(key)) == ProbeResult::Fresh;
+    /// Probe the key which `write` would use, i.e. an entry of another user does not count.
+    return probeExistingEntry(makeFileCacheKey(key, key.is_shared)) == ProbeResult::Fresh;
 }
 
 void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry) const
 {
-    const FileCacheKey cache_key = makeFileCacheKey(key);
+    const FileCacheKey cache_key = makeFileCacheKey(key, key.is_shared);
     const auto & origin = FileCache::getCommonOrigin();
 
     switch (probeExistingEntry(cache_key))
@@ -340,19 +356,30 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
 
 QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCache::Key & key) const
 {
+    /// A non-shared entry is stored under a key which covers the access context, a shared entry under a key which does not, and the
+    /// reader cannot know which of the two a writer created (`key.is_shared` is not part of a key constructed for reading). So look
+    /// for an entry of the current user first and for a shared entry second.
+    if (auto reader = tryCreateReader(key, makeFileCacheKey(key, /*is_shared=*/false)))
+        return std::move(*reader);
+
+    if (auto reader = tryCreateReader(key, makeFileCacheKey(key, /*is_shared=*/true)))
+        return std::move(*reader);
+
+    LOG_TRACE(logger, "No query result found on disk for query {}", doubleQuoteString(key.query_string));
+    return QueryResultCacheReader(QueryResultCacheReader::Source::OnDisk);
+}
+
+std::optional<QueryResultCacheReader> QueryResultCacheOnDisk::tryCreateReader(const QueryResultCache::Key & key, const FileCacheKey & cache_key) const
+{
     const auto source = QueryResultCacheReader::Source::OnDisk;
 
     try
     {
-        const FileCacheKey cache_key = makeFileCacheKey(key);
         const auto & user_id = FileCache::getCommonOrigin().user_id;
 
         auto header_holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, FIXED_HEADER_SIZE, user_id);
         if (header_holder->empty())
-        {
-            LOG_TRACE(logger, "No query result found on disk for query {}", doubleQuoteString(key.query_string));
-            return QueryResultCacheReader(source);
-        }
+            return std::nullopt;
 
         std::optional<FixedHeader> fixed_header;
         {
@@ -364,13 +391,13 @@ QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCac
         if (!fixed_header)
         {
             LOG_TRACE(logger, "Incompatible query result found on disk for query {}", doubleQuoteString(key.query_string));
-            return QueryResultCacheReader(source);
+            return std::nullopt;
         }
 
         if (fixed_header->isStale())
         {
             LOG_TRACE(logger, "Stale query result found on disk for query {}", doubleQuoteString(key.query_string));
-            return QueryResultCacheReader(source);
+            return std::nullopt;
         }
 
         /// Hold all segments of the entry while deserializing it. An entry whose segments were partially evicted is a miss.
@@ -378,7 +405,7 @@ QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCac
         if (holder->empty())
         {
             LOG_TRACE(logger, "Partially evicted query result found on disk for query {}", doubleQuoteString(key.query_string));
-            return QueryResultCacheReader(source);
+            return std::nullopt;
         }
 
         auto in = createReadBufferFromSegments(*holder, DBMS_DEFAULT_BUFFER_SIZE);
@@ -404,7 +431,7 @@ QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCac
         if (!is_shared && (!is_same_user_id || !is_same_current_user_roles))
         {
             LOG_TRACE(logger, "Inaccessible query result found on disk for query {}", doubleQuoteString(key.query_string));
-            return QueryResultCacheReader(source);
+            return std::nullopt;
         }
 
         CompressedReadBuffer compressed_in(*in);
@@ -454,7 +481,7 @@ QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCac
     catch (...)
     {
         tryLogCurrentException(logger, "Failed to read a query result from the on-disk query result cache");
-        return QueryResultCacheReader(source);
+        return std::nullopt;
     }
 }
 
