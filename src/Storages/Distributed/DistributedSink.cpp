@@ -629,13 +629,32 @@ void DistributedSink::writeSync(const Block & block)
 
     try
     {
-        /// Run jobs in parallel for each block and wait them
+        /// Run remote jobs in parallel for each block. For a non-parallel quorum
+        /// insert, local jobs can target the same ReplicatedMergeTree table through
+        /// different shards. Complete each of those jobs before starting the next:
+        /// a later block can commit from `consume`, before `onFinish` serializes
+        /// the final pipeline flushes.
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
             {
-                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+                if (!job.is_local_job || !isSequentialQuorumInsert(settings))
+                    pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
             }
+
+        if (isSequentialQuorumInsert(settings))
+        {
+            for (size_t shard_index : collections::range(start, end))
+                for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                {
+                    if (job.is_local_job)
+                    {
+                        pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+                        pool->wait();
+                    }
+                }
+            }
+        }
     }
     catch (...)
     {

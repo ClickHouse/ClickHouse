@@ -21,11 +21,12 @@ CREATE TABLE t_04907_dist (n UInt64)
     ENGINE = Distributed(test_cluster_two_shards_localhost, currentDatabase(), t_04907_target_r1, n);
 
 -- `0` and `1` belong to different shards, so both local jobs write a quorum part into
--- `t_04907_target_r1`.
-INSERT INTO t_04907_dist
+-- `t_04907_target_r1`. Keep the outer INSERT split into two blocks: on the second block,
+-- `ReplicatedMergeTreeSink::consume` commits the first block before `onFinish` runs.
+INSERT INTO t_04907_dist SELECT number FROM numbers(2)
     SETTINGS distributed_foreground_insert = 1, prefer_localhost_replica = 1,
-        insert_quorum = 2, insert_quorum_parallel = 0, max_distributed_connections = 2
-    VALUES (0), (1);
+        insert_quorum = 2, insert_quorum_parallel = 0, max_distributed_connections = 2,
+        max_block_size = 1, min_insert_block_size_rows = 1, min_insert_block_size_bytes = 1;
 
 SELECT count(), sum(n) FROM t_04907_target_r1 SETTINGS select_sequential_consistency = 1;
 
