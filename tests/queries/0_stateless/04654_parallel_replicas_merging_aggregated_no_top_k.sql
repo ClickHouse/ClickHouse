@@ -4,6 +4,10 @@
 -- path never runs it, so the merge step must not carry `top_k` (it would skip
 -- the hash-table size hints and advertise a Top-K in EXPLAIN that never runs).
 
+-- With serialized plans the pass returns before it examines the merge step;
+-- pin the text-planned path so the assertion tests the right gate.
+SET serialize_query_plan = 0;
+
 SET max_rows_to_group_by = 0;
 SET optimize_trivial_group_by_limit_query = 0;
 -- CI randomizes query_plan_max_limit_for_top_k_optimization (can be tiny); pin it.

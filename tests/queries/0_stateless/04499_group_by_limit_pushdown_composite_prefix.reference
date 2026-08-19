@@ -22,6 +22,8 @@ trailing_nullable_nulls_last
 trailing_collate
 trailing_collate: optimized by design
 1
+collate on a matched key: not optimized
+0
 trailing_duplicate_key
 aliased key passes through: still optimized
 1

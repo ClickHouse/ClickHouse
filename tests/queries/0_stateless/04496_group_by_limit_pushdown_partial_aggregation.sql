@@ -33,7 +33,12 @@ SETTINGS enable_group_by_top_k_optimization = 0, log_comment = '04496_partial_ag
 SELECT k1, k2, count() FROM remote('127.0.0.1,localhost', view(
     SELECT intDiv(number, 100) AS k1, number % 7 AS k2 FROM numbers(100000)
 )) GROUP BY k1, k2 ORDER BY k1 DESC, k2 ASC LIMIT 3
-SETTINGS enable_group_by_top_k_optimization = 1;
+SETTINGS enable_group_by_top_k_optimization = 1, log_comment = '04496_mixed_on';
+
+SELECT k1, k2, count() FROM remote('127.0.0.1,localhost', view(
+    SELECT intDiv(number, 100) AS k1, number % 7 AS k2 FROM numbers(100000)
+)) GROUP BY k1, k2 ORDER BY k1 DESC, k2 ASC LIMIT 3
+SETTINGS enable_group_by_top_k_optimization = 0;
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -64,6 +69,23 @@ WHERE type = 'QueryFinish'
         SELECT query_id FROM system.query_log
         WHERE current_database = currentDatabase()
             AND log_comment = '04496_partial_agg_off'
+            AND is_initial_query
+            AND type = 'QueryFinish'
+            AND event_date >= yesterday()
+    );
+
+-- The mixed-direction shards must also have skipped rows through the heap.
+SELECT
+    countIf(NOT is_initial_query) AS shard_queries,
+    sum(ProfileEvents['AggregationTopKRowsSkipped']) > 0 AS shards_skipped
+FROM system.query_log
+WHERE type = 'QueryFinish'
+    AND event_date >= yesterday()
+    AND initial_query_id IN
+    (
+        SELECT query_id FROM system.query_log
+        WHERE current_database = currentDatabase()
+            AND log_comment = '04496_mixed_on'
             AND is_initial_query
             AND type = 'QueryFinish'
             AND event_date >= yesterday()

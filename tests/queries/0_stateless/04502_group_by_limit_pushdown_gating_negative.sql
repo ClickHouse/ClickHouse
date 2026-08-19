@@ -158,25 +158,46 @@ SELECT k_u64, count(), sum(val)
 FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10
 EXCEPT
 SELECT * FROM gt_limit_with_offset;
+SELECT * FROM (SELECT * FROM gt_limit_with_offset)
+EXCEPT
+SELECT * FROM (SELECT k_u64, count(), sum(val)
+FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 ASC LIMIT 5, 10);
 
 SELECT 'multiple_aggregates';
 SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
 FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_multiple_aggregates;
+SELECT * FROM (SELECT * FROM gt_multiple_aggregates)
+EXCEPT
+SELECT * FROM (SELECT k_u32, count(), sum(val), min(val), max(val), avg(val)
+FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY k_u32 ASC LIMIT 10);
 
 SELECT 'desc_order';
 SELECT k_u64, count()
 FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10
 EXCEPT
 SELECT * FROM gt_desc_order;
+SELECT * FROM (SELECT * FROM gt_desc_order)
+EXCEPT
+SELECT * FROM (SELECT k_u64, count()
+FROM t_gbylimit_edge GROUP BY k_u64 ORDER BY k_u64 DESC LIMIT 10);
 
 SELECT 'negative_with_totals';
 SELECT count() FROM (
-    SELECT k_u32, count() AS cnt
-    FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10
-    EXCEPT
-    SELECT * FROM gt_with_totals
+    (
+        SELECT k_u32, count() AS cnt
+        FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10
+        EXCEPT
+        SELECT * FROM gt_with_totals
+    )
+    UNION ALL
+    (
+        SELECT * FROM gt_with_totals
+        EXCEPT
+        SELECT k_u32, count() AS cnt
+        FROM t_gbylimit_edge GROUP BY k_u32 WITH TOTALS ORDER BY k_u32 ASC LIMIT 10
+    )
 );
 
 SELECT 'negative_having';
@@ -184,18 +205,30 @@ SELECT k_u32, count() AS cnt
 FROM t_gbylimit_edge GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_having;
+SELECT * FROM (SELECT * FROM gt_having)
+EXCEPT
+SELECT * FROM (SELECT k_u32, count() AS cnt
+FROM t_gbylimit_edge GROUP BY k_u32 HAVING cnt > 1 ORDER BY k_u32 ASC LIMIT 10);
 
 SELECT 'negative_order_by_aggregate';
 SELECT k_u32, count() AS cnt
 FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_order_by_aggregate;
+SELECT * FROM (SELECT * FROM gt_order_by_aggregate)
+EXCEPT
+SELECT * FROM (SELECT k_u32, count() AS cnt
+FROM t_gbylimit_edge GROUP BY k_u32 ORDER BY cnt DESC, k_u32 ASC LIMIT 10);
 
 SELECT 'negative_multi_key';
 SELECT k_u32, k_u64, count()
 FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_multi_key;
+SELECT * FROM (SELECT * FROM gt_multi_key)
+EXCEPT
+SELECT * FROM (SELECT k_u32, k_u64, count()
+FROM t_gbylimit_edge GROUP BY k_u32, k_u64 ORDER BY k_u32, k_u64 ASC LIMIT 10);
 
 SELECT 'gated shapes carry no Top-K in the plan, the control does';
 SELECT countIf(explain LIKE '%Top-K%') FROM (EXPLAIN actions = 1
@@ -234,6 +267,11 @@ FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_two_level
 SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+SELECT * FROM (SELECT * FROM gt_two_level
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000)
+EXCEPT
+SELECT * FROM (SELECT number, count()
+FROM numbers(600000) GROUP BY number ORDER BY number ASC LIMIT 10);
 
 SELECT 'two_level_string';
 SELECT toString(number) AS k, count()
@@ -241,6 +279,11 @@ FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10
 EXCEPT
 SELECT * FROM gt_two_level_string
 SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000;
+SELECT * FROM (SELECT * FROM gt_two_level_string
+SETTINGS group_by_two_level_threshold = 100000, group_by_two_level_threshold_bytes = 50000000)
+EXCEPT
+SELECT * FROM (SELECT toString(number) AS k, count()
+FROM numbers(600000) GROUP BY k ORDER BY k ASC LIMIT 10);
 
 DROP TABLE t_gbylimit_edge;
 DROP TABLE gt_limit_with_offset;

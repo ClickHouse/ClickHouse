@@ -158,7 +158,16 @@ def start_cluster():
 
 
 def _run(node, query, opt):
-    return node.query(query, settings={"enable_group_by_top_k_optimization": opt})
+    # Pin the gates that could otherwise silently disable the optimization and
+    # turn the on-vs-off comparisons vacuous.
+    return node.query(
+        query,
+        settings={
+            "enable_group_by_top_k_optimization": opt,
+            "serialize_query_plan": 0,
+            "query_plan_max_limit_for_top_k_optimization": 1000,
+        },
+    )
 
 
 def _assert_same_result(node, query):
