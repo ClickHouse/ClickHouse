@@ -227,7 +227,7 @@ In addition to the built-in authenticator, you can configure your ClickHouse Clo
 
 | Parameter | Description |
 |---|---|
-| Name | A label for the provider on the service. |
+| Name | A unique name for the provider on the service. |
 | Issuer | The value of the `iss` claim in tokens issued by your identity provider, typically the provider's URL (for example, `https://your-tenant.okta.com`). ClickHouse rejects tokens whose issuer does not match this value. |
 | Audience | The value of the `aud` claim that your identity provider places in tokens intended for this service. ClickHouse rejects tokens issued for a different audience. |
 | JWKS URL | The HTTPS endpoint where your identity provider publishes its JSON Web Key Set (for example, `https://idp.example.com/.well-known/jwks.json`). ClickHouse fetches the public keys from this endpoint to verify token signatures. JWKS verification works with RSA keys (`RS256`) only, as described in [Required claims](#required-claims). |

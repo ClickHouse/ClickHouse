@@ -20,7 +20,7 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 <EnterprisePlanFeatureBadge feature="JWT authentication with a custom identity provider" support="true"/>
 
 <Tip>
-This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — required claims (`iss`, `aud`, `sub`, `kid`), the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/operations/external-authenticators/jwt) reference.
+This guide covers configuring JWKS providers in the Cloud console. To learn how to generate a JWT and what its structure looks like — its required claims, the roles and grants claims, and how ephemeral users work — see the [JWT Authentication](/operations/external-authenticators/jwt) reference.
 </Tip>
 
 ClickHouse Cloud lets you authenticate connections to a service with JSON Web Tokens (JWTs) validated against your own JSON Web Key Set (JWKS) endpoints. Instead of managing database credentials, your identity provider issues short-lived tokens that ClickHouse verifies against the public keys published at a JWKS URL you configure.
@@ -37,7 +37,7 @@ To configure JWT providers for a service, you need:
 
 - An organization on the **Enterprise** plan.
 - A service running **ClickHouse version 26.4 or later**.
-- The **Admin**, **Service admin**, or **Service manager** role on the service (the `control-plane:service:manage` permission). Members without it see the section as read only.
+- A role with the `control-plane:service:manage` permission on the service (for example, **Admin** or **Service admin**). Members without it see the section as read only.
 - A publicly reachable **HTTPS** JWKS URL that publishes at least one **RSA** key (tokens must be signed with **RS256**).
 
 <Note>
@@ -50,7 +50,7 @@ The client (your identity provider or application) generates a JWT and signs it 
 
 1. ClickHouse reads the token's `kid` (key ID) header and selects the matching key from your JWKS document.
 2. It verifies the token signature against that RSA public key and checks the `iss` (issuer) and `aud` (audience) claims against your provider configuration.
-3. On success, the connection runs as an ephemeral user with the `default` user's grants, optionally mapped to roles carried in the token's roles claim.
+3. On success, the connection runs as an ephemeral user whose access rights come from the token's `clickhouse:grants` and `clickhouse:roles` claims, capped by the permission limit (the `default` user). See [Access rights](/operations/external-authenticators/jwt#access-rights) for details.
 
 ClickHouse validates and fetches the JWKS URL when you add or update a provider, so a misconfigured or unreachable URL is rejected up front.
 
@@ -80,8 +80,8 @@ Complete the provider form and select **Save**.
 | **Name** | A unique name for this provider on the service. Cannot be changed after creation. |
 | **Issuer** | The expected `iss` claim of incoming tokens. |
 | **Audience** | The expected `aud` claim of incoming tokens. |
-| **JWKS URL** | The public HTTPS URL that publishes your RSA signing keys. |
-| **Roles claim** (optional) | The token claim to read ClickHouse roles from. Leave blank to use the default claim name `clickhouse:roles`. |
+| **JWKS URL** | The public HTTPS URL that publishes your RSA public keys used to verify token signatures. |
+| **Roles claim** (optional) | The token claim to read ClickHouse roles from. Leave blank to use the default claim name `clickhouse:roles`. Roles named in the token must already exist on the service. |
 
 </Step>
 <Step title="Add more providers if needed" id="add-more-providers">
