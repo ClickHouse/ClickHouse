@@ -1075,6 +1075,15 @@ using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFin
 /// top-level source types would leave that value in the 16/32-bit domain.
 DataTypePtr widenTemporalType(const DataTypePtr & type)
 {
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(nullable_type->getNestedType());
+        if (!nullable_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeNullable>(std::move(widened_nested));
+
+        return type;
+    }
+
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         DataTypes widened_elements;
