@@ -2652,10 +2652,11 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
     /// Out-of-range rows keep the default (zero) value, so start from an all-zero buffer that bits are ORed into.
     memset(res_data.data(), 0, input_rows_count * sizeof(T));
 
+    const bool index_is_nullable = arguments[1].type->isNullable();
     ColumnUInt8::MutablePtr null_map;
     if constexpr (is_null_mode)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
-    else if (source_null_map)
+    else if (source_null_map || index_is_nullable)
         null_map = ColumnUInt8::create(input_rows_count, UInt8(0));
 
     auto plane_chars = [&](size_t group, size_t bit) -> const UInt8 *
@@ -2727,6 +2728,11 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
             element = resolve_unsigned(index.safeGet<UInt64>());
         else if (index.getType() == Field::Types::Int64)
             element = resolve_signed(index.safeGet<Int64>());
+        else if (index.isNull() && index_is_nullable)
+        {
+            null_map->getData().assign(input_rows_count, UInt8(1));
+            return ColumnNullable::create(std::move(res), std::move(null_map));
+        }
         else
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
 
@@ -2768,9 +2774,13 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
     }
     else
     {
+        const auto * nullable_index = checkAndGetColumn<ColumnNullable>(&index_column);
+        const IColumn & nested_index_column = nullable_index ? nullable_index->getNestedColumn() : index_column;
+        const auto * index_null_map = nullable_index ? &nullable_index->getNullMapData() : nullptr;
+
         auto execute_index_type = [&]<typename IndexType>() -> bool
         {
-            const auto * col_index = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+            const auto * col_index = checkAndGetColumn<ColumnVector<IndexType>>(&nested_index_column);
             if (!col_index)
                 return false;
 
@@ -2778,6 +2788,11 @@ ColumnPtr FunctionArrayElement<mode>::executeQBitImpl(const ColumnsWithTypeAndNa
             for (size_t row = 0; row < input_rows_count; ++row)
             {
                 if (source_null_map && (*source_null_map)[row])
+                {
+                    null_map->getData()[row] = 1;
+                    continue;
+                }
+                if (index_null_map && (*index_null_map)[row])
                 {
                     null_map->getData()[row] = 1;
                     continue;
