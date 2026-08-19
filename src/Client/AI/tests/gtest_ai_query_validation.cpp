@@ -183,6 +183,43 @@ TEST(AIQueryValidation, RejectsExternalAccess)
     EXPECT_TRUE(isAllowed("SELECT number IN numbers(3) FROM numbers(5)"));
 }
 
+TEST(AIQueryValidation, RejectsTableNamesOnTheRightHandSideOfIn)
+{
+    /// `1 IN v` reads `v` without an `ASTTableExpression` in the AST, so it has to be held to the
+    /// same boundary as `FROM v`: the view may be defined over `url` or `file`.
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN v"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN (v)"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN db.v"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 GLOBAL IN v"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 NOT IN v"));
+    /// Nested in a subquery of an allowed statement.
+    EXPECT_FALSE(isAllowed("SELECT (SELECT 1 WHERE 1 IN v)"));
+
+    /// The `system` tables stay allowed, `system.zookeeper` does not.
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN system.numbers"));
+    EXPECT_FALSE(isAllowed("SELECT 1 WHERE 1 IN system.zookeeper"));
+
+    /// Literals, tuples of literals, subqueries and the allowed table functions are unaffected.
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (1, 2, 3)"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN [1, 2, 3]"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN numbers(3)"));
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (SELECT number FROM numbers(3))"));
+    /// The identifiers inside a subquery name columns, not tables.
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (SELECT number FROM system.numbers LIMIT 1)"));
+    /// Only the set expression itself can name a table: inside a tuple the elements are ordinary
+    /// expressions, which the server resolves as columns, so they are left alone.
+    EXPECT_TRUE(isAllowed("SELECT 1 WHERE 1 IN (toUInt8(1), toUInt8(2))"));
+    EXPECT_TRUE(isAllowed("SELECT number FROM numbers(3) WHERE number IN (number, number + 1)"));
+
+    /// A name is ambiguous between a column and a table, and the client cannot resolve it, so
+    /// `IN` over an array column is conservatively sent through run_query as well.
+    EXPECT_FALSE(isAllowed("SELECT 1 IN arr FROM (SELECT [1, 2] AS arr)"));
+
+    /// The same position must not bypass the schema-access restriction either.
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN system.tables"));
+    EXPECT_TRUE(isAllowedWithoutSchemaAccess("SELECT 1 WHERE 1 IN (1, 2, 3)"));
+}
+
 TEST(AIQueryValidation, RejectsUnknownFunctions)
 {
     /// The validation sees the raw AST before the server expands SQL user-defined functions,

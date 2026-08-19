@@ -183,10 +183,74 @@ bool isDeniedScalarFunction(const String & name)
 /// admit the server-owned `system` tables. User tables, views, and CTE names require the
 /// confirmed tool. This is deliberately stricter than `readonly = 1`: it preserves the promise
 /// that the unconfirmed tool cannot reach resources beyond the local server.
-bool isAllowedNamedTable(const ASTTableIdentifier & table)
+bool isAllowedNamedTable(const String & database, const String & table)
 {
     /// `system.zookeeper` reaches Keeper, rather than reading metadata local to the server.
-    return table.getDatabaseName() == "system" && table.shortName() != "zookeeper";
+    return database == "system" && table != "zookeeper";
+}
+
+bool isAllowedNamedTable(const ASTTableIdentifier & table)
+{
+    return isAllowedNamedTable(table.getDatabaseName(), table.shortName());
+}
+
+/// The right-hand side of an IN operator names a table or a table function without an
+/// `ASTTableExpression` around it: `x IN some_view`, `x IN remote(...)`. The generic traversal
+/// never sees a table there, so this position is checked separately.
+///
+/// Only the expression itself can name a table; the parser has already unwrapped the parentheses
+/// of `x IN (some_view)`. Inside a tuple or an array the elements are ordinary expressions, and
+/// the server resolves a name there as a column only - so they are deliberately not descended
+/// into, which also keeps `x IN (toDate('2026-01-01'), toDate('2026-01-02'))` allowed.
+///
+/// A name in this position is ambiguous: the server resolves it as a column of the enclosing
+/// query first and only then as a table, and the client cannot tell the two apart before
+/// execution. It is therefore held to the same named-table boundary as an explicit `FROM`, at
+/// the cost of sending `x IN some_array_column` through run_query as well - the same fallback as
+/// for any other construct that cannot be verified in advance.
+void checkNoTableAccessInSetExpression(const IAST & ast, bool allow_system_tables)
+{
+    if (const auto * identifier = ast.as<ASTIdentifier>())
+    {
+        /// A name of any other number of parts cannot be a table, so it leaves both names empty
+        /// and is rejected below like any other name that is not a `system` table.
+        const auto & parts = identifier->name_parts;
+        const String database = parts.size() == 2 ? parts.front() : "";
+        const String table = parts.size() == 1 || parts.size() == 2 ? parts.back() : "";
+
+        if (!allow_system_tables)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
+
+        if (!isAllowedNamedTable(database, table))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The name `{}` on the right-hand side of IN may be a table or a view whose definition reaches "
+                "resources outside of the tables of the current server, so it is not allowed for the read-only "
+                "tool. Use the run_query tool for this query",
+                identifier->name());
+    }
+    else if (const auto * function = ast.as<ASTFunction>())
+    {
+        /// A tuple or an array here is a set of values rather than a table.
+        if (function->name != "tuple" && function->name != "array" && !isAllowedTableFunction(function->name))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The function `{}` on the right-hand side of IN may be a table function reaching resources "
+                "outside of the tables of the current server, so it is not allowed for the read-only tool. "
+                "Use the run_query tool for this query",
+                function->name);
+    }
+}
+
+/// The set expression of an IN operator, when the operator has the shape this validation can
+/// reason about. `null` when it does not, in which case the generic traversal still applies.
+const IAST * getSetExpressionOfInOperator(const ASTFunction & function)
+{
+    if (!functionIsInOrGlobalInOperator(function.name) || !function.arguments || function.arguments->children.size() != 2)
+        return nullptr;
+    return function.arguments->children[1].get();
 }
 
 /// Whether the function is a builtin known to the client. This validation runs on the raw
@@ -220,7 +284,7 @@ void checkNoExternalAccess(const IAST & ast)
         /// `EXISTS` and `SHOW CREATE` store their target directly on the query instead of
         /// in an `ASTTableExpression`, so apply the same named-table boundary here.
         if (!query_with_table->getTable().empty()
-            && !isAllowedNamedTable(ASTTableIdentifier(query_with_table->getDatabase(), query_with_table->getTable())))
+            && !isAllowedNamedTable(query_with_table->getDatabase(), query_with_table->getTable()))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The table `{}.{}` may be a view whose definition reaches resources outside of the tables of the current "
@@ -270,20 +334,10 @@ void checkNoExternalAccess(const IAST & ast)
                 "before execution. Use the run_query tool for this query",
                 function->name);
 
-        /// The right-hand side of an IN operator can be a table function: `x IN remote(...)`.
-        /// Reject any function there except tuple/array literals and the allowed table functions
-        /// (a false positive sends the query through run_query, which is fine).
-        if (functionIsInOrGlobalInOperator(function->name) && function->arguments && function->arguments->children.size() == 2)
-        {
-            if (const auto * rhs = function->arguments->children[1]->as<ASTFunction>();
-                rhs && rhs->name != "tuple" && rhs->name != "array" && !isAllowedTableFunction(rhs->name))
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "The function `{}` on the right-hand side of IN may be a table function reaching resources "
-                    "outside of the tables of the current server, so it is not allowed for the read-only tool. "
-                    "Use the run_query tool for this query",
-                    rhs->name);
-        }
+        /// The right-hand side of an IN operator can name a table or a table function without an
+        /// `ASTTableExpression`: `x IN remote(...)`, `x IN some_view`.
+        if (const auto * set_expression = getSetExpressionOfInOperator(*function))
+            checkNoTableAccessInSetExpression(*set_expression, /*allow_system_tables=*/ true);
     }
 
     for (const auto & child : ast.children)
@@ -302,6 +356,14 @@ void checkNoSchemaAccess(const IAST & ast)
                     ErrorCodes::BAD_ARGUMENTS,
                     "Schema access is disabled for the read-only tool. Use the run_query tool for this query");
         }
+    }
+    else if (const auto * function = ast.as<ASTFunction>())
+    {
+        /// `x IN system.tables` reads a table without an `ASTTableExpression`. The external-access
+        /// check has already rejected every name there that is not a `system` table, so any name
+        /// left in this position is one this restriction is meant to hide.
+        if (const auto * set_expression = getSetExpressionOfInOperator(*function))
+            checkNoTableAccessInSetExpression(*set_expression, /*allow_system_tables=*/ false);
     }
 
     for (const auto & child : ast.children)
