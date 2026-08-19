@@ -43,6 +43,7 @@ namespace DimensionalMetrics
 {
     extern MetricFamily & ObjectStorageQueueNewestSeenTimestamp;
     extern MetricFamily & ObjectStorageQueueNewestCommittedTimestamp;
+    extern MetricFamily & ObjectStorageQueueOldestOpenFileTimestamp;
 }
 
 namespace DB
@@ -743,6 +744,40 @@ void ObjectStorageQueueMetadata::updateNewestCommittedTimestamp(time_t timestamp
             {storage_id.getDatabaseName(), storage_id.getTableName()},
             static_cast<double>(timestamp));
     }
+}
+
+void ObjectStorageQueueMetadata::openFileForProcessing(time_t last_modified, const StorageID & storage_id)
+{
+    std::lock_guard lock(open_files_mutex);
+    auto & open_files = open_files_by_table[storage_id.getFullTableName()];
+    open_files.insert(last_modified);
+
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueOldestOpenFileTimestamp,
+        {storage_id.getDatabaseName(), storage_id.getTableName()},
+        static_cast<double>(*open_files.begin()));
+}
+
+void ObjectStorageQueueMetadata::closeFileForProcessing(time_t last_modified, const StorageID & storage_id)
+{
+    std::lock_guard lock(open_files_mutex);
+    auto it = open_files_by_table.find(storage_id.getFullTableName());
+    if (it == open_files_by_table.end())
+        return;
+
+    auto & open_files = it->second;
+    auto entry_it = open_files.find(last_modified);
+    if (entry_it != open_files.end())
+        open_files.erase(entry_it);
+
+    const double value = open_files.empty()
+        ? static_cast<double>(getCurrentTime())
+        : static_cast<double>(*open_files.begin());
+
+    DimensionalMetrics::set(
+        DimensionalMetrics::ObjectStorageQueueOldestOpenFileTimestamp,
+        {storage_id.getDatabaseName(), storage_id.getTableName()},
+        value);
 }
 
 void ObjectStorageQueueMetadata::registerActive(const StorageID & storage_id)

@@ -1,4 +1,5 @@
 #include "config.h"
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/CurrentThread.h>
 
@@ -1245,7 +1246,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
             if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
                 object_metadata && object_metadata->is_last_modified_known)
             {
-                processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+                const auto last_modified = object_metadata->last_modified.epochTime();
+                processed_files.back().last_modified = last_modified;
+                files_metadata->openFileForProcessing(last_modified, storage_id);
             }
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
@@ -1663,6 +1666,14 @@ void ObjectStorageQueueSource::finalizeCommit(
     std::exception_ptr finalize_exception;
     for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
     {
+        /// Runs on every path out of this iteration (success, `continue`, or an exception
+        /// caught below), so a finalize failure can never leave this file stuck "open"
+        /// forever in the oldest-open-file tracking.
+        SCOPE_EXIT({
+            if (last_modified)
+                files_metadata->closeFileForProcessing(last_modified, storage_id);
+        });
+
         try
         {
             switch (file_state)

@@ -70,6 +70,12 @@ namespace DimensionalMetrics
         {"database", "table"}
     );
 
+    MetricFamily & ObjectStorageQueueOldestOpenFileTimestamp = Factory::instance().registerMetric(
+        "object_storage_queue_oldest_open_file_timestamp_seconds",
+        "Unix timestamp of the last-modified time of the oldest object currently claimed and not yet finished (processed, permanently failed, or reset for retry) by an ObjectStorageQueue (S3Queue/AzureQueue) table, labelled by database and table. Set to the current time when nothing is currently claimed. Flags a single file stuck retrying even while other files keep being processed normally.",
+        {"database", "table"}
+    );
+
     void Metric::set(Value value_)
     {
         value.store(value_, std::memory_order_relaxed);
