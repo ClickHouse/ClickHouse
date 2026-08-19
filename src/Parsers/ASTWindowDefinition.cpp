@@ -367,7 +367,12 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         if (frame_begin_type != WindowFrame::BoundaryType::Offset && frame_begin_offset)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_begin_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
+        if (!r.has("frame_begin_preceding"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_begin_preceding' for a non-default-frame window during AST JSON deserialization");
         frame_begin_preceding = r.getBool("frame_begin_preceding");
+        if (frame_begin_type != WindowFrame::BoundaryType::Offset && !frame_begin_preceding)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'frame_begin_preceding' must be true for a non-Offset frame boundary during AST JSON deserialization");
 
         frame_end_type = parseBoundaryType(r.getString("frame_end_type"));
 
@@ -382,7 +387,12 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_offset)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'frame_end_offset' is only valid for an Offset frame boundary during AST JSON deserialization");
 
+        if (!r.has("frame_end_preceding"))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'frame_end_preceding' for a non-default-frame window during AST JSON deserialization");
         frame_end_preceding = r.getBool("frame_end_preceding");
+        if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_preceding)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'frame_end_preceding' must be false for a non-Offset frame boundary during AST JSON deserialization");
     }
 }
 
