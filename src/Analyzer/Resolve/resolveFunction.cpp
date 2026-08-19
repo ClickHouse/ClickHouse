@@ -377,7 +377,7 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
-bool isViewBackedSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+bool isViewBackedOrRemoteSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
 {
     QueryTreeNodePtr resolved_table = join_tree;
     if (const auto * identifier = join_tree->as<IdentifierNode>())
@@ -391,7 +391,9 @@ bool isViewBackedSource(const QueryTreeNodePtr & join_tree, const IdentifierReso
     if (!table || !table->getStorage())
         return true;
 
-    return table->getStorage()->isView();
+    /// Remote storages can attach policies and filters on shard-local tables that are not
+    /// visible in initiator-side metadata, so they cannot be proven safe speculatively.
+    return table->getStorage()->isView() || table->getStorage()->isRemote();
 }
 
 bool hasLateAttachedTableFilter(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
@@ -432,7 +434,7 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
             && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
         || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
             && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
-        || isViewBackedSource(join_tree, scope)
+        || isViewBackedOrRemoteSource(join_tree, scope)
         || hasLateAttachedTableFilter(join_tree, scope)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
