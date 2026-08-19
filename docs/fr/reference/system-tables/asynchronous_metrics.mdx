@@ -810,6 +810,18 @@ La taille, en octets, de l’arène mémoire réservée aux clés dans ClickHous
 
 Index du dernier log validé dans ClickHouse Keeper.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+Durée, en millisecondes, de la dernière période sans leader observée localement, qui s&#39;est achevée lorsque cette instance de ClickHouse Keeper est devenue leader. Les transferts de leadership qui ne présentent pas d&#39;état sans leader échantillonné ne sont pas enregistrés. `0` si cette instance n&#39;est pas le leader actif ou si aucune période terminée n&#39;a été enregistrée.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+Durée, en millisecondes, de la dernière période sans leader observée localement et achevée par ce leader ClickHouse Keeper. `0` si cette instance n’est pas le leader actif ou si aucune période sans leader achevée n’a été enregistrée.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
