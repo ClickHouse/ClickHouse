@@ -7,6 +7,8 @@
 
 #include <fmt/format.h>
 
+#include <tuple>
+
 namespace DB
 {
 
@@ -303,18 +305,30 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Kill the largest allocation. It is the last as the set is ordered by size.
-    ResourceAllocation & victim = *running_allocations.rbegin();
+    // Choose the eviction victim by (oom_score, fair_key, unique_id), highest first. `oom_score` (a
+    // per-query setting, 0 by default) is the primary key, so a reservation the user marked with a
+    // higher score is evicted first. When every reservation shares the same `oom_score` this reduces
+    // to the largest `fair_key` - exactly what `running_allocations.rbegin()` selected before - so the
+    // default eviction order is unchanged.
+    ResourceAllocation * victim_ptr = nullptr;
+    for (ResourceAllocation & candidate : running_allocations)
+    {
+        if (!victim_ptr
+            || std::tie(candidate.oom_score, candidate.fair_key, candidate.unique_id)
+             > std::tie(victim_ptr->oom_score, victim_ptr->fair_key, victim_ptr->unique_id))
+            victim_ptr = &candidate;
+    }
+    ResourceAllocation & victim = *victim_ptr;
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting allocation of size {} (oom_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.allocated), victim.oom_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting the largest allocation of size {} in workload '{}' to satisfy increase of a smaller allocation.",
-                formatReadableCost(victim.allocated), getWorkloadName());
+            details = fmt::format("Evicting allocation of size {} (oom_score {}) in workload '{}' to satisfy increase of a smaller allocation.",
+                formatReadableCost(victim.allocated), victim.oom_score, getWorkloadName());
     }
 
     return &victim;

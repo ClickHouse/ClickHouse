@@ -4009,6 +4009,11 @@ If not enough memory is available to the workload, a query is prevented from sta
 A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
+    DECLARE(Int64, oom_score, 0, R"(
+Used in workload scheduling. Controls the order in which queries' memory reservations are evicted when their workload is under memory pressure. A query with a higher `oom_score` is evicted before a query with a lower one; queries with an equal `oom_score` are evicted largest-reservation-first. The value may be negative to make a query less likely to be evicted. Analogous to the Linux `oom_score_adj`.
+A value of `0` (the default) leaves the eviction order unchanged.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 
