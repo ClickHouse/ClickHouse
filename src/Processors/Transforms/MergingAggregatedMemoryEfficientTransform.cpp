@@ -99,7 +99,13 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
             /// The bucket is no longer delayed by any of the inputs.
             /// Either we received it from all sources (where it was not empty),
             /// or we received buckets with higher id-s and no delayed bucket information.
-            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+            ///
+            /// Every input has to be strictly past the bucket, not at it: an input whose last chunk is of
+            /// this bucket can send more chunks of the same bucket, they would be merged and pushed a second
+            /// time, and the keys of the bucket would be returned twice. The in order push below relies on
+            /// the same: it pushes the buckets before `current_bucket`, and `current_bucket` only moves on
+            /// when every input has read a bucket after it.
+            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) > bucket)
             {
                 if (try_push_by_iter(chunks_map.find(bucket)))
                 {
