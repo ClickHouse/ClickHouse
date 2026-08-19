@@ -1157,15 +1157,15 @@ Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedStat
     using DataType = typename Method::Data;
     using KeyType = typename Method::Key;
 
-    if constexpr (!requires(DataType d, KeyType k) { d.erase(k); })
+    constexpr bool prunes = requires(DataType d, KeyType k) { d.erase(k); };
+
+    if (!prunes || method.top_k_heap.is_prefix_mode)
     {
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact());
+        return;
     }
-    else if (method.top_k_heap.is_prefix_mode)
-    {
-        ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, method.top_k_heap.trimAndCompact());
-    }
-    else
+
+    if constexpr (prunes)
     {
         auto destroy_state = [&](AggregateDataPtr mapped)
         {
@@ -1178,7 +1178,7 @@ Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedStat
                 aggregate_functions[j]->destroy(mapped + offsets_of_aggregate_states[j]);
         };
 
-        const size_t evicted_count = method.top_k_heap.trimAndCompact([&](size_t evicted)
+        auto erase_evicted = [&](size_t evicted)
         {
             if constexpr (requires { method.data.hasNullKeyData(); })
             {
@@ -1205,7 +1205,9 @@ Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedStat
             }
 
             method.data.erase(key);
-        });
+        };
+
+        const size_t evicted_count = method.top_k_heap.trimAndCompact(erase_evicted);
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, evicted_count);
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysPruned, evicted_count);
     }
@@ -1595,7 +1597,7 @@ void NO_INLINE Aggregator::executeImplBatch(
             if constexpr (top_k)
             {
                 if (skip_bitmap
-                    ? bool(skip_bitmap[i])
+                    ? static_cast<bool>(skip_bitmap[i])
                     : (method.top_k_heap.size() >= params.top_k->k && heap_should_skip(i)))
                 {
                     places[i] = nullptr;

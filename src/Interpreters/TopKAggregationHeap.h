@@ -43,7 +43,7 @@ struct TopKAggregationHeap
     std::vector<AggregateDataPtr> free_states;  /// state slots of pruned groups, reused by later inserts (arena memory is never returned)
 
 private:
-    static constexpr size_t invalid_row = size_t(-1);
+    static constexpr size_t invalid_row = static_cast<size_t>(-1);
 
     /// The tracked set.
     std::vector<size_t> heap_indices;       /// row indices into `heap_column`, in no particular order
