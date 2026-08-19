@@ -2207,7 +2207,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     /// Actually creates table
-    bool created;
+    bool created = false;
     try
     {
         created = doCreateTable(create, properties, ddl_guard, mode, engine_user_specified);
