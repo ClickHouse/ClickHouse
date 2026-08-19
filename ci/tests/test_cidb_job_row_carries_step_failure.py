@@ -31,7 +31,12 @@ from ci.praktika.cidb import CIDB
 from ci.praktika.result import Result
 
 MARKER = "Poco::Exception. Code: 1000, e.code() = 111, Connection refused"
-SERVER_LOG = "\n".join(f"srvlog{i}" for i in range(300) if i) + "\n" + MARKER
+# `Result.from_commands_run` truncates to a leading marker plus the last 300 lines
+# (`ci/praktika/result.py`), so 301 lines is the ceiling, not 300. Real master payloads
+# measure 301 lines / ~26 KB at ~88 chars per line; the fixture matches both axes so a
+# line clip or a byte clip of the appended text cannot stay green.
+_SERVER_LOG_BODY = [f"srvlog{i}: " + "x" * 76 for i in range(1, 300)]
+SERVER_LOG = "\n".join(["~~~~~ truncated 912 lines ~~~~~", *_SERVER_LOG_BODY, MARKER])
 FAST_TEST_INFO = "1 tests failed:\n00001_foo FAIL"
 
 
@@ -245,14 +250,19 @@ def test_failing_step_with_empty_info():
 
 
 def test_large_payload_is_appended_verbatim():
-    """`Result.from_commands_run` already caps its info at 300 lines; do not cap again."""
+    """
+    `Result.from_commands_run` already caps its info at 300 lines plus a truncation
+    marker; do not cap again. A real payload is 301 lines and ~26 KB, and its cause is
+    in the TAIL, so the line count and the byte size are both pinned.
+    """
     step = node("Start ClickHouse Server", Result.Status.FAIL, SERVER_LOG)
     result = job([node("Install ClickHouse", Result.Status.OK), step])
     context = rows(result)[0]["test_context_raw"]
 
     appended = context[len(result.info) + 1 :]
     assert appended == f"{step.name}: {step.info}"
-    assert len(appended.splitlines()) == len(step.info.splitlines())
+    assert len(appended.splitlines()) == len(step.info.splitlines()) == 301
+    assert len(appended) > 20_000
     assert context.endswith(MARKER)
 
 
