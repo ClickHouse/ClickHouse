@@ -94,7 +94,7 @@ AccessToken UnifiedUnityCatalog::retrieveAccessToken() const
 {
     DB::HTTPHeaderEntries headers;
     headers.emplace_back("Content-Type", "application/x-www-form-urlencoded");
-    headers.emplace_back("Accepts", "application/json; charset=UTF-8");
+    headers.emplace_back("Accept", "application/json");
 
     std::string effective_oauth_uri = oauth_server_uri;
     if (effective_oauth_uri.empty())
