@@ -11,6 +11,7 @@
 SET max_threads = 4;
 SET enable_adaptive_aggregator = 1;
 SET group_by_two_level_threshold = 100000;
+SET group_by_two_level_threshold_bytes = 500000000;
 SET max_block_size = 65536;
 
 -- An admitted parallel aggregation routes through exactly one store.
