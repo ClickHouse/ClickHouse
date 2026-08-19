@@ -1286,12 +1286,15 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         /// footer would describe the generation the cache key names, which is the assignment's own
         /// generation, and the comparison could not detect that the `GET` returned a different one.
         /// The read is pinned to the listed etag - so the opened bytes are that generation by
-        /// construction - only on S3 with `s3_validate_etag_on_read` (see `createReadBuffer`); on any
-        /// other backend, or with the setting off, the metadata cache is bypassed for bucketed reads so
-        /// the digest guard can fail close on a concurrent in-place overwrite.
+        /// construction - only on S3 with `s3_validate_etag_on_read` (see `createReadBuffer`). Data-lake
+        /// configurations also pin the listed file generation to immutable metadata. On any other backend,
+        /// or with the setting off, the metadata cache is bypassed for bucketed reads so the digest guard
+        /// can fail close on a concurrent in-place overwrite.
         const bool read_is_pinned_to_etag = context_->getSettingsRef()[Setting::s3_validate_etag_on_read]
             && object_storage->getType() == ObjectStorageType::S3;
-        const bool can_use_metadata_cache = !object_info->file_bucket_info || read_is_pinned_to_etag;
+        const bool can_use_metadata_cache = !object_info->file_bucket_info
+            || configuration->isDataLakeConfiguration()
+            || read_is_pinned_to_etag;
 
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
