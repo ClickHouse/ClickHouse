@@ -274,6 +274,20 @@ public:
         return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// Documentation-only signatures must not take the base types-only
+        /// path: it applies the DSL result directly and bypasses the legacy
+        /// lambda-result normalization above. Build synthetic arguments to
+        /// reuse that legacy implementation instead.
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
+    }
+
     ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
         return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/true);

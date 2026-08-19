@@ -123,6 +123,20 @@ public:
         return type;
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        /// The documentation signature cannot represent the input-dependent
+        /// nesting depth. Reuse the authoritative implementation so callers
+        /// without columns get the same result where possible, or its normal
+        /// error when a constant depth value is required.
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
+    }
+
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
 private:
