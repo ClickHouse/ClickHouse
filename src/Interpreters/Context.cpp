@@ -3498,6 +3498,16 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
     checkSettingsConstraintsWithLock(changes, source);
 }
 
+void Context::checkSettingsConstraintsForDefaults(const std::vector<String> & names, SettingSource source)
+{
+    if (names.empty())
+        return;
+    SharedLockGuard lock(mutex);
+    getSettingsConstraintsAndCurrentProfilesWithLock()->constraints.checkCanReset(*settings, names, source);
+    if (getApplicationType() == ApplicationType::LOCAL || getApplicationType() == ApplicationType::SERVER)
+        doSettingsSanityCheckClamp(*settings, getLogger("SettingsSanity"));
+}
+
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     SharedLockGuard lock(mutex);
