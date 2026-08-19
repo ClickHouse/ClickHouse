@@ -11,6 +11,13 @@ avro files: 6
 18
 yes
 data files: 3
+-- DELETE, unknown outcome: the mutation unwind must not delete the rewritten files
+unknown status reported
+yes
+data files: 3
+avro files: 6
+18
+18
 -- OPTIMIZE: manifest compaction commits through the same seam
 yes
 data files: 8

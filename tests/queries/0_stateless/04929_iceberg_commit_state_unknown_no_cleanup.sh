@@ -20,13 +20,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 TABLE_INSERT="t_insert_${CLICKHOUSE_DATABASE}"
 TABLE_DELETE="t_delete_${CLICKHOUSE_DATABASE}"
+TABLE_DELETE_UNKNOWN="t_delete_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_UNKNOWN="t_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_OPTIMIZE="t_optimize_${CLICKHOUSE_DATABASE}"
 TABLE_OPTIMIZE_UNKNOWN="t_optimize_unknown_${CLICKHOUSE_DATABASE}"
 TABLE_HINT="t_hint_${CLICKHOUSE_DATABASE}"
 TABLE_CONTROL="t_control_${CLICKHOUSE_DATABASE}"
 ALL_TABLES=(
-    "${TABLE_INSERT}" "${TABLE_DELETE}" "${TABLE_UNKNOWN}"
+    "${TABLE_INSERT}" "${TABLE_DELETE}" "${TABLE_DELETE_UNKNOWN}" "${TABLE_UNKNOWN}"
     "${TABLE_OPTIMIZE}" "${TABLE_OPTIMIZE_UNKNOWN}" "${TABLE_HINT}" "${TABLE_CONTROL}"
 )
 
@@ -143,6 +144,20 @@ ${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_DELETE}"
 scan_sum "${TABLE_DELETE}"
 current_manifest_list_present "${USER_FILES_PATH}/${TABLE_DELETE}/"
 echo "data files: $(stored_files "${USER_FILES_PATH}/${TABLE_DELETE}/" '*.parquet')"
+
+echo "-- DELETE, unknown outcome: the mutation unwind must not delete the rewritten files"
+create_and_seed "${TABLE_DELETE_UNKNOWN}"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_metadata_commit_response_lost"
+${CLICKHOUSE_CLIENT} --query "SYSTEM ENABLE FAILPOINT iceberg_metadata_commit_reconcile_fail"
+${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "DELETE FROM ${TABLE_DELETE_UNKNOWN} WHERE c0 < 3" 2>&1 \
+    | grep -qF 'UNKNOWN_STATUS_OF_TRANSACTION' && echo "unknown status reported" || echo "NOT REPORTED AS UNKNOWN"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_reconcile_fail"
+${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT iceberg_metadata_commit_response_lost"
+current_manifest_list_present "${USER_FILES_PATH}/${TABLE_DELETE_UNKNOWN}/"
+echo "data files: $(stored_files "${USER_FILES_PATH}/${TABLE_DELETE_UNKNOWN}/" '*.parquet')"
+echo "avro files: $(stored_files "${USER_FILES_PATH}/${TABLE_DELETE_UNKNOWN}/" '*.avro')"
+scan_sum "${TABLE_DELETE_UNKNOWN}"
+scan_sum "icebergLocal('${USER_FILES_PATH}/${TABLE_DELETE_UNKNOWN}/', 'Parquet')"
 
 echo "-- OPTIMIZE: manifest compaction commits through the same seam"
 seed_for_compaction "${TABLE_OPTIMIZE}"
