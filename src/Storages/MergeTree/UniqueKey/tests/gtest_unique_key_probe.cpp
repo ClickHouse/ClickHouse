@@ -438,13 +438,6 @@ TEST_F(UniqueKeyProbeDeathTest, DuplicateLiveKeyAcrossPartsIsRejected)
 {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
 
-    /// `abortOnFailedAssertion` reports the message through the root logger, and this binary
-    /// installs no channel on it, so the LOG_FATAL would be dropped and the matcher below would
-    /// have no output to match. Attach a stderr channel for the duration of the test.
-    Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
-    Poco::Logger::root().setChannel(channel);
-    Poco::Logger::root().setLevel("fatal");
-
     /// Key 5 live in two parts at once — the state the invariant forbids.
     auto newest = makeTarget({{5, 9}});
     auto older = makeTarget({{5, 1}});
@@ -452,7 +445,19 @@ TEST_F(UniqueKeyProbeDeathTest, DuplicateLiveKeyAcrossPartsIsRejected)
     ASSERT_NE(older, nullptr);
     auto probe = probeOver({newest, older});
 
-    EXPECT_DEATH(probeKey(probe, 5), "live in more than one part");
+    /// `abortOnFailedAssertion` reports through the root logger, which `LOG_IMPL` skips when no
+    /// channel is attached, so attach one to guarantee the matcher has the message to match.
+    /// The statement runs only in the death-test child, leaving the parent's logger state alone.
+    /// The matcher is a plain substring: gtest matches death-test patterns with POSIX extended
+    /// regular expressions or with its own simple engine depending on the platform.
+    EXPECT_DEATH(
+        {
+            Poco::AutoPtr<Poco::ConsoleChannel> channel(new Poco::ConsoleChannel(std::cerr));
+            Poco::Logger::root().setChannel(channel);
+            Poco::Logger::root().setLevel("fatal");
+            probeKey(probe, 5);
+        },
+        "live in more than one part");
 }
 
 #endif
