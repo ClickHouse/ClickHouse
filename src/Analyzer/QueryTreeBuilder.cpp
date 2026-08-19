@@ -4,6 +4,7 @@
 #include <unordered_set>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/SettingSource.h>
 #include <Common/quoteString.h>
 
 #include <DataTypes/FieldToDataType.h>
@@ -300,10 +301,42 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
         set_query.changes.removeSetting("limit");
         set_query.changes.removeSetting("offset");
 
-        if (!set_query.changes.empty())
+        /// `SETTINGS name = DEFAULT` lands in `default_settings` rather than in `changes`, and this path
+        /// ignored it entirely, so the nested form was silently a no-op. Desugar the built-in ones into
+        /// explicit changes so a single constraint check and a single apply cover both clause forms, and
+        /// so the clause survives serialization of the query tree back to AST, because only `changes` is
+        /// recorded on the `QueryNode`. Work on a copy so repeated analysis of the same AST cannot
+        /// accumulate duplicates.
+        SettingsChanges changes = set_query.changes;
+        std::vector<String> custom_settings_to_reset;
+        for (const auto & name : set_query.default_settings)
         {
-            updated_context->applySettingsChanges(set_query.changes);
-            settings_changes = set_query.changes;
+            if (Settings::hasBuiltin(name))
+                changes.emplace_back(name, Settings::getDefaultValue(name));
+            else
+                custom_settings_to_reset.push_back(name);
+        }
+
+        /// Without this check a `SETTINGS` clause inside a subquery, a CTE, or a view's inner query is
+        /// applied unchecked, which lets a user override a setting an administrator locked with `CONST`,
+        /// `readonly`, `MIN`/`MAX` or a feature tier - for example `additional_table_filters`, which the
+        /// Planner later reads from this very context. A clause on the outer query is checked by
+        /// `InterpreterSetQuery::applySettingsFromQuery`, and the legacy interpreter checks the nested
+        /// form in `InterpreterSelectQuery`, so this was the only settings-application path without it.
+        /// Re-checking a value the outer query already applied costs nothing: the constraint checker
+        /// skips a change that equals the current value.
+        if (!changes.empty())
+        {
+            updated_context->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+            updated_context->applySettingsChanges(changes);
+            settings_changes = std::move(changes);
+        }
+
+        /// A custom setting has no compiled-in default, so it cannot be desugared - resetting one erases it.
+        if (!custom_settings_to_reset.empty())
+        {
+            updated_context->checkSettingsConstraintsForDefaults(custom_settings_to_reset, SettingSource::QUERY);
+            updated_context->resetSettingsToDefaultValue(custom_settings_to_reset);
         }
     }
 
