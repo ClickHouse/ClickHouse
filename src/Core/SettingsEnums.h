@@ -541,8 +541,8 @@ enum class TextIndexPostingListCodec : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)
 
-/// On-disk serialization format version of text indexes (written verbatim into the text index header).
-/// These are the on-disk version numbers and must remain stable (pinned by a static_assert in MergeTreeIndexText.cpp).
+/// On-disk serialization format version of text indexes.
+/// These are the on-disk version numbers and must remain stable.
 enum class MergeTreeTextIndexSerializationVersion : uint8_t
 {
     V0_Initial = 0,

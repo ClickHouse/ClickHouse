@@ -710,15 +710,11 @@ which stores token positions to support exact phrase matching.
 The preferred on-disk serialization format version for writing text indexes.
 
 The setting is a preference rather than a hard constraint: if the configured version cannot
-represent an index (for example, an index with `support_phrase_search` requires
-`v2_with_positions`), a newer version that can represent it is chosen automatically, and
+represent an index, a newer version that can represent it is chosen automatically, and
 writing a text index never fails because of this setting.
 
 During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
-the already upgraded servers, so that they keep writing the format that older servers can
-still read, and remove the pin after all replicas are upgraded. Do not use
-`ALTER TABLE ... MODIFY SETTING` for this purpose on replicated tables: the modified setting
-is persisted in the table metadata, which replicas running an older version cannot parse.
+the already upgraded servers, so that they keep writing the format that older servers can still read.
 
 Possible values:
 
