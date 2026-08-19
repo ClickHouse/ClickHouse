@@ -845,9 +845,27 @@ void StorageAzureConfiguration::initializeFromParsedArguments(const AzureStorage
     connection_params = parsed_arguments.connection_params;
 }
 
+std::string StorageAzureConfiguration::getMetadataLocationURI() const
+{
+    static constexpr std::string_view blob_suffix = ".blob.fabric.microsoft.com";
+    static constexpr std::string_view dfs_suffix = ".dfs.fabric.microsoft.com";
+
+    std::string host = Poco::URI(connection_params.endpoint.storage_account_url).getHost();
+    if (host.ends_with(blob_suffix))
+        host = host.substr(0, host.size() - blob_suffix.size()) + std::string(dfs_suffix);
+
+    return fmt::format("abfss://{}@{}/{}", getNamespace(), host, getRawPath().path);
+}
+
 void StorageAzureConfiguration::addStructureAndFormatToArgsIfNeeded(
     ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure)
 {
+    /// The OneLake signature is a single storage URL: the account and the container are
+    /// derived from it, and the format is dictated by the data lake metadata, so the
+    /// `azureBlobStorage` signatures do not apply and there is nothing to add.
+    if (is_onelake)
+        return;
+
     if (disk)
     {
         if (format == "auto")

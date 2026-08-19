@@ -88,6 +88,9 @@ public:
     std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
     ASTs getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const;
+
+    void applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const;
+
     static bool catalogManagesProviderChain(const DataLake::ICatalog & catalog);
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

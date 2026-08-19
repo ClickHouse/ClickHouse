@@ -236,6 +236,27 @@ class BigLakeCatalogManager(CatalogManager):
             return f"gs://{self.config.gcs_bucket}/{self.config.gcs_prefix}"
         return f"gs://{self.config.gcs_bucket}"
 
+    def create_namespace_with_location(self) -> str:
+        # BigLake supports only flat namespaces, so the session namespace is reused
+        # rather than creating a second one. A location assigned by BigLake itself
+        # (from the warehouse) is left alone; it is only set when absent.
+        self._refresh_token_if_needed()
+        namespace = self._session_namespace
+        if "location" in self.catalog.load_namespace_properties(namespace):
+            return namespace
+        self.catalog.update_namespace_properties(
+            namespace,
+            updates={"location": f"{self._warehouse_path()}/{namespace}"},
+        )
+        return namespace
+
+    def track_table(self, namespace: str, table_name: str) -> None:
+        self._tables_created.append(table_name)
+
+    def metadata_location(self, namespace: str, table_name: str) -> str:
+        self._refresh_token_if_needed()
+        return self.catalog.load_table(f"{namespace}.{table_name}").metadata_location
+
     def _refresh_token_if_needed(self) -> str:
         if not self._credential.valid:
             self._credential.refresh(GoogleAuthRequest())

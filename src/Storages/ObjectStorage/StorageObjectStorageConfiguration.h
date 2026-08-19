@@ -282,9 +282,14 @@ public:
         return nullptr;
     }
 
-    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/) const
+    virtual ASTs completeEngineArgsFromCatalog(const StorageID & /*table_id*/, ContextPtr /*context*/)
     {
         return {};
+    }
+
+    virtual std::string getMetadataLocationURI() const
+    {
+        return getTypeName() + "://" + getNamespace() + "/" + getRawPath().path;
     }
 
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)

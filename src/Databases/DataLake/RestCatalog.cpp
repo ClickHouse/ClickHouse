@@ -87,6 +87,7 @@ namespace DataLake
 
 static constexpr auto CONFIG_ENDPOINT = "config";
 static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
+static constexpr auto ONELAKE_DFS_HOST_SUFFIX = ".dfs.fabric.microsoft.com";
 
 namespace
 {
@@ -463,6 +464,35 @@ void RestCatalog::applySettingsChangesToState(
         new_access_token = std::make_unique<AccessToken>(retrieveAccessToken(new_state.client_id, new_state.client_secret));
         new_auth_headers = DB::HTTPHeaderEntries{{"Authorization", "Bearer " + new_access_token->token}};
     }
+}
+
+std::optional<std::string> OneLakeCatalog::getDefaultTableLocation(
+    const std::string & namespace_name,
+    const std::string & table_name) const
+{
+    auto location = RestCatalog::getDefaultTableLocation(namespace_name, table_name);
+    if (!location || location->contains("://"))
+        return location;
+
+    std::string_view relative_location = *location;
+    while (relative_location.starts_with('/'))
+        relative_location.remove_prefix(1);
+
+    const auto container_end = relative_location.find('/');
+    if (container_end == std::string_view::npos)
+        return std::nullopt;
+
+    const auto catalog_host = Poco::URI(base_url.string()).getHost();
+    const auto account = catalog_host.substr(0, catalog_host.find('.'));
+    if (account.empty())
+        return std::nullopt;
+
+    return fmt::format(
+        "abfss://{}@{}{}/{}",
+        relative_location.substr(0, container_end),
+        account,
+        ONELAKE_DFS_HOST_SUFFIX,
+        relative_location.substr(container_end + 1));
 }
 
 DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
@@ -1586,6 +1616,16 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
     catch (const DB::HTTPException & ex)
     {
+        /// A catalog that registers tables from object storage (e.g. Fabric discovers them in
+        /// the lakehouse) has already picked up the initial metadata written just before this
+        /// call, so it reports the identifier as taken.
+        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_DEBUG(
+                log, "Table {}.{} is already registered in the catalog: {}",
+                namespace_name, table_name, ex.displayText());
+            return;
+        }
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
     }
 }

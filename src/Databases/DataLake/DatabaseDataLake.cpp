@@ -716,6 +716,51 @@ static DatabaseDataLakeStorageType toDataLakeStorageType(ObjectStorageType type)
     }
 }
 
+void DatabaseDataLake::applyCatalogSpecificConfiguration(StorageObjectStorageConfiguration & configuration) const
+{
+    const auto settings_version = database_settings.get();
+    const DatabaseDataLakeSettings & settings = *settings_version;
+
+    auto catalog = getCatalog();
+
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+    {
+#if USE_AZURE_BLOB_STORAGE
+        auto * azure_configuration = dynamic_cast<StorageAzureConfiguration *>(&configuration);
+        if (!azure_configuration)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
+        const auto & onelake_catalog = assert_cast<const DataLake::OneLakeCatalog &>(*catalog);
+        const auto auth = onelake_catalog.getStateSnapshot();
+        azure_configuration->setInitializationAsOneLake(
+            auth->client_id,
+            auth->client_secret,
+            auth->tenant_id,
+            auth->bearer_token,
+            settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
+        );
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
+#endif
+    }
+
+    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
+    {
+#if USE_AWS_S3
+        auto * s3_configuration = dynamic_cast<StorageS3Configuration *>(&configuration);
+        if (!s3_configuration)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
+        const auto & biglake_catalog = assert_cast<const DataLake::BigLakeCatalog &>(*catalog);
+        s3_configuration->setInitializationAsBigLake(
+            biglake_catalog.getGoogleADCClientId(),
+            biglake_catalog.getGoogleADCClientSecret(),
+            biglake_catalog.getGoogleADCRefreshToken()
+        );
+#else
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
+#endif
+    }
+}
+
 ASTs DatabaseDataLake::getEngineArgsForNewTable(const String & name, ObjectStorageType engine_storage_type) const
 {
     const auto settings_version = database_settings.get();
@@ -846,44 +891,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
     settings_copy[Setting::use_hive_partitioning] = false;
     context_copy->setSettings(settings_copy);
 
-    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
-    {
-#if USE_AZURE_BLOB_STORAGE
-        auto azure_configuration = std::static_pointer_cast<StorageAzureIcebergConfiguration>(configuration);
-        if (!azure_configuration)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not azure type for one lake catalog");
-        auto rest_catalog = std::static_pointer_cast<DataLake::OneLakeCatalog>(catalog);
-        if (!rest_catalog)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
-        const auto auth = rest_catalog->getStateSnapshot();
-        azure_configuration->setInitializationAsOneLake(
-            auth->client_id,
-            auth->client_secret,
-            auth->tenant_id,
-            auth->bearer_token,
-            settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
-        );
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
-#endif
-    }
-
-    if (catalog->getCatalogType() == DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE)
-    {
-#if USE_AWS_S3
-        auto s3_configuration = std::dynamic_pointer_cast<StorageS3Configuration>(configuration);
-        if (!s3_configuration)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Configuration is not S3 type for BigLake catalog");
-        auto biglake_catalog = std::static_pointer_cast<DataLake::BigLakeCatalog>(catalog);
-        s3_configuration->setInitializationAsBigLake(
-            biglake_catalog->getGoogleADCClientId(),
-            biglake_catalog->getGoogleADCClientSecret(),
-            biglake_catalog->getGoogleADCRefreshToken()
-        );
-#else
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");
-#endif
-    }
+    applyCatalogSpecificConfiguration(*configuration);
 
     /// with_table_structure = false: because there will be
     /// no table structure in table definition AST.

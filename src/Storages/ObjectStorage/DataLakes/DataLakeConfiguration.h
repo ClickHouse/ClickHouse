@@ -375,13 +375,15 @@ public:
     }
 
     ASTs completeEngineArgsFromCatalog(
-        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) const override
+        [[maybe_unused]] const StorageID & table_id, [[maybe_unused]] ContextPtr context) override
     {
 #if USE_AVRO && USE_PARQUET
         auto datalake_database = tryGetDataLakeDatabase(table_id, context);
         if (!datalake_database)
             return {};
-        return datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        auto args = datalake_database->getEngineArgsForNewTable(table_id.table_name, this->getType());
+        datalake_database->applyCatalogSpecificConfiguration(*this);
+        return args;
 #else
         return {};
 #endif
