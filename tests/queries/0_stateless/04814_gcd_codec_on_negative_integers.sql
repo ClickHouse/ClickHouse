@@ -144,8 +144,8 @@ DROP TABLE table_gcd_codec_on_negative_integers;
 -------------------------------------------------------------------------------------------
 -- Case 2: Verify that all signed integer widths round-trip correctly under GCD compression.
 -- Each column uses INT_MIN for that width so the magnitude 2^(N-1) is unrepresentable
--- in the signed type — the exact edge case that [expr.unary.op] makes UB.
--- Int128/Int256 use simple multiples instead of their literal INT_MIN values.
+-- in the signed type — the exact edge case that [expr.unary.op] makes UB.  This includes
+-- Int128/Int256, whose division takes a separate non-libdivide branch in compressDataForType.
 
 DROP TABLE IF EXISTS table_gcd_codec_signed_min_roundtrip;
 CREATE TABLE table_gcd_codec_signed_min_roundtrip
@@ -162,7 +162,7 @@ ORDER BY tuple()
 SETTINGS min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 
 INSERT INTO table_gcd_codec_signed_min_roundtrip VALUES
-    (-128,  -32768,       -2147483648,  -9223372036854775808,  toInt128(-200),  toInt256(-200)),
+    (-128,  -32768,       -2147483648,  -9223372036854775808,  toInt128('-170141183460469231731687303715884105728'),  toInt256('-57896044618658097711785492504343953926634992332820282019728792003956564819968')),
     (-64,   -16384,       -1073741824,  -4611686018427387904,  toInt128(-100),  toInt256(-100)),
     ( 64,    16384,        1073741824,   4611686018427387904,  toInt128( 100),  toInt256( 100));
 
