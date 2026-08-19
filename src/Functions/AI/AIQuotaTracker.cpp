@@ -9,10 +9,8 @@ namespace ErrorCodes
     extern const int LIMIT_EXCEEDED;
 }
 
-bool AIQuotaTracker::checkQuotas()
+bool AIQuotaTracker::quotasExceededLocked()
 {
-    std::lock_guard lock(mutex);
-
     if (quota_exceeded)
         return true;
 
@@ -41,12 +39,24 @@ bool AIQuotaTracker::checkQuotas()
     return false;
 }
 
+bool AIQuotaTracker::checkQuotas()
+{
+    std::lock_guard lock(mutex);
+    return quotasExceededLocked();
+}
+
 bool AIQuotaTracker::recordApiCall()
 {
-    if (max_api_calls == 0) /// 0 disables the limit.
-        return true;
-
     std::lock_guard lock(mutex);
+
+    /// Don't start a new request once any quota is known-exhausted (e.g. another thread's response
+    /// just pushed the token budget over), even though the API-call count itself is still under its
+    /// own limit. This keeps token overshoot to the requests already in flight at that moment.
+    if (quotasExceededLocked())
+        return false;
+
+    if (max_api_calls == 0) /// 0 disables the API-call limit.
+        return true;
 
     if (api_calls < max_api_calls)
     {

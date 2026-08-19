@@ -410,11 +410,8 @@ FunctionBaseAI::EmbeddingResult FunctionBaseAI::embedTexts(
         bool batch_ok = false;
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request, and reserve the API-call slot atomically.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota.checkQuotas())
-                break;
-            /// Count the call before dispatching, so failed calls still count against the request quota.
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
             if (!quota.recordApiCall())
                 break;
 
@@ -533,11 +530,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Check quotas before every request, and reserve the API-call slot atomically.
-            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
-            if (quota_tracker->checkQuotas())
-                break;
-            /// Count the call before dispatching, so failed calls still count against the request quota.
+            /// Reserve an API-call slot before each request; this also performs a quota check.
+            /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
             if (!quota_tracker->recordApiCall())
                 break;
 

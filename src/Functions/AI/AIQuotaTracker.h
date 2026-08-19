@@ -36,8 +36,9 @@ public:
     /// Count one outbound API call against the request quota, only while under the limit. Should be
     /// called before each provider request (including retries), so a misbehaving
     /// endpoint can't bypass `ai_function_max_api_calls_per_query`. Returns true if the call is within
-    /// the limit (the caller may dispatch), false once the per-query limit is reached; throws when
-    /// `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
+    /// the limit (the caller may dispatch), false once the per-query API-call limit is reached or any
+    /// quota is already exhausted (so no new request starts after the token budget is known-spent);
+    /// throws when `throw_on_quota_exceeded`. Exact: `api_calls` never exceeds the limit.
     bool recordApiCall();
 
     /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
@@ -56,6 +57,11 @@ private:
     UInt64 input_tokens TSA_GUARDED_BY(mutex) = 0;
     UInt64 output_tokens TSA_GUARDED_BY(mutex) = 0;
     UInt64 api_calls TSA_GUARDED_BY(mutex) = 0;
+
+    /// The sticky-flag + token-limit check, assuming `mutex` is held. Sets the sticky flag (or throws,
+    /// per `throw_on_quota_exceeded`) when a token quota is met. Shared by `checkQuotas` and
+    /// `recordApiCall` so a call is never started once a quota is known-exhausted.
+    bool quotasExceededLocked() TSA_REQUIRES(mutex);
 };
 
 }
