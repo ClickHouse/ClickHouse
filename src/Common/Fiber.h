@@ -3,8 +3,6 @@
 #include <base/defines.h>
 #include <boost/context/fiber.hpp>
 #include <map>
-#include <string_view>
-#include <typeinfo>
 
 /// Class wrapper for boost::context::fiber.
 /// It tracks current executing fiber for thread and
@@ -102,8 +100,8 @@ private:
 
     using DataPtr = std::unique_ptr<DataWrapper>;
 
-    /// Get reference to fiber-specific data by key and it must not depend on the thread
-    DataPtr & getLocalData(std::string_view key)
+    /// Get reference to fiber-specific data by key.
+    DataPtr & getLocalData(const void * key)
     {
         return local_data[key];
     }
@@ -129,23 +127,28 @@ private:
     }
 
     Impl impl;
-    std::map<std::string_view, DataPtr> local_data;
+    std::map<const void *, DataPtr> local_data;
 };
 
 /// Implementation for fiber local variable.
 /// If we are in fiber, it returns fiber local data,
-/// otherwise it returns it's single field.
+/// otherwise it returns a thread local fallback.
 /// Fiber local data is destroyed in Fiber destructor.
 /// Implementation is similar to boost::fiber::fiber_specific_ptr
 /// (we cannot use it because we don't use boost::fiber API.
 ///
-/// The per-fiber slot uses type `T` alone, so every `FiberLocal<T>` object with the same `T` aliases the same slot.
-/// This is intentional for `thread_local` instances of one logical variable: a fiber suspended on one thread and
-/// resumed on another goes through different `FiberLocal` objects but must find the same data.
+/// There is exactly one `FiberLocal` object per `T`, obtained via `instance` (the constructor is
+/// private, so a second one cannot be created).
 template <typename T>
 class FiberLocal
 {
 public:
+    static FiberLocal & instance()
+    {
+        static FiberLocal fiber_local;
+        return fiber_local;
+    }
+
     T & operator*()
     {
         return get();
@@ -157,6 +160,8 @@ public:
     }
 
 private:
+    FiberLocal() = default;
+
     struct DataWrapperImpl : public Fiber::DataWrapper
     {
         T impl;
@@ -168,9 +173,7 @@ private:
         if (!current_fiber)
             return main_instance;
 
-        /// typeid names have static storage duration and identical content in every copy
-        /// of the code, so the same fiber data is found from any thread and shared object.
-        Fiber::DataPtr & ptr = current_fiber->getLocalData(typeid(T).name());
+        Fiber::DataPtr & ptr = current_fiber->getLocalData(this);
         /// Initialize instance on first request.
         if (!ptr)
             ptr = std::make_unique<DataWrapperImpl>();
@@ -178,5 +181,5 @@ private:
         return dynamic_cast<DataWrapperImpl *>(ptr.get())->impl;
     }
 
-    T main_instance;
+    static inline thread_local T main_instance;
 };
