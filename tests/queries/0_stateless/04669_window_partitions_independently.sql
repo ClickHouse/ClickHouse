@@ -159,3 +159,17 @@ SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 S
 -- NEGATIVE: the resize back to max_threads after the last window mixes the streams
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT a, max(s) FROM (SELECT a, sum(b) OVER (PARTITION BY a ORDER BY b) AS s FROM test_win_scatter_source) GROUP BY a SETTINGS allow_aggregate_partitions_independently = 1, max_rows_to_group_by = 0, query_plan_enable_multithreading_after_window_functions = 1) WHERE explain LIKE '%Skip merging: 1%';
 DROP TABLE test_win_scatter_source;
+
+-- Disjointness propagated from a per-partition LIMIT BY still passes the window cost heuristic: with
+-- fewer partitions than max_threads / 2, skipping the scatter would cap the window processing at the
+-- partition count, so the scatter is kept even though the streams are disjoint.
+-- force_window_partitions_independently bypasses the heuristic here the same way as for a direct
+-- per-partition request.
+DROP TABLE IF EXISTS test_win_few_partitions_via_limit_by;
+CREATE TABLE test_win_few_partitions_via_limit_by (k UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY k % 2;
+SYSTEM STOP MERGES test_win_few_partitions_via_limit_by;
+INSERT INTO test_win_few_partitions_via_limit_by SELECT number FROM numbers_mt(400);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() OVER (PARTITION BY k) FROM (SELECT k FROM test_win_few_partitions_via_limit_by LIMIT 1 BY k) SETTINGS allow_window_partitions_independently = 1, allow_limit_by_partitions_independently = 1) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT count() OVER (PARTITION BY k) FROM (SELECT k FROM test_win_few_partitions_via_limit_by LIMIT 1 BY k) SETTINGS allow_window_partitions_independently = 1, allow_limit_by_partitions_independently = 1, force_window_partitions_independently = 1) WHERE explain LIKE '%Skip scatter by partition%' OR explain LIKE '%Read each partition through separate port%';
+SELECT (SELECT sum(cityHash64(c)) FROM (SELECT count() OVER (PARTITION BY k) AS c FROM (SELECT k FROM test_win_few_partitions_via_limit_by LIMIT 1 BY k)) SETTINGS allow_window_partitions_independently = 0, allow_limit_by_partitions_independently = 0) = (SELECT sum(cityHash64(c)) FROM (SELECT count() OVER (PARTITION BY k) AS c FROM (SELECT k FROM test_win_few_partitions_via_limit_by LIMIT 1 BY k)) SETTINGS allow_window_partitions_independently = 1, allow_limit_by_partitions_independently = 1, force_window_partitions_independently = 1);
+DROP TABLE test_win_few_partitions_via_limit_by;
