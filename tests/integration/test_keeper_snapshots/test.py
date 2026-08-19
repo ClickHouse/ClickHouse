@@ -19,6 +19,14 @@ node = cluster.add_instance(
     stay_alive=True,
 )
 
+# Same configuration, but with compress_snapshots_with_zstd_format turned off, so that
+# snapshots are written in ClickHouse's own compressed block format instead of zstd.
+node_uncompressed = cluster.add_instance(
+    "node_uncompressed",
+    main_configs=["configs/enable_keeper_uncompressed.xml"],
+    stay_alive=True,
+)
+
 
 def random_string(length):
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
@@ -257,5 +265,52 @@ def test_snapshot_size(started_cluster, request):
                 node_zk.stop()
                 node_zk.close()
 
+        except:
+            pass
+
+
+@pytest.mark.parametrize("keeper_node", [node, node_uncompressed])
+def test_snapshot_survives_restart(started_cluster, request, keeper_node):
+    keeper_utils.wait_until_connected(started_cluster, keeper_node)
+    node_zk = None
+    try:
+        node_zk = get_connection_zk(keeper_node.name)
+
+        chroot = f"/test_snapshot_survives_restart_{get_retry_number(request)}"
+        node_zk.create(chroot, b"somevalue")
+        node_zk.chroot = chroot
+        for i in range(100):
+            node_zk.create("/node" + str(i), random_string(123).encode())
+
+        node_zk.stop()
+        node_zk.close()
+        node_zk = None
+
+        keeper_utils.send_4lw_cmd(started_cluster, keeper_node, "csnp")
+        keeper_node.wait_for_log_line("Created persistent snapshot")
+
+        snapshot_sizes = keeper_node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                "stat -c %s /var/lib/clickhouse/coordination/snapshots/snapshot_* || true",
+            ]
+        ).split()
+        assert snapshot_sizes, "no snapshot file was written"
+        assert all(int(size) > 0 for size in snapshot_sizes), (
+            f"snapshot written as an empty file: sizes {snapshot_sizes}"
+        )
+
+        keeper_node.restart_clickhouse(kill=True)
+        keeper_utils.wait_until_connected(started_cluster, keeper_node)
+
+        node_zk = get_connection_zk(keeper_node.name)
+        node_zk.chroot = chroot
+        assert len(node_zk.get_children("/")) == 100
+    finally:
+        try:
+            if node_zk is not None:
+                node_zk.stop()
+                node_zk.close()
         except:
             pass

@@ -710,6 +710,30 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSimple)
     EXPECT_EQ(stats.getSeqNum(), large_seq_num);
 }
 
+TEST_P(CoordinationTestWithCompression, TestStorageSnapshotSerializeToDisk)
+{
+    ChangelogDirTest test("./snapshots_to_disk");
+    this->setSnapshotDirectory("./snapshots_to_disk");
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+    DB::KeeperStorageSnapshot snapshot(&storage, 2, nullptr, this->keeper_context->getWriteSnapshotVersion());
+
+    manager.serializeSnapshotToDisk(snapshot);
+
+    auto files = snapshotFilesForIdx("./snapshots_to_disk", 2);
+    ASSERT_EQ(files.size(), 1);
+    EXPECT_GT(fs::file_size(fs::path("./snapshots_to_disk") / files.at(0)), 0);
+
+    auto debuf = manager.deserializeSnapshotBufferFromDisk(2);
+    auto restored = DB::KeeperStorage::create(500, "", this->keeper_context, /*initialize_system_nodes=*/false);
+    manager.deserializeSnapshotFromBuffer(debuf, *restored);
+    EXPECT_EQ(committedNodeData(*restored, "/hello"), "world");
+}
+
 TEST_P(CoordinationTestWithCompression, TestStorageSnapshotMoreWrites)
 {
 

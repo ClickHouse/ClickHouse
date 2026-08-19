@@ -903,7 +903,15 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
         compressed_writer->finalize();
 
         Stopwatch watch;
-        compressed_writer->sync();
+        /// A CompressedWriteBuffer does not own the file buffer, so finalizing it only moves the
+        /// compressed blocks into the file buffer: that buffer has to be finalized and synced here.
+        if (writer)
+        {
+            writer->finalize();
+            writer->sync();
+        }
+        else
+            compressed_writer->sync();
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         compressed_writer.reset();
