@@ -277,21 +277,16 @@ bool isKnownBuiltinFunction(const String & name)
         || AggregateFunctionFactory::instance().isAggregateFunctionName(name);
 }
 
+/// `EXISTS` and `SHOW CREATE` keep their target on the query itself instead of in an
+/// `ASTTableExpression`, so the named-table boundary below does not see it. They need none: they
+/// only read metadata of the current server and never execute the definition of a view, so they
+/// cannot reach an external resource through one. `DESCRIBE` is the exception - it infers the
+/// structure, which does open the resource - but it carries an `ASTTableExpression` and is
+/// covered. Autonomous access to metadata is gated by `allow_schema_access` instead, which
+/// rejects these statements by their type in `isSchemaExplorationStatement`.
 void checkNoExternalAccess(const IAST & ast)
 {
-    if (const auto * query_with_table = ast.as<ASTQueryWithTableAndOutput>())
-    {
-        /// `EXISTS` and `SHOW CREATE` store their target directly on the query instead of
-        /// in an `ASTTableExpression`, so apply the same named-table boundary here.
-        if (!query_with_table->getTable().empty()
-            && !isAllowedNamedTable(query_with_table->getDatabase(), query_with_table->getTable()))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "The table `{}.{}` may be a view whose definition reaches resources outside of the tables of the current "
-                "server, so it is not allowed for the read-only tool. Use the run_query tool for this query",
-                query_with_table->getDatabase(), query_with_table->getTable());
-    }
-    else if (const auto * table_expression = ast.as<ASTTableExpression>())
+    if (const auto * table_expression = ast.as<ASTTableExpression>())
     {
         if (table_expression->table_function)
         {

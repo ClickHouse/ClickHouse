@@ -93,6 +93,17 @@ TEST(AIQueryValidation, DisablingSchemaAccessBlocksAutonomousSchemaExploration)
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW TABLES"));
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.tables"));
     EXPECT_FALSE(isAllowedWithoutSchemaAccess("SELECT name FROM system.columns"));
+
+    /// `SHOW CREATE` and `EXISTS` only read metadata of the current server: they never execute the
+    /// definition of a view, so the named-table boundary of the external-access check does not
+    /// apply to them and `allow_schema_access` is what gates them.
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("SHOW CREATE TABLE t"));
+    EXPECT_FALSE(isAllowedWithoutSchemaAccess("EXISTS TABLE t"));
+    EXPECT_TRUE(isAllowed("SHOW CREATE TABLE t"));
+    EXPECT_TRUE(isAllowed("EXISTS TABLE t"));
+    /// `DESCRIBE` infers the structure, which opens the resource, so it stays bounded by the
+    /// named-table boundary even with schema access enabled.
+    EXPECT_FALSE(isAllowed("DESCRIBE t"));
 }
 
 TEST(AIQueryValidation, RejectsWritesAndDDL)
