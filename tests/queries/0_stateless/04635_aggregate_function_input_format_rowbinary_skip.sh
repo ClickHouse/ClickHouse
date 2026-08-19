@@ -44,11 +44,13 @@ $CLICKHOUSE_LOCAL -q "SELECT a, finalizeAggregation(s), b FROM file('$JSON_FILE'
 echo '-- skip, value JSON-as-string'
 $CLICKHOUSE_LOCAL -q "SELECT a, b FROM file('$JSON_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, b UInt8') SETTINGS input_format_skip_unknown_fields = 1, aggregate_function_input_format = 'value', input_format_binary_read_json_as_string = 1"
 
-# The default `state` mode is unchanged: a state-encoded file written by ClickHouse itself round-trips
-# through the column read path.
+# The default `state` mode uses raw aggregate-state bytes. Verify both the normal read and unknown-column
+# skip path against a file written by ClickHouse itself.
 STATE_FILE="${CLICKHOUSE_TMP}/04635_state.rowbinary"
 $CLICKHOUSE_LOCAL -q "SELECT 1::UInt8 AS a, avgState(2::UInt32) AS s, 3::UInt8 AS b FORMAT RowBinaryWithNamesAndTypes" > "$STATE_FILE"
 echo '-- read, state'
 $CLICKHOUSE_LOCAL -q "SELECT a, finalizeAggregation(s), b FROM file('$STATE_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, s AggregateFunction(avg, UInt32), b UInt8')"
+echo '-- skip, state'
+$CLICKHOUSE_LOCAL -q "SELECT a, b FROM file('$STATE_FILE', 'RowBinaryWithNamesAndTypes', 'a UInt8, b UInt8') SETTINGS input_format_skip_unknown_fields = 1"
 
 rm -f "$VALUE_FILE" "$ARRAY_FILE" "$JSON_FILE" "$STATE_FILE"

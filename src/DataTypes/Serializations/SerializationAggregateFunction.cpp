@@ -390,15 +390,11 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
     AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
     s.name = type_name;
 
-    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
-    {
-        readBinary(s.data, istr);
-        return;
-    }
-
-    /// This method must honor `aggregate_function_input_format`: `BinaryRowInputFormat::skipField` uses it
-    /// to consume unknown columns of `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same
-    /// bytes as the column-based `deserializeBinary` does, otherwise all following columns are misaligned.
+    /// `BinaryRowInputFormat::skipField` uses this method to consume unknown columns of
+    /// `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same bytes as the column-based
+    /// `deserializeBinary` does, otherwise all following columns are misaligned. This also applies to
+    /// `aggregate_function_input_format = 'state'`: aggregate states are raw bytes without a length prefix,
+    /// so reading a `String` here would consume bytes from the following column.
     /// Delegate to the column-based path to guarantee that: parsing the value with the argument type's
     /// Field-based deserializer would diverge for types whose two paths read different representations
     /// (e.g. `SerializationObject` reads a length-prefixed string into a column when
