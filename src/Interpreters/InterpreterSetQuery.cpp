@@ -82,6 +82,12 @@ BlockIO InterpreterSetQuery::execute()
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
+    /// `SET name = DEFAULT` lands in `default_settings`, not in `changes`, and
+    /// `resetSettingsToDefaultValue` applies the compiled-in default without validating it. Without
+    /// this check the reset is a way to clear a `CONST`, `readonly`, `MIN`/`MAX` or feature-tier
+    /// constraint. Checked against the session context because that is what the reset mutates, so
+    /// "already at its default" is decided against the values the reset would overwrite.
+    session_context->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
     session_context->applySettingsChanges(changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
     session_context->resetSettingsToDefaultValue(ast.default_settings);
@@ -100,6 +106,8 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     if (!ignore_setting_constraints)
     {
         getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+        /// See the note in execute(): the `name = DEFAULT` form needs its own check.
+        getContext()->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
         rejectHTTPOnlyConstructionSettings(ast);
     }
     getContext()->applySettingsChanges(changes);
