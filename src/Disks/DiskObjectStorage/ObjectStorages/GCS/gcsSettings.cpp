@@ -10,6 +10,7 @@
 
 #include <poco_rest_options.h>
 
+#include <algorithm>
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -145,6 +146,13 @@ static HTTPHeaderEntries parseGCSHeaders(const Poco::Util::AbstractConfiguration
     return headers;
 }
 
+static bool hasGCSAccessHeaders(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+{
+    Poco::Util::AbstractConfiguration::Keys keys;
+    config.keys(config_prefix, keys);
+    return std::any_of(keys.begin(), keys.end(), [](const auto & key) { return key.starts_with("access_header"); });
+}
+
 /// The protocol a proxy has to be resolved for: the scheme the client will actually speak, which is
 /// the scheme of the endpoint override when there is one and `https` (the default GCS endpoint)
 /// otherwise. It selects between the `<proxy><http>` and `<proxy><https>` sections, exactly as the
@@ -186,10 +194,20 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.google_adc_client_secret = config.getString(config_prefix + ".google_adc_client_secret", "");
     result.google_adc_refresh_token = config.getString(config_prefix + ".google_adc_refresh_token", "");
 
+    if (!result.access_token.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS disk does not support `access_token` because the access token cannot be refreshed for its long-lived client. "
+            "Use Application Default Credentials or a service-account key instead");
+
     if (!result.google_adc_refresh_token.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "The native GCS disk does not support `google_adc_*` refresh-token credentials because the access token cannot be refreshed "
             "for its long-lived client. Use Application Default Credentials or a service-account key instead");
+
+    if (hasGCSAccessHeaders(config, config_prefix))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The native GCS disk does not support `access_header` because its credentials must be managed by the GCS client. "
+            "Use Application Default Credentials or a service-account key instead");
 
     result.headers = parseGCSHeaders(config, config_prefix);
     result.connect_timeout_ms = config.getUInt64(config_prefix + ".connect_timeout_ms", DEFAULT_GCS_CONNECT_TIMEOUT_MS);

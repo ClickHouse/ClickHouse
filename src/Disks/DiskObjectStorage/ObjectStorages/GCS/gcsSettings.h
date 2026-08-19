@@ -52,7 +52,8 @@ struct GCSObjectStorageSettings
     String service_account_key;
     /// Path to a service-account JSON key file.
     String service_account_key_file;
-    /// A static OAuth2 access token (bearer). `access_token_expires_in_seconds` bounds its lifetime.
+    /// A static OAuth2 access token (bearer). This is only supported by ephemeral SQL clients;
+    /// `loadFromConfig` rejects it for long-lived disks.
     String access_token;
     Int64 access_token_expires_in_seconds = 3600;
     /// "Authorized user" refresh-token triple (the same one the S3-compat `gcp_oauth` client uses).
