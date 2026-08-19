@@ -916,7 +916,14 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many hash tables were inited as two-level for aggregation.
 - `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/reference/data-types/int-uint)) — How many times a single-level aggregation hash table was converted to two-level at runtime.
 - `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/reference/data-types/int-uint)) — For how many blocks optimization of equal ranges of keys was applied
+- `ProfileEvent_HashJoinBuildInsertMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.
+- `ProfileEvent_HashJoinBuildLockWaitMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin build-side: time spent yielding in insertIntoSlots while waiting for a slot mutex. A subset of HashJoinBuildInsertMicroseconds.
+- `ProfileEvent_HashJoinBuildMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent in the HashJoin build phase (adding right-side blocks plus onBuildPhaseFinish), summed over all build threads.
+- `ProfileEvent_HashJoinBuildScatterMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin build-side sub-phase: time spent in scatterBlockBySlot routing right-side rows into per-slot selectors. A subset of HashJoinBuildMicroseconds. Zero when the join uses a single slot.
 - `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/reference/data-types/int-uint)) — How many elements were preallocated in hash tables for hash join.
+- `ProfileEvent_HashJoinProbeGatherMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.
+- `ProfileEvent_HashJoinProbeLookupMicroseconds` ([UInt64](/reference/data-types/int-uint)) — HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.
+- `ProfileEvent_HashJoinProbeMicroseconds` ([UInt64](/reference/data-types/int-uint)) — Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.
 - `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request was answered from cache without making request to Keeper
 - `ProfileEvent_MetadataFromKeeperCacheMiss` ([UInt64](/reference/data-types/int-uint)) — Number of times an object storage metadata request had to be answered from Keeper
 - `ProfileEvent_MetadataFromKeeperCacheTooManyInvalidated` ([UInt64](/reference/data-types/int-uint)) — Number of times filesystem cache returned too many invalidated entries
@@ -1629,9 +1636,6 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_DestroyAggregatesThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states.
 - `CurrentMetric_DestroyAggregatesThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for destroy aggregate states running a task.
 - `CurrentMetric_DestroyAggregatesThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for destroy aggregate states.
-- `CurrentMetric_ConcurrentHashJoinPoolThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for concurrent hash join.
-- `CurrentMetric_ConcurrentHashJoinPoolThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the thread pool for concurrent hash join running a task.
-- `CurrentMetric_ConcurrentHashJoinPoolThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the thread pool for concurrent hash join.
 - `CurrentMetric_HashedDictionaryThreads` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool.
 - `CurrentMetric_HashedDictionaryThreadsActive` ([Int64](/reference/data-types/int-uint)) — Number of threads in the HashedDictionary thread pool running a task.
 - `CurrentMetric_HashedDictionaryThreadsScheduled` ([Int64](/reference/data-types/int-uint)) — Number of queued or active jobs in the HashedDictionary thread pool.
