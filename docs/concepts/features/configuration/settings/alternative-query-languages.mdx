@@ -111,7 +111,7 @@ functions, including the ones whose names exist in both systems with different s
 counts Unicode code points and is translated to `lengthUTF8`). ClickHouse functions that do not collide with Trino
 names remain accessible, so both function families can be mixed in one query.
 
-Trino `JSON` values are mapped to the ClickHouse [`JSON`](/reference/sql-reference/data-types/newjson) type:
+Trino `JSON` values are mapped to the ClickHouse [`JSON`](/reference/data-types/newjson) type:
 `JSON '...'` literals and `json_parse` become casts to `JSON`, `json_format` becomes `toJSONString`, and the path
 functions (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) are
 translated to their ClickHouse counterparts. Since the ClickHouse `JSON` type stores objects, non-object documents

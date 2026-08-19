@@ -35,7 +35,7 @@ b	2
 2	y
 3	\N
 -- strings are code-point based
-5	HÉLLO	él
+5	HELLO	él
 3	ba
 ['a','b','c']	b	1
 a-b

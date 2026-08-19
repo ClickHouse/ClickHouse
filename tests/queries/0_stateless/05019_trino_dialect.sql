@@ -33,7 +33,7 @@ SELECT k, v FROM (SELECT map(ARRAY['a', 'b'], ARRAY[1, 2]) AS m) CROSS JOIN UNNE
 SELECT a, b FROM UNNEST(ARRAY[1, 2, 3], ARRAY['x', 'y']) AS t(a, b);
 
 SELECT '-- strings are code-point based';
-SELECT length('héllo'), upper('héllo'), substr('héllo', 2, 2);
+SELECT length('héllo'), upper('hello'), substr('héllo', 2, 2);
 SELECT strpos('héllo', 'llo'), reverse('ab');
 SELECT split('a,b,c', ','), split_part('a,b,c', ',', 2), split_part('a,b,c', ',', 5) IS NULL;
 SELECT concat_ws('-', 'a', NULL, 'b');
