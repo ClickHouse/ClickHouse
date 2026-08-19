@@ -91,8 +91,8 @@ cleanup_worker_codex_auth
 [[ ! -e "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json" ]]
 
 # Load and exercise the sandbox-config helper directly. The mounted config
-# must not retain credentials embedded in remotes, URL-rewrite rules, or
-# URL-scoped credential helpers.
+# must not retain credentials embedded in remotes, URL-rewrite rules,
+# URL-scoped credential helpers, or SSH-command overrides.
 source <(sed -n '/^prepare_triage_sandbox_config()/,/^}/p' "$repo/utils/continue-all-prs.sh")
 triage_repo="$scratch/triage-repository"
 git init -q "$triage_repo"
@@ -100,11 +100,13 @@ git -C "$triage_repo" remote add origin 'https://user:SECRET_TOKEN@example.com/C
 git -C "$triage_repo" remote set-url --push origin 'https://user:SECRET_TOKEN@example.com/ClickHouse/ClickHouse.git'
 git -C "$triage_repo" config url.'https://user:SECRET_TOKEN@example.com/'.insteadOf 'https://example.com/'
 git -C "$triage_repo" config credential.https://github.com.helper test-helper
+git -C "$triage_repo" config core.sshCommand test-helper
 triage_config=$(REPO='ClickHouse/ClickHouse' prepare_triage_sandbox_config "$triage_repo" "$scratch/triage-git-config")
 [[ "$(git config --file "$triage_config" --get remote.origin.url)" == 'https://github.com/ClickHouse/ClickHouse.git' ]]
 ! git config --file "$triage_config" --get-regexp '^remote\..*\.(url|pushurl)$' | grep -v '^remote\.origin\.url '
 ! git config --file "$triage_config" --get-regexp '^url\..*\.(insteadof|pushinsteadof)$'
 ! git config --file "$triage_config" --get-regexp '^credential(\..*)?\.helper$'
+! git config --file "$triage_config" --get core.sshCommand
 
 # Command-scope Git config has higher priority than the sanitized clone config.
 # The triage environment must remove every numbered carrier, not only
@@ -149,6 +151,21 @@ if PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
     echo 'Expected an unregistered worker path to be rejected' >&2
     exit 1
 fi
+
+# SSH transport command overrides can authenticate an explicit SSH push. The
+# triage environment must clear both supported environment carriers before
+# entering the sandbox.
+ssh_helper="$scratch/fake-ssh"
+ssh_invocations="$scratch/fake-ssh-invocations"
+printf '%s\n' '#!/usr/bin/env bash' "printf invoked >> '$ssh_invocations'" 'exit 1' > "$ssh_helper"
+chmod +x "$ssh_helper"
+triage_ssh_env=(env -u GIT_SSH_COMMAND -u GIT_SSH)
+timeout 3 env GIT_SSH_COMMAND="$ssh_helper" "${triage_ssh_env[@]}" \
+    git ls-remote ssh://git@example.com/ClickHouse/ClickHouse.git >/dev/null 2>&1 || true
+[[ ! -e "$ssh_invocations" ]]
+timeout 3 env GIT_SSH="$ssh_helper" "${triage_ssh_env[@]}" \
+    git ls-remote ssh://git@example.com/ClickHouse/ClickHouse.git >/dev/null 2>&1 || true
+[[ ! -e "$ssh_invocations" ]]
 grep -q 'path exists but is not a registered worktree' "$scratch/unregistered-worktree.log"
 rmdir "${unregistered_worktree_base}-0"
 

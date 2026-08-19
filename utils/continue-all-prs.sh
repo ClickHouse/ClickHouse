@@ -880,7 +880,8 @@ prepare_triage_sandbox_config()
     # Worktrees share the main repository's config. Never mutate it for
     # triage: use a private copy mounted over the common config only in the
     # Bubblewrap namespace. Besides credential helpers, remove all HTTPS
-    # extra headers and include files, which can carry authentication tokens.
+    # extra headers, SSH command overrides, and include files, which can carry
+    # authentication tokens.
     mkdir -p "${config%/*}" || return 1
     source_config=$(git -C "$wt" rev-parse --path-format=absolute --git-path config) || return 1
     cp "$source_config" "$config" || return 1
@@ -890,6 +891,7 @@ prepare_triage_sandbox_config()
     while IFS= read -r key; do
         git config --file "$config" --unset-all "$key" || return 1
     done < <(git config --file "$config" --name-only --get-regexp '^http\..*\.extraheader$' || true)
+    git config --file "$config" --unset-all core.sshCommand 2>/dev/null || true
     while IFS= read -r key; do
         git config --file "$config" --unset-all "$key" || return 1
     done < <(git config --file "$config" --name-only --get-regexp '^(include|includeif\..*)\.path$' || true)
@@ -1049,7 +1051,10 @@ run_continue_pr()
         active_codex_env=("${codex_env[@]}")
         triage_git_args=()
         if [[ "$phase" == "triage" ]]; then
-            triage_git_args=(env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR -u SSH_AUTH_SOCK -u GIT_CONFIG -u GIT_CONFIG_COUNT)
+            triage_git_args=(
+                env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR
+                -u SSH_AUTH_SOCK -u GIT_SSH_COMMAND -u GIT_SSH -u GIT_CONFIG -u GIT_CONFIG_COUNT
+            )
             # Command-scope Git configuration is injected through numbered
             # `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` variables. It takes
             # precedence over the sanitized clone config, so do not inherit
