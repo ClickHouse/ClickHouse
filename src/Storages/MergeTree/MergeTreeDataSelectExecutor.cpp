@@ -1861,6 +1861,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
+        /*allow_top_k_prewhere_query_condition_cache=*/false,
         /*supports_skip_indexes_on_data_read*/false,
         /*check_row_limits=*/true);
 }
