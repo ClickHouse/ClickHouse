@@ -385,7 +385,15 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
                     && reader.function_base->isDeterministicInScopeOfQuery() && reader.children.size() == 1
                     && isSupportedArgumentType(reader.function_base->getName(), argument->result_type);
 
-                if (&reader != &node && !is_another_supported_volume_reducing_function)
+                /// A sibling function is harmless only if it can stay below the filter too.
+                /// Otherwise its argument still crosses the filter, and evaluating this function
+                /// for rejected rows is a regression. For example, `length` is cheap but
+                /// `lengthUTF8` scans the payload, so neither can stay below a filter that
+                /// reads their shared argument.
+                const bool can_keep_sibling_below = is_another_supported_volume_reducing_function
+                    && (!low_part_root || isCheapToEvaluateBeforeFilter(*reader.function_base, argument->result_type));
+
+                if (&reader != &node && !can_keep_sibling_below)
                 {
                     argument_is_needed_by_lifted_node = true;
                     break;

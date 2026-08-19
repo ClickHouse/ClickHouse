@@ -256,6 +256,21 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1,
              query_plan_execute_functions_after_sorting = 1);
 
+-- A cheap function cannot stay below a filter on its own when a sibling function on the same
+-- argument scans the payload and must remain above the filter.
+SELECT 'plan: mixed filter functions on one argument — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%') = 0
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT x, y
+    FROM
+    (
+        SELECT s, length(s) AS x, lengthUTF8(s) AS y
+        FROM volume_reducing_function_push_down
+    )
+    WHERE notEmpty(s)
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1,
+             optimize_functions_to_subcolumns = 0);
+
 -- ----------------------------------------------------------------------------
 -- Equivalence regressions: ON vs OFF must produce identical result sets in
 -- every shape we accept for pushdown.
