@@ -1459,6 +1459,9 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
             PRECONFIG_KEEPER_RAFT: "preconfig keeper raft",
         })
         coord = work_dir / "coordination0"
+        # Keeper state is only ever valid for the data it was written against.
+        # The work dir is reused between runs, so start from an empty one.
+        shutil.rmtree(coord, ignore_errors=True)
         coord.mkdir(parents=True, exist_ok=True)
         preconfig_log = work_dir / "preconfig.log"
         with open(preconfig_log, "w") as lf:
@@ -2742,6 +2745,13 @@ def main() -> int:
     for side in ("left", "right"):
         side_dir = work_dir / side
         hardlink_db(db_source, side_dir / "db")
+        # The embedded Keeper's state has to be dropped together with the data
+        # it describes. The work dir is shared between runs, and
+        # `alter_select.xml` creates a
+        # `ReplicatedMergeTree('/tables/{database}', '{table}')`: against a
+        # fresh db but the previous run's znodes, its create_query fails with
+        # REPLICA_ALREADY_EXISTS and the whole test goes unmeasured.
+        shutil.rmtree(side_dir / "coordination", ignore_errors=True)
         # After the hardlink copy: hardlink_db wipes the destination.
         seed_user_files(perf_root, side_dir / "db")
 

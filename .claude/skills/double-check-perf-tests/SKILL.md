@@ -354,6 +354,17 @@ treated as CI noise.
   practice this is unreachable today — only the master workflow schedules
   `release_base` (ARM only), and its reports live under `REFs/`, which this
   skill does not read — so the check is a guard against that changing.
+- **The work dir is reused, so Keeper state is wiped on every run.**
+  `tmp/double_check_perf` persists between invocations (that is what makes
+  the binary cache worth having), but the embedded Keeper's `coordination`
+  directories are only valid for the data they were written against. The db
+  copies are recreated from `db0` each run, so the coordination dirs are
+  removed alongside them — `left/coordination`, `right/coordination` and the
+  preconfig server's `coordination0`. Without that, `alter_select.xml`, the
+  one perf test that creates a
+  `ReplicatedMergeTree('/tables/{database}', '{table}')`, hits
+  `REPLICA_ALREADY_EXISTS` on its `create_query` against the previous run's
+  znodes and the whole test goes unmeasured.
 - Some shards upload `all-query-metrics.tsv.zst` (zstd-compressed) instead
   of plain `.tsv` — the script detects the URL suffix and decompresses on
   the fly (uses the `zstandard` Python package if available, else shells
