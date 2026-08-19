@@ -636,14 +636,16 @@ void AlterConversions::addColumnsRequiredForMaterialized(
 
         for (const auto & dependency : get_dependencies(column_name))
         {
-            if (ephemeral_columns.contains(dependency))
+            /// An EPHEMERAL column cannot be read, and one already required has already been queued.
+            if (ephemeral_columns.contains(dependency) || required_source_columns.contains(dependency))
                 continue;
 
-            bool needed = all_updated_columns.contains(dependency)
-                || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column));
-
-            if (needed && required_source_columns.insert(dependency).second)
+            if (all_updated_columns.contains(dependency)
+                || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column)))
+            {
+                required_source_columns.insert(dependency);
                 columns_to_visit.push(dependency);
+            }
         }
     }
 
