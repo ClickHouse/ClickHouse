@@ -35,6 +35,8 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
   ## tmp_policy
 </div>
 
+<SettingsInfoBlock type="String" default_value="" changeable_without_restart="No" />
+
 一時データ用ストレージのポリシーです。`tmp` プレフィックスを持つすべてのファイルは、起動時に削除されます。
 
 <Note>
@@ -46,7 +48,7 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 </Note>
 
 <Note>
-  * 一時データストレージの設定に使用できるオプションは 1 つだけです: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+  * 一時データの保存先の設定に使用できるオプションは 1 つだけです: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
   * `move_factor`, `keep_free_space_bytes`,`max_data_part_size_bytes` は無視されます。
   * ポリシーには *ちょうど 1 つの volume* が含まれている必要があります
 
