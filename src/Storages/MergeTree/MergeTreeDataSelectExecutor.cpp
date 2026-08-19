@@ -33,6 +33,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Cache/QueryConditionCacheTimeConditions.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -112,6 +113,8 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool secondary_indices_enable_bulk_filtering;
     extern const SettingsBool vector_search_with_rescoring;
@@ -1608,9 +1611,25 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
 
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
+        /// A condition involving the current time (e.g. `time >= now() - INTERVAL 10 DAY`) is
+        /// non-deterministic and its own hash changes with every query, so probing it would always
+        /// miss. Probe the deterministic condition derived from it instead (issue #115504). Since
+        /// this is the consult side, the derivation must *weaken* the condition: "no rows of this
+        /// granule match the weakened condition" implies "no rows match the actual condition", so
+        /// skipping the granule is sound. The write sides store entries under the strengthened
+        /// variant, which coincides with the weakened one for grid-aligned constants and equals the
+        /// weakened variant of the next grid cell otherwise.
+        std::optional<DeterministicTimeCondition> derived;
+        if (settings[Setting::use_query_condition_cache_for_time_conditions])
+            derived = deriveDeterministicTimeCondition(
+                dag,
+                TimeConditionRounding::Weaken,
+                static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]),
+                time(nullptr));
+
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = dag->getHash();
+        size_t condition_hash = derived ? derived->hash : dag->getHash();
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
