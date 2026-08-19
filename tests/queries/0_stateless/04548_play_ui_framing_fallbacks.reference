@@ -53,7 +53,7 @@ dropped multi failures keep an error text: OK
 log queue bounded: OK
 log budget shared with the DOM: OK
 metric history bounded: OK
-view is tab-owned: OK
+view is cell-owned: OK
 toggles replayed per tab: OK
 background meter batches accumulate: OK
 meter state re-adopted on tab open: OK
@@ -71,7 +71,7 @@ every restore path expands a single value: OK
 replay clock comes from the packets: OK
 replay time reaches the metrics model: OK
 replay rebuilds the resource state: OK
-every replay site passes its tab: OK
+every replay site passes its cell: OK
 replay honors the saved truncation state: OK
 live truncation state is captured: OK
 both single-query saves persist it: OK
