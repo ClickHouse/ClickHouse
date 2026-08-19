@@ -507,6 +507,8 @@ struct HashMethodKeysFixed
 #endif
 
     PaddedPODArray<Key> prepared_keys;
+    ColumnRawPtrs batch_packed_key_columns;
+    Sizes batch_packed_key_sizes;
 
     static bool usePreparedKeys(const Sizes & key_sizes, bool enable_prepared_keys_256)
     {
@@ -532,6 +534,37 @@ struct HashMethodKeysFixed
         return settings_context && settings_context->settings.enable_fixed_key_prefetch;
     }
 
+    void initializeBatchPackedKeyLayout()
+    {
+        if constexpr (sizeof(Key) <= 16)
+            return;
+
+        if (!usePreparedKeys(key_sizes, enable_prepared_keys_256_))
+            return;
+
+        batch_packed_key_columns.reserve(keys_size);
+        batch_packed_key_sizes.reserve(keys_size);
+
+        const auto add_columns_of_size = [&](size_t size)
+        {
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if (key_sizes[i] == size)
+                {
+                    batch_packed_key_columns.push_back(Base::getActualColumns()[i]);
+                    batch_packed_key_sizes.push_back(size);
+                }
+            }
+        };
+
+        add_columns_of_size(32);
+        add_columns_of_size(16);
+        add_columns_of_size(8);
+        add_columns_of_size(4);
+        add_columns_of_size(2);
+        add_columns_of_size(1);
+    }
+
     HashMethodKeysFixed(const ColumnRawPtrs & key_columns, const Sizes & key_sizes_, const HashMethodContextPtr & context)
         : Base(key_columns), key_sizes(key_sizes_), keys_size(key_columns.size())
     {
@@ -552,6 +585,8 @@ struct HashMethodKeysFixed
                     low_cardinality_keys.nested_columns[i] = key_columns[i];
             }
         }
+
+        initializeBatchPackedKeyLayout();
 
         if (usePreparedKeys(key_sizes, enablePreparedKeys256(context)))
         {
@@ -678,6 +713,9 @@ struct HashMethodKeysFixed
                 return packFixedShuffle<Key>(columns_data.get(), keys_size, key_sizes.data(), row, masks.get());
             }
 #endif
+            if (!batch_packed_key_columns.empty())
+                return packFixed<Key>(row, keys_size, batch_packed_key_columns, batch_packed_key_sizes);
+
             return packFixed<Key>(row, keys_size, Base::getActualColumns(), key_sizes);
         }
     }
