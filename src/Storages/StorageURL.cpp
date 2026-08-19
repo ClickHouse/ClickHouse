@@ -2599,7 +2599,11 @@ void registerStorageURL(StorageFactory & factory)
                 {
                     const auto metadata = storage->getInMemoryMetadataPtr(context, false);
                     validateParquetFieldIdSettingsWithResolvedHeader(
-                        args, storage->getFormatName(), metadata->getColumns().getAllPhysical(), format_settings);
+                        args,
+                        storage->getFormatName(),
+                        metadata->getColumns().getAllPhysical(),
+                        format_settings,
+                        /* validate_secondary_create */ true);
                 }
 
                 return storage;

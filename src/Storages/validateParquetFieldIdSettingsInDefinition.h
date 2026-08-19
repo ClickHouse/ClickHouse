@@ -46,8 +46,11 @@ void validateParquetFieldIdSettingsInDefinition(
   * columns, or the partition strategy's format header — the header-dependent checks (unknown
   * columns, full coverage, ambiguous dotted paths) must run against it, or the definition would
   * be accepted and only fail on the first `INSERT`. The same definition-supplied /
-  * fresh-definition / Parquet gates apply, so replayed definitions and ambient values are exempt
-  * exactly as in the first phase. Call it only when the first phase ran without the final writer
+ * fresh-definition / Parquet gates apply, so replayed definitions and ambient values are exempt
+ * exactly as in the first phase. Set `validate_secondary_create` for a node-local source whose
+ * resolved header can differ on a distributed DDL worker: unlike a metadata replay, that worker
+ * must validate its own header before accepting the table. Call it only when the first phase ran
+ * without the final writer
   * header, i.e. when the definition's column list was empty, its format was still `auto`, or the
   * table is partitioned.
   */
@@ -55,6 +58,7 @@ void validateParquetFieldIdSettingsWithResolvedHeader(
     const StorageFactory::Arguments & args,
     const String & resolved_format_name,
     const NamesAndTypesList & writer_header_columns,
-    const FormatSettings & format_settings);
+    const FormatSettings & format_settings,
+    bool validate_secondary_create = false);
 
 }

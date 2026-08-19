@@ -2756,7 +2756,8 @@ void registerStorageFile(StorageFactory & factory)
                         factory_args,
                         storage->getFormatName(),
                         metadata->getColumns().getAllPhysical(),
-                        *storage_args.format_settings);
+                        *storage_args.format_settings,
+                        /* validate_secondary_create */ true);
                 }
                 return storage;
             };

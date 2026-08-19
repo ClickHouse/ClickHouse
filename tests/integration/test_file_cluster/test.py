@@ -134,6 +134,7 @@ def test_schema_inference(started_cluster):
     )
     assert result == expected_result
 
+
     result = node.query(
         "select * from fileCluster('my_cluster', 'file*.csv', auto) ORDER BY (c1, c2)"
     )
@@ -163,6 +164,28 @@ def test_schema_inference(started_cluster):
         "select * from fileCluster('my_cluster', 'file*.csv', CSV, auto, auto) ORDER BY (c1, c2)"
     )
     assert result == expected_result
+
+
+def test_parquet_field_ids_are_validated_on_cluster_after_schema_inference(started_cluster):
+    node_names = ("s0_0_0", "s0_0_1", "s0_1_0")
+    file_name = "parquet_field_ids_on_cluster.parquet"
+
+    started_cluster.instances[node_names[0]].query(
+        f"INSERT INTO FUNCTION file('{file_name}', Parquet) SELECT 1::Int64 AS x"
+    )
+    for node_name in node_names[1:]:
+        started_cluster.instances[node_name].query(
+            f"INSERT INTO FUNCTION file('{file_name}', Parquet) SELECT 1::Int64 AS y"
+        )
+
+    error = started_cluster.instances[node_names[0]].query_and_get_error(
+        f"""
+        CREATE TABLE parquet_field_ids_on_cluster ON CLUSTER my_cluster
+        ENGINE = File(Parquet, '{file_name}')
+        SETTINGS output_format_parquet_column_field_ids = {{'x': '1'}}
+        """
+    )
+    assert "BAD_ARGUMENTS" in error
 
 
 def test_format_detection(started_cluster):

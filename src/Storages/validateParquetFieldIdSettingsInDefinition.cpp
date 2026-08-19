@@ -25,7 +25,8 @@ void validateParquetFieldIdSettingsInDefinitionImpl(
     const StorageFactory::Arguments & args,
     const String & format_name,
     const NamesAndTypesList & physical_columns,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    bool validate_secondary_create)
 {
     if (!args.storage_def || !args.storage_def->settings)
         return;
@@ -47,6 +48,7 @@ void validateParquetFieldIdSettingsInDefinitionImpl(
     /// Replaying a definition that was already accepted once must not be rejected, or an existing
     /// table would fail to load; for such tables the write-time checks still apply.
     const bool fresh_user_definition = args.mode == LoadingStrictnessLevel::CREATE
+        || (validate_secondary_create && args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
         || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
     if (!fresh_user_definition)
         return;
@@ -77,7 +79,8 @@ void validateParquetFieldIdSettingsInDefinition(
         args,
         format_name,
         definition_columns_match_writer_header ? args.columns.getAllPhysical() : NamesAndTypesList{},
-        format_settings);
+        format_settings,
+        false);
 #else
     (void)args;
     (void)format_name;
@@ -90,15 +93,18 @@ void validateParquetFieldIdSettingsWithResolvedHeader(
     const StorageFactory::Arguments & args,
     const String & resolved_format_name,
     const NamesAndTypesList & writer_header_columns,
-    const FormatSettings & format_settings)
+    const FormatSettings & format_settings,
+    bool validate_secondary_create)
 {
 #if USE_PARQUET
-    validateParquetFieldIdSettingsInDefinitionImpl(args, resolved_format_name, writer_header_columns, format_settings);
+    validateParquetFieldIdSettingsInDefinitionImpl(
+        args, resolved_format_name, writer_header_columns, format_settings, validate_secondary_create);
 #else
     (void)args;
     (void)resolved_format_name;
     (void)writer_header_columns;
     (void)format_settings;
+    (void)validate_secondary_create;
 #endif
 }
 
