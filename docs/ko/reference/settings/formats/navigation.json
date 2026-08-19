@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "포맷 설정",
+  "group": "Format Settings",
   "pages": [
     "ko/reference/settings/formats/bool",
     "ko/reference/settings/formats/date-time",
