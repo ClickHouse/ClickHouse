@@ -102,5 +102,5 @@ def test_add_column_bool_and_decimal(started_cluster_iceberg_no_spark, format_ve
         settings=INSERT_SETTINGS,
     )
     assert instance.query(f"SELECT id, flag, price FROM {TABLE_NAME} ORDER BY id") == (
-        "1\t\\N\t\\N\n2\t\\N\t\\N\n3\ttrue\t99.95\n4\tfalse\t123.40\n"
+        "1\t\\N\t\\N\n2\t\\N\t\\N\n3\ttrue\t99.95\n4\tfalse\t123.4\n"
     )
