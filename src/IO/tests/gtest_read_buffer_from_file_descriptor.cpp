@@ -123,6 +123,47 @@ TEST(WriteBufferFromFileDescriptor, PreservesUnwrittenDataAfterInterruption)
     ASSERT_EQ(0, ::close(pipe_fds[1]));
 }
 
+TEST(WriteBufferFromFileDescriptor, PreservesFullBufferAfterInterruption)
+{
+    std::array<int, 2> pipe_fds{};
+    ASSERT_EQ(0, ::pipe(pipe_fds.data()));
+    ASSERT_EQ(4096, ::fcntl(pipe_fds[1], F_SETPIPE_SZ, 4096));
+
+    const String filler(4096, 'f');
+    ASSERT_EQ(static_cast<ssize_t>(filler.size()), ::write(pipe_fds[1], filler.data(), filler.size()));
+
+    bool interrupted = true;
+    const String preserved(4096, 'p');
+    WriteBufferFromFileDescriptor out(pipe_fds[1], preserved.size());
+    out.setCancellationHook([] { return false; }, [&] { return interrupted; });
+    writeString(preserved, out);
+    out.next();
+
+    EXPECT_GT(out.available(), 0);
+
+    String result(filler.size(), '\0');
+    ASSERT_EQ(static_cast<ssize_t>(result.size()), ::read(pipe_fds[0], result.data(), result.size()));
+    EXPECT_EQ(filler, result);
+
+    interrupted = false;
+    out.next();
+
+    result.resize(preserved.size());
+    ASSERT_EQ(static_cast<ssize_t>(result.size()), ::read(pipe_fds[0], result.data(), result.size()));
+    EXPECT_EQ(preserved, result);
+
+    const String appended = " appended";
+    writeString(appended, out);
+    out.finalize();
+
+    result.resize(appended.size());
+    ASSERT_EQ(static_cast<ssize_t>(result.size()), ::read(pipe_fds[0], result.data(), result.size()));
+    EXPECT_EQ(appended, result);
+
+    ASSERT_EQ(0, ::close(pipe_fds[0]));
+    ASSERT_EQ(0, ::close(pipe_fds[1]));
+}
+
 TEST(ForkWriteBuffer, DoesNotReplayPreservedPrimarySuffixToSecondary)
 {
     std::array<int, 2> pipe_fds{};

@@ -175,7 +175,21 @@ void WriteBufferFromFileDescriptor::nextImpl()
     const auto preserve_unwritten_data = [&]
     {
         const size_t bytes_left = offset() - bytes_written;
-        std::memmove(working_buffer.begin(), working_buffer.begin() + bytes_written, bytes_left);
+
+        /// WriteBuffer::next() restores pos to nextimpl_working_buffer_offset after this
+        /// method returns. Preserve at least one byte of capacity: otherwise a completely full
+        /// buffer would make the following WriteBuffer::write() spin with zero bytes to copy.
+        if (bytes_left == working_buffer.size())
+        {
+            String unwritten_data(working_buffer.begin() + bytes_written, bytes_left);
+            resize(bytes_left + 1);
+            std::memcpy(working_buffer.begin(), unwritten_data.data(), bytes_left);
+        }
+        else
+        {
+            std::memmove(working_buffer.begin(), working_buffer.begin() + bytes_written, bytes_left);
+        }
+
         nextimpl_working_buffer_offset = bytes_left;
     };
     while (bytes_written != offset())
