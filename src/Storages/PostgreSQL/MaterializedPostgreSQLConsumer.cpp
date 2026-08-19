@@ -1106,7 +1106,7 @@ void MaterializedPostgreSQLConsumer::syncTables()
 
         while (auto buffer = storage_data.popBuffer())
         {
-            const auto skip_reason = buffer->rows_with_defaulted_key_values.empty()
+            const String skip_reason = buffer->rows_with_defaulted_key_values.empty()
                 ? "because an unchanged TOAST value cannot be restored"
                 : "because a replica identity column could not be converted";
 
