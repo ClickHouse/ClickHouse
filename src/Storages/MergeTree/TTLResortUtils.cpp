@@ -9,6 +9,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <Core/SortDescription.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -43,6 +44,18 @@ namespace MergeTreeSetting
 
 namespace
 {
+
+/// Stored default and MATERIALIZED expressions must remain executable during a background merge
+/// even when a feature used at table-creation time is disabled in the current context. Keep this
+/// in sync with `IMergeTreeReader::createContextForDefaultExpressions`; chained materialized
+/// subcolumns additionally require the new analyzer for the expression DAG assembled here.
+ContextPtr createContextForTTLDefaultExpressions(const ContextPtr & context)
+{
+    auto expressions_context = Context::createCopy(context);
+    enableAllExperimentalSettings(expressions_context);
+    expressions_context->setSetting("enable_analyzer", true);
+    return expressions_context;
+}
 
 /// The physical storage columns the `GROUP BY` TTLs `SET` (assignment targets are always physical).
 NameSet getGroupByTTLSetTargets(const StorageMetadataPtr & metadata_snapshot)
@@ -245,6 +258,7 @@ std::optional<NameSet> getMaterializedColumnSourceColumns(
 std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
+    const auto expressions_context = createContextForTTLDefaultExpressions(context);
     const auto & columns_desc = metadata_snapshot->getColumns();
     const auto storage_columns = columns_desc.getAllPhysical().getNameSet();
 
@@ -269,7 +283,7 @@ std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
         if (column_desc.default_desc.kind != ColumnDefaultKind::Materialized || !column_desc.default_desc.expression)
             continue;
         auto sources = getMaterializedColumnSourceColumns(
-            column_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, context);
+            column_desc, all_columns_with_ephemeral, storage_columns, ephemeral_columns, expressions_context);
         if (sources)
             sources_map.emplace(column.name, std::move(*sources));
     }
@@ -322,6 +336,7 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
 Names getStaleEphemeralMaterializedColumnsAffectedBySet(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
 {
+    const auto expressions_context = createContextForTTLDefaultExpressions(context);
     Names stale;
 
     if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
@@ -364,7 +379,7 @@ Names getStaleEphemeralMaterializedColumnsAffectedBySet(
 
         auto query = column_desc.default_desc.expression->clone();
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
-        auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+        auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
 
         NameSet sources;
         for (const auto & source : syntax_result->requiredSourceColumns())
@@ -421,6 +436,7 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
 {
+    const auto expressions_context = createContextForTTLDefaultExpressions(context);
     NamesAndTypesList affected;
 
     if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
@@ -440,8 +456,8 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
         if (affected_materialized.contains(column.name))
         {
             auto default_ast = columns_desc.get(column.name).default_desc.expression->clone();
-            const auto syntax_result = TreeRewriter(context).analyze(default_ast, columns_desc.getAll());
-            const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, context}.getActions(true);
+            const auto syntax_result = TreeRewriter(expressions_context).analyze(default_ast, columns_desc.getAll());
+            const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, expressions_context}.getActions(true);
 
             /// A `GROUP BY` TTL can aggregate some rows while passing other rows through unchanged.
             /// The post-TTL repair is a whole-stream expression, so it cannot safely recompute a
@@ -806,6 +822,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     const ColumnsDescription & columns_desc,
     const ContextPtr & context)
 {
+    const auto expressions_context = createContextForTTLDefaultExpressions(context);
     NameSet recompute_names;
     for (const auto & column : columns_to_recompute)
         recompute_names.insert(column.name);
@@ -862,7 +879,7 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
         /// subcolumn read such as `tup.ts` in `d MATERIALIZED toDate(tup.ts)` is reported by its
         /// subcolumn name, so it is recognised and dropped below.
         auto query = column_desc.default_desc.expression->clone();
-        auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
+        auto syntax_result = TreeRewriter(expressions_context).analyze(query, all_columns_with_ephemeral);
         for (const auto & source : syntax_result->requiredSourceColumns())
             /// A subcolumn source is one that is not itself a physical column but maps to one.
             if (!storage_names.contains(source))
@@ -899,9 +916,6 @@ ActionsDAG buildRecomputeMaterializedColumnsDAG(
     /// A recomputed default may read a subcolumn of another recomputed column (`z MATERIALIZED
     /// toYYYYMM(y.d)` over MATERIALIZED `y`): both are dropped above, so `y.d` is resolvable only
     /// against the sibling `y` built in the same expression list, which the old analyzer cannot do.
-    auto expressions_context = Context::createCopy(context);
-    expressions_context->setSetting("enable_analyzer", true);
-
     auto recompute_dag = evaluateMissingDefaults(
         header_after_drop, required_columns, columns_desc, expressions_context, /*save_unneeded_columns=*/true);
     if (!recompute_dag)

@@ -30,6 +30,11 @@ namespace Setting
     extern const SettingsBool serialize_string_in_memory_with_zero_byte;
 }
 
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsUInt64 ttl_group_by_unsorted_max_bytes_before_external_group_by;
+}
+
 namespace
 {
 
@@ -95,6 +100,9 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
 
     columns_for_aggregator.resize(description.aggregate_descriptions.size());
     const Settings & settings = storage_.getContext()->getSettingsRef();
+    const UInt64 max_bytes_before_external_group_by = storage_.getContext()->getTempDataOnDisk()
+        ? (*storage_.getSettings())[MergeTreeSetting::ttl_group_by_unsorted_max_bytes_before_external_group_by]
+        : 0;
 
     /// Exact aggregation: every expired key must reach the written part, so no approximate cap
     /// applies here. The unsorted path holds all keys of the part at once, where a cap would either
@@ -108,7 +116,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*group_by_two_level_threshold*/ 0,
         /*group_by_two_level_threshold_bytes*/ 0,
         Aggregator::Params::getMaxBytesBeforeExternalGroupBy(
-            settings[Setting::max_bytes_before_external_group_by], settings[Setting::max_bytes_ratio_before_external_group_by]),
+            max_bytes_before_external_group_by,
+            /*max_bytes_ratio_before_external_group_by=*/0),
         settings[Setting::empty_result_for_aggregation_by_empty_set],
         storage_.getContext()->getTempDataOnDisk(),
         settings[Setting::max_threads],

@@ -44,3 +44,5 @@ const folded mat set fired	2
 const folded mat recomputed	2	2
 const folded tuple rows	1
 const folded tuple value	1
+unsorted group by count	100
+unsorted group by spilled	1

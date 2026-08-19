@@ -401,3 +401,25 @@ OPTIMIZE TABLE t_const_folded_tuple FINAL;
 SELECT 'const folded tuple rows', count() FROM t_const_folded_tuple;
 SELECT 'const folded tuple value', tup.ts = toDateTime(0) FROM t_const_folded_tuple;
 DROP TABLE t_const_folded_tuple;
+
+-- A `SET` in an earlier GROUP BY TTL changes the grouping key of the later TTL, so the latter
+-- must use its unsorted hash-aggregation path. Its dedicated table setting bounds that path,
+-- independently of the global ratio gate: with a one-byte limit it must spill rather than retain
+-- the whole part in memory.
+DROP TABLE IF EXISTS t_unsorted_group_by_spill;
+CREATE TABLE t_unsorted_group_by_spill (a UInt32, b UInt32, ts DateTime)
+ENGINE = MergeTree ORDER BY a
+TTL ts + toIntervalDay(1) GROUP BY a SET b = max(b),
+    ts + toIntervalDay(2) GROUP BY b SET a = max(a)
+SETTINGS min_bytes_for_full_part_storage = 128, ttl_group_by_unsorted_max_bytes_before_external_group_by = 1;
+SYSTEM STOP MERGES t_unsorted_group_by_spill;
+INSERT INTO t_unsorted_group_by_spill
+    SELECT number % 100, 100 - number % 100, toDateTime('2000-01-01') FROM numbers(50000);
+SYSTEM START MERGES t_unsorted_group_by_spill;
+OPTIMIZE TABLE t_unsorted_group_by_spill FINAL;
+SELECT 'unsorted group by count', count() FROM t_unsorted_group_by_spill;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'unsorted group by spilled', max(ProfileEvents['ExternalAggregationWritePart']) > 0
+FROM system.part_log
+WHERE database = currentDatabase() AND table = 't_unsorted_group_by_spill' AND event_type = 'MergeParts' AND error = 0;
+DROP TABLE t_unsorted_group_by_spill;

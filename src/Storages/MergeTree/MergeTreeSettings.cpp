@@ -1813,6 +1813,14 @@ sorted runs are spilled to the temporary storage on disk and merged back in a
 streaming fashion. Set to `0` to disable spilling and keep the whole re-sort in
 memory (not recommended for large parts).
 )", 0) \
+    DECLARE(UInt64, ttl_group_by_unsorted_max_bytes_before_external_group_by, 256 * 1024 * 1024, R"(
+When an earlier `TTL ... GROUP BY ... SET` clause changes the grouping key of a
+later `GROUP BY` TTL, the later aggregation uses a hash table because its input
+is no longer ordered by that key. This setting bounds that hash table: once it
+reaches the limit, partial aggregation data is spilled to temporary storage on
+disk. Set to `0` to disable spilling and keep the whole aggregation in memory
+(not recommended for large parts).
+)", 0) \
     DECLARE(Bool, enable_mixed_granularity_parts, true, R"(
 Enables or disables transitioning to control the granule size with the
 `index_granularity_bytes` setting. Before version 19.11, there was only the
