@@ -302,9 +302,48 @@ def test_quoted_server_path_identifiers_are_flagged(tmp_path):
     )
     assert _run(
         tmp_path,
-        'root=$(${CLICKHOUSE_CLIENT} -q \'SELECT "value" FROM system.server_settings'
-        " WHERE name = 'path'\")\n"
+        'path=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM system.`parts`'
+        " WHERE table = 't' AND active LIMIT 1\")\n"
+        'rm -f "$path/data.bin"\n',
+    )
+    assert _run(
+        tmp_path,
+        'root=$(${CLICKHOUSE_CLIENT} -q \'SELECT "value" FROM system.`server_settings`'
+        " WHERE `name` = 'path'\")\n"
         'rm -f "$root/flags/force_drop_table"\n',
+    )
+
+
+def test_server_root_fetch_with_multiple_setting_values_is_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'root=$(${CLICKHOUSE_CLIENT} -q "SELECT value FROM system.server_settings'
+        " WHERE name IN ('path', 'tmp_path')\")\n"
+        'rm -f "$root/flags/force_drop_table"\n',
+    )
+
+
+def test_sed_in_place_variants_are_flagged(tmp_path):
+    assert _run(tmp_path, FETCH_PART_PATH + 'sed -Ei s/a/b/ "$path/data.bin"\n')
+    assert _run(
+        tmp_path, FETCH_PART_PATH + 'sed --in-place=.bak s/a/b/ "$path/data.bin"\n'
+    )
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'sed --follow-symlinks -i s/a/b/ "$path/data.bin"\n',
+    )
+
+
+def test_non_executable_payload_does_not_arm_check(tmp_path):
+    assert not _run(
+        tmp_path,
+        'echo "SELECT path FROM system.parts WHERE table = \'t\'"\n'
+        'tmp=$(mktemp)\nrm -f "$tmp"\n',
+    )
+    assert not _run(
+        tmp_path,
+        "cat <<'EOF'\nSELECT path FROM system.parts WHERE table = 't'\nEOF\n"
+        'tmp=$(mktemp)\nrm -f "$tmp"\n',
     )
 
 

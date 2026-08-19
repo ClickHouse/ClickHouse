@@ -247,19 +247,22 @@ STAR_PROJECTION_RE = (
 # Single quotes are allowed inside the window so that a derived expression such as
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
 # semicolons still bound the match to one query.
+SYSTEM_PATH_TABLE_RE = (
+    r"`?(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|"
+    r"distribution_queue|remote_data_paths|filesystem_cache_settings)`?(?=[\s;])"
+)
 FETCHES_SERVER_PATH_RE = re.compile(
     r"(?i)(?:[`\"]?\b(?:path|data_path|data_paths|metadata_path|cache_paths|local_path)\b[`\"]?[^\"`|;]{0,300}?"
-    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue|remote_data_paths|filesystem_cache_settings)\b"
-    rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\."
-    r"(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue|remote_data_paths|filesystem_cache_settings)\b)"
+    rf"\bfrom\s+system\.{SYSTEM_PATH_TABLE_RE}"
+    rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\.{SYSTEM_PATH_TABLE_RE})"
 )
 # The server data root fetched as `SELECT value` or a star projection from
 # `system.server_settings` where `name = 'path'` or `name IN ('path')`. The `value` token (or `*`) is required
 # so that queries that merely inspect the setting without materializing the path (e.g.
 # `SELECT count()`) are not classified as a path fetch.
 FETCHES_SERVER_ROOT_RE = re.compile(
-    rf"(?i)(?:[`\"]?\bvalue\b[`\"]?|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.server_settings\b"
-    r"[^\"`|;]{0,100}?(?:\bname\s*=\s*'path'|'path'\s*=\s*\bname\b|\bname\s+in\s*\(\s*'path'\s*\))"
+    rf"(?i)(?:[`\"]?\bvalue\b[`\"]?|{STAR_PROJECTION_RE})[^\"`|;]{{0,100}}?\bfrom\s+system\.`?server_settings`?(?=[\s;])"
+    r"[^\"`|;]{0,100}?(?:`?name`?\s*=\s*'path'|'path'\s*=\s*`?name`?|`?name`?\s+in\s*\([^)]*'path'[^)]*\))"
 )
 # Wrapper commands that can precede the actual mutation verb without changing what it does,
 # their options and numeric arguments (`sudo -n rm ...`, `timeout 60 rm ...`), options that
@@ -287,7 +290,9 @@ FILE_MUTATION_CMD_RE = re.compile(
     + MUTATION_CMD_PREFIX
     + rf"(?:{FILE_MUTATION_VERBS})\s"
 )
-SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
+SED_IN_PLACE_RE = re.compile(
+    r"\bsed\s+(?:(?:--?[\w-]+)(?:=[^\s]+)?\s+)*(?:-\w*i\w*|--in-place(?:=[^\s]+)?)(?:\s|$)"
+)
 # Redirection into a path built from a shell variable, except well-known test scratch areas.
 REDIRECT_TO_VAR_RE = re.compile(
     r"(?<!-)>(?:>|\|)?\s*\"?\$\{?(?!CLICKHOUSE_TMP|CUR_DIR|CURDIR|USER_FILES_PATH"
@@ -379,6 +384,45 @@ def strip_shell_comment(line):
     return line
 
 
+def executable_shell_content(lines):
+    """
+    Return the shell text that can execute a system-table query.
+
+    `echo` and `printf` payloads are output, not commands, and quoted heredoc bodies are
+    similarly inert. Omitting them avoids arming the file-level check on documentation or
+    generated SQL text while retaining every executable command and unquoted heredoc.
+    """
+    result = []
+    quoted_heredoc_end = None
+    quoted_heredoc_re = re.compile(r"<<-?\s*(['\"])([A-Za-z_][A-Za-z0-9_]*)\1")
+    output_command_re = re.compile(r"^\s*(?:echo|printf)\b")
+    command_substitution_re = re.compile(r"`([^`]*)`|\$\(([^()]*)\)")
+
+    for line in lines:
+        if quoted_heredoc_end is not None:
+            if line.strip() == quoted_heredoc_end:
+                quoted_heredoc_end = None
+            continue
+
+        code = strip_shell_comment(line)
+        heredoc_match = quoted_heredoc_re.search(code)
+        if heredoc_match:
+            quoted_heredoc_end = heredoc_match.group(2)
+
+        if output_command_re.match(code):
+            # An output command can still execute a query in command substitution, e.g.
+            # `echo > `clickhouse-client -q "SELECT path ..."``. Keep that executable
+            # fragment while discarding the ordinary payload text.
+            result.extend(
+                match.group(1) or match.group(2)
+                for match in command_substitution_re.finditer(code)
+            )
+            continue
+        result.append(code)
+
+    return " ".join(result)
+
+
 def has_opaque_shell_command_string(code):
     """
     Whether the line runs a shell command string whose payload could hide a file mutation.
@@ -426,9 +470,7 @@ def check_no_server_data_manipulation(files):
 
         # Use the same comment handling as the mutation scan below. Otherwise a commented
         # query could arm the file-level check but could not itself produce a violation.
-        joined_content = " ".join(
-            strip_shell_comment(line) for line in file_content.splitlines()
-        )
+        joined_content = executable_shell_content(file_content.splitlines())
         if not FETCHES_SERVER_PATH_RE.search(
             joined_content
         ) and not FETCHES_SERVER_ROOT_RE.search(joined_content):
