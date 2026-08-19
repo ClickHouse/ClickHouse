@@ -14,7 +14,7 @@ SET use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, use_query_condition
 
 -- `t % toInt64(19)` renders as `t MOD 19`, the same name as the index expression, but its result
 -- type is UInt64 while the granule holds UInt8.
-SELECT 'index_consulted', countIf(explain LIKE '%Name: t_set%')
+SELECT 'index_consulted', countIf(explain LIKE '%Name: t_set%') > 0
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_widened_operand WHERE t % toInt64(19) = 16);
 
 SELECT 'granules_plain', extract(explain, 'Granules: [0-9]+/[0-9]+')
