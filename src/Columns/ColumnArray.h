@@ -219,9 +219,13 @@ public:
 
     void finalize() override
     {
-        auto finalized = IColumn::mutate(data);
-        finalized->finalize();
-        data = std::move(finalized);
+        /// A row-input format serializer can retain a `ColumnPtr` to `data` while the
+        /// owning `ColumnArray` is finalized. Mutating the slot through `IColumn::mutate`
+        /// would replace it with a clone and leave that retained reference pointing to a
+        /// different column. The serializer owns this bounded sharing and mutates the
+        /// nested column in place.
+        const auto & data_ref = data;
+        const_cast<IColumn &>(*data_ref).finalize();
     }
     bool isFinalized() const override { return data->isFinalized(); }
 
