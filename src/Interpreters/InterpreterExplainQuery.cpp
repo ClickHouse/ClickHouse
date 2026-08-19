@@ -474,9 +474,10 @@ namespace
                         };
 
                         collect_references(node);
-                        for (size_t index = 0; index < referenced_with_subqueries_to_scan.size(); ++index)
+                        size_t index = 0;
+                        while (index < referenced_with_subqueries_to_scan.size())
                         {
-                            const auto & name = referenced_with_subqueries_to_scan[index];
+                            const auto & name = referenced_with_subqueries_to_scan[index++];
                             const auto * subquery = with_subqueries.at(name)->as<ASTSubquery>();
                             if (subquery && !subquery->children.empty())
                                 collect_references(subquery->children.front());
