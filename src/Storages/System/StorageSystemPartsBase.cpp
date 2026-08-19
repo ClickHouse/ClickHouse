@@ -103,9 +103,9 @@ StoragesInfo StoragesInfoStreamBase::next()
     {
         /// The check is needed because if many tables were dropped concurrently,
         /// this loop can spend a long time skipping them, retaking the locks.
-        /// Note: if the time limit is exceeded in the 'break' mode, we return no more storages,
-        /// and the caller finishes with the rows collected so far.
-        if (query_status && !query_status->checkTimeLimit())
+        /// If the discovery prepass was stopped in the 'break' mode, drain the already collected
+        /// storages without starting another time-limit check here.
+        if (!discovery_stopped && query_status && !query_status->checkTimeLimit())
             return {};
 
         StoragesInfo info;
@@ -173,23 +173,27 @@ namespace
 /// A callback for the part enumeration in MergeTreeData to stop it on query cancellation or a time limit.
 /// checkTimeLimit returns false (instead of throwing) only in the 'break' overflow mode,
 /// so a stopped enumeration returns partial data, consistent with the 'break' semantics.
-std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status)
+std::function<bool()> makeNeedStopCallback(const QueryStatusPtr & query_status, bool & stopped)
 {
     if (!query_status)
         return {};
 
-    return [query_status] { return !query_status->checkTimeLimit(); };
+    return [query_status, &stopped]
+    {
+        stopped = !query_status->checkTimeLimit();
+        return stopped;
+    };
 }
 
 }
 
 MergeTreeData::DataPartsVector
-StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
+StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const
 {
     using State = MergeTreeData::DataPartState;
     using Kind = MergeTreeData::DataPartKind;
 
-    auto need_stop = makeNeedStopCallback(query_status);
+    auto need_stop = makeNeedStopCallback(query_status, stopped);
 
     if (need_inactive_parts)
     {
@@ -204,13 +208,13 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 MergeTreeData::ProjectionPartsVector
-StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status) const
+StoragesInfo::getProjectionParts(MergeTreeData::DataPartStateVector & state, bool has_state_column, const std::shared_ptr<QueryStatus> & query_status, bool & stopped) const
 {
     auto metadata_snapshot = data->getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     if (metadata_snapshot->projections.empty())
         return {};
 
-    auto need_stop = makeNeedStopCallback(query_status);
+    auto need_stop = makeNeedStopCallback(query_status, stopped);
 
     using State = MergeTreeData::DataPartState;
     if (need_inactive_parts)
@@ -293,6 +297,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                     if (query_status && !query_status->checkTimeLimit())
                     {
                         time_limit_exceeded = true;
+                        discovery_stopped = true;
                         break;
                     }
 
@@ -468,18 +473,8 @@ void ReadFromSystemPartsBase::initializePipeline(QueryPipelineBuilder & pipeline
 
     MutableColumns res_columns = header->cloneEmptyColumns();
 
-    /// The whole result is built eagerly here, so without this check a cancelled or timed out
-    /// query would keep building rows over every storage until the very end.
-    /// If the time limit is exceeded in the 'break' mode, return the rows collected so far.
-    QueryStatusPtr query_status = context->getProcessListElement();
-
     while (StoragesInfo info = stream->next())
-    {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
         storage->processNextStorage(context, res_columns, columns_mask, info, has_state_column);
-    }
 
     UInt64 num_rows = res_columns.at(0)->size();
     Chunk chunk(std::move(res_columns), num_rows);

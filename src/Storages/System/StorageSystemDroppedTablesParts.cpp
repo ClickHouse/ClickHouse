@@ -48,7 +48,10 @@ StoragesDroppedInfoStream::StoragesDroppedInfoStream(std::optional<ActionsDAG> f
         /// and time limits here. If the time limit is exceeded in the 'break' mode,
         /// stop the enumeration and return what was collected so far.
         if (query_status && !query_status->checkTimeLimit())
+        {
+            discovery_stopped = true;
             break;
+        }
 
         StoragePtr storage = dropped_table.table;
         if (!storage)

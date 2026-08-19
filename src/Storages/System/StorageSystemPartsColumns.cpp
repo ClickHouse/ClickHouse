@@ -132,11 +132,12 @@ void StorageSystemPartsColumns::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
-    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
+    bool snapshot_stopped = false;
+    all_parts = info.getParts(all_parts_state, has_state_column, query_status, snapshot_stopped);
 
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        if (query_status && !query_status->checkTimeLimit())
+        if (!snapshot_stopped && query_status && !query_status->checkTimeLimit())
             break;
 
         slowDownSystemPartsEnumeration(info.table);
