@@ -420,19 +420,16 @@ bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & /*root*/, S
         /// be satisfiable from the reader header after the rewrite. In particular, a projection
         /// such as `length(vec)` needs the physical vector column even though `vec` is not an
         /// output node of the DAG.
-        if (optimize_plan)
-        {
-            auto pruned_projection_expression = expression.clone();
-            pruned_projection_expression.removeUnusedResult(sort_column);
-            pruned_projection_expression.removeUnusedActions();
+        auto pruned_projection_expression = expression.clone();
+        pruned_projection_expression.removeUnusedResult(sort_column);
+        pruned_projection_expression.removeUnusedActions();
 
-            for (const auto * input : pruned_projection_expression.getInputs())
+        for (const auto * input : pruned_projection_expression.getInputs())
+        {
+            if (input->result_name == search_column)
             {
-                if (input->result_name == search_column)
-                {
-                    optimize_plan = false;
-                    break;
-                }
+                optimize_plan = false;
+                break;
             }
         }
 
