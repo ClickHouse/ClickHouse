@@ -722,8 +722,26 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
 
         if (cancel_delegated_to_reader)
         {
-            connections->sendCancel();
-            LOG_TRACE(log, "({}) Cancelling query", connections->dumpAddresses());
+            try
+            {
+                connections->sendCancel();
+                LOG_TRACE(log, "({}) Cancelling query", connections->dumpAddresses());
+            }
+            catch (...)
+            {
+                /// `cancel` has already been accepted. A broken transport must not turn this
+                /// hard-cancellation path into an exception, and it may still have unread
+                /// packets, so prevent the connections from returning to the pool.
+                tryLogCurrentException(log, "Error while cancelling remote query.");
+                try
+                {
+                    connections->disconnect();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Error while disconnecting cancelled remote query.");
+                }
+            }
             return ReadResult(Block());
         }
 
