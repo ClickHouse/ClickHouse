@@ -1070,10 +1070,10 @@ using FindAggregateFunctionFinderMatcher = OneTypeMatcher<FindAggregateFunctionD
 using FindAggregateFunctionVisitor = InDepthNodeVisitor<FindAggregateFunctionFinderMatcher, true>;
 
 /// Widens `Date` / `DateTime` to `Date32` / `DateTime64(0, tz)`, recursively inside
-/// tuple carriers. A TTL expression can refer to a tuple element while its syntax-level
-/// source column is the enclosing tuple, so widening only top-level source types would
-/// leave `t.d + INTERVAL ...` in the 32-bit domain.
-static DataTypePtr widenTemporalType(const DataTypePtr & type)
+/// `Tuple`, `Array`, and `Map` carriers. A TTL expression can refer to a nested temporal
+/// value while its syntax-level source column is the enclosing carrier, so widening only
+/// top-level source types would leave that value in the 16/32-bit domain.
+DataTypePtr widenTemporalType(const DataTypePtr & type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
@@ -1090,6 +1090,25 @@ static DataTypePtr widenTemporalType(const DataTypePtr & type)
 
         if (widened_any)
             return std::make_shared<DataTypeTuple>(std::move(widened_elements), tuple_type->getElementNames());
+
+        return type;
+    }
+
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        auto widened_nested = widenTemporalType(array_type->getNestedType());
+        if (!array_type->getNestedType()->equals(*widened_nested))
+            return std::make_shared<DataTypeArray>(std::move(widened_nested));
+
+        return type;
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        auto widened_key = widenTemporalType(map_type->getKeyType());
+        auto widened_value = widenTemporalType(map_type->getValueType());
+        if (!map_type->getKeyType()->equals(*widened_key) || !map_type->getValueType()->equals(*widened_value))
+            return std::make_shared<DataTypeMap>(std::move(widened_key), std::move(widened_value));
 
         return type;
     }
@@ -1119,7 +1138,7 @@ static DataTypePtr widenTemporalType(const DataTypePtr & type)
 
 /// Returns the column list with every `Date` / `DateTime` source column widened to
 /// `Date32` / `DateTime64(0, tz)` (looking through `Nullable` / `LowCardinality` and
-/// through tuple carriers).
+/// through `Tuple`, `Array`, and `Map` carriers).
 /// The TTL expression is analyzed against this widened view so arithmetic in
 /// `column + INTERVAL ...` is performed in the 64-bit domain and cannot silently
 /// wrap on overflow. The original timezone is preserved so calendar transforms
