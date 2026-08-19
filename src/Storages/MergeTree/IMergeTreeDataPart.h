@@ -24,7 +24,8 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityInfo.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
-#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartIndex.h>
+#include <Storages/MergeTree/PartDirIntent.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/Statistics/Statistics.h>
@@ -149,7 +150,7 @@ public:
         const MutableDataPartStoragePtr & data_part_storage_,
         Type part_type_,
         const IMergeTreeDataPart * parent_part_,
-        bool part_may_exist_on_disk = true);
+        PartDirIntent intent);
 
     virtual bool isStoredOnReadonlyDisk() const = 0;
     virtual bool isStoredOnRemoteDisk() const = 0;
@@ -204,7 +205,7 @@ public:
 
     /// Re-home the small, part-lifetime metadata that build paths may populate outside the
     /// dedicated MergeTree arena (`partition`, `ttl_infos`, `expired_columns`, and for patch parts
-    /// `source_parts_set`) into that arena. A cheap copy of small objects; call once these members
+    /// `patch_part_index`) into that arena. A cheap copy of small objects; call once these members
     /// are final. `columns` / `serializations` are handled by `setColumns`, the minmax index by
     /// `setMinMaxIndex` / the population sites.
     void moveMetadataToDedicatedArena();
@@ -331,14 +332,14 @@ public:
     /// to help avoid communication with keeper when temporary part is deleting.
     /// The common procedure is to ask the keeper with unlock request to release a references to the blobs.
     /// And then follow the keeper answer decide remove or preserve the blobs in that part from s3.
-    /// However in some special cases Clickhouse can make a decision without asking keeper.
+    /// However in some special cases ClickHouse can make a decision without asking keeper.
     enum class BlobsRemovalPolicyForTemporaryParts : uint8_t
     {
         /// decision about removing blobs is determined by keeper, the common case
         ASK_KEEPER,
-        /// is set when Clickhouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
+        /// is set when ClickHouse is sure that the blobs in the part are belong only to it, other replicas have not seen them yet
         REMOVE_BLOBS,
-        /// is set when Clickhouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
+        /// is set when ClickHouse is sure that the blobs belong to other replica and current replica has not locked them on s3 yet
         PRESERVE_BLOBS,
         /// remove blobs even if the part is not temporary
         REMOVE_BLOBS_OF_NOT_TEMPORARY,
@@ -435,6 +436,12 @@ public:
 
         void update(const Block & block, const NamesAndTypesList & columns);
         void merge(const MinMaxIndex & other);
+
+        /// Repair the block column ranges of an index inherited from `source_part` when that part does not
+        /// know them: grow the index to the current set of minmax columns and re-derive the ranges of
+        /// `_block_number` / `_block_offset` that came back as the whole universe. See the implementation
+        /// for when each range is recoverable. No-op for an uninitialized index, projection and patch parts.
+        void repairInheritedBlockColumns(const IMergeTreeDataPart & source_part, const StorageMetadataPtr & metadata_snapshot);
         Names getProbablyWrittenFiles(const IMergeTreeDataPart & part) const;
         /// For Store
         static String getFileColumnName(const String & column_name, const MergeTreeSettingsPtr & storage_settings_, const IDataPartStorage & data_part_storage);
@@ -567,8 +574,8 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
-    void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
-    const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
+    void setPatchPartIndex(PatchPartIndex patch_part_index_);
+    const PatchPartIndex & getPatchPartIndex() const;
 
     /// Check if the part is in the `/moving` directory
     bool isMovingPart() const;
@@ -578,8 +585,8 @@ public:
 
     const std::map<String, std::shared_ptr<IMergeTreeDataPart>> & getProjectionParts() const { return projection_parts; }
 
-    MergeTreeDataPartBuilder
-    getProjectionPartBuilder(const String & projection_name, ProjectionDescriptionRawPtr projection, bool is_temp_projection = false);
+    MergeTreeDataPartBuilder getProjectionPartBuilder(
+        const String & projection_name, ProjectionDescriptionRawPtr projection, PartDirIntent intent, bool is_temp_projection = false);
 
     void addProjectionPart(const String & projection_name, std::shared_ptr<IMergeTreeDataPart> && projection_part);
 
@@ -822,8 +829,8 @@ protected:
 
     mutable std::map<String, std::shared_ptr<IMergeTreeDataPart>> projection_parts;
 
-    /// Set of source parts for patch parts. Empty for regular parts.
-    SourcePartsSetForPatch source_parts_set;
+    /// Index of source parts covered by a patch part. Non-empty only for patch parts.
+    std::optional<PatchPartIndex> patch_part_index;
 
     /// Fill each_columns_size and total_size with sizes from columns files on
     /// disk using columns and checksums.
@@ -845,8 +852,6 @@ protected:
     /// storage storage, excluding files in the second returned argument.
     /// They can be hardlinks to some newer parts.
     std::pair<bool, NameSet> canRemovePart() const;
-
-    void initializeIndexGranularityInfo(const MergeTreeSettings & storage_settings);
 
     virtual void doCheckConsistency(bool require_part_metadata) const;
 
@@ -923,7 +928,7 @@ private:
     /// if it not exists tries to deduce codec from compressed column without
     /// any specifial compression.
     void loadDefaultCompressionCodec();
-    void loadSourcePartsSet();
+    void loadPatchPartIndex();
 
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
