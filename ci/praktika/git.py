@@ -123,6 +123,7 @@ class Git:
                     f"{git_prefix} fetch --quiet origin {shlex.quote(branch)}",
                     strict=True,
                     verbose=verbose,
+                    retries=retries,  # fetch is a network call — ride out a blip
                 )
                 Shell.check(
                     f"{git_prefix} rebase FETCH_HEAD", strict=True, verbose=verbose
