@@ -268,10 +268,16 @@ bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request
     if (request->getOpNum() == Coordination::OpNum::Set)
     {
         /// A Set cannot allocate a znode: the node must already exist, otherwise the request fails
-        /// with ZNONODE and stores nothing. With empty data the amount of stored data can only
+        /// with ZNONODE and stores nothing. With empty data the amount of *stored* data can only
         /// shrink, so refusing it buys nothing - and it is how a client re-registers its session
         /// (ZooKeeper::initSession), so refusing it prevents recovery from the very condition that
         /// triggered the refusal.
+        ///
+        /// "Can only shrink" is about the committed state. Preprocessing an admitted Set still copies
+        /// the node's current payload once into `UpdateNodeDataDelta::old_data`, so an empty Set over a
+        /// large node does allocate transiently before commit frees it. That is deliberate: this is
+        /// best-effort load shedding, and the alternative - refusing the write - keeps sessions from
+        /// re-registering for as long as the memory event lasts.
         const auto & set_req = dynamic_cast<const Coordination::ZooKeeperSetRequest &>(*request);
         return !set_req.data.empty();
     }
