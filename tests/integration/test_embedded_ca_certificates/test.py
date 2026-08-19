@@ -19,6 +19,7 @@ node = cluster.add_instance(
         "configs/server-cert.pem",
         "configs/server-key.pem",
     ],
+    stay_alive=True,
 )
 
 # The locations probed by Poco::Net::Context for default CA certificates.
