@@ -177,8 +177,12 @@ void SelectStreamFactory::createForShardImpl(
         /// But distributed_group_by_no_merge requires Complete.
         if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
+            /// Pass the already-resolved query_tree (see createLocalPlan's doc comment, #111893):
+            /// avoids re-resolving query_ast against this (the initiator's) DatabaseCatalog, which
+            /// legitimately may not have the shard's table (e.g. remote()'s target database).
             query_plan = createLocalPlan(
-                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
+                query_ast, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database,
+                query_tree);
 
             shard_header = query_plan->getCurrentHeader();
         }
