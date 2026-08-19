@@ -599,23 +599,30 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
-    /// Whether an updated column is reachable from `column_name` directly or through other MATERIALIZED
-    /// columns. The entry inserted before recursing also breaks a cycle, which well-formed defaults
-    /// cannot contain; on an acyclic graph an entry is only ever read once its value is final, because a
-    /// column still being visited is reachable exclusively from its own subtree.
-    std::unordered_map<String, bool> reaches_updated;
-    auto reaches_updated_column = [&](const String & column_name, auto && self) -> bool
+    /// Whether a column has to be read: it is updated itself, or it is a MATERIALIZED column that the
+    /// interpreter recalculates from an updated column further down the chain. Memoised, and the entry
+    /// inserted before recursing also breaks a cycle, which well-formed defaults cannot contain; on an
+    /// acyclic graph an entry is only ever read once its value is final, because a column still being
+    /// visited is reachable exclusively from its own subtree.
+    std::unordered_map<String, bool> needs_reading_of;
+    auto needs_reading = [&](const String & column_name, auto && self) -> bool
     {
-        auto [it, inserted] = reaches_updated.emplace(column_name, false);
+        if (all_updated_columns.contains(column_name))
+            return true;
+
+        if (!can_recalculate(column_name))
+            return false;
+
+        auto [it, inserted] = needs_reading_of.emplace(column_name, false);
         if (!inserted)
             return it->second;
 
         for (const auto & dependency : get_dependencies(column_name))
         {
-            if (all_updated_columns.contains(dependency) || (can_recalculate(dependency) && self(dependency, self)))
+            if (self(dependency, self))
             {
                 /// Not through `it`: the recursion above may have rehashed the map.
-                reaches_updated[column_name] = true;
+                needs_reading_of[column_name] = true;
                 return true;
             }
         }
@@ -635,14 +642,10 @@ void AlterConversions::addColumnsRequiredForMaterialized(
 
         for (const auto & dependency : get_dependencies(column_name))
         {
-            /// An EPHEMERAL column cannot be read, and one already in the read set needs nothing: it is
-            /// either a column the query asked for or one an earlier step of this walk added, and either
-            /// way it has been queued.
             if (ephemeral_columns.contains(dependency) || read_columns_set.contains(dependency))
                 continue;
 
-            if (all_updated_columns.contains(dependency)
-                || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column)))
+            if (needs_reading(dependency, needs_reading))
             {
                 read_columns_set.insert(dependency);
                 read_columns.push_back(dependency);
