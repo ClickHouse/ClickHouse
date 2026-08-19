@@ -481,10 +481,13 @@ ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const Stor
 /// self-referential branch would be rejected because of a sibling branch that reads a
 /// `MergeTree` table. Nodes that share `scope_context` are the ones whose settings
 /// really are the ones being examined, so only those are walked.
-/// Mirror of `should_disable_parallel_replicas` in `buildJoinTreeQueryPlan`
-/// (`PlannerJoinTree.cpp`): for several join-tree shapes the planner *silently* sets
+/// Mirror the join-tree gates in `buildJoinTreeQueryPlan`
+/// (`PlannerJoinTree.cpp`): `allowParallelReplicasForJoinTree` rejects a top-level
+/// `CROSS JOIN` and a non-`ALL` `INNER JOIN`, while `should_disable_parallel_replicas`
+/// silently sets
 /// `enable_parallel_replicas = 0` before planning the reads — even under the forcing
 /// mode — instead of throwing:
+///   - a top-level `CROSS JOIN` or non-`ALL` `INNER JOIN`,
 ///   - an n-way join where a `LEFT`/`INNER`/`RIGHT` join precedes the last `RIGHT`
 ///     join (the left side of that `RIGHT` join cannot be parallelized),
 ///   - an n-way join involving a `FULL`, `GLOBAL` or `CROSS` join,
@@ -500,6 +503,17 @@ ParallelReplicasEngagement mayEngageParallelReplicasForWrappedStorage(const Stor
 /// for any other right side (e.g. a subquery).
 bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & join_tree_node)
 {
+    /// `allowParallelReplicasForJoinTree` only permits a top-level `INNER JOIN`
+    /// with `ALL` strictness and rejects a top-level `CROSS JOIN`. The engagement
+    /// walk below evaluates storage eligibility per leaf, so it must apply this
+    /// join-tree eligibility before any eligible leaf can make forced mode throw.
+    if (join_tree_node->as<CrossJoinNode>())
+        return true;
+
+    if (const auto * join_node = join_tree_node->as<JoinNode>();
+        join_node && join_node->getKind() == JoinKind::Inner && join_node->getStrictness() != JoinStrictness::All)
+        return true;
+
     /// Post-order like `buildTableExpressionsStack`, but tolerant of unresolved
     /// trees: the engagement walk also inspects view inner queries built by
     /// `QueryTreeBuilder` without analysis, whose table expressions are still

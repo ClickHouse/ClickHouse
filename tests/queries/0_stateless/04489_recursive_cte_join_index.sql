@@ -690,6 +690,40 @@ SELECT current_id FROM traverse_pr ORDER BY current_id
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
 
+-- `allowParallelReplicasForJoinTree` rejects a top-level `CROSS JOIN`, even if
+-- its `WHERE` clause makes it equivalent to the normal recursive inner join.
+-- Keep the cross join intact to verify that forced mode follows the planner and
+-- runs this recursive step plainly instead of throwing.
+WITH RECURSIVE traverse_pr_cross_join AS
+(
+    SELECT to_id AS current_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges AS e CROSS JOIN traverse_pr_cross_join AS t
+    WHERE e.from_id = t.current_id
+)
+SELECT sum(current_id) FROM traverse_pr_cross_join
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0,
+    cross_to_inner_join_rewrite = 0;
+
+-- The same planner gate applies to a non-`ALL` inner join. The edge keys are
+-- unique, so `ANY INNER JOIN` has the same result as the ordinary walk above.
+WITH RECURSIVE traverse_pr_any_inner_join AS
+(
+    SELECT to_id AS current_id
+    FROM edges
+    WHERE from_id = 0
+  UNION ALL
+    SELECT e.to_id AS current_id
+    FROM edges AS e ANY INNER JOIN traverse_pr_any_inner_join AS t ON e.from_id = t.current_id
+)
+SELECT sum(current_id) FROM traverse_pr_any_inner_join
+SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
+    parallel_replicas_for_non_replicated_merge_tree = 1, automatic_parallel_replicas_mode = 0;
+
 -- The same force-or-throw contract must hold for *every* parallel-replica mode
 -- the recursive context could otherwise engage, not just the task-based one.
 -- A forced custom-key mode (`parallel_replicas_mode = 'custom_key_sampling'`)
