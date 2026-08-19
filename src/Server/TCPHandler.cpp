@@ -1342,6 +1342,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 void TCPHandler::readTemporaryTables(QueryState & state)
 {
     sendLogs(state);
+    out->sync();
 
     /// no sense in partial_result_on_first_cancel setting when temporary data is read.
     auto off_setting_guard = TurnOffBoolSettingTemporary(state.allow_partial_result_on_first_cancel);
@@ -1350,6 +1351,7 @@ void TCPHandler::readTemporaryTables(QueryState & state)
     {
         sendLogs(state);
         sendInsertProfileEvents(state);
+        out->sync();
     }
 }
 
@@ -1411,6 +1413,7 @@ AsynchronousInsertQueue::PushResult TCPHandler::processAsyncInsertQuery(QuerySta
             std::lock_guard lock(*callback_mutex);
             sendLogs(state);
             sendInsertProfileEvents(state);
+            out->sync();
         }
 
         if (result_chunk)
@@ -1462,6 +1465,7 @@ void TCPHandler::processInsertQuery(QueryState & state)
                 std::lock_guard lock(*callback_mutex);
                 sendLogs(state);
                 sendInsertProfileEvents(state);
+                out->sync();
             }
 
             executor.finish();
