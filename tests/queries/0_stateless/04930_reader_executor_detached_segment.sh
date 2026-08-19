@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings, no-distributed-cache
+# Tags: no-fasttest, no-parallel, no-random-settings, no-distributed-cache
 # no-fasttest: needs an S3/minio-backed storage policy with a filesystem cache.
 # no-parallel: arms a server-wide failpoint that affects every filesystem cache lookup.
-# no-distributed-cache/no-object-storage/no-random-settings: the executor falls back off its cache path there.
+# no-distributed-cache, no-random-settings: keep the read on the executor's cache path (else the assertion below fails).
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
