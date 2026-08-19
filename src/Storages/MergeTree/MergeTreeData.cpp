@@ -9470,8 +9470,9 @@ static void canonicalizeCastTypeNames(IAST * ast)
                 {
                     type_literal->value = DataTypeFactory::instance().get(type_literal->value.safeGet<String>())->getName();
                 }
-                catch (...) /// NOLINT(bugprone-empty-catch): unparseable type name, leave it as written.
+                catch (...) /// NOLINT(bugprone-empty-catch)
                 {
+                    /// Ok: not a valid type name, leave the literal exactly as written.
                 }
             }
         }
