@@ -3516,7 +3516,8 @@ static bool isArrayQuantifierPredicate(std::string_view function_name)
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
-        "like", "ilike", "notLike", "notILike", "match"
+        "like", "ilike", "notLike", "notILike",
+        "match", "matchCaseInsensitive", "notMatch", "notMatchCaseInsensitive"
     };
     return predicates.contains(function_name);
 }

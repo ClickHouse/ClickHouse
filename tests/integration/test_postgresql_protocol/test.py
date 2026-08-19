@@ -258,6 +258,28 @@ def test_query_error_keeps_connection(started_cluster):
     ch.close()
 
 
+def test_prepared_query_error_keeps_connection(started_cluster):
+    node = cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+        dbname="default",
+    )
+    cur = ch.cursor()
+
+    # An error in the extended protocol keeps the connection usable after its
+    # `Sync`, which psycopg sends before reporting the failed operation.
+    with pytest.raises(Exception):
+        cur.execute("SELECT throwIf(1)", prepare=True)
+
+    cur.execute("SELECT 1", prepare=True)
+    assert int(cur.fetchone()[0]) == 1
+    ch.close()
+
+
 def test_psql_client_secure(started_cluster):
     node = cluster.instances["node_secure"]
 
@@ -607,12 +629,19 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     )
     cur = restricted.cursor()
 
-    # The internal pg_type view should be accessible.
+    # The internal compatibility views should be accessible without direct
+    # grants on their `system.*` sources.
     # ClickHouse currently sends scalar values over the PostgreSQL protocol in
     # text mode, so result[0] arrives as a string from psycopg.
     cur.execute("SELECT count() FROM pg_type")
     result = cur.fetchone()
     assert int(result[0]) > 0
+
+    cur.execute("SELECT count() FROM pg_namespace")
+    assert int(cur.fetchone()[0]) > 0
+
+    cur.execute("SELECT count() FROM pg_class")
+    assert int(cur.fetchone()[0]) > 0
 
     # SELECT should work
     cur.execute("SELECT 1")

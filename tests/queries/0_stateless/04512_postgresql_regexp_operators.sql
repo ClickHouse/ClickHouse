@@ -21,3 +21,8 @@ SELECT formatQuerySingleLine('SELECT \'abc\' ~ \'a\', \'abc\' ~* \'A\', \'abc\' 
 
 -- A single exclamation mark is still an error.
 SELECT 'abc' ! 'a'; -- { clientError SYNTAX_ERROR }
+
+-- All PostgreSQL regexp operators support array quantifiers.
+SELECT 'abc' ~* SOME(['A']);
+SELECT 'abc' !~ SOME(['A', 'z']);
+SELECT 'abc' !~* ALL(['Z', 'X']);
