@@ -155,7 +155,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         {
             ++column_position;
             slowDownSystemPartsColumnsEnumeration(info.table, column_position);
-            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
+            if (!snapshot_stopped && query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
             {
                 time_limit_exceeded = true;
                 break;
