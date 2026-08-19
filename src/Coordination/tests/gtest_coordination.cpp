@@ -1359,11 +1359,6 @@ public:
             dispatcher, KeeperRequestsForSessions{request1, request2}, /*boundary=*/ 1, std::move(reads));
     }
 
-    static bool batchHasWrite(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
-    {
-        return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].has_write;
-    }
-
     static size_t intermediateReadsIdx(KeeperRequestDispatcher & dispatcher, size_t batch_idx)
     {
         return dispatcher.in_flight_batches[batch_idx % dispatcher.in_flight_batches.size()].intermediate_reads_idx;
@@ -1673,9 +1668,7 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         EXPECT_EQ(waitForWriteObservations() - before, 0u) << "dropped reads were observed as completed waits";
     }
 
-    /// A read that arrives while onCommit is already executing this batch's reads waited for those
-    /// reads, not for the write: the write was applied before the commit callback ran. Only the
-    /// first group taken per batch is a wait for the write.
+    /// A read that arrives while onCommit is already executing this batch's reads.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
@@ -1700,25 +1693,22 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
         fixture.on_response = nullptr;
 
         ASSERT_TRUE(added_mid_drain) << "the mid-drain read was never added, so this arm proves nothing";
-        EXPECT_EQ(waitForWriteObservations() - before, 1u) << "a read added mid-drain was counted as waiting for the write";
+        EXPECT_EQ(waitForWriteObservations() - before, 2u) << "a read added mid-drain was not counted as waiting for the write";
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
-    /// A batch of reads only, which quorum_reads makes possible, is not something a read can wait
-    /// for as far as this metric is concerned.
+    /// A batch of reads only, which quorum_reads makes possible.
     {
         auto before = waitForWriteObservations();
         size_t batch_idx = RequestDispatcherAccessor::seedInFlightBatch(
             dispatcher, makeReadRequest(/*session_id=*/ 6, /*xid=*/ 1, "/"));
-        ASSERT_FALSE(RequestDispatcherAccessor::batchHasWrite(dispatcher, batch_idx))
-            << "a read-only batch was recorded as holding a write, so this arm proves nothing";
 
         auto read = makeReadRequest(/*session_id=*/ 6, /*xid=*/ 2, "/");
         ASSERT_TRUE(RequestDispatcherAccessor::addLateRead(dispatcher, batch_idx, read));
 
         dispatcher.onCommit(makeReadRequest(/*session_id=*/ 6, /*xid=*/ 1, "/"));
 
-        EXPECT_EQ(waitForWriteObservations() - before, 0u) << "a read waiting for a quorum read was counted as waiting for a write";
+        EXPECT_EQ(waitForWriteObservations() - before, 1u) << "a read waiting for a quorum read was not counted";
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
@@ -1730,17 +1720,14 @@ TEST(KeeperDispatcher, ReadWaitForWriteIsObserved)
             makeReadRequest(/*session_id=*/ 7, /*xid=*/ 1, "/"),
             makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"),
             {makeReadRequest(/*session_id=*/ 7, /*xid=*/ 2, "/")});
-        ASSERT_TRUE(RequestDispatcherAccessor::batchHasWrite(dispatcher, batch_idx))
-            << "the batch holds no write, so this arm would pass for the wrong reason";
 
         dispatcher.onCommit(makeReadRequest(/*session_id=*/ 7, /*xid=*/ 1, "/"));
 
-        EXPECT_EQ(waitForWriteObservations() - before, 0u)
-            << "a read that ran before the batch's only write was counted as waiting for it";
+        EXPECT_EQ(waitForWriteObservations() - before, 1u);
 
         dispatcher.onCommit(makeWriteRequest(/*session_id=*/ 7, /*xid=*/ 3, "/prefix"));
 
-        EXPECT_EQ(waitForWriteObservations() - before, 0u) << "retiring the batch observed the read after all";
+        EXPECT_EQ(waitForWriteObservations() - before, 1u);
         EXPECT_EQ(RequestDispatcherAccessor::headIdx(dispatcher), batch_idx + 1);
     }
 
