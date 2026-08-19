@@ -45,8 +45,15 @@ done <<'EOF'
 trivial count|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1
 minmax_count projection|SELECT max(a) FROM t_hypo_proj_baseline SETTINGS optimize_use_implicit_projections = 1
 exact_count projection|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1
-normal projection with no ranges|SELECT a FROM t_hypo_proj_baseline WHERE b = 999999 SETTINGS optimize_use_projections = 1
 EOF
+
+# A normal projection that selects no ranges may drop the read step or keep an empty one, which
+# differs by plan; either way the statement must not fail
+echo "--- a normal projection with no ranges does not fail ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 999999 SETTINGS optimize_use_projections = 1;
+" > /dev/null 2>&1 && echo "no exception" || echo "FAILED"
 
 # the no-scan path is still single-table only, and still honours force_data_skipping_indices
 echo "--- a join is not silently reported as single-table ---"

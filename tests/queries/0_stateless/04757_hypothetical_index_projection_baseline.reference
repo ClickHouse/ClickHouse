@@ -17,9 +17,8 @@ reason: The query is answered without reading the table\'s parts, so an index on
 exact_count projection
 status: not_applicable
 reason: The query is answered without reading the table\'s parts, so an index on them would not be read
-normal projection with no ranges
-status: not_applicable
-reason: The query is answered without reading the table\'s parts, so an index on them would not be read
+--- a normal projection with no ranges does not fail ---
+no exception
 --- a join is not silently reported as single-table ---
 NOT_IMPLEMENTED
 --- a forced index still fails when nothing is read ---
