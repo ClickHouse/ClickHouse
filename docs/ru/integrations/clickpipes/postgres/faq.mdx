@@ -86,20 +86,7 @@ REPLICA IDENTITY FULL также позволяет реплицировать �
   ### Можно ли подключать базы данных Postgres без публичного IP-адреса или в частных сетях?
 </div>
 
-Да! ClickPipes для Postgres предлагает два способа подключения к базам данных в частных сетях:
-
-1. **SSH-туннелирование**
-   * Подходит для большинства сценариев
-   * Инструкции по настройке смотрите [здесь](/ru/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
-   * Работает во всех регионах
-
-2. **AWS PrivateLink**
-   * Доступно в трёх регионах AWS:
-     * us-east-1
-     * us-east-2
-     * eu-central-1
-   * Подробные инструкции по настройке см. в нашей [документации по PrivateLink](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-   * В регионах, где PrivateLink недоступен, используйте SSH-туннелирование
+Да. О способах, которыми ClickPipes может подключаться к источнику данных, недоступному из публичного интернета, см. в разделе [Сетевое взаимодействие ClickPipes](/ru/integrations/clickpipes/networking).
 
 <div id="how-do-you-handle-updates-and-deletes">
   ### Как обрабатываются UPDATE и DELETE?
