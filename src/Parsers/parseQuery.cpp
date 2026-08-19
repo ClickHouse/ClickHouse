@@ -1,5 +1,6 @@
 #include <Parsers/parseQuery.h>
 
+#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -319,13 +320,52 @@ ASTPtr tryParseQuery(
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
     IParser::Pos set_lookahead(token_iterator);
-    /// Committed to SET once the input starts with `SET <identifier>`, as every real (even malformed) SET
-    /// statement does; `set` as a bare PromQL metric name (`set`, `set{...}`, `set[5m]`, `set @ 100`) does not.
-    ASTPtr set_probe_node;
-    Expected set_probe_expected;
-    const bool committed_to_set = parser.consumesRawText()
-        && ParserKeyword(Keyword::SET).ignore(set_lookahead, set_probe_expected)
-        && ParserCompoundIdentifier().parse(set_lookahead, set_probe_node, set_probe_expected);
+    /// Committed to SET once the input starts with a genuine SET statement structure:
+    /// 1. `SET PROFILE ...`, `SET ROLE ...`, `SET DEFAULT ROLE ...`, `SET TIME ZONE ...`
+    /// 2. `SET <setting> = ...` (assignment, even if the value is malformed)
+    /// 3. `SET <setting> [, ...]` or `SET <setting> ;` / end of stream, where <setting> is not a PromQL keyword/operator.
+    auto is_promql_keyword = [](std::string_view name) -> bool
+    {
+        static constexpr std::string_view keywords[]
+            = {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"};
+        for (const auto & kw : keywords)
+        {
+            if (equalsCaseInsensitive(name, kw))
+                return true;
+        }
+        return false;
+    };
+
+    auto is_committed_to_set = [&](IParser::Pos pos) -> bool
+    {
+        Expected probe_expected;
+        if (!ParserKeyword(Keyword::SET).ignore(pos, probe_expected))
+            return false;
+
+        if (ParserKeyword(Keyword::PROFILE).check(pos, probe_expected)
+            || ParserKeyword(Keyword::ROLE).check(pos, probe_expected)
+            || ParserKeyword(Keyword::DEFAULT).check(pos, probe_expected)
+            || ParserKeyword(Keyword::TIME_ZONE).check(pos, probe_expected))
+            return true;
+
+        ASTPtr identifier_node;
+        if (!ParserCompoundIdentifier().parse(pos, identifier_node, probe_expected))
+            return false;
+
+        String identifier_name;
+        tryGetIdentifierNameInto(identifier_node, identifier_name);
+
+        if (pos->type == TokenType::Equals)
+            return true;
+
+        if ((pos->type == TokenType::Comma || pos->type == TokenType::Semicolon || pos->type == TokenType::EndOfStream)
+            && !is_promql_keyword(identifier_name))
+            return true;
+
+        return false;
+    };
+
+    const bool committed_to_set = parser.consumesRawText() && is_committed_to_set(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {

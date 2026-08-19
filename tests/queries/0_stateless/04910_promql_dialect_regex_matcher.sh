@@ -44,6 +44,10 @@ promql_client -q 'set{instance=~"host2|host3"}' | cut -f1,3 | LC_ALL=C sort
 echo "-- bare 'set' is a metric too"
 promql_client -q 'set' | cut -f1,3 | LC_ALL=C sort
 
+echo "-- a metric named 'set' followed by PromQL bareword operators/modifiers"
+promql_client -q 'set or up{instance=~"host2|host3"}' | cut -f1,3 | LC_ALL=C sort
+promql_client -q 'set offset 0s' | cut -f1,3 | LC_ALL=C sort
+
 echo "-- a real SET statement still works under the dialect"
 promql_client -q 'SET max_threads = 1' && echo OK
 

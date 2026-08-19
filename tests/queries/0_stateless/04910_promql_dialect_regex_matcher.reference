@@ -14,6 +14,13 @@
 [('__name__','set'),('instance','host1')]	3
 [('__name__','set'),('instance','host2')]	1
 [('__name__','set'),('instance','host3')]	2
+-- a metric named 'set' followed by PromQL bareword operators/modifiers
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
+[('__name__','set'),('instance','host1')]	3
+[('__name__','set'),('instance','host2')]	1
+[('__name__','set'),('instance','host3')]	2
 -- a real SET statement still works under the dialect
 OK
 -- a malformed SET still gets the ordinary SQL lexical error
