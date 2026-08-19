@@ -201,6 +201,16 @@ def test_config_env_include_keeps_xml_subtree_behavior(start_cluster):
     assert get_log_comment(node_env, "env_subtree") == "subtree value\n"
 
 
+def test_config_env_direct_container_keeps_xml_fragment_literal(start_cluster):
+    """A direct ordinary-element `from_env` value is literal, not a subtree import.
+
+    Before this change `<profile from_env="ENV_XML_SUBTREE"/>` parsed the environment value as
+    XML. Direct substitutions now use the literal-text contract, so existing subtree imports must
+    use `<profile><include from_env="ENV_XML_SUBTREE"/></profile>` instead.
+    """
+    assert get_log_comment(node_env, "env_direct_subtree") == "\n"
+
+
 def test_config_zk_yaml_is_parsed_with_explicit_opt_in(start_cluster):
     """A structural <include from_zk=... yaml="true"> parses a non-XML value as YAML."""
     assert (
