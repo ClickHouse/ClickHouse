@@ -35,7 +35,8 @@ public:
 
     AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) override;
     bool supportsEmbeddings() const override { return true; }
-    AIEmbeddingResponse embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts) override;
+    void embed(
+        const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response) override;
 
 private:
     const String endpoint;

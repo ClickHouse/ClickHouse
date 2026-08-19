@@ -1076,6 +1076,21 @@ def test_embed_quota_throw_records_rows_processed(started_cluster):
     assert int(events["rows_skipped"]) == 0  # the quota raised instead of skipping
 
 
+def test_embed_malformed_response_records_input_tokens(started_cluster):
+    """A `200` body the provider billed for but that fails validation still consumed tokens, so they must
+    reach `system.query_log` and `AIQuotaTracker` rather than being lost with the rejected payload."""
+    qid = unique_query_id("embed_malformed_tokens")
+    error = instance.query_and_get_error(
+        "SELECT aiEmbed(x, 'test-embed-model', map('credentials', 'ai_embed_dup_index')) FROM (SELECT arrayJoin(['a', 'b']) AS x)",
+        settings={**AI_SETTINGS, "ai_function_max_retries": 0},
+        query_id=qid,
+    )
+    assert "MALFORMED_AI_PROVIDER_RESPONSE" in error
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 2  # the mock bills one token per input character: "a", "b"
+
+
 def test_embed_error_throw_records_api_calls(started_cluster):
     """The provider was called and charged for it, so `embedTexts` must report the usage counters even
     though it rethrows. They used to be lost with the `EmbeddingResult` that never reached the caller."""

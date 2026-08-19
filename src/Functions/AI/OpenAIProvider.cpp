@@ -125,8 +125,12 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     return ai_response;
 }
 
-AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts)
+void OpenAIProvider::embed(
+    const AIEmbeddingRequest & ai_embedding_request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response)
 {
+    response.embeddings.clear();
+    response.input_tokens = 0;
+
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_embedding_request.model);
 
@@ -177,8 +181,15 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    AIEmbeddingResponse ai_embedding_response;
-    ai_embedding_response.embeddings.resize(ai_embedding_request.inputs.size());
+    /// A malformed body was still charged for, so read the usage before the checks below can throw.
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+    }
+
+    response.embeddings.resize(ai_embedding_request.inputs.size());
 
     auto data_arr = json_obj->getArray("data");
     if (!data_arr)
@@ -203,10 +214,10 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
 
         /// `index` tells us which input this embedding corresponds to. Defaults to `i` when missing (TEI).
         UInt64 idx = item->optValue<UInt64>("index", i);
-        if (idx >= ai_embedding_response.embeddings.size())
+        if (idx >= response.embeddings.size())
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} is out of range (expected < {})",
-                i, idx, ai_embedding_response.embeddings.size());
+                i, idx, response.embeddings.size());
         if (seen[idx])
             throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
                 "AI embedding response 'data[{}].index' = {} duplicates an earlier entry", i, idx);
@@ -218,17 +229,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
                 "AI embedding response 'data[{}].embedding' is missing or not an array", i);
 
         for (unsigned j = 0; j < embedding_arr->size(); ++j)
-            ai_embedding_response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
+            response.embeddings[idx].push_back(static_cast<Float32>(embedding_arr->getElement<double>(j)));
     }
-
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-            ai_embedding_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-    }
-
-    return ai_embedding_response;
 }
 
 }

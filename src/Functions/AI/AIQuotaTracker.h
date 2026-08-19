@@ -25,8 +25,8 @@ public:
     /// (including retries), so a misbehaving endpoint can't bypass `ai_function_max_api_calls_per_query`.
     void recordAttempt();
 
-    /// Record token usage on a successful response. Tokens are only billed by the provider when the call succeeds,
-    /// so this is kept separate from `recordAttempt` and called only after the response is parsed.
+    /// Record token usage reported by a response, including one whose body was rejected as malformed: the
+    /// provider billed for it either way. Kept separate from `recordAttempt`, which counts the request itself.
     void recordTokens(UInt64 in_tokens, UInt64 out_tokens);
 
 

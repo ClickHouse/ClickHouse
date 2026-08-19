@@ -434,9 +434,11 @@ void FunctionBaseAI::embedTexts(
                 /// Update api_calls/quotas before call so failed calls are still added to total.
                 ++api_calls;
                 quota.recordAttempt();
-                ai_embedding_response = provider.embed(ai_embedding_request, timeouts);
-                input_tokens += ai_embedding_response.input_tokens;
-                quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                SCOPE_EXIT({
+                    input_tokens += ai_embedding_response.input_tokens;
+                    quota.recordTokens(ai_embedding_response.input_tokens, 0);
+                });
+                provider.embed(ai_embedding_request, timeouts, ai_embedding_response);
                 batch_ok = true;
                 break;
             }
