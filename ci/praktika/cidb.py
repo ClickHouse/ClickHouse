@@ -20,7 +20,7 @@ except ImportError as ex:
 
 from .result import Result
 from .settings import Settings
-from .usage import ComputeUsage, StorageUsage
+from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Utils
 
 
@@ -52,6 +52,7 @@ class CIDB:
     class TableRecord:
         pull_request_number: int
         commit_sha: str
+        workflow_name: str
         commit_url: str
         check_name: str
         check_status: str
@@ -70,6 +71,9 @@ class CIDB:
         test_status: str
         test_duration_ms: Optional[int]
         test_context_raw: str
+        # Structured metrics for the `attributes` JSON column: per-job host
+        # utilization on job rows, workflow-level usage on the summary row.
+        attributes: dict = dataclasses.field(default_factory=dict)
 
         def __post_init__(self):
             # Transparently convert Result.Status values to legacy CIDB strings
@@ -191,6 +195,44 @@ ORDER BY day DESC
                 return r
         return None
 
+    @staticmethod
+    def _host_usage_attributes(metrics) -> dict:
+        """Build the per-job ``attributes`` payload from the compacted host
+        metrics dict (see ``HostMetricsCollector``): peak CPU/iowait/RAM/disk
+        usage and PSI stall totals. Returns a flat dict of scalar leaves (no
+        nested objects/arrays) for the ``attributes`` JSON column, or ``{}``
+        when metrics are missing or predate the ``peaks`` schema."""
+        if not metrics or not metrics.get("peaks"):
+            return {}
+        peaks = metrics.get("peaks", {})
+        averages = metrics.get("averages", {})
+        psi = metrics.get("psi", {})
+        attrs = {
+            "host_cpu_count": metrics.get("cpu_count"),
+            "host_duration_s": metrics.get("duration"),
+            "host_mem_total_gb": metrics.get("mem_total_gb"),
+            "host_cpu_peak_pct": peaks.get("cpu"),
+            "host_iowait_peak_pct": peaks.get("iowait"),
+            "host_mem_peak_pct": peaks.get("mem"),
+            "host_mem_peak_gb": peaks.get("mem_gb"),
+            "host_cpu_avg_pct": averages.get("cpu"),
+            "host_iowait_avg_pct": averages.get("iowait"),
+            "host_mem_avg_pct": averages.get("mem"),
+        }
+        if "disk_total_gb" in metrics:
+            attrs["host_disk_total_gb"] = metrics.get("disk_total_gb")
+            attrs["host_disk_peak_pct"] = peaks.get("disk")
+            attrs["host_disk_peak_gb"] = peaks.get("disk_gb")
+            if "disk" in averages:
+                attrs["host_disk_avg_pct"] = averages.get("disk")
+        if psi:
+            attrs["host_cpu_stall_s"] = psi.get("cpu_s")
+            attrs["host_mem_stall_s"] = psi.get("mem_some_s")
+            attrs["host_mem_stall_all_s"] = psi.get("mem_full_s")
+            attrs["host_io_stall_s"] = psi.get("io_some_s")
+            attrs["host_io_stall_all_s"] = psi.get("io_full_s")
+        return {k: v for k, v in attrs.items() if v is not None}
+
     @classmethod
     def json_data_generator(cls, result: Result, result_name_for_cidb):
         """Generates JSON data records for the result and its test cases."""
@@ -200,6 +242,7 @@ ORDER BY day DESC
         base_record = cls.TableRecord(
             pull_request_number=env.PR_NUMBER,
             commit_sha=env.SHA,
+            workflow_name=env.WORKFLOW_NAME,
             commit_url=env.COMMIT_URL,
             check_name=result.name,
             check_status=result.status,
@@ -220,6 +263,7 @@ ORDER BY day DESC
             test_status="",
             test_duration_ms=None,
             test_context_raw=result.info,
+            attributes=cls._host_usage_attributes(result.ext.get("metrics")),
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
@@ -229,6 +273,8 @@ ORDER BY day DESC
         if test_cases_result:
             for result_ in test_cases_result.results:
                 record = copy.copy(base_record)
+                # Host usage is a job-level metric; keep it only on the job row.
+                record.attributes = {}
                 record.test_name = result_.name
                 record.report_url = (
                     record.report_url
@@ -332,16 +378,48 @@ ORDER BY day DESC
         self.insert_rows(jsons)
         return self
 
-    def insert_storage_usage(self, storage_usage: StorageUsage):
+    def insert_workflow_usage(
+        self,
+        pipeline_utilization: Optional[PipelineUtilization] = None,
+        storage_usage: Optional[StorageUsage] = None,
+        compute_usage: Optional[ComputeUsage] = None,
+    ):
+        """Write a single workflow-level summary row carrying pipeline
+        utilization, storage and compute usage in the ``attributes`` JSON
+        column. Called once from the final (Finish workflow) job.
+
+        Replaces the older ``insert_storage_usage``/``insert_compute_usage``,
+        which encoded these numbers into the ``check_duration_ms``/``test_*``
+        columns in a way inconsistent with their schema meaning."""
         info = Info()
-        json_rows = []
+        attributes: dict = {}
+        if pipeline_utilization and pipeline_utilization.jobs:
+            for key, value in pipeline_utilization.to_summary().items():
+                attributes[f"pipeline_{key}"] = value
+        if storage_usage and (storage_usage.uploaded or storage_usage.downloaded):
+            attributes["storage_uploaded_bytes"] = storage_usage.uploaded
+            attributes["storage_uploaded_items"] = len(storage_usage.uploaded_details)
+            attributes["storage_downloaded_bytes"] = storage_usage.downloaded
+            attributes["storage_downloaded_items"] = len(
+                storage_usage.downloaded_details
+            )
+        if compute_usage and compute_usage.runners_usage:
+            # runner type -> accumulated seconds across all its jobs.
+            attributes["compute_usage_seconds"] = {
+                runner_str: round(usage, 1)
+                for runner_str, usage in compute_usage.runners_usage.items()
+            }
+        if not attributes:
+            print("NOTE: no workflow usage data to insert into CIDB")
+            return self
         record = self.TableRecord(
             pull_request_number=info.pr_number,
             commit_sha=info.sha,
+            workflow_name=info.workflow_name,
             commit_url=info.commit_url,
-            check_name="Usage Storage",
+            check_name=info.workflow_name,
             check_status=Result.Status.OK,
-            check_duration_ms=storage_usage.uploaded,
+            check_duration_ms=0,
             check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
             report_url=info.get_report_url(),
             pull_request_url=info.change_url,
@@ -354,53 +432,13 @@ ORDER BY day DESC
                 filter(None, [info.instance_type, info.instance_lifecycle])
             ),
             instance_id=info.instance_id,
-            test_name="storage_usage_uploaded_bytes",
-            test_status="OK",
+            test_name="",
+            test_status=Result.Status.OK,
             test_duration_ms=0,
-            test_context_raw="test_duration_ms shows total size uploaded in bytes",
+            test_context_raw="",
+            attributes=attributes,
         )
-        json_rows.append(json.dumps(dataclasses.asdict(record)))
-        record.test_name = "storage_usage_uploaded_items"
-        record.test_duration_ms = len(storage_usage.uploaded_details)
-        record.test_context_raw = (
-            "test_duration_ms shows total number of uniq object names uploaded"
-        )
-        json_rows.append(json.dumps(dataclasses.asdict(record)))
-        self.insert_rows(json_rows)
-        return self
-
-    def insert_compute_usage(self, compute_usage: ComputeUsage):
-        info = Info()
-        json_rows = []
-        for runner_str, usage in compute_usage.runners_usage.items():
-            jobs = sorted(compute_usage.details[runner_str])
-            description = ",".join(jobs)
-            record = self.TableRecord(
-                pull_request_number=info.pr_number,
-                commit_sha=info.sha,
-                commit_url=info.commit_url,
-                check_name="Usage Compute",
-                check_status=Result.Status.OK,
-                check_duration_ms=int(usage * 1000),
-                check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
-                report_url=info.get_report_url(),
-                pull_request_url=info.change_url,
-                base_ref=info.base_branch,
-                base_repo=info.repo_name,
-                head_ref=info.git_branch,
-                head_repo=info.fork_name,
-                task_url="",
-                instance_type=",".join(
-                    filter(None, [info.instance_type, info.instance_lifecycle])
-                ),
-                instance_id=info.instance_id,
-                test_name=runner_str,
-                test_status="OK",
-                test_duration_ms=0,
-                test_context_raw=description,
-            )
-            json_rows.append(json.dumps(dataclasses.asdict(record)))
-        self.insert_rows(json_rows)
+        self.insert_rows([json.dumps(dataclasses.asdict(record))])
         return self
 
     def check(self):

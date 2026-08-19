@@ -25,7 +25,7 @@ from .result import Result, ResultInfo
 from .runtime import RunConfig
 from .s3 import S3
 from .settings import Settings
-from .usage import ComputeUsage, StorageUsage
+from .usage import ComputeUsage, PipelineUtilization, StorageUsage
 from .utils import Shell, TeePopen, Utils
 
 
@@ -844,23 +844,21 @@ class Runner:
 
             workflow_result = Result.from_fs(workflow.name)
             if is_final_job and ci_db:
-                # run after HtmlRunnerHooks.post_run(), when Workflow Result has up-to-date storage_usage data
-                workflow_storage_usage = StorageUsage.from_dict(
-                    workflow_result.ext.get("storage_usage", {})
+                # run after HtmlRunnerHooks.post_run(), when the workflow Result
+                # has up-to-date storage/compute/pipeline-utilization data. All
+                # three are written as a single workflow-level summary row into
+                # the `attributes` JSON column.
+                ci_db.insert_workflow_usage(
+                    pipeline_utilization=PipelineUtilization.from_dict(
+                        workflow_result.ext.get("pipeline_utilization", {})
+                    ),
+                    storage_usage=StorageUsage.from_dict(
+                        workflow_result.ext.get("storage_usage", {})
+                    ),
+                    compute_usage=ComputeUsage.from_dict(
+                        workflow_result.ext.get("compute_usage", {})
+                    ),
                 )
-                workflow_compute_usage = ComputeUsage.from_dict(
-                    workflow_result.ext.get("compute_usage", {})
-                )
-                if workflow_storage_usage:
-                    print(
-                        "NOTE: storage_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_storage_usage(workflow_storage_usage)
-                if workflow_compute_usage:
-                    print(
-                        "NOTE: compute_usage is found in workflow Result - insert into CIDB"
-                    )
-                    ci_db.insert_compute_usage(workflow_compute_usage)
 
         if workflow.enable_gh_summary_comment and (
             job.name == Settings.FINISH_WORKFLOW_JOB_NAME or not result.is_ok()
