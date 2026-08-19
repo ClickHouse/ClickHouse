@@ -13,6 +13,7 @@
 
 
 #include "Poco/Net/Context.h"
+#include "Poco/Net/EmbeddedCertificates.h"
 #include "Poco/Net/SSLManager.h"
 #include "Poco/Net/SSLException.h"
 #include "Poco/Net/Utility.h"
@@ -228,6 +229,38 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 	return 0;
 }
 
+static int poco_load_embedded_certificates(SSL_CTX * ctx, Context::CAPaths & caPaths)
+{
+	std::string_view pem = embeddedCACertificates();
+	if (pem.empty())
+		return 0;
+
+	BIO * bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+	if (bio == nullptr)
+		return 0;
+
+	X509_STORE * store = SSL_CTX_get_cert_store(ctx);
+	size_t added = 0;
+	while (X509 * cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr))
+	{
+		int ok = X509_STORE_add_cert(store, cert);
+		X509_free(cert);
+		if (ok != 1)
+			break;
+		++added;
+	}
+	BIO_free(bio);
+
+	if (added == 0)
+		return 0;
+
+	/// Reaching the end of the bundle leaves a PEM_R_NO_START_LINE error on the queue.
+	ERR_clear_error();
+
+	caPaths.caEmbedded = true;
+	return 1;
+}
+
 
 void Context::init(const Params& params)
 {
@@ -272,7 +305,15 @@ void Context::init(const Params& params)
 				{
 					errCode = 0;
 					if (!poco_dir_contains_certs(dir))
+					{
 						errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+
+						/// The default directory exists, but neither it nor the probed locations contain
+						/// certificates. Add the certificates embedded into the binary, as the store
+						/// would be empty otherwise.
+						if (errCode == 0)
+							poco_load_embedded_certificates(_pSSLContext, _caPaths);
+					}
 
 					if (errCode == 0)
 					{
@@ -281,7 +322,14 @@ void Context::init(const Params& params)
 					}
 				}
 				else
+				{
 					errCode = poco_ssl_probe_and_set_default_ca_location(_pSSLContext, _caPaths);
+
+					/// No CA certificates anywhere on the filesystem (e.g. a container built "from scratch"):
+					/// fall back to the certificates embedded into the binary, if any.
+					if (errCode != 1)
+						errCode = poco_load_embedded_certificates(_pSSLContext, _caPaths);
+				}
 			}
 
 			if (errCode != 1)
