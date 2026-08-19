@@ -151,7 +151,13 @@ SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 -- matching probe row, so the classic plan emits one row per KEY, not per pushed row; if this
 -- combination were ever wrongly enabled, the pushed/classic pair below would mismatch.
 SELECT '-- 14. INNER ANY is never pushed (at most one row per key, not per pushed row)';
+-- Single node: `ANY`'s `setUsedOnce` dedups per node, not globally, so with more than one node
+-- a key whose rows straddle a `ParallelReadImplementation` bucket boundary can be emitted once
+-- per node under a randomized `index_granularity`/insert split, independent of this rule. The
+-- tripwire still works single-node (a wrongly-pushed partial would still yield 10 vs 1).
+SET param__internal_cascades_cluster_node_count = 1;
 SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k;
+SET param__internal_cascades_cluster_node_count = 4;
 SELECT t1.k AS k, count() AS c FROM t_corr_left AS t1 INNER ANY JOIN t_corr_right_uniq AS t2 ON t1.k = t2.k GROUP BY t1.k ORDER BY k
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 

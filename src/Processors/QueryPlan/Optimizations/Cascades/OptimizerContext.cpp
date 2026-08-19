@@ -35,6 +35,10 @@ OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, Optimizati
     addRule(createTwoStageAggregationTransformation());
     /// Registered conditionally: the rule can never apply when the setting is off,
     /// and OptimizerContext is built per query, so the gate belongs here.
+    /// `distributed_plan_force_shuffle_aggregation` fully disables it too: a pushed partial +
+    /// merge is exactly the split that setting forbids, and keyless aggregations (which the
+    /// shuffle strategy cannot apply to) are already excluded by the rule's own
+    /// `params.keys.empty()` bail-out.
     if (memo.getEnvironment().cascades_aggregation_pushdown
         && !memo.getEnvironment().distributed_plan_force_shuffle_aggregation)
         addRule(createAggregationPushdown());
