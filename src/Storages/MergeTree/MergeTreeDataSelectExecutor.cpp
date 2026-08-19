@@ -1955,8 +1955,9 @@ BoolMask MergeTreeDataSelectExecutor::checkOffsetConditionsInRange(
         left[0] = begin;
         right[0] = end;
 
-        left[1] = part->name;
-        right[1] = part->name;
+        /// The user-visible _part of a projection read resolves to the parent part name.
+        left[1] = part_with_ranges.getAnalysisPartName();
+        right[1] = left[1];
 
         result = result & part_offset_condition->checkInRange(2, left.data(), right.data(), part_offset_types, initial_mask);
     }

@@ -358,14 +358,17 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
         {
             const auto & created_projections = parent_part->getProjectionParts();
             auto it = created_projections.find(projection_name);
-            if (it == created_projections.end() || it->second->is_broken)
-                continue;
-            analysis_parts.emplace_back(
-                /*data_part*/ it->second,
-                /*parent_part*/ parent_part,
-                /*part_index_in_query*/ analysis_parts.size(),
-                /*part_starting_offset_in_query*/ starting_offset);
-            starting_offset += it->second->rows_count;
+            if (it != created_projections.end() && !it->second->is_broken)
+            {
+                analysis_parts.emplace_back(
+                    /*data_part*/ it->second,
+                    /*parent_part*/ parent_part,
+                    /*part_index_in_query*/ analysis_parts.size(),
+                    /*part_starting_offset_in_query*/ starting_offset);
+            }
+            /// Projection reads keep the parent numbering, so must the analysis
+            /// (the projection may not preserve the row count of the parent).
+            starting_offset += parent_part->rows_count;
         }
     }
 
