@@ -3529,6 +3529,15 @@ public:
                 return {false, true, false, false};
         }
 
+        if ((name_view == "divide" || name_view == "intDiv") && right.column && isColumnConst(*right.column))
+        {
+            // The `variable / constant` branch compares the constant with numeric zero. An
+            // `IPv4`/`IPv6` divisor has an IP-tagged `Field`, for which that comparison raises
+            // `BAD_TYPE_OF_FIELD`; conservatively decline monotonicity instead.
+            if (!isNumber(removeNullable(recursiveRemoveLowCardinality(right.type))))
+                return {false, true, false, false};
+        }
+
         // For simplicity, we treat null values as monotonicity breakers, except for variable / non-zero constant.
         if (left_point.isNull() || right_point.isNull())
         {

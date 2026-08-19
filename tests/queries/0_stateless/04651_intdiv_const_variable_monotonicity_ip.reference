@@ -8,6 +8,8 @@ c9ii ip key g8 intDiv	1
 c9ii ip key g8 divide	1
 c9iii ip plus	1
 c9iii ip var right	1
+c9iii ipv4 divisor intDiv	1
+c9iii ipv4 divisor divide	1
 c9iii ipv eq	1
 c9iv ipv4 signed divisor wrap	1
 c9iv ipv6 signed divisor wrap	1

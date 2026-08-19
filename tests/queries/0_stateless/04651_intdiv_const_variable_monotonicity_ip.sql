@@ -75,6 +75,11 @@ SELECT 'c9ii ip key g8 divide', (SELECT count() FROM t_cv_ip8 WHERE divide(1, a)
 SELECT 'c9iii ip plus', (SELECT count() FROM t_cv_ip8 WHERE plus(1, a) = toIPv4('1.0.0.2')) = (SELECT count() FROM m_cv_ip8 WHERE plus(1, a) = toIPv4('1.0.0.2'));
 SELECT 'c9iii ip var right', (SELECT count() FROM t_cv_ip8 WHERE intDiv(a, 10) = 1677721) = (SELECT count() FROM m_cv_ip8 WHERE intDiv(a, 10) = 1677721);
 
+-- IP divisors take the `variable / constant` branch. They cannot be compared directly with
+-- numeric zero during key analysis, so this must decline monotonicity rather than throw.
+SELECT 'c9iii ipv4 divisor intDiv', (SELECT count() FROM t_cv_ip8 WHERE intDiv(a, toIPv4('1.0.0.1')) = 0) = (SELECT count() FROM m_cv_ip8 WHERE intDiv(a, toIPv4('1.0.0.1')) = 0);
+SELECT 'c9iii ipv4 divisor divide', (SELECT count() FROM t_cv_ip8 WHERE divide(a, toIPv4('1.0.0.1')) = 0) = (SELECT count() FROM m_cv_ip8 WHERE divide(a, toIPv4('1.0.0.1')) = 0);
+
 -- The `variable / constant` role must keep PRUNING, not merely keep answering: it reads the
 -- constant's integer field and never compares an IP field against zero. 8 rows at granularity 2
 -- give 4 granules, so the pruning decision is observable in the plan (case 8 below).
