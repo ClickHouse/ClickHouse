@@ -15,6 +15,7 @@ struct QueryFlags
     /// With a chunked transfer encoding, the request headers cannot distinguish an empty body from a
     /// non-empty one. The body has to be inspected after sending a deferred HTTP `100 Continue` response.
     bool http_request_body_is_chunked = false;
+    bool background = false; /// If true, this query is the background run scheduled by executeQueryInBackground.
 };
 
 }
