@@ -289,7 +289,7 @@ public:
         }
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         const AggregateFunctionForEachData & state = data(place);
         writeBinaryLittleEndian(state.dynamic_array_size, buf);
@@ -297,7 +297,7 @@ public:
         const char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
-            nested_func->serialize(nested_state, buf);
+            nested_func->serialize(nested_state, buf, version);
             nested_state += nested_size_of_data;
         }
     }
