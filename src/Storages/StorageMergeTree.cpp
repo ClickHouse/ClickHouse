@@ -307,6 +307,12 @@ void StorageMergeTree::shutdown(bool)
 
     try
     {
+        /// This can reject shutdown while the disk cannot persist the fence that
+        /// protects diverged deduplication-log history. Do it before the
+        /// irreversible shutdown preparation, so a later retry remains valid.
+        if (deduplication_log)
+            deduplication_log->shutdown();
+
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
 
@@ -322,9 +328,6 @@ void StorageMergeTree::shutdown(bool)
         }
 
         flushAndPrepareForShutdown();
-
-        if (deduplication_log)
-            deduplication_log->shutdown();
     }
     catch (...)
     {
