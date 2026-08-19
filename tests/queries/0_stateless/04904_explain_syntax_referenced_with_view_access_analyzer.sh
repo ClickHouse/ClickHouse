@@ -21,7 +21,7 @@ run() {
     local label="$1"
     local query="$2"
     local out
-    out=$(${CLICKHOUSE_CLIENT} --user "${reader}" --query "SET enable_analyzer = 1, enable_global_with_statement = 0; ${query}" 2>&1)
+    out=$(${CLICKHOUSE_CLIENT} --user "${reader}" --query "SET enable_analyzer = 1, enable_global_with_statement = 1; ${query}" 2>&1)
     local status=$?
     if [ "${status}" -eq 0 ]; then
         echo "${label}: OK"
