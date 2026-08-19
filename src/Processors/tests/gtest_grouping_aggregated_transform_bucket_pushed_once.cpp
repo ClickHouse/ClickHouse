@@ -83,7 +83,8 @@ PushedBucket chunkPushed(const Chunk & chunk)
 /// An input can send several chunks of the same bucket: the producer converts the aggregation variants
 /// of a bucket one by one. A bucket must not be pushed while an input is still at it, the chunks of it
 /// which arrive after the push are merged and pushed a second time, and the keys of the bucket are
-/// returned twice. The inputs are fed by hand, the random driver above delivers everything upfront.
+/// returned twice. The inputs are fed by hand, one chunk at a time, so that the rest of the bucket
+/// arrives only after the transform has pushed it.
 TEST(GroupingAggregatedOOO, BucketNotPushedWhileAnInputIsStillAtIt)
 {
     auto header = oneColumnHeader();
