@@ -176,6 +176,34 @@ TEST(GroupingAggregatedOOO, BucketNotPushedWhileAnInputIsStillAtIt)
                             << "returned twice, which duplicates its keys in the result";
 }
 
+/// An input which has finished cannot send more chunks of a bucket, so it must not hold a delayed
+/// bucket back. Otherwise a source which ends right on a delayed bucket keeps it until the whole query
+/// is over, although every input which can still send something has moved past it long ago.
+TEST(GroupingAggregatedOOO, FinishedInputDoesNotHoldADelayedBucket)
+{
+    Driver d(2);
+
+    /// Both inputs postpone bucket 1 and send bucket 3.
+    d.send(0, 3, {1});
+    d.send(1, 3, {1});
+    /// Input 0 resolves bucket 1 and ends right on it.
+    d.send(0, 1);
+    d.feeders[0]->finish();
+    d.step();
+    /// Input 1 resolves bucket 1 and moves past it. Nothing can send anything of bucket 1 any more.
+    d.send(1, 1);
+    d.send(1, 4);
+    d.step();
+
+    /// Input 1 is still open here.
+    EXPECT_EQ(d.counts()[1], 1) << "bucket 1 is not pushed while input 1 is open, a finished input which "
+                               << "stopped at the bucket must not hold it until the end of the query";
+
+    d.finish();
+    for (auto [bucket, count] : d.counts())
+        EXPECT_EQ(count, 1) << "bucket " << bucket << " is pushed " << count << " times";
+}
+
 /// The highest bucket can be delayed as well, and then no input ever reads a bucket after it, so it is
 /// not pushed as soon as it is resolved. It still has to be pushed, once, when the inputs finish.
 TEST(GroupingAggregatedOOO, HighestBucketDelayedIsStillPushedOnce)
