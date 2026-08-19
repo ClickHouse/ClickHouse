@@ -122,7 +122,11 @@ SET optimize_move_to_prewhere = 1;
 SET optimize_extract_common_expressions = 1;
 SET optimize_syntax_fuse_functions = 1;
 SET optimize_and_compare_chain = 1;
+-- The work budget of the pin above: a small one stops the optimization part-way through the
+-- query, so the derived `indexHint` conjunct the reference asserts is never added.
+SET optimize_and_compare_chain_max_hash_work = 5000000;
 SET enable_join_transitive_predicates = 1;
+SET query_plan_merge_expression_into_join = 1;
 SET send_logs_level = 'error';
 
 -- Simulate 20 node cluster, and set cost weights to optimize for lower sequential time, i.e. more parallelism

@@ -18,6 +18,9 @@ SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 10;
+-- Pinned to its default: with it off, the expression stays a separate node above the join
+-- instead of being merged into it, which changes the asserted plan.
+SET query_plan_merge_expression_into_join = 1;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_cascades_cost_config = '{"sequential_weight":32,"network_weight":1,"exchange_fixed_overhead":1,"work_weight":1}';
 
