@@ -7,7 +7,6 @@ from pathlib import Path
 from ci.praktika.gh import GH
 
 DOCS_PREFIX = "docs/"
-SOURCE_PREFIX = "src/"
 CLICKPIPES_DOCS_PREFIX = "docs/integrations/clickpipes/"
 INTEGRATIONS_DOCS_PREFIXES = (
     "docs/integrations/language-clients/",
@@ -28,20 +27,16 @@ def normalize_path(file):
 
 def get_docs_teams_to_request(changed_files):
     files = [normalize_path(file) for file in changed_files]
-    if any(file.startswith(SOURCE_PREFIX) for file in files):
-        return []
-
-    docs_files = [file for file in files if file.startswith(DOCS_PREFIX)]
-    if not docs_files:
+    if not files or not all(file.startswith(DOCS_PREFIX) for file in files):
         return []
 
     teams = []
-    if any(file.startswith(CLICKPIPES_DOCS_PREFIX) for file in docs_files):
+    if any(file.startswith(CLICKPIPES_DOCS_PREFIX) for file in files):
         teams.append(CLICKPIPES_TEAM)
 
     if any(
         file.startswith(prefix)
-        for file in docs_files
+        for file in files
         for prefix in INTEGRATIONS_DOCS_PREFIXES
     ):
         teams.append(INTEGRATIONS_ECOSYSTEM_TEAM)

@@ -49,10 +49,11 @@ def make_event(*, internal, labels=None):
         ),
         (
             [
-                "ci/jobs/scripts/team_review_requests.py",
-                "docs/integrations/clickpipes/home.mdx",
+                "docker/keeper/Dockerfile",
+                "docs/changelogs/v26.5.7.64-stable.md",
+                "utils/list-versions/version_date.tsv",
             ],
-            ["clickpipes", "docs"],
+            [],
         ),
         (["src/Core/TypeId.h"], []),
         ([], []),
