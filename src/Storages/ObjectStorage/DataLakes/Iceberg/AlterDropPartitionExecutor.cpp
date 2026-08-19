@@ -501,16 +501,16 @@ AlterDropPartitionExecutor::ManifestListWriteResult AlterDropPartitionExecutor::
     if (!parent_snapshot || !parent_snapshot->has(f_summary))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "Parent snapshot {} has no summary", parent_snapshot_id);
 
-    std::optional<SnapshotSummaryTotals> parent_totals;
+    auto parent_summary = parent_snapshot->getObject(f_summary);
+    auto parsed_summary = SnapshotSummary::fromJSON(*parent_summary, /*with_extra_fields=*/false, /*require_totals=*/true);
+    if (!parsed_summary)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Cannot use summary of parent snapshot {} for DROP PARTITION: {}",
+            parent_snapshot_id,
+            parsed_summary.error());
 
-    if (auto parent_summary = parent_snapshot->getObject(f_summary); parent_summary)
-        if (auto summary = SnapshotSummary::fromJSON(*parent_summary))
-            parent_totals = summary->getTotals();
-
-    if (!parent_totals)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Parent snapshot {} has no totals in summary", parent_snapshot_id);
-
-    new_snapshot->set(f_summary, SnapshotSummary{plan.snapshot_summary_update, parent_totals}.toJSON());
+    new_snapshot->set(f_summary, SnapshotSummary{plan.snapshot_summary_update, parsed_summary->getTotals()}.toJSON());
 
     const String storage_manifest_list_path = components.path_resolver.resolve(manifest_list_path);
     files_for_cleanup.push_back(storage_manifest_list_path);
