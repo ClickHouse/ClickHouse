@@ -167,6 +167,14 @@ bool CompressionCodecMultiple::isEncryption() const
     return false;
 }
 
+bool CompressionCodecMultiple::isLossyCompression() const
+{
+    for (const auto & codec : codecs)
+        if (codec->isLossyCompression())
+            return true;
+    return false;
+}
+
 
 void registerCodecMultiple(CompressionCodecFactory & factory)
 {
