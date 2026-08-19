@@ -45,6 +45,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"output_format_parquet_column_field_ids", "", "", "New setting to specify explicit Parquet `field_id` overrides per column (`Map(String, Int32)`), useful for Iceberg compatibility."},
             {"output_format_parquet_auto_assign_field_ids", false, false, "New setting to auto-assign sequential Parquet `field_id`s to every output column, Iceberg-style."},
+            {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
             {"output_format_image_time_divisor_seconds", 60, 60, "New setting controlling the denominator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},
@@ -65,6 +66,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
+            {"explain_syntax_single_record", false, true, "From 26.8, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.8 one-record-per-line output."},
             {"query_plan_optimize_count_from_text_index", false, true, "New setting"},
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
             {"materialize_statistics_on_insert_max_table_size", 0, 26843545600, "New setting."},

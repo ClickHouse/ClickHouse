@@ -65,10 +65,25 @@ TEST(CascadesGroupDedup, AddPhysicalExpressionKeepsDistinctAlternatives)
 {
     Group group(0);
 
-    group.addPhysicalExpression(exprWithSorting("k", 1));
-    group.addPhysicalExpression(exprWithSorting("k", 1)); /// exact duplicate
+    EXPECT_TRUE(group.addPhysicalExpression(exprWithSorting("k", 1)));
+    EXPECT_FALSE(group.addPhysicalExpression(exprWithSorting("k", 1))); /// exact duplicate
     EXPECT_EQ(group.physical_expressions.size(), 1u);
 
-    group.addPhysicalExpression(exprWithSorting("k", -1)); /// distinct: opposite direction
+    EXPECT_TRUE(group.addPhysicalExpression(exprWithSorting("k", -1))); /// distinct: opposite direction
     EXPECT_EQ(group.physical_expressions.size(), 2u);
+}
+
+/// `addLogicalExpression` drops structurally-equal duplicates the same way, so a transformation
+/// that derives an already-known logical alternative (e.g. a join swapped twice) does not grow
+/// the group.
+TEST(CascadesGroupDedup, AddLogicalExpressionDropsDuplicates)
+{
+    Group group(0);
+
+    EXPECT_TRUE(group.addLogicalExpression(exprWithInput(1)));
+    EXPECT_FALSE(group.addLogicalExpression(exprWithInput(1))); /// exact duplicate
+    EXPECT_EQ(group.logical_expressions.size(), 1u);
+
+    EXPECT_TRUE(group.addLogicalExpression(exprWithInput(2))); /// distinct input group
+    EXPECT_EQ(group.logical_expressions.size(), 2u);
 }
