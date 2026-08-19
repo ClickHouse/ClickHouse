@@ -288,23 +288,6 @@ bool hasFunctionNotSuitableForEarlyShortCircuit(const QueryTreeNodePtr & node, b
     return false;
 }
 
-bool hasAggregateFunctionOutsideScalarSubquery(const QueryTreeNodePtr & node)
-{
-    /// Aggregates in scalar subqueries are validated independently. In particular, the safe
-    /// `count()` scalar form is the only scalar subquery that this optimization accepts.
-    if (node->getNodeType() == QueryTreeNodeType::QUERY || node->getNodeType() == QueryTreeNodeType::UNION)
-        return false;
-
-    if (const auto * function = node->as<FunctionNode>(); function && function->isAggregateFunction())
-        return true;
-
-    for (const auto & child : node->getChildren())
-        if (child && hasAggregateFunctionOutsideScalarSubquery(child))
-            return true;
-
-    return false;
-}
-
 void copySecretMasksByPosition(
     QueryTreeNodePtr resolved_node,
     const QueryTreeNodePtr & source_node,
@@ -1091,7 +1074,6 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             if (type_inference_succeeded
-                && !hasAggregateFunctionOutsideScalarSubquery(node_for_type_inference)
                 && !hasFunctionNode(node_for_type_inference, "arrayJoin")
                 && !hasUnsafeEarlyShortCircuitScalarUsage(node_for_type_inference)
                 && !hasFunctionNotSuitableForEarlyShortCircuit(node_for_type_inference))
