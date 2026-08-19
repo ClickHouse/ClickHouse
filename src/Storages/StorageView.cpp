@@ -679,6 +679,9 @@ std::optional<UInt128> StorageView::getModificationHash(const StorageSnapshotPtr
         hash.update(getMetadataVersionForModificationHash());
         hash.update(storage_snapshot->metadata->sql_security_type ? static_cast<Int8>(*storage_snapshot->metadata->sql_security_type) : Int8(-1));
         hash.update(storage_snapshot->metadata->definer.value_or(""));
+        /// The effective reader's settings can change the rows this view returns (for example,
+        /// a definer's read limits), so a settings-profile update must invalidate consistency users.
+        hash.update(effective_context->getSettingsRef().toString());
         IASTHash view_query_hash = inner_query->getTreeHash(/*ignore_aliases*/ false);
         hash.update(view_query_hash.low64);
         hash.update(view_query_hash.high64);

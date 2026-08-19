@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -u
 
-# The `SQL SECURITY DEFINER` context is rebuilt for each refresh. If its settings profile changes,
-# an `IF CHANGED` watermark made under the old settings must not skip the next refresh.
+# A nested `SQL SECURITY DEFINER` view's settings profile is part of the rows it can return. If it
+# changes, an `IF CHANGED` watermark made under the old settings must not skip the next refresh.
 definer="definer_04909_${CLICKHOUSE_DATABASE}"
 
 $CLICKHOUSE_CLIENT -q "
@@ -30,17 +30,17 @@ do
     sleep 0.5
 done
 
-# The source data is unchanged, but the definer now reads two rows. Without invalidating the old
-# watermark the refresh is skipped and `mv` remains at one row.
+# The source data is unchanged, but the nested view's effective settings changed. Without
+# invalidating the old watermark the refresh is skipped and `mv` remains at two rows.
 $CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_block_size = 1, max_rows_to_read = 2, read_overflow_mode = 'break'"
 for _ in {1..30}
 do
     rows=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
-    [ "$rows" -eq 3 ] && break
+    [ "$rows" -eq 4 ] && break
     sleep 0.5
 done
 
-[ "$initial" -eq 1 ] && [ "$rows" -eq 3 ] && echo "definer settings invalidate watermark: yes" || echo "definer settings invalidate watermark: no ($initial -> $rows)"
+[ "$initial" -eq 2 ] && [ "$rows" -eq 4 ] && echo "definer settings invalidate watermark: yes" || echo "definer settings invalidate watermark: no ($initial -> $rows)"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE mv SYNC;
