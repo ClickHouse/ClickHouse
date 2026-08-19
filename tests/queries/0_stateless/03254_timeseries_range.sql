@@ -31,3 +31,4 @@ SELECT timeSeriesFromGrid('2025-06-01 00:00:00'::DateTime64(3), '2025-06-01 00:0
 SELECT timeSeriesRange(CAST(-60, 'DateTime64(3)'), CAST(120, 'DateTime64(3)'), 60) SETTINGS session_timezone = 'UTC';
 SELECT timeSeriesRange(CAST(-0.5, 'DateTime64(3)'), CAST(1, 'DateTime64(3)'), '0.5'::Decimal64(3)) SETTINGS session_timezone = 'UTC';
 SELECT timeSeriesFromGrid(CAST(-60, 'DateTime64(3)'), CAST(120, 'DateTime64(3)'), 60, [1, NULL, 3, 4]) SETTINGS session_timezone = 'UTC';
+SELECT timeSeriesFromGrid(CAST(-60, 'DateTime64(3)'), CAST(120, 'DateTime64(3)'), 60, [1, 2, 3, 4]) SETTINGS session_timezone = 'UTC';

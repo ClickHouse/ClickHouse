@@ -8,11 +8,9 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnsCommon.h>
 #include <Core/DecimalFunctions.h>
 #include <base/arithmeticOverflow.h>
-
-#include <algorithm>
-
 
 namespace DB
 {
@@ -309,12 +307,8 @@ public:
                 if (num_values != num_steps)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Number of values ({}) doesn't match number of steps ({})", num_values, num_steps);
 
-                bool row_has_no_nulls = !null_map;
-                if (null_map)
-                {
-                    auto row_null_map_begin = null_map->begin() + values_base_offset;
-                    row_has_no_nulls = std::none_of(row_null_map_begin, row_null_map_begin + num_steps, [](UInt8 is_null) { return is_null != 0; });
-                }
+                bool row_has_no_nulls = !null_map
+                    || memoryIsZero(null_map->data(), values_base_offset, values_base_offset + num_steps);
 
                 if (row_has_no_nulls)
                 {
