@@ -13,7 +13,8 @@ CREATE TABLE summing_final_nested_map
     hitsMap Nested(name String, value UInt64)
 )
 ENGINE = SummingMergeTree(v)
-ORDER BY key;
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
 
 SYSTEM STOP MERGES summing_final_nested_map;
 INSERT INTO summing_final_nested_map VALUES (1, 1, ['clickhouse'], [5]);

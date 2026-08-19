@@ -2188,6 +2188,7 @@ static NameSet getColumnsAggregatedForSummingFinal(
     /// leaves (for example, a String sibling of a numeric tuple element) that the merge
     /// only copies and never consults when it decides whether to remove a row.
     auto header = metadata_snapshot->getSampleBlock();
+    const NameSet original_column_names = header.getNameSet();
     std::vector<Strings> flatten_ancestors;
     if (merging_params.allow_tuple_element_aggregation)
         header = Nested::flattenTupleRecursive(header, &flatten_ancestors);
@@ -2228,6 +2229,7 @@ static NameSet getColumnsAggregatedForSummingFinal(
             /// `columns_to_sum` is explicit. This is the same special case as in
             /// `SummingSortedAlgorithm::defineColumns`.
             const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
+                || original_column_names.contains(column.name)
                 || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
             if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map")
                 && is_real_tuple_map
@@ -2258,6 +2260,7 @@ static NameSet getColumnsAggregatedForSummingFinal(
                 ? Nested::splitName(column.name, /*reverse=*/true).first
                 : Nested::extractTableName(column.name);
             const bool is_real_tuple_map = !merging_params.allow_tuple_element_aggregation
+                || original_column_names.contains(column.name)
                 || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
             aggregated = nested_table_name != column.name && endsWith(nested_table_name, "Map") && is_real_tuple_map;
         }
