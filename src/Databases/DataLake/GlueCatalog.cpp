@@ -67,6 +67,7 @@ namespace DB::FailPoints
     extern const char check_database_datalake_negative[];
     extern const char iceberg_catalog_commit_response_lost[];
     extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_rejected[];
 }
 
 namespace DB::Setting
@@ -736,7 +737,13 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     request.SetTableInput(table_input);
 
-    auto response = glue_client->UpdateTable(request);
+    bool rejected = false;
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { rejected = true; });
+
+    /// Models a request glue rejects outright, so the pointer never advances.
+    auto response = rejected ? Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
+                                   Aws::Glue::GlueErrors::ACCESS_DENIED, "InjectedRejection", "Injected rejection", false))
+                             : glue_client->UpdateTable(request);
 
     bool failed = !response.IsSuccess();
     String error_message = failed ? String(response.GetError().GetMessage()) : String();

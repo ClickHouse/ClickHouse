@@ -1930,3 +1930,111 @@ def test_catalog_schema_with_empty_column_name_is_rejected(started_cluster):
     assert node.query("SELECT 1") == "1\n"
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def _glue_client(started_cluster):
+    return boto3.client("glue", region_name="us-east-1", endpoint_url=get_glue_local_url(started_cluster))
+
+
+def _glue_metadata_location(started_cluster, namespace_name, table_name):
+    table_info = _glue_client(started_cluster).get_table(DatabaseName=namespace_name, Name=table_name)["Table"]
+    return table_info["Parameters"].get("metadata_location")
+
+
+def _s3_uri_exists(minio_client, s3_uri):
+    assert s3_uri.startswith("s3://"), s3_uri
+    bucket, key = s3_uri[len("s3://") :].split("/", 1)
+    try:
+        minio_client.stat_object(bucket, key)
+        return True
+    except Exception:
+        return False
+
+
+def _setup_glue_commit_table(started_cluster, node, test_ref):
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    # The commit failpoints are process-global, so no other commit may be in flight when an arm
+    # arms them: wait for each insert instead of letting it complete asynchronously.
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+
+    return root_namespace, table_name, table_ref, write_settings
+
+
+def test_glue_commit_response_lost_keeps_committed_pointer(started_cluster):
+    # UpdateTable applied the change and only the response was lost, so the read-back confirms it
+    # and the INSERT succeeds with its files intact.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_lost_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_unknown_keeps_files(started_cluster):
+    # The read-back cannot resolve, so the outcome is unknown: the query fails and nothing is
+    # deleted. UpdateTable has no precondition, so this is the only safe answer.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_unknown_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The original glue error must still be readable, so the user keeps the actionable detail.
+    assert "Injected lost response" in error, error
+
+    # The commit did land, so the pointer names the new metadata file; it must still exist.
+    metadata_location = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert metadata_location, "glue lost the table's metadata_location"
+    assert _s3_uri_exists(started_cluster.minio_client, metadata_location), metadata_location
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"
+
+
+def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
+    # The pointer is NOT ours, so the commit cannot be confirmed. Reconciling through a helper that
+    # derives the location from object storage would find the metadata file staged before the
+    # commit and wrongly report success, so this must fail with an unknown outcome.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_rejected_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_rejected")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_rejected")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    # The pointer never advanced, and the previous snapshot is untouched.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
