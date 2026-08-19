@@ -81,6 +81,7 @@
 #include <Common/Logger.h>
 #include <Common/SipHash.h>
 #include <Common/checkStackSize.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 
@@ -506,22 +507,27 @@ ReadFromMergeTree::ReadFromMergeTree(
     }
 
     const auto & settings = context->getSettingsRef();
-    if (settings[Setting::max_streams_for_merge_tree_reading])
+    /// The `max_streams_for_merge_tree_reading` setting is bounded by `doSettingsSanityCheckClamp`.
+    if (const UInt64 max_streams_for_merge_tree_reading = settings[Setting::max_streams_for_merge_tree_reading])
     {
         if (settings[Setting::allow_asynchronous_read_from_io_pool_for_merge_tree])
         {
             /// When async reading is enabled, allow to read using more streams.
             /// Will add resize to output_streams_limit to reduce memory usage.
-            output_streams_limit = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            output_streams_limit = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
             /// We intentionally set `max_streams` to 1 in InterpreterSelectQuery in case of small limit.
             /// Changing it here to `max_streams_for_merge_tree_reading` proven itself as a threat for performance.
             if (requested_num_streams != 1)
-                requested_num_streams = std::max<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+                requested_num_streams = std::max<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
         }
         else
             /// Just limit requested_num_streams otherwise.
-            requested_num_streams = std::min<size_t>(requested_num_streams, settings[Setting::max_streams_for_merge_tree_reading]);
+            requested_num_streams = std::min<size_t>(requested_num_streams, max_streams_for_merge_tree_reading);
     }
+    /// `requested_num_streams` drives pipes.reserve()/resize() downstream, which throws
+    /// std::length_error when unbounded. It can be amplified past any setting clamp via
+    /// `max_streams_to_max_threads_ratio`, so bound the effective value here too.
+    requested_num_streams = std::min<size_t>(requested_num_streams, 256 * getNumberOfCPUCoresToUse());
 
     /// Add explicit description.
     std::string description = data.getStorageID().getFullNameNotQuoted();
@@ -3405,6 +3411,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         bool is_initial_query = context_->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY;
 
         bool distributed_index_analysis_enabled = !final_second_pass
+            /// Projection parts are identified only by the projection name, which is identical in every
+            /// parent part, so per-part analysis results cannot be attributed back, and remote replicas
+            /// resolve part names against the parent table. Analyze projection parts locally.
+            && !projection_parts_exist
             && settings[Setting::distributed_index_analysis]
             && (settings[Setting::distributed_index_analysis_for_non_shared_merge_tree] || data.isSharedStorage())
             && (total_parts >= distributed_index_analysis_min_parts_to_activate)
@@ -4216,6 +4226,17 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
         read_task_callback,
         number_of_current_replica);
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
+    cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
+    /// The coordinator-computed mark buckets and their per-task grouping; without them the
+    /// fan-out has nothing to ship in the per-read bucket task parameters, and a FINAL read
+    /// with several lanes per task would serialize misaligned lanes and lose rows.
+    cloned_step->distributed_read_buckets = distributed_read_buckets;
+    cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
+    cloned_step->distributed_read_param_name = distributed_read_param_name;
+    /// Filters deferred until after FINAL merging: losing them would apply the filter
+    /// before deduplication and return rows a newer version should have replaced.
+    cloned_step->deferred_row_level_filter = deferred_row_level_filter;
+    cloned_step->deferred_prewhere_info = deferred_prewhere_info;
     /// Carry over the TopK marker. `tryOptimizeTopK` runs in the first optimization pass, so a clone
     /// made later (`materializeQueryPlanReferences` for a common subplan reference, `cloneSubtree` for a
     /// parallel-replicas plan fragment) clones a subtree whose filter still contains `__topKFilter` and
@@ -4231,6 +4252,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// materialized only by this task map, and losing it makes the clone evaluate the rewritten filter
     /// without the index readers (`optimizeLazyFinal` copies the same map onto its synthetic reads).
     cloned_step->index_read_tasks = index_read_tasks;
+    cloned_step->setStepDescription(*this);
     return cloned_step;
 }
 
@@ -4561,14 +4583,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
     logPredicateStatistics(result);
 
-    /// A distributed worker reads exactly the bucket described by its `read_bucket` task parameter: its
+    /// A distributed worker reads exactly the bucket described by its per-read bucket task parameter: its
     /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
     /// to local parts by name; a missing part is a retryable error (the replica diverged by merge or lag).
     if (distributed_read_bucket_count > 0 && settings.parameter_lookup)
     {
-        /// Read this task's lanes from the `read_bucket` parameter, in the layout
+        /// Read this task's lanes from this read's own bucket parameter, in the layout
         /// `serializeDistributedReadBuckets` wrote.
-        String blob = settings.parameter_lookup->getParameter("read_bucket").safeGet<String>();
+        String blob = settings.parameter_lookup->getParameter(distributed_read_param_name).safeGet<String>();
         ReadBufferFromString buf(blob);
         const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
         DB::FormatSettings format_settings;
@@ -5934,12 +5956,23 @@ void ReadFromMergeTree::setDistributedRead(size_t bucket_count)
     distributed_read_bucket_count = bucket_count;
 }
 
+/// A process-wide counter gives each bucketed read a distinct task-parameter key. Assigned on the
+/// coordinator and serialized, so the worker reads under the same key.
+static String nextDistributedReadParamName()
+{
+    static std::atomic<UInt64> counter{0};
+    return "read_bucket_" + toString(counter.fetch_add(1, std::memory_order_relaxed));
+}
+
 size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets)
 {
     /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
     /// worker, so fall back to a serial read instead of bucketing and then failing when the fragment ships.
     if (!supportsBucketedRead())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: the read does not support bucketing");
         return 0;
+    }
 
     /// A non-FINAL read needs no merge, so its marks can be split arbitrarily: cut the analyzed marks into
     /// contiguous mark-balanced slices, one bucket each. FINAL needs primary-key-range layers (handled
@@ -5948,7 +5981,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     {
         auto analysis = selectRangesToRead();
         if (!analysis || analysis->parts_with_ranges.empty())
+        {
+            LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
             return 0;
+        }
 
         /// Keep every bucket, including empty ones, so the count stays `target_buckets` and matches the
         /// downstream exchange (dropping empties would shrink the count for tiny tables and force a reshuffle).
@@ -5961,6 +5997,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
 
         distributed_read_lanes_per_task = 1;
         setDistributedRead(buckets.size());
+        distributed_read_param_name = nextDistributedReadParamName();
         distributed_read_buckets = std::move(buckets);
         return distributed_read_buckets.size();
     }
@@ -5970,28 +6007,42 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// ordered primary key. Read serially otherwise.
     const auto & modifiers = query_info.table_expression_modifiers;
     if (modifiers && (modifiers->hasSampleSizeRatio() || modifiers->hasSampleOffsetRatio()))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: SAMPLE");
         return 0;
+    }
 
     /// `Graphite` rollup parameters are not shipped to the worker, so its FINAL cannot be range-split. Read serially.
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: Graphite rollup");
         return 0;
+    }
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     if (!isSafePrimaryKey(primary_key))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: the primary key is not safe for range splitting");
         return 0;
+    }
 
     auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
     if (!in_reverse_order)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: mixed sort directions");
         return 0;
+    }
 
     auto analysis = selectRangesToRead();
     if (!analysis || analysis->parts_with_ranges.empty())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
         return 0;
+    }
 
-    /// When FINAL does not merge across partitions, each partition is deduplicated independently, so a
-    /// layer must not span partitions (a key may repeat across partitions and must not be merged). Group
-    /// the parts into one span per partition (parts of a partition are adjacent in the analyzed order);
-    /// otherwise all parts form a single span that is merged together.
+    /// When FINAL does not merge across partitions, a layer must not span partitions (a key may
+    /// repeat across partitions and must stay unmerged): make one span per partition. Otherwise
+    /// all parts form a single span.
     std::vector<RangesInDataParts> spans;
     if (doNotMergePartsAcrossPartitionsFinal())
     {
@@ -6015,24 +6066,22 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// Lanes (merge layers) per task, matching single-node FINAL's parallelism
-    /// `min(requested_num_streams, max_final_threads)`.
-    const size_t lanes_per_task
-        = std::max<size_t>(1, std::min<size_t>(requested_num_streams, context->getSettingsRef()[Setting::max_final_threads]));
+    /// Target number of merge layers per task, fixed so the split does not depend on the
+    /// machine that builds the plan.
+    constexpr size_t target_lanes_per_task = 16;
+    const size_t layer_budget = target_buckets * target_lanes_per_task;
 
-    /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
-    /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
-    /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
-    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
-    /// read-in-order read is caught by `supportsBucketedRead` at the top of this method and
-    /// falls back to a serial read before reaching here, so the split needs no read-in-order guard.
+    /// Split each span by primary key into non-intersecting ranges (owned by a single level>0 part,
+    /// already deduplicated, read without a merge) and intersecting ranges (merged in PK-range layers),
+    /// each getting a share of the span's budget proportional to its marks.
+    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split.
     const bool split_non_intersecting
         = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
     std::vector<DistributedReadBucket> buckets;
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * lanes_per_task * span_marks / total_marks);
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, layer_budget * span_marks / total_marks);
 
         RangesInDataParts intersecting;
         if (split_non_intersecting)
@@ -6070,16 +6119,24 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         }
     }
 
-    /// Group `lanes_per_task` consecutive virtual buckets into each task. A single task has nothing to
-    /// distribute, and a per-partition split with many partitions can exceed the task limit. Read serially
-    /// rather than under-parallelize or exceed it.
+    /// Group the layers into `target_buckets` tasks. More layers than the target (a per-partition
+    /// split makes at least one per partition) just mean more lanes per task, and each task ships
+    /// only its own lanes. A single task or a task count above the ceiling reads serially.
+    const size_t lanes_per_task = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
     const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
     if (tasks <= 1 || tasks > max_total_buckets)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: {} layers in {} lanes per task make {} tasks (target {}, limit {})",
+            buckets.size(), lanes_per_task, tasks, target_buckets, max_total_buckets);
         return 0;
+    }
 
+    LOG_TRACE(log, "Distributed FINAL read bucketed: {} layers in {} lanes per task make {} tasks (target {})",
+        buckets.size(), lanes_per_task, tasks, target_buckets);
     distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
+    distributed_read_param_name = nextDistributedReadParamName();
     return tasks;
 }
 
@@ -6259,9 +6316,11 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
 
-    /// Every distributed bucket's marks travel in its own `read_bucket` task parameter (set during
-    /// fan-out), so the shared step carries only the bucket count.
+    /// Every distributed bucket's marks travel in its own per-read task parameter (set during fan-out),
+    /// so the shared step carries only the bucket count and this read's parameter key.
     writeVarUInt(distributed_read_bucket_count, ctx.out);
+    if (distributed_read_bucket_count > 0)
+        writeStringBinary(distributed_read_param_name, ctx.out);
 }
 
 std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization & ctx)
@@ -6312,7 +6371,8 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
     if (has_prewhere_info)
         query_info.prewhere_info = std::make_shared<PrewhereInfo>(PrewhereInfo::deserialize(ctx));
 
-    /// The per-bucket marks travel in the `read_bucket` task parameter, so the step carries only the count.
+    /// The per-bucket marks travel in a per-read task parameter, so the step carries only the count and
+    /// this read's parameter key.
     size_t distributed_read_bucket_count = 0;
     readVarUInt(distributed_read_bucket_count, ctx.in);
     /// A version-1 bucketed step had a trailing part-name payload this reader would leave unconsumed; fail
@@ -6321,6 +6381,9 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan: a bucketed ReadFromMergeTree read requires query plan serialization "
             "version >= 2; all nodes must run the same version");
+    String distributed_read_param_name;
+    if (distributed_read_bucket_count > 0)
+        readStringBinary(distributed_read_param_name, ctx.in);
 
     /// The plan is only being drained off the buffer (TCPHandler::skipData) and will be discarded.
     /// All serialized fields have been consumed above, so return a lightweight placeholder that
@@ -6371,6 +6434,7 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         if (!read_from_merge_tree_step)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "ReadFromMergeTree step is expected to be created by readFromParts");
         read_from_merge_tree_step->setDistributedRead(distributed_read_bucket_count);
+        read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
     /// Need to keep shared pointer to MergeTree table till the end of plan execution
