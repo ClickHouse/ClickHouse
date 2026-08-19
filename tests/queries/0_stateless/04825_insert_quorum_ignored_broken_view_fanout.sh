@@ -36,6 +36,13 @@ $CLICKHOUSE_CLIENT $QUORUM_SETTINGS -q \
 $CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=0 --ignore_materialized_views_with_dropped_target_table=1 -q \
     "EXPLAIN PIPELINE INSERT INTO quorum_broken_view_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
 
+# `materialized_views_ignore_errors` prunes the same missing-target branch. The hidden Alias probes
+# must not serialize the outer fan-out when the nested INSERT will ignore that view.
+$CLICKHOUSE_CLIENT $SETTINGS --parallel_view_processing=0 --materialized_views_ignore_errors=1 -q \
+    "EXPLAIN PIPELINE INSERT INTO quorum_broken_view_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
+$CLICKHOUSE_CLIENT $SETTINGS --insert_quorum=2 --insert_quorum_parallel=0 --materialized_views_ignore_errors=1 -q \
+    "EXPLAIN PIPELINE INSERT INTO quorum_broken_view_alias SELECT number FROM numbers(4)" | grep -c "AliasSink"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_broken_view_mv"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_broken_view_alias"
 $CLICKHOUSE_CLIENT -q "DROP TABLE quorum_broken_view_dst"

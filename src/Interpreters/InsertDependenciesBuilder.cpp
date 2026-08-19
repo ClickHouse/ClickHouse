@@ -1007,7 +1007,8 @@ bool InsertDependenciesBuilder::hasExecutableDependentView(const StoragePtr & st
                 : nullptr;
             if (!target_lock)
             {
-                if (settings[Setting::ignore_materialized_views_with_dropped_target_table])
+                if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                    || settings[Setting::materialized_views_ignore_errors])
                     continue;
 
                 return true;
@@ -1090,7 +1091,8 @@ bool InsertDependenciesBuilder::dependentViewForwardsInsertToSeparateContext(
             : nullptr;
         if (!target_lock)
         {
-            if (settings[Setting::ignore_materialized_views_with_dropped_target_table])
+            if (settings[Setting::ignore_materialized_views_with_dropped_target_table]
+                || settings[Setting::materialized_views_ignore_errors])
                 continue;
 
             return true;
@@ -1243,7 +1245,7 @@ bool InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(const Sto
                 : nullptr;
             if (!target_lock)
             {
-                if (ignore_materialized_views_with_dropped_target_table)
+                if (ignore_materialized_views_with_dropped_target_table || materialized_views_ignore_errors)
                     continue;
 
                 return true;
