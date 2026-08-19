@@ -517,12 +517,17 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-p/C-n to history-previous/history-next like readline.
     rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
     rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::DOWN), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_NEXT, code); });
+    rx.bind_key(Replxx::KEY::meta(Replxx::KEY::UP), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_PREVIOUS, code); });
     rx.bind_key(Replxx::KEY::meta('p'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
     rx.bind_key(Replxx::KEY::meta('n'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_COMMON_PREFIX_SEARCH, code); });
     rx.bind_key(Replxx::KEY::meta('<'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
     rx.bind_key(Replxx::KEY::PAGE_UP, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_FIRST, code); });
     rx.bind_key(Replxx::KEY::meta('>'), [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
     rx.bind_key(Replxx::KEY::PAGE_DOWN, [this](char32_t code) { return historyNavigate(Replxx::ACTION::HISTORY_LAST, code); });
+    rx.bind_key(Replxx::KEY::control('R'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::control('S'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, code); });
+    rx.bind_key(Replxx::KEY::meta('r'), [this](char32_t code) { return historySearch(Replxx::ACTION::HISTORY_SEEDED_INCREMENTAL_SEARCH, code); });
 
     /// We don't want the default, "suspend" behavior, it confuses people.
     if (options.ignore_shell_suspend)
@@ -730,15 +735,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     {
         /// Reverse search is detected by C-R.
         uint32_t reverse_search = Replxx::KEY::control('R');
-        /// The found entry is a whole new line displayed at once - do not pop hints on it (see
-        /// historyNavigate).
-        suppress_hints_once = true;
-        auto result = rx.invoke(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
-        if (rx.history_recalled())
-            suppressHintsForDisplayedLine();
-        else
-            suppress_hints_once = false;
-        return result;
+        return historySearch(Replxx::ACTION::HISTORY_INCREMENTAL_SEARCH, reverse_search);
     });
 
     /// Change cursor style for overwrite mode to blinking (see console_codes(5))
@@ -788,6 +785,20 @@ replxx::Replxx::ACTION_RESULT ReplxxLineReader::historyNavigate(replxx::Replxx::
     /// suppression must be armed before it; the pin below keeps later regenerations of the
     /// recalled text hintless (the refresh inside the action may be throttled and replayed after
     /// this returns) and is cleared by the first edit.
+    suppress_hints_once = true;
+    auto result = rx.invoke(action, code);
+    if (rx.history_recalled())
+        suppressHintsForDisplayedLine();
+    else
+        suppress_hints_once = false;
+    return result;
+}
+
+replxx::Replxx::ACTION_RESULT ReplxxLineReader::historySearch(replxx::Replxx::ACTION action, char32_t code)
+{
+    /// The selected entry is displayed (and its hints regenerated) inside the search action, so
+    /// the suppression must be armed before it. C-R, C-S, Meta-R, and the ClickHouse regular
+    /// history-search binding all use this wrapper.
     suppress_hints_once = true;
     auto result = rx.invoke(action, code);
     if (rx.history_recalled())

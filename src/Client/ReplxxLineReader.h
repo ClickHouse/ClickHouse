@@ -56,6 +56,10 @@ private:
     /// `suppress_hints_once`): the entry it recalls must not pop hints by itself.
     replxx::Replxx::ACTION_RESULT historyNavigate(replxx::Replxx::ACTION action, char32_t code);
 
+    /// Run a history-search action with the hint suppression armed (see
+    /// `suppress_hints_once`): a selected entry must not pop hints by itself.
+    replxx::Replxx::ACTION_RESULT historySearch(replxx::Replxx::ACTION action, char32_t code);
+
     /// After a line was displayed programmatically, pin its text so that any hint regeneration
     /// for it shows nothing (see `suppress_hints_for_text`).
     void suppressHintsForDisplayedLine();

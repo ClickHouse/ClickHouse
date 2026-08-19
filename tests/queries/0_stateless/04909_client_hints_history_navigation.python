@@ -147,6 +147,17 @@ def main():
         lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
     )
 
+    # Meta-Up is replxx's direct history-previous binding. It must use the same suppression as
+    # plain Up, rather than leaving the default action to regenerate hints.
+    history = make_history_file("meta_up_recall", ["SELECT concatAssumeInject"])
+    run_with_timeout(
+        base[0],
+        args + [f"--history_file={history}"],
+        "meta_up_recall_no_hints",
+        [b"\x1b\x1b[A"],
+        lambda o: "concatAssumeInject" in o and (HINT_COLOR + "ive") not in o,
+    )
+
     # 2. Up, Up, Down walks the history (the entries end in "rand", which has many hint
     #    matches - Down must not step into the hint list); Enter then runs the recalled entry,
     #    so its result (222) is printed. The result can use either Pretty or TabSeparated output
