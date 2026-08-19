@@ -1,0 +1,12 @@
+constant argument before the non-const argument
+  Join: probe[10] ⋈ aggregated[10]
+  ResultRows: 10
+      Aggregating
+non-folded constant argument
+  Join: probe[10] ⋈ aggregated[10]
+  ResultRows: 10
+      Aggregating
+constant scalar subquery argument
+  Join: probe[10] ⋈ aggregated[10]
+  ResultRows: 10
+      Aggregating

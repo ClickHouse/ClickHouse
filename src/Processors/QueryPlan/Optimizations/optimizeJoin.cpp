@@ -92,9 +92,8 @@ static bool isValuePassThroughFunction(std::string_view function_name)
         || function_name == "CAST" || function_name == "toNullable";
 }
 
-/// Whether an expression has the same value for every input row. Some such expressions intentionally
-/// do not have a folded constant column (e.g. materialize(const)), so this must be derived from the DAG.
-static bool isRowConstant(const ActionsDAG::Node * node)
+/// Whether an expression is independent of input columns and deterministic within the query.
+static bool isConstantExpression(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
     nodes.push(node);
@@ -130,8 +129,7 @@ static bool isRowConstant(const ActionsDAG::Node * node)
 /// How a node relates its output NDV to the NDV of one of its children's source columns.
 struct ValueHop
 {
-    bool propagates = false; /// output inherits the source NDV of children[source_child_index]
-    size_t source_child_index = 0;
+    std::pair<bool, size_t> source_child = {false, 0}; /// whether NDV propagates, and from which child
     UInt64 ndv_delta = 0; /// extra distinct values the hop can introduce over the source
     bool preserves_width = false; /// output value bytes equal the source's (relabel or same-type hop)
 };
@@ -141,7 +139,7 @@ struct ValueHop
 static ValueHop describeValueHop(const ActionsDAG::Node & node)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return {.propagates = true, .preserves_width = true};
+        return {.source_child = {true, 0}, .preserves_width = true};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
@@ -149,28 +147,26 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     size_t source_child_index = 0;
     if (!isValuePassThroughFunction(node.function_base->getName()))
     {
-        if (!node.function_base->isDeterministic())
+        /// A deterministic function can inherit the NDV bound of its only non-const argument.
+        /// Functions with no non-const arguments have no source column, while functions with
+        /// multiple non-const arguments are not bounded by any single argument's NDV.
+        if (!node.function_base->isDeterministicInScopeOfQuery())
             return {};
 
-        if (node.children.size() > 1)
+        std::optional<size_t> non_constant_child;
+        for (size_t i = 0; i < node.children.size(); ++i)
         {
-            /// A deterministic function has at most as many distinct values as its only row-varying
-            /// argument. This also covers expressions such as dateTrunc('month', date).
-            std::optional<size_t> non_constant_child;
-            for (size_t i = 0; i < node.children.size(); ++i)
-            {
-                if (isRowConstant(node.children[i]))
-                    continue;
+            if (isConstantExpression(node.children[i]))
+                continue;
 
-                if (non_constant_child)
-                    return {};
-                non_constant_child = i;
-            }
-
-            if (!non_constant_child)
+            if (non_constant_child)
                 return {};
-            source_child_index = *non_constant_child;
+            non_constant_child = i;
         }
+
+        if (!non_constant_child)
+            return {};
+        source_child_index = *non_constant_child;
     }
 
     /// NDV counts only non-null values. A hop turning a Nullable source argument into a non-Nullable
@@ -182,11 +178,7 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     /// wrapping (the analyzer's `toNullable`/`CAST` around join keys) leaves the value bytes intact.
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
         ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type));
-    return {
-        .propagates = true,
-        .source_child_index = source_child_index,
-        .ndv_delta = collapses_null ? 1u : 0u,
-        .preserves_width = preserves_width};
+    return {.source_child = {true, source_child_index}, .ndv_delta = collapses_null ? 1u : 0u, .preserves_width = preserves_width};
 }
 
 /// How an output column relates to the source input column it traces back to.
@@ -233,17 +225,18 @@ static std::unordered_map<String, BackTrackedColumn> backTrackColumnsInDag(const
             }
 
             ValueHop hop = describeValueHop(*node);
-            if (hop.propagates && !child_pushed)
+            const auto [propagates, source_child_index] = hop.source_child;
+            if (propagates && !child_pushed)
             {
                 nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[hop.source_child_index], false});
+                nodes_to_process.push({node->children[source_child_index], false});
                 continue;
             }
 
             std::optional<BackTrackedColumn> result;
-            if (hop.propagates)
+            if (propagates)
             {
-                if (auto source_path = path_to_input[node->children[hop.source_child_index]])
+                if (auto source_path = path_to_input[node->children[source_child_index]])
                     result = BackTrackedColumn{
                         .ndv_offset = source_path->ndv_offset + hop.ndv_delta,
                         .preserves_width = source_path->preserves_width && hop.preserves_width};
