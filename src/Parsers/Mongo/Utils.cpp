@@ -383,7 +383,7 @@ std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, 
     const char * value_end = begin + start_position;
     if (value_begin == value_end || (value_end == value_begin + 1 && *value_begin == '-'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' has no argument", pattern);
-    Int64 result;
+    Int64 result{};
     const auto [parse_end, error] = std::from_chars(value_begin, value_end, result);
     if (error != std::errc{} || parse_end != value_end)
     {
