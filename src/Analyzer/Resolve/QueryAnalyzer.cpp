@@ -1074,21 +1074,10 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
         /// only when the alias value can actually resolve the nested path.
         if (dot_pos != String::npos)
         {
-            /// Join-tree validation runs before the projection and `WITH` expressions are resolved.
-            /// Assume collision when the alias might be unresolved.
-            if (const auto * function_node = it->second->as<FunctionNode>(); function_node && !function_node->isResolved())
-                return true;
-            if (const auto * alias_query_node = it->second->as<QueryNode>(); alias_query_node && !alias_query_node->isResolved())
-                return true;
-            if (const auto * alias_union_node = it->second->as<UnionNode>(); alias_union_node && !alias_union_node->isResolved())
-                return true;
-            if (it->second->as<IdentifierNode>())
-                return true;
-
-            Identifier identifier(column_name);
-            return identifier_resolver.tryResolveIdentifierFromCompoundExpression(
-                identifier, 1 /*identifier_bind_size*/, it->second, {} /* compound_expression_source */,
-                scope, true /* can_be_not_found */) != nullptr;
+            /// Use the regular alias resolver: it resolves transitive aliases before checking the
+            /// nested path, and falls through to the join tree when that path is not bindable.
+            auto identifier_lookup = IdentifierLookup{Identifier(column_name), IdentifierLookupContext::EXPRESSION};
+            return tryResolveIdentifierFromAliases(identifier_lookup, scope, {}).resolved_identifier != nullptr;
         }
 
         /// A self alias is skipped while its own body is resolved and cannot cause a collision.

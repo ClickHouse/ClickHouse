@@ -154,10 +154,10 @@ CREATE TABLE arr_tuple (arr Array(Tuple(x UInt8))) ENGINE = Memory;
 INSERT INTO arr_tuple VALUES ([(1)]);
 SELECT `a.x` FROM arr_tuple, (SELECT 2 AS `a.x`) ARRAY JOIN arr AS a; -- { serverError ALIAS_REQUIRED }
 
--- The same applies to a transitive `WITH` alias: its first identifier must be resolved before a
--- compound lookup can inspect the nested path, so validation keeps the strict behavior meanwhile.
-WITH CAST(tuple(1), 'Tuple(x UInt8)') AS base, base AS n
-SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
+-- A transitive scalar `WITH` alias also cannot resolve the nested path. The normal identifier
+-- binder resolves `n` to `base` and then falls through to the joined `n.x` column, so no alias is required.
+WITH 1 AS base, base AS n
+SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`) FORMAT Null;
 
 -- The same applies to a scalar-subquery `WITH` alias. It is registered before its query node is
 -- resolved, so probing it for a nested path would otherwise throw `UNSUPPORTED_METHOD` instead of
