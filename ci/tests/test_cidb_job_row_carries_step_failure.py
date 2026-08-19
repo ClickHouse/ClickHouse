@@ -102,12 +102,19 @@ def published_node(status=Result.Status.OK, info="", cases=None):
     )
 
 
-def test_failing_step_outside_tests_node_is_named():
-    """The real master shape: `Start ClickHouse Server` dies before the test phase."""
+@pytest.mark.parametrize("step_status", [Result.Status.FAIL, Result.Status.ERROR])
+def test_failing_step_outside_tests_node_is_named(step_status):
+    """
+    The real master shape: `Start ClickHouse Server` dies before the test phase.
+
+    Both statuses are read, matching `_add_job_summary_to_info`'s own `is_ok()`
+    predicate: `ci/jobs/performance_tests.py` appends a direct `Download datasets`
+    child with `status=ERROR` under `result_name_for_cidb="Tests"`.
+    """
     result = job(
         [
             node("Install ClickHouse", Result.Status.OK),
-            node("Start ClickHouse Server", Result.Status.FAIL, SERVER_LOG),
+            node("Start ClickHouse Server", step_status, SERVER_LOG),
             node("Collect logs", Result.Status.OK),
         ]
     )
@@ -181,6 +188,34 @@ def test_failing_test_inside_published_node():
     assert published[1]["test_context_raw"] == "assert MARKER"
 
 
+def test_selected_node_own_info_is_named():
+    """
+    The selected node is never in its own published set: CIDB publishes its CHILDREN.
+    `Result.from_commands_run` fills a failing node's own info (`with_info_on_failure`
+    defaults to True), so a failing `Tests` node's command log reaches no row without
+    this. The root info here is a different string, so containment does not apply.
+    """
+    result = job(
+        [
+            published_node(
+                Result.Status.FAIL,
+                "SELECTED_NODE_MARKER",
+                [node("00001_foo", Result.Status.FAIL, "assert")],
+            ),
+            node("Report", Result.Status.OK),
+        ],
+        info="4 slower, 0 unstable",
+    )
+    published = rows(result)
+    assert (
+        published[0]["test_context_raw"]
+        == "4 slower, 0 unstable\nTests: SELECTED_NODE_MARKER"
+    )
+    # Child rows are untouched: no pseudo test case, no changed context.
+    assert [r["test_name"] for r in published] == ["", "00001_foo"]
+    assert published[1]["test_context_raw"] == "assert"
+
+
 def test_skipped_step_is_not_a_failure():
     """`is_ok()` accepts SKIPPED, matching `_add_job_summary_to_info`'s own predicate."""
     result = job(
@@ -196,7 +231,7 @@ def test_skipped_step_is_not_a_failure():
 
 
 def test_failing_step_with_empty_info():
-    """`Check errors` re-parents its children into the Tests node and empties itself."""
+    """A failing step with no info of its own adds nothing (the `r.info` guard)."""
     result = job(
         [
             published_node(
