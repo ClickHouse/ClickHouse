@@ -15,6 +15,7 @@
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/Macros.h>
 #include <Common/OptimizedRegularExpression.h>
+#include <Common/quoteString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/typeid_cast.h>
