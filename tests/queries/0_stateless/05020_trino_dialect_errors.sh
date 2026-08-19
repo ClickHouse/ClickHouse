@@ -15,7 +15,7 @@ $CLICKHOUSE_CLIENT --dialect trino -q "SET dialect = 'clickhouse'" && echo "SET 
 # Unsupported constructs report clear errors
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT count() FROM numbers(10) TABLESAMPLE BERNOULLI (10)" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT TRY(1 / 0)" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
-$CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT x FROM UNNEST(ARRAY[1])" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
+$CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT 1 FROM (SELECT ARRAY[1] AS a) CROSS JOIN UNNEST(a)" 2>&1 | grep -om1 "NOT_IMPLEMENTED"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT split('a,b', ',', 2)" 2>&1 | grep -om1 "BAD_ARGUMENTS"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT approx_percentile(number, number / 10) FROM numbers(10)" 2>&1 | grep -om1 "BAD_ARGUMENTS"
 $CLICKHOUSE_CLIENT $TRINO_OPTS -q "SELECT json_size('{}', concat('$', '.a'))" 2>&1 | grep -om1 "NOT_IMPLEMENTED"

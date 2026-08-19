@@ -185,6 +185,30 @@ void attachParameters(ASTFunction & function, ASTs parameters)
     function.children.clear();
     function.children.push_back(function.parameters);
     function.children.push_back(function.arguments);
+    if (function.window_definition)
+        function.children.push_back(function.window_definition);
+}
+
+/// Rewriters that replace an aggregate call with an expression over another
+/// aggregate must carry the window of the original call over to it.
+void transferWindow(const ASTFunction & from, const ASTPtr & to)
+{
+    if (!from.isWindowFunction())
+        return;
+    auto * target = to->as<ASTFunction>();
+    target->setIsWindowFunction(true);
+    target->window_name = from.window_name;
+    if (from.window_definition)
+    {
+        target->window_definition = from.window_definition;
+        target->children.push_back(target->window_definition);
+    }
+}
+
+void requireNotWindow(const ASTFunction & function)
+{
+    if (function.isWindowFunction())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Trino function {} is not supported as a window function", function.name);
 }
 
 /// Simple renames: the argument order and semantics match.
@@ -1017,16 +1041,19 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"checksum", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             requireArguments(function, arguments, 1, 1, "(value)");
             node = makeFunctionWithArguments("groupBitXor", {makeFunctionWithArguments("sipHash64", {arguments[0]})});
         }},
         {"geometric_mean", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             requireArguments(function, arguments, 1, 1, "(value)");
             node = makeFunctionWithArguments("exp", {makeFunctionWithArguments("avg", {makeFunctionWithArguments("log", {arguments[0]})})});
         }},
         {"histogram", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             /// DANGER if unmapped: the ClickHouse histogram aggregate is an adaptive
             /// numeric histogram, while Trino counts values into a map.
             requireArguments(function, arguments, 1, 1, "(value)");
@@ -1047,6 +1074,7 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"map_agg", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             requireArguments(function, arguments, 2, 2, "(key, value)");
             node = makeFunctionWithArguments(
                 "mapFromArrays",
@@ -1054,6 +1082,7 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"regr_slope", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             requireArguments(function, arguments, 2, 2, "(y, x)");
             node = makeFunctionWithArguments(
                 "tupleElement",
@@ -1061,6 +1090,7 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         }},
         {"regr_intercept", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
+            requireNotWindow(function);
             requireArguments(function, arguments, 2, 2, "(y, x)");
             node = makeFunctionWithArguments(
                 "tupleElement",
@@ -1081,10 +1111,10 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             /// Trino max(x, n) returns the n largest values as an array.
             if (arguments.size() != 2)
                 return;
-            ASTPtr sorted = makeFunctionWithArguments(
-                "arrayReverseSort", {makeFunctionWithArguments("groupArray", {arguments[0]})});
+            ASTPtr group_array = makeFunctionWithArguments("groupArray", {arguments[0]});
+            transferWindow(function, group_array);
+            ASTPtr sorted = makeFunctionWithArguments("arrayReverseSort", {group_array});
             node = makeFunctionWithArguments("arraySlice", {sorted, make_intrusive<ASTLiteral>(UInt64(1)), arguments[1]});
-            UNUSED(function);
         }},
 
         /// Row.

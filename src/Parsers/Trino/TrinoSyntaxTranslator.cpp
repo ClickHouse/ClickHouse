@@ -2,6 +2,9 @@
 
 #include <Common/Exception.h>
 #include <Common/StringUtils.h>
+#include <base/defines.h>
+
+#include <Poco/String.h>
 
 #include <algorithm>
 #include <cstring>
@@ -27,6 +30,33 @@ bool tokenIsKeyword(const Token & token, std::string_view keyword)
     return strncasecmp(token.begin, keyword.data(), keyword.size()) == 0;
 }
 
+/// The target ClickHouse type for a Trino typed literal (TYPE 'value'), or
+/// nullptr when the word is not a supported literal type prefix. DECIMAL,
+/// TIMESTAMP, JSON, DATE and INTERVAL are handled elsewhere.
+const char * getTypedLiteralTarget(const Token & token)
+{
+    static const std::pair<const char *, const char *> types[] =
+    {
+        {"BIGINT", "BIGINT"},
+        {"INTEGER", "INTEGER"},
+        {"INT", "INTEGER"},
+        {"SMALLINT", "SMALLINT"},
+        {"TINYINT", "TINYINT"},
+        {"REAL", "REAL"},
+        {"DOUBLE", "DOUBLE"},
+        {"VARCHAR", "String"},
+        {"CHAR", "String"},
+        {"BOOLEAN", "BOOLEAN"},
+        {"UUID", "UUID"},
+        {"VARBINARY", "String"},
+        {"IPADDRESS", "IPv6"},
+    };
+    for (const auto & [name, target] : types)
+        if (tokenIsKeyword(token, name))
+            return target;
+    return nullptr;
+}
+
 /// The kind of construct that precedes UNNEST and determines the translation.
 enum class UnnestKind : uint8_t
 {
@@ -45,7 +75,23 @@ public:
 
     std::optional<String> run()
     {
-        translateRange(0, tokens.size(), /*type_context=*/ false);
+        size_t body_begin = 0;
+        size_t clause_begin = 0;
+        if (findTrailingClauseAfterSetOperation(body_begin, clause_begin))
+        {
+            /// In Trino a trailing ORDER BY/LIMIT/OFFSET/FETCH applies to the whole
+            /// set operation, while in ClickHouse it binds to the last SELECT:
+            /// wrap the set operation into a subquery.
+            changed = true;
+            translateRange(0, body_begin, /*type_context=*/ false);
+            out += "SELECT * FROM ( ";
+            translateRange(body_begin, clause_begin, /*type_context=*/ false);
+            out += ") ";
+            translateRange(clause_begin, tokens.size(), /*type_context=*/ false);
+        }
+        else
+            translateRange(0, tokens.size(), /*type_context=*/ false);
+
         if (!changed)
             return std::nullopt;
         return std::move(out);
@@ -206,6 +252,41 @@ private:
             return;
         }
 
+        /// Row field expansion of a parenthesized expression: (expr).* -> untuple(expr).
+        /// (The primary must not be function-call arguments, so a preceding
+        /// identifier-like token disables the rule.)
+        if (token.type == TokenType::OpeningRoundBracket && isExpressionStartContext(i))
+        {
+            size_t close = findMatchingParen(i);
+            if (close != tokens.size() && isTypeAt(close + 1, TokenType::Dot) && isTypeAt(close + 2, TokenType::Asterisk))
+            {
+                if (isKeywordAt(close + 3, "AS"))
+                    throwNotSupported(tokens[close + 1], "Row field expansion .* with column aliases", "");
+                changed = true;
+                String inner = translateSubRange(i + 1, close, /*type_context=*/ false);
+                /// (1, 2).* is a tuple denoted by the parentheses themselves.
+                if (splitTopLevelCommas(i + 1, close).size() > 1)
+                    inner = "tuple(" + inner + ")";
+                out += "untuple(" + inner + ") ";
+                i = close + 3;
+                return;
+            }
+        }
+
+        /// Row field expansion of other primaries is not detectable at the token
+        /// level; a qualified asterisk (t.*) passes through to ClickHouse, and
+        /// everything else must fail loudly rather than lose the expression.
+        if (token.type == TokenType::Dot && isTypeAt(i + 1, TokenType::Asterisk))
+        {
+            if (i > 0 && (tokens[i - 1].type == TokenType::BareWord || tokens[i - 1].type == TokenType::QuotedIdentifier))
+            {
+                emitToken(token);
+                ++i;
+                return;
+            }
+            throwNotSupported(token, "Row field expansion with .*", "Parenthesize the expression: (expr).*");
+        }
+
         /// A parenthesized VALUES table: (VALUES (1, 'a'), (2, 'b')) becomes a
         /// subquery over SQLStandardValues, so that a following column alias
         /// list (AS t(x, y)) applies to it.
@@ -344,8 +425,11 @@ private:
             return;
         }
 
-        /// Statement-level VALUES (1, 'a'), (2, 'b') -> SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b'))
-        if (i == 0 && tokenIsKeyword(token, "VALUES"))
+        /// Statement-level VALUES (1, 'a'), (2, 'b') -> SELECT * FROM SQLStandardValues((1, 'a'), (2, 'b')).
+        /// Also covers VALUES as an arm of a set operation.
+        if (tokenIsKeyword(token, "VALUES")
+            && (i == 0 || isKeywordAt(i - 1, "ALL") || isKeywordAt(i - 1, "DISTINCT") || isKeywordAt(i - 1, "UNION")
+                || isKeywordAt(i - 1, "INTERSECT") || isKeywordAt(i - 1, "EXCEPT")))
         {
             translateValuesStatement(i, end_idx);
             return;
@@ -396,6 +480,20 @@ private:
             return;
         }
 
+        /// Trino set operations default to DISTINCT, while ClickHouse requires an
+        /// explicit mode (or the union_default_mode setting) in compound set
+        /// operations. `* EXCEPT (columns)` is column exclusion and is left alone.
+        if ((tokenIsKeyword(token, "UNION") || tokenIsKeyword(token, "INTERSECT") || tokenIsKeyword(token, "EXCEPT"))
+            && !isKeywordAt(i + 1, "ALL") && !isKeywordAt(i + 1, "DISTINCT")
+            && !(i > 0 && tokens[i - 1].type == TokenType::Asterisk))
+        {
+            changed = true;
+            emitToken(token);
+            emitText("DISTINCT");
+            ++i;
+            return;
+        }
+
         /// BETWEEN ASYMMETRIC is the default BETWEEN; BETWEEN SYMMETRIC orders
         /// the bounds first: x BETWEEN least(a, b) AND greatest(a, b).
         if (tokenIsKeyword(token, "BETWEEN") && isKeywordAt(i + 1, "ASYMMETRIC"))
@@ -420,6 +518,46 @@ private:
             if (translateTimestampLiteral(i))
                 return;
         }
+
+        /// Typed literals: BIGINT '1' -> CAST('1' AS BIGINT), VARCHAR 'x' -> CAST('x' AS String), ...
+        if (isTypeAt(i + 1, TokenType::StringLiteral))
+        {
+            if (const char * target = getTypedLiteralTarget(token))
+            {
+                changed = true;
+                out += "CAST(";
+                emitToken(tokens[i + 1]);
+                out += String("AS ") + target + ") ";
+                i += 2;
+                return;
+            }
+        }
+
+        /// GROUP BY AUTO -> GROUP BY ALL (group by all non-aggregated columns).
+        if (tokenIsKeyword(token, "AUTO") && i >= 2 && tokenIsKeyword(tokens[i - 1], "BY") && tokenIsKeyword(tokens[i - 2], "GROUP"))
+        {
+            changed = true;
+            emitText("ALL");
+            ++i;
+            return;
+        }
+
+        /// The TABLE t query shorthand -> SELECT * FROM t.
+        if (tokenIsKeyword(token, "TABLE")
+            && (isTypeAt(i + 1, TokenType::BareWord) || isTypeAt(i + 1, TokenType::QuotedIdentifier))
+            && (i == 0 || tokens[i - 1].type == TokenType::OpeningRoundBracket || isKeywordAt(i - 1, "UNION")
+                || isKeywordAt(i - 1, "INTERSECT") || isKeywordAt(i - 1, "EXCEPT") || isKeywordAt(i - 1, "ALL")
+                || isKeywordAt(i - 1, "DISTINCT")))
+        {
+            changed = true;
+            emitText("SELECT * FROM");
+            ++i;
+            return;
+        }
+
+        /// Aggregates with an inline ORDER BY or a WITHIN GROUP clause.
+        if (isTypeAt(i + 1, TokenType::OpeningRoundBracket) && translateOrderedAggregate(i, end_idx))
+            return;
 
         /// nan() and infinity() -> the nan and inf literals (in ClickHouse these
         /// are literal keywords, so a function-call form does not even parse).
@@ -554,6 +692,88 @@ private:
         return true;
     }
 
+    /// Detects a query of the form `<set operation> ORDER BY/LIMIT/OFFSET/FETCH ...`
+    /// (optionally preceded by a WITH clause). Sets `body_begin` to the start of
+    /// the set operation and `clause_begin` to the first trailing clause.
+    bool findTrailingClauseAfterSetOperation(size_t & body_begin, size_t & clause_begin) const
+    {
+        if (tokens.empty())
+            return false;
+
+        size_t begin = 0;
+        if (tokenIsKeyword(tokens[0], "WITH"))
+        {
+            /// The body is the first top-level SELECT or VALUES after the CTE list
+            /// (the CTE definitions themselves are inside parentheses).
+            size_t depth = 0;
+            bool found = false;
+            for (size_t j = 1; j < tokens.size(); ++j)
+            {
+                TokenType type = tokens[j].type;
+                if (type == TokenType::OpeningRoundBracket)
+                    ++depth;
+                else if (type == TokenType::ClosingRoundBracket)
+                {
+                    if (depth > 0)
+                        --depth;
+                }
+                else if (depth == 0 && (tokenIsKeyword(tokens[j], "SELECT") || tokenIsKeyword(tokens[j], "VALUES")))
+                {
+                    begin = j;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return false;
+        }
+        else if (!(tokenIsKeyword(tokens[0], "SELECT") || tokenIsKeyword(tokens[0], "VALUES")
+                   || tokens[0].type == TokenType::OpeningRoundBracket))
+            return false;
+
+        size_t depth = 0;
+        size_t last_set_operation = tokens.size();
+        for (size_t j = begin; j < tokens.size(); ++j)
+        {
+            TokenType type = tokens[j].type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                ++depth;
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (depth == 0
+                && (tokenIsKeyword(tokens[j], "UNION") || tokenIsKeyword(tokens[j], "INTERSECT") || tokenIsKeyword(tokens[j], "EXCEPT"))
+                && !(j > 0 && tokens[j - 1].type == TokenType::Asterisk))
+                last_set_operation = j;
+        }
+        if (last_set_operation == tokens.size())
+            return false;
+
+        depth = 0;
+        for (size_t j = last_set_operation + 1; j < tokens.size(); ++j)
+        {
+            TokenType type = tokens[j].type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                ++depth;
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (depth == 0
+                && ((tokenIsKeyword(tokens[j], "ORDER") && isKeywordAt(j + 1, "BY")) || tokenIsKeyword(tokens[j], "LIMIT")
+                    || tokenIsKeyword(tokens[j], "OFFSET") || tokenIsKeyword(tokens[j], "FETCH")))
+            {
+                body_begin = begin;
+                clause_begin = j;
+                return true;
+            }
+        }
+        return false;
+    }
+
     /// Finds where a BETWEEN bound expression ends: the next AND/OR, comma,
     /// unbalanced closing bracket or clause keyword at the top nesting level.
     /// CASE ... END counts as nesting (it may contain top-level AND).
@@ -614,6 +834,43 @@ private:
         changed = true;
         out += "BETWEEN least(" + low + ", " + high + ") AND greatest(" + low + ", " + high + ") ";
         i = high_end;
+    }
+
+    /// Whether the token at `idx` begins a primary expression (as opposed to
+    /// being function-call arguments or a subscript), judged by the preceding token.
+    bool isExpressionStartContext(size_t idx) const
+    {
+        if (idx == 0)
+            return true;
+        const Token & prev = tokens[idx - 1];
+        switch (prev.type)
+        {
+            case TokenType::Comma:
+            case TokenType::OpeningRoundBracket:
+            case TokenType::OpeningSquareBracket:
+            case TokenType::Equals:
+            case TokenType::NotEquals:
+            case TokenType::Less:
+            case TokenType::Greater:
+            case TokenType::LessOrEquals:
+            case TokenType::GreaterOrEquals:
+            case TokenType::Plus:
+            case TokenType::Minus:
+            case TokenType::Asterisk:
+            case TokenType::Slash:
+            case TokenType::Percent:
+            case TokenType::Concatenation:
+            case TokenType::Arrow:
+                return true;
+            case TokenType::BareWord:
+                for (const auto * keyword : {"SELECT", "AS", "BY", "AND", "OR", "NOT", "WHEN", "THEN", "ELSE",
+                                             "WHERE", "HAVING", "ON", "IN", "ALL", "DISTINCT", "UNION", "EXCEPT", "INTERSECT"})
+                    if (tokenIsKeyword(prev, keyword))
+                        return true;
+                return false;
+            default:
+                return false;
+        }
     }
 
     /// Whether a dot at position `idx` starts a numeric literal (`.06`) rather
@@ -708,6 +965,158 @@ private:
         translateRange(arrow + 1, body_end, /*type_context=*/ false);
         out += ") ";
         i = body_end;
+        return true;
+    }
+
+    /// agg(x ORDER BY k [DESC]) and listagg(x, sep) WITHIN GROUP (ORDER BY k):
+    /// ClickHouse has no ordered aggregates. array_agg and listagg are rewritten
+    /// through arraySort over (value, key) tuples; for order-insensitive
+    /// aggregates the clause is simply dropped. `i` points at the function name.
+    bool translateOrderedAggregate(size_t & i, size_t end_idx)
+    {
+        static constexpr std::string_view order_insensitive[] =
+            {"sum", "count", "avg", "min", "max", "count_if", "bool_and", "bool_or", "every", "arbitrary",
+             "any_value", "approx_distinct", "geometric_mean", "checksum", "stddev", "stddev_samp", "stddev_pop",
+             "variance", "var_samp", "var_pop"};
+
+        const Token & name = tokens[i];
+        bool is_array_agg = tokenIsKeyword(name, "ARRAY_AGG");
+        bool is_listagg = tokenIsKeyword(name, "LISTAGG");
+        bool is_insensitive = false;
+        for (const auto & candidate : order_insensitive)
+            is_insensitive |= tokenIsKeyword(name, candidate);
+        if (!is_array_agg && !is_listagg && !is_insensitive)
+            return false;
+
+        size_t open = i + 1;
+        size_t close = findMatchingParen(open);
+        if (close == tokens.size())
+            return false;
+
+        /// A top-level ORDER BY inside the call.
+        size_t order_idx = close;
+        size_t depth = 0;
+        for (size_t j = open + 1; j < close; ++j)
+        {
+            TokenType type = tokens[j].type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                ++depth;
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (depth == 0 && tokenIsKeyword(tokens[j], "ORDER") && isKeywordAt(j + 1, "BY"))
+            {
+                order_idx = j;
+                break;
+            }
+        }
+
+        bool within_group = isKeywordAt(close + 1, "WITHIN") && isKeywordAt(close + 2, "GROUP")
+            && isTypeAt(close + 3, TokenType::OpeningRoundBracket);
+
+        if (order_idx == close && !within_group)
+            return false;
+
+        size_t args_end = order_idx;
+        size_t order_begin = 0;
+        size_t order_end = 0;
+        size_t consumed_end = 0;
+        if (within_group)
+        {
+            size_t wg_close = findMatchingParen(close + 3);
+            if (order_idx != close || wg_close == tokens.size() || !isKeywordAt(close + 4, "ORDER") || !isKeywordAt(close + 5, "BY"))
+                throwNotSupported(name, "This WITHIN GROUP clause", "");
+            order_begin = close + 6;
+            order_end = wg_close;
+            consumed_end = wg_close + 1;
+        }
+        else
+        {
+            order_begin = order_idx + 2;
+            order_end = close;
+            consumed_end = close + 1;
+        }
+
+        if (isKeywordAt(open + 1, "DISTINCT"))
+            throwNotSupported(name, "DISTINCT together with ORDER BY in an aggregate", "");
+
+        /// A single ordering key: expr [ASC|DESC] [NULLS FIRST|LAST].
+        if (splitTopLevelCommas(order_begin, order_end).size() != 1)
+            throwNotSupported(name, "Multiple ORDER BY keys in an aggregate", "");
+        size_t key_end = order_end;
+        if (key_end >= order_begin + 2 && isKeywordAt(key_end - 2, "NULLS")
+            && (isKeywordAt(key_end - 1, "FIRST") || isKeywordAt(key_end - 1, "LAST")))
+            key_end -= 2;
+        bool descending = false;
+        if (key_end > order_begin && (isKeywordAt(key_end - 1, "ASC") || isKeywordAt(key_end - 1, "DESC")))
+        {
+            descending = tokenIsKeyword(tokens[key_end - 1], "DESC");
+            --key_end;
+        }
+        if (key_end == order_begin)
+            throwNotSupported(name, "This ORDER BY in an aggregate", "");
+        String key = translateSubRange(order_begin, key_end, /*type_context=*/ false);
+
+        /// Trailing FILTER (WHERE ...) and OVER clauses attach to the rewritten aggregate.
+        String tail;
+        if (isKeywordAt(consumed_end, "FILTER") && isTypeAt(consumed_end + 1, TokenType::OpeningRoundBracket))
+        {
+            size_t filter_close = findMatchingParen(consumed_end + 1);
+            if (filter_close == tokens.size())
+                throwNotSupported(name, "This FILTER clause", "");
+            tail += " " + translateSubRange(consumed_end, filter_close + 1, /*type_context=*/ false);
+            consumed_end = filter_close + 1;
+        }
+        if (isKeywordAt(consumed_end, "OVER"))
+        {
+            size_t over_end = 0;
+            if (isTypeAt(consumed_end + 1, TokenType::OpeningRoundBracket))
+                over_end = findMatchingParen(consumed_end + 1) + 1;
+            else if (isTypeAt(consumed_end + 1, TokenType::BareWord) || isTypeAt(consumed_end + 1, TokenType::QuotedIdentifier))
+                over_end = consumed_end + 2;
+            else
+                throwNotSupported(name, "This OVER clause", "");
+            tail += " " + translateSubRange(consumed_end, over_end, /*type_context=*/ false);
+            consumed_end = over_end;
+        }
+
+        changed = true;
+        const char * sort_function = descending ? "arrayReverseSort" : "arraySort";
+
+        if (is_insensitive)
+        {
+            out += String(name.begin, name.size()) + "(" + translateSubRange(open + 1, args_end, /*type_context=*/ false) + ")"
+                + tail + " ";
+            i = consumed_end;
+            return true;
+        }
+
+        auto arguments = splitTopLevelCommas(open + 1, args_end);
+        if (arguments.empty() || arguments.size() > (is_listagg ? 2 : 1))
+            throwNotSupported(name, "This combination of arguments and ORDER BY in an aggregate", "");
+        for (const auto & [arg_begin, arg_end_idx] : arguments)
+            for (size_t j = arg_begin; j < arg_end_idx; ++j)
+                if (tokenIsKeyword(tokens[j], "ON"))
+                    throwNotSupported(name, "The ON OVERFLOW clause of listagg", "");
+
+        String value = translateSubRange(arguments[0].first, arguments[0].second, /*type_context=*/ false);
+        String sorted_values = "arrayMap(__trino_x -> (__trino_x).1, " + String(sort_function)
+            + "(__trino_x -> (__trino_x).2, groupArray(tuple(" + value + ", " + key + "))" + tail + "))";
+
+        if (is_listagg)
+        {
+            String separator = arguments.size() == 2
+                ? translateSubRange(arguments[1].first, arguments[1].second, /*type_context=*/ false)
+                : "''";
+            out += "arrayStringConcat(" + sorted_values + ", " + separator + ") ";
+        }
+        else
+            out += sorted_values + " ";
+
+        i = consumed_end;
+        UNUSED(end_idx);
         return true;
     }
 
@@ -826,7 +1235,25 @@ private:
         }
         else
         {
-            out += "CAST(" + expression + " AS " + type + ") ";
+            /// All Trino types are nullable, so scalar cast targets are wrapped
+            /// in Nullable (composite ClickHouse types cannot be Nullable).
+            String first_word;
+            for (char c : type)
+            {
+                if (!isWordCharASCII(c))
+                    break;
+                first_word += c;
+            }
+            String upper_word = Poco::toUpper(first_word);
+            bool wrap_nullable = upper_word != "NULLABLE" && upper_word != "ARRAY" && upper_word != "TUPLE" && upper_word != "MAP"
+                && upper_word != "ROW" && upper_word != "JSON" && !upper_word.empty();
+            if (wrap_nullable)
+            {
+                changed = true;
+                out += "CAST(" + expression + " AS Nullable(" + type + ")) ";
+            }
+            else
+                out += "CAST(" + expression + " AS " + type + ") ";
         }
         i = close + 1;
     }
@@ -901,8 +1328,19 @@ private:
         }
 
         if (columns.empty())
-            throwNotSupported(
-                unnest_token, "UNNEST without column aliases", "Specify them explicitly, e.g. UNNEST(expr) AS t (c).");
+        {
+            /// In the standalone form the columns can be given synthesized names
+            /// (each argument is assumed to be an array). In the join form the
+            /// unnested columns would not be reachable (`SELECT *` does not
+            /// include ARRAY JOIN aliases), so explicit aliases are required.
+            if (kind != UnnestKind::Standalone)
+                throwNotSupported(
+                    unnest_token, "UNNEST without column aliases", "Specify them explicitly, e.g. UNNEST(expr) AS t (c).");
+            for (size_t k = 0; k < args.size(); ++k)
+                columns.push_back("__trino_unnest_col" + std::to_string(k + 1));
+            if (with_ordinality)
+                columns.push_back("__trino_unnest_ordinality");
+        }
 
         changed = true;
         i = j;
@@ -1140,13 +1578,39 @@ private:
     }
 
     /// A statement-level VALUES query: VALUES 1, 2 or VALUES (1, 'a'), (2, 'b').
+    /// The rows end at a set operation or a trailing clause, if any.
     void translateValuesStatement(size_t & i, size_t end_idx)
     {
+        size_t rows_end = end_idx;
+        size_t depth = 0;
+        for (size_t j = i + 1; j < end_idx; ++j)
+        {
+            TokenType type = tokens[j].type;
+            if (type == TokenType::OpeningRoundBracket || type == TokenType::OpeningSquareBracket)
+                ++depth;
+            else if (type == TokenType::ClosingRoundBracket || type == TokenType::ClosingSquareBracket)
+            {
+                if (depth > 0)
+                    --depth;
+            }
+            else if (depth == 0 && type == TokenType::BareWord)
+            {
+                bool is_terminator = false;
+                for (const auto * keyword : {"UNION", "INTERSECT", "EXCEPT", "ORDER", "LIMIT", "OFFSET", "FETCH"})
+                    is_terminator |= tokenIsKeyword(tokens[j], keyword);
+                if (is_terminator)
+                {
+                    rows_end = j;
+                    break;
+                }
+            }
+        }
+
         changed = true;
         out += "SELECT * FROM SQLStandardValues(";
-        emitValuesRows(i + 1, end_idx);
+        emitValuesRows(i + 1, rows_end);
         out += ") ";
-        i = end_idx;
+        i = rows_end;
     }
 
     void emitValuesRows(size_t begin_idx, size_t end_idx)
@@ -1158,10 +1622,21 @@ private:
         {
             if (k > 0)
                 out += ", ";
-            String row = translateSubRange(rows[k].first, rows[k].second, /*type_context=*/ false);
+            size_t row_begin = rows[k].first;
+            size_t row_end = rows[k].second;
+            /// An explicit ROW constructor is the row itself: VALUES ROW(1, 'a')
+            /// must not become a single-column row holding a tuple.
+            if (tokenIsKeyword(tokens[row_begin], "ROW") && isTypeAt(row_begin + 1, TokenType::OpeningRoundBracket)
+                && findMatchingParen(row_begin + 1) + 1 == row_end)
+            {
+                changed = true;
+                out += "(" + translateSubRange(row_begin + 2, row_end - 1, /*type_context=*/ false) + ")";
+                continue;
+            }
+            String row = translateSubRange(row_begin, row_end, /*type_context=*/ false);
             /// Wrap scalar rows: VALUES 1, 2 means two rows of one column.
-            bool parenthesized = tokens[rows[k].first].type == TokenType::OpeningRoundBracket
-                && findMatchingParen(rows[k].first) + 1 == rows[k].second;
+            bool parenthesized = tokens[row_begin].type == TokenType::OpeningRoundBracket
+                && findMatchingParen(row_begin) + 1 == row_end;
             if (parenthesized)
                 out += row;
             else
