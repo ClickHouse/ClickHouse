@@ -4819,12 +4819,11 @@ void ClientBase::runInteractive()
         .ignore_shell_suspend = getClientConfiguration().getBool("ignore_shell_suspend", true),
         .embedded_mode = isEmbeeddedClient(),
         .interactive_history_legacy_keymap = getClientConfiguration().getBool("interactive_history_legacy_keymap", false),
-        /// Hints need color, so they are enabled only together with highlighting.
-        /// Hints need color (highlighting) and the suggestion machinery; `--disable_suggestion`
-        /// turns off autocompletion entirely, including the hints.
+        /// Hints need color, so they are enabled only together with highlighting. Client slash
+        /// commands have a static list and can therefore remain hinted when suggestions are off.
         .enable_hints = ConfigHelper::getBool(getClientConfiguration(), "hints", true)
-            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true)
-            && !getClientConfiguration().getBool("disable_suggestion", false),
+            && ConfigHelper::getBool(getClientConfiguration(), "highlight", true),
+        .enable_suggestion_hints = !getClientConfiguration().getBool("disable_suggestion", false),
         /// The `/`-commands (`/help`, `/man`, `/clear`) are the client's own; they are dispatched in
         /// `processQueryText`, so offer them here.
         .enable_slash_commands = true,

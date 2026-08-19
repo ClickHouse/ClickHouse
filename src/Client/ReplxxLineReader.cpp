@@ -350,6 +350,7 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     , suggest(options.suggest)
     , word_break_characters(options.word_break_characters.data())
     , enable_slash_commands(options.enable_slash_commands)
+    , enable_suggestion_hints(options.enable_suggestion_hints)
     , editor(getEditor())
 {
     using Replxx = replxx::Replxx;
@@ -494,6 +495,9 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
                     return show(replxx::Replxx::hints_t(slash_commands.commands.begin(), slash_commands.commands.end()), context_size);
                 }
             }
+
+            if (!enable_suggestion_hints)
+                return replxx::Replxx::hints_t{};
 
             /// Mirror `set_complete_on_empty(false)` *before* matching: an empty last word matches
             /// every suggestion, and this callback runs on every zero-delay repaint, so we must not

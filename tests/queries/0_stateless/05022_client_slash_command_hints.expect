@@ -26,13 +26,12 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-# The instant hints need color (the highlighter) and the suggestion machinery, and the harness
-# passes both `--highlight 0` and `--disable_suggestion`, so strip them where the hints are
-# exercised. The `/`-commands themselves are a static client-side list: they need no loaded
-# suggestions, so `--wait_for_suggestions_to_load` is not needed either.
+# The instant hints need color (the highlighter), while the `/`-commands themselves are a static
+# client-side list and do not need the asynchronous suggestion loader. The harness disables both,
+# so enable only highlighting where the hints are exercised.
 
 # ─── 1. A bare `/` shows the list of the commands as hints ───────────────────
-spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
 send -- "/"
@@ -46,7 +45,7 @@ expect eof
 # `/cl` matches `/clear` only, so its remainder is shown as ghost text; Tab accepts the hint and
 # `/clear` then clears the terminal (\033[2J), which proves the whole line - not only the part
 # after the `/` word break - was replaced by the command.
-spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
 send -- "/cl"
@@ -106,7 +105,7 @@ send -- "\3\4"
 expect eof
 
 # ─── 6. Nothing is offered where a `/` is not a command ──────────────────────
-spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--disable_suggestion/} ; opts=\${opts/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; opts=\${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/} ; \$CLICKHOUSE_CLIENT_BINARY \$opts --history_file=$history_file"
 expect ":) "
 
 # In the middle of a query it is an operator (or the beginning of a `/* comment */`).
