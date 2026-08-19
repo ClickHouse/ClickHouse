@@ -143,6 +143,23 @@ TEST(MultipartUploadMemory, ExponentialPolicyCapsTheCeilingAtTheReachableTier)
         21 * 256ULL * 1024 * 1024);
 }
 
+TEST(MultipartUploadMemory, ExponentialPolicyAccountsForTheLiveBufferTiers)
+{
+    BufferAllocationPolicy::Settings settings;
+    settings.max_single_size = 32 * 1024 * 1024;
+    settings.min_size = 16 * 1024 * 1024;
+    settings.max_size = 5ULL * 1024 * 1024 * 1024;
+
+    const auto memory = getMultipartUploadMemory(settings, 20);
+
+    /// One GiB reaches the initial 32 MiB buffer and then 16 MiB multipart buffers, but it does not reach
+    /// the next tier. By the time 21 buffers coexist, the first 32 MiB buffer has been released, so the
+    /// live window contains 21 16 MiB buffers rather than 21 32 MiB buffers.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
+        21 * 16ULL * 1024 * 1024);
+}
+
 TEST(MultipartUploadMemory, ExponentialPolicyFirstBufferFollowsMinUploadPartSize)
 {
     BufferAllocationPolicy::Settings settings;

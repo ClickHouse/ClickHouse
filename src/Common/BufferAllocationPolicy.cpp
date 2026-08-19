@@ -3,6 +3,7 @@
 #include <base/defines.h>
 
 #include <algorithm>
+#include <deque>
 #include <memory>
 
 namespace DB
@@ -197,24 +198,42 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
     {
         auto policy = BufferAllocationPolicy::create(settings);
         UInt64 written = 0;
+        UInt64 live_memory = 0;
+        UInt64 peak_live_memory = 0;
+        UInt64 live_buffers = 0;
+        if (__builtin_add_overflow(memory.max_inflight_parts, static_cast<UInt64>(1), &live_buffers))
+            return MultipartUploadMemory::UNLIMITED;
+
+        /// A multipart writer keeps the current buffer together with the most recent detached or in-flight
+        /// buffers. The exponential policy may have several older, smaller buffers alive while the current
+        /// buffer has reached a larger tier, so multiplying every live slot by the largest reached tier
+        /// over-reserves small merges. Replay the policy and retain exactly the live allocation window.
+        std::deque<UInt64> allocated_buffers;
         while (true)
         {
             policy->nextBuffer();
             const UInt64 buffer_size = policy->getBufferSize();
-            largest_reachable_buffer = std::max(largest_reachable_buffer, buffer_size);
+
+            allocated_buffers.push_back(buffer_size);
+            if (__builtin_add_overflow(live_memory, buffer_size, &live_memory))
+                return MultipartUploadMemory::UNLIMITED;
+
+            if (allocated_buffers.size() > live_buffers)
+            {
+                live_memory -= allocated_buffers.front();
+                allocated_buffers.pop_front();
+            }
+
+            peak_live_memory = std::max(peak_live_memory, live_memory);
             if (written >= bytes_written)
                 break;
             written += std::min(buffer_size, bytes_written - written);
             if (written == bytes_written)
                 break;
         }
-    }
 
-    UInt64 live_buffers = 0;
-    if (__builtin_add_overflow(memory.max_inflight_parts, static_cast<UInt64>(1), &live_buffers)
-        || __builtin_mul_overflow(live_buffers, largest_reachable_buffer, &live_buffers))
-        return MultipartUploadMemory::UNLIMITED;
-    return std::min(memory.ceiling, live_buffers);
+        return std::min(memory.ceiling, peak_live_memory);
+    }
 }
 
 }
