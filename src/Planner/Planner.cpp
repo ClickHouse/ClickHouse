@@ -2294,13 +2294,8 @@ static bool shouldUseQueryCacheForSubquery(
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    if (select_query_options.build_logical_plan)
-        return false;
-
-    /// A distributed plan ships its stages to workers, including the subquery plan below.
-    /// Query result cache steps own node-local writers or cached chunks and cannot be serialized,
-    /// so they must not be added even when a subquery explicitly enables the cache.
-    if (settings[Setting::make_distributed_plan])
+    if (select_query_options.build_logical_plan
+        || (settings[Setting::make_distributed_plan] && !select_query_options.is_local_plan_for_distributed_query))
         return false;
 
     const bool is_subquery = select_query_options.is_subquery;

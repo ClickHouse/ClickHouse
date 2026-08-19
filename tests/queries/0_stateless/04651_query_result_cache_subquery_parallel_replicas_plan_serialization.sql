@@ -42,16 +42,17 @@ SELECT sum(k) FROM t_qrc_pr WHERE k IN (SELECT k FROM t_qrc_pr WHERE k < 10);
 SET use_query_cache = 0;
 SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_pr WHERE k < 10%';
 
--- `make_distributed_plan` ships subquery plans to workers, so an explicitly enabled subquery cache
--- must not add its node-local, non-serializable steps.
+-- Clear the parallel-replicas entry. A top-level distributed plan must not add non-serializable
+-- cache steps to its shard fragments, even with an explicit subquery cache setting.
+SYSTEM DROP QUERY CACHE;
+
 SET enable_parallel_replicas = 0;
 SET make_distributed_plan = 1;
 SET max_rows_to_group_by = 0;
 SELECT sum(k) FROM (SELECT k FROM t_qrc_pr WHERE k < 10 SETTINGS use_query_cache = 1);
 
 -- The system-table assertion itself is not part of the distributed-plan test.
--- Leave distributed-plan mode before querying the local system table: with no remote workers,
--- `make_distributed_plan` rightly rejects an exchange-free plan rather than executing it locally.
+-- Leave distributed-plan mode before querying the local system table.
 SET make_distributed_plan = 0;
 SET use_query_cache = 0;
 SELECT count() FROM system.query_cache WHERE is_subquery = 1 AND query LIKE '%' || currentDatabase() || '.t_qrc_pr WHERE k < 10%';
