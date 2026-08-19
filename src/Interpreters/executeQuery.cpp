@@ -1700,8 +1700,12 @@ void wrapNestedConstructionSettings(
 /// When only the last arm carries the setting, it is indistinguishable from a query-level trailing
 /// `SETTINGS` clause (the grammar produces the same AST), so it is intentionally left to the
 /// query-level handling (`applyQueryConstructionSettings` / `wrapNestedConstructionSettings`).
-void wrapPerArmConstructionSettings(
-    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+static void wrapPerArmConstructionSettingsImpl(
+    ASTPtr & ast,
+    ContextMutablePtr context,
+    size_t max_query_size,
+    size_t max_parser_depth,
+    size_t max_parser_backtracks)
 {
     if (!ast)
         return;
@@ -1714,7 +1718,7 @@ void wrapPerArmConstructionSettings(
         if (insert_query->select)
         {
             ASTPtr old_select = insert_query->select;
-            wrapPerArmConstructionSettings(insert_query->select, max_query_size, max_parser_depth, max_parser_backtracks);
+            wrapPerArmConstructionSettingsImpl(insert_query->select, context, max_query_size, max_parser_depth, max_parser_backtracks);
             if (insert_query->select != old_select)
                 for (auto & child : insert_query->children)
                     if (child == old_select)
@@ -1732,7 +1736,7 @@ void wrapPerArmConstructionSettings(
         if (create_query->select && create_query->isCreateQueryWithImmediateInsertSelect() && !create_query->isView())
         {
             ASTPtr select_ptr = create_query->select->ptr();
-            wrapPerArmConstructionSettings(select_ptr, max_query_size, max_parser_depth, max_parser_backtracks);
+            wrapPerArmConstructionSettingsImpl(select_ptr, context, max_query_size, max_parser_depth, max_parser_backtracks);
             if (select_ptr.get() != create_query->select)
                 create_query->replace(create_query->select, select_ptr);
         }
@@ -1750,7 +1754,7 @@ void wrapPerArmConstructionSettings(
 
     /// Bottom-up: handle inner-most unions before their parents.
     for (auto & child : ast->children)
-        wrapPerArmConstructionSettings(child, max_query_size, max_parser_depth, max_parser_backtracks);
+        wrapPerArmConstructionSettingsImpl(child, context, max_query_size, max_parser_depth, max_parser_backtracks);
 
     auto * select_union = ast->as<ASTSelectWithUnionQuery>();
     if (!select_union || !select_union->list_of_selects)
@@ -1810,6 +1814,24 @@ void wrapPerArmConstructionSettings(
             continue;
 
         ConstructionSettings cs;
+        std::vector<String> construction_defaults;
+        for (const auto & setting_name : set_query->default_settings)
+        {
+            if (setting_name == "limit" || setting_name == "offset" || setting_name == "page")
+            {
+                construction_defaults.push_back(setting_name);
+            }
+        }
+
+        /// The arm-local clause is consumed before `InterpreterSetQuery::applySettingsFromQuery`.
+        /// Preserve a reset of result-shaping settings in the execution context, otherwise the inherited
+        /// session `limit` / `offset` would be materialized around the entire UNION after this arm's
+        /// `SETTINGS ... = DEFAULT` has been removed.
+        if (context && !construction_defaults.empty())
+        {
+            context->resetSettingsToDefaultValue(construction_defaults);
+        }
+
         takeConstructionSettingsFromSetQuery(*set_query, cs);
         if (isEmptySetQuery(*set_query))
             select->setExpression(ASTSelectQuery::Expression::SETTINGS, nullptr);
@@ -1820,6 +1842,12 @@ void wrapPerArmConstructionSettings(
             arm, cs.select_expr, cs.filter_expr, cs.order_expr, cs.limit, cs.offset,
             max_query_size, max_parser_depth, max_parser_backtracks);
     }
+}
+
+void wrapPerArmConstructionSettings(
+    ASTPtr & ast, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks)
+{
+    wrapPerArmConstructionSettingsImpl(ast, nullptr, max_query_size, max_parser_depth, max_parser_backtracks);
 }
 
 /// Apply the query-construction settings (`select`/`filter`/`order`/`sort`) by wrapping the parsed
@@ -2576,7 +2604,7 @@ static BlockIO executeQueryImpl(
             /// wrap each such arm with its own `SELECT`/`WHERE`/`ORDER BY`/`LIMIT`/`OFFSET` and remove
             /// the settings from the AST. This runs before `applySettingsFromQuery` so the per-arm
             /// values are not read into the context as (spurious) query-level settings.
-            wrapPerArmConstructionSettings(out_ast,
+            wrapPerArmConstructionSettingsImpl(out_ast, context,
                 max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             /// Interpret SETTINGS clauses as early as possible (before invoking the corresponding interpreter),
