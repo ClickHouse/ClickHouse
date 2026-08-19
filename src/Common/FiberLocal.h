@@ -220,7 +220,7 @@ private:
 
     struct ThreadStorageCleaner;
 
-    static inline constinit std::array<std::atomic<void (*)(void *)>, slot_count> slot_destructors{};
+    static constinit std::array<std::atomic<void (*)(void *)>, slot_count> slot_destructors;
     static thread_local constinit FiberLocalStorage thread_storage asm("FiberLocalStorageThreadStorage");
 
     alignas(DB::CH_CACHE_LINE_SIZE) std::array<uintptr_t, slot_count> slots = fiberLocalSlotDefaults();

@@ -1,6 +1,7 @@
 #include <Common/FiberLocal.h>
 
 thread_local constinit FiberLocalStorage FiberLocalStorage::thread_storage{};
+constinit std::array<std::atomic<void (*)(void *)>, FiberLocalStorage::slot_count> FiberLocalStorage::slot_destructors{};
 
 void FiberLocalStorage::destroySlots() noexcept
 {
