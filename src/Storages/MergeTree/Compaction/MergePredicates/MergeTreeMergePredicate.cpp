@@ -8,19 +8,6 @@
 namespace DB
 {
 
-static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree & storage)
-{
-    auto patches_vector = storage.getPatchPartsVectorForInternalUsage();
-
-    std::vector<MergeTreePartInfo> patch_infos;
-    patch_infos.reserve(patches_vector.size());
-
-    for (const auto & patch : patches_vector)
-        patch_infos.push_back(patch->info);
-
-    return patch_infos;
-}
-
 static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
 {
     MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
@@ -73,10 +60,17 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(
     , committing_blocks(storage.getCommittingBlocks())
     , min_update_block(getMinUpdateBlockNumber(committing_blocks))
 {
-    auto patches_vector = getPatchPartInfos(storage);
+    auto parts_visible_for_merge = getPartsVisibleForMerge(storage, tx_);
+
+    std::vector<MergeTreePartInfo> patches_vector;
+    for (const auto & part : parts_visible_for_merge)
+    {
+        if (part->info.isPatch())
+            patches_vector.push_back(part->info);
+    }
 
     if (!patches_vector.empty())
-        data_versions_by_partition = getDataVersionsByPartition(getPartsVisibleForMerge(storage, tx_));
+        data_versions_by_partition = getDataVersionsByPartition(parts_visible_for_merge);
 
     patches_by_partition = getPatchPartsByPartition(patches_vector, min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
