@@ -1067,7 +1067,8 @@ void addDistinctStep(QueryPlan & query_plan,
     const Names & column_names,
     const QueryNode & query_node,
     bool before_order,
-    bool pre_distinct)
+    bool pre_distinct,
+    bool is_subquery)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
@@ -1106,10 +1107,11 @@ void addDistinctStep(QueryPlan & query_plan,
 
     /// The final DISTINCT may be followed by a limit, offset, or LIMIT BY that selects rows according
     /// to its input order. `limit_hint` covers the usual positive integer LIMIT case, but negative
-    /// and fractional limits and offsets are applied only after the full result is read. Do not let
-    /// parallel DISTINCT reorder their input either.
+    /// and fractional limits and offsets are applied only after the full result is read. The same
+    /// operators can be applied by an outer query, where they are not visible in `query_node`. Do
+    /// not let parallel DISTINCT reorder the input of either case.
     const bool has_order_sensitive_post_distinct_limit
-        = !pre_distinct && (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy());
+        = !pre_distinct && (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy() || is_subquery);
 
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
@@ -1518,7 +1520,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             expressions_analysis_result.getProjection().projection_column_names,
             query_node,
             false /*before_order*/,
-            false /*pre_distinct*/);
+            false /*pre_distinct*/,
+            select_query_options.is_subquery);
     }
 
     if (expressions_analysis_result.hasLimitBy())
@@ -2657,7 +2660,8 @@ void Planner::buildPlanForQueryNode()
                         expression_analysis_result.getProjection().projection_column_names,
                         query_node,
                         true /*before_order*/,
-                        true /*pre_distinct*/);
+                        true /*pre_distinct*/,
+                        false /*is_subquery*/);
                 }
 
                 if (expression_analysis_result.hasSort())
@@ -2760,7 +2764,8 @@ void Planner::buildPlanForQueryNode()
                     expression_analysis_result.getProjection().projection_column_names,
                     query_node,
                     true /*before_order*/,
-                    true /*pre_distinct*/);
+                    true /*pre_distinct*/,
+                    false /*is_subquery*/);
             }
 
             if (expression_analysis_result.hasSort())
@@ -2821,7 +2826,8 @@ void Planner::buildPlanForQueryNode()
                 expression_analysis_result.getProjection().projection_column_names,
                 query_node,
                 false /*before_order*/,
-                false /*pre_distinct*/);
+                false /*pre_distinct*/,
+                select_query_options.is_subquery);
         }
 
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())

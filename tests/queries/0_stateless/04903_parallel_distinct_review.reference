@@ -15,3 +15,29 @@ ExpressionTransform
           ExpressionTransform
             (ReadFromSystemNumbers)
             NumbersRange 0 → 1
+(Expression)
+ExpressionTransform
+  (Offset)
+  Offset
+    (Expression)
+    ExpressionTransform
+      (Distinct)
+      DistinctTransform
+        (Distinct)
+        DistinctTransform
+          (Expression)
+          ExpressionTransform
+            (ReadFromSystemNumbers)
+            NumbersRange 0 → 1
+(Offset)
+Offset
+  (Expression)
+  ExpressionTransform
+    (Distinct)
+    DistinctTransform
+      (Distinct)
+      DistinctTransform
+        (Expression)
+        ExpressionTransform
+          (ReadFromSystemNumbers)
+          NumbersRange 0 → 1
