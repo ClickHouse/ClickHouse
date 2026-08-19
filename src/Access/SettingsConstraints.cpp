@@ -252,6 +252,41 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
+void SettingsConstraints::checkCanReset(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+{
+    for (const auto & name : names)
+    {
+        if (Settings::hasBuiltin(name))
+        {
+            /// A reset installs the compiled-in default, so check exactly that value. `checkImpl` drops
+            /// the change when it equals the current value, which is what keeps resetting an already
+            /// default setting allowed even under `readonly = 1`.
+            SettingChange change{name, Settings::getDefaultValue(name)};
+            checkImpl(current_settings, change, THROW_ON_VIOLATION, source);
+            continue;
+        }
+
+        /// A custom setting has no compiled-in default - a reset erases it - so there is no value to
+        /// compare and only writability can be checked. Deliberately not through `getChecker`: that
+        /// consults `Settings::getTier`, which throws for a custom setting that is not currently set.
+        auto it = constraints.find(name);
+        if (current_settings[Setting::readonly] == 1)
+        {
+            const bool changeable_in_readonly = (it != constraints.end()
+                    && it->second.writability == SettingConstraintWritability::CHANGEABLE_IN_READONLY)
+                || isAlwaysChangeableInReadonly(name);
+            if (!changeable_in_readonly)
+                throw Exception(ErrorCodes::READONLY, "Cannot modify '{}' setting in readonly mode", name);
+        }
+
+        if (it != constraints.end() && it->second.writability == SettingConstraintWritability::CONST)
+            throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", name);
+
+        if (!getSettingSourceRestrictions(name).isSourceAllowed(source))
+            throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", name, toString(source));
+    }
+}
+
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
 {
     checkImpl(current_settings, const_cast<SettingChange &>(change), THROW_ON_VIOLATION);

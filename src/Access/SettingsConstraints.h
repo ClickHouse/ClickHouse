@@ -84,6 +84,12 @@ public:
     void check(const Settings & current_settings, const SettingsProfileElements & profile_elements, SettingSource source) const;
     void check(const Settings & current_settings, const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
+    /// Checks whether resetting the named settings to their defaults violates these constraints and
+    /// throws if so. This is the `SET name = DEFAULT` / `SETTINGS name = DEFAULT` form. For a built-in
+    /// setting the compiled-in default is the value being checked; a custom setting has no default -
+    /// resetting it erases it - so only its writability is checked.
+    void checkCanReset(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const;
+
     /// Checks whether `change` violates these constraints and throws an exception if so. (setting short name is expected inside `changes`)
     void check(const MergeTreeSettings & current_settings, const SettingChange & change) const;
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
