@@ -12,7 +12,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
-#include <deque>
+#include <queue>
 #include <ranges>
 
 namespace ProfileEvents
@@ -624,12 +624,12 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return false;
     };
 
-    std::deque<String> queue(read_columns_set.begin(), read_columns_set.end());
+    std::queue<String> columns_to_visit(read_columns_set.begin(), read_columns_set.end());
 
-    while (!queue.empty())
+    while (!columns_to_visit.empty())
     {
-        auto column_name = std::move(queue.front());
-        queue.pop_front();
+        auto column_name = std::move(columns_to_visit.front());
+        columns_to_visit.pop();
 
         if (!is_materialized(column_name))
             continue;
@@ -643,7 +643,7 @@ void AlterConversions::addColumnsRequiredForMaterialized(
                 || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column));
 
             if (needed && required_source_columns.insert(dependency).second)
-                queue.push_back(dependency);
+                columns_to_visit.push(dependency);
         }
     }
 
