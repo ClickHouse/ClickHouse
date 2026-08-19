@@ -1299,10 +1299,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey()
+            && (configuration->isDataLakeConfiguration() || object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
             && can_use_metadata_cache)
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
+            /// A data lake snapshot pins every listed file to immutable metadata. Its path is
+            /// therefore a stable cache identity even when the underlying object storage cannot
+            /// provide a strong content ETag, as with HDFS. Do not use HDFS's weak `(mtime, size)`
+            /// token here: it can collide for an in-place rewrite outside a data-lake snapshot.
+            if (configuration->isDataLakeConfiguration() && !object_with_metadata->metadata->isEtagUsableAsCacheKey())
+                object_with_metadata->metadata->etag = "data-lake:" + object_info->getPath();
             if (object_info->isArchive())
                 object_with_metadata->relative_path = object_info->getPath();
             input_format = FormatFactory::instance().getInputWithMetadata(
