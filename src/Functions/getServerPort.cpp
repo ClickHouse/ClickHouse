@@ -58,7 +58,6 @@ public:
     bool isDeterministic() const override { return false; }
     bool isSuitableForConstantFolding() const override { return !is_distributed; }
 
-    /// Read per executing node, so two nodes can disagree.
     bool isServerConstant() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
@@ -94,7 +93,6 @@ public:
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {0}; }
     bool isDeterministic() const override { return false; }
 
-    /// Read per executing node, so two nodes can disagree.
     bool isServerConstant() const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & data_types) const override

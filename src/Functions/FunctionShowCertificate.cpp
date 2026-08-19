@@ -55,7 +55,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    /// The connection's client certificate, or the executing node's own server certificate.
     bool isDeterministic() const override { return false; }
     bool isServerConstant() const override { return true; }
 
