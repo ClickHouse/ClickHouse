@@ -171,7 +171,10 @@ Chunk NATSSource::generateImpl()
         /// discarded the pull request it was waiting for. Direct reads do not return the consumer
         /// to `StorageNATS` until this source is destroyed, so recover it here instead of waiting
         /// for the background streaming task to notice it.
-        if (consumer->needsResubscribe())
+        /// Once rows have been appended to the current output block, their JetStream ACK handles
+        /// must stay in `consumed_messages` until `StorageNATS` inserts that block and acknowledges
+        /// them. The next source cycle will re-subscribe before consuming anything instead.
+        if (total_rows == 0 && consumer->needsResubscribe())
         {
             consumer->unsubscribe(/*finish_queue=*/false);
             consumer->dropBuffered();
