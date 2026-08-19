@@ -144,10 +144,10 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
         return {};
 
     size_t source_child_index = 0;
+
+    /// For deterministic non-pass-through functions, find the only non-const child and use it as the NDV source.
     if (!isValuePassThroughFunction(node.function_base->getName()))
     {
-        /// A deterministic function always returns the same output for the same inputs.
-        /// If exactly one argument is non-const, the output NDV cannot exceed that argument's NDV.
         if (!node.function_base->isDeterministicInScopeOfQuery())
             return {};
 
