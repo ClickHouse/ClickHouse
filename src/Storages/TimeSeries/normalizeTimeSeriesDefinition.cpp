@@ -11,7 +11,6 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
@@ -21,6 +20,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
+#include <DataTypes/DataTypeUUID2.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
 #include <Storages/ColumnsDescription.h>
@@ -32,8 +32,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/ParserDataType.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesIDGenerator.h>
@@ -306,7 +304,8 @@ namespace
     ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
         const ASTCreateQuery & create_query,
         const ContextPtr & context,
-        bool check_external_targets)
+        bool check_external_targets,
+        UInt64 uuid_type_version)
     {
         StorageID table_id{create_query.getDatabase(), create_query.getTable()};
 
@@ -341,7 +340,9 @@ namespace
         if (!scalar_type)
             scalar_type = std::make_shared<DataTypeFloat64>();
         if (!id_type)
-            id_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeUUID>()});
+            id_type = std::make_shared<DataTypeTuple>(DataTypes{
+                std::make_shared<DataTypeUInt64>(),
+                uuid_type_version == 2 ? DataTypePtr(std::make_shared<DataTypeUUID2>()) : DataTypePtr(std::make_shared<DataTypeUUID>())});
 
         /// Validate types.
         {
@@ -1090,23 +1091,8 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
     /// Resolve types timestamp_type, scalar_type, id_type.
     /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
-    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(create_query, context, /*check_external_targets=*/ is_new_table);
-
-    /// Apply the same materialization to the default `id` type (the one used when no inner/outer/external column
-    /// determines it), so a `uuid_type_version = 2` table gets a `UUID2` id consistently. The inner-column
-    /// declarations were already materialized above; this handles the remaining case where the id type comes
-    /// from the built-in default, including a `UUID` nested in the default `Tuple(UInt64, UUID)`. The round trip
-    /// through the type AST applies exactly the substitution `getColumnsDescription` applies to the inner columns
-    /// below, so the resolved type and the materialized inner columns cannot diverge.
-    if (uuid_type_version == 2)
-    {
-        const String id_type_name = resolved_types.id_type->getName();
-        ParserDataType parser;
-        ASTPtr id_type_ast = parseQuery(
-            parser, id_type_name, DBMS_DEFAULT_MAX_QUERY_SIZE, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        if (applyUUIDTypeVersionInPlace(*id_type_ast, uuid_type_version))
-            resolved_types.id_type = DataTypeFactory::instance().get(id_type_ast);
-    }
+    ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
+        create_query, context, /*check_external_targets=*/ is_new_table, uuid_type_version);
 
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)

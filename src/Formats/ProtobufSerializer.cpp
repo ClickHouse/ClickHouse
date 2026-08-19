@@ -1772,7 +1772,10 @@ namespace
             auto & column_vector = assert_cast<ColumnVector<UUID> &>(column->assumeMutableRef());
             if (row_num < column_vector.size())
                 return;
-            column_vector.insertDefault();
+            UUID value = default_function();
+            if (is_uuid2)
+                value = UUIDHelpers::swapHalves(value);
+            column_vector.insertValue(value);
         }
 
         void describeTree(WriteBuffer & out, size_t indent) const override

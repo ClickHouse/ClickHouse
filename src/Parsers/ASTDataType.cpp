@@ -57,6 +57,7 @@ bool isBareUUIDTypeName(const String & name)
 }
 
 bool substituteBareUUIDInPlace(IAST & ast);
+bool foldConstantStringExpression(ASTPtr & argument);
 
 /// Position of the type name argument of a function, or `last_type_name_argument` when the type name is
 /// always the last argument (as for the `JSONExtract` family, which takes a variable number of path arguments).
@@ -102,7 +103,7 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
     if (!function.arguments)
         return false;
 
-    const auto & arguments = function.arguments->children;
+    auto & arguments = function.arguments->children;
     std::optional<size_t> type_argument_index;
 
     for (const auto & candidate : type_name_arguments)
@@ -127,7 +128,11 @@ bool substituteBareUUIDInTypeNameLiteral(ASTFunction & function)
     if (!type_argument_index)
         return false;
 
-    auto * type_literal = arguments[*type_argument_index]->as<ASTLiteral>();
+    auto & type_argument = arguments[*type_argument_index];
+    if (!foldConstantStringExpression(type_argument))
+        return false;
+
+    auto * type_literal = type_argument->as<ASTLiteral>();
     if (!type_literal || type_literal->value.getType() != Field::Types::String)
         return false;
 
@@ -385,22 +390,14 @@ bool substituteBareUUIDInPlace(IAST & ast)
     {
         substituted |= substituteBareUUIDInTypeNameLiteral(*function);
         substituted |= substituteBareUUIDInColumnsListLiteralArgument(*function);
+        /// A table function nested in a wrapper (for example, `loop(url(...))`) does not have a dedicated
+        /// table-expression node. `getTableFunctionStructureArguments` recognizes only table-function names,
+        /// so calling it for every function is safe and reaches those nested carriers.
+        substituted |= substituteBareUUIDInTableFunction(*function);
     }
 
     /// A table function is recognized by its position rather than by its name, so that the schema string of any
     /// table function is frozen, including ones added later.
-    if (const auto * table_expression = ast.as<ASTTableExpression>(); table_expression && table_expression->table_function)
-    {
-        if (auto * function = table_expression->table_function->as<ASTFunction>())
-            substituted |= substituteBareUUIDInTableFunction(*function);
-    }
-
-    if (const auto * create = ast.as<ASTCreateQuery>(); create && create->as_table_function)
-    {
-        if (auto * function = create->as_table_function->as<ASTFunction>())
-            substituted |= substituteBareUUIDInTableFunction(*function);
-    }
-
     for (const auto & child : ast.children)
         if (child)
             substituted |= substituteBareUUIDInPlace(*child);
