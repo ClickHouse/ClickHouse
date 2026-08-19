@@ -151,13 +151,12 @@ private:
         {
             if (table_expression->database_and_table_name)
             {
-                auto & table_identifier = table_expression->database_and_table_name;
-                auto * old_table_identifier = table_identifier.get();
+                auto table_identifier = table_expression->database_and_table_name;
                 tryVisit<ASTTableIdentifier>(table_identifier);
 
-                /// ASTTableExpression keeps a raw pointer to this child as well.
-                if (table_identifier.get() != old_table_identifier)
-                    ast.updatePointerToChild(old_table_identifier, table_identifier.get());
+                /// Keep `database_and_table_name` and `children` synchronized.
+                if (table_identifier != table_expression->database_and_table_name)
+                    table_expression->setOrReplace(table_expression->database_and_table_name, std::move(table_identifier));
             }
             else if (table_expression->table_function)
                 visitTableFunction(*table_expression->table_function);
