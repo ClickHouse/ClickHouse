@@ -295,6 +295,21 @@ def test_executable_function_parameter_python(started_cluster):
         == "Parameter 2 key 1\n"
     )
 
+    # Placeholders with invalid parameter names must not be registered as
+    # command parameters, so each of these functions takes zero parameters and
+    # passing one fails the parameter-count check with a specific error.
+    for function_name in (
+        "test_function_invalid_parameter_name_python",  # name with a space: {test parameter:UInt64}
+        "test_function_invalid_empty_parameter_name_python",  # empty name: {:UInt64}
+        "test_function_invalid_blank_parameter_name_python",  # blank name: { :UInt64}
+    ):
+        assert (
+            "number of parameters does not match. Expected 0. Actual 1"
+            in node.query_and_get_error(
+                f"SELECT {function_name}(2)(toUInt64(1))"
+            )
+        )
+
 
 def test_executable_function_always_error_python(started_cluster):
     skip_test_msan(node)

@@ -1,4 +1,11 @@
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/IColumn.h>
 #include <Common/NaNUtils.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Common/assert_cast.h>
+#include <Core/Block.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -18,16 +25,87 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
 }
 
+static bool containsAggregateStateColumn(const IColumn & column)
+{
+    if (typeid_cast<const ColumnAggregateFunction *>(&column))
+        return true;
+
+    bool found = false;
+    column.forEachSubcolumn([&](const auto & subcolumn) { found = found || containsAggregateStateColumn(*subcolumn); });
+    return found;
+}
+
 static SharedHeader checkHeaders(const SharedHeaders & input_headers)
 {
     if (input_headers.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot unite an empty set of query plan steps");
 
-    auto res = input_headers.front();
-    for (const auto & header : input_headers)
-        assertBlocksHaveEqualStructure(*header, *res, "UnionStep");
+    /// Branches are optimized independently, so filter push-down may constant-fold a
+    /// column in one branch but not its sibling. Tolerate exactly that: compare with the
+    /// top-level Const stripped, which keeps the check otherwise strict (different types
+    /// and divergent Sparse/Replicated wrappers are still rejected). The strip is guarded
+    /// by isColumnConst because convertToFullColumnIfConst is broader for some columns
+    /// (e.g. ColumnArray materializes const nested data too), and the conversion path at
+    /// execution time only reconciles a top-level Const. Header columns may legitimately
+    /// have a null column pointer (e.g. __grouping_set from WithMergeableState); leave
+    /// those untouched, names and types are still validated below.
+    auto without_top_level_const = [](const Block & header)
+    {
+        ColumnsWithTypeAndName columns = header.getColumnsWithTypeAndName();
+        for (auto & column : columns)
+            if (column.column && isColumnConst(*column.column))
+                column.column = column.column->convertToFullColumnIfConst();
+        return Block(std::move(columns));
+    };
 
-    return res;
+    Block reference = without_top_level_const(*input_headers.front());
+    for (const auto & header : input_headers)
+        assertBlocksHaveEqualStructure(without_top_level_const(*header), reference, "UnionStep");
+
+    /// Build the common header following the same rule as getLeastSuperColumn: keep a
+    /// column Const only when every branch is Const with the same value, otherwise
+    /// materialize it. This matches the execution-time makeConvertingActions path, which
+    /// can convert a branch to a full column but not to a different branch's Const value.
+    ColumnsWithTypeAndName common = input_headers.front()->getColumnsWithTypeAndName();
+    bool materialized = false;
+    for (size_t col = 0; col < common.size(); ++col)
+    {
+        if (!common[col].column || !isColumnConst(*common[col].column))
+            continue;
+
+        /// Aggregate-state values cannot be compared as `Field`: the comparison throws when the
+        /// aggregate function type names differ, and they may legitimately differ between branches
+        /// when the functions have the same state representation (e.g. `quantileState` and
+        /// `quantilesState(0.9)`). Don't keep constness for them, materialize instead.
+        if (containsAggregateStateColumn(assert_cast<const ColumnConst &>(*common[col].column).getDataColumn()))
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            materialized = true;
+            continue;
+        }
+
+        const Field value = assert_cast<const ColumnConst &>(*common[col].column).getField();
+        bool keep_const = true;
+        for (const auto & header : input_headers)
+        {
+            const auto & branch = header->getByPosition(col).column;
+            if (!branch || !isColumnConst(*branch) || assert_cast<const ColumnConst &>(*branch).getField() != value)
+            {
+                keep_const = false;
+                break;
+            }
+        }
+
+        if (!keep_const)
+        {
+            common[col].column = common[col].column->convertToFullColumnIfConst();
+            materialized = true;
+        }
+    }
+
+    if (!materialized)
+        return input_headers.front();
+    return std::make_shared<const Block>(std::move(common));
 }
 
 UnionStep::UnionStep(SharedHeaders input_headers_, size_t max_threads_, bool allow_narrowing_)
@@ -142,12 +220,26 @@ void UnionStep::describePipeline(FormatSettings & settings) const
 
 void UnionStep::serialize(Serialization & ctx) const
 {
-    (void)ctx;
+    /// Only the planner knows whether this union may be narrowed (SQL UNION) or feeds an
+    /// order-sensitive consumer that forbids it, so the flag must survive the round trip.
+    /// `max_threads` is intentionally not serialized: zero makes `updatePipeline` derive it from the
+    /// executing server's own settings, which is the right source for a per-machine thread cap.
+    UInt8 flags = 0;
+    if (allow_narrowing)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
 }
 
 QueryPlanStepPtr UnionStep::deserialize(Deserialization & ctx)
 {
-    return std::make_unique<UnionStep>(ctx.input_headers);
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    return std::make_unique<UnionStep>(ctx.input_headers, /*max_threads_=*/0, /*allow_narrowing_=*/flags & 1);
+}
+
+QueryPlanStepPtr UnionStep::clone() const
+{
+    return std::make_unique<UnionStep>(input_headers, max_threads, allow_narrowing);
 }
 
 void registerUnionStep(QueryPlanStepRegistry & registry);

@@ -1,0 +1,131 @@
+---
+description: 'توثيق Geohash'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'دوال للتعامل مع Geohash'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash) هو نظام ترميز جغرافي يقسّم سطح الأرض إلى خلايا شبكية ويشفّر كل خلية إلى سلسلة قصيرة من الأحرف والأرقام. وهو بنية بيانات هرمية، لذا كلما زاد طول سلسلة geohash، زادت دقة الموقع الجغرافي.
+
+إذا كنت بحاجة إلى تحويل الإحداثيات الجغرافية يدويًا إلى سلاسل geohash، يمكنك استخدام [geohash.org](http://geohash.co/)
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+يُشفِّر خطَّي العرض والطول في سلسلة [geohash](#geohash).
+
+**الصياغة**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**قيم الإدخال**
+
+* `longitude` — جزء خط الطول من الإحداثي الذي تريد ترميزه. قيمة فاصلة عائمة ضمن النطاق `[-180°, 180°]`. [Float](/ar/reference/data-types/float).
+* `latitude` — جزء خط العرض من الإحداثي الذي تريد ترميزه. قيمة فاصلة عائمة ضمن النطاق `[-90°, 90°]`. [Float](/ar/reference/data-types/float).
+* `precision` (اختياري) — طول السلسلة المُرمَّزة الناتجة. القيمة الافتراضية هي `12`. عدد صحيح ضمن النطاق `[1, 12]`. [Int8](/ar/reference/data-types/int-uint).
+
+<Note>
+  - يجب أن تكون جميع مَعلمات الإحداثيات من النوع نفسه: إما `Float32` أو `Float64`.
+  - بالنسبة إلى المَعلمة `precision`، فإن أي قيمة أقل من `1` أو أكبر من `12` تُحوَّل تلقائيًا إلى `12`.
+</Note>
+
+**القيم المُعادة**
+
+* سلسلة أبجدية رقمية تمثل الإحداثي المُرمَّز (تُستخدم نسخة معدّلة من أبجدية ترميز base32). [String](/ar/reference/data-types/string).
+
+**مثال**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+يفكّ ترميز أي سلسلة مُرمَّزة باستخدام [geohash](#geohash) إلى إحداثيي خط الطول وخط العرض.
+
+**الصياغة**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**قيم الإدخال**
+
+* `hash_str` — سلسلة مرمّزة بنظام Geohash.
+
+**القيم المُعادة**
+
+* Tuple `(longitude, latitude)` من قيم `Float64` تمثل خط الطول وخط العرض. [Tuple](/ar/reference/data-types/tuple)([Float64](/ar/reference/data-types/float))
+
+**مثال**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+يعيد مصفوفة من السلاسل المُرمَّزة باستخدام [geohash](#geohash) وبالدقة المحددة، تقع داخل حدود المربع المحدد وتتقاطع معها، وهي في الأساس شبكة ثنائية الأبعاد مُسطَّحة إلى مصفوفة.
+
+**الصياغة**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**الوسيطات**
+
+* `longitude_min` — الحد الأدنى لخط الطول. النطاق: `[-180°, 180°]`. [Float](/ar/reference/data-types/float).
+* `latitude_min` — الحد الأدنى لخط العرض. النطاق: `[-90°, 90°]`. [Float](/ar/reference/data-types/float).
+* `longitude_max` — الحد الأقصى لخط الطول. النطاق: `[-180°, 180°]`. [Float](/ar/reference/data-types/float).
+* `latitude_max` — الحد الأقصى لخط العرض. النطاق: `[-90°, 90°]`. [Float](/ar/reference/data-types/float).
+* `precision` — دقة geohash. النطاق: `[1, 12]`. [UInt8](/ar/reference/data-types/int-uint).
+
+<Note>
+  يجب أن تكون جميع معلمات الإحداثيات من النوع نفسه: إما `Float32` أو `Float64`.
+</Note>
+
+**القيم المعادة**
+
+* مصفوفة من سلاسل geohash بطول precision تغطي المنطقة المحددة، ولا ينبغي الاعتماد على ترتيب العناصر. [Array](/ar/reference/data-types/array)([String](/ar/reference/data-types/string)).
+* `[]` - مصفوفة فارغة إذا لم تكن القيم الدنيا لخط العرض وخط الطول أقل من القيم القصوى المناظرة لها.
+
+<Note>
+  تُطلق الدالة استثناءً إذا تجاوزت المصفوفة الناتجة 10&#39;000&#39;000 عنصر.
+</Note>
+
+**مثال**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

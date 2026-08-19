@@ -1,0 +1,109 @@
+---
+title: Простой пример извлечения JSON-данных с помощью приёмной таблицы и Materialized View
+description: "Простой пример извлечения JSON-данных с помощью приёмной таблицы и Materialized View"
+date: 2024-05-20
+tags: ['Форматы данных']
+keywords: ['JSON', 'Приёмная таблица', 'Materialized View']
+---
+
+<div id="question">
+  ## Вопрос
+</div>
+
+Как работать с сообщениями JSON, используя source или приёмную таблицу для извлечения данных с помощью materialized view?
+Как работать с JSON без экспериментального JSON Object?
+
+<div id="answer">
+  ## Ответ
+</div>
+
+Распространённый способ работы с данными JSON — отправлять их в приёмную таблицу и с помощью функций JSONExtract извлекать их в новую таблицу через триггер materialized view.
+Обычно для этого используется следующая схема:
+
+```
+исходные данные --> таблица MergeTree --> Materialized View (с базовой таблицей) --> приложение/клиент
+```
+
+В приёмной таблице должно быть строковое поле `raw`, в котором будет храниться исходный JSON. Также в ней должно быть ещё одно или два поля, которые можно использовать для обслуживания этой таблицы, чтобы её можно было разбивать на партиции и очищать по мере устаревания данных.
+
+*некоторые интеграции могут добавлять поля к исходным данным, например при использовании ClickHouse Kafka Connector Sink.
+
+Ниже приведён упрощённый пример:
+
+* создайте пример базы данных
+
+```
+create database db1;
+```
+
+* создайте приёмную таблицу, в которую будет вставляться исходный JSON:
+
+```
+create table db1.table2_json_raw
+(
+    id Int32,
+    timestamp DateTime,
+    raw String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* создайте базовую таблицу для materialized view
+
+```
+create table db1.table2_json_mv_base
+(
+ id Int32,
+ timestamp DateTime,
+ raw_string String,
+ custId Int8,
+ custName String
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+* создайте materialized view на основе базовой таблицы
+
+```
+create materialized view db1.table2_json_mv to db1.table2_json_mv_base
+AS SELECT
+ id,
+ timestamp,
+ raw as raw_string,
+ simpleJSONExtractRaw(raw, 'customerId') as custId,
+ simpleJSONExtractRaw(raw, 'customerName') as custName
+ FROM
+db1.table2_json_raw;
+```
+
+* вставить несколько строк с примерами данных
+
+```
+ insert into db1.table2_json_raw
+ values
+ (1, '2024-05-16 00:00:00', '{"customerId":1, "customerName":"ABC"}'),
+ (2, '2024-05-16 00:00:01', '{"customerId":2, "customerName":"XYZ"}');
+```
+
+* просмотреть результаты извлечения и materialized view, используемую в запросах
+
+```
+clickhouse-cloud :) select * from db1.table2_json_mv;
+
+SELECT *
+FROM db1.table2_json_mv
+
+Query id: 12655fd3-567a-4dfb-9ef7-abc4b11ad044
+
+┌─id─┬───────────timestamp─┬─raw_string─────────────────────────────┬─custId─┬─custName─┐
+│  1 │ 2024-05-16 00:00:00 │ {"customerId":1, "customerName":"ABC"} │ 1      │ "ABC"    │
+│  2 │ 2024-05-16 00:00:01 │ {"customerId":2, "customerName":"XYZ"} │ 2      │ "XYZ"    │
+└────┴─────────────────────┴────────────────────────────────────────┴────────┴──────────┘
+```
+
+Дополнительные ссылки на справочные материалы:
+Materialized Views: [https://clickhouse.com/docs/guides/developer/cascading-materialized-views](https://clickhouse.com/docs/guides/developer/cascading-materialized-views)
+Работа с JSON: [https://clickhouse.com/docs/integrations/data-formats/json#other-approaches](https://clickhouse.com/docs/integrations/data-formats/json#other-approaches)
+Функции JSON: [https://clickhouse.com/docs/sql-reference/functions/json-functions](https://clickhouse.com/docs/sql-reference/functions/json-functions)

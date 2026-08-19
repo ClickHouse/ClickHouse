@@ -1,6 +1,6 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103785
 -- DISTINCT inside a CTE branch was being silently weakened when an outer
--- query projected only a subset of the CTE's columns. The new analyzer's
+-- query projected only a subset of the CTE's columns. The analyzer's
 -- `RemoveUnusedProjectionColumnsPass` correctly skipped DISTINCT
 -- query-as-FROM-children, but did not skip DISTINCT query-as-children
 -- of a `UNION ALL`, so the unused column was pruned out of the inner

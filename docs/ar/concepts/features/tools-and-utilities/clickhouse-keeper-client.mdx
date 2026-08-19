@@ -1,0 +1,113 @@
+---
+description: 'توثيق أداة عميل ClickHouse Keeper'
+sidebarTitle: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'أداة clickhouse-keeper-client'
+doc_type: 'reference'
+---
+
+تطبيق عميل للتفاعل مع clickhouse-keeper باستخدام بروتوكوله الأصلي.
+
+<div id="clickhouse-keeper-client">
+  ## الخيارات
+</div>
+
+* `-q QUERY`, `--query=QUERY` — الاستعلام المراد تنفيذه. إذا لم يتم تمرير هذا المعامل، فسيبدأ `clickhouse-keeper-client` في الوضع التفاعلي.
+* `-h HOST`, `--host=HOST` — مضيف الخادم. القيمة الافتراضية: `localhost`.
+* `-p N`, `--port=N` — منفذ الخادم. القيمة الافتراضية: 9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — تعيين مسار ملف الإعدادات للحصول على سلسلة الاتصال. القيمة الافتراضية: `config.xml`.
+* `--password=PASSWORD` — كلمة المرور للمصادقة. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_PASSWORD` أو في ملف إعدادات XML ضمن `<zookeeper><password>`.
+* `--identity=IDENTITY` — الهوية لمخطط المصادقة `digest`. يمكن أيضًا تعيينها عبر متغير البيئة `CLICKHOUSE_KEEPER_IDENTITY` أو في ملف إعدادات XML ضمن `<zookeeper><identity>`.
+* `--connection-timeout=TIMEOUT` — تعيين مهلة الاتصال بالثواني. القيمة الافتراضية: 10s.
+* `--session-timeout=TIMEOUT` — تعيين مهلة الجلسة بالثواني. القيمة الافتراضية: 10s.
+* `--operation-timeout=TIMEOUT` — تعيين مهلة العملية بالثواني. القيمة الافتراضية: 10s.
+* `--history-file=FILE_PATH` — تعيين مسار ملف المحفوظات. القيمة الافتراضية: `~/.keeper-client-history`.
+* `--log-level=LEVEL` — تعيين مستوى التسجيل. القيمة الافتراضية: `information`.
+* `--no-confirmation` — عند تعيينه، لن يطلب تأكيدًا لبعض الأوامر. القيمة الافتراضية هي `false` في الوضع التفاعلي و`true` للاستعلام
+* `--help` — يعرض رسالة المساعدة.
+
+<div id="clickhouse-keeper-client-env">
+  ## متغيرات البيئة
+</div>
+
+* `CLICKHOUSE_KEEPER_PASSWORD` — يُستخدم ككلمة المرور الافتراضية إذا لم يتم تمرير `--password` في سطر الأوامر.
+* `CLICKHOUSE_KEEPER_IDENTITY` — يُستخدم كهوية افتراضية إذا لم يتم تمرير `--identity` في سطر الأوامر.
+
+<div id="clickhouse-keeper-client-auth">
+  ## المصادقة
+</div>
+
+عند الاتصال بخادم Keeper يتطلب المصادقة، تُحدَّد كلمة المرور وفق ترتيب الأولوية التالي (تُعتمد أول قيمة مطابقة):
+
+1. وسيطة سطر الأوامر `--password`
+2. متغير البيئة `CLICKHOUSE_KEEPER_PASSWORD`
+3. `<zookeeper><password>` في ملف إعدادات XML المحدد بواسطة `--config-file`
+
+وينطبق ترتيب الأولوية نفسه على `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
+
+مثال على ملف إعدادات XML يتضمن إعدادات المصادقة:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="clickhouse-keeper-client-example">
+  ## مثال
+</div>
+
+```bash
+./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+Connected to ZooKeeper at [::1]:9181 with session_id 137
+/ :) ls
+keeper foo bar
+/ :) cd 'keeper'
+/keeper :) ls
+api_version
+/keeper :) cd 'api_version'
+/keeper/api_version :) ls
+
+/keeper/api_version :) cd 'xyz'
+Path /keeper/api_version/xyz does not exist
+/keeper/api_version :) cd ../../
+/ :) ls
+keeper foo bar
+/ :) get 'keeper/api_version'
+2
+```
+
+<div id="clickhouse-keeper-client-commands">
+  ## الأوامر
+</div>
+
+* `ls '[path]' [watch_id]` -- يسرد العقد للمسار المحدد (الافتراضي: cwd). ويمكنه اختياريًا تعيين watch على العقد الفرعية معرّف بواسطة `watch_id`
+* `cd '[path]'` -- يغيّر مسار العمل (الافتراضي `.`)
+* `cp '<src>' '<dest>'`  -- ينسخ العقدة &#39;src&#39; إلى المسار &#39;dest&#39;
+* `cpr '<src>' '<dest>'`  -- ينسخ الشجرة الفرعية للعقدة &#39;src&#39; إلى المسار &#39;dest&#39;
+* `mv '<src>' '<dest>'`  -- ينقل العقدة &#39;src&#39; إلى المسار &#39;dest&#39;
+* `mvr '<src>' '<dest>'`  -- ينقل الشجرة الفرعية للعقدة &#39;src&#39; إلى المسار &#39;dest&#39;
+* `exists '<path>' [watch_id]` -- يعيد `1` إذا كانت العقدة موجودة، و`0` خلاف ذلك. ويمكنه اختياريًا تعيين watch معرّف بواسطة `watch_id`
+* `set '<path>' <value> [version]` -- يحدّث قيمة العقدة. ولا يحدّثها إلا إذا تطابق الإصدار (الافتراضي: -1)
+* `create '<path>' <value> [mode]` -- ينشئ عقدة جديدة بالقيمة المحددة
+* `touch '<path>'` -- ينشئ عقدة جديدة بقيمة سلسلة فارغة. ولا يطلق استثناءً إذا كانت العقدة موجودة بالفعل
+* `get '<path>' [watch_id]` -- يعيد قيمة العقدة. ويمكنه اختياريًا تعيين watch للبيانات معرّف بواسطة `watch_id`
+* `watch <watch_id> [timeout_seconds]` -- ينتظر حدث watch المعرّف بواسطة `watch_id` ويطبع نوع الحدث والمسار. إذا تم تحديد `timeout_seconds`، يعيد خطأً بعد انتهاء المهلة المحددة
+* `rm '<path>' [version]` -- يزيل العقدة فقط إذا تطابق الإصدار (الافتراضي: -1)
+* `rmr '<path>' [limit]` -- يحذف المسار تكراريًا إذا كان حجم الشجرة الفرعية أصغر من الحد. التأكيد مطلوب (الحد الافتراضي = 100)
+* `flwc <command>` -- ينفّذ أمر four-letter-word
+* `help` -- يطبع هذه الرسالة
+* `get_direct_children_number '[path]'` -- يحصل على عدد العقد الفرعية المباشرة تحت مسار محدد
+* `get_all_children_number '[path]'` -- يحصل على العدد الإجمالي للعقد الفرعية تحت مسار محدد
+* `get_stat '[path]'` -- يعيد إحصاءات العقدة (الافتراضي `.`)
+* `find_super_nodes <threshold> '[path]'` -- يعثر على العقد التي يزيد عدد العقد الفرعية فيها على threshold معيّن للمسار المحدد (الافتراضي `.`)
+* `delete_stale_backups` -- يحذف عقد ClickHouse المستخدمة للنسخ الاحتياطية والتي أصبحت الآن غير نشطة
+* `find_big_family [path] [n]` -- يعيد أعلى n من العقد ذات أكبر عائلة في الشجرة الفرعية (المسار الافتراضي = `.` و n = 10)
+* `sync '<path>'` -- يزامن العقدة بين العمليات وleader
+* `reconfig <add|remove|set> "<arg>" [version]` -- يعيد تهيئة عنقود Keeper. انظر /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

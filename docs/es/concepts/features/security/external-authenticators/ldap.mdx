@@ -1,0 +1,195 @@
+---
+description: 'Guía para configurar la autenticación mediante LDAP en ClickHouse'
+slug: /operations/external-authenticators/ldap
+title: 'LDAP'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+El servidor LDAP puede utilizarse para autenticar usuarios de ClickHouse. Hay dos enfoques distintos para hacerlo:
+
+* Usar LDAP como autenticador externo para usuarios existentes, definidos en `users.xml` o en las rutas locales de control de acceso.
+* Usar LDAP como directorio externo de usuarios y permitir la autenticación de usuarios no definidos localmente si existen en el servidor LDAP.
+
+En ambos enfoques, debe definirse en la configuración de ClickHouse un servidor LDAP con un nombre interno para que otras partes de la configuración puedan hacer referencia a él.
+
+<div id="ldap-server-definition">
+  ## Definición del servidor LDAP
+</div>
+
+Para definir el servidor LDAP, debe añadir la sección `ldap_servers` a `config.xml`.
+
+**Ejemplo**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <ldap_servers>
+        <!- Servidor LDAP estándar. -->
+        <my_ldap_server>
+            <host>localhost</host>
+            <port>636</port>
+            <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+            <verification_cooldown>300</verification_cooldown>
+            <follow_referrals>false</follow_referrals>
+            <enable_tls>yes</enable_tls>
+            <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+            <tls_require_cert>demand</tls_require_cert>
+            <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+            <tls_key_file>/path/to/tls_key_file</tls_key_file>
+            <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+            <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+            <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+        </my_ldap_server>
+
+        <!- Active Directory estándar con detección del DN de usuario configurada para una asignación posterior de roles. -->
+        <my_ad_server>
+            <host>localhost</host>
+            <port>389</port>
+            <bind_dn>EXAMPLE\{user_name}</bind_dn>
+            <user_dn_detection>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+            </user_dn_detection>
+            <enable_tls>no</enable_tls>
+        </my_ad_server>
+    </ldap_servers>
+</clickhouse>
+```
+
+Ten en cuenta que puedes definir varios servidores LDAP en la sección `ldap_servers` con nombres distintos.
+
+**Parámetros**
+
+| Parámetro                      | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------ | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                         | —              | Nombre de host o IP del servidor LDAP. Este parámetro es obligatorio y no puede estar vacío.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `port`                         | `636` / `389`  | Puerto del servidor LDAP. El valor predeterminado es `636` si `enable_tls` está establecido en `yes`; de lo contrario, `389`.                                                                                                                                                                                                                                                                                                                                                                 |
+| `bind_dn`                      | —              | Plantilla utilizada para construir el bind DN. El DN resultante se construirá reemplazando todas las subcadenas `{user_name}` de la plantilla por el nombre de usuario real en cada intento de autenticación.                                                                                                                                                                                                                                                                                 |
+| `auth_dn_prefix`               | —              | **Obsoleto.** Alternativa a `bind_dn`. No se puede usar junto con `bind_dn`. Cuando se especifica, el bind DN se construye como `auth_dn_prefix + {user_name} + auth_dn_suffix`. Por ejemplo, establecer `auth_dn_prefix` en `uid=` y `auth_dn_suffix` en `,ou=users,dc=example,dc=com` equivale a establecer `bind_dn` en `uid={user_name},ou=users,dc=example,dc=com`.                                                                                                                      |
+| `auth_dn_suffix`               | —              | **Obsoleto.** Consulte `auth_dn_prefix`.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `verification_cooldown`        | `0`            | Período de tiempo, en segundos, posterior a un intento de bind exitoso, durante el cual se asumirá que el usuario ha sido autenticado correctamente para todas las solicitudes consecutivas sin contactar con el servidor LDAP. Especifique `0` para deshabilitar el almacenamiento en caché y forzar el contacto con el servidor LDAP en cada solicitud de autenticación.                                                                                                                    |
+| `follow_referrals`             | `false`        | Indicador que permite que la biblioteca cliente LDAP siga automáticamente las referencias LDAP devueltas por el servidor. Es especialmente relevante en entornos de Microsoft Active Directory, donde las búsquedas de subárbol en un base DN de nivel superior (por ejemplo, `DC=example,DC=com`) pueden devolver referencias LDAP o referencias de búsqueda (por ejemplo, `DC=DomainDnsZones,...`). Establézcalo en `true` solo cuando necesite explícitamente búsquedas entre particiones. |
+| `enable_tls`                   | `yes`          | Indicador para activar el uso de una conexión segura con el servidor LDAP. Especifique `no` para el protocolo `ldap://` en texto sin cifrar (no recomendado), `yes` para el protocolo LDAP sobre SSL/TLS `ldaps://` (recomendado) o `starttls` para el protocolo heredado StartTLS (protocolo `ldap://` en texto sin cifrar, actualizado a TLS).                                                                                                                                              |
+| `tls_minimum_protocol_version` | `tls1.2`       | Versión mínima del protocolo SSL/TLS. Valores aceptados: `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2`.                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_require_cert`             | `demand`       | Comportamiento de verificación del certificado del peer SSL/TLS. Valores aceptados: `never`, `allow`, `try`, `demand`.                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_cert_file`                | —              | Ruta al archivo del certificado.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `tls_key_file`                 | —              | Ruta al archivo de la clave del certificado.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `tls_ca_cert_file`             | —              | Ruta al archivo del certificado de CA.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_ca_cert_dir`              | —              | Ruta al directorio que contiene los certificados de CA.                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `tls_cipher_suite`             | —              | Conjunto de cifrado permitido (en notación OpenSSL).                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `search_limit`                 | `256`          | Número máximo de entradas que pueden devolver las consultas de búsqueda LDAP realizadas por esta definición de servidor (para la detección del DN de usuario y la asignación de roles).                                                                                                                                                                                                                                                                                                             |
+
+**Subparámetros de `user_dn_detection`**
+
+Sección con parámetros de búsqueda LDAP para detectar el DN de usuario real del usuario autenticado mediante bind. Esto se usa principalmente en filtros de búsqueda para la posterior asignación de roles cuando el servidor es Active Directory. El DN de usuario resultante se usará al reemplazar las subcadenas `{user_dn}` donde estén permitidas. De forma predeterminada, el DN de usuario se establece igual que el bind DN, pero una vez realizada la búsqueda, se actualizará con el valor real del DN de usuario detectado.
+
+| Parámetro       | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                                                      |
+| --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base_dn`       | —              | Plantilla utilizada para construir el base DN para la búsqueda LDAP. El DN resultante se construirá reemplazando todas las subcadenas `{user_name}` y `{bind_dn}` de la plantilla por el nombre de usuario real y el bind DN durante la búsqueda LDAP.                                                                                                                           |
+| `scope`         | `subtree`      | Alcance de la búsqueda LDAP. Valores aceptados: `base`, `one_level`, `children`, `subtree`.                                                                                                                                                                                                                                                                                      |
+| `search_filter` | —              | Plantilla utilizada para construir el filtro de búsqueda de la búsqueda LDAP. El filtro resultante se construirá reemplazando todas las subcadenas `{user_name}`, `{bind_dn}` y `{base_dn}` de la plantilla por el nombre de usuario real, el bind DN y el base DN durante la búsqueda LDAP. Tenga en cuenta que los caracteres especiales deben escaparse correctamente en XML. |
+
+<div id="ldap-external-authenticator">
+  ## Autenticador externo LDAP
+</div>
+
+Se puede usar un servidor LDAP remoto como método para verificar contraseñas de usuarios definidos localmente (usuarios definidos en `users.xml` o en rutas locales de control de acceso). Para ello, especifique el nombre de un servidor LDAP definido previamente en lugar de `password` o secciones similares en la definición del usuario.
+
+En cada intento de inicio de sesión, ClickHouse intenta hacer &quot;bind&quot; con el DN especificado por el parámetro `bind_dn` en la [definición del servidor LDAP](#ldap-server-definition) usando las credenciales proporcionadas y, si lo consigue, el usuario se considera autenticado. A esto se le suele llamar método de &quot;simple bind&quot;.
+
+**Ejemplo**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <!- ... -->
+        <my_user>
+            <!- ... -->
+            <ldap>
+                <server>my_ldap_server</server>
+            </ldap>
+        </my_user>
+    </users>
+</clickhouse>
+```
+
+Tenga en cuenta que el usuario `my_user` corresponde a `my_ldap_server`. Este servidor LDAP debe configurarse en el archivo principal `config.xml`, como se describió anteriormente.
+
+Cuando está habilitado el [Control de acceso y gestión de cuentas](/es/concepts/features/security/access-rights#access-control-usage) basado en SQL, los usuarios autenticados por servidores LDAP también pueden crearse mediante la [sentencia CREATE USER](/es/reference/statements/create/user).
+
+```sql title="Query"
+CREATE USER my_user IDENTIFIED WITH ldap SERVER 'my_ldap_server';
+```
+
+<div id="ldap-external-user-directory">
+  ## Directorio externo de usuarios LDAP
+</div>
+
+Además de los usuarios definidos localmente, se puede usar un servidor LDAP remoto como fuente de definición de usuarios. Para ello, especifique el nombre del servidor LDAP definido previamente (consulte [Definición del servidor LDAP](#ldap-server-definition)) en la sección `ldap`, dentro de la sección `users_directories` del archivo `config.xml`.
+
+En cada intento de inicio de sesión, ClickHouse intenta encontrar la definición del usuario localmente y autenticarlo como de costumbre. Si el usuario no está definido, ClickHouse asumirá que la definición existe en el directorio LDAP externo e intentará hacer &quot;bind&quot; con el DN especificado en el servidor LDAP usando las credenciales proporcionadas. Si lo consigue, se considerará que el usuario existe y ha sido autenticado. Al usuario se le asignarán los roles de la lista especificada en la sección `roles`. Además, se puede realizar una operación LDAP de &quot;search&quot;, y los resultados pueden transformarse y tratarse como nombres de roles para asignárselos al usuario si también está configurada la sección `role_mapping`. Todo esto implica que el [Control de acceso y gestión de cuentas](/es/concepts/features/security/access-rights#access-control-usage) gestionado mediante SQL está habilitado y que los roles se crean con la sentencia [CREATE ROLE](/es/reference/statements/create/role).
+
+**Ejemplo**
+
+Va en `config.xml`.
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <user_directories>
+        <!- Servidor LDAP típico. -->
+        <ldap>
+            <server>my_ldap_server</server>
+            <roles>
+                <my_local_role1 />
+                <my_local_role2 />
+            </roles>
+            <role_mapping>
+                <base_dn>ou=groups,dc=example,dc=com</base_dn>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=groupOfNames)(member={bind_dn}))</search_filter>
+                <attribute>cn</attribute>
+                <prefix>clickhouse_</prefix>
+            </role_mapping>
+        </ldap>
+
+        <!- Active Directory típico con asignación de roles que se basa en el DN de usuario detectado. -->
+        <ldap>
+            <server>my_ad_server</server>
+            <role_mapping>
+                <base_dn>CN=Users,DC=example,DC=com</base_dn>
+                <attribute>CN</attribute>
+                <scope>subtree</scope>
+                <search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+                <prefix>clickhouse_</prefix>
+            </role_mapping>
+        </ldap>
+    </user_directories>
+</clickhouse>
+```
+
+Ten en cuenta que `my_ldap_server`, al que se hace referencia en la sección `ldap` dentro de la sección `user_directories`, debe ser un servidor LDAP definido previamente y configurado en `config.xml` (consulta [Definición del servidor LDAP](#ldap-server-definition)).
+
+**Parámetros**
+
+| Parámetro | Predeterminado | Descripción                                                                                                                                                                                                                                                                    |
+| --------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `server`  | —              | Uno de los nombres de servidor LDAP definidos en la sección de configuración `ldap_servers` anterior. Este parámetro es obligatorio y no puede estar vacío.                                                                                                                    |
+| `roles`   | —              | Sección con una lista de roles definidos localmente que se asignarán a cada usuario recuperado del servidor LDAP. Si aquí no se especifica ningún rol ni se asigna durante la asignación de roles (más abajo), el usuario no podrá realizar ninguna acción después de autenticarse. |
+
+**Subparámetros de `role_mapping`**
+
+Sección con parámetros de búsqueda LDAP y reglas de mapeo. Cuando un usuario se autentica, mientras sigue conectado a LDAP, se realiza una búsqueda LDAP usando `search_filter` y el nombre del usuario que ha iniciado sesión. Para cada entrada encontrada durante esa búsqueda, se extrae el valor del atributo especificado. Para cada valor de atributo que tenga el prefijo indicado, se elimina ese prefijo y el resto del valor pasa a ser el nombre de un rol local definido en ClickHouse, que se espera que se haya creado previamente mediante la sentencia [CREATE ROLE](/es/reference/statements/create/role). Puede haber varias secciones `role_mapping` definidas dentro de la misma sección `ldap`. Todas ellas se aplicarán.
+
+| Parámetro       | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base_dn`       | —              | Plantilla utilizada para construir el base DN de la búsqueda LDAP. El DN resultante se construirá reemplazando todas las subcadenas `{user_name}`, `{bind_dn}` y `{user_dn}` de la plantilla por el nombre de usuario, el bind DN y el DN de usuario reales en cada búsqueda LDAP.                                                                                                                             |
+| `scope`         | `subtree`      | Alcance de la búsqueda LDAP. Valores aceptados: `base`, `one_level`, `children`, `subtree`.                                                                                                                                                                                                                                                                                                              |
+| `search_filter` | —              | Plantilla utilizada para construir el filtro de búsqueda de la búsqueda LDAP. El filtro resultante se construirá reemplazando todas las subcadenas `{user_name}`, `{bind_dn}`, `{user_dn}` y `{base_dn}` de la plantilla por el nombre de usuario, el bind DN, el DN de usuario y el base DN reales en cada búsqueda LDAP. Tenga en cuenta que los caracteres especiales deben escaparse correctamente en XML. |
+| `attribute`     | `cn`           | Nombre del atributo cuyos valores devolverá la búsqueda LDAP.                                                                                                                                                                                                                                                                                                                                            |
+| `prefix`        | vacío          | Prefijo esperado al comienzo de cada cadena de la lista original de cadenas devuelta por la búsqueda LDAP. El prefijo se eliminará de las cadenas originales y las cadenas resultantes se tratarán como nombres de roles locales.                                                                                                                                                                        |

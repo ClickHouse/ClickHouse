@@ -1,0 +1,51 @@
+---
+title: 'ClickHouse는 어떤 SQL 구문을 지원합니까?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/sql
+description: 'ClickHouse는 SQL 구문을 100% 지원합니다'
+doc_type: 'reference'
+keywords: ['SQL 구문', 'ANSI SQL']
+---
+
+ClickHouse는 다음과 같은 기능을 포함하여 SQL 구문을 완전하게 지원합니다.
+
+* SQL/JSON 및 JSON 데이터 타입 (SQL-2023)
+* 윈도우 함수 (SQL-2003)
+* 공통 테이블 표현식 및 재귀 쿼리 (SQL-1999)
+* ROLLUP, CUBE 및 GROUPING SETS (SQL-1999)
+* RBAC 완전 지원 (SQL-1999)
+* 상관 서브쿼리 (SQL-1992);
+
+이 지원 범위는 TPC-H 및 TPC-DS 벤치마크와 SQLTest를 통해 검증되었습니다.
+
+ClickHouse는 이후 ISO/IEC에서 표준화한 여러 기능을 그보다 앞서 도입했습니다. 예를 들면 다음과 같습니다.
+
+* 조건부 집계 함수
+* `any` 집계 함수
+* `least` 및 `greatest`
+* `GROUP BY ALL`
+* 별칭의 확장된 사용
+* 숫자 리터럴의 밑줄
+
+ClickHouse는 SQL을 확장해 사용 편의성을 크게 높이는 여러 개선 사항도 도입했습니다.
+
+* 별칭의 제한 없는 사용
+* WITH 절 내부의 별칭
+* 집계 함수 combinator
+* 매개변수화된 집계 함수
+* 근사 집계 함수
+* 네이티브 및 big integer 숫자 데이터 타입, 확장 정밀도 decimal
+* 배열 조작을 위한 고차 함수
+* ARRAY JOIN 절 및 arrayJoin 함수
+* 배열 집계
+* LIMIT BY 절
+* GROUP BY WITH TOTALS
+* AS OF JOIN
+* ANY/ALL JOIN
+* JSON용 자연스러운 구문
+* 컬럼 목록의 후행 쉼표
+* FROM ... SELECT 절 순서
+* 타입 안전 쿼리 매개변수 및 매개변수화된 뷰
+
+이들 가운데 일부는 향후 SQL 표준에 포함될 가능성이 있으며, 이미 ClickHouse 사용자에게 제공되고 있습니다.

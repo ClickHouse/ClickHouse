@@ -1,0 +1,55 @@
+---
+slug: /cloud/get-started/cloud/resource-tour
+title: '资源导览'
+description: 'ClickHouse Cloud 文档资源概览，涵盖查询优化、扩缩容策略、监控和最佳实践'
+keywords: ['clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+import TableOfContentsBestPractices from '/snippets/zh/_table_of_contents.mdx';
+import TableOfContentsOptimizationAndPerformance from '/snippets/zh/_performance_optimizations_table_of_contents.mdx';
+import TableOfContentsSecurity from '/snippets/zh/_security_table_of_contents.mdx';
+
+本文旨在概述文档中可用的各类资源，帮助您了解如何最大化发挥 ClickHouse Cloud 部署的价值。
+可按以下主题浏览相关资源：
+
+* [查询优化技术与性能调优](#query-optimization)
+* [监控](#monitoring)
+* [安全最佳实践与合规功能](#security)
+* [成本优化与计费](#cost-optimization)
+
+在深入了解更具体的主题之前，我们建议您先从 ClickHouse 的通用最佳实践指南开始，这些指南涵盖了使用 ClickHouse 时应遵循的一般最佳实践：
+
+<TableOfContentsBestPractices />
+
+<div id="query-optimization">
+  ## 查询优化技术与性能调优
+</div>
+
+<TableOfContentsOptimizationAndPerformance />
+
+<div id="monitoring">
+  ## 监控
+</div>
+
+| 页面                                                              | 描述                        |
+| --------------------------------------------------------------- | ------------------------- |
+| [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) | 使用内置高级仪表板监控服务健康状况和性能      |
+| [Prometheus 集成](/zh/products/cloud/features/monitoring/prometheus) | 使用 Prometheus 监控 Cloud 服务 |
+| [Cloud 监控能力](/zh/guides/use-cases/observability/cloud-monitoring)  | 了解内置监控能力和集成选项             |
+
+<div id="security">
+  ## 安全
+</div>
+
+<TableOfContentsSecurity />
+
+<div id="cost-optimization">
+  ## 成本优化与计费
+</div>
+
+| Page                                                            | Description                                 |
+| --------------------------------------------------------------- | ------------------------------------------- |
+| [数据传输](/zh/products/cloud/reference/billing/network-data-transfer) | 了解 ClickHouse Cloud 如何对入站和出站数据传输量进行计量       |
+| [通知](/zh/products/cloud/features/monitoring/notifications)         | 为您的 ClickHouse Cloud 服务设置通知。例如，当信用额度用量超过阈值时 |

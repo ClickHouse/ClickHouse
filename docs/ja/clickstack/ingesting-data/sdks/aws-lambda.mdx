@@ -1,0 +1,339 @@
+---
+slug: /use-cases/observability/clickstack/sdks/aws_lambda
+description: 'ClickStack 向け AWS Lambda - ClickHouse オブザーバビリティスタック'
+title: 'AWS Lambda'
+doc_type: 'guide'
+keywords: ['ClickStack', 'オブザーバビリティ', 'aws-lambda', 'lambda-layers']
+---
+
+**このガイドでは以下を統合します:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ ログ</td>
+      <td className="pe-2">✅ メトリクス</td>
+      <td className="pe-2">✅ トレース</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="installing-the-otel-lambda-layers">
+  ## OpenTelemetry Lambda レイヤーをインストールする
+</div>
+
+OpenTelemetry プロジェクトでは、次の目的に応じて個別の Lambda レイヤーが提供されています。
+
+1. OpenTelemetry の自動インストルメンテーションを使用して、Lambda 関数のコードを自動的にインストルメントする。
+2. 収集したログ、メトリクス、トレースを ClickStack に転送する。
+
+<div id="adding-language-specific-auto-instrumentation">
+  ### 言語別の自動インストルメンテーションレイヤーを追加する
+</div>
+
+言語別の自動インストルメンテーション Lambda レイヤーを使用すると、対象の言語向け OpenTelemetry 自動インストルメンテーションパッケージによって、Lambda 関数のコードが自動的にインストルメントされます。
+
+各言語およびリージョンには、それぞれ専用のレイヤー ARN があります。
+
+Lambda がすでに OpenTelemetry SDK でインストルメントされている場合は、この手順は省略できます。
+
+**開始するには**:
+
+1. Layers セクションで &quot;Add a layer&quot; をクリックします
+2. ARN を指定するオプションを選択し、言語に応じた正しい ARN を選びます。`<region>` は実際のリージョン (例: `us-east-2`) に置き換えてください:
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-nodejs-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-python-0_7_0:1
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-javaagent-0_6_0:1
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell copy
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-ruby-0_1_0:1
+    ```
+  </Tab>
+</Tabs>
+
+*レイヤーの最新リリースは、[OpenTelemetry Lambda Layers GitHubリポジトリ](https://github.com/open-telemetry/opentelemetry-lambda/releases) で確認できます。*
+
+3. Lambda 関数の &quot;Configuration&quot; &gt; &quot;Environment variables&quot; で、以下の環境変数を設定します。
+
+<Tabs>
+  <Tab title="Javascript">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-instrument
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+
+  <Tab title="Ruby">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    AWS_LAMBDA_EXEC_WRAPPER=/opt/otel-handler
+    OTEL_PROPAGATORS=tracecontext
+    OTEL_TRACES_SAMPLER=always_on
+    ```
+  </Tab>
+</Tabs>
+
+<div id="installing-the-otel-collector-layer">
+  ### OpenTelemetry collector Lambda レイヤーのインストール
+</div>
+
+collector Lambda レイヤーを使用すると、エクスポーターのレイテンシによる応答時間への影響を抑えながら、Lambda 関数から ClickStack にログ、メトリクス、トレースを転送できます。
+
+**collector レイヤーをインストールするには**:
+
+1. [Layers] セクションで &quot;Add a layer&quot; をクリックします
+2. ARN を指定するオプションを選択し、アーキテクチャに応じた正しい ARN を選びます。`<region>` はお使いのリージョン (例: `us-east-2`) に置き換えてください:
+
+<Tabs>
+  <Tab title="x86_64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-amd64-0_8_0:1
+    ```
+  </Tab>
+
+  <Tab title="arm64">
+    ```shell
+    arn:aws:lambda:<region>:184161586896:layer:opentelemetry-collector-arm64-0_8_0:1
+    ```
+  </Tab>
+</Tabs>
+
+3. collector が ClickStack に送信するように設定するため、以下の `collector.yaml` ファイルをプロジェクトに追加します:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    processors:
+      batch:
+      decouple:
+
+    exporters:
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp]
+    ```
+  </Tab>
+</Tabs>
+
+4. 以下の環境変数を追加します:
+
+```shell
+OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
+```
+
+<div id="checking-the-installation">
+  ## インストールの確認
+</div>
+
+レイヤーをデプロイすると、Lambda 関数から自動的に収集された
+トレースが HyperDX に表示されるようになります。`decouple` と `batching`
+プロセッサーによりテレメトリー収集に遅延が生じる可能性があるため、トレースの
+表示に時間がかかることがあります。カスタムのログやメトリクスを出力するには、言語固有の
+OpenTelemetry SDKs を使用してコードをインストルメントする必要があります。
+
+<div id="troubleshoting">
+  ## トラブルシューティング
+</div>
+
+<div id="custom-instrumentation-not-sending">
+  ### カスタムインストルメンテーションでデータが送信されない
+</div>
+
+手動で定義したトレースやその他のテレメトリーが表示されない場合は、
+互換性のないバージョンのOpenTelemetry APIパッケージを使用している可能性があります。
+OpenTelemetry APIパッケージのバージョンが、AWS Lambdaに含まれている
+バージョン以下であることを確認してください。
+
+<div id="enabling-sdk-debug-logs">
+  ### SDK のデバッグログを有効にする
+</div>
+
+OpenTelemetry SDK のデバッグログを有効にするには、`OTEL_LOG_LEVEL` 環境変数を `DEBUG` に設定します。これにより、自動インストルメンテーションレイヤーがアプリケーションを正しくインストルメントしているか確認しやすくなります。
+
+<div id="enabling-collector-debug-logs">
+  ### collector のデバッグログを有効にする
+</div>
+
+collector の問題をデバッグするには、collector の
+設定ファイルを変更して `logging` エクスポーター を追加し、テレメトリー の
+ログレベルを `debug` に設定します。これにより、collector の Lambda レイヤー から、より詳細なログを出力できるようになります。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```yaml
+    # collector.yaml
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 'localhost:4317'
+          http:
+            endpoint: 'localhost:4318'
+
+    exporters:
+      logging:
+        verbosity: detailed
+      otlphttp:
+        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        headers:
+          authorization: <YOUR_INGESTION_API_KEY>
+        compression: gzip
+
+    service:
+      telemetry:
+        logs:
+          level: "debug"
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        metrics:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+        logs:
+          receivers: [otlp]
+          processors: [batch, decouple]
+          exporters: [otlphttp, logging]
+    ```
+  </Tab>
+</Tabs>

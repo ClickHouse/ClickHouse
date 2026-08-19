@@ -38,8 +38,8 @@ using AggregatedDataWithUInt16Key = FixedImplicitZeroHashMap<UInt16, AggregateDa
 using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
+using AggregatedDataWithPackedStringKey = HashMap<PackedStringRef, AggregateDataPtr>;
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
-
 using AggregatedDataWithStringKey = HashMapWithSavedHash<std::string_view, AggregateDataPtr>;
 
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
@@ -49,6 +49,7 @@ using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDat
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
+using AggregatedDataWithPackedStringKeyTwoLevel = TwoLevelHashMap<PackedStringRef, AggregateDataPtr>;
 
 using AggregatedDataWithStringKeyTwoLevel = TwoLevelHashMapWithSavedHash<std::string_view, AggregateDataPtr>;
 
@@ -126,6 +127,8 @@ using AggregatedDataWithNullableUInt32Key = AggregationDataWithNullKey<Aggregate
 
 
 using AggregatedDataWithNullableUInt64Key = AggregationDataWithNullKey<AggregatedDataWithUInt64Key>;
+/// The better-hash counterpart, for the external-aggregation merge (see the `*Hash64` block above).
+using AggregatedDataWithNullableUInt64KeyHash64 = AggregationDataWithNullKey<AggregatedDataWithUInt64KeyHash64>;
 using AggregatedDataWithNullableStringKey = AggregationDataWithNullKey<AggregatedDataWithStringKey>;
 using AggregatedDataWithNullableShortStringKey = AggregationDataWithNullKey<AggregatedDataWithShortStringKey>;
 

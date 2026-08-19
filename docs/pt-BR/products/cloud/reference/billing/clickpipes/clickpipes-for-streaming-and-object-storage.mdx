@@ -1,0 +1,101 @@
+---
+sidebarTitle: 'Streaming e armazenamento de objetos'
+slug: /cloud/reference/billing/clickpipes/streaming-and-object-storage
+title: 'ClickPipes para streaming e armazenamento de objetos'
+description: 'Visão geral do faturamento do ClickPipes para streaming e armazenamento de objetos'
+doc_type: 'reference'
+keywords: ['faturamento', 'clickpipes', 'preços de streaming', 'custos', 'preços']
+---
+
+import ClickPipesFAQ from '/snippets/pt-BR/_clickpipes_faq.mdx';
+
+Esta seção descreve o modelo de preços do ClickPipes para streaming e armazenamento de objetos.
+
+<div id="what-does-the-clickpipes-pricing-structure-look-like">
+  ## Como funciona a estrutura de preços do ClickPipes?
+</div>
+
+Ela consiste em duas dimensões:
+
+* **Compute**: Preço **por unidade por hora**.
+  O compute representa o custo de executar os pods de réplica do ClickPipes, estejam eles fazendo ingestão de dados ativamente ou não.
+  Ele se aplica a todos os tipos de ClickPipes.
+* **Dados ingeridos**: Preço **por GB**.
+  A tarifa de dados ingeridos se aplica a todos os ClickPipes de streaming
+  (Kafka, Confluent, Amazon MSK, Amazon Kinesis, Redpanda, WarpStream, Azure Event Hubs)
+  para os dados transferidos pelos pods de réplica. O volume de dados ingeridos (GB) é cobrado com base nos bytes recebidos da origem (não comprimidos ou comprimidos).
+
+<div id="what-are-clickpipes-replicas">
+  ## O que são as réplicas do ClickPipes?
+</div>
+
+O ClickPipes faz a ingestão de dados de fontes de dados remotas por meio de uma infraestrutura dedicada
+que opera e é dimensionada independentemente do serviço ClickHouse Cloud.
+Por esse motivo, ele usa réplicas dedicadas de computação.
+
+<div id="what-is-the-default-number-of-replicas-and-their-size">
+  ## Qual é o número padrão de réplicas e o tamanho delas?
+</div>
+
+Cada ClickPipe tem, por padrão, 1 réplica com 512 MiB de RAM e 0,125 vCPU (XS).
+Isso corresponde a **0,0625** unidades de computação do ClickHouse (1 unidade = 8 GiB de RAM, 2 vCPUs).
+
+<div id="what-are-the-clickpipes-public-prices">
+  ## Quais são os preços públicos do ClickPipes?
+</div>
+
+* Compute: $0.20 por unidade por hora ($0.0125 por réplica por hora para o tamanho de réplica padrão)
+* Dados ingeridos: $0.04 por GB
+
+O preço da dimensão de Compute depende do **número** e do **tamanho** das réplicas em um ClickPipe. O tamanho de réplica padrão pode ser ajustado com escalonamento vertical, e o preço de cada tamanho de réplica é o seguinte:
+
+| Tamanho da réplica          | Unidades de Compute | RAM     | vCPU   | Preço por hora |
+| --------------------------- | ------------------- | ------- | ------ | -------------- |
+| Extra pequeno (XS) (padrão) | 0.0625              | 512 MiB | 0.125. | $0.0125        |
+| Pequeno (S)                 | 0.125               | 1 GiB   | 0.25   | $0.025         |
+| Médio (M)                   | 0.25                | 2 GiB   | 0.5    | $0.05          |
+| Grande (L)                  | 0.5                 | 4 GiB   | 1.0    | $0.10          |
+| Extra grande (XL)           | 1.0                 | 8 GiB   | 2.0    | $0.20          |
+
+<div id="how-does-it-look-in-an-illustrative-example">
+  ## Como isso fica em um exemplo ilustrativo?
+</div>
+
+Os exemplos a seguir consideram uma única réplica de tamanho M, salvo quando explicitamente indicado.
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>100 GB over 24h</th>
+      <th>1 TB over 24h</th>
+      <th>10 TB over 24h</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>ClickPipe de streaming</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 100) = $5.20</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 1000) = $41.20</td>
+      <td>Com 4 réplicas: <br /> (0.25 x 0.20 x 24 x 4) + (0.04 x 10000) = $404.80</td>
+    </tr>
+
+    <tr>
+      <td>ClickPipe de armazenamento de objetos $^*$</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+    </tr>
+  </tbody>
+</table>
+
+$^1$ *Apenas a computação do ClickPipes para orquestração,
+a transferência efetiva de dados é assumida pelo serviço ClickHouse subjacente*
+
+<div id="faq-streaming-and-object-storage">
+  ## FAQ do ClickPipes para streaming e armazenamento de objetos
+</div>
+
+<ClickPipesFAQ />

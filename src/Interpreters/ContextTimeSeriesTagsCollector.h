@@ -1,8 +1,13 @@
 #pragma once
 
+#include <Columns/IColumn_fwd.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
 #include <Common/SharedMutex.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
+#include <city.h>
 
 
 namespace DB
@@ -10,6 +15,15 @@ namespace DB
 class ColumnString;
 
 /// Mapping between identifiers and tags which are collected in the context of the currently executed query.
+///
+/// Identifiers can be of any type. Lookups must use the same type of identifiers which was used to store them.
+/// Identifier columns with one of the common fixed-size layouts (UInt64, UInt128, UUID, FixedString(16),
+/// and two-element tuples with a UInt64 first component and a UInt64/UInt128/UUID second component)
+/// are stored in typed maps keyed by the ids' native binary representation; identifiers of other types
+/// are stored in a generic map in serialized form.
+/// Identifiers sharing one map are treated as the same identifier if their key representations are identical
+/// (for example, UUID, UInt128 and FixedString(16) with the same bit pattern, or, in the generic map,
+/// Int64 and FixedString(8) with the same bytes).
 ///
 /// Set of tags are always sorted.
 ///
@@ -46,13 +60,10 @@ public:
     /// A group is just an integer.
     using Group = UInt64;
 
-    /// Adds mapping between a specified identifier and a set of tags to the collector.
-    /// The function assigns a group to that set of tags and returns it.
-    template <typename IDType>
-    void storeTags(const IDType & id, const TagNamesAndValuesPtr & tags);
-
-    template <typename IDType>
-    void storeTags(const VectorWithMemoryTracking<IDType> & ids, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+    /// Adds mapping between identifiers from a column and sets of tags to the collector.
+    /// `id_column` is allowed to be Nullable, in that case rows with NULL identifiers are skipped.
+    /// `tags_vector` must contain one element per row of `id_column`.
+    void storeTags(const ColumnPtr & id_column, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
 
     /// Returns the group assigned to a specified set of tags.
     /// If that set of tags hasn't been added to the collector yet then this functions adds it.
@@ -77,20 +88,15 @@ public:
     VectorWithMemoryTracking<String> extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract) const;
     void extractTag(const VectorWithMemoryTracking<Group> & groups_, const String & tag_to_extract, ColumnString & out_column) const;
 
-    /// Returns the group assigned to the set of tags which was added to the collector
-    /// with a specified identifier.
-    template <typename IDType>
-    Group getGroupByID(const IDType & id) const;
+    /// Fills `res` with the groups assigned to the sets of tags which were added to the collector
+    /// with identifiers from a column. Throws an exception if some identifier is unknown.
+    /// `id_column` must not be Nullable. Any previous contents of `res` are discarded.
+    void getGroupByID(const ColumnPtr & id_column, PaddedPODArray<Group> & res) const;
 
-    template <typename IDType>
-    VectorWithMemoryTracking<Group> getGroupByID(const VectorWithMemoryTracking<IDType> & ids) const;
-
-    /// Returns the set of tags which was added to the collector with a specified identifier.
-    template <typename IDType>
-    TagNamesAndValuesPtr getTagsByID(const IDType & id) const;
-
-    template <typename IDType>
-    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const VectorWithMemoryTracking<IDType> & ids) const;
+    /// Returns the sets of tags which were added to the collector with identifiers from a column.
+    /// Throws an exception if some identifier is unknown.
+    /// `id_column` must not be Nullable.
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByID(const ColumnPtr & id_column) const;
 
     /// Removes a tag from a group and returns the result group.
     /// If the result set of tags hasn't been added to the collector yet then this functions adds it and assigns a group to it.
@@ -184,6 +190,57 @@ private:
     Group tryAddGroupUnlocked(const TagNamesAndValuesPtr & tags) TSA_REQUIRES(mutex);
     Group tryAddGroupUnlocked(TagsKey && key) TSA_REQUIRES(mutex);
 
+    /// Hash for the keys of the typed identifier maps.
+    struct IDMapHash
+    {
+        size_t operator()(UInt64 id) const { return DefaultHash<UInt64>{}(id); }
+        size_t operator()(const UInt128 & id) const { return DefaultHash<UInt128>{}(id); }
+        size_t operator()(const std::pair<UInt64, UInt64> & id) const { return CityHash_v1_0_2::Hash128to64({id.first, id.second}); }
+        size_t operator()(const std::pair<UInt64, UInt128> & id) const { return CityHash_v1_0_2::Hash128to64({id.first, UInt128Hash{}(id.second)}); }
+    };
+
+    /// A typed identifier map: the keys are the ids' native binary representation.
+    template <typename IDType>
+    struct IDMap
+    {
+        HashMap<IDType, Group, IDMapHash> map;
+    };
+
+    /// The generic identifier map: the keys are the ids' serialized form, the key bytes are owned by `arena`.
+    struct GenericIDMap
+    {
+        using Map = HashMapWithSavedHash<std::string_view, Group>;
+        Arena arena;
+        Map map;
+    };
+
+    /// Returns the typed identifier map with the specified key type.
+    template <typename IDType>
+    IDMap<IDType> & getTypedIDMap() TSA_REQUIRES(mutex);
+    template <typename IDType>
+    const IDMap<IDType> & getTypedIDMap() const TSA_REQUIRES_SHARED(mutex);
+
+    /// Implementations of storeTags, getGroupByID, getTagsByID for identifier columns
+    /// matching one of the typed maps. `IDGetter` extracts the identifier for a specified row.
+    template <typename IDGetter>
+    void storeTagsTyped(const IDGetter & id_getter, const IColumn & id_data, const UInt8 * null_map,
+                        size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    template <typename IDGetter>
+    void getGroupByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
+
+    template <typename IDGetter>
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDTyped(const IDGetter & id_getter, const IColumn & id_data, size_t num_rows) const;
+
+    /// Implementations of storeTags, getGroupByID, getTagsByID for identifier columns
+    /// which don't match any of the typed maps.
+    void storeTagsGeneric(const IColumn & id_data, const UInt8 * null_map,
+                          size_t num_rows_to_store, const VectorWithMemoryTracking<TagNamesAndValuesPtr> & tags_vector);
+
+    void getGroupByIDGeneric(const IColumn & id_data, size_t num_rows, PaddedPODArray<Group> & res) const;
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> getTagsByIDGeneric(const IColumn & id_data, size_t num_rows) const;
+
     mutable SharedMutex mutex;
 
     VectorWithMemoryTracking<TagNamesAndValuesPtr> groups TSA_GUARDED_BY(mutex);
@@ -193,20 +250,12 @@ private:
 
     std::unordered_map<TagsKey, Group, Hash, Equal> groups_for_tags TSA_GUARDED_BY(mutex);
 
-    template <typename IDType>
-    struct IDMap
-    {
-        std::unordered_map<IDType, Group> groups_by_id;
-    };
-
-    template <typename IDType>
-    IDMap<IDType> & getIDMap() TSA_REQUIRES(mutex);
-
-    template <typename IDType>
-    const IDMap<IDType> & getConstIDMap() const TSA_REQUIRES_SHARED(mutex);
-
-    IDMap<UInt64> uint64_id_map TSA_GUARDED_BY(mutex);
-    IDMap<UInt128> uint128_id_map TSA_GUARDED_BY(mutex);
+    /// Identifier maps: a typed map per common fixed-size id layout, and the generic map for other id types.
+    IDMap<UInt64> id_map_uint64 TSA_GUARDED_BY(mutex);
+    IDMap<UInt128> id_map_uint128 TSA_GUARDED_BY(mutex);
+    IDMap<std::pair<UInt64, UInt64>> id_map_pair_uint64_uint64 TSA_GUARDED_BY(mutex);
+    IDMap<std::pair<UInt64, UInt128>> id_map_pair_uint64_uint128 TSA_GUARDED_BY(mutex);
+    GenericIDMap generic_id_map TSA_GUARDED_BY(mutex);
 };
 
 }

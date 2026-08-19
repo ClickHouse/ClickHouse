@@ -1,0 +1,64 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed-array
+title: 'hashed_array Dictionary のレイアウト型'
+sidebarTitle: 'hashed_array'
+description: '属性配列を持つハッシュテーブルを使用して、Dictionary をメモリ内に格納します。'
+doc_type: 'reference'
+---
+
+<div id="hashed_array">
+  ## hashed_array
+</div>
+
+このDictionaryは完全にメモリ内に格納されます。各 attribute は配列に格納されます。キー attribute は、値が attribute 配列内の索引となるハッシュテーブル形式で格納されます。Dictionaryには、任意の識別子を持つ要素をいくつでも含めることができます。実際には、キーの数が数千万件に達することもあります。
+
+Dictionaryキーの型は [UInt64](/ja/reference/data-types/int-uint) です。
+
+すべての種類のソースをサポートしています。更新時には、データ (ファイルまたは table から) が全体読み込まれます。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <hashed_array>
+      </hashed_array>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_hashed_array">
+  ## complex_key_hashed_array
+</div>
+
+このタイプのストレージは、複合[キー](/ja/reference/statements/create/dictionary/attributes#composite-key)で使用します。[hashed&#95;array](#hashed_array)に似ています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED_ARRAY([SHARDS 1]))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <layout>
+      <complex_key_hashed_array />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

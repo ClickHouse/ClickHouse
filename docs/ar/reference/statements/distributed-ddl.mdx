@@ -1,0 +1,23 @@
+---
+description: 'توثيق Distributed DDL'
+sidebarTitle: 'Distributed DDL'
+slug: /sql-reference/distributed-ddl
+title: 'استعلامات DDL الموزعة (عبارة ON CLUSTER)'
+doc_type: 'reference'
+---
+
+بشكل افتراضي، لا تؤثر استعلامات `CREATE` و`DROP` و`ALTER` و`RENAME` إلا في الخادم الحالي الذي تُنفَّذ عليه. في إعداد عنقودي، يمكن تشغيل مثل هذه الاستعلامات بصورة موزعة باستخدام عبارة `ON CLUSTER`.
+
+على سبيل المثال، يُنشئ الاستعلام التالي جدول `all_hits` من نوع `Distributed` على كل مضيف ضمن `cluster`:
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
+```
+
+لكي تُنفَّذ هذه الاستعلامات بشكل صحيح، يجب أن يكون لدى كل مضيف تعريف العنقود نفسه (ولتسهيل مزامنة ملفات الإعداد، يمكنك استخدام الاستبدالات من ZooKeeper). ويجب أيضًا أن يتصل كل مضيف بخوادم ZooKeeper.
+
+سيُنفَّذ الإصدار المحلي من الاستعلام في النهاية على كل مضيف في العنقود، حتى إذا كانت بعض المضيفات غير متاحة حاليًا.
+
+<Warning>
+  يُضمن ترتيب تنفيذ الاستعلامات داخل المضيف الواحد.
+</Warning>

@@ -1,0 +1,54 @@
+---
+sidebar_title: 'Query insights'
+slug: /cloud/get-started/query-insights
+description: 'تصوّر بيانات system.query_log لتسهيل استكشاف أخطاء الاستعلامات وتحسين الأداء'
+keywords: ['query insights', 'query log', 'query log ui', 'system.query_log insights']
+title: 'Query insights'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تجعل ميزة **Query Insights** سجل الاستعلامات المضمّن في ClickHouse أسهل استخدامًا من خلال المرئيات والجداول. ويُعد جدول `system.query_log` في ClickHouse مصدرًا أساسيًا للمعلومات اللازمة لتحسين الاستعلامات، واستكشاف الأخطاء وإصلاحها، ومراقبة الحالة العامة للعنقود وأدائه.
+
+<div id="query-overview">
+  ## نظرة عامة على الاستعلامات
+</div>
+
+بعد تحديد خدمة، من المفترض أن يتوسّع عنصر التنقّل **Monitoring** في الشريط الجانبي الأيسر ليعرض عنصرًا فرعيًا جديدًا باسم **Query insights**. ويؤدي النقر على هذا الخيار إلى فتح صفحة Query insights الجديدة:
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="نظرة عامة على واجهة مستخدم Query Insights" border />
+
+<div id="top-level-metrics">
+  ## المقاييس عالية المستوى
+</div>
+
+تعرض مربعات الإحصاءات في الأعلى بعض المقاييس الأساسية عالية المستوى للاستعلامات خلال الفترة الزمنية المحددة. وتحتها، تظهر ثلاثة مخططات زمنية تمثل حجم الاستعلامات وزمن الاستجابة ومعدل الأخطاء، مقسّمة حسب نوع الاستعلام (select وinsert وغيرها) ضمن النافذة الزمنية المحددة. ويمكن أيضًا ضبط مخطط زمن الاستجابة لعرض قيم p50 وp90 وp99:
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="مخطط زمن الاستجابة في واجهة Query Insights" border />
+
+<div id="recent-queries">
+  ## الاستعلامات الأخيرة
+</div>
+
+أسفل المقاييس عالية المستوى، يعرض جدول إدخالات سجل الاستعلامات (مجمّعة حسب قيمة تجزئة الاستعلام المُطبَّع والمستخدم) ضمن النافذة الزمنية المحددة:
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="واجهة Query Insights لجدول Recent queries" border />
+
+يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح. ويمكن أيضًا تهيئة الجدول لإظهار حقول إضافية أو إخفائها، مثل الجداول وزمن الاستجابة p90 وp99.
+
+<div id="query-drill-down">
+  ## التعمّق في الاستعلام
+</div>
+
+سيؤدي اختيار استعلام من جدول استعلامات أخيرة إلى فتح لوحة جانبية تحتوي على مقاييس ومعلومات خاصة بالاستعلام المحدد:
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="واجهة Query Insights للتعمّق في الاستعلام" border />
+
+كما نرى من اللوحة الجانبية، جرى تشغيل هذا الاستعلام أكثر من 3000 مرة خلال آخر 24 ساعة. جميع المقاييس في علامة التبويب **Query info** هي مقاييس مُجمّعة، ولكن يمكننا أيضًا عرض مقاييس عمليات التشغيل الفردية باختيار علامة التبويب **Query history**:
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="واجهة Query Insights لمعلومات الاستعلام" border />
+
+<br />
+
+من هذه اللوحة، يمكن توسيع العنصرين `Settings` و`Profile Events` لكل عملية تشغيل استعلام لإظهار معلومات إضافية.

@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- The `system.user_query_log` feature is enabled. The startup guard must reject a `query_log.table`
+         of `user_query_log`, because the query log table is always created in the `system` database and
+         would collide with `system.user_query_log`. This file starts from a valid configuration; the test
+         rewrites the `query_log.database` / `query_log.table` values to exercise the guard. -->
+    <query_log>
+        <enable_user_query_log>1</enable_user_query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+    </query_log>
+</clickhouse>

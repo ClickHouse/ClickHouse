@@ -510,6 +510,12 @@ void DiskObjectStorageTransaction::copyFileImpl(
 
     runner.waitForAllToFinishAndRethrowFirstError();
 
+    if (blobs_to_create.empty() && !metadata_storage->supportsEmptyFilesWithoutBlobs())
+    {
+        writeFile(to_file_path, 0, WriteMode::Rewrite, write_settings)->finalize();
+        return;
+    }
+
     operations_to_execute.push_back([blobs_to_create, missing_locations, to_file_path](MetadataTransactionPtr tx)
     {
         for (const auto & blob : blobs_to_create)

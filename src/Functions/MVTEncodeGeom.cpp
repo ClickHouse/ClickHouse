@@ -2,8 +2,14 @@
 #include <limits>
 #include <numbers>
 
+#include "config.h"
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
+
+#if USE_WAGYU
+#include <mapbox/geometry/wagyu/wagyu.hpp>
+#endif
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnVariant.h>
@@ -24,6 +30,7 @@ namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -34,7 +41,7 @@ namespace bg = boost::geometry;
 using BPoint = CartesianPoint;
 using BBox = bg::model::box<BPoint>;
 
-/// Global discriminator order of the `Geometry` Variant: alternatives are sorted alphabetically by type name.
+/// Global discriminators of the `Geometry` Variant. The order is fixed and new geo types are appended.
 namespace GeoDisc
 {
     constexpr UInt8 LineString = 0;
@@ -43,12 +50,22 @@ namespace GeoDisc
     constexpr UInt8 Point = 3;
     constexpr UInt8 Polygon = 4;
     constexpr UInt8 Ring = 5;
+    constexpr UInt8 MultiPoint = 6;
 }
 
 /// The Web Mercator projection spans 2^32 units on each axis (the standard XYZ tile scheme).
 constexpr double mercator_max = 4294967296.0; /// 2^32
 /// Latitude bound of the Web Mercator projection (it diverges at the poles).
 constexpr double latitude_limit = 85.05112877980659;
+#if USE_WAGYU
+/// wagyu normalizes collinear edges with Int64 products of coordinate deltas (`slopes_equal`); a delta is at most
+/// the width of the clip window, so the product overflows Int64 once the window half-width approaches 2^31 (this
+/// includes the corners of the window itself - a 2^31 half-width gives a 2^32 edge whose squared delta is 2^64).
+/// The non-clipping path therefore bounds geometry to a 2^30 window: a 2^31-wide edge keeps every product at 2^62
+/// (< 2^63), and 2^30 is exactly the pixel span of the whole world at zoom 18 / extent 4096 (2^18 * 4096), so
+/// realistic geometry is validated but never clipped; only geometry projected beyond it (extreme zoom/extent) is.
+constexpr double max_wagyu_coordinate = 1073741824.0; /// 2^30
+#endif
 
 /// Per-row projection from geographic (lon, lat) degrees to tile-local pixel space.
 struct Projection
@@ -89,10 +106,115 @@ void roundToGrid(Geometry & geometry)
     });
 }
 
+#if USE_WAGYU
+/// Conversions between the integer-grid Boost polygons and wagyu's integer geometry, used to clip and validate
+/// polygons (wagyu produces MVT-valid output: no self-intersections, correct ring nesting). Coordinates are already
+/// whole integers after roundToGrid, so the Float64 <-> Int64 casts are exact.
+using WagyuRing = mapbox::geometry::linear_ring<Int64>;
+
+WagyuRing toWagyuRing(const Ring<BPoint> & ring)
+{
+    WagyuRing out;
+    out.reserve(ring.size());
+    for (const auto & p : ring)
+        out.emplace_back(static_cast<Int64>(bg::get<0>(p)), static_cast<Int64>(bg::get<1>(p)));
+    return out;
+}
+
+MultiPolygon<BPoint> fromWagyu(const mapbox::geometry::multi_polygon<Int64> & solution)
+{
+    MultiPolygon<BPoint> result;
+    result.reserve(solution.size());
+    for (const auto & poly : solution)
+    {
+        if (poly.empty())
+            continue;
+        Polygon<BPoint> out;
+        for (const auto & pt : poly.front()) /// the first ring is the exterior, the rest are holes
+            out.outer().emplace_back(static_cast<Float64>(pt.x), static_cast<Float64>(pt.y));
+        for (size_t i = 1; i < poly.size(); ++i)
+        {
+            out.inners().emplace_back();
+            for (const auto & pt : poly[i])
+                out.inners().back().emplace_back(static_cast<Float64>(pt.x), static_cast<Float64>(pt.y));
+        }
+        result.push_back(std::move(out));
+    }
+    return result;
+}
+
+/// Sutherland-Hodgman clip of a ring against the axis-aligned box [lo_x, hi_x] x [lo_y, hi_y]. Unlike
+/// bg::intersection it works on any ring, including self-intersecting ("bow-tie") ones, and it bounds the
+/// output coordinates to the box so the Int64 arithmetic in wagyu (slopes_equal) cannot overflow for geometry
+/// far from the tile. The clipped ring may still be self-intersecting and may include connector edges along the
+/// box boundary; wagyu repairs it into valid MVT polygons. Clip-introduced crossing points are rounded back to
+/// the integer grid (the input ring is already snapped).
+Ring<BPoint> clipRingToBox(const Ring<BPoint> & ring, Float64 lo_x, Float64 lo_y, Float64 hi_x, Float64 hi_y)
+{
+    Ring<BPoint> poly = ring;
+    /// Drop a duplicate closing vertex; the clip treats the vertex list as implicitly closed.
+    if (poly.size() >= 2 && bg::get<0>(poly.front()) == bg::get<0>(poly.back()) && bg::get<1>(poly.front()) == bg::get<1>(poly.back()))
+        poly.pop_back();
+
+    /// Clip the vertex list against one half-plane: axis 0 = x, axis 1 = y; keep_lower keeps coord >= bound,
+    /// otherwise coord <= bound.
+    auto clip_edge = [](const Ring<BPoint> & input, int axis, Float64 bound, bool keep_lower)
+    {
+        Ring<BPoint> output;
+        const size_t n = input.size();
+        if (n == 0)
+            return output;
+        auto coord = [axis](const BPoint & p) { return axis == 0 ? bg::get<0>(p) : bg::get<1>(p); };
+        auto inside = [&](const BPoint & p) { return keep_lower ? coord(p) >= bound : coord(p) <= bound; };
+        auto intersect = [axis, bound](const BPoint & a, const BPoint & b)
+        {
+            const Float64 ax = bg::get<0>(a);
+            const Float64 ay = bg::get<1>(a);
+            const Float64 bx = bg::get<0>(b);
+            const Float64 by = bg::get<1>(b);
+            if (axis == 0)
+            {
+                const Float64 t = (bound - ax) / (bx - ax);
+                return BPoint(bound, ay + t * (by - ay));
+            }
+            const Float64 t = (bound - ay) / (by - ay);
+            return BPoint(ax + t * (bx - ax), bound);
+        };
+        for (size_t i = 0; i < n; ++i)
+        {
+            const BPoint & cur = input[i];
+            const BPoint & prev = input[(i + n - 1) % n];
+            const bool cur_in = inside(cur);
+            if (cur_in)
+            {
+                if (!inside(prev))
+                    output.push_back(intersect(prev, cur));
+                output.push_back(cur);
+            }
+            else if (inside(prev))
+            {
+                output.push_back(intersect(prev, cur));
+            }
+        }
+        return output;
+    };
+
+    poly = clip_edge(poly, 0, lo_x, true);
+    poly = clip_edge(poly, 0, hi_x, false);
+    poly = clip_edge(poly, 1, lo_y, true);
+    poly = clip_edge(poly, 1, hi_y, false);
+
+    /// Round the clip-introduced crossing points back to the integer grid (the input ring is already snapped).
+    roundToGrid(poly);
+    return poly;
+}
+#endif
+
 /// Accumulates the per-row tile-space geometries into a `Geometry` (Variant) result column.
 struct GeometryVariantBuilder
 {
     PointSerializer<BPoint> point;
+    MultiPointSerializer<BPoint> multi_point;
     LineStringSerializer<BPoint> line_string;
     MultiLineStringSerializer<BPoint> multi_line_string;
     PolygonSerializer<BPoint> polygon;
@@ -106,6 +228,12 @@ struct GeometryVariantBuilder
     {
         point.add(p);
         discriminators->insertValue(GeoDisc::Point);
+    }
+
+    void addMultiPoint(const MultiPoint<BPoint> & value)
+    {
+        multi_point.add(value);
+        discriminators->insertValue(GeoDisc::MultiPoint);
     }
 
     void addMultiLineString(const MultiLineString<BPoint> & value)
@@ -129,6 +257,7 @@ struct GeometryVariantBuilder
         columns.push_back(point.finalize());              /// 3 Point
         columns.push_back(polygon.finalize());            /// 4 Polygon
         columns.push_back(ring.finalize());               /// 5 Ring
+        columns.push_back(multi_point.finalize());        /// 6 MultiPoint
         return ColumnVariant::create(std::move(discriminators), columns);
     }
 };
@@ -136,8 +265,8 @@ struct GeometryVariantBuilder
 /// MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]]) -> Geometry
 ///
 /// Projects a geometry (in geographic lon/lat) into the tile-local pixel space of the slippy-map tile identified by
-/// zoom/tile_x/tile_y, optionally clips it to the tile expanded by `buffer` pixels, snaps to the integer pixel grid, and
-/// returns the tile-space geometry as a `Geometry` (NULL when the geometry falls entirely outside the clip window). The
+/// zoom/tile_x/tile_y, snaps it to the integer pixel grid, optionally clips it to the tile expanded by `buffer` pixels,
+/// and returns the tile-space geometry as a `Geometry` (NULL when the geometry falls entirely outside the clip window). The
 /// result feeds the aggregate function `MVTEncode`. Analogue of PostGIS `ST_AsMVTGeom` (registered alias `ST_AsMVTGeom`).
 class FunctionMVTEncodeGeom final : public IFunction
 {
@@ -174,7 +303,7 @@ public:
         if (geometry_type->getName() != "Geometry" && !getGeometryColumnTypeFromDataType(geometry_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The first argument of function {} must be a geometry (Point, LineString, MultiLineString, Ring, Polygon, "
+                "The first argument of function {} must be a geometry (Point, MultiPoint, LineString, MultiLineString, Ring, Polygon, "
                 "MultiPolygon or Geometry), got {}",
                 getName(),
                 arguments[0].type->getName());
@@ -274,19 +403,47 @@ public:
         auto process_point = [&](BPoint p, const Projection & projection, const BBox & box, bool clip)
         {
             projection(p);
+            /// Snap to the integer pixel grid before clipping, so a coordinate a fraction of a pixel outside the
+            /// tile rounds onto the boundary pixel and is kept rather than dropped.
+            bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
+            bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
             if (clip && !bg::covered_by(p, box))
             {
                 builder.addNull();
                 return;
             }
-            bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
-            bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
             builder.addPoint(p);
+        };
+
+        auto process_multipoint = [&](const MultiPoint<BPoint> & points, const Projection & projection, const BBox & box, bool clip)
+        {
+            /// Snap to the integer pixel grid before clipping (see process_point). Clipping a point set
+            /// keeps the points inside the window and drops the rest.
+            MultiPoint<BPoint> result;
+            result.reserve(points.size());
+            for (BPoint p : points)
+            {
+                projection(p);
+                bg::set<0>(p, roundCoordinate(bg::get<0>(p)));
+                bg::set<1>(p, roundCoordinate(bg::get<1>(p)));
+                if (clip && !bg::covered_by(p, box))
+                    continue;
+                result.push_back(p);
+            }
+            if (result.empty())
+            {
+                builder.addNull();
+                return;
+            }
+            builder.addMultiPoint(result);
         };
 
         auto process_lines = [&](MultiLineString<BPoint> lines, const Projection & projection, const BBox & box, bool clip)
         {
             bg::for_each_point(lines, projection);
+            /// Snap to the integer pixel grid before clipping (see process_point), then round again after clipping
+            /// because intersecting with the box can introduce fractional crossing points on its edges.
+            roundToGrid(lines);
             MultiLineString<BPoint> result;
             if (clip)
                 bg::intersection(lines, box, result);
@@ -303,25 +460,87 @@ public:
             builder.addMultiLineString(result);
         };
 
-        auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, const BBox & box, bool clip)
+        auto process_polygons = [&](MultiPolygon<BPoint> polygons, const Projection & projection, [[maybe_unused]] const BBox & box, bool clip)
         {
             bg::for_each_point(polygons, projection);
-            bg::correct(polygons);
-            MultiPolygon<BPoint> result;
-            if (clip)
-                bg::intersection(polygons, box, result);
-            else
-                result = std::move(polygons);
+            /// Snap to the integer pixel grid before clipping (clip-vs-snap ordering, matching PostGIS).
+            roundToGrid(polygons);
+
             /// A single empty input is wrapped into a Multi container holding one empty element, so the
             /// container is non-empty despite having no vertices; check the vertex count to map it to NULL.
+            if (bg::num_points(polygons) == 0)
+            {
+                builder.addNull();
+                return;
+            }
+
+#if USE_WAGYU
+            /// Validate (and optionally clip) with wagyu: unlike bg::intersection it repairs self-intersections
+            /// and nested rings into MVT-valid polygons. Both the clipping and non-clipping paths run through
+            /// wagyu (as PostGIS does); the only difference is the clip window - the tile-plus-buffer box when
+            /// clipping, otherwise the full 2^31 coordinate range so realistic geometry is validated but not
+            /// clipped. wagyu normalizes collinear edges with Int64 products of coordinate deltas that overflow
+            /// past 2^31, so each ring is first Sutherland-Hodgman pre-clipped to the window (bounding the
+            /// coordinates); the even-odd fill rule then resolves self-intersections independently of the input
+            /// ring winding.
+            /// Default to the full 2^30 window (validate without clipping); narrow it to the tile box when clipping.
+            Float64 lo_x = -max_wagyu_coordinate;
+            Float64 lo_y = -max_wagyu_coordinate;
+            Float64 hi_x = max_wagyu_coordinate;
+            Float64 hi_y = max_wagyu_coordinate;
+            if (clip)
+            {
+                lo_x = bg::get<bg::min_corner, 0>(box);
+                lo_y = bg::get<bg::min_corner, 1>(box);
+                hi_x = bg::get<bg::max_corner, 0>(box);
+                hi_y = bg::get<bg::max_corner, 1>(box);
+            }
+
+            namespace wg = mapbox::geometry::wagyu;
+            wg::wagyu<Int64> clipper;
+            auto add_clipped = [&](const Ring<BPoint> & ring)
+            {
+                const Ring<BPoint> clipped = clipRingToBox(ring, lo_x, lo_y, hi_x, hi_y);
+                if (clipped.size() >= 3)
+                    clipper.add_ring(toWagyuRing(clipped), wg::polygon_type_subject);
+            };
+            for (const auto & poly : polygons)
+            {
+                add_clipped(poly.outer());
+                for (const auto & inner : poly.inners())
+                    add_clipped(inner);
+            }
+
+            const auto box_lo_x = static_cast<Int64>(lo_x);
+            const auto box_lo_y = static_cast<Int64>(lo_y);
+            const auto box_hi_x = static_cast<Int64>(hi_x);
+            const auto box_hi_y = static_cast<Int64>(hi_y);
+            clipper.add_ring(
+                WagyuRing{{box_lo_x, box_lo_y}, {box_hi_x, box_lo_y}, {box_hi_x, box_hi_y}, {box_lo_x, box_hi_y}, {box_lo_x, box_lo_y}},
+                wg::polygon_type_clip);
+
+            mapbox::geometry::multi_polygon<Int64> solution;
+            clipper.execute(wg::clip_type_intersection, solution, wg::fill_type_even_odd, wg::fill_type_even_odd);
+
+            MultiPolygon<BPoint> result = fromWagyu(solution);
             if (bg::num_points(result) == 0)
             {
                 builder.addNull();
                 return;
             }
             bg::correct(result);
-            roundToGrid(result);
             builder.addMultiPolygon(result);
+#else
+            if (clip)
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "Clipping polygons in MVTEncodeGeom requires the wagyu library, which is disabled in this build; "
+                    "pass clip = false to project the polygon without clipping");
+            /// Without wagyu the unclipped path still emits the projected geometry, repairing only ring orientation
+            /// and closure (self-intersections are not repaired - that needs wagyu).
+            bg::correct(polygons);
+            builder.addMultiPolygon(polygons);
+#endif
         };
 
         /// Dispatch a single Boost geometry value (the right overload is chosen by type).
@@ -333,6 +552,7 @@ public:
             process_lines(std::move(m), pr, b, c);
         };
         auto dispatch_mline = [&](const MultiLineString<BPoint> & g, const Projection & pr, const BBox & b, bool c) { process_lines(g, pr, b, c); };
+        auto dispatch_mpoint = [&](const MultiPoint<BPoint> & g, const Projection & pr, const BBox & b, bool c) { process_multipoint(g, pr, b, c); };
         auto dispatch_ring = [&](const Ring<BPoint> & g, const Projection & pr, const BBox & b, bool c)
         {
             Polygon<BPoint> poly;
@@ -363,6 +583,7 @@ public:
             auto points = convert_sub(GeoDisc::Point, [](ColumnPtr c) { return c ? ColumnToPointsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<BPoint>{}; });
             auto lines = convert_sub(GeoDisc::LineString, [](ColumnPtr c) { return c ? ColumnToLineStringsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<LineString<BPoint>>{}; });
             auto mlines = convert_sub(GeoDisc::MultiLineString, [](ColumnPtr c) { return c ? ColumnToMultiLineStringsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiLineString<BPoint>>{}; });
+            auto mpoints = convert_sub(GeoDisc::MultiPoint, [](ColumnPtr c) { return c ? ColumnToMultiPointsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiPoint<BPoint>>{}; });
             auto rings = convert_sub(GeoDisc::Ring, [](ColumnPtr c) { return c ? ColumnToRingsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<Ring<BPoint>>{}; });
             auto polygons = convert_sub(GeoDisc::Polygon, [](ColumnPtr c) { return c ? ColumnToPolygonsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<Polygon<BPoint>>{}; });
             auto mpolygons = convert_sub(GeoDisc::MultiPolygon, [](ColumnPtr c) { return c ? ColumnToMultiPolygonsConverter<BPoint>::convert(c) : VectorWithMemoryTracking<MultiPolygon<BPoint>>{}; });
@@ -388,6 +609,7 @@ public:
                     case GeoDisc::Point: dispatch(points[off], projection, box, clip); break;
                     case GeoDisc::LineString: dispatch_line(lines[off], projection, box, clip); break;
                     case GeoDisc::MultiLineString: dispatch_mline(mlines[off], projection, box, clip); break;
+                    case GeoDisc::MultiPoint: dispatch_mpoint(mpoints[off], projection, box, clip); break;
                     case GeoDisc::Ring: dispatch_ring(rings[off], projection, box, clip); break;
                     case GeoDisc::Polygon: dispatch_polygon(polygons[off], projection, box, clip); break;
                     case GeoDisc::MultiPolygon: dispatch_mpolygon(mpolygons[off], projection, box, clip); break;
@@ -416,6 +638,8 @@ public:
                         dispatch_line(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToMultiLineStringsConverter<BPoint>>)
                         dispatch_mline(geometries[row], projection, box, clip);
+                    else if constexpr (std::is_same_v<Converter, ColumnToMultiPointsConverter<BPoint>>)
+                        dispatch_mpoint(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToRingsConverter<BPoint>>)
                         dispatch_ring(geometries[row], projection, box, clip);
                     else if constexpr (std::is_same_v<Converter, ColumnToPolygonsConverter<BPoint>>)
@@ -436,20 +660,20 @@ REGISTER_FUNCTION(MVTEncodeGeom)
 {
     FunctionDocumentation::Description description = R"(
 Projects a geometry given in geographic coordinates (longitude/latitude) into the tile-local pixel space of the
-slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, optionally clips it to the tile, snaps it to the integer
-pixel grid, and returns the tile-space geometry as a `Geometry`.
+slippy-map tile identified by `zoom`, `tile_x` and `tile_y`, snaps it to the integer pixel grid, optionally clips it
+to the tile, and returns the tile-space geometry as a `Geometry`.
 
 The projection is Web Mercator over the full `UInt32` coordinate range; the origin is the tile's top-left corner with the
 y axis pointing downwards (the Mapbox Vector Tile convention). When `clip` is enabled (the default) the geometry is
 clipped to the tile expanded by `buffer` pixels, and geometries that fall entirely outside become `NULL`. The result is
 intended to be passed to the aggregate function `MVTEncode`. This function is the analogue of PostGIS `ST_AsMVTGeom`.
 
-Supported input geometry types are `Point`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon` and the
+Supported input geometry types are `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon` and the
 `Geometry` variant.
     )";
     FunctionDocumentation::Syntax syntax = "MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])";
     FunctionDocumentation::Arguments arguments = {
-        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
+        {"geometry", "Geometry in longitude/latitude degrees.", {"Point", "MultiPoint", "LineString", "MultiLineString", "Ring", "Polygon", "MultiPolygon", "Geometry"}},
         {"zoom", "Slippy-map zoom level, in the range `[0, 32]`.", {"UInt8"}},
         {"tile_x", "Tile column index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},
         {"tile_y", "Tile row index, in the range `[0, 2^zoom - 1]`.", {"UInt32"}},

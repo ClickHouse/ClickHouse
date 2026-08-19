@@ -1,0 +1,49 @@
+-- { echo }
+
+SET enable_analyzer=0;
+SELECT 'Old Analyzer:';
+
+SELECT 'Negative FETCH and negative OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT number FROM numbers(10) ORDER BY number OFFSET -9 ROWS FETCH FIRST -3 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -9 ROWS FETCH FIRST -3 ROWS WITH TIES;
+
+SELECT 'Negative FETCH and positive OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET 8 ROWS FETCH FIRST -3 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET 8 ROWS FETCH FIRST -3 ROWS WITH TIES;
+
+SELECT 'Positive FETCH and negative OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a OFFSET -4 ROWS FETCH FIRST 5 ROWS WITH TIES;
+
+SET max_block_size = 2;
+SELECT 'Small block size';
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SET max_block_size = 65536;
+
+SET enable_analyzer=1;
+SELECT 'Analyzer:';
+
+SELECT 'Negative FETCH and negative OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT number FROM numbers(10) ORDER BY number OFFSET -9 ROWS FETCH FIRST -3 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -9 ROWS FETCH FIRST -3 ROWS WITH TIES;
+
+SELECT 'Negative FETCH and positive OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET 8 ROWS FETCH FIRST -3 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET 8 ROWS FETCH FIRST -3 ROWS WITH TIES;
+
+SELECT 'Positive FETCH and negative OFFSET';
+SELECT number FROM numbers(10) ORDER BY number OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SELECT intDiv(number, 4) AS a FROM numbers(12) ORDER BY a OFFSET -4 ROWS FETCH FIRST 5 ROWS WITH TIES;
+
+SET max_block_size = 2;
+SELECT 'Small block size';
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -5 ROWS FETCH FIRST -1 ROWS WITH TIES;
+SELECT intDiv(number, 2) AS x FROM numbers(10) ORDER BY x OFFSET -3 ROWS FETCH FIRST 8 ROWS WITH TIES;
+SET max_block_size = 65536;

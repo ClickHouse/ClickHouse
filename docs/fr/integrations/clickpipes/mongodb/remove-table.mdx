@@ -1,0 +1,33 @@
+---
+title: 'Supprimer certaines tables d’un ClickPipe'
+description: 'Supprimer certaines tables d’un ClickPipe'
+sidebarTitle: 'Supprimer une table'
+slug: /integrations/clickpipes/mongodb/removing_tables
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Dans certains cas, il peut être judicieux d’exclure certaines tables d’un ClickPipe MongoDB : par exemple, si une table n’est pas nécessaire à votre charge de travail analytique, l’ignorer peut réduire les coûts de stockage et de réplication dans ClickHouse.
+
+<div id="remove-tables-steps">
+  ## Étapes pour supprimer des tables spécifiques
+</div>
+
+La première étape consiste à supprimer la table du pipe. Pour ce faire, suivez les étapes ci-dessous :
+
+1. [Mettez en pause](/fr/integrations/clickpipes/mongodb/pause-and-resume) le pipe.
+2. Cliquez sur Edit Table Settings.
+3. Repérez votre table ; vous pouvez la rechercher dans la barre de recherche.
+4. Désélectionnez la table en cliquant sur la case à cocher sélectionnée.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Cliquez sur update.
+6. Une fois la mise à jour effectuée avec succès, dans l’onglet **Métriques**, le statut sera **Running**. Cette table ne sera plus répliquée par ce ClickPipe.

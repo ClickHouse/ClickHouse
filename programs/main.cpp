@@ -93,6 +93,9 @@ int mainEntryClickHouseStop(int argc, char ** argv);
 int mainEntryClickHouseStatus(int argc, char ** argv);
 int mainEntryClickHouseRestart(int argc, char ** argv);
 
+// packed-io: list/extract/create ClickHouse packed-format archives
+int mainEntryClickHousePackedIO(int argc, char ** argv);
+
 /// Private-only programs
 #if CLICKHOUSE_CLOUD
 int mainEntryClickHouseSharedCatalogUtil(int argc, char ** argv);
@@ -101,7 +104,6 @@ int mainEntryClickHouseDistributedCache(int argc, char ** argv);
 #endif
 int mainEntryClickHouseSharedMergeTreeGarbageCleaner(int argc, char ** argv);
 int mainEntryClickHouseClearZooKeeperLocks(int argc, char ** argv);
-int mainEntryClickHousePackedIO(int argc, char ** argv);
 int mainEntryClickHouseMangler(int argc, char ** argv);
 #endif
 
@@ -180,13 +182,13 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"restart", mainEntryClickHouseRestart},
     // help
     {"help", mainEntryHelp},
+    {"packed-io", mainEntryClickHousePackedIO},
 
 /// Private-only programs
 #if CLICKHOUSE_CLOUD
     {"shared-merge-tree-garbage-cleaner", mainEntryClickHouseSharedMergeTreeGarbageCleaner},
     {"clear-zookeeper-locks", mainEntryClickHouseClearZooKeeperLocks},
     {"shared-catalog-util", mainEntryClickHouseSharedCatalogUtil},
-    {"packed-io", mainEntryClickHousePackedIO},
     {"mangler", mainEntryClickHouseMangler},
 #if ENABLE_DISTRIBUTED_CACHE
     {"distributed-cache", mainEntryClickHouseDistributedCache}
@@ -213,7 +215,7 @@ std::pair<std::string_view, std::string_view> clickhouse_short_names[] =
 
 }
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
@@ -247,7 +249,11 @@ static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & a
 ///
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS)
+///
+/// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
+/// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
+/// cannot load libraries in the first place.
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);
@@ -354,7 +360,7 @@ int main(int argc_, char ** argv_)
 
     for (auto & application : clickhouse_applications)
     {
-        if (isClickhouseApp(application.first, argv))
+        if (isClickHouseApp(application.first, argv))
         {
             main_func = application.second;
             break;

@@ -1,0 +1,85 @@
+<test>
+    <!-- Demonstrates the speedup of enabling the Query Condition Cache (QCC) for
+         queries that go through the `ORDER BY ... LIMIT n` (TopK) plan. Before
+         this PR, `updateQueryConditionCache` bailed out for TopK reads and the
+         QCC never cached anything, so every run paid the full WHERE-filter cost.
+         With the QCC entry now salted by the TopK plan parameters, the second
+         and subsequent runs of the same query reuse the cached granule
+         decisions and skip the granules dropped by the WHERE filter.
+
+         The benchmark is shaped so the QCC speedup dominates over the perf
+         framework's per-query overhead (planning, network, etc.). With a small
+         or highly-compressible payload column the cache savings are dwarfed by
+         setup cost; this test uses an incompressible wide payload so every
+         granule scan reads enough bytes that skipping all granules is a clearly
+         measurable win in CI.
+
+           * 10M rows × `FixedString(256)` payload filled with `randomFixedString`
+             (incompressible, ~2.5 GB on disk). Every granule has to read and
+             decompress a meaningful chunk of payload bytes.
+           * The WHERE predicate `payload = 'no_match'` matches no rows (the
+             payload is random). Every granule is `0/N` after the WHERE filter,
+             so the prewarm run writes a "skip me" entry for every granule.
+           * `ORDER BY v ASC LIMIT 10` engages `tryOptimizeTopK`'s dynamic
+             filtering branch; `__topKFilter` is added as PREWHERE and the WHERE
+             predicate is the QCC entry's deterministic part. The QCC salt
+             partitions the cache by TopK plan parameters.
+           * On the prewarm run, the QCC is empty and the full table is
+             scanned. On every subsequent measured run, the QCC tells the
+             reader to skip all granules, so the query returns immediately
+             — that's the speedup the QCC-enabled query measures here.
+
+         The table must be a single, fully-merged, merge-frozen part *before*
+         the measured runs. QCC entries are keyed on `(table_uuid, part_name,
+         condition_hash)`, so a background merge that consolidates the freshly
+         inserted parts into a new part renames them and silently invalidates
+         every entry the prewarm run populated — the measured runs then read the
+         new part, miss the cache, and re-pay the full scan, hiding the speedup.
+         `OPTIMIZE TABLE ... FINAL` collapses the table into one stable part and
+         `SYSTEM STOP MERGES` freezes its name, so the prewarm-primed entries
+         stay valid through every measured run. -->
+
+    <create_query>
+        CREATE TABLE qcc_topk_test (id UInt32, v UInt32, payload FixedString(256)) ENGINE = MergeTree ORDER BY id
+        SETTINGS index_granularity = 8192,
+                 min_bytes_for_wide_part = 0,
+                 min_bytes_for_full_part_storage = 0,
+                 add_minmax_index_for_numeric_columns = 0,
+                 auto_statistics_types = ''
+    </create_query>
+
+    <fill_query>
+        INSERT INTO qcc_topk_test
+        SELECT rand(), number, randomFixedString(256)
+        FROM numbers(10000000)
+    </fill_query>
+
+    <!-- Collapse into a single part so the prewarm-primed QCC entries are not
+         invalidated by a background merge before the measured runs. -->
+    <fill_query>OPTIMIZE TABLE qcc_topk_test FINAL</fill_query>
+
+    <!-- Freeze the part name for the rest of the test. -->
+    <fill_query>SYSTEM STOP MERGES qcc_topk_test</fill_query>
+
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <use_top_k_dynamic_filtering>1</use_top_k_dynamic_filtering>
+        <use_skip_indexes_for_top_k>1</use_skip_indexes_for_top_k>
+        <query_plan_max_limit_for_top_k_optimization>1000</query_plan_max_limit_for_top_k_optimization>
+        <!-- Keep WHERE as a separate `FilterStep` above `ReadFromMergeTree` so the
+             dynamic-filtering branch of `tryOptimizeTopK` applies (it bails out
+             when `getPrewhereInfo()` is already set) and the WHERE condition is
+             the one written into the query condition cache. -->
+        <optimize_move_to_prewhere>0</optimize_move_to_prewhere>
+        <enable_parallel_replicas>0</enable_parallel_replicas>
+    </settings>
+
+    <!-- QCC enabled: prewarm primes the cache with a "skip all granules" entry
+         for every part, measured runs reuse it and return without reading data. -->
+    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 1 FORMAT Null</query>
+
+    <!-- QCC disabled: baseline, every run pays the full WHERE-filter cost. -->
+    <query>SELECT v FROM qcc_topk_test WHERE payload = 'no_match' ORDER BY v ASC LIMIT 10 SETTINGS use_query_condition_cache = 0 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS qcc_topk_test</drop_query>
+</test>

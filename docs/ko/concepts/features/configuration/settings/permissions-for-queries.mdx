@@ -1,0 +1,75 @@
+---
+description: '쿼리 권한 설정입니다.'
+sidebarTitle: '쿼리 권한'
+slug: /operations/settings/permissions-for-queries
+title: '쿼리 권한'
+doc_type: '참고'
+---
+
+ClickHouse의 쿼리는 여러 유형으로 나눌 수 있습니다:
+
+1. 데이터 읽기 쿼리: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2. 데이터 쓰기 쿼리: `INSERT`, `OPTIMIZE`.
+3. 설정 변경 쿼리: `SET`, `USE`.
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
+
+다음 설정은 쿼리 유형에 따라 사용자 권한을 제어합니다:
+
+<div id="readonly">
+  ## readonly
+</div>
+
+데이터 읽기, 데이터 쓰기 및 설정 변경 쿼리에 대한 권한을 제한합니다.
+
+1로 설정하면 다음이 허용됩니다.
+
+* 모든 유형의 읽기 쿼리(예: SELECT 및 이에 해당하는 쿼리)
+* 세션 컨텍스트만 수정하는 쿼리(예: USE)
+
+2로 설정하면 위 항목에 더해 다음이 허용됩니다.
+
+* SET 및 CREATE TEMPORARY TABLE
+
+<Tip>
+  EXISTS, DESCRIBE, EXPLAIN, SHOW PROCESSLIST 등의 쿼리는 시스템 테이블(system tables)에서 select만 수행하므로 SELECT와 동일합니다.
+</Tip>
+
+Possible values:
+
+* 0 — 읽기, 쓰기 및 설정 변경 쿼리가 허용됩니다.
+* 1 — 데이터 읽기 쿼리만 허용됩니다.
+* 2 — 데이터 읽기 및 설정 변경 쿼리가 허용됩니다.
+
+기본값: 0
+
+<Note>
+  `readonly = 1`로 설정한 후에는 현재 세션(session)에서 사용자가 `readonly` 및 `allow_ddl` 설정을 변경할 수 없습니다.
+
+  [HTTP 인터페이스](/ko/concepts/features/interfaces/http)에서 `GET` 메서드를 사용하면 `readonly = 1`이 자동으로 설정됩니다. 데이터를 수정하려면 `POST` 메서드를 사용하세요.
+
+  `readonly = 1`로 설정하면 사용자가 설정을 변경할 수 없습니다. 특정 설정만 변경하지 못하도록 제한하는 방법도 있습니다. 또한 `readonly = 1` 제한하에서도 특정 설정만 변경할 수 있도록 허용하는 방법이 있습니다. 자세한 내용은 [설정 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 참조하세요.
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+[DDL](https://en.wikipedia.org/wiki/Data_definition_language) 쿼리를 허용하거나 금지합니다.
+
+가능한 값:
+
+* 0 — DDL 쿼리가 허용되지 않습니다.
+* 1 — DDL 쿼리가 허용됩니다.
+
+기본값: 1
+
+<Note>
+  현재 세션(session)에서 `allow_ddl = 0`이면 `SET allow_ddl = 1`을 실행할 수 없습니다.
+</Note>
+
+<Info>
+  **KILL QUERY**
+
+  `KILL QUERY`는 readonly 및 allow&#95;ddl 설정값의 조합과 관계없이 수행할 수 있습니다.
+</Info>

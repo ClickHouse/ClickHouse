@@ -5,7 +5,7 @@ DROP TABLE IF EXISTS test;
 CREATE TABLE test (x Float64, y UInt64)
 ENGINE = MergeTree
 ORDER BY y
-SETTINGS index_granularity=1, auto_statistics_types='minmax';
+SETTINGS index_granularity=1, auto_statistics_types='basic';
 
 INSERT INTO test
 SELECT if(number % 10 = 0, toFloat64('nan'), toFloat64(number)), number

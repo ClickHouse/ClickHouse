@@ -1,0 +1,16 @@
+---
+slug: /integrations/postgresql/inserting-data
+title: 'PostgreSQL からデータを挿入する方法'
+keywords: ['postgres', 'postgresql', 'inserts']
+description: 'ClickPipes、PeerDB、または Postgres テーブル関数を使用して PostgreSQL からデータを挿入する方法を説明するページ'
+doc_type: 'guide'
+---
+
+挿入パフォーマンスを最適化するための、ClickHouse へのデータ挿入のベストプラクティスについては、[このガイド](/ja/concepts/features/operations/insert/inserting-data)を参照することをおすすめします。
+
+PostgreSQL からデータを一括ロードするには、次の方法を使用できます。
+
+* [ClickPipes](/ja/integrations/clickpipes/postgres/index)。ClickHouse Cloud 向けのマネージドインテグレーションサービスです。
+* `PeerDB by ClickHouse`。セルフホストの ClickHouse と ClickHouse Cloud の両方への PostgreSQL データベースのレプリケーション向けに特別に設計された ETL ツールです。
+* データを直接読み取るための [Postgres Table Function](/ja/reference/functions/table-functions/postgresql)。これは通常、既知の watermark (たとえば timestamp) に基づくバッチレプリケーションで十分な場合や、一度限りの移行である場合に適しています。この方法は数千万行規模までスケールできます。さらに大規模な dataset の移行を検討している場合は、データの chunk ごとに複数のリクエストに分けることを検討してください。各 chunk については、パーティションを最終テーブルに移動する前にステージングテーブルを使用できます。これにより、失敗したリクエストを再試行できます。この一括ロード戦略の詳細については、こちらを参照してください。
+* データは Postgres から CSV フォーマットでエクスポートできます。その後、テーブル関数を使用して、ローカルファイルまたは object storage 経由で ClickHouse に挿入できます。

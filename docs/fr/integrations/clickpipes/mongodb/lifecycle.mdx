@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Cycle de vie d’un ClickPipe MongoDB'
+description: 'Différents statuts d’un pipe et leur signification'
+slug: /integrations/clickpipes/mongodb/lifecycle
+title: 'Cycle de vie d’un ClickPipe MongoDB'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestion de données', 'synchronisation en temps réel']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ce document présente les différentes phases d’un ClickPipe MongoDB, les différents statuts qu’il peut avoir et leur signification.
+
+<div id="provisioning">
+  ## Provisioning
+</div>
+
+Lorsque vous cliquez sur le bouton Create ClickPipe, le ClickPipe est créé à l’état `Provisioning`. Le processus de provisioning consiste à mettre en place l’infrastructure sous-jacente nécessaire à l’exécution de ClickPipes pour le service, ainsi qu’à enregistrer les métadonnées initiales du pipe. Comme la capacité de calcul de ClickPipes au sein d’un service est partagée, votre deuxième ClickPipe sera créé bien plus rapidement que le premier -- l’infrastructure étant déjà en place.
+
+<div id="setup">
+  ## Setup
+</div>
+
+Une fois le pipe provisionné, il passe à l’état `Setup`. C’est à ce stade que nous créons les tables ClickHouse de destination.
+
+<div id="snapshot">
+  ## Snapshot
+</div>
+
+Une fois la configuration terminée, on passe à l’état `Snapshot` (sauf s’il s’agit d’un pipe CDC uniquement, qui passe alors à l’état `Running`). `Snapshot`, `Initial Snapshot` et `Initial Load` (le plus courant) sont des termes interchangeables. Dans cet état, un snapshot des collections MongoDB source est effectué et chargé dans ClickHouse. Le paramètre de rétention de l’oplog doit tenir compte de la durée du chargement initial. Le pipe passe également à l’état `Snapshot` lorsqu’une resynchronisation est déclenchée ou lorsque de nouvelles tables sont ajoutées à un pipe existant.
+
+<div id="running">
+  ## Running
+</div>
+
+Une fois le chargement initial terminé, le pipe passe à l’état `Running` (sauf s’il s’agit d’un pipe de type snapshot uniquement, auquel cas il passe à l’état `Completed`). C’est à ce moment que le pipe lance la `capture des changements de données (CDC)`. Dans cet état, nous commençons à transmettre en continu les changements du cluster MongoDB source vers ClickHouse. Pour plus d’informations sur le contrôle de la CDC, consultez [la documentation sur le contrôle de la CDC](/fr/integrations/clickpipes/mongodb/controlling-sync).
+
+<div id="paused">
+  ## En pause
+</div>
+
+Une fois le pipe à l’état `Running`, vous pouvez le mettre en pause. Cela arrête le processus CDC et le pipe passe à l’état `Paused`. Dans cet état, aucune nouvelle donnée n’est extraite de la source MongoDB, mais les données existantes dans ClickHouse restent intactes. Vous pouvez relancer le pipe depuis cet état.
+
+<div id="pausing">
+  ## Mise en pause
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), envisagez d&#39;ajouter sa prise en charge dès maintenant afin de garantir que votre intégration continue de fonctionner lorsqu&#39;il sera disponible.
+</Note>
+
+Lorsque vous cliquez sur le bouton Pause, le pipe passe à l&#39;état `Pausing`. Il s&#39;agit d&#39;un état transitoire pendant lequel le processus CDC est en cours d&#39;arrêt. Une fois le processus CDC complètement arrêté, le pipe passe à l&#39;état `Paused`.
+
+<div id="modifying">
+  ## Modification
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), envisagez de le prendre en charge dès maintenant afin de garantir que votre intégration continue de fonctionner lorsqu&#39;il sera publié.
+</Note>
+
+Actuellement, cela indique que le pipe est en cours de suppression de tables.
+
+<div id="resync">
+  ## Resynchronisation
+</div>
+
+<Note>
+  Cet état sera bientôt disponible. Si vous utilisez notre [OpenAPI](/fr/products/cloud/features/admin-features/api/openapi), pensez à ajouter sa prise en charge dès maintenant afin de garantir que votre intégration continue de fonctionner lors de son déploiement.
+</Note>
+
+Cet état indique que le pipe se trouve dans la phase de resynchronisation au cours de laquelle il effectue un échange atomique des &#95;tables de resynchronisation avec les tables d&#39;origine. Vous trouverez plus d&#39;informations sur la resynchronisation dans la [documentation de resynchronisation](/fr/integrations/clickpipes/mongodb/resync).
+
+<div id="completed">
+  ## Terminé
+</div>
+
+Cet état s&#39;applique aux pipes d&#39;instantané uniquement et indique que l&#39;instantané est terminé et qu&#39;il n&#39;y a plus rien à faire.
+
+<div id="failed">
+  ## Failed
+</div>
+
+En cas d’error irrécupérable dans le pipe, celui-ci passe à l’état `Failed`. Vous pouvez contacter le support ou [resynchronisation](/fr/integrations/clickpipes/mongodb/resync) votre pipe pour sortir de cet état.

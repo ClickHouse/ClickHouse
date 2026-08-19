@@ -1,0 +1,38 @@
+---
+title: Keeper の説明
+---
+
+各設定ファイルには、次のような固有の設定 (以下参照) を含めます。
+使用する `server_id` は、クラスター内の該当する ClickHouse Keeper ノードごとに一意であり、
+`<raft_configuration>` セクションで定義されたサーバーの `<id>` と一致している必要があります。
+`tcp_port` は、ClickHouse Keeper の*クライアント*が使用するポートです。
+
+```xml
+<tcp_port>9181</tcp_port>
+<server_id>{id}</server_id>
+```
+
+次のセクションでは、
+[Raftコンセンサスアルゴリズム](https://en.wikipedia.org/wiki/Raft_\(algorithm\))のクォーラムに参加する
+サーバーを設定します。
+
+```xml highlight={6}
+<raft_configuration>
+    <server>
+        <id>1</id>
+        <hostname>clickhouse-keeper-01</hostname>
+        <!-- ClickHouse Keeperノード間の通信に使用するTCPポート -->
+        <port>9234</port>
+    </server>
+    <server>
+        <id>2</id>
+        <hostname>clickhouse-keeper-02</hostname>
+        <port>9234</port>
+    </server>
+    <server>
+        <id>3</id>
+        <hostname>clickhouse-keeper-03</hostname>
+        <port>9234</port>
+    </server>
+</raft_configuration>
+```

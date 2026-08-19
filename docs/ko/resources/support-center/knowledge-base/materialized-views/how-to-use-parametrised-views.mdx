@@ -1,0 +1,89 @@
+---
+title: ClickHouse에서 매개변수화된 뷰를 사용하는 방법
+description: 쿼리 시점 매개변수에 따라 데이터를 동적으로 분할할 수 있도록 ClickHouse에서 매개변수화된 뷰를 생성하고 쿼리하는 방법을 알아봅니다.
+date: 2023-08-01
+tags: ['사용 사례']
+keywords: ['매개변수화된 뷰']
+---
+
+<div id="using-parameterized-views-in-clickhouse">
+  ## ClickHouse에서 매개변수화된 뷰 사용하기
+</div>
+
+매개변수화된 뷰(Parameterized View)는 쿼리 실행 시 전달되는 매개변수에 따라 데이터를 즉석에서 여러 방식으로 분석할 때 유용합니다.
+
+다음 기본 예시를 참조하십시오:
+
+1. 테이블을 생성합니다
+
+```sql
+clickhouse-cloud :) CREATE TABLE raw_data (id UInt32, data String) ENGINE = MergeTree ORDER BY id
+
+CREATE TABLE raw_data
+(
+`id` UInt32,
+`data` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: aa21e614-1e10-4bba-88ce-4c7183a9148e
+
+Ok.
+
+0 rows in set. Elapsed: 0.332 sec.
+```
+
+2. 예시용 무작위 데이터를 일부 삽입합니다
+
+```sql
+clickhouse-cloud :) INSERT INTO raw_data SELECT * FROM generateRandom('`id` UInt32,
+`data` String',1,1) LIMIT 1000000;
+
+INSERT INTO raw_data SELECT *
+FROM generateRandom('`id` UInt32,
+`data` String', 1, 1)
+LIMIT 1000000
+
+Query id: c552a34a-b72f-45e1-bed0-778923e1b5c9
+
+Ok.
+
+0 rows in set. Elapsed: 0.438 sec. Processed 1.05 million rows, 10.99 MB (2.39 million rows/s., 25.11 MB/s.)
+```
+
+3. 매개변수화된 뷰를 생성하세요:
+
+```sql
+clickhouse-cloud :) CREATE VIEW raw_data_parametrized AS SELECT * FROM raw_data WHERE id BETWEEN {id_from:UInt32} AND {id_to:UInt32}
+
+CREATE VIEW raw_data_parametrized AS
+SELECT *
+FROM raw_data
+WHERE (id >= {id_from:UInt32}) AND (id <= {id_to:UInt32})
+
+Query id: 45fb83a6-aa55-4197-a7cd-9e1ad2c76d48
+
+Ok.
+
+0 rows in set. Elapsed: 0.102 sec.
+```
+
+4. `FROM` 절에 필요한 매개변수를 전달해 매개변수화된 뷰를 조회합니다:
+
+```sql
+clickhouse-cloud :) SELECT count() FROM raw_data_parametrized(id_from=0, id_to=50000);
+
+SELECT count()
+FROM raw_data_parametrized(id_from = 0, id_to = 50000)
+
+Query id: 5731aae1-3e68-4e63-b57f-d50f29055744
+
+┌─count()─┐
+│ 317019 │
+└─────────┘
+
+1 row in set. Elapsed: 0.004 sec. Processed 319.49 thousand rows, 319.49 KB (76.29 million rows/s., 76.29 MB/s.)
+```
+
+자세한 내용은 [https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view](https://clickhouse.com/docs/sql-reference/statements/create/view#parameterized-view)를 참고하십시오.

@@ -1,0 +1,39 @@
+---
+title: Quand utiliser JSON
+---
+
+<div id="when-to-use-json-type">
+  ## Quand utiliser le type `JSON`
+</div>
+
+Le type `JSON` est conçu pour interroger, filtrer et agréger des champs spécifiques au sein d’objets JSON dont la structure est dynamique ou imprévisible. Il y parvient en décomposant les objets JSON en sous-colonnes distinctes, ce qui réduit considérablement le volume de données lu et accélère les requêtes sur les champs sélectionnés par rapport à des alternatives comme `Map` ou l’analyse de chaînes de caractères.
+
+**Cependant, cela implique des compromis importants :**
+
+* `INSERT` plus lents - Décomposer le JSON en sous-colonnes, effectuer l’inférence de type et gérer des structures de stockage flexibles ralentit les insertions par rapport au stockage du JSON dans une simple colonne `String`.
+* Plus lent pour la lecture d’objets entiers - Si vous devez récupérer des documents JSON complets (plutôt que des champs spécifiques), le type `JSON` est plus lent qu’une lecture depuis une colonne `String`. Le surcoût lié à la reconstruction des objets à partir de sous-colonnes distinctes n’apporte aucun bénéfice lorsque vous n’effectuez pas de requêtes au niveau des champs.
+* Surcoût de stockage - Le maintien de sous-colonnes distinctes ajoute un surcoût structurel par rapport au stockage du JSON sous la forme d’une unique valeur de chaîne.
+
+<div id="use-json-type">
+  ### Utilisez le type `JSON` lorsque :
+</div>
+
+* Vos données ont une structure dynamique ou imprévisible, avec des clés qui varient d’un document à l’autre
+* Les types de champs ou les schémas évoluent au fil du temps, ou varient d’un enregistrement à l’autre
+* Vous devez interroger, filtrer ou agréger des chemins spécifiques au sein d’objets JSON dont vous ne pouvez pas prévoir la structure à l’avance
+* Votre cas d’utilisation porte sur des données semi-structurées, comme des logs, des événements ou du contenu généré par les utilisateurs, avec des schémas incohérents
+
+<div id="use-string-type">
+  ### Utilisez une colonne `String` (ou des types structurés) lorsque :
+</div>
+
+* La structure de vos données est connue et stable ; dans ce cas, utilisez plutôt des colonnes classiques ou les types `Tuple`, `Array`, `Dynamic` ou `Variant`
+* Les documents `JSON` sont traités comme des blobs opaques, uniquement stockés et récupérés dans leur intégralité, sans analyse au niveau des champs
+* Vous n&#39;avez pas besoin d&#39;interroger ni de filtrer des champs `JSON` individuels dans la base de données
+* Le `JSON` sert simplement de format de transport/stockage et n&#39;est pas analysé dans ClickHouse
+
+<Tip>
+  Si le `JSON` est un document opaque qui n&#39;est pas analysé dans la base de données, et qu&#39;il sert uniquement à être stocké puis restitué, il doit être stocké dans un champ `String`. Les avantages du type `JSON` ne se concrétisent que lorsque vous devez interroger, filtrer ou agréger efficacement des champs spécifiques au sein de structures `JSON` dynamiques.
+
+  Vous pouvez également combiner les approches : utilisez des colonnes standard pour les champs de premier niveau prévisibles et une colonne `JSON` pour les sections dynamiques du payload.
+</Tip>
