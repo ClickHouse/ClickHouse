@@ -173,15 +173,15 @@ TEST(ExperimentalSpillCodecPlanSetting, JoinEmitsItOnlyForASpillingJoin)
     EXPECT_TRUE(spilling_hash.canSpillToTemporaryFiles(keyed_inner.join_operator));
     EXPECT_TRUE(joinCarriesSetting(spilling_hash, keyed_inner.join_operator));
 
-    /// The initiator cannot spill without temporary storage, but a remote worker can rebuild a scope
-    /// while deserializing this plan. It must therefore receive the opt-in for the experimental codec.
+    /// A worker without temporary storage stays in memory, so it must not receive an opt-in for a
+    /// temporary-file codec that it will never resolve.
     auto spilling_hash_without_temporary_storage = spilling_hash;
     spilling_hash_without_temporary_storage.temporary_storage_available = false;
     EXPECT_FALSE(spilling_hash_without_temporary_storage.canSpillToTemporaryFiles(keyed_inner.join_operator));
-    EXPECT_TRUE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
-    EXPECT_THROW(joinCarriesSetting(
+    EXPECT_FALSE(joinCarriesSetting(spilling_hash_without_temporary_storage, keyed_inner.join_operator));
+    EXPECT_FALSE(joinCarriesSetting(
         spilling_hash_without_temporary_storage, keyed_inner.join_operator,
-        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1), Exception);
+        DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC - 1));
 
     auto ratio_hash = makeJoinSettings(experimental_codec, true, {JoinAlgorithm::HASH});
     ratio_hash.max_bytes_ratio_before_external_join = 0.5;

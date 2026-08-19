@@ -7058,13 +7058,14 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
 {
     /// The selector is built once and shared, so the experimental-codec gate must come from the
     /// server-level policy (the default profile), not from the settings of whichever query happens
-    /// to construct it first. Read it before taking the lock.
-    const bool allow_experimental_codecs = getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
-
     std::lock_guard lock(shared->mutex);
 
     if (!shared->compression_codec_selector)
     {
+        /// Read the policy in the same locked epoch as the selector check. `setUsersConfig` updates
+        /// both under this mutex, so this cannot rebuild the selector after a users reload with a
+        /// stale default-profile policy.
+        const bool allow_experimental_codecs = getGlobalContext()->getDefaultProfileAllowExperimentalCodecs();
         constexpr auto config_name = "compression";
         const auto & config = shared->getConfigRefWithLock(lock);
 

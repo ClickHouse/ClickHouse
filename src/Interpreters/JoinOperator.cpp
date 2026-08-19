@@ -296,12 +296,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     /// files (see `canSpillToTemporaryFiles`) never resolves the codec and must not carry the opt-in. See
     /// the matching comment in `AggregatingStep::serializeSettings` and
     /// `spillCodecNeedsExperimentalCodecsOptIn`.
-    /// The setting was added in serialization version 8. Older workers cannot safely execute a plan that
+    /// The setting was added in serialization version 10. Older workers cannot safely execute a plan that
     /// can spill with an experimental codec because they would silently lose the opt-in.
-    auto worker_settings = *this;
-    worker_settings.temporary_storage_available = true;
     if (spillCodecNeedsExperimentalCodecsOptIn(
-            worker_settings.canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
+            canSpillToTemporaryFiles(join_operator), allow_experimental_codecs, temporary_files_codec))
     {
         if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
