@@ -277,6 +277,7 @@ MUTATION_CMD_PREFIX = (
     rf"(?:[A-Za-z_]\w*={MUTATION_CMD_ASSIGNMENT_VALUE}\s+"
     rf"|{MUTATION_CMD_WRAPPER}\s+(?:{MUTATION_CMD_WRAPPER_ARG}\s+)*)*"
 )
+FILE_MUTATION_VERBS = r"rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred|tee"
 # Shell commands that create, modify, or delete files, at the start of a line or after
 # anything that can precede a command: a pipe / & / ; / subshell / group / backtick /
 # `case` branch delimiter, or a shell keyword (`if true; then rm ...; fi` compressed onto
@@ -284,7 +285,7 @@ MUTATION_CMD_PREFIX = (
 FILE_MUTATION_CMD_RE = re.compile(
     r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
     + MUTATION_CMD_PREFIX
-    + r"(?:rm|cp|mv|dd|truncate|ln|chmod|touch|mkdir|tar|install|shred|tee)\s"
+    + rf"(?:{FILE_MUTATION_VERBS})\s"
 )
 SED_IN_PLACE_RE = re.compile(r"\bsed\s+(?:-\w+\s+)*-i\b")
 # Redirection into a path built from a shell variable, except well-known test scratch areas.
@@ -301,9 +302,29 @@ REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>(?:>|\|)?\s*\"?(?:\$\(
 REDIRECT_TO_MKTEMP_RE = re.compile(
     r"(?<!-)>(?:>|\|)?\s*\"?\$\(\s*mktemp\s*\)\"?\s*(?:$|[;|&])"
 )
+# An `sh -c` / `bash -c` / `eval` payload is opaque: a quote in front of a mutation verb hides
+# it from the command-position anchor of the patterns above.
 SHELL_COMMAND_STRING_RE = re.compile(
     r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"
-    r"(?:sh|bash)\s+-c\b|\beval\s+"
+    r"(?P<executor>(?:sh|bash)\s+-c\b)|(?P<eval>\beval\s+)"
+)
+# ... except when the payload is provably a plain call of a shell function of the test itself:
+# a literal command word that is not a mutation verb, followed only by plain arguments and
+# simple variable expansions, with no way to reach a second command (no separator, redirection,
+# or command substitution). Such a payload hides nothing - the function body lives in the same
+# file, and every one of its lines is scanned by this check on its own - so it must not arm the
+# check. This is the `bash -c insert_thread &` idiom that stress tests use to spawn background
+# threads. Only the payload is exempted: the rest of the line is still matched by every pattern
+# above, so a mutation or a redirection that follows it is still reported.
+SHELL_COMMAND_STRING_PLAIN_CALL_RE = re.compile(
+    rf"""(?x)
+    (?:sh|bash)\s+-c\s+
+    (?P<quote>["']?)
+    (?!(?:{FILE_MUTATION_VERBS})\b)
+    [A-Za-z_]\w*                                 # the function or command to call
+    (?:\s+(?:\$\{{?\w+\}}?|[\w@%.,:=+/-]+))*     # plain arguments and simple variables
+    (?P=quote)
+    """
 )
 CLICKHOUSE_DISKS_WRITE_RE = re.compile(
     r"""(?x)
@@ -358,6 +379,22 @@ def strip_shell_comment(line):
     return line
 
 
+def has_opaque_shell_command_string(code):
+    """
+    Whether the line runs a shell command string whose payload could hide a file mutation.
+    Every `sh -c` / `bash -c` / `eval` on the line counts, except a `-c` payload that just calls
+    a shell function of the test itself - see `SHELL_COMMAND_STRING_PLAIN_CALL_RE`. Checking the
+    occurrences one by one, rather than the line as a whole, keeps an exempt call from covering
+    for a second, opaque executor on the same line.
+    """
+    for match in SHELL_COMMAND_STRING_RE.finditer(code):
+        if match.group("eval"):
+            return True
+        if not SHELL_COMMAND_STRING_PLAIN_CALL_RE.match(code, match.start("executor")):
+            return True
+    return False
+
+
 def check_no_server_data_manipulation(files):
     """
     Stateless tests must not modify the server's on-disk data: part directories, detached
@@ -407,7 +444,7 @@ def check_no_server_data_manipulation(files):
                     REDIRECT_TO_COMMAND_SUBSTITUTION_RE.search(code)
                     and not REDIRECT_TO_MKTEMP_RE.search(code)
                 )
-                or SHELL_COMMAND_STRING_RE.search(code)
+                or has_opaque_shell_command_string(code)
                 or CLICKHOUSE_DISKS_WRITE_RE.search(code)
             ):
                 errors.append(

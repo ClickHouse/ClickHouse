@@ -312,6 +312,29 @@ def test_shell_command_string_executor_is_flagged(tmp_path):
     assert _run(tmp_path, FETCH_PART_PATH + 'sh -c "rm -f \\"$path/data.bin\\""\n')
     assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "rm -f \\"$path/data.bin\\""\n')
     assert _run(tmp_path, FETCH_PART_PATH + 'eval "rm -f \\"$path/data.bin\\""\n')
+    # A payload that is not a literal command word stays opaque.
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "$cmd"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "$(build_cmd)"\n')
+    # A plain call must not cover for a second executor, or for a mutation, on the same line.
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c worker; eval "$cmd"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c worker; rm -f "$path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "worker; rm -f $path/data.bin"\n')
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c worker > "$path/data.bin"\n')
+
+
+def test_shell_command_string_calling_a_function_is_not_flagged(tmp_path):
+    # `bash -c <function>` is how stress tests spawn background threads. The payload hides
+    # nothing: the function body is in the same file and is scanned line by line anyway.
+    assert not _run(
+        tmp_path,
+        FETCH_PART_PATH + "bash -c insert_thread 2> /dev/null &\n",
+    )
+    assert not _run(
+        tmp_path,
+        FETCH_PART_PATH + 'bash -c "sync_replica_with_retries $i" &\n',
+    )
+    # A mutation verb as the payload is still a mutation.
+    assert _run(tmp_path, FETCH_PART_PATH + 'bash -c "rm $path/data.bin"\n')
 
 
 def test_server_settings_inspection_without_value_is_not_flagged(tmp_path):
