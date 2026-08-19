@@ -383,16 +383,25 @@ ORDER BY day DESC
         pipeline_utilization: Optional[PipelineUtilization] = None,
         storage_usage: Optional[StorageUsage] = None,
         compute_usage: Optional[ComputeUsage] = None,
+        job_counts: Optional[dict] = None,
     ):
         """Write a single workflow-level summary row carrying pipeline
         utilization, storage and compute usage in the ``attributes`` JSON
         column. Called once from the final (Finish workflow) job.
+
+        ``job_counts`` is a ``{bucket: count}`` breakdown of the pipeline's
+        jobs by status (e.g. ``total``/``success``/``failed``/``skipped``),
+        written as ``pipeline_<bucket>_jobs``. Note this is distinct from
+        ``pipeline_jobs`` below, which counts only the jobs substantial enough
+        to qualify for the utilization KPI.
 
         Replaces the older ``insert_storage_usage``/``insert_compute_usage``,
         which encoded these numbers into the ``check_duration_ms``/``test_*``
         columns in a way inconsistent with their schema meaning."""
         info = Info()
         attributes: dict = {}
+        for bucket, count in (job_counts or {}).items():
+            attributes[f"pipeline_{bucket}_jobs"] = count
         if pipeline_utilization and pipeline_utilization.jobs:
             for key, value in pipeline_utilization.to_summary().items():
                 attributes[f"pipeline_{key}"] = value

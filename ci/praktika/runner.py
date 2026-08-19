@@ -858,6 +858,28 @@ class Runner:
                     compute_usage=ComputeUsage.from_dict(
                         workflow_result.ext.get("compute_usage", {})
                     ),
+                    job_counts={
+                        "total": len(workflow_result.results),
+                        "run": sum(
+                            1
+                            for j in workflow_result.results
+                            if not (j.is_skipped() or j.is_dropped())
+                        ),
+                        "success": sum(
+                            1 for j in workflow_result.results if j.is_success()
+                        ),
+                        "failed": sum(
+                            1
+                            for j in workflow_result.results
+                            if j.is_failure() or j.is_error()
+                        ),
+                        "skipped": sum(
+                            1 for j in workflow_result.results if j.is_skipped()
+                        ),
+                        "dropped": sum(
+                            1 for j in workflow_result.results if j.is_dropped()
+                        ),
+                    },
                 )
 
         if workflow.enable_gh_summary_comment and (
