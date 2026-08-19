@@ -2,6 +2,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <Common/Exception.h>
+#include <Core/ProtocolDefines.h>
 
 
 namespace DB
@@ -14,7 +15,11 @@ extern const int NOT_IMPLEMENTED;
 
 DataTypePtr IAggregateFunction::getStateType() const
 {
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
+    std::optional<size_t> version;
+    if (isVersioned())
+        version = getVersionFromRevision(DBMS_TCP_PROTOCOL_VERSION);
+
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
