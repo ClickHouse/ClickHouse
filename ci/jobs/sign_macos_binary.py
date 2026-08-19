@@ -274,6 +274,9 @@ def main():
     print(f"Build type [{args.build_type}], job [{Info().job_name}]")
 
     steps = [
+        # read the notary key with the runner's own creds BEFORE assuming the
+        # signing role (release_signing can only kms:Sign, not read SSM).
+        ("write notary api key", write_notary_api_key),
         ("assume signing role", assume_signing_role),
         ("report tooling", report_tooling),
         ("configure KMS module", configure_kms_module),
@@ -283,7 +286,6 @@ def main():
         ("check output", check_signed_output),
         ("package", package),
         ("verify", verify),
-        ("write notary api key", write_notary_api_key),
         ("notarize", notarize),
     ]
 
