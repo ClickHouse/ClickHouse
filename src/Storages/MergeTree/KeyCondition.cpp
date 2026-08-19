@@ -2997,9 +2997,11 @@ static bool tupleElementTakesFirstElement(const ColumnWithTypeAndName & index_ar
     if (first_element_type->isNullable() || first_element_type->lowCardinality() || !first_element_type->isComparable())
         return false;
 
-    if (!index_arg.column || index_arg.column->empty())
+    /// Constants inside an `ActionsDAG` are often `ColumnConst` of size 0; `ColumnConst`
+    /// reads the nested value regardless of size, so take the value via `getField`.
+    if (!index_arg.column || !isColumnConst(*index_arg.column))
         return false;
-    Field index_value = (*index_arg.column)[0];
+    Field index_value = assert_cast<const ColumnConst &>(*index_arg.column).getField();
 
     if (index_value.getType() == Field::Types::UInt64)
         return index_value.safeGet<UInt64>() == 1;
