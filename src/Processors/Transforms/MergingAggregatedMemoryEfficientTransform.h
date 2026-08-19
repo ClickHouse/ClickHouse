@@ -66,11 +66,7 @@ namespace DB
 class GroupingAggregatedTransform final : public IProcessor
 {
 public:
-    /// With `produce_buckets_in_order` the output buckets are strictly ascending: a bucket some
-    /// input announced as delayed is waited for instead of being emitted late. The output
-    /// carries no delay announcements, so the order is required when the output feeds another
-    /// `GroupingAggregatedTransform` over an exchange.
-    GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_, bool produce_buckets_in_order_);
+    GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_);
     String getName() const override { return "GroupingAggregatedTransform"; }
 
 protected:
@@ -80,10 +76,8 @@ protected:
 private:
     size_t num_inputs;
     AggregatingTransformParamsPtr params;
-    bool produce_buckets_in_order;
 
     std::vector<Int32> last_bucket_number; /// Last bucket read from each input.
-    std::vector<Int32> max_seen_bucket; /// Highest bucket read from each input, to validate the delivery order.
 
     /// See `ConvertingAggregatedToChunksTransform` to learn about sending buckets out of order.
     std::vector<std::vector<Int32>> input_out_of_order_buckets; /// Out of order bucket ids for each input.
@@ -107,8 +101,6 @@ private:
 
     /// Add chunk read from input to chunks_map, overflow_chunks or single_level_chunks according to it's chunk info.
     void addChunk(Chunk chunk, size_t input);
-    /// Drop a finished input's delayed-bucket announcements and treat it as past every bucket.
-    void releaseFinishedInput(size_t input_num);
     /// Drop the out of order buckets reported by an input which has finished, they cannot arrive anymore.
     void forgetOutOfOrderBucketsOfInput(size_t input);
     /// Ids of the buckets smaller than `bucket` which still can be pushed after it.
@@ -192,3 +184,4 @@ void addMergingAggregatedMemoryEfficientTransform(
     size_t num_merging_processors,
     bool should_produce_results_in_order_of_bucket_number);
 }
+

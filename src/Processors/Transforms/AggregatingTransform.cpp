@@ -1403,8 +1403,7 @@ void AggregatingTransform::initGenerate()
                 if (should_produce_results_in_order_of_bucket_number)
                 {
                     /// Groups chunks with the same bucket_id and outputs them (as a vector of chunks) in order of bucket_id.
-                    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(
-                        pipe.getHeader(), pipe.numOutputPorts(), params, /*produce_buckets_in_order_=*/ true));
+                    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
                     /// Outputs one chunk from group at a time in order of bucket_id.
                     pipe.addTransform(std::make_shared<FlattenChunksToMergeTransform>(pipe.getHeader(), params->getHeader()));
                 }

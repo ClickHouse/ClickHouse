@@ -16,14 +16,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-GroupingAggregatedTransform::GroupingAggregatedTransform(
-    const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_, bool produce_buckets_in_order_)
+GroupingAggregatedTransform::GroupingAggregatedTransform(const Block & header_, size_t num_inputs_, AggregatingTransformParamsPtr params_)
     : IProcessor(InputPorts(num_inputs_, header_), {Block()})
     , num_inputs(num_inputs_)
     , params(std::move(params_))
-    , produce_buckets_in_order(produce_buckets_in_order_)
     , last_bucket_number(num_inputs, -1)
-    , max_seen_bucket(num_inputs, -1)
     , input_out_of_order_buckets(num_inputs)
 {
 }
@@ -97,43 +94,26 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
     else
     {
-        /// A resolved delayed bucket can be emitted as soon as it is complete - but only when the
-        /// consumer tolerates out-of-order buckets; the emitted stream carries no announcements.
-        if (!produce_buckets_in_order)
+        for (const auto & [bucket, inputs_delayed_that_bucket] : out_of_order_buckets)
         {
-            for (const auto & [bucket, inputs_delayed_that_bucket] : out_of_order_buckets)
+            /// The bucket is no longer delayed by any of the inputs.
+            /// Either we received it from all sources (where it was not empty),
+            /// or we received buckets with higher id-s and no delayed bucket information.
+            if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
             {
-                /// The bucket is no longer delayed by any of the inputs.
-                /// Either we received it from all sources (where it was not empty),
-                /// or we received buckets with higher id-s and no delayed bucket information.
-                if (inputs_delayed_that_bucket == 0 && std::ranges::min(last_bucket_number) >= bucket)
+                if (try_push_by_iter(chunks_map.find(bucket)))
                 {
-                    if (try_push_by_iter(chunks_map.find(bucket)))
-                    {
-                        out_of_order_buckets.erase(bucket);
-                        return true;
-                    }
+                    out_of_order_buckets.erase(bucket);
+                    return true;
                 }
             }
         }
 
         for (; next_bucket_to_push < current_bucket; ++next_bucket_to_push)
         {
-            if (auto delayed = out_of_order_buckets.find(next_bucket_to_push); delayed != out_of_order_buckets.end())
-            {
-                /// The bucket was announced as delayed by some input.
-                if (!produce_buckets_in_order)
-                {
-                    /// It may still arrive; the loop above will emit it once it is resolved.
-                    continue;
-                }
-                /// In-order mode: emit it in place once no input can send it anymore, otherwise
-                /// wait for more input.
-                if (delayed->second == 0 && std::ranges::min(last_bucket_number) >= next_bucket_to_push)
-                    out_of_order_buckets.erase(delayed);
-                else
-                    return false;
-            }
+            /// If bucket is delayed by any of the inputs, we cannot push it. The loop above will take care of it at some point.
+            if (out_of_order_buckets.contains(next_bucket_to_push))
+                continue;
 
             if (try_push_by_iter(chunks_map.find(next_bucket_to_push)))
                 return true;
@@ -141,18 +121,6 @@ bool GroupingAggregatedTransform::tryPushTwoLevelData()
     }
 
     return false;
-}
-
-void GroupingAggregatedTransform::releaseFinishedInput(size_t input_num)
-{
-    /// A finished input can neither deliver the buckets it announced as delayed nor advance
-    /// past any bucket, so drop its announcements and treat it as past every bucket; otherwise
-    /// a delayed bucket would wait for it until all inputs finish. Idempotent - `prepare` calls
-    /// it on every pass.
-    for (const auto ooo_bucket : input_out_of_order_buckets[input_num])
-        out_of_order_buckets[ooo_bucket]--;
-    input_out_of_order_buckets[input_num].clear();
-    last_bucket_number[input_num] = std::numeric_limits<Int32>::max();
 }
 
 bool GroupingAggregatedTransform::tryPushSingleLevelData()
@@ -260,7 +228,7 @@ IProcessor::Status GroupingAggregatedTransform::prepare(const UpdatedInputPorts 
         {
             if (in->isFinished())
             {
-                releaseFinishedInput(input_num);
+                forgetOutOfOrderBucketsOfInput(input_num);
                 continue;
             }
 
@@ -363,18 +331,6 @@ void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
             single_level_chunks.emplace_back(std::move(chunk));
         else
         {
-            /// Every input must deliver its buckets in ascending order; a bucket may come late
-            /// only when a previous chunk of the same input announced it as out of order.
-            /// Without this check an unannounced late bucket would be emitted a second time,
-            /// duplicating its groups in the result.
-            if (bucket < max_seen_bucket[input]
-                && std::ranges::find(input_out_of_order_buckets[input], bucket) == input_out_of_order_buckets[input].end())
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "GroupingAggregatedTransform received bucket {} from input {} after bucket {} "
-                    "without an out-of-order announcement (announced: [{}])",
-                    bucket, input, max_seen_bucket[input], fmt::join(input_out_of_order_buckets[input], ", "));
-            max_seen_bucket[input] = std::max(max_seen_bucket[input], bucket);
-
             chunks_map[bucket].emplace_back(std::move(chunk));
             has_two_level = true;
             last_bucket_number[input] = bucket;
@@ -666,8 +622,7 @@ IProcessor::Status SortingAggregatedTransform::prepare()
 void addMergingAggregatedMemoryEfficientTransform(
     Pipe & pipe, AggregatingTransformParamsPtr params, size_t num_merging_processors, bool should_produce_results_in_order_of_bucket_number)
 {
-    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(
-        pipe.getHeader(), pipe.numOutputPorts(), params, should_produce_results_in_order_of_bucket_number));
+    pipe.addTransform(std::make_shared<GroupingAggregatedTransform>(pipe.getHeader(), pipe.numOutputPorts(), params));
 
     if (num_merging_processors <= 1)
     {
