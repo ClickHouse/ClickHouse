@@ -16,8 +16,8 @@ void encodeMapKeyValueToken(std::string_view key, std::string_view value, bool i
     /// Leading namespace byte + key + value + reversed varint of key.size (see MapKeyValueToken.h).
     out.reserve(1 + key.size() + value.size() + getLengthOfVarUInt(key_length));
 
-    /// Namespace byte: 0 = the key's first occurrence in the row, 1 = a later duplicate.
-    out.push_back(static_cast<char>(is_rest ? 1 : 0));
+    /// Namespace byte tags the token kind; the rare duplicate kind sorts first (see MapKeyValueToken.h).
+    out.push_back(is_rest ? MAP_KV_NAMESPACE_REST : MAP_KV_NAMESPACE_FIRST);
     out.append(key);
     out.append(value);
 

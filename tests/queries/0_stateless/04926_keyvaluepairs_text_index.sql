@@ -20,10 +20,10 @@ SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_kv VALUES (1, {'foo':'bar'}), (2, {'foo':'baz','k2':'v2'}), (3, {'lvl':'err'}), (4, {'lvl':'warn'});
 
--- Each distinct pair is one token: namespace byte (0 = first occurrence) || key || value || chr(length(key)).
+-- Each distinct pair is one token: namespace byte (1 = first occurrence) || key || value || chr(length(key)).
 SELECT hex(token), cardinality FROM mergeTreeTextIndex(currentDatabase(), t_kv, idx) ORDER BY token;
--- The 'foo' -> 'bar' token: namespace 0, key 'foo' (length 3), so char(0) || 'foo' || 'bar' || char(3).
-SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_kv, idx) WHERE token = concat(char(0), 'foo', 'bar', char(3));
+-- The 'foo' -> 'bar' token: first-occurrence namespace 1, key 'foo' (length 3), so char(1) || 'foo' || 'bar' || char(3).
+SELECT count() FROM mergeTreeTextIndex(currentDatabase(), t_kv, idx) WHERE token = concat(char(1), 'foo', 'bar', char(3));
 
 -- Exact key-value lookups answered by the index (granule pruning).
 SELECT id FROM t_kv WHERE m['foo'] = 'bar' ORDER BY id;
