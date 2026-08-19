@@ -46,6 +46,8 @@ SELECT toTypeName(1 OR CAST(0 AS Bool));
 
 SELECT 'Test aggregate and arrayJoin branches are not erased';
 SELECT 0 AND sum(number) FROM numbers(10);
+SELECT 1 OR count() FROM numbers(10);
+SELECT 0 AND count() FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
 
 SELECT 'Test EXISTS falls back when its runtime value is unknown';

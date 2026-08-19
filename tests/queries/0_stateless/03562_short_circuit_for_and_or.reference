@@ -26,6 +26,8 @@ Bool
 Test aggregate and arrayJoin branches are not erased
 0
 1
+0
+1
 1
 Test EXISTS falls back when its runtime value is unknown
 0

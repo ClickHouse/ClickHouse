@@ -172,11 +172,19 @@ bool isFunctionAliasInScope(const String & name, const IdentifierResolveScope & 
     return false;
 }
 
+bool isSafeCountScalarSubqueryForEarlyShortCircuit(
+    const QueryNode & query,
+    const IdentifierResolveScope & scope);
+
 bool hasUnsafeFunctionForEarlyShortCircuit(
     const QueryTreeNodePtr & node,
     const ContextPtr & context,
-    const IdentifierResolveScope & scope)
+    const IdentifierResolveScope & scope,
+    bool inside_safe_count_scalar_subquery = false)
 {
+    if (const auto * query = node->as<QueryNode>())
+        inside_safe_count_scalar_subquery = isSafeCountScalarSubqueryForEarlyShortCircuit(*query, scope);
+
     if (const auto * function = node->as<FunctionNode>())
     {
         if (isFunctionAliasInScope(function->getFunctionName(), scope))
@@ -190,9 +198,10 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
         auto resolver = FunctionFactory::instance().tryGet(function->getFunctionName(), context);
         if (!resolver)
         {
-            /// The safe scalar-subquery check separately verifies the aggregate count call.
-            /// Any other unknown name may be a SQL/executable UDF whose body is not visible here.
-            if (function->getFunctionName() != "count")
+            /// An aggregate count is only safe inside a scalar subquery that has already passed
+            /// the strict count-subquery preflight. Any other unknown name may be a
+            /// SQL/executable UDF whose body is not visible here.
+            if (function->getFunctionName() != "count" || !inside_safe_count_scalar_subquery)
                 return true;
         }
         else if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
@@ -200,7 +209,7 @@ bool hasUnsafeFunctionForEarlyShortCircuit(
     }
 
     for (const auto & child : node->getChildren())
-        if (child && hasUnsafeFunctionForEarlyShortCircuit(child, context, scope))
+        if (child && hasUnsafeFunctionForEarlyShortCircuit(child, context, scope, inside_safe_count_scalar_subquery))
             return true;
 
     return false;
