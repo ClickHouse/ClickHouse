@@ -57,7 +57,7 @@ VALUES
 위의 `CREATE TABLE` DDL 문은 전환, 즉 달성된 목표에 대한 데이터를 포함하는 `Goals` 중첩 데이터 구조를 선언합니다.
 `visits` 테이블의 각 행은 0개 이상의 전환에 해당할 수 있습니다.
 
-[`flatten_nested`](/ko/reference/settings/session-settings#flatten_nested) 설정이 `0`으로 지정되면(`flatten_nested=1`이 기본값) 임의 수준의 중첩이 지원됩니다.
+[`flatten_nested`](/ko/reference/settings/session-settings/other#flatten_nested) 설정이 `0`으로 지정되면(`flatten_nested=1`이 기본값) 임의 수준의 중첩이 지원됩니다.
 
 대부분의 경우 중첩 데이터 구조를 사용할 때는 점으로 구분된 컬럼 이름으로 컬럼을 지정합니다.
 이 컬럼들은 같은 타입의 배열을 구성합니다.

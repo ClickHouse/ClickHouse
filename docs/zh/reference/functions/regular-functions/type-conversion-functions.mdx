@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse 通常采用[与 C++ 程序相同的行为](https://en.cppreference.com/w/cpp/language/implicit_conversion)。
 
-`to<type>` 函数和 [cast](#CAST) 在某些情况下的行为有所不同，例如对于 [LowCardinality](/zh/reference/data-types/lowcardinality)：[cast](#CAST) 会移除 [LowCardinality](/zh/reference/data-types/lowcardinality) 特性，而 `to<type>` 函数不会。对于 [Nullable](/zh/reference/data-types/nullable) 也是如此。此行为与 SQL 标准不兼容，但可以通过 [cast&#95;keep&#95;nullable](/zh/reference/settings/session-settings#cast_keep_nullable) 设置进行更改。
+`to<type>` 函数和 [cast](#CAST) 在某些情况下的行为有所不同，例如对于 [LowCardinality](/zh/reference/data-types/lowcardinality)：[cast](#CAST) 会移除 [LowCardinality](/zh/reference/data-types/lowcardinality) 特性，而 `to<type>` 函数不会。对于 [Nullable](/zh/reference/data-types/nullable) 也是如此。此行为与 SQL 标准不兼容，但可以通过 [cast&#95;keep&#95;nullable](/zh/reference/settings/session-settings/cast#cast_keep_nullable) 设置进行更改。
 
 <Note>
   请注意，如果将某种数据类型的值转换为更小的数据类型 (例如从 `Int64` 转为 `Int32`) ，或者在
@@ -2911,7 +2911,7 @@ SELECT toDate(20297)
 引入版本：v21.9.0
 
 将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。
-如果值超出范围，`toDate32` 会返回 [Date32](/zh/reference/data-types/date32) 支持的边界值。
+如果值超出 `[0000-01-01, 9999-12-31]` 范围，`toDate32` 会返回 [Date32](/zh/reference/data-types/date32) 支持的边界值。
 如果参数类型为 [`Date`](/zh/reference/data-types/date)，则会考虑其取值边界。
 
 **语法**
@@ -2944,7 +2944,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**超出取值范围**
+**1900 年以前**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2954,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1900-01-01
+value:           1899-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,7 +2964,9 @@ toTypeName(value): Date32
 
 引入版本：v21.11.0
 
-将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。如果该值超出范围，`toDate32OrDefault` 会返回 [Date32](/zh/reference/data-types/date32) 支持的下限值。如果参数的类型为 [Date](/zh/reference/data-types/date)，则会考虑其边界。如果接收到无效参数，则返回默认值。
+将参数转换为 [Date32](/zh/reference/data-types/date32) 数据类型。如果参数无法转换 (包括超出 [Date32](/zh/reference/data-types/date32) 范围的数值) ，该函数将返回默认值：如果指定了第二个参数，则返回该参数；否则返回 [Date32](/zh/reference/data-types/date32) 的历史默认值 `1900-01-01` (而非其下界值 `0000-01-01`) 。如果参数的类型为 [Date](/zh/reference/data-types/date)，则会考虑其边界。
+
+请注意，与 [toDate32](#toDate32) 不同，该函数不会将超出范围的数值参数限制在 [Date32](/zh/reference/data-types/date32) 的边界值内；此类参数会被视为无法转换。
 
 **语法**
 
@@ -2997,6 +2999,16 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
+```
+
+```response title=Response
+2020-01-01
+```
+
+**超出范围的数值**
+
+```sql title=Query
+SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3046,8 +3058,9 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 引入版本：v21.9.0
 
-将输入值转换为 [Date32](/zh/reference/data-types/date32) 类型的值；如果收到无效参数，则返回 [Date32](/zh/reference/data-types/date32) 的下界值。
-与 [toDate32](#toDate32) 相同，但如果收到无效参数，则返回 [Date32](/zh/reference/data-types/date32) 的下界值。
+将输入值转换为 [Date32](/zh/reference/data-types/date32) 类型的值；如果收到无效参数，则返回默认值 `1900-01-01`。
+与 [toDate32](#toDate32) 相同，但如果收到无效参数，则返回 `1900-01-01`。
+请注意，`1900-01-01` 是无效输入的历史默认值，并非 [Date32](/zh/reference/data-types/date32) 的下界值；其下界值为 `0000-01-01`。
 
 另请参见：
 
@@ -3067,7 +3080,7 @@ toDate32OrZero(x)
 
 **返回值**
 
-成功时返回 Date32 值，否则返回 Date32 的下界值 (`1900-01-01`) 。[`Date32`](/zh/reference/data-types/date32)
+成功时返回 Date32 值，否则返回无效输入的历史默认值 (`1900-01-01`) 。[`Date32`](/zh/reference/data-types/date32)
 
 **示例**
 
@@ -3258,13 +3271,15 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
   ## toDateTime32
 </div>
 
-Introduced in: v20.9.0
+引入于：v20.9.0
 
 将输入值转换为 `DateTime` 类型。
-支持从 `String`、`FixedString`、`Date`、`Date32`、`DateTime` 或数值类型 (`(U)Int*`、`Float*`、`Decimal`) 转换。
-与 `DateTime` 相比，DateTime32 的取值范围更大，支持 `1900-01-01` 至 `2299-12-31` 的日期。
+支持从 `String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64` 或数值类型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`BFloat16`、`Float32`、`Float64`) 转换。`Decimal` 和 `Time64` 值不受支持，会引发异常；`Time` 类型以及 `(U)Int128`/`(U)Int256` 等宽整数类型会发生回绕，而不会饱和。
+`DateTime32` 是 `DateTime` 的别名，支持 `1970-01-01 00:00:00` 至 `2106-02-07 06:28:15` 范围内的日期时间。
+从字符串或上述可饱和的数值类型转换时，超出此范围的值会被饱和到范围边界。非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，会引发异常。
+从 `Date32` 或 `DateTime64` 等其他日期时间类型转换时，遵循 `date_time_overflow_behavior` 设置：默认的 `ignore` 模式可能产生回绕值，`saturate` 会将值限制在范围边界内，而 `throw` 会引发异常。
 
-**Syntax**
+**语法**
 
 ```sql
 toDateTime32(x[, timezone])
@@ -3272,8 +3287,8 @@ toDateTime32(x[, timezone])
 
 **参数**
 
-* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`UInt*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Date`](/zh/reference/data-types/date) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
-* `timezone` — 可选。返回的 `DateTime` 值使用的时区。[`String`](/zh/reference/data-types/string)
+* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string)、[`FixedString`](/zh/reference/data-types/fixedstring)、[`(U)Int*`](/zh/reference/data-types/int-uint)、[`Float*`](/zh/reference/data-types/float)、[`BFloat16`](/zh/reference/data-types/float)、[`Date`](/zh/reference/data-types/date)、[`Date32`](/zh/reference/data-types/date32)、[`Time`](/zh/reference/data-types/time)、[`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64)
+* `timezone` — 可选。返回的 `DateTime` 值所使用的时区。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -3281,45 +3296,40 @@ toDateTime32(x[, timezone])
 
 **示例**
 
-**值在范围内**
+**从字符串转换**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime          │
+└─────────────────────┴───────────────────┘
 ```
 
-**作为指定精度的 Decimal 值**
+**从 Unix 时间戳转换**
 
 ```sql title=Query
-SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
--- without the decimal point the value is still treated as Unix Timestamp in seconds
-SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
+SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
-┌───────────────────value─┬─toTypeName(value)─┐
-│ 2299-12-31 23:59:59.000 │ DateTime64(3)     │
-└─────────────────────────┴───────────────────┘
+┌───────────────value─┬─toTypeName(value)─┐
+│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
+└─────────────────────┴───────────────────┘
 ```
 
 **指定时区**
 
 ```sql title=Query
-SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
-│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
-└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
+┌───────────────value─┬─toTypeName(value)─────────┐
+│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -7099,10 +7109,23 @@ SELECT
   ## toTime
 </div>
 
-引入版本：v1.1.0
+引入版本：v25.5.0
 
 将输入值转换为 [Time](/zh/reference/data-types/time) 类型。
 支持从 String、FixedString、DateTime、DateTime64 或表示自午夜起经过秒数的数值类型进行转换。
+超出该类型范围的数值 (`-999:59:59` 至 `999:59:59`，即 `-3599999` 至 `3599999` 秒) 将被限制在范围边界内；非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，并会引发异常。
+
+<Info>
+  **旧版 `toTime`**
+
+  在 v25.5 之前，`toTime` 是另一个函数，用于将日期时间转换为固定日期 (`1970-01-02`) ，同时保留
+  时间部分。该函数仍以 [`toTimeWithFixedDate`](/zh/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) 的名称提供。
+
+  将 [`use_legacy_to_time`](/zh/reference/settings/session-settings#use_legacy_to_time) 设置为 `1`，也会使 `toTime` 名称仍绑定到旧版
+  函数；即对 `toTime` 的调用会解析为 `toTimeWithFixedDate`，而非此处所述的转换函数。
+  启用该设置时，请使用 `CAST(x AS Time)` 或 `x::Time` 转换为 `Time` 类型。
+  自 v26.7 起，该设置默认值为 `0`，但在 v25.6 至 v26.6 期间默认值为 `1`，因此以下示例会显式设置该值。
+</Info>
 
 **语法**
 
@@ -7112,7 +7135,7 @@ toTime(x)
 
 **参数**
 
-* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`BFloat16`](/zh/reference/data-types/float) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
@@ -7299,7 +7322,7 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
   ## toTimeOrNull
 </div>
 
-引入版本：v1.1.0
+引入版本：v25.5.0
 
 将输入值转换为 Time 类型的值；如果发生错误，则返回 `NULL`。
 与 [`toTime`](#toTime) 类似，但在转换出错时会返回 `NULL`，而不是抛出异常。
@@ -7341,7 +7364,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-Introduced in: v1.1.0
+Introduced in: v25.5.0
 
 将输入值转换为 `Time` 类型的值；如果出错，则返回 `00:00:00`。
 与 toTime 类似，但在转换出错时会返回 `00:00:00`，而不是抛出异常。
