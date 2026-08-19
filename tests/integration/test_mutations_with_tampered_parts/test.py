@@ -1025,10 +1025,28 @@ def test_variant_escape_filename_rename_consistency(
     files = container_bash(
         f"find {shlex.quote(renamed_path)} -maxdepth 1 -name 'w.*.bin' -printf '%f\\n'"
     )
-    assert len(files.splitlines()) == 3
+    escaped = before_escape if not remove_substreams else after_escape
+    tuple_name = (
+        "Tuple%28a%20UInt32%2C%20b%20UInt32%29"
+        if escaped
+        else "Tuple(a UInt32, b UInt32)"
+    )
+    expected_files = [
+        f"w.{tuple_name}%2Ea.bin",
+        f"w.{tuple_name}%2Eb.bin",
+        "w.variant_discr.bin",
+    ]
+    assert sorted(files.splitlines()) == sorted(expected_files)
     if not remove_substreams:
         after = container_bash(
             f"cat {shlex.quote(renamed_path + 'columns_substreams.txt')}"
         )
-        assert "3 substreams for column `w`:" in after
+        assert after == (
+            "columns substreams version: 1\n"
+            "1 columns:\n"
+            "3 substreams for column `w`:\n"
+            "\tw.variant_discr\n"
+            f"\tw.{tuple_name}%2Ea\n"
+            f"\tw.{tuple_name}%2Eb\n"
+        )
     node.query(f"DROP TABLE {table} SYNC")
