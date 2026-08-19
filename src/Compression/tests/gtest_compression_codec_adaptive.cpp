@@ -2,7 +2,6 @@
 #include <cstring>
 #include <thread>
 #include <vector>
-#include <Compression/CompressedSizeCalculator.h>
 #include <Compression/CompressionCodecAdaptive.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
@@ -96,6 +95,27 @@ std::vector<char> bytesOf(const std::vector<T> & values)
     return bytes;
 }
 
+/// Compress `bytes` with the adaptive codec for `type_name` and return the winner's on-disk method byte.
+/// Round-trips the compressed block through the method-byte codec, as a normal reader would do.
+uint8_t adaptiveWinnerByte(const String & type_name, const std::vector<char> & bytes)
+{
+    const UInt32 size = static_cast<UInt32>(bytes.size());
+    CompressionCodecAdaptive adaptive(*type(type_name), defaultCodec());
+
+    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
+    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
+
+    const uint8_t method = ICompressionCodec::readMethod(encoded.data());
+    auto decoder = CompressionCodecFactory::instance().get(method);
+
+    /// Fast decompressors read and write in wide blocks past the logical end of both buffers.
+    encoded.resize(encoded_size + decoder->getAdditionalSizeAtTheEndOfBuffer());
+    PODArray<char> decoded(size + decoder->getAdditionalSizeAtTheEndOfBuffer());
+    EXPECT_EQ(decoder->decompress(encoded.data(), encoded_size, decoded.data()), size);
+    EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
+    return method;
+}
+
 }
 
 TEST(AdaptiveCodecPool, EachCandidateTypeBuildsWithDefaultAnchor)
@@ -166,82 +186,31 @@ TEST(CompressionCodecFactory, IsDefaultCodec)
     EXPECT_FALSE(CompressionCodecFactory::isDefaultCodec(codec("Delta, Default")));
 }
 
-TEST(AdaptiveCodecSelector, MonotonicNarrowIntegersPickT64)
+TEST(CompressionCodecAdaptive, MonotonicNarrowIntegersPickT64)
 {
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), T64);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), T64);
 }
 
-TEST(AdaptiveCodecSelector, RepeatingWideValuesPickDefault)
+TEST(CompressionCodecAdaptive, RepeatingWideValuesPickDefault)
 {
     /// A short pattern of full-range values, repeated: LZ4 crushes the repetition, but T64 sees a wide min/max cannot shrink it.
     const std::vector<UInt32> pattern = {0u, 0xFFFFFFFFu, 0x0F0F0F0Fu, 0xF0F0F0F0u, 0x12345678u, 0x9ABCDEF0u, 0xDEADBEEFu, 0xCAFEBABEu};
     std::vector<UInt32> values(100000);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = pattern[i % pattern.size()];
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), LZ4);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), LZ4);
 }
 
-TEST(AdaptiveCodecSelector, ConstantColumnPicksT64)
+TEST(CompressionCodecAdaptive, ConstantColumnPicksT64)
 {
     std::vector<UInt32> values(100000, 42u);
-    auto bytes = bytesOf(values);
 
-    auto pool = AdaptiveCodec::poolForType(*type("UInt32"), defaultCodec());
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner->getMethodByte(), T64);
-}
-
-TEST(AdaptiveCodecSelector, TieGoesToEarliestCandidate)
-{
-    /// Two distinct but identical codecs produce the same size, the earliest must win (strict <).
-    auto lz4a = CompressionCodecFactory::instance().get("LZ4", {});
-    auto lz4b = CompressionCodecFactory::instance().get("LZ4", {});
-    ASSERT_NE(lz4a.get(), lz4b.get());
-    Codecs pool = {lz4a, lz4b};
-
-    std::vector<UInt32> values(1000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i * 7);
-    auto bytes = bytesOf(values);
-
-    auto winner = AdaptiveCodec::select(pool, bytes.data(), static_cast<UInt32>(bytes.size()));
-    EXPECT_EQ(winner.get(), lz4a.get());
-    EXPECT_NE(winner.get(), lz4b.get());
-}
-
-TEST(CompressionCodecAdaptive, CompressRoundTripsViaWinnerByte)
-{
-    std::vector<UInt32> values(100000);
-    for (size_t i = 0; i < values.size(); ++i)
-        values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
-
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-
-    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-    const UInt32 encoded_size = adaptive.compress(bytes.data(), size, encoded.data());
-
-    const uint8_t method = ICompressionCodec::readMethod(encoded.data());
-    EXPECT_EQ(method, T64); /// monotonic integers -> T64 wins
-
-    /// Decode exactly as a normal reader would: look the codec up by the on-disk method byte.
-    auto decoder = CompressionCodecFactory::instance().get(method);
-    PODArray<char> decoded(size);
-    const UInt32 decoded_size = decoder->decompress(encoded.data(), encoded_size, decoded.data());
-    ASSERT_EQ(decoded_size, size);
-    EXPECT_EQ(0, memcmp(decoded.data(), bytes.data(), size));
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), T64);
 }
 
 TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
@@ -250,14 +219,8 @@ TEST(CompressionCodecAdaptive, TinyBlockStoredRaw)
     std::vector<UInt32> values(4);
     for (size_t i = 0; i < values.size(); ++i)
         values[i] = static_cast<UInt32>(i);
-    auto bytes = bytesOf(values);
-    const UInt32 size = static_cast<UInt32>(bytes.size());
 
-    CompressionCodecAdaptive adaptive(*type("UInt32"), defaultCodec());
-
-    PODArray<char> encoded(adaptive.getCompressedReserveSize(size));
-    adaptive.compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(ICompressionCodec::readMethod(encoded.data()), NONE);
+    EXPECT_EQ(adaptiveWinnerByte("UInt32", bytesOf(values)), NONE);
 }
 
 TEST(CompressionCodecAdaptive, HashHasOwnNamespace)
@@ -321,7 +284,7 @@ TEST(CompressionCodecAdaptive, ConcurrentCompressIsThreadSafe)
     EXPECT_TRUE(ok);
 }
 
-TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
+TEST(TryGetCompressedSize, MatchesCompressForT64)
 {
     std::vector<UInt32> values(50000);
     for (size_t i = 0; i < values.size(); ++i)
@@ -334,11 +297,11 @@ TEST(GetCompressedBlockSize, CalculateMatchesCompressForT64)
     const auto & t64 = pool[2];
     ASSERT_EQ(t64->getMethodByte(), T64);
 
-    PODArray<char> scratch;
-    const UInt32 calculated = CompressedSizeCalculator::getCompressedBlockSize(*t64, bytes.data(), size, scratch);
+    const auto calculated = t64->tryGetCompressedSize(bytes.data(), size);
+    ASSERT_TRUE(calculated.has_value());
 
-    /// Re-derive size from a real compress: calculation must match exactly
+    /// Re-derive size from a real compress.
     PODArray<char> encoded(t64->getCompressedReserveSize(size));
     const UInt32 actual = t64->compress(bytes.data(), size, encoded.data());
-    EXPECT_EQ(calculated, actual);
+    EXPECT_EQ(ICompressionCodec::getHeaderSize() + *calculated, actual);
 }
