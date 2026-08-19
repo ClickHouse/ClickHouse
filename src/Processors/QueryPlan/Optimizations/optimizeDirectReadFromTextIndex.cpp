@@ -937,8 +937,16 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     QueryPlan::Node * filter_node = (stack.rbegin() + 1)->node;
     auto * filter_step = typeid_cast<FilterStep *>(filter_node->step.get());
 
+    /// The rewrite needs the filter directly on top of the read step: nothing would carry the virtual
+    /// column across an intermediate step. Log it, the fallback silently reads the whole text column.
     if (!filter_step)
+    {
+        LOG_TRACE(
+            getLogger("optimizeDirectReadFromTextIndex"),
+            "Cannot use direct reading from text index. Reason: the parent of ReadFromMergeTree is a '{}' step, not a filter",
+            filter_node->step->getName());
         return;
+    }
 
     ActionsDAG & filter_dag = filter_step->getExpression();
     const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized && !already_has_direct_read);
