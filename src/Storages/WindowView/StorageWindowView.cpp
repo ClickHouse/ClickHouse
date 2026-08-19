@@ -1371,7 +1371,11 @@ StorageWindowView::StorageWindowView(
     /// Extract information about watermark, lateness.
     eventTimeParser(query);
 
-    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH;
+    /// A full-definition `ATTACH WINDOW VIEW` is fresh user input and must be validated like
+    /// `CREATE WINDOW VIEW`. The short form loads stored metadata and must remain compatible
+    /// with views created before interval validation was added.
+    const bool validate_intervals = mode < LoadingStrictnessLevel::ATTACH
+        || (mode == LoadingStrictnessLevel::ATTACH && !query.attach_short_syntax);
     auto inner_query = initInnerQuery(query.select->list_of_selects->children.at(0)->as<ASTSelectQuery &>(), context_, validate_intervals);
 
     /// Window, slide, and slice intervals from old metadata remain attach-compatible: their
