@@ -674,7 +674,7 @@ This inconsistency is tolerated to improve the usability of full-text search.
 hasAllTokens(input, needles[, tokenizer])
 )";
     FunctionDocumentation::Arguments arguments_hasAllTokens = {
-        {"input", "The input column.", {"String", "FixedString", "Array(String)", "Array(FixedString)"}},
+        {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {"needles", "Tokens to be searched.", {"String", "Array(String)"}},
         {"tokenizer", "The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
     };
