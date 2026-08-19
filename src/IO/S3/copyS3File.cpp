@@ -193,6 +193,7 @@ namespace
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetUploadId(multipart_upload_id);
+            request.setExpectedContentType("binary/octet-stream");
 
             if (object_metadata.has_value()
                 || !request_settings[S3RequestSetting::storage_class_name].value.empty()

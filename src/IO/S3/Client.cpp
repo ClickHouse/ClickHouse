@@ -616,8 +616,10 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
         /// the key proves that only if it is the object this part list describes: any other object there
         /// belongs to a different write, and accepting it would acknowledge rows that were never stored.
         const auto expected_etag = expectedMultipartETag(request.GetMultipartUpload());
+        const auto & expected_content_type = request.getExpectedContentType();
         if (check_outcome.IsSuccess() && expected_etag
-            && unquoteETag(check_outcome.GetResult().GetETag()) == *expected_etag)
+            && unquoteETag(check_outcome.GetResult().GetETag()) == *expected_etag
+            && (!expected_content_type || check_outcome.GetResult().GetContentType() == *expected_content_type))
         {
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
         }
@@ -626,11 +628,13 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
             LOG_INFO(
                 log,
                 "Multipart upload was not completed and the key does not hold its result, reporting the error. "
-                "Key: {}, Bucket: {}, Expected ETag: {}, ETag at key: {}",
+                "Key: {}, Bucket: {}, Expected ETag: {}, ETag at key: {}, Expected Content-Type: {}, Content-Type at key: {}",
                 key,
                 bucket,
                 expected_etag.value_or("<not derivable>"),
-                check_outcome.IsSuccess() ? check_outcome.GetResult().GetETag() : "<no object>");
+                check_outcome.IsSuccess() ? check_outcome.GetResult().GetETag() : "<no object>",
+                expected_content_type.value_or("<not checked>"),
+                check_outcome.IsSuccess() ? check_outcome.GetResult().GetContentType() : "<no object>");
         }
     }
 

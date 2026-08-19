@@ -639,6 +639,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
+    req.setExpectedContentType("binary/octet-stream");
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);

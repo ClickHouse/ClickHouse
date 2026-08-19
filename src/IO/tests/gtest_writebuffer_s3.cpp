@@ -117,6 +117,7 @@ public:
 
     std::map<Key, Data> objects;
     std::map<Key, ETag> object_etags;
+    std::map<Key, std::string> object_content_types;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
     std::vector<std::pair<MPU_ID, MPUParts>> CompletedPartUploads;
 
@@ -137,10 +138,11 @@ public:
         return etag;
     }
 
-    void PutObject(const std::string & key, const std::string & data)
+    void PutObject(const std::string & key, const std::string & data, const std::string & content_type = "binary/octet-stream")
     {
         objects[key] = data;
         object_etags[key] = quotedMD5Hex(data);
+        object_content_types[key] = content_type;
     }
 
     void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
@@ -159,6 +161,7 @@ public:
         }
 
         object_etags[key] = quotedMultipartETag(completedParts);
+        object_content_types[key] = "binary/octet-stream";
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
         multiPartUploads.erase(upload_id);
@@ -385,6 +388,7 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
         result.SetETag(bStore.object_etags[request.GetKey()]);
+        result.SetContentType(bStore.object_content_types[request.GetKey()]);
         return result;
     }
 
@@ -1113,6 +1117,31 @@ TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObject) {
       }, DB::S3Exception);
 
     EXPECT_EQ(bStore.objects["complete_multipart_upload_foreign_object"], "OLD");
+}
+
+/// An ETag also does not identify the content type that `CreateMultipartUpload` committed. A foreign
+/// object with the same multipart payload but a different content type must not make recovery succeed.
+TEST_P(SyncAsync, CompleteMultipartUploadReportsNoSuchUploadForForeignObjectWithDifferentContentType)
+{
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // no single part
+    getSettings()[Setting::s3_min_upload_part_size] = 1; // small parts are ok
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("complete_multipart_upload_foreign_content_type", "A", "text/plain");
+    bStore.object_etags["complete_multipart_upload_foreign_content_type"] = MockS3::quotedMultipartETag({"A"});
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMultipartUploadNoSuchUploadIngection>());
+
+    EXPECT_THROW({
+        auto buffer = getWriteBuffer("complete_multipart_upload_foreign_content_type");
+        buffer->write('A');
+
+        getAsyncPolicy().setAutoExecute(true);
+        buffer->finalize();
+    }, DB::S3Exception);
+
+    EXPECT_EQ(client->counters.headObject, 1u);
+    EXPECT_EQ(bStore.object_content_types["complete_multipart_upload_foreign_content_type"], "text/plain");
 }
 
 /// The same transient MinIO `InvalidPart` on CompleteMultipartUpload must also be retried by the
