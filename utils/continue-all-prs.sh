@@ -1090,6 +1090,17 @@ create_triage_clone()
     git -C "$triage_wt" remote set-url origin "$origin_url"
 }
 
+# The private triage clone starts without a checkout. Materialize its
+# submodules only after `prepare_triage_worktree` has checked out the actual
+# PR head, so builds and source inspection see the same revision as triage.
+setup_triage_submodules()
+{
+    local triage_wt="$1" deadline="$2"
+
+    (( SKIP_SUBMODULES )) && return 0
+    run_with_deadline "$deadline" git -C "$triage_wt" submodule update --init --checkout --recursive
+}
+
 # Use the remaining per-PR budget for setup operations as well as agent turns.
 # `timeout` returns 124 when the budget expires, which `run_continue_pr`
 # reports as the ordinary per-PR timeout outcome.
@@ -1198,6 +1209,7 @@ run_continue_pr()
         create_triage_clone "$wt" "$triage_wt" "$deadline" || return $?
         local triage_metadata
         triage_metadata=$(prepare_triage_worktree "$triage_wt" "$number" "$deadline") || return $?
+        setup_triage_submodules "$triage_wt" "$deadline" || return $?
         IFS=$'\t' read -r triage_start_head triage_base_head triage_head_ref triage_push_url triage_pushable <<< "$triage_metadata"
     fi
     : > "$log"
@@ -1309,7 +1321,7 @@ run_continue_pr()
         if [[ "$phase" == "triage" ]]; then
             triage_git_args=(
                 env -u GH_TOKEN -u GITHUB_TOKEN -u GITHUB_PAT -u GH_CONFIG_DIR
-                -u SSH_AUTH_SOCK -u GIT_SSH_COMMAND -u GIT_SSH -u GIT_CONFIG -u GIT_CONFIG_COUNT
+                -u SSH_AUTH_SOCK -u GIT_SSH_COMMAND -u GIT_SSH -u GIT_CONFIG -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT
             )
             # Command-scope Git configuration is injected through numbered
             # `GIT_CONFIG_KEY_*` / `GIT_CONFIG_VALUE_*` variables. It takes

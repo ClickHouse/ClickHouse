@@ -116,7 +116,7 @@ triage_config=$(REPO='ClickHouse/ClickHouse' prepare_triage_sandbox_config "$tri
 # Command-scope Git config has higher priority than the sanitized clone config.
 # The triage environment must remove every numbered carrier, not only
 # `GIT_CONFIG` itself.
-command_scope_git_args=(env -u GIT_CONFIG -u GIT_CONFIG_COUNT)
+command_scope_git_args=(env -u GIT_CONFIG -u GIT_CONFIG_PARAMETERS -u GIT_CONFIG_COUNT)
 for command_scope_git_var in GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GIT_CONFIG_KEY_1 GIT_CONFIG_VALUE_1; do
     command_scope_git_args+=(-u "$command_scope_git_var")
 done
@@ -134,6 +134,52 @@ if env GIT_CONFIG_COUNT=2 \
         echo 'Expected command-scope HTTP header to be removed' >&2
         exit 1
     fi
+
+# Older Git versions use `GIT_CONFIG_PARAMETERS` rather than numbered
+# variables for command-scope configuration. It must be scrubbed as well.
+if env GIT_CONFIG_PARAMETERS="'credential.helper'='test-helper' 'http.https://github.com/.extraheader'='Authorization: Basic secret'" \
+    "${command_scope_git_args[@]}" git -c "include.path=$triage_config" config --get credential.helper; then
+        echo 'Expected GIT_CONFIG_PARAMETERS credential helper to be removed' >&2
+        exit 1
+    fi
+if env GIT_CONFIG_PARAMETERS="'credential.helper'='test-helper' 'http.https://github.com/.extraheader'='Authorization: Basic secret'" \
+    "${command_scope_git_args[@]}" git -c "include.path=$triage_config" config --get http.https://github.com/.extraheader; then
+        echo 'Expected GIT_CONFIG_PARAMETERS HTTP header to be removed' >&2
+        exit 1
+    fi
+
+# Triage uses a private clone. After the PR head is checked out, it must still
+# initialize submodules so it can build and inspect the complete source tree.
+source <(sed -n '/^setup_triage_submodules()/,/^}/p' "$repo/utils/continue-all-prs.sh")
+run_with_deadline()
+{
+    shift
+    "$@"
+}
+triage_submodule_source="$scratch/triage-submodule-source"
+triage_superproject="$scratch/triage-superproject"
+triage_clone="$scratch/triage-clone"
+git init -q "$triage_submodule_source"
+git -C "$triage_submodule_source" config user.email test@example.com
+git -C "$triage_submodule_source" config user.name test
+printf 'triage submodule\n' > "$triage_submodule_source/content"
+git -C "$triage_submodule_source" add content
+git -C "$triage_submodule_source" commit -qm 'Add test content'
+git init -q "$triage_superproject"
+git -C "$triage_superproject" config user.email test@example.com
+git -C "$triage_superproject" config user.name test
+git -C "$triage_superproject" -c protocol.file.allow=always submodule add -q "$triage_submodule_source" dependency
+git -C "$triage_superproject" commit -qam 'Add test submodule'
+git clone -q --shared --no-checkout "$triage_superproject" "$triage_clone"
+git -C "$triage_clone" checkout -q --detach HEAD
+SKIP_SUBMODULES=0
+GIT_CONFIG_COUNT=1
+GIT_CONFIG_KEY_0=protocol.file.allow
+GIT_CONFIG_VALUE_0=always
+export GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+setup_triage_submodules "$triage_clone" $(( $(date +%s) + 30 ))
+unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+[[ "$(<"$triage_clone/dependency/content")" == 'triage submodule' ]]
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
