@@ -1,0 +1,5 @@
+<clickhouse>
+    <access_control_improvements>
+        <throw_on_unmatched_row_policies>false</throw_on_unmatched_row_policies>
+    </access_control_improvements>
+</clickhouse>
