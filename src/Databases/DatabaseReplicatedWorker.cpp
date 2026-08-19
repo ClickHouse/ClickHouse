@@ -112,6 +112,12 @@ size_t getTableNameEnd(const Tokens & tokens, size_t pos)
     return pos + 1;
 }
 
+void skipIfNotExists(const Tokens & tokens, size_t & pos)
+{
+    if (pos + 2 < tokens.size() && isKeyword(tokens[pos], "IF") && isKeyword(tokens[pos + 1], "NOT") && isKeyword(tokens[pos + 2], "EXISTS"))
+        pos += 3;
+}
+
 std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
 {
     if (tokens.size() < 5
@@ -121,8 +127,7 @@ std::optional<String> getRemovedWindowViewName(const Tokens & tokens)
         return {};
 
     size_t pos = 3;
-    if (pos + 2 < tokens.size() && isKeyword(tokens[pos], "IF") && isKeyword(tokens[pos + 1], "NOT") && isKeyword(tokens[pos + 2], "EXISTS"))
-        pos += 3;
+    skipIfNotExists(tokens, pos);
 
     return getTableName(tokens, pos);
 }
@@ -142,7 +147,9 @@ std::optional<String> getCreatedTableOrViewName(const Tokens & tokens)
     if (pos == tokens.size() || (!isKeyword(tokens[pos], "TABLE") && !isKeyword(tokens[pos], "VIEW")))
         return {};
 
-    return getTableName(tokens, pos + 1);
+    ++pos;
+    skipIfNotExists(tokens, pos);
+    return getTableName(tokens, pos);
 }
 
 std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens)
@@ -157,6 +164,7 @@ std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens
         return {};
 
     ++pos;
+    skipIfNotExists(tokens, pos);
     while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
         ++pos;
 
@@ -180,11 +188,31 @@ std::optional<String> getAttachedTableOrViewDefinitionName(const Tokens & tokens
 
         if (isKeyword(tokens[definition_pos], "TO"))
         {
-            if (definition_pos + 3 >= tokens.size()
-                || !isKeyword(tokens[definition_pos + 1], "INNER")
-                || !isKeyword(tokens[definition_pos + 2], "UUID"))
+            ++definition_pos;
+            if (definition_pos == tokens.size())
                 return {};
-            definition_pos += 4;
+
+            if (isKeyword(tokens[definition_pos], "INNER"))
+            {
+                if (definition_pos + 2 >= tokens.size() || !isKeyword(tokens[definition_pos + 1], "UUID"))
+                    return {};
+                definition_pos += 3;
+            }
+            else
+            {
+                if (!getTableName(tokens, definition_pos))
+                    return {};
+                definition_pos = getTableNameEnd(tokens, definition_pos);
+            }
+            continue;
+        }
+
+        if (isKeyword(tokens[definition_pos], "REFRESH"))
+        {
+            while (definition_pos < tokens.size() && !isKeyword(tokens[definition_pos], "TO"))
+                ++definition_pos;
+            if (definition_pos == tokens.size())
+                return {};
             continue;
         }
 
@@ -302,6 +330,7 @@ std::vector<WindowViewFollowup> getWindowViewFollowups(const Tokens & tokens)
         return {};
 
     ++pos;
+    skipIfNotExists(tokens, pos);
     while (pos < tokens.size() && (isKeyword(tokens[pos], "IF") || isKeyword(tokens[pos], "EXISTS") || isKeyword(tokens[pos], "TEMPORARY") || isKeyword(tokens[pos], "PERMANENTLY")))
         ++pos;
 

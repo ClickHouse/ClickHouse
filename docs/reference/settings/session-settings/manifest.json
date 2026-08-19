@@ -1,5 +1,5 @@
 {
-  "settings": 1315,
+  "settings": 1311,
   "anchorRoutes": {
     "adaptive_aggregator_freeze_threshold": "/reference/settings/session-settings/other",
     "add_http_cors_header": "/reference/settings/session-settings/other",
