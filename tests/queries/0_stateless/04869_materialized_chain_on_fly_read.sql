@@ -1,3 +1,6 @@
+-- Tags: no-shared-catalog
+-- no-shared-catalog: STOP MERGES will only stop them on the current replica, the second one will
+-- continue to merge and can materialize the mutation this test needs to stay pending
 -- Reading a MATERIALIZED column while a mutation is still pending must apply the whole chain on the
 -- fly: a column that reaches the updated one only through another MATERIALIZED column has to be
 -- recomputed from the pending value, not returned from its stale on-disk value.
