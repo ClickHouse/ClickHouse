@@ -567,6 +567,21 @@ function check_fails_kind_without_detach()
     fi
 }
 
+function check_fails_after_detaching()
+{
+    local expected_error="$3"
+    check_if_detached_impl "$1" "$2"
+    if [ "$REATTACH_STATUS" -eq 0 ]; then
+        echo "FAIL (query unexpectedly succeeded)"
+    elif ! echo "$REATTACH_OUTPUT" | grep -q "$expected_error"; then
+        echo "FAIL (unexpected error: $REATTACH_OUTPUT)"
+    elif echo "$REATTACH_OUTPUT" | grep -q "DETACH TABLE $CLICKHOUSE_DATABASE.$2"; then
+        echo "OK"
+    else
+        echo "FAIL (source was not detached before the query failed)"
+    fi
+}
+
 check_fails_kind_without_detach "SHOW CREATE VIEW t_reattach_kind" "t_reattach_kind"
 check_fails_kind_without_detach "SHOW CREATE DICTIONARY t_reattach_kind" "t_reattach_kind"
 
@@ -696,15 +711,15 @@ ${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS t_reattach_dest_refresh"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_refresh_dst"
 ${CLICKHOUSE_CLIENT} -q "DROP USER IF EXISTS ${DEST_USER}"
 
-# 3. Taken destination name. `CREATE ... IF NOT EXISTS` over an existing destination is a pure no-op that
-# never runs the `SELECT`, and the plain form fails with `TABLE_ALREADY_EXISTS` before it — in both cases
-# the source must stay attached. The same statement over a free destination name does detach the source.
+# 3. Taken destination name. A source-carrying `CREATE` resolves its `AS` source or analyzes its
+# populating `SELECT` before checking the destination, so the source is detached even when the destination
+# turns the statement into a no-op or causes `TABLE_ALREADY_EXISTS`.
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS t_reattach_dest_taken"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE t_reattach_dest_taken (a UInt64) ENGINE = MergeTree ORDER BY a"
 
-check_if_not_detached "CREATE TABLE IF NOT EXISTS t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
-check_if_not_detached "CREATE VIEW IF NOT EXISTS t_reattach_dest_taken AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
-check_fails_kind_without_detach "CREATE TABLE t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "TABLE_ALREADY_EXISTS"
+check_if_detached "CREATE TABLE IF NOT EXISTS t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_if_detached "CREATE VIEW IF NOT EXISTS t_reattach_dest_taken AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src"
+check_fails_after_detaching "CREATE TABLE t_reattach_dest_taken ENGINE = MergeTree ORDER BY a AS SELECT * FROM t_reattach_dest_src" "t_reattach_dest_src" "TABLE_ALREADY_EXISTS"
 
 # A parameterized view does not analyze its SELECT at creation time, and validation of an ordinary
 # view's alias list can fail before it does. Neither form may detach its source.

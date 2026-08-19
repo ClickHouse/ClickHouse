@@ -1727,6 +1727,12 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
     if (create.isTemporary())
         return static_cast<bool>(context->tryResolveStorageID(StorageID("", create.getTable()), Context::ResolveExternal));
 
+    /// `setEngine` resolves an `AS table` / `CLONE AS table` source and `getSampleBlock` analyzes a
+    /// populating `SELECT` before the plain-create destination-name checks below. Keep those sources
+    /// eligible even when the destination is already taken: the query has already touched them by then.
+    if (create.select || create.is_clone_as || !create.as_table.empty())
+        return false;
+
     /// Probing the destination must itself be side-effect free: in databases that do not support
     /// detaching tables even `isTableExist` can act on behalf of the query — e.g.
     /// `DatabaseRemote::isTableExist` reaches out to the remote server under the caller's credentials
@@ -1737,10 +1743,8 @@ bool createQueryStopsBeforeSources(const ASTCreateQuery & create, const ContextP
         database && !database->supportsDetachingTables())
         return true;
 
-    /// A taken destination name makes the statement throw `TABLE_ALREADY_EXISTS` (or, with
-    /// `IF NOT EXISTS`, a pure no-op) before the populating `SELECT` runs — see the `is_plain_create`
-    /// branch of `InterpreterCreateQuery::doCreateTableAsSelectViaTemporaryTable` and the existence check
-    /// at the top of `InterpreterCreateQuery::doCreateTable`.
+    /// A taken destination name makes a source-less plain statement throw `TABLE_ALREADY_EXISTS` (or,
+    /// with `IF NOT EXISTS`, a pure no-op) before it accesses another table.
     if (DatabaseCatalog::instance().isTableExist(StorageID(destination_database, destination_table), context))
         return true;
 
