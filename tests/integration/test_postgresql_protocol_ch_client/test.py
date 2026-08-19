@@ -999,7 +999,7 @@ def test_copy_array_column_round_trips(started_cluster):
     )
     node.query(
         "INSERT INTO copy_arrays VALUES "
-        "(1, [1, 2, 3], ['a', 'b,c'], [[1, 2], [3]], [1, NULL, 3]), "
+        "(1, [1, 2, 3], ['a', 'b,c'], [[1, 2], [3, 4]], [1, NULL, 3]), "
         "(2, [], [''], [], [])",
         settings={"async_insert": 0},
     )
@@ -1020,6 +1020,12 @@ def test_copy_array_column_round_trips(started_cluster):
         cur.copy_expert(
             "COPY copy_arrays FROM STDIN WITH (FORMAT csv)", io.StringIO(payload)
         )
+
+        # PostgreSQL multidimensional arrays must be rectangular. Reject a ClickHouse-only ragged
+        # value rather than advertising it as a PostgreSQL array literal that another server cannot parse.
+        with pytest.raises(py_psql.Error, match="rectangular"):
+            cur.execute("SELECT CAST([[1, 2], [3]], 'Array(Array(Int32))')")
+        conn.rollback()
 
         # A malformed array literal is reported without touching the table.
         node.query("DROP TABLE IF EXISTS copy_bad_arrays SYNC")
@@ -1042,7 +1048,7 @@ def test_copy_array_column_round_trips(started_cluster):
     assert node.query(
         "SELECT id, ints, strs, nested, nulls FROM copy_arrays ORDER BY id"
     ) == (
-        "1\t[1,2,3]\t['a','b,c']\t[[1,2],[3]]\t[1,NULL,3]\n"
+        "1\t[1,2,3]\t['a','b,c']\t[[1,2],[3,4]]\t[1,NULL,3]\n"
         "2\t[]\t['']\t[]\t[]\n"
     )
     node.query("DROP TABLE copy_arrays SYNC")

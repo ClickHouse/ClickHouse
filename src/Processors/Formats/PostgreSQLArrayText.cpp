@@ -17,6 +17,9 @@
 
 #include <Poco/String.h>
 
+#include <optional>
+#include <vector>
+
 namespace DB
 {
 
@@ -27,6 +30,39 @@ namespace ErrorCodes
 
 namespace
 {
+
+void validatePostgreSQLArrayShape(
+    const IColumn & column, const IDataType & type, size_t row, std::vector<std::optional<size_t>> & dimensions, size_t depth)
+{
+    if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))
+    {
+        validatePostgreSQLArrayShape(const_column->getDataColumn(), type, 0, dimensions, depth);
+        return;
+    }
+
+    const auto & array_column = assert_cast<const ColumnArray &>(column);
+    const auto & array_type = assert_cast<const DataTypeArray &>(type);
+    const auto & offsets = array_column.getOffsets();
+    const size_t begin = row == 0 ? 0 : offsets[row - 1];
+    const size_t end = offsets[row];
+    const size_t size = end - begin;
+
+    if (dimensions.size() == depth)
+        dimensions.emplace_back(size);
+    else if (*dimensions[depth] != size)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Cannot serialize {} as a PostgreSQL array: multidimensional PostgreSQL arrays must be rectangular",
+            type.getName());
+
+    const auto & nested_type = array_type.getNestedType();
+    if (!isArray(nested_type))
+        return;
+
+    const IColumn & nested_column = array_column.getData();
+    for (size_t k = begin; k < end; ++k)
+        validatePostgreSQLArrayShape(nested_column, *nested_type, k, dimensions, depth + 1);
+}
 
 /// Emit one scalar array element: double-quoted, with `"` and `\` escaped.
 void writeQuotedElement(const String & value, WriteBuffer & out)
@@ -46,6 +82,9 @@ void writeQuotedElement(const String & value, WriteBuffer & out)
 void writePostgreSQLArrayText(
     const IColumn & column, const IDataType & type, size_t row, WriteBuffer & out, const FormatSettings & settings)
 {
+    std::vector<std::optional<size_t>> dimensions;
+    validatePostgreSQLArrayShape(column, type, row, dimensions, 0);
+
     /// A constant expression (e.g. `SELECT [1, 2]`) may reach here as a `ColumnConst` if the caller
     /// does not materialize its input; unwrap it instead of copying the whole column per row.
     if (const auto * const_column = checkAndGetColumn<ColumnConst>(&column))

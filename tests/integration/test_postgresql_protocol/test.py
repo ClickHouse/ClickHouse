@@ -322,7 +322,7 @@ def test_python_client(started_cluster):
     )
     cur.execute("select * from tmp2")
     assert cur.fetchall()[0] == (
-        "44",
+        44,
         534324234,
         0.32423423,
         "hello",
@@ -330,6 +330,7 @@ def test_python_client(started_cluster):
         decimal.Decimal("0.3333330000"),
         uuid.UUID("61f0c404-5cb3-11e7-907b-a6006ad3dba0"),
     )
+    assert cur.description[0].type_code == 21
     cur.execute("DROP DATABASE x")
 
 
@@ -968,6 +969,39 @@ def test_malformed_frontend_frame_closes_connection(started_cluster, message_typ
         assert sock.recv(1) == b""
     finally:
         sock.close()
+
+
+@pytest.mark.parametrize("message_type", [b"S"])
+def test_fixed_size_frontend_frames_reject_trailing_bytes(started_cluster, message_type):
+    """A fixed-size frontend message must not leave trailing bytes to be parsed as a new frame."""
+    node = cluster.instances["node"]
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    try:
+        sock.sendall(message_type + struct.pack("!i", 5) + b"x")
+        assert sock.recv(1) == b""
+    finally:
+        sock.close()
+
+
+def test_copy_done_rejects_trailing_bytes(started_cluster):
+    """`CopyDone` is fixed-size and must reject a payload before it can desynchronize the session."""
+    node = cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS malformed_copy_done SYNC")
+    node.query("CREATE TABLE malformed_copy_done (x UInt8) ENGINE = Memory")
+    sock = _pg_connect_raw(node, "default", "123", "default")
+
+    try:
+        query = b"COPY malformed_copy_done FROM STDIN\x00"
+        sock.sendall(b"Q" + struct.pack("!i", 4 + len(query)) + query)
+        message_type, _ = _pg_read_message(sock)
+        assert message_type == b"G"
+
+        sock.sendall(b"c" + struct.pack("!i", 5) + b"x")
+        assert sock.recv(1) == b""
+    finally:
+        sock.close()
+        node.query("DROP TABLE malformed_copy_done SYNC")
 
 
 def test_flush_error_discards_extended_query_cycle(started_cluster):

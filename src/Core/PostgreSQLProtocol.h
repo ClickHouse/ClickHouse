@@ -986,6 +986,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz != static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in Sync, it must be 4", sz);
     }
 
     MessageType getMessageType() const override
@@ -1239,6 +1242,9 @@ public:
     {
         Int32 sz = 0;
         readBinaryBigEndian(sz, in);
+        if (sz != static_cast<Int32>(sizeof(Int32)))
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong message length {} in CopyDone, it must be 4", sz);
     }
 
     MessageType getMessageType() const override

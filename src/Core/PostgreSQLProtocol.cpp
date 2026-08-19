@@ -109,8 +109,6 @@ ColumnTypeSpec convertDataTypeToPostgresColumnTypeSpec(const DataTypePtr & data_
     switch (type_index)
     {
         case TypeIndex::Int8:
-            return {ColumnType::CHAR, 1};
-
         case TypeIndex::UInt8:
         case TypeIndex::Int16:
             return {ColumnType::INT2, 2};
