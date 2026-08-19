@@ -145,7 +145,9 @@ def test_review_threads_workflows_preserve_override_and_infra_retry_behavior():
     assert 'Failed to verify re-run of $run_id' in rerun_workflow
     assert '[ "$failed_workflow_jobs" = "Finish Workflow" ]' in retry_workflow
     assert 'select(.created_at >= $finish_started_at)' in retry_workflow
-    assert 'review threads and another post-hook blocked' not in (
+    pull_request_workflow = (repository_root / "ci/workflows/pull_request.py").read_text()
+    assert 'can_be_merged.py --review-threads' in pull_request_workflow
+    assert '"ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"' in (
         repository_root / "ci/praktika/native_jobs.py"
     ).read_text()
     assert '_REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"' in (
@@ -342,7 +344,7 @@ def test_limited_pipeline_status_write_failure_does_not_enable_filtering(monkeyp
     assert not record_limited_pipeline_status(info, 1)
 
 
-def test_review_threads_marker_distinguishes_another_merge_gate(monkeypatch):
+def test_review_threads_marker_is_independent_of_another_merge_gate(monkeypatch):
     from ci.jobs.scripts.workflow_hooks import can_be_merged
 
     info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
@@ -355,5 +357,5 @@ def test_review_threads_marker_distinguishes_another_merge_gate(monkeypatch):
         lambda **kwargs: posted.append(kwargs) or True,
     )
 
-    assert not can_be_merged.check_review_threads(other_merge_gate_blocked=True)
-    assert posted[0]["description"] == "review threads and another merge gate blocked"
+    assert not can_be_merged.check_review_threads()
+    assert posted[0]["description"] == "1 unresolved review thread(s)"

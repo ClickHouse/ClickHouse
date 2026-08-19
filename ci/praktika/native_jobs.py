@@ -93,12 +93,14 @@ _final_job = Job.Config(
 # The review-thread reconciliation workflow can clear this exact failure after
 # the dedicated override label is added, while leaving every other post-hook
 # and job failure untouched.
-_REVIEW_THREADS_POST_HOOK = "ci/jobs/scripts/workflow_hooks/can_be_merged.py"
+_REVIEW_THREADS_POST_HOOK = (
+    "ci/jobs/scripts/workflow_hooks/can_be_merged.py --review-threads"
+)
 _REVIEW_THREADS_ONLY_POST_HOOK_FAILURE = "Failed: review threads only"
 
 
 def _review_threads_were_the_only_failed_post_hook(results):
-    """Whether `can_be_merged.py` was the sole failed workflow post-hook."""
+    """Whether the dedicated review-thread hook was the sole failed post-hook."""
     return any(
         not result.is_ok() and _REVIEW_THREADS_POST_HOOK in result.name
         for result in results

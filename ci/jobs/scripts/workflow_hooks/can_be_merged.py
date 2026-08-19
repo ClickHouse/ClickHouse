@@ -1,4 +1,4 @@
-import sys
+import argparse
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
@@ -31,7 +31,7 @@ def check():
     return True
 
 
-def check_review_threads(other_merge_gate_blocked=False):
+def check_review_threads():
     """The unresolved-review-threads merge gate
     (https://github.com/ClickHouse/ClickHouse/issues/114724).
 
@@ -53,12 +53,6 @@ def check_review_threads(other_merge_gate_blocked=False):
     blocked, description = merge_gate_verdict(
         config_limited, unresolved_now, override_now
     )
-    if blocked and other_merge_gate_blocked:
-        # The rerun workflow clears the aggregate `Mergeable Check` only when
-        # this status proves the review-thread hook was its sole blocker.
-        # Keep this distinct from the count-only marker even if the other
-        # gate's failure has the same aggregate `Finish Workflow` job.
-        description = "review threads and another merge gate blocked"
     print(
         f"Review threads gate: config_limited [{config_limited}], unresolved now "
         f"[{unresolved_now}], override [{override_now}] -> blocked [{blocked}] ({description})"
@@ -81,10 +75,13 @@ def check_review_threads(other_merge_gate_blocked=False):
 
 
 if __name__ == "__main__":
-    # Run both checks unconditionally: check_review_threads also refreshes the
-    # `Review Threads` commit status, which must stay in sync with the live
-    # thread state even when a forbidden label already blocks the merge.
-    other_merge_gate_blocked = not check()
-    ok = check_review_threads(other_merge_gate_blocked) and not other_merge_gate_blocked
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--review-threads", action="store_true")
+    args = parser.parse_args()
+
+    # Keep these as separate post-hooks. `Finish Workflow` aggregates its
+    # post-hooks, and the reconciliation workflow must know whether a review
+    # thread was the sole failed hook instead of conflating it with `check`.
+    ok = check_review_threads() if args.review_threads else check()
     if not ok:
         sys.exit(1)
