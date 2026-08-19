@@ -659,13 +659,14 @@ def test_default_codec_recovered_from_explicit_default_codec_column(start_cluste
 
     assert node4.query("SELECT COUNT() FROM explicit_default_codec_column") == "2\n"
 
-    # Recovered from the `CODEC(Default)` column's `LZ4` frame, not from the `ZSTD(3)` `checksums.txt`.
+    # The `CODEC(Default)` column proves the `LZ4` family, but its frame does not preserve all codec
+    # parameters. Do not present that recovery as authoritative part metadata.
     assert (
         node4.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='explicit_default_codec_column' AND active"
         ).strip()
-        == "LZ4"
+        == "UNKNOWN"
     )
 
     node4.query("DROP TABLE explicit_default_codec_column SYNC")
@@ -714,13 +715,13 @@ def test_default_codec_recovered_from_pipeline_default_codec_column(start_cluste
 
     assert node4.query("SELECT COUNT() FROM pipeline_default_codec_column") == "2\n"
 
-    # Recovered from the generic-compression stage of the `data` column's `Multiple` frame.
+    # The generic-compression stage proves the `LZ4` family but not authoritative part metadata.
     assert (
         node4.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='pipeline_default_codec_column' AND active"
         ).strip()
-        == "LZ4"
+        == "UNKNOWN"
     )
 
     node4.query("DROP TABLE pipeline_default_codec_column SYNC")
@@ -775,13 +776,14 @@ def test_default_codec_recovered_from_lz4hc_part(start_cluster):
 
     assert node4.query("SELECT COUNT() FROM lz4hc_default_codec") == "2\n"
 
-    # The shared method byte only proves the `LZ4` family; the `HC` variant and level are lost.
+    # The shared method byte only proves the `LZ4` family; the `HC` variant and level are lost, so
+    # the system table must expose the missing provenance.
     assert (
         node4.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='lz4hc_default_codec' AND active"
         ).strip()
-        == "LZ4"
+        == "UNKNOWN"
     )
 
     node4.query("DROP TABLE lz4hc_default_codec SYNC")
@@ -896,14 +898,14 @@ def test_default_codec_approximate_when_recovered_from_column_data(start_cluster
     assert node5.query("SELECT COUNT() FROM approximate_default_codec") == "2\n"
 
     # The `data` column's `.bin` proves the codec *family* (ZSTD), but the frame does not store the
-    # level, so the recovered default comes back as `ZSTD(1)` rather than the real `ZSTD(3)`. The
-    # recovery is therefore approximate; the level shown here is a best-effort guess.
+    # level, so the recovered default comes back internally as `ZSTD(1)` rather than the real
+    # `ZSTD(3)`. The system table must not present that best-effort guess as authoritative metadata.
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='approximate_default_codec' AND active"
         ).strip()
-        == "ZSTD(1)"
+        == "UNKNOWN"
     )
 
     node5.query("DROP TABLE approximate_default_codec SYNC")
@@ -1059,15 +1061,14 @@ def test_default_codec_provenance_survives_column_only_mutation(start_cluster):
         == "UNKNOWN"
     )
 
-    # A projection rebuilt by the column-only mutation must use the writer's exact recompression
-    # codec, rather than treating pointer identity with the approximate parent estimate as a signal
-    # to choose a fresh codec independently.
+    # A projection rebuilt by the column-only mutation chooses its codec independently instead of
+    # inheriting the approximate parent estimate. On this node that is the configured `ZSTD(3)`.
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.projection_parts WHERE database='default' "
             "AND table='codec_provenance_mutation' AND name='by_data' AND active AND rows > 0"
         ).strip()
-        == "ZSTD(1)"
+        == "ZSTD(3)"
     )
 
     # Reloading recovers a part-wide estimate again rather than converting the codec chosen for
@@ -1143,13 +1144,14 @@ def test_projection_codec_is_not_inherited_from_approximate_guess(start_cluster)
         "SELECT name FROM system.parts WHERE database='default' AND table='codec_provenance_projection' AND active AND rows > 0"
     ).strip()
 
-    # The level was lost by the recovery: the part's codec is now only a guess.
+    # The level was lost by the recovery: the part's codec is now only a guess and is reported as
+    # unknown rather than exposing the internal estimate.
     assert (
         node5.query(
             "SELECT default_compression_codec FROM system.parts "
             "WHERE database='default' AND table='codec_provenance_projection' AND active AND rows > 0"
         ).strip()
-        == "ZSTD(1)"
+        == "UNKNOWN"
     )
 
     # Build a projection for that part: none of its columns declare a `CODEC`, so all of them are
