@@ -2232,8 +2232,7 @@ static NameSet getColumnsAggregatedForSummingFinal(
                 || original_column_names.contains(column.name)
                 || std::ranges::find(flatten_ancestors[index], nested_table_name) != flatten_ancestors[index].end();
             if (WhichDataType(column.type).isArray() && nested_table_name != column.name && endsWith(nested_table_name, "Map")
-                && is_real_tuple_map
-                && (!merging_params.allow_tuple_element_aggregation || is_column_or_ancestor_in(index, columns_to_sum)))
+                && is_real_tuple_map)
             {
                 aggregated_columns.insert(column.name);
                 continue;
