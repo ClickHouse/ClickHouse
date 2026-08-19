@@ -710,32 +710,21 @@ which stores token positions to support exact phrase matching.
 The preferred on-disk serialization format version for writing text indexes.
 
 The setting is a preference rather than a hard constraint: if the configured version cannot
-represent an index, a newer version that can represent it is chosen automatically. An index
-with `support_phrase_search` is always written in `v2_with_positions` (older formats cannot
-represent positions), and an index with a posting list codec other than `none` is written at
-least in `v1_with_codec` (the `v0_initial` format does not persist the codec type). Writing
-a text index never fails because of this setting; readers take the format version from the
-on-disk header of each part.
-
-Explicit contradictions are rejected at creation time: an index with `support_phrase_search`
-cannot be created while this setting is below `v2_with_positions`, and an index with a
-`posting_list_codec` argument other than `none` cannot be created while it is `v0_initial`.
+represent an index (for example, an index with `support_phrase_search` requires
+`v2_with_positions`), a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
 
 During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
-the already upgraded servers: when it is set to a version older than the one that introduced
-the corresponding format, this setting reverts to an older value automatically and newer
-servers keep writing the format that older servers can still read. Remove the pin after all
-replicas are upgraded. Do not use `ALTER TABLE ... MODIFY SETTING` for a rolling upgrade of
-a replicated table: the modified setting is persisted in the table metadata, which replicas
-still running an older version cannot parse.
+the already upgraded servers, so that they keep writing the format that older servers can
+still read, and remove the pin after all replicas are upgraded. Do not use
+`ALTER TABLE ... MODIFY SETTING` for this purpose on replicated tables: the modified setting
+is persisted in the table metadata, which replicas running an older version cannot parse.
 
 Possible values:
 
-- `v0_initial` — The original format. Does not persist the posting list codec type; an index
-  with a codec other than `none` is automatically written in `v1_with_codec` instead.
+- `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
-- `v2_with_positions` — Persists token positions for indexes with the
-  `support_phrase_search` argument enabled (such indexes are always written in this format).
+- `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
 )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
@@ -2783,18 +2772,6 @@ void MergeTreeSettingsImpl::sanityCheck(
 
         if (!(*this)[MergeTreeSetting::enable_block_offset_column])
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting 'part_minmax_index_columns = with_block_number_offset' requires 'enable_block_offset_column' to be enabled");
-    }
-
-    /// The 'v0_initial' text index format does not persist the posting list codec type,
-    /// so it can only be written with codec 'none'. Catch the conflicting combination early, on CREATE and ALTER.
-    if ((*this)[MergeTreeSetting::text_index_serialization_version] == MergeTreeTextIndexSerializationVersion::V0_Initial
-        && (*this)[MergeTreeSetting::text_index_posting_list_codec] != TextIndexPostingListCodec::None)
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Setting 'text_index_serialization_version' = 'v0_initial' is incompatible with 'text_index_posting_list_codec' = '{}'. "
-            "Set 'text_index_posting_list_codec' to 'none', or 'text_index_serialization_version' to 'v1_with_codec'.",
-            (*this)[MergeTreeSetting::text_index_posting_list_codec].toString());
     }
 
     /// The marks, primary key and default compression codec settings are applied without a column data type, so

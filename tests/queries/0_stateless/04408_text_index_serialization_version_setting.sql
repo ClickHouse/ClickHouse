@@ -29,7 +29,7 @@ CREATE TABLE tab_v0_initial
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
--- 'v0_initial' requires the 'none' codec; pin it so randomized settings cannot inject a codec.
+-- Pin the codec to 'none': a randomized non-'none' codec would silently bump the format to 'v1_with_codec'.
 SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'none';
 
 INSERT INTO tab_v0_initial SELECT number, 'foo bar' FROM numbers(512);
@@ -81,19 +81,23 @@ OPTIMIZE TABLE tab_v2_with_positions FINAL;
 SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'foo bar');
 SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'baz bar');
 
-SELECT '-- v0_initial version is incompatible with a posting list codec';
-DROP TABLE IF EXISTS tab_conflict;
--- The conflict is rejected up front while validating the table settings on CREATE.
-CREATE TABLE tab_conflict
+SELECT '-- a posting list codec setting overrides the v0_initial preference';
+-- The version setting is only a preference: the codec cannot be represented in 'v0_initial',
+-- so the index is silently written in 'v1_with_codec' and stays readable.
+DROP TABLE IF EXISTS tab_codec_override;
+CREATE TABLE tab_codec_override
 (
     id UInt32,
     str String,
     INDEX text_idx str TYPE text(tokenizer = 'splitByNonAlpha')
 )
 ENGINE = MergeTree() ORDER BY id
-SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'bitpacking'; -- { serverError BAD_ARGUMENTS }
+SETTINGS index_granularity = 64, text_index_serialization_version = 'v0_initial', text_index_posting_list_codec = 'bitpacking';
 
-SELECT '-- altering into the incompatible combination is also rejected';
+INSERT INTO tab_codec_override SELECT number, 'foo bar' FROM numbers(512);
+SELECT count() FROM tab_codec_override WHERE hasToken(str, 'foo');
+
+SELECT '-- altering into the same combination also keeps the index writable';
 DROP TABLE IF EXISTS tab_alter;
 CREATE TABLE tab_alter
 (
@@ -103,7 +107,9 @@ CREATE TABLE tab_alter
 )
 ENGINE = MergeTree() ORDER BY id
 SETTINGS index_granularity = 64, text_index_posting_list_codec = 'bitpacking';
-ALTER TABLE tab_alter MODIFY SETTING text_index_serialization_version = 'v0_initial'; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE tab_alter MODIFY SETTING text_index_serialization_version = 'v0_initial';
+INSERT INTO tab_alter SELECT number, 'foo bar' FROM numbers(512);
+SELECT count() FROM tab_alter WHERE hasToken(str, 'bar');
 
 SELECT '-- a posting list codec index argument requires at least the v1_with_codec version';
 -- The table-level codec setting is pinned to 'none', so the conflict comes from the index argument alone.
@@ -152,5 +158,6 @@ SELECT count() FROM tab_v2_with_positions WHERE hasPhrase(str, 'bar qux');
 DROP TABLE tab_v0_initial;
 DROP TABLE tab_v1_with_codec;
 DROP TABLE tab_v2_with_positions;
+DROP TABLE tab_codec_override;
 DROP TABLE tab_alter;
 DROP TABLE tab_add_index;

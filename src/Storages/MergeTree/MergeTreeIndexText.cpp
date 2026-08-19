@@ -289,7 +289,7 @@ const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
 
     if (serialization_version < MergeTreeTextIndexSerializationVersion::V1_WithCodec)
     {
-        /// Pre-V1_WithCodec parts don't persist the codec type, but Bitpacking was the only
+        /// Pre-WithCodec parts don't persist the codec type, but Bitpacking was the only
         /// compression codec at the time, so an IsCompressed posting list must be Bitpacking.
         if (posting_list_codec->getType() == IPostingListCodec::Type::None)
             posting_list_codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
@@ -532,7 +532,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     const auto & settings = condition_text.getContext()->getSettingsRef();
     analyzer->analyzeCardinalitiesAndBypassHints(static_cast<double>(settings[Setting::text_index_hint_max_selectivity]), state.part.rows_count);
 
-    /// Capture the codec after the analysis — for pre-V1_WithCodec parts the
+    /// Capture the codec after the analysis — for pre-WithCodec parts the
     /// codec may have been lazily installed while decoding an IsCompressed posting list.
     postings_codec_type = postings_serialization.getPostingListCodec()->getType();
 }
@@ -1155,9 +1155,9 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
 
 void TextIndexSerialization::serializeHeader(MergeTreeTextIndexSerializationVersion version, const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, bool has_positions, WriteBuffer & ostr)
 {
-    /// `textIndexCreator` raises the version to one that can represent the codec and positions,
-    /// so a violation here is a logical error, not a user error.
-    if (version == MergeTreeTextIndexSerializationVersion::V0_Initial && posting_list_codec_type != IPostingListCodec::Type::None)
+    /// `textIndexCreator` raises the version to one that can represent the codec
+    /// and positions, so a violation here is a logical error, not a user error.
+    if (posting_list_codec_type != IPostingListCodec::Type::None && version < MergeTreeTextIndexSerializationVersion::V1_WithCodec)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index version 'v0_initial' does not support a posting list codec");
 
     if (has_positions && version < MergeTreeTextIndexSerializationVersion::V2_WithPositions)
@@ -2093,15 +2093,10 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     MergeTreeTextIndexSerializationVersion max_version = V2_WithPositions;
 
     if (has_codec)
-    {
         min_version = V1_WithCodec;
-    }
 
     if (positions)
-    {
         min_version = V2_WithPositions;
-        max_version = V2_WithPositions;
-    }
 
     const MergeTreeTextIndexSerializationVersion version_setting = settings[MergeTreeSetting::text_index_serialization_version];
     MergeTreeTextIndexSerializationVersion serialization_version = std::clamp(version_setting, min_version, max_version);

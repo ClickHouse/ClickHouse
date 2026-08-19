@@ -18,8 +18,10 @@ v2_with_positions
 -- v2_with_positions version: merge keeps the format readable
 512
 512
--- v0_initial version is incompatible with a posting list codec
--- altering into the incompatible combination is also rejected
+-- a posting list codec setting overrides the v0_initial preference
+512
+-- altering into the same combination also keeps the index writable
+512
 -- a posting list codec index argument requires at least the v1_with_codec version
 -- phrase search index requires the v2_with_positions version on CREATE
 -- adding a phrase search index on a table pinned to an older version is also rejected

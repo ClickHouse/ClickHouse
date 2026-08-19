@@ -581,10 +581,8 @@ The main use case of the table-level settings is to change the index parameters 
 Changing a table-level setting applies the new parameters only to text indexes built for new parts; existing parts keep their current layout.
 
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index#text_index_serialization_version) (default: `v2_with_positions`).
-The setting is a preference rather than a hard constraint: if the configured version cannot represent an index (for example, an index with `support_phrase_search` requires `v2_with_positions`), a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
+The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
-Remove the pin once all replicas are upgraded.
-Do not use `ALTER TABLE ... MODIFY SETTING text_index_serialization_version` for a rolling upgrade of a replicated table: the modified setting is persisted in the table metadata, which replicas still running an older version cannot parse.
 
 An argument given in the index definition takes precedence over the table setting, for example:
 
