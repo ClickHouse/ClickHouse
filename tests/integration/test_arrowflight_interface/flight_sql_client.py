@@ -481,6 +481,14 @@ class FlightSQLClient:
         options = self._flight_call_options()
         return self.client.get_flight_info(flight_descriptor(cmd), options)
 
+    def get_xdbc_type_info_schema(self, data_type: Optional[int] = None) -> flight.SchemaResult:
+        """Retrieve the CommandGetXdbcTypeInfo result schema."""
+        cmd = CommandGetXdbcTypeInfo()
+        if data_type is not None:
+            cmd.data_type = data_type
+        options = self._flight_call_options()
+        return self.client.get_schema(flight_descriptor(cmd), options)
+
     def get_schema(self, query: str) -> flight.SchemaResult:
         """Retrieve query result schema without executing via GetSchema."""
         cmd = CommandStatementQuery(query=query)

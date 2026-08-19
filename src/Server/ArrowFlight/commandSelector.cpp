@@ -1,27 +1,28 @@
 #include <Server/ArrowFlight/commandSelector.h>
 
-#include <Interpreters/Context.h>
-#include <Core/Block.h>
-#include <Core/Settings.h>
-#include <Common/config_version.h>
-#include <Common/quoteString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
+#include <Interpreters/Context.h>
 #include <Processors/Formats/Impl/CHColumnToArrowColumn.h>
+#include <Common/config_version.h>
+#include <Common/quoteString.h>
 
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/adaptor/transformed.hpp>
 
-#include <arrow/ipc/writer.h>
 #include <arrow/array/builder_binary.h>
 #include <arrow/array/builder_nested.h>
 #include <arrow/array/builder_primitive.h>
 #include <arrow/array/builder_union.h>
 #include <arrow/flight/sql/protocol_internal.h>
 #include <arrow/flight/sql/server.h>
+#include <arrow/ipc/writer.h>
 
 #include <string_view>
 
@@ -184,16 +185,19 @@ static constexpr int32_t SQL_REAL = 7;
 static constexpr int32_t SQL_DOUBLE = 8;
 static constexpr int32_t SQL_VARCHAR = 12;
 static constexpr int32_t SQL_TYPE_DATE = 91;
+static constexpr int32_t SQL_TYPE_TIME = 92;
 static constexpr int32_t SQL_TYPE_TIMESTAMP = 93;
 
 /// Verbose SQL data type used in sql_data_type for datetime rows,
 /// with the concise type reported in datetime_subcode (see FlightSql.proto).
 static constexpr int32_t SQL_DATETIME = 9;
 static constexpr int32_t SQL_CODE_DATE = 1;
+static constexpr int32_t SQL_CODE_TIME = 2;
 static constexpr int32_t SQL_CODE_TIMESTAMP = 3;
 
 static constexpr int32_t SQL_NULLABLE = 1;
-static constexpr int32_t SQL_SEARCHABLE = 3;
+static constexpr int32_t SQL_SEARCHABLE_BASIC = 2;
+static constexpr int32_t SQL_SEARCHABLE_FULL = 3;
 
 /// One row of GetXdbcTypeInfo. Rows must be ordered by (data_type, type_name)
 /// per Flight SQL protocol (SQL_GUID=-11 is first).
@@ -207,6 +211,8 @@ struct XdbcTypeInfoRow
     /// Comma-separated parameter keywords (e.g. "precision,scale"); empty means NULL.
     std::string_view create_params = {};
     bool case_sensitive = false;
+    int32_t searchable = SQL_SEARCHABLE_BASIC;
+    bool numeric = false;
     bool unsigned_attribute = false;
     bool fixed_prec_scale = false;
     /// -1 means NULL; when set, sql_data_type is SQL_DATETIME and this is the subcode.
@@ -216,9 +222,8 @@ struct XdbcTypeInfoRow
     int32_t num_prec_radix = -1;
 };
 
-static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
-    const arrow::flight::protocol::sql::CommandGetXdbcTypeInfo & command,
-    bool schema_only)
+static arrow::Result<std::shared_ptr<arrow::Table>>
+commandGetXdbcTypeInfo(const arrow::flight::protocol::sql::CommandGetXdbcTypeInfo & command, bool schema_only)
 {
     // Ordered by data_type ascending, then type_name (protocol requirement).
     static constexpr XdbcTypeInfoRow kTypeInfoRows[] = {
@@ -227,39 +232,139 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
         // Bool
         {.type_name = "Bool", .data_type = SQL_BIT, .column_size = 1},
         // Int8 / UInt8
-        {.type_name = "Int8", .data_type = SQL_TINYINT, .column_size = 3, .num_prec_radix = 10},
-        {.type_name = "UInt8", .data_type = SQL_TINYINT, .column_size = 3, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "Int8", .data_type = SQL_TINYINT, .column_size = 3, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "UInt8",
+         .data_type = SQL_TINYINT,
+         .column_size = 3,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
         // Int64 / UInt64 (SQL_BIGINT = -5; must sort between TINYINT and BINARY)
-        {.type_name = "Int64", .data_type = SQL_BIGINT, .column_size = 19, .num_prec_radix = 10},
-        {.type_name = "UInt64", .data_type = SQL_BIGINT, .column_size = 20, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "Int64", .data_type = SQL_BIGINT, .column_size = 19, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "UInt64",
+         .data_type = SQL_BIGINT,
+         .column_size = 20,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
         // FixedString
-        {.type_name = "FixedString", .data_type = SQL_BINARY, .column_size = 65536, .create_params = "length"},
+        {.type_name = "FixedString",
+         .data_type = SQL_BINARY,
+         .column_size = MAX_FIXEDSTRING_SIZE,
+         .create_params = "length",
+         .case_sensitive = true,
+         .searchable = SQL_SEARCHABLE_FULL},
         // Wide integers as NUMERIC (max number of decimal digits)
-        {.type_name = "Int128", .data_type = SQL_NUMERIC, .column_size = 39, .num_prec_radix = 10},
-        {.type_name = "Int256", .data_type = SQL_NUMERIC, .column_size = 77, .num_prec_radix = 10},
-        {.type_name = "UInt128", .data_type = SQL_NUMERIC, .column_size = 39, .unsigned_attribute = true, .num_prec_radix = 10},
-        {.type_name = "UInt256", .data_type = SQL_NUMERIC, .column_size = 78, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "Int128", .data_type = SQL_NUMERIC, .column_size = 39, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "Int256", .data_type = SQL_NUMERIC, .column_size = 77, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "UInt128",
+         .data_type = SQL_NUMERIC,
+         .column_size = 39,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
+        {.type_name = "UInt256",
+         .data_type = SQL_NUMERIC,
+         .column_size = 78,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
         // Decimal
-        {.type_name = "Decimal", .data_type = SQL_DECIMAL, .column_size = 76, .create_params = "precision,scale", .minimum_scale = 0, .maximum_scale = 76, .num_prec_radix = 10},
+        {.type_name = "Decimal",
+         .data_type = SQL_DECIMAL,
+         .column_size = 76,
+         .create_params = "precision,scale",
+         .numeric = true,
+         .minimum_scale = 0,
+         .maximum_scale = 76,
+         .num_prec_radix = 10},
         // Int32 / UInt32
-        {.type_name = "Int32", .data_type = SQL_INTEGER, .column_size = 10, .num_prec_radix = 10},
-        {.type_name = "UInt32", .data_type = SQL_INTEGER, .column_size = 10, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "Int32", .data_type = SQL_INTEGER, .column_size = 10, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "UInt32",
+         .data_type = SQL_INTEGER,
+         .column_size = 10,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
         // Int16 / UInt16
-        {.type_name = "Int16", .data_type = SQL_SMALLINT, .column_size = 5, .num_prec_radix = 10},
-        {.type_name = "UInt16", .data_type = SQL_SMALLINT, .column_size = 5, .unsigned_attribute = true, .num_prec_radix = 10},
+        {.type_name = "Int16", .data_type = SQL_SMALLINT, .column_size = 5, .numeric = true, .num_prec_radix = 10},
+        {.type_name = "UInt16",
+         .data_type = SQL_SMALLINT,
+         .column_size = 5,
+         .numeric = true,
+         .unsigned_attribute = true,
+         .num_prec_radix = 10},
         // Floats
-        {.type_name = "Float32", .data_type = SQL_REAL, .column_size = 24, .num_prec_radix = 2},
-        {.type_name = "Float64", .data_type = SQL_DOUBLE, .column_size = 53, .num_prec_radix = 2},
+        {.type_name = "Float32", .data_type = SQL_REAL, .column_size = 24, .numeric = true, .num_prec_radix = 2},
+        {.type_name = "Float64", .data_type = SQL_DOUBLE, .column_size = 53, .numeric = true, .num_prec_radix = 2},
         // Enums / String as VARCHAR
-        {.type_name = "Enum16", .data_type = SQL_VARCHAR, .column_size = 65536},
-        {.type_name = "Enum8", .data_type = SQL_VARCHAR, .column_size = 65536},
-        {.type_name = "String", .data_type = SQL_VARCHAR, .column_size = 65536, .literal_prefix = "'", .literal_suffix = "'", .case_sensitive = true},
+        {.type_name = "Enum16",
+         .data_type = SQL_VARCHAR,
+         .column_size = MAX_FIXEDSTRING_SIZE,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .case_sensitive = true,
+         .searchable = SQL_SEARCHABLE_FULL},
+        {.type_name = "Enum8",
+         .data_type = SQL_VARCHAR,
+         .column_size = MAX_FIXEDSTRING_SIZE,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .case_sensitive = true,
+         .searchable = SQL_SEARCHABLE_FULL},
+        {.type_name = "String",
+         .data_type = SQL_VARCHAR,
+         .column_size = MAX_FIXEDSTRING_SIZE,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .case_sensitive = true,
+         .searchable = SQL_SEARCHABLE_FULL},
         // Dates
-        {.type_name = "Date", .data_type = SQL_TYPE_DATE, .column_size = 10, .literal_prefix = "'", .literal_suffix = "'", .datetime_subcode = SQL_CODE_DATE},
-        {.type_name = "Date32", .data_type = SQL_TYPE_DATE, .column_size = 10, .literal_prefix = "'", .literal_suffix = "'", .datetime_subcode = SQL_CODE_DATE},
+        {.type_name = "Date",
+         .data_type = SQL_TYPE_DATE,
+         .column_size = 10,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .datetime_subcode = SQL_CODE_DATE},
+        {.type_name = "Date32",
+         .data_type = SQL_TYPE_DATE,
+         .column_size = 10,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .datetime_subcode = SQL_CODE_DATE},
+        // Time / Time64
+        {.type_name = "Time",
+         .data_type = SQL_TYPE_TIME,
+         .column_size = 10,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .datetime_subcode = SQL_CODE_TIME},
+        {.type_name = "Time64",
+         .data_type = SQL_TYPE_TIME,
+         .column_size = 20,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .create_params = "precision",
+         .datetime_subcode = SQL_CODE_TIME,
+         .minimum_scale = 0,
+         .maximum_scale = 9},
         // DateTime / DateTime64
-        {.type_name = "DateTime", .data_type = SQL_TYPE_TIMESTAMP, .column_size = 19, .literal_prefix = "'", .literal_suffix = "'", .create_params = "timezone", .datetime_subcode = SQL_CODE_TIMESTAMP},
-        {.type_name = "DateTime64", .data_type = SQL_TYPE_TIMESTAMP, .column_size = 29, .literal_prefix = "'", .literal_suffix = "'", .create_params = "scale,timezone", .datetime_subcode = SQL_CODE_TIMESTAMP, .minimum_scale = 0, .maximum_scale = 9},
+        {.type_name = "DateTime",
+         .data_type = SQL_TYPE_TIMESTAMP,
+         .column_size = 19,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .create_params = "timezone",
+         .datetime_subcode = SQL_CODE_TIMESTAMP},
+        {.type_name = "DateTime64",
+         .data_type = SQL_TYPE_TIMESTAMP,
+         .column_size = 29,
+         .literal_prefix = "'",
+         .literal_suffix = "'",
+         .create_params = "precision,timezone",
+         .datetime_subcode = SQL_CODE_TIMESTAMP,
+         .minimum_scale = 0,
+         .maximum_scale = 9},
     };
 
     auto schema = arrow::flight::sql::SqlSchema::GetXdbcTypeInfoSchema();
@@ -271,8 +376,7 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
     arrow::StringBuilder literal_prefix_builder(pool);
     arrow::StringBuilder literal_suffix_builder(pool);
     auto create_params_value_builder = std::make_shared<arrow::StringBuilder>(pool);
-    arrow::ListBuilder create_params_builder(
-        pool, create_params_value_builder, schema->GetFieldByName("create_params")->type());
+    arrow::ListBuilder create_params_builder(pool, create_params_value_builder, schema->GetFieldByName("create_params")->type());
     arrow::Int32Builder nullable_builder(pool);
     arrow::BooleanBuilder case_sensitive_builder(pool);
     arrow::Int32Builder searchable_builder(pool);
@@ -333,10 +437,16 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
 
             ARROW_RETURN_NOT_OK(nullable_builder.Append(SQL_NULLABLE));
             ARROW_RETURN_NOT_OK(case_sensitive_builder.Append(row.case_sensitive));
-            ARROW_RETURN_NOT_OK(searchable_builder.Append(SQL_SEARCHABLE));
-            ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Append(row.unsigned_attribute));
+            ARROW_RETURN_NOT_OK(searchable_builder.Append(row.searchable));
+            if (row.numeric)
+                ARROW_RETURN_NOT_OK(unsigned_attribute_builder.Append(row.unsigned_attribute));
+            else
+                ARROW_RETURN_NOT_OK(unsigned_attribute_builder.AppendNull());
             ARROW_RETURN_NOT_OK(fixed_prec_scale_builder.Append(row.fixed_prec_scale));
-            ARROW_RETURN_NOT_OK(auto_increment_builder.Append(false));
+            if (row.numeric)
+                ARROW_RETURN_NOT_OK(auto_increment_builder.Append(false));
+            else
+                ARROW_RETURN_NOT_OK(auto_increment_builder.AppendNull());
             ARROW_RETURN_NOT_OK(local_type_name_builder.Append(std::string(row.type_name)));
 
             if (row.minimum_scale >= 0)
@@ -414,25 +524,9 @@ static arrow::Result<std::shared_ptr<arrow::Table>> commandGetXdbcTypeInfo(
     return arrow::Table::Make(
         schema,
         {
-            type_name,
-            data_type,
-            column_size,
-            literal_prefix,
-            literal_suffix,
-            create_params,
-            nullable,
-            case_sensitive,
-            searchable,
-            unsigned_attribute,
-            fixed_prec_scale,
-            auto_increment,
-            local_type_name,
-            minimum_scale,
-            maximum_scale,
-            sql_data_type,
-            datetime_subcode,
-            num_prec_radix,
-            interval_precision,
+            type_name,      data_type,     column_size,        literal_prefix,   literal_suffix,     create_params,   nullable,
+            case_sensitive, searchable,    unsigned_attribute, fixed_prec_scale, auto_increment,     local_type_name, minimum_scale,
+            maximum_scale,  sql_data_type, datetime_subcode,   num_prec_radix,   interval_precision,
         });
 }
 

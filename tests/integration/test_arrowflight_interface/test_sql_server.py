@@ -262,12 +262,36 @@ def test_get_xdbc_type_info():
     assert table.schema.field("data_type").type == pa.int32()
     assert table.schema.field("case_sensitive").type == pa.bool_()
     assert table.schema.field("create_params").type == pa.list_(pa.field("item", pa.utf8(), nullable=False))
-    assert table.num_rows >= 24
-
     type_names = [table.column("type_name")[i].as_py() for i in range(table.num_rows)]
-    assert "Int32" in type_names
-    assert "String" in type_names
-    assert "UUID" in type_names
+    assert type_names == [
+        "UUID",
+        "Bool",
+        "Int8",
+        "UInt8",
+        "Int64",
+        "UInt64",
+        "FixedString",
+        "Int128",
+        "Int256",
+        "UInt128",
+        "UInt256",
+        "Decimal",
+        "Int32",
+        "UInt32",
+        "Int16",
+        "UInt16",
+        "Float32",
+        "Float64",
+        "Enum16",
+        "Enum8",
+        "String",
+        "Date",
+        "Date32",
+        "Time",
+        "Time64",
+        "DateTime",
+        "DateTime64",
+    ]
 
     # Protocol requires ordering by (data_type, type_name).
     order_keys = [
@@ -294,6 +318,10 @@ def test_get_xdbc_type_info():
         assert rows[name]["data_type"] == 93
         assert rows[name]["sql_data_type"] == 9
         assert rows[name]["datetime_subcode"] == 3
+    for name in ("Time", "Time64"):
+        assert rows[name]["data_type"] == 92
+        assert rows[name]["sql_data_type"] == 9
+        assert rows[name]["datetime_subcode"] == 2
     assert rows["Int32"]["sql_data_type"] == 4
     assert rows["Int32"]["datetime_subcode"] is None
 
@@ -302,7 +330,8 @@ def test_get_xdbc_type_info():
     assert rows["FixedString"]["create_params"] == ["length"]
     assert rows["Decimal"]["create_params"] == ["precision", "scale"]
     assert rows["DateTime"]["create_params"] == ["timezone"]
-    assert rows["DateTime64"]["create_params"] == ["scale", "timezone"]
+    assert rows["DateTime64"]["create_params"] == ["precision", "timezone"]
+    assert rows["Time64"]["create_params"] == ["precision"]
     assert rows["Int32"]["create_params"] is None
     assert rows["String"]["create_params"] is None
 
@@ -311,6 +340,32 @@ def test_get_xdbc_type_info():
     assert rows["UInt64"]["num_prec_radix"] == 10
     assert rows["Float64"]["num_prec_radix"] == 2
     assert rows["String"]["num_prec_radix"] is None
+
+    # Only character-like types support all predicates, including LIKE.
+    assert rows["String"]["searchable"] == 3
+    assert rows["FixedString"]["searchable"] == 3
+    assert rows["Enum8"]["searchable"] == 3
+    assert rows["Int32"]["searchable"] == 2
+    assert rows["Date"]["searchable"] == 2
+
+    # Enum values use quoted, case-sensitive string literals.
+    for name in ("Enum8", "Enum16"):
+        assert rows[name]["literal_prefix"] == "'"
+        assert rows[name]["literal_suffix"] == "'"
+        assert rows[name]["case_sensitive"] is True
+
+    # Optional numeric attributes are NULL for non-numeric types.
+    assert rows["Int32"]["unsigned_attribute"] is False
+    assert rows["UInt32"]["unsigned_attribute"] is True
+    assert rows["Int32"]["auto_increment"] is False
+    assert rows["String"]["unsigned_attribute"] is None
+    assert rows["String"]["auto_increment"] is None
+
+    for name in ("FixedString", "Enum8", "Enum16", "String"):
+        assert rows[name]["column_size"] == 0xFFFFFF
+
+    schema_result = client.get_xdbc_type_info_schema()
+    assert schema_result.schema == table.schema
 
 
 def test_get_xdbc_type_info_filtered():
