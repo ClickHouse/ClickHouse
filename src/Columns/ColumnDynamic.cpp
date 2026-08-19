@@ -1478,26 +1478,31 @@ void ColumnDynamic::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
         variant_col.getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnDynamic::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnDynamic::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Dynamic column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFrom should be called only on empty Dynamic column");
 
     const auto & source_dynamic = assert_cast<const ColumnDynamic &>(source);
+    /// `cloneEmpty` carries over the limits of the source's variants, which is how a limit belonging
+    /// to a column instance nested inside a variant (a JSON column) reaches this column.
     variant_column = source_dynamic.getVariantColumn().cloneEmpty();
     variant_column_ptr = assert_cast<ColumnVariant *>(variant_column.get());
     variant_info = source_dynamic.getVariantInfo();
-    /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
-    /// to extend selected variants on inserts into this column.
-    /// -1 because we don't count shared variant in the limit.
-    max_dynamic_types = variant_info.variant_names.size() - 1;
+    if (exact)
+    {
+        /// Reduce max_dynamic_types to the number of selected variants, so there will be no possibility
+        /// to extend selected variants on inserts into this column.
+        /// -1 because we don't count shared variant in the limit.
+        max_dynamic_types = variant_info.variant_names.size() - 1;
+    }
 
-    /// Run `takeExactDynamicStructureFrom` recursively for variants.
+    /// Run recursively for variants.
     const auto & source_variant_column = source_dynamic.getVariantColumn();
     auto & variant_col = getVariantColumn();
     for (size_t i = 0; i != variant_info.variant_names.size(); ++i)
-        variant_col.getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(
-            source_variant_column.getVariantByGlobalDiscriminator(i));
+        variant_col.getVariantByGlobalDiscriminator(i).takeDynamicStructureFromImpl(
+            source_variant_column.getVariantByGlobalDiscriminator(i), exact);
 }
 
 void ColumnDynamic::fixDynamicStructure()

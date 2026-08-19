@@ -158,14 +158,14 @@ size_t StreamingFormatExecutor::execute(size_t num_bytes)
     }
 }
 
-void StreamingFormatExecutor::takeDynamicStructureLimitsFromChunk(const Chunk & chunk)
+void StreamingFormatExecutor::takeDynamicStructureFromChunk(const Chunk & chunk)
 {
     const auto & chunk_columns = chunk.getColumns();
     for (size_t i = 0; i < result_columns.size(); ++i)
     {
-        /// A column that already has rows took its limits from the chunk that first filled it.
+        /// A column that already has rows took its structure from the chunk that first filled it.
         if (result_columns[i]->empty())
-            result_columns[i]->takeDynamicStructureLimitsFrom(*chunk_columns[i]);
+            result_columns[i]->takeDynamicStructureFrom(*chunk_columns[i]);
     }
 }
 
@@ -175,7 +175,7 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
     if (adding_defaults_transform)
         adding_defaults_transform->transform(chunk);
 
-    takeDynamicStructureLimitsFromChunk(chunk);
+    takeDynamicStructureFromChunk(chunk);
     preallocateResultColumns(num_bytes, chunk);
 
     auto columns = chunk.detachColumns();

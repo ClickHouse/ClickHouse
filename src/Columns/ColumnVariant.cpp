@@ -1956,20 +1956,12 @@ void ColumnVariant::chooseDynamicStructureForMerge(const VectorWithMemoryTrackin
         getVariantByGlobalDiscriminator(i).chooseDynamicStructureForMerge(variants_source_columns[i], max_dynamic_subcolumns);
 }
 
-void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnVariant::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
     const auto & source_variant = assert_cast<const ColumnVariant &>(source);
     size_t num_variants = variants.size();
     for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
-}
-
-void ColumnVariant::takeDynamicStructureLimitsFrom(const IColumn & source)
-{
-    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
-    size_t num_variants = variants.size();
-    for (size_t i = 0; i != num_variants; ++i)
-        getVariantByGlobalDiscriminator(i).takeDynamicStructureLimitsFrom(source_variant.getVariantByGlobalDiscriminator(i));
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureFromImpl(source_variant.getVariantByGlobalDiscriminator(i), exact);
 }
 
 

@@ -1713,14 +1713,9 @@ void ColumnArray::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<
     data->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnArray::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
-    data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
-}
-
-void ColumnArray::takeDynamicStructureLimitsFrom(const IColumn & source)
-{
-    data->takeDynamicStructureLimitsFrom(assert_cast<const ColumnArray &>(source).getData());
+    data->takeDynamicStructureFromImpl(assert_cast<const ColumnArray &>(source).getData(), exact);
 }
 
 void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)

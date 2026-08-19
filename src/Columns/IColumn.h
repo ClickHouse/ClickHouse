@@ -814,17 +814,16 @@ public:
     /// For columns with dynamic structure checks if columns have equal dynamic structure.
     [[nodiscard]] virtual bool dynamicStructureEquals(const IColumn & rhs) const { return structureEquals(rhs); }
 
-    /// Copies the exact dynamic structure from a single source column.
-    /// Used when we need to match an existing column's structure precisely
-    /// (e.g. taking structure from the first block during write, or during deserialization).
-    virtual void takeExactDynamicStructureFrom(const IColumn & /*source*/) {}
+    /// Copy the dynamic structure and its limits from a single source column of the same type.
+    /// Both must be called on an empty column. Limits are copied because some of them belong to a
+    /// column instance rather than to its type, such as a parsing limit on dynamic subcolumns.
+    /// The exact variant also fixes the structure, so later inserts cannot extend it: use it when the
+    /// structure must match the source (write of the first block, deserialization), and the other one
+    /// when the source is only the first part of the data the destination will hold.
+    void takeExactDynamicStructureFrom(const IColumn & source) { takeDynamicStructureFromImpl(source, /*exact=*/ true); }
+    void takeDynamicStructureFrom(const IColumn & source) { takeDynamicStructureFromImpl(source, /*exact=*/ false); }
 
-    /// Copies the limits of the dynamic structure from a single source column of the same type, the
-    /// limits only: unlike `takeExactDynamicStructureFrom` the destination is left free to grow up to
-    /// the copied limit. Used to carry a limit that belongs to a column instance rather than to the
-    /// type (a parsing limit on the number of dynamic subcolumns) over to the column that parsed data
-    /// is aggregated into. Must be called on an empty column.
-    virtual void takeDynamicStructureLimitsFrom(const IColumn & /*source*/) {}
+    virtual void takeDynamicStructureFromImpl(const IColumn & /*source*/, bool /*exact*/) {}
 
     /// Determines the optimal dynamic structure for a merge by analyzing all source columns.
     /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).

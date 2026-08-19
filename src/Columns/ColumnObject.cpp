@@ -2044,15 +2044,15 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     }
 }
 
-void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnObject::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
     if (!empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "takeDynamicStructureFrom should be called only on empty Object column");
 
     const auto & source_object = assert_cast<const ColumnObject &>(source);
 
     for (auto & [path, column] : typed_paths)
-        column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
+        column->takeDynamicStructureFromImpl(*source_object.typed_paths.at(path), exact);
 
     dynamic_paths.clear();
     dynamic_paths_ptrs.clear();
@@ -2060,26 +2060,15 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
     for (const auto & [path, column] : source_object.getDynamicPaths())
     {
         auto it = dynamic_paths.emplace(path, ColumnDynamic::create(max_dynamic_types)).first;
-        it->second->takeExactDynamicStructureFrom(*column);
+        it->second->takeDynamicStructureFromImpl(*column, exact);
         dynamic_paths_ptrs.emplace(path, assert_cast<ColumnDynamic *>(it->second.get()));
         sorted_dynamic_paths.insert(it->first);
     }
 
-    /// Set max_dynamic_paths to the number of dynamic paths.
-    /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
-    /// max_dynamic_paths_upper_bound is deliberately left alone: lowering it to the same value would
-    /// make `prepareForSquashing` restore max_dynamic_paths to it and so undo this freeze.
-    max_dynamic_paths = dynamic_paths.size();
-}
-
-void ColumnObject::takeDynamicStructureLimitsFrom(const IColumn & source)
-{
-    const auto & source_object = assert_cast<const ColumnObject &>(source);
-    if (source_object.max_dynamic_paths_upper_bound < max_dynamic_paths_upper_bound)
+    if (exact)
+        fixDynamicStructure();
+    else
         setMaxDynamicPathsUpperBound(source_object.max_dynamic_paths_upper_bound);
-
-    for (auto & [path, column] : typed_paths)
-        column->takeDynamicStructureLimitsFrom(*source_object.typed_paths.at(path));
 }
 
 void ColumnObject::fixDynamicStructure()

@@ -466,16 +466,10 @@ void ColumnMap::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<Co
     nested->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
 }
 
-void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnMap::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
     const auto & source_map = assert_cast<const ColumnMap &>(source);
-    nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
-}
-
-void ColumnMap::takeDynamicStructureLimitsFrom(const IColumn & source)
-{
-    const auto & source_map = assert_cast<const ColumnMap &>(source);
-    nested->takeDynamicStructureLimitsFrom(*source_map.getNestedColumnPtr());
+    nested->takeDynamicStructureFromImpl(*source_map.getNestedColumnPtr(), exact);
 }
 
 ColumnMap::Statistics ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const

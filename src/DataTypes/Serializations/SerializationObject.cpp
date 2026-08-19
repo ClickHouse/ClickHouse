@@ -1449,7 +1449,7 @@ SerializationPtr SerializationObject::TypedPathSubcolumnCreator::create(const DB
     return SerializationObjectTypedPath::create(prev, path);
 }
 
-void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const
+void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings)
 {
     if (!format_settings.json.max_dynamic_subcolumns_in_json_type_parsing || !column.empty())
         return;

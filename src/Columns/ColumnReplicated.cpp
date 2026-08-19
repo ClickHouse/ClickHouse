@@ -725,20 +725,12 @@ void ColumnReplicated::chooseDynamicStructureForMerge(const VectorWithMemoryTrac
     nested_column->chooseDynamicStructureForMerge(source_nested_columns, max_dynamic_subcolumns);
 }
 
-void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnReplicated::takeDynamicStructureFromImpl(const IColumn & source, bool exact)
 {
     if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
-        nested_column->takeExactDynamicStructureFrom(*rhs_replicated->nested_column);
+        nested_column->takeDynamicStructureFromImpl(*rhs_replicated->nested_column, exact);
     else
-        nested_column->takeExactDynamicStructureFrom(source);
-}
-
-void ColumnReplicated::takeDynamicStructureLimitsFrom(const IColumn & source)
-{
-    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
-        nested_column->takeDynamicStructureLimitsFrom(*rhs_replicated->nested_column);
-    else
-        nested_column->takeDynamicStructureLimitsFrom(source);
+        nested_column->takeDynamicStructureFromImpl(source, exact);
 }
 
 
