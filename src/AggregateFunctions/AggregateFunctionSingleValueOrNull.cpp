@@ -2,7 +2,11 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
 #include <Columns/ColumnNullable.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -12,6 +16,7 @@ struct Settings;
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -26,6 +31,8 @@ namespace
 struct AggregateFunctionSingleValueOrNullData
 {
     using Self = AggregateFunctionSingleValueOrNullData;
+
+    static constexpr size_t state_version = 1;
 
 private:
     /// Raw storage populated by `generateSingleValueFromType` via placement construction in the
@@ -88,11 +95,40 @@ public:
         }
     }
 
-    /// TODO: Methods write and read lose data (first_value and is_null)
-    /// Fixing it requires a breaking change (but it's probably necessary)
-    void write(WriteBuffer & buf, const ISerialization & serialization) const { data().write(buf, serialization); }
+    void write(WriteBuffer & buf, const ISerialization & serialization, size_t version) const
+    {
+        if (version > state_version)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of singleValueOrNull aggregate state", version);
 
-    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, Arena * arena) { data().read(buf, serialization, data_type, arena); }
+        data().write(buf, serialization);
+
+        if (version == state_version)
+        {
+            writeBinary(first_value, buf);
+            writeBinary(is_null, buf);
+        }
+    }
+
+    void read(ReadBuffer & buf, const ISerialization & serialization, const DataTypePtr & data_type, size_t version, Arena * arena)
+    {
+        if (version > state_version)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected version {} of singleValueOrNull aggregate state", version);
+
+        data().read(buf, serialization, data_type, arena);
+
+        if (version == 0)
+        {
+            /// Version 0 did not serialize the flags. `first_value` can be recovered from the
+            /// underlying state, while `is_null` is unavailable and remains false for legacy data.
+            first_value = !data().has();
+            is_null = false;
+        }
+        else
+        {
+            readBinary(first_value, buf);
+            readBinary(is_null, buf);
+        }
+    }
 
     void insertResultInto(IColumn & to, const DataTypePtr & result_type) const
     {
@@ -114,6 +150,8 @@ class AggregateFunctionSingleValueOrNull final
     : public IAggregateFunctionDataHelper<AggregateFunctionSingleValueOrNullData, AggregateFunctionSingleValueOrNull>
 {
 private:
+    static constexpr size_t state_version = AggregateFunctionSingleValueOrNullData::state_version;
+
     SerializationPtr serialization;
     const DataTypePtr value_type;
 
@@ -129,6 +167,23 @@ public:
     void create(AggregateDataPtr __restrict place) const override { new (place) AggregateFunctionSingleValueOrNullData(value_type); }
 
     String getName() const override { return "singleValueOrNull"; }
+
+    bool isVersioned() const override { return true; }
+
+    /// The default version must stay 0 because unversioned states already exist in persisted data.
+    size_t getDefaultVersion() const override { return 0; }
+
+    DataTypePtr getStateType() const override
+    {
+        return std::make_shared<DataTypeAggregateFunction>(this->shared_from_this(), this->argument_types, this->parameters, state_version);
+    }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= DBMS_MIN_REVISION_WITH_SINGLE_VALUE_OR_NULL_STATE_VERSION)
+            return state_version;
+        return 0;
+    }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena * arena) const override
     {
@@ -174,14 +229,14 @@ public:
         data(place).add(data(rhs), arena);
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        data(place).write(buf, *serialization);
+        data(place).write(buf, *serialization, version.value_or(getDefaultVersion()));
     }
 
-    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
+    void deserialize(AggregateDataPtr place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
-        data(place).read(buf, *serialization, value_type, arena);
+        data(place).read(buf, *serialization, value_type, version.value_or(getDefaultVersion()), arena);
     }
 
     bool allocatesMemoryInArena() const override { return singleValueTypeAllocatesMemoryInArena(value_type->getTypeId()); }
