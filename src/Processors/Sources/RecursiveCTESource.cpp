@@ -510,6 +510,18 @@ bool plannerDisablesParallelReplicasForJoinTreeShape(const QueryTreeNodePtr & jo
     if (join_tree_node->as<CrossJoinNode>())
         return true;
 
+    if (const auto * join_node = join_tree_node->as<JoinNode>())
+    {
+        /// `allowParallelReplicasForJoinTree` rejects an ordinary `VIEW` as the
+        /// leftmost join-table expression. `StorageView::readImpl` can still use
+        /// parallel replicas for the view's inner query, but that query does not
+        /// reference the recursive working table, so it cannot use the stale
+        /// `GLOBAL JOIN` table that this guard prevents.
+        if (const auto * left_table = join_node->getLeftTableExpressionNode()->as<TableNode>();
+            left_table && left_table->getStorage()->isView())
+            return true;
+    }
+
     if (const auto * join_node = join_tree_node->as<JoinNode>();
         join_node && join_node->getKind() == JoinKind::Inner && join_node->getStrictness() != JoinStrictness::All)
         return true;

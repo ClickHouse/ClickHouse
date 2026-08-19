@@ -833,13 +833,11 @@ SELECT sum(n) FROM joined_pr_non_replicated
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 0, automatic_parallel_replicas_mode = 0;
 
--- A view over a `MergeTree` table can engage parallel replicas regardless of
--- `parallel_replicas_allow_view_over_mergetree`: that setting only gates the *outer*
--- planner's unwrapping of the view, while with the setting off `StorageView::readImpl`
--- still re-interprets the inner query with the reading context's settings, and that inner
--- planner engages parallel replicas for the bare eligible `MergeTree` (the plain read's
--- plan contains `ReadFromRemoteParallelReplicas` over the view's inner query either way).
--- The forced mode must therefore fail closed with the view support turned off too ...
+-- A `VIEW` as the leftmost leaf of an outer join tree cannot make that join use
+-- parallel replicas: `allowParallelReplicasForJoinTree` rejects it. The view's inner
+-- query may still use parallel replicas, but it does not read the recursive working
+-- table and therefore cannot observe a stale rewritten `GLOBAL JOIN`; the recursive
+-- step must keep that safe inner-view path intact in forcing mode.
 CREATE VIEW edges_view AS SELECT * FROM edges;
 
 WITH RECURSIVE view_pr AS
@@ -851,9 +849,10 @@ WITH RECURSIVE view_pr AS
 SELECT sum(n) FROM view_pr
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 0,
-    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+    automatic_parallel_replicas_mode = 0;
 
--- ... and with it on, when the outer planner itself can read the view with parallel replicas.
+-- This remains true when view-over-`MergeTree` support is enabled: the outer join-tree
+-- gate still leaves the `VIEW` on its regular read path.
 WITH RECURSIVE view_pr_throw AS
 (
     SELECT 1 AS n
@@ -863,7 +862,7 @@ WITH RECURSIVE view_pr_throw AS
 SELECT sum(n) FROM view_pr_throw
 SETTINGS allow_experimental_parallel_reading_from_replicas = 2, max_parallel_replicas = 2,
     parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_allow_view_over_mergetree = 1,
-    automatic_parallel_replicas_mode = 0; -- { serverError SUPPORT_IS_DISABLED }
+    automatic_parallel_replicas_mode = 0;
 
 -- `FINAL` on a view is an outer `TableNode` modifier. It disqualifies parallel replicas
 -- in the ordinary planner, so the recursive-step preflight must preserve that guard and
