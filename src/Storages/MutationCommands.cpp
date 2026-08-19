@@ -356,8 +356,8 @@ std::string MutationCommands::toString(bool with_pure_metadata_commands) const
 }
 
 
-/// Decides both what runs as a mutation and what `allow_non_metadata_alters = 0` refuses
-/// (`MergeTreeData::checkMutationIsPossible`), so a command answering here always reaches both.
+/// Shared with `MergeTreeData::checkMutationIsPossible`, so of the commands that reach the
+/// heavyweight mutation path, the ones answering here are exactly the ones it refuses.
 bool MutationCommands::hasNonEmptyMutationCommands() const
 {
     for (const auto & command : *this)
