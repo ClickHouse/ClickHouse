@@ -91,9 +91,8 @@ Granules getGranulesToWrite(const MergeTreeIndexGranularity & index_granularity,
     return result;
 }
 
-/// Read up to `rows_to_read` rows from `istr` into a fresh column.
 /// `rows_to_read` is an untrusted per-mark granularity and may be arbitrarily large, so read in
-/// bounded batches instead of letting deserializeBinaryBulk eagerly resize the column to it.
+/// bounded batches rather than letting deserializeBinaryBulk resize the column to it up front.
 ColumnPtr readColumnForValidation(const ISerialization & serialization, const IDataType & type, ReadBuffer & istr, size_t rows_to_read)
 {
     static constexpr size_t max_rows_per_batch = 1ULL << 20;
