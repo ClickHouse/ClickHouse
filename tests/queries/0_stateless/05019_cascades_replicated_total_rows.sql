@@ -25,9 +25,10 @@ SELECT k, sum(x) FROM t_cascades_repl GROUP BY k ORDER BY k;
 SELECT count() FROM t_cascades_repl AS a JOIN t_cascades_repl AS b USING (k);
 
 -- A filter on a non-key column leaves the row count unestimated, so the group's statistics are
--- derived on demand instead of being prepopulated. `use_statistics = 0` keeps the column-statistics
--- estimator from supplying a count and reaching the prepopulated path anyway.
-SELECT k, count() FROM t_cascades_repl WHERE x > 10 GROUP BY k ORDER BY k SETTINGS use_statistics = 0;
+-- derived on demand instead of being prepopulated. `PREWHERE` puts the filter on the read step
+-- itself, which is what makes the count unestimable; `use_statistics = 0` keeps the
+-- column-statistics estimator from supplying one.
+SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k SETTINGS use_statistics = 0;
 
 -- The results above are only meaningful if the distributed optimizer planned those queries, and a
 -- distributed read strategy is named in the plan only when it did. The table is small, so drop the
@@ -46,7 +47,7 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 SELECT countIf(explain LIKE '%ParallelRead%' OR explain LIKE '%ReplicatedRead%') > 0
 FROM (
     EXPLAIN
-    SELECT k, count() FROM t_cascades_repl WHERE x > 10 GROUP BY k ORDER BY k
+    SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k
     SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, use_statistics = 0
 )
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
