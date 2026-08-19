@@ -349,7 +349,7 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
     const bool is_unaligned = array_join->is_unaligned;
     const bool is_left = array_join->is_left;
 
-    /// Skip fully-dead windows here - the inflating transform would push each empty chunk otherwise
+    /// Skip fully-dead windows here, the inflating transform would push each empty chunk otherwise
     while (current_row < total_rows)
     {
         size_t next_row = current_row;
@@ -365,13 +365,13 @@ Block ArrayJoinResultIterator::nextWithElementFilter()
         const auto & win_offsets = cut_any_array->getOffsets();
         size_t num_elements = cut_any_array->getData().size();
 
-        /// Element block: the nested element column of each joined column, keyed by name
+        /// Element block, the nested element column of each joined column, keyed by name
         Block element_block;
         for (const auto & name : columns)
         {
             const auto & src = block.getByName(name);
 
-            /// Mirror next(): the first aligned-inner column is already the unwrapped nested array
+            /// Mirrors next(). The first aligned-inner column is already the unwrapped nested array
             ColumnPtr column;
             DataTypePtr branch_type;
             if (!is_unaligned && !is_left && name == *columns.begin())

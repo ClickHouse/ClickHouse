@@ -94,7 +94,7 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
 /// Version 10: ArrayJoinStep now serializes an optional element filter, so older workers can't read the
-/// extra DAG - hence the bump, and we fail closed when a filter is present below version 10
+/// extra DAG, and we fail closed when a filter is present below version 10
 static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
