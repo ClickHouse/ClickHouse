@@ -25,11 +25,15 @@ CREATE TABLE test_gradual_resize (k UInt64, v UInt64) ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 256;
 SYSTEM STOP MERGES test_gradual_resize;
-INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(1000000);
+INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(0, 250000);
+INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(250000, 250000);
+INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(500000, 250000);
+INSERT INTO test_gradual_resize SELECT number % 10, number FROM numbers(750000, 250000);
 
 -- Keep this source non-partitioned: the recent partition-aggregation optimization can
--- skip the pre-aggregation resize completely for partition-local keys. A one-million-row
--- MergeTree part splits into several read streams, so this query reaches the resize stage.
+-- skip the pre-aggregation resize completely for partition-local keys. With merges stopped,
+-- the four inserts guarantee several source parts and streams, so this query reaches the
+-- resize stage independently of single-part read heuristics.
 
 SET min_rows_per_stream_for_gradual_resize = 1000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
