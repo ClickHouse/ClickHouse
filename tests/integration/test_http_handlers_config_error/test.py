@@ -13,6 +13,7 @@ node = cluster.add_instance("node", stay_alive=True)
 
 BAD_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_handler.xml"
 LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
+NO_HTTP_PORT_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/no_http_port.xml"
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -96,3 +97,42 @@ def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_clus
             user="root",
         )
         node.start_clickhouse()
+
+
+def test_handler_config_is_not_read_without_an_http_port(start_cluster):
+    # With no `http_port` there is no HTTP listener to configure, so `<http_handlers>` must not be read
+    # at all and a broken rule in it must not keep the server down. This is a lock on the port check
+    # that keeps the parse out of that path; it holds before the change too, since the parse then sat
+    # behind the same condition inside `createServer`.
+    node.stop_clickhouse()
+
+    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search space
+    # would fail it for the wrong reason: `grep_in_log` globs every rotation and these instances set
+    # `<rotateOnOpen>`.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
+    )
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "no_http_port.xml"), NO_HTTP_PORT_CONFIG_IN_CONTAINER
+    )
+    try:
+        node.start_clickhouse()
+
+        assert node.query("SELECT 1").strip() == "1"
+        assert node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG) == ""
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {BAD_CONFIG_IN_CONTAINER} {NO_HTTP_PORT_CONFIG_IN_CONTAINER}",
+            ],
+            user="root",
+        )
+        node.restart_clickhouse()
