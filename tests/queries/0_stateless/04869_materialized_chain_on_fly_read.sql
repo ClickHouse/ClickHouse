@@ -34,9 +34,72 @@ SELECT m1 FROM t_on_fly;
 SELECT m2 FROM t_on_fly;
 SELECT m3 FROM t_on_fly;
 SELECT x, m1, m2, m3 FROM t_on_fly;
+
+-- Selecting the updated column next to the deepest one, without the intermediate hop, keeps the
+-- command in the on-fly chain while the read set still lacks `m1`. The interpreter then analyses
+-- the default of `m2` against a column list that does not contain `m1` and the query fails
+-- outright, so the intermediate columns of the chain have to be read as well.
+SELECT x, m2 FROM t_on_fly;
+SELECT x, m3 FROM t_on_fly;
+
 SELECT y FROM t_on_fly;
 
 SYSTEM START MERGES t_on_fly;
+
+SELECT 'on the fly, multiple assignments';
+
+-- A single command assigning two columns. Reading `y` keeps the command in the on-fly chain, but
+-- it is narrowed to the assignments the query reads, so `x = 20` is dropped from it. The chain
+-- derived from `x` still has to be pulled into the read set, otherwise `x = 20` is lost and the
+-- default of `m2` is analysed without `m1`.
+DROP TABLE IF EXISTS t_on_fly_multi;
+
+CREATE TABLE t_on_fly_multi
+(
+    x Int32,
+    y Int32,
+    m1 Int32 MATERIALIZED x + 1,
+    m2 Int32 MATERIALIZED m1 + 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_on_fly_multi (x, y) VALUES (10, 0);
+
+SYSTEM STOP MERGES t_on_fly_multi;
+
+ALTER TABLE t_on_fly_multi UPDATE x = 20, y = 1 WHERE 1;
+
+SELECT m2, y FROM t_on_fly_multi;
+SELECT y FROM t_on_fly_multi;
+
+SYSTEM START MERGES t_on_fly_multi;
+
+SELECT 'on the fly, pending delete';
+
+-- A pending DELETE puts its predicate column into the read set, so a command survives filtering
+-- while the set of updated columns stays empty. The chain still has to be recomputed from the
+-- value the pending UPDATE assigns.
+DROP TABLE IF EXISTS t_on_fly_delete;
+
+CREATE TABLE t_on_fly_delete
+(
+    x Int32,
+    y Int32,
+    m1 Int32 MATERIALIZED x + 1,
+    m2 Int32 MATERIALIZED m1 + 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_on_fly_delete (x, y) VALUES (10, 0), (11, 5);
+
+SYSTEM STOP MERGES t_on_fly_delete;
+
+ALTER TABLE t_on_fly_delete UPDATE x = 20 WHERE 1;
+ALTER TABLE t_on_fly_delete DELETE WHERE y = 5;
+
+SELECT m2 FROM t_on_fly_delete;
+
+SYSTEM START MERGES t_on_fly_delete;
 
 SELECT 'on the fly, subcolumn';
 
@@ -96,5 +159,7 @@ SELECT x, me, me2 FROM t_on_fly_ephemeral;
 SYSTEM START MERGES t_on_fly_ephemeral;
 
 DROP TABLE t_on_fly;
+DROP TABLE t_on_fly_multi;
+DROP TABLE t_on_fly_delete;
 DROP TABLE t_on_fly_subcolumn;
 DROP TABLE t_on_fly_ephemeral;
