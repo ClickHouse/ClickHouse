@@ -11,6 +11,7 @@
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeArray.h>
