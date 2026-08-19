@@ -349,6 +349,11 @@ class ChangedQuery:
     # which arches CI flagged this same (test, query_index) on. Useful so
     # the report can say "flagged on ARM only" vs "flagged on both".
     flagged_on: list[str] = field(default_factory=list)
+    # Every arch's CI numbers for this (test, query_index). The dedup below
+    # keeps a single row per query, so without this the second arch's numbers
+    # and direction are lost -- and CI can legitimately call the same query
+    # slower on one arch and faster on the other, which is a finding in itself.
+    ci_by_arch: dict[str, dict] = field(default_factory=dict)
 
 
 def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
@@ -461,9 +466,14 @@ def parse_changed_rows_from_html(html: str) -> dict[tuple[str, int], dict]:
     return rows
 
 
+def describe_unreadable(unreadable: list[tuple[str, int, int, str]]) -> str:
+    return ", ".join(f"{a} {n}/{t}" for a, n, t, _ in sorted(unreadable))
+
+
 def find_changed_queries(
     shards: list[PerfShard],
-) -> tuple[list[ChangedQuery], int]:
+) -> tuple[list[ChangedQuery], int, list[tuple[str, int, str, int]],
+           list[tuple[str, int, int, str]]]:
     """Identify rows the CI report flags under "Changes in Performance".
 
     compare.sh computes the predicate at report time using per-test thresholds
@@ -475,20 +485,23 @@ def find_changed_queries(
     timing numbers for those tuples from ``all-query-metrics.tsv``. This is
     exactly the set the user sees in the report.
 
-    Also returns how many shard reports were actually readable, and any row CI
-    flagged whose numbers could be read from neither source -- those must never
-    be silently dropped, or a non-empty CI report turns into an all-clear: a shard whose
-    report cannot be fetched contributes no changed queries, exactly like a
-    shard that had none, and the caller must not read the second as the first.
+    Also returns how many shard reports were actually readable, the shards
+    that could not be read at all, and any row CI flagged whose numbers could
+    be read from neither source -- none of those may be silently dropped, or a
+    non-empty CI report turns into an all-clear: a shard whose report cannot be
+    fetched contributes no changed queries, exactly like a shard that had none,
+    and the caller must not read the second as the first.
     """
     changed: list[ChangedQuery] = []
     read_ok = 0
     unresolved: list[tuple[str, int, str, int]] = []
+    unreadable: list[tuple[str, int, int, str]] = []
     for s in shards:
         try:
             html = http_get(f"{s.base_dir_url}/report.html")
         except RuntimeError as e:
             log(f"skipping shard {s.arch}/{s.shard_num} report.html: {e}")
+            unreadable.append((s.arch, s.shard_num, s.total_shards, str(e)))
             continue
         read_ok += 1
         flagged = parse_changes_in_performance(html)
@@ -552,7 +565,7 @@ def find_changed_queries(
                     numbers_from_html=from_html,
                 )
             )
-    return changed, read_ok, unresolved
+    return changed, read_ok, unresolved, unreadable
 
 
 # ---------------------------------------------------------------------------
@@ -998,7 +1011,9 @@ def fetch_run_day(pr_number: int, pr_sha: str, perf_arch: str) -> Optional[str]:
     return day if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day) else None
 
 
-def fetch_reference_sha(pr_number: int, pr_sha: str, perf_arch: str) -> str:
+def fetch_reference_sha(
+    pr_number: int, pr_sha: str, perf_arch: str, required: bool = True
+) -> Optional[str]:
     """Find the reference (left/baseline) git SHA used in the CI run.
 
     The CI uploads each perf-test row to ``query_metrics_v2`` on
@@ -1014,7 +1029,18 @@ def fetch_reference_sha(pr_number: int, pr_sha: str, perf_arch: str) -> str:
     scrape is overwritten in place by the latest run, so the newest reference
     is the one that matches it -- order by ``event_time`` instead of taking an
     arbitrary row, and tell the user when the choice was not unique.
+
+    ``required=False`` turns every failure into a warning and ``None``. Only
+    the planning path (``--dry-run``) passes it: that path downloads nothing
+    and runs nothing, so an unresolved reference SHA costs the user a line of
+    the plan rather than a wrong measurement -- and it keeps the documented
+    promise that a dry run needs nothing but ``python3`` and ``git``.
     """
+    def fail(msg: str) -> None:
+        if required:
+            die(msg)
+        log(f"WARNING: {msg}")
+
     query = (
         "SELECT old_sha, toString(max(event_time)) FROM query_metrics_v2 "
         f"WHERE new_sha = '{pr_sha}' AND arch = '{perf_arch}' "
@@ -1040,23 +1066,26 @@ def fetch_reference_sha(pr_number: int, pr_sha: str, perf_arch: str) -> str:
             stderr=subprocess.PIPE,
         )
     except FileNotFoundError:
-        die(
+        fail(
             "clickhouse client not found on PATH — required to query "
             "play.clickhouse.com for the reference SHA. Install it or pass "
             "--reference-sha explicitly."
         )
+        return None
     except subprocess.CalledProcessError as e:
-        die(
+        fail(
             f"play.clickhouse.com query failed: {e.stderr.strip()}; "
             "pass --reference-sha explicitly"
         )
+        return None
     rows = [line.split("\t") for line in out.splitlines() if line.strip()]
     if not rows or not re.fullmatch(r"[0-9a-f]{40}", rows[0][0]):
-        die(
+        fail(
             f"play.clickhouse.com returned no row for new_sha={pr_sha} "
             f"arch={perf_arch} pr={pr_number} (got: {out.strip()!r}); pass "
             "--reference-sha explicitly"
         )
+        return None
     ref_sha = rows[0][0]
     if len(rows) > 1:
         log(
@@ -2037,6 +2066,7 @@ def print_report(
     local_results: dict[tuple[str, int], dict],
     local_arch: str,
     failed_tests: Optional[dict[str, int]] = None,
+    unreadable: Optional[list[tuple[str, int, int, str]]] = None,
 ) -> None:
     print()
     print("=" * 120)
@@ -2053,6 +2083,24 @@ def print_report(
     not_reproduced = 0
     failed = 0
     unverifiable = 0
+
+    def print_arch_disagreement(cq: ChangedQuery) -> bool:
+        """CI's own verdict split across arches. The table shows one arch's
+        numbers per query, so a query CI called slower on one arch and faster
+        on the other would otherwise read as a single-direction change."""
+        rows = cq.ci_by_arch
+        if len({r["direction"] for r in rows.values()}) < 2:
+            return False
+        print(
+            f"{'':<32} {'':>3}  └ CI split: "
+            + ", ".join(
+                f"{a} {fmt_diff(r['diff'])} {r['direction']}"
+                for a, r in rows.items()
+            )
+        )
+        return True
+
+    split_arch = False
     for cq in sorted(changed, key=lambda c: (c.test, c.query_index, c.arch)):
         key = (cq.test, cq.query_index)
         local = local_results.get(key)
@@ -2105,6 +2153,7 @@ def print_report(
                     f"{fmt_sec(cq.left):>8} {fmt_sec(cq.right):>8} "
                     f"{fmt_diff(cq.diff):>8} | {local_str}  {verdict}"
                 )
+                split_arch |= print_arch_disagreement(cq)
                 continue
             bar = cq.changed_threshold or CHANGED_THRESHOLD_FLOOR
             l_stat = local.get("stat_threshold")
@@ -2147,6 +2196,7 @@ def print_report(
             f"{fmt_sec(cq.left):>8} {fmt_sec(cq.right):>8} {fmt_diff(cq.diff):>8} | "
             f"{local_str}  {verdict}"
         )
+        split_arch |= print_arch_disagreement(cq)
     print()
     print(
         f"Summary: {confirmed} confirmed, "
@@ -2155,6 +2205,18 @@ def print_report(
         + (f" (of which {failed} from failed perf.py runs)" if failed else "")
         + (f", {unverifiable} without a verdict" if unverifiable else "")
     )
+    if unreadable:
+        print(
+            f"INCOMPLETE: {len(unreadable)} shard report(s) could not be read "
+            f"({describe_unreadable(unreadable)}). Queries those shards flagged "
+            "are missing from this table, so it is not the whole comparison."
+        )
+    if split_arch:
+        print(
+            "'CI split' lines: CI flagged the query on both arches but in "
+            "opposite directions. The table row carries one arch's numbers; "
+            "the split line has all of them."
+        )
     if failed_tests:
         print(
             "WARNING: perf.py failed for "
@@ -2365,14 +2427,17 @@ def main() -> int:
     #     can't reproduce the ARM regression" is a meaningful result)
     # When the same (test, query_index) is flagged on more than one arch,
     # we keep one row per query and remember every arch it was flagged on.
-    local_changed, local_read, local_unresolved = find_changed_queries(arch_shards)
+    local_changed, local_read, local_unresolved, local_unreadable = (
+        find_changed_queries(arch_shards)
+    )
     if other_arch_shards:
-        other_changed, other_read, other_unresolved = find_changed_queries(
-            other_arch_shards
+        other_changed, other_read, other_unresolved, other_unreadable = (
+            find_changed_queries(other_arch_shards)
         )
     else:
-        other_changed, other_read, other_unresolved = [], 0, []
+        other_changed, other_read, other_unresolved, other_unreadable = [], 0, [], []
     unresolved = local_unresolved + other_unresolved
+    unreadable = local_unreadable + other_unreadable
     if local_read + other_read == 0:
         die(
             f"none of the {len(shards)} Performance Comparison shard(s) for "
@@ -2380,6 +2445,13 @@ def main() -> int:
             "expired, or the run did not publish them). Without a report there "
             "is no way to tell 'CI flagged nothing' from 'no data', so no "
             "verdict is possible."
+        )
+    if unreadable:
+        log(
+            f"WARNING: {len(unreadable)} shard report(s) could not be read "
+            f"({describe_unreadable(unreadable)}) — whatever those shards "
+            "flagged is invisible here, so this double-check covers only part "
+            "of the comparison"
         )
     log(f"changed queries flagged by CI on {perf_arch}: {len(local_changed)}")
     if other_changed:
@@ -2394,6 +2466,7 @@ def main() -> int:
     # other-arch row we saw. Track every arch that flagged it.
     by_key: dict[tuple[str, int], ChangedQuery] = {}
     flagged_on: dict[tuple[str, int], list[str]] = defaultdict(list)
+    ci_by_arch: dict[tuple[str, int], dict[str, dict]] = defaultdict(dict)
     for cq in local_changed:
         key = (cq.test, cq.query_index)
         by_key[key] = cq
@@ -2405,8 +2478,23 @@ def main() -> int:
             by_key[key] = cq
         if cq.arch not in flagged_on[key]:
             flagged_on[key].append(cq.arch)
+    # Only one row per query survives the dedup, so keep each arch's numbers
+    # separately: the report has to be able to say that CI called the same
+    # query slower on one arch and faster on the other.
+    for cq in local_changed + other_changed:
+        ci_by_arch[(cq.test, cq.query_index)].setdefault(
+            cq.arch,
+            {
+                "left": cq.left,
+                "right": cq.right,
+                "diff": cq.diff,
+                "direction": cq.direction,
+                "shard_num": cq.shard_num,
+            },
+        )
     for key, cq in by_key.items():
         cq.flagged_on = sorted(flagged_on[key])
+        cq.ci_by_arch = dict(sorted(ci_by_arch[key].items()))
 
     changed = list(by_key.values())
     if unresolved:
@@ -2422,6 +2510,16 @@ def main() -> int:
             "comparison clean."
         )
     if not changed:
+        if unreadable:
+            die(
+                f"CI flagged no 'Changes in Performance' in the "
+                f"{local_read + other_read} shard report(s) that could be read, "
+                f"but {len(unreadable)} shard report(s) could not be read at "
+                f"all ({describe_unreadable(unreadable)}). Such a shard "
+                "contributes no changed queries, exactly like a shard that had "
+                "none, so calling the comparison clean here would be a claim "
+                "about the part of it that was never inspected."
+            )
         log(
             f"CI flagged no 'Changes in Performance' in the "
             f"{local_read + other_read} shard report(s) read — the comparison "
@@ -2542,11 +2640,19 @@ def main() -> int:
                 f"historical window ending {run_day})"
             )
 
-    # Find the reference SHA
+    # Find the reference SHA. A dry run only prints it, so it must not be the
+    # thing that makes the planning path require `clickhouse client`.
     ref_sha = args.reference_sha or fetch_reference_sha(
-        pr_number, pr_sha, perf_arch
+        pr_number, pr_sha, perf_arch, required=not args.dry_run
     )
-    log(f"reference SHA: {ref_sha}")
+    if ref_sha:
+        log(f"reference SHA: {ref_sha}")
+    else:
+        log(
+            "reference SHA: unresolved — a real run needs it, so install "
+            "clickhouse client or pass --reference-sha before rerunning "
+            "without --dry-run"
+        )
 
     if args.dry_run:
         log("--dry-run: stopping before downloads")
@@ -2710,7 +2816,7 @@ def main() -> int:
                 )
                 local_results[(test, qi)] = d
 
-        print_report(changed, local_results, perf_arch, failed_tests)
+        print_report(changed, local_results, perf_arch, failed_tests, unreadable)
         # JSON dump for downstream use
         json_path = work_dir / "result.json"
         json_path.write_text(
@@ -2723,6 +2829,10 @@ def main() -> int:
                     "populated_tables": populate_tables,
                     "changed": [cq.__dict__ for cq in changed],
                     "failed_tests": failed_tests,
+                    "unreadable_shards": [
+                        {"arch": a, "shard": n, "of": t, "error": e}
+                        for a, n, t, e in unreadable
+                    ],
                     "local": {
                         f"{k[0]}#{k[1]}": v for k, v in local_results.items()
                     },
@@ -2731,7 +2841,9 @@ def main() -> int:
             )
         )
         log(f"wrote {json_path}")
-        if failed_tests:
+        if failed_tests or unreadable:
+            # An unreadable shard leaves part of the comparison uninspected;
+            # a zero exit would read as "all of CI's findings were checked".
             exit_code = 1
     finally:
         stop_server(right_h)

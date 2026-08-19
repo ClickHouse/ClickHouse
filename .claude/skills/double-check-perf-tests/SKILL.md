@@ -20,7 +20,12 @@ skill:
    than reporting "no changes": "CI never ran the comparison" and "CI ran it
    and found nothing" are different answers, and only the second is a
    verdict. It stops the same way when shards ran but none of their reports
-   can be read (expired artifacts).
+   can be read (expired artifacts), and when *some* report is unreadable and
+   the readable ones happened to be clean: a missing report contributes no
+   changed queries, exactly like a shard that had none, so "clean" would be a
+   claim about a part of the comparison nobody looked at. When there are
+   changes to rerun, an unreadable shard instead marks the run `INCOMPLETE`
+   in the report and makes the exit code non-zero.
    It also stops when any shard carries a baseline other than `master_head`
    — see the `release_base` limitation below.
 4. For each remaining perf shard, fetches `report.html` and extracts the rows in the
@@ -35,7 +40,10 @@ skill:
    column showing which arch(es) CI flagged the query on (e.g. `arm-only`
    means CI saw the change on ARM but the local rerun is on AMD). This
    surfaces silent drift on the local arch and lets the user judge whether
-   an `<arch>-only` CI verdict was real or noise.
+   an `<arch>-only` CI verdict was real or noise. One row per query survives
+   the cross-arch dedup, but each arch's CI numbers are kept: when CI called
+   the same query slower on one arch and faster on the other, a `CI split`
+   line under the row shows both, since the row itself can only carry one.
 6. Resolves the reference (left/baseline) git SHA used by the CI run by
    querying `query_metrics_v2` on `play.clickhouse.com` for the row with
    `new_sha = <pr-sha>` (the `report.html` "Tested Commits" section is
@@ -131,7 +139,10 @@ python3 .claude/skills/double-check-perf-tests/double_check_perf.py <commit-sha>
 This prints: PR number, architecture, reference SHA, and the list of
 affected XML files with their changed query indices. If anything looks
 wrong (wrong arch, wrong reference SHA, wrong PR), pass `--pr` /
-`--reference-sha` to override.
+`--reference-sha` to override. Resolving the reference SHA needs
+`clickhouse client`; on the dry-run path its absence is only a warning and
+the line reads `unresolved`, so planning keeps working on a bare checkout.
+The real run still refuses to start without it.
 
 ### 3. Run the comparison
 
