@@ -60,21 +60,21 @@ As condições nas colunas de partição e de chave do log de consultas (`event_
 * `exception_code` ([Int32](/pt-BR/reference/data-types/int-uint)) — Código da exceção.
 * `exception` ([String](/pt-BR/reference/data-types/string)) — Mensagem da exceção.
 * `stack_trace` ([String](/pt-BR/reference/data-types/string)) — Rastreamento de pilha. String vazia se a consulta foi concluída com êxito.
-* `is_initial_query` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Tipo de consulta. Valores possíveis: 1 — consulta iniciada pelo cliente; 0 — consulta iniciada por outra consulta como parte da execução distribuída de consultas.
+* `is_initial_query` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Indica se a consulta é inicial. Valores possíveis: 1 — uma consulta inicial (de nível superior); 0 — uma consulta filha iniciada por outra consulta, incluindo consultas para execução distribuída e subconsultas internas.
 * `connection_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP do cliente a partir do qual a conexão foi estabelecida. Ao se conectar por meio de um proxy, será o endereço do proxy.
 * `connection_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — Porta do cliente a partir da qual a conexão foi estabelecida. Ao se conectar por meio de um proxy, será a porta do proxy.
 * `user` ([String](/pt-BR/reference/data-types/string)) — Nome do usuário que iniciou a consulta atual.
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta.
 * `address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP usado para executar a consulta. Ao se conectar por meio de um proxy, se `auth_use_forwarded_address` estiver definido, será o endereço do cliente em vez do proxy.
 * `port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — Porta do cliente usada para executar a consulta. Ao se conectar por meio de um proxy, se `auth_use_forwarded_address` estiver definido, será a porta do cliente em vez da porta do proxy.
-* `initial_user` ([String](/pt-BR/reference/data-types/string)) — Nome do usuário que executou a consulta inicial (para execução distribuída de consultas).
-* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial (para execução distribuída de consultas).
-* `initial_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP a partir do qual a consulta pai foi iniciada.
-* `initial_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — Porta do cliente usada para executar a consulta pai.
-* `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Horário de início da consulta inicial (para execução distribuída de consultas).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário de início da consulta inicial com precisão de microssegundos (para execução distribuída de consultas).
+* `initial_user` ([String](/pt-BR/reference/data-types/string)) — Nome do usuário que executou a consulta inicial na mesma cadeia de consultas.
+* `initial_query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta inicial na mesma cadeia de consultas.
+* `initial_address` ([IPv6](/pt-BR/reference/data-types/ipv6)) — Endereço IP a partir do qual a consulta inicial na mesma cadeia de consultas foi iniciada.
+* `initial_port` ([UInt16](/pt-BR/reference/data-types/int-uint)) — Porta do cliente a partir da qual a consulta inicial na mesma cadeia de consultas foi iniciada.
+* `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Horário de início da consulta inicial na mesma cadeia de consultas.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário de início da consulta inicial na mesma cadeia de consultas, com precisão de microssegundos.
 * `authenticated_user` ([String](/pt-BR/reference/data-types/string)) — Nome do usuário autenticado na sessão.
-* `interface` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Interface pela qual a consulta foi iniciada. Valores possíveis: 1 — TCP; 2 — HTTP.
+* `interface` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Interface pela qual a consulta foi iniciada. Valores possíveis: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Sinalizador que indica se uma consulta foi executada por meio de uma interface segura
 * `os_user` ([String](/pt-BR/reference/data-types/string)) — Nome de usuário do sistema operacional que executa o clickhouse-client.
 * `client_hostname` ([String](/pt-BR/reference/data-types/string)) — Nome do host da máquina cliente em que o clickhouse-client ou outro cliente TCP é executado.
