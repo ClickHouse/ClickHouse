@@ -15,7 +15,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-    extern const int SYNTAX_ERROR;
 }
 
 namespace
@@ -668,7 +667,7 @@ private:
                 parts.push_back(text.substr(start, space - start));
             start = space + 1;
         }
-        if (parts.size() < 2 || parts.size() > 3 || text.find('\'') != String::npos || text.find('\\') != String::npos)
+        if (parts.size() < 2 || parts.size() > 3 || text.contains('\'') || text.contains('\\'))
             return false;
 
         size_t scale = 0;
@@ -959,7 +958,7 @@ private:
         }
 
         changed = true;
-        out += "( ";
+        out += "(";
         for (size_t j = i; j <= arrow; ++j)
             emitToken(tokens[j]);
         translateRange(arrow + 1, body_end, /*type_context=*/ false);
@@ -1228,7 +1227,7 @@ private:
 
         if (is_try)
         {
-            if (type.find('\'') != String::npos)
+            if (type.contains('\''))
                 throwNotSupported(tokens[i], "TRY_CAST to this type", "");
             changed = true;
             out += "accurateCastOrNull(" + expression + ", '" + type + "') ";

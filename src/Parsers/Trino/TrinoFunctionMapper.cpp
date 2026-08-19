@@ -219,14 +219,14 @@ const std::unordered_map<String, String> & getRenames()
 {
     static const std::unordered_map<String, String> renames =
     {
-        /// String functions. Trino varchar semantics are code-point-based, so
-        /// the UTF8 variants are used (ClickHouse plain variants count bytes).
+        /// String functions. Trino character-position semantics are code-point-based,
+        /// so the UTF8 variants are used where available in every ClickHouse build.
         {"ends_with", "endsWith"},
         {"format", "printf"},
         {"hamming_distance", "byteHammingDistance"},
         {"length", "lengthUTF8"},
         {"levenshtein_distance", "editDistanceUTF8"},
-        {"lower", "lowerUTF8"},
+        {"lower", "lower"},
         {"lpad", "leftPadUTF8"},
         {"rpad", "rightPadUTF8"},
         {"overlay", "overlayUTF8"},
@@ -236,7 +236,7 @@ const std::unordered_map<String, String> & getRenames()
         {"substring", "substringUTF8"},
         {"title_case", "initcapUTF8"},
         {"translate", "translateUTF8"},
-        {"upper", "upperUTF8"},
+        {"upper", "upper"},
         {"from_utf8", "toValidUTF8"},
 
         /// Math.
