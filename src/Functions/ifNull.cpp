@@ -93,23 +93,28 @@ public:
         return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = !can_contain_null };
     }
 
-    /// Override the column-form entry point so this stays authoritative over the declarative
-    /// signature: the `(T, Any) -> T` signature alternative cannot express the Variant
-    /// auto-expansion below, where `ifNull(Variant(...), alt)` widens the Variant to include
-    /// `alt`'s type. The signature in `getSignatureString` is documentation-only.
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    /// Override both entry points so this stays authoritative over the declarative signature:
+    /// the `(T, Any) -> T` signature alternative cannot express the Variant auto-expansion
+    /// below, where `ifNull(Variant(...), alt)` widens the Variant to include `alt`'s type.
+    /// The signature in `getSignatureString` is documentation-only.
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments[0].type->onlyNull())
-            return arguments[1].type;
+        if (arguments[0]->onlyNull())
+            return arguments[1];
 
-        if (!canContainNull(*arguments[0].type))
-            return arguments[0].type;
+        if (!canContainNull(*arguments[0]))
+            return arguments[0];
 
-        auto args = DataTypes{removeNullable(arguments[0].type), arguments[1].type};
+        auto args = DataTypes{removeNullable(arguments[0]), arguments[1]};
         bool has_variant = std::any_of(args.begin(), args.end(), [](const auto & t) { return isVariant(t); });
         if (use_variant_as_common_type || has_variant)
             return getLeastSupertypeOrVariant(args, allow_lossy_numeric_supertype);
         return getLeastSupertype(args, allow_lossy_numeric_supertype);
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        return getReturnTypeImpl(DataTypes{arguments[0].type, arguments[1].type});
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override

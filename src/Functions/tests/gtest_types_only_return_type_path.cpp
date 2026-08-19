@@ -184,6 +184,27 @@ TEST(TypesOnlyReturnTypePath, TupleAndVariantTypeUseTheirAuthoritativeResolvers)
     EXPECT_EQ(typesOnlyReturnType("variantType", variant_arguments)->getName(), "Enum8('String' = 0, 'UInt64' = 1, 'None' = -1)");
 }
 
+TEST(TypesOnlyReturnTypePath, IfNullAndDecimalArithmeticUseTheirAuthoritativeResolvers)
+{
+    /// With `use_variant_as_common_type` disabled, the documentation signature would select
+    /// `leastSupertype` for this shape. The authoritative resolver must still preserve the
+    /// Variant and extend it with the fallback type on both entry points.
+    const std::vector<String> if_null_arguments{"Nullable(Variant(String, UInt64))", "Int8"};
+    EXPECT_EQ(
+        typesOnlyReturnType("ifNull", if_null_arguments)->getName(),
+        columnPathReturnType("ifNull", if_null_arguments)->getName());
+
+    /// Decimal scale is derived by the legacy resolver. A bare `Decimal256` signature result
+    /// is not constructible, so the types-only path must instead share the two-argument logic.
+    const std::vector<String> decimal_arguments{"Decimal64(3)", "Decimal128(7)"};
+    for (const auto & function_name : {"multiplyDecimal", "divideDecimal"})
+    {
+        EXPECT_EQ(
+            typesOnlyReturnType(function_name, decimal_arguments)->getName(),
+            columnPathReturnType(function_name, decimal_arguments)->getName()) << function_name;
+    }
+}
+
 /// `JSONOverloadResolver` builds its result type from `Impl::getReturnType`, which accepts shapes
 /// the advertised (documentation-only) signature does not describe: a `Dynamic` JSON argument, and
 /// a `Nullable` input whose wrapper the resolver adds itself. Both return-type entry points must

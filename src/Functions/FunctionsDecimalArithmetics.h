@@ -298,6 +298,16 @@ public:
         return std::make_shared<DataTypeDecimal256>(DecimalUtils::max_precision<Decimal256>, scale);
     }
 
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        ColumnsWithTypeAndName columns;
+        columns.reserve(arguments.size());
+        for (const auto & type : arguments)
+            columns.emplace_back(nullptr, type, String{});
+
+        return getReturnTypeImpl(columns);
+    }
+
     bool useDefaultImplementationForConstants() const override { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {2}; }
 
