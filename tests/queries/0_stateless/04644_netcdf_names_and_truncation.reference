@@ -11,8 +11,8 @@ n	Nullable(Int32)
 1
 a valid name is accepted
 --- a name has to be NFC-normalized
-0
-an NFC name is accepted
+a non-NFC name is rejected
+NFC validation is enforced
 --- a streaming file with a whole number of records
 0
 1

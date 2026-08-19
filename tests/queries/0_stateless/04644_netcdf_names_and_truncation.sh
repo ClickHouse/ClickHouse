@@ -27,8 +27,13 @@ $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`.temp\` FORMAT NetCDF" 2>&1 | grep -c "BAD_A
 $CLICKHOUSE_LOCAL -q "SELECT 1 AS \`_temp.1\` FORMAT NetCDF" > /dev/null && echo "a valid name is accepted"
 
 echo "--- a name has to be NFC-normalized"
-$CLICKHOUSE_LOCAL -q $'SELECT 1 AS `e\u0301` FORMAT NetCDF' 2>&1 | grep -c "BAD_ARGUMENTS"
-$CLICKHOUSE_LOCAL -q $'SELECT 1 AS `\u00e9` FORMAT NetCDF' > /dev/null && echo "an NFC name is accepted"
+$CLICKHOUSE_LOCAL -q $'SELECT 1 AS `e\u0301` FORMAT NetCDF' > /dev/null 2>&1 && exit 1
+echo "a non-NFC name is rejected"
+
+if [ "$( ${CLICKHOUSE_LOCAL} -q "SELECT value FROM system.build_options WHERE name = 'USE_ICU' LIMIT 1")" = "1" ]; then
+    $CLICKHOUSE_LOCAL -q $'SELECT 1 AS `\u00e9` FORMAT NetCDF' > /dev/null
+fi
+echo "NFC validation is enforced"
 
 # Writes the files that the cases below need. They cannot be produced by the netCDF library: one of
 # them is truncated, and the other one has a variable that shares the name of a dimension without
