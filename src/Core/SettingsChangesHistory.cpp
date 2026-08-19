@@ -124,6 +124,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"text_index_posting_list_apply_mode", "materialize", "lazy", "Text index queries now decode posting lists on demand with a cursor instead of materializing them into Roaring Bitmaps, which reduces memory usage and CPU time for selective queries."},
             {"filesystem_cache_verbose_logging", false, false, "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
+             {"log_query_plans", false, false, "New setting to write the query plan actually executed to `system.query_plan_log`."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {

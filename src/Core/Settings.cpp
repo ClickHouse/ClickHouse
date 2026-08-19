@@ -2238,6 +2238,16 @@ See also:
 - [`system.processors_profile_log`](/reference/system-tables/processors_profile_log)
 - [`EXPLAIN PIPELINE`](/reference/statements/explain#explain-pipeline)
 )", 0) \
+    DECLARE(Bool, log_query_plans, false, R"(
+Write the query plan that was actually executed to the `system.query_plan_log` table.
+
+Only `SELECT` queries executed with the analyzer (`enable_analyzer = 1`, the default) are captured.
+
+See also:
+
+- [`system.query_plan_log`](/reference/system-tables/query_plan_log)
+- [`EXPLAIN PLAN`](/reference/statements/explain#explain-plan)
+)", 0) \
     DECLARE(DistributedProductMode, distributed_product_mode, DistributedProductMode::DENY, R"(
 Changes the behaviour of [distributed subqueries](/reference/statements/in).
 
