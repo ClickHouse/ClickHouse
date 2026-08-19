@@ -29,6 +29,9 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 class QueryResultCacheWriter;
 class QueryResultCacheReader;
 
+class QueryResultCacheOnDisk;
+using QueryResultCacheOnDiskPtr = std::shared_ptr<const QueryResultCacheOnDisk>;
+
 /// Maps queries to query results. Useful to avoid repeated query calculation.
 ///
 /// The cache does not aim to be transactionally consistent (which is difficult to get right). For example, the cache is not invalidated
@@ -162,7 +165,9 @@ public:
         bool squash_partial_results,
         size_t max_block_size,
         size_t max_query_result_cache_size_in_bytes_quota,
-        size_t max_query_result_cache_entries_quota);
+        size_t max_query_result_cache_entries_quota,
+        bool write_to_memory_cache = true,
+        QueryResultCacheOnDiskPtr on_disk_cache = nullptr);
 
     void clear(const std::optional<String> & tag);
 
@@ -231,8 +236,12 @@ private:
     const std::chrono::milliseconds min_query_runtime;
     const bool squash_partial_results;
     const size_t max_block_size;
+    const bool write_to_memory_cache; /// if false, the result is written only to the on-disk cache
+    const QueryResultCacheOnDiskPtr on_disk_cache; /// nullptr if the result is not written to the on-disk cache
     Cache::MappedPtr query_result TSA_GUARDED_BY(mutex) = std::make_shared<QueryResultCache::Entry>();
-    std::atomic<bool> skip_insert = false;
+    bool skip_memory_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
+    bool skip_disk_insert = false; /// (set in the ctor, then accessed only in finalizeWrite)
+    std::atomic<bool> skip_insert = false; /// both of the above: don't even buffer the result
     std::atomic<bool> was_finalized = false;
     LoggerPtr logger = getLogger("QueryResultCache");
 
@@ -243,7 +252,9 @@ private:
         size_t max_entry_size_in_rows_,
         std::chrono::milliseconds min_query_runtime_,
         bool squash_partial_results_,
-        size_t max_block_size_);
+        size_t max_block_size_,
+        bool write_to_memory_cache_,
+        QueryResultCacheOnDiskPtr on_disk_cache_);
 
     friend class QueryResultCache; /// for createWriter()
 };
@@ -254,6 +265,13 @@ class QueryResultCacheReader
 {
 public:
     using Cache = QueryResultCache::Cache;
+
+    /// Where the reader looked the query result up. Only determines which profile events are incremented.
+    enum class Source
+    {
+        Memory,
+        OnDisk
+    };
 
     bool hasCacheEntryForKey(bool update_profile_events = true) const;
 
@@ -268,7 +286,21 @@ public:
 
 private:
     QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &);
+
+    /// Ctor for a cache miss from the given source.
+    explicit QueryResultCacheReader(Source source_);
+
+    /// Ctor for a cache hit served by the on-disk query result cache.
+    QueryResultCacheReader(
+        Source source_,
+        SharedHeader header,
+        QueryResultCache::Entry && entry,
+        std::chrono::time_point<std::chrono::system_clock> created_at_,
+        std::chrono::time_point<std::chrono::system_clock> expires_at_);
+
     void buildSourceFromChunks(SharedHeader header, Chunks && chunks, const std::optional<Chunk> & totals, const std::optional<Chunk> & extremes);
+
+    Source source = Source::Memory;
 
     std::unique_ptr<SourceFromChunks> source_from_chunks;
     std::unique_ptr<SourceFromChunks> source_from_chunks_totals;
@@ -280,6 +312,7 @@ private:
     LoggerPtr logger = getLogger("QueryResultCache");
 
     friend class QueryResultCache; /// for createReader()
+    friend class QueryResultCacheOnDisk; /// for the on-disk ctors
 };
 
 

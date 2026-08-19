@@ -43,6 +43,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"query_cache_on_disk_cache_name", "", "", "New setting to store entries of the query cache on disk in the named filesystem cache."},
+            {"query_cache_on_disk_codec", "ZSTD(3)", "ZSTD(3)", "New setting to control the compression codec of query cache entries on disk."},
+            {"enable_writes_to_query_cache_on_disk", true, true, "New setting to control whether query results are written to the query cache on disk."},
+            {"enable_reads_from_query_cache_on_disk", true, true, "New setting to control whether query results are read from the query cache on disk."},
             {"resumable_backup_from_snapshot", false, false, "New experimental setting to enable resumable `BACKUP FROM SNAPSHOT`."},
             {"framing_output_format", "None", "None", "New setting to select a framing format that multiplexes data, totals, extremes, progress, logs, and profile events packets in a single output stream over HTTP."},
             {"output_format_image_time_multiplier_seconds", 1, 1, "New setting controlling the numerator of the time unit of the `t` column, which makes image output formats such as `PNG` produce an animation."},

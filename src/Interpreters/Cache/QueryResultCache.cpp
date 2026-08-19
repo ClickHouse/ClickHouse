@@ -1,5 +1,6 @@
 #include <Interpreters/Cache/QueryResultCache.h>
 
+#include <Interpreters/Cache/QueryResultCacheOnDisk.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
@@ -36,6 +37,8 @@ namespace ProfileEvents
 {
     extern const Event QueryCacheHits;
     extern const Event QueryCacheMisses;
+    extern const Event QueryCacheOnDiskHits;
+    extern const Event QueryCacheOnDiskMisses;
     extern const Event QueryCacheAgeSeconds;
     extern const Event QueryCacheReadRows;
     extern const Event QueryCacheReadBytes;
@@ -54,6 +57,8 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool enable_writes_to_query_cache_on_disk;
+    extern const SettingsString query_cache_on_disk_cache_name;
     extern const SettingsBool extremes;
     extern const SettingsUInt64 max_result_bytes;
     extern const SettingsUInt64 max_result_rows;
@@ -231,7 +236,11 @@ bool checkCanWriteQueryResultCache(ASTPtr ast, ContextPtr context, bool skip_con
 {
     const Settings & settings = context->getSettingsRef();
 
-    if ((skip_context_check || context->getCanUseQueryResultCache()) && settings[Setting::enable_writes_to_query_cache])
+    const bool writes_to_memory_cache_enabled = settings[Setting::enable_writes_to_query_cache];
+    const bool writes_to_on_disk_cache_enabled = settings[Setting::enable_writes_to_query_cache_on_disk]
+        && !settings[Setting::query_cache_on_disk_cache_name].value.empty();
+
+    if ((skip_context_check || context->getCanUseQueryResultCache()) && (writes_to_memory_cache_enabled || writes_to_on_disk_cache_enabled))
     {
         const bool ast_contains_nondeterministic_functions = astContainsNonDeterministicFunctions(ast, context);
         const bool ast_contains_system_tables = astContainsSystemTables(ast, context);
@@ -263,7 +272,12 @@ namespace
 
 bool isQueryResultCacheRelatedSetting(const String & setting_name)
 {
-    return (setting_name.starts_with("query_cache_") || setting_name.ends_with("_query_cache")) && setting_name != "query_cache_tag";
+    return (setting_name.starts_with("query_cache_")
+            || setting_name.ends_with("_query_cache")
+            /// covers `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk`
+            || setting_name.starts_with("enable_reads_from_query_cache")
+            || setting_name.starts_with("enable_writes_to_query_cache"))
+        && setting_name != "query_cache_tag";
 }
 
 /// Some additional settings are set for subqueries, they don't affect the result of SELECT queries,
@@ -601,7 +615,9 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     size_t max_entry_size_in_rows_,
     std::chrono::milliseconds min_query_runtime_,
     bool squash_partial_results_,
-    size_t max_block_size_)
+    size_t max_block_size_,
+    bool write_to_memory_cache_,
+    QueryResultCacheOnDiskPtr on_disk_cache_)
     : cache(cache_)
     , key(key_)
     , max_entry_size_in_bytes(max_entry_size_in_bytes_)
@@ -609,12 +625,27 @@ QueryResultCacheWriter::QueryResultCacheWriter(
     , min_query_runtime(min_query_runtime_)
     , squash_partial_results(squash_partial_results_)
     , max_block_size(max_block_size_)
+    , write_to_memory_cache(write_to_memory_cache_)
+    , on_disk_cache(on_disk_cache_)
 {
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (!write_to_memory_cache)
+        skip_memory_insert = true;
+    else if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
     {
-        skip_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
+        skip_memory_insert = true; /// Key already contained in cache and did not expire yet --> don't replace it
         LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
     }
+
+    if (!on_disk_cache)
+        skip_disk_insert = true;
+    else if (on_disk_cache->containsFreshEntry(key))
+    {
+        skip_disk_insert = true; /// Same for the on-disk cache. The check is repeated in QueryResultCacheOnDisk::write.
+        LOG_TRACE(logger, "Skipped insert because the on-disk cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
+    }
+
+    if (skip_memory_insert && skip_disk_insert)
+        skip_insert = true; /// don't even buffer the query result
 }
 
 QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & other)
@@ -625,6 +656,11 @@ QueryResultCacheWriter::QueryResultCacheWriter(const QueryResultCacheWriter & ot
     , min_query_runtime(other.min_query_runtime)
     , squash_partial_results(other.squash_partial_results)
     , max_block_size(other.max_block_size)
+    , write_to_memory_cache(other.write_to_memory_cache)
+    , on_disk_cache(other.on_disk_cache)
+    , skip_memory_insert(other.skip_memory_insert)
+    , skip_disk_insert(other.skip_disk_insert)
+    , skip_insert(other.skip_insert.load())
 {
 }
 
@@ -698,12 +734,19 @@ void QueryResultCacheWriter::finalizeWrite()
         return;
     }
 
-    if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+    if (!skip_memory_insert)
     {
-        /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime
-        LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
-        return;
+        if (auto entry = cache.getWithKey(key); entry.has_value() && !QueryResultCache::IsStale()(entry->key))
+        {
+            /// Same check as in ctor because a parallel Writer could have inserted the current key in the meantime.
+            /// The corresponding re-check for the on-disk cache happens inside QueryResultCacheOnDisk::write.
+            LOG_TRACE(logger, "Skipped insert because the cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
+            skip_memory_insert = true;
+        }
     }
+
+    if (skip_memory_insert && skip_disk_insert)
+        return;
 
     if (squash_partial_results)
     {
@@ -745,6 +788,22 @@ void QueryResultCacheWriter::finalizeWrite()
 
         query_result->chunks = std::move(squashed_chunks);
     }
+
+    if (!skip_disk_insert)
+    {
+        /// The on-disk cache serializes the chunks in Native format, which requires the generic (full, non-const) column
+        /// representation. Note: this must happen before the columnar in-memory compression below.
+        for (auto & chunk : query_result->chunks)
+        {
+            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfConst(chunk);
+        }
+
+        on_disk_cache->write(key, *query_result); /// best-effort, logs instead of throwing
+    }
+
+    if (skip_memory_insert)
+        return;
 
     if (key.is_compressed)
     {
@@ -825,6 +884,25 @@ void QueryResultCacheReader::buildSourceFromChunks(SharedHeader header, Chunks &
     }
 }
 
+QueryResultCacheReader::QueryResultCacheReader(Source source_)
+    : source(source_)
+{
+}
+
+QueryResultCacheReader::QueryResultCacheReader(
+    Source source_,
+    SharedHeader header,
+    QueryResultCache::Entry && entry,
+    std::chrono::time_point<std::chrono::system_clock> created_at_,
+    std::chrono::time_point<std::chrono::system_clock> expires_at_)
+    : source(source_)
+{
+    buildSourceFromChunks(header, std::move(entry.chunks), entry.totals, entry.extremes);
+
+    created_at = created_at_;
+    expires_at = expires_at_;
+}
+
 QueryResultCacheReader::QueryResultCacheReader(Cache & cache_, const Cache::Key & key, const std::lock_guard<std::mutex> &)
 {
     auto entry = cache_.getWithKey(key);
@@ -901,10 +979,10 @@ bool QueryResultCacheReader::hasCacheEntryForKey(bool update_profile_events) con
 
     if (update_profile_events)
     {
-        if (has_entry)
-            ProfileEvents::increment(ProfileEvents::QueryCacheHits);
+        if (source == Source::OnDisk)
+            ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheOnDiskHits : ProfileEvents::QueryCacheOnDiskMisses);
         else
-            ProfileEvents::increment(ProfileEvents::QueryCacheMisses);
+            ProfileEvents::increment(has_entry ? ProfileEvents::QueryCacheHits : ProfileEvents::QueryCacheMisses);
     }
 
     return has_entry;
@@ -966,7 +1044,9 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     bool squash_partial_results,
     size_t max_block_size,
     size_t max_query_result_cache_size_in_bytes_quota,
-    size_t max_query_result_cache_entries_quota)
+    size_t max_query_result_cache_entries_quota,
+    bool write_to_memory_cache,
+    QueryResultCacheOnDiskPtr on_disk_cache)
 {
     /// Update the per-user cache quotas with the values stored in the query context. This happens per query which writes into the query
     /// cache. Obviously, this is overkill but I could find the good place to hook into which is called when the settings profiles in
@@ -975,8 +1055,17 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-    std::lock_guard lock(mutex);
-    return QueryResultCacheWriter(cache, key, max_entry_size_in_bytes, max_entry_size_in_rows, min_query_runtime, squash_partial_results, max_block_size);
+    size_t max_entry_size_in_bytes_copy;
+    size_t max_entry_size_in_rows_copy;
+    {
+        /// Don't construct the writer under the mutex: the writer ctor may probe the on-disk cache (i.e. do disk IO).
+        std::lock_guard lock(mutex);
+        max_entry_size_in_bytes_copy = max_entry_size_in_bytes;
+        max_entry_size_in_rows_copy = max_entry_size_in_rows;
+    }
+    return QueryResultCacheWriter(
+        cache, key, max_entry_size_in_bytes_copy, max_entry_size_in_rows_copy, min_query_runtime, squash_partial_results, max_block_size,
+        write_to_memory_cache, on_disk_cache);
 }
 
 void QueryResultCache::clear(const std::optional<String> & tag)

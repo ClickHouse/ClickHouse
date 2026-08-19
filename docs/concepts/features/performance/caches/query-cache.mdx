@@ -243,6 +243,49 @@ row policy on a table by running the same query as another user B for whom no su
 be marked accessible by other users (i.e. shared) by supplying setting
 [query_cache_share_between_users](/reference/settings/session-settings/query-cache#query_cache_share_between_users).
 
+## Query cache on disk {#query-cache-on-disk}
+
+By default, the query cache keeps its entries in memory. Additionally, query results can be cached on disk, backed by a
+[filesystem cache](/reference/settings/server-settings/filesystem-caches). Compared to the in-memory query cache, the query cache on
+disk provides more space, survives server restarts, and (when the filesystem cache is distributed) can be shared between servers.
+
+To use the query cache on disk, first configure a filesystem cache in the `filesystem_caches` section of the server configuration:
+
+```xml
+<filesystem_caches>
+    <query_results>
+        <path>query_results_cache/</path>
+        <max_size>10Gi</max_size>
+    </query_results>
+</filesystem_caches>
+```
+
+then specify its name in setting [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name):
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results';
+```
+
+The query cache on disk works independently of the in-memory query cache and can separately be enabled for reads and/or writes using
+settings [enable_reads_from_query_cache_on_disk](/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) and
+[enable_writes_to_query_cache_on_disk](/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) (both `true`
+by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
+are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
+[query_cache_on_disk_codec](/reference/settings/session-settings/query-cache#query_cache_on_disk_codec) (`ZSTD(3)` by default). All
+other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`, `query_cache_share_between_users`) apply to the
+query cache on disk in the same way as to the in-memory query cache.
+
+The entries of the query cache on disk are ordinary entries of the filesystem cache, indistinguishable from other data cached in the
+same filesystem cache: they are not held from deletion and they are evicted by the same rules (e.g. least-recently-used) when the
+filesystem cache runs out of space. There are no separate limits on their total size or number - only the limits of the filesystem
+cache itself apply. Statement `SYSTEM DROP FILESYSTEM CACHE '<name>'` removes them together with everything else in the filesystem
+cache; `SYSTEM CLEAR QUERY CACHE` only clears the in-memory query cache. Likewise, system table
+[system.query_cache](/reference/system-tables/query_cache) shows only the entries of the in-memory query cache. The number of query
+cache hits and misses on disk are shown as events "QueryCacheOnDiskHits" and "QueryCacheOnDiskMisses" in system table
+[system.events](/reference/system-tables/events).
+
 ## Related content {#related-content}
 
 - Blog: [Introducing the ClickHouse Query Cache](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
