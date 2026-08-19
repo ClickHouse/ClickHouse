@@ -11,6 +11,8 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeTime.h>
+#include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -42,6 +44,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 
@@ -240,6 +243,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         which_from_type = WhichDataType(*from_type_hint);
     }
 
+    const auto time64_to_seconds = [&]
+    {
+        const auto & time64 = src.safeGet<Decimal64>();
+        const auto scale_multiplier = static_cast<const DataTypeTime64 &>(*from_type_hint).getScaleMultiplier();
+        Int64 seconds = time64.getValue().value / scale_multiplier;
+        if (time64.getValue().value < 0 && time64.getValue().value % scale_multiplier)
+            --seconds;
+        return seconds;
+    };
+
     /// Conversion between Date and DateTime, Time and vice versa.
     if (which_type.isDate() && which_from_type.isDateTime())
     {
@@ -286,12 +299,34 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDate() && which_from_type.isTime())
     {
-        return static_cast<UInt16>(static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+        return static_cast<UInt16>(DateLUT::instance("UTC").toDayNum(src.safeGet<UInt64>()).toUnderType());
     }
     if (which_type.isDate32() && which_from_type.isTime())
     {
-        return static_cast<Int32>(
-            static_cast<const DataTypeTime &>(*from_type_hint).getTimeZone().toDayNum(src.safeGet<UInt64>()).toUnderType());
+        return static_cast<Int32>(DateLUT::instance("UTC").toDayNum(src.safeGet<UInt64>()).toUnderType());
+    }
+    if (which_type.isDate() && which_from_type.isTime64())
+    {
+        return static_cast<UInt16>(DateLUT::instance("UTC").toDayNum(time64_to_seconds()).toUnderType());
+    }
+    if (which_type.isDate32() && which_from_type.isTime64())
+    {
+        return static_cast<Int32>(DateLUT::instance("UTC").toDayNum(time64_to_seconds()).toUnderType());
+    }
+    if (which_type.isDateTime() && which_from_type.isTime64())
+    {
+        const Int64 seconds = time64_to_seconds();
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
+            && (seconds < 0 || seconds > MAX_DATETIME_TIMESTAMP))
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", seconds);
+
+        return static_cast<UInt64>(std::clamp(seconds, Int64(0), Int64(MAX_DATETIME_TIMESTAMP)));
+    }
+    if (which_type.isDateTime64() && which_from_type.isTime64())
+    {
+        /// `Time64` and `DateTime64` use the same decimal representation. Drop the type hint so the
+        /// regular decimal rescaling below preserves the fractional component.
+        return convertFieldToTypeImpl(src, type, nullptr, format_settings, strict, convert_inexact_floats);
     }
     if (which_type.isTime() && which_from_type.isDate())
     {
