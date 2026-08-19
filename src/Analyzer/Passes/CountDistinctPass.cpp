@@ -23,9 +23,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool count_distinct_optimization;
-    extern const SettingsUInt64 distributed_group_by_no_merge;
-    extern const SettingsBool optimize_distributed_group_by_sharding_key;
-    extern const SettingsBool optimize_skip_unused_shards;
 }
 
 namespace
@@ -42,16 +39,6 @@ public:
         if (!getSettings()[Setting::count_distinct_optimization])
             return;
 
-        /// The rewritten subquery must be merged on the initiator. Otherwise, the outer `count()` counts
-        /// duplicate groups returned independently by each shard instead of global distinct keys. This can
-        /// happen with `distributed_group_by_no_merge` and with the sharding-key optimization. The latter
-        /// is not observable through the direct `isRemote()` check below when a distributed table is hidden
-        /// behind a subquery or local wrapper, so fail closed for both settings combinations.
-        if (getSettings()[Setting::distributed_group_by_no_merge]
-            || (getSettings()[Setting::optimize_skip_unused_shards]
-                && getSettings()[Setting::optimize_distributed_group_by_sharding_key]))
-            return;
-
         auto * query_node = node->as<QueryNode>();
 
         /// Check that query has only SELECT clause
@@ -65,20 +52,16 @@ public:
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
 
-        /// Check only local table. Remote storages must be skipped because rewriting `countDistinct`/`uniqExact`
-        /// into `count()` over `GROUP BY` is not correct for distributed reads: with `distributed_group_by_no_merge`
-        /// the inner `GROUP BY` is completed independently per shard, so the outer `count()` would count duplicate
-        /// per-shard groups instead of the global distinct keys. A remote storage can be reached both directly
-        /// (`TableNode`) and through a table function such as `remote(...)` (`TableFunctionNode`), so check both.
-        const auto & join_tree_node = query_node->getJoinTreeNode();
-        if (const auto * table_node = join_tree_node->as<TableNode>())
+        /// The rewritten subquery must be merged on the initiator. Otherwise, the outer `count()` counts
+        /// duplicate groups returned independently by each shard instead of global distinct keys. Skip a
+        /// remote carrier at any depth, including a `Distributed` table hidden behind a subquery. A purely
+        /// local query remains eligible even when distributed-query settings are enabled in its session.
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), false, true))
         {
-            if (table_node->getStorage()->isRemote())
+            if (const auto * table_node = table_expression->as<TableNode>(); table_node && table_node->getStorage()->isRemote())
                 return;
-        }
-        else if (const auto * table_function_node = join_tree_node->as<TableFunctionNode>())
-        {
-            if (table_function_node->getStorage()->isRemote())
+
+            if (const auto * table_function_node = table_expression->as<TableFunctionNode>(); table_function_node && table_function_node->getStorage()->isRemote())
                 return;
         }
 
