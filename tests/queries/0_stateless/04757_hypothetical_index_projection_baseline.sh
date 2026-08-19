@@ -31,13 +31,22 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42 SETTINGS optimize_use_projections = 0;
 " 2>&1 | grep -oE 'status: +applicable|source: +empirical' | tr -s ' '
 
-# A plan with no ReadFromMergeTree at all (trivial count here; a minmax_count or exact-count
-# projection reaches the same path) must also report candidates instead of throwing
-echo "--- a plan with no MergeTree read step still reports candidates ---"
-$CLICKHOUSE_CLIENT -q "
-    CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1;
-" 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
+# Every plan shape that leaves no ReadFromMergeTree must report candidates instead of throwing.
+# The projection rewrites and trivial count reach that state by different routes
+echo "--- plans with no MergeTree read step still report candidates ---"
+while IFS='|' read -r label query
+do
+    echo "$label"
+    $CLICKHOUSE_CLIENT -q "
+        CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
+        EXPLAIN WHATIF $query;
+    " 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
+done <<'EOF'
+trivial count|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1
+minmax_count projection|SELECT max(a) FROM t_hypo_proj_baseline SETTINGS optimize_use_implicit_projections = 1
+exact_count projection|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1
+normal projection with no ranges|SELECT a FROM t_hypo_proj_baseline WHERE b = 999999 SETTINGS optimize_use_projections = 1
+EOF
 
 # the no-scan path is still single-table only, and still honours force_data_skipping_indices
 echo "--- a join is not silently reported as single-table ---"
