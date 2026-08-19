@@ -2659,7 +2659,30 @@ static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_typ
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 
-    return set_type->equals(*key_type) || (isNativeInteger(set_type) && isNativeInteger(key_type));
+    if (set_type->equals(*key_type) || (isNativeInteger(set_type) && isNativeInteger(key_type)))
+        return true;
+
+    const auto * set_tuple_type = typeid_cast<const DataTypeTuple *>(set_type.get());
+    const auto * key_tuple_type = typeid_cast<const DataTypeTuple *>(key_type.get());
+    if (set_tuple_type && key_tuple_type)
+    {
+        const auto & set_elements = set_tuple_type->getElements();
+        const auto & key_elements = key_tuple_type->getElements();
+        if (set_elements.size() != key_elements.size())
+            return false;
+
+        for (size_t i = 0; i < set_elements.size(); ++i)
+        {
+            if (!areTypesCompatibleForHasSetIndex(set_elements[i], key_elements[i]))
+                return false;
+        }
+        return true;
+    }
+
+    const auto * set_array_type = typeid_cast<const DataTypeArray *>(set_type.get());
+    const auto * key_array_type = typeid_cast<const DataTypeArray *>(key_type.get());
+    return set_array_type && key_array_type
+        && areTypesCompatibleForHasSetIndex(set_array_type->getNestedType(), key_array_type->getNestedType());
 }
 
 static bool areSetAndKeyTypesCompatibleForHas(
@@ -2841,7 +2864,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
 
     const DataTypePtr & array_nested_type = array_data_type->getNestedType();
 
-    if (!areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, indexes_mapping))
+    if (!out.relaxed && !areSetAndKeyTypesCompatibleForHas({array_nested_type}, key_args_count, data_types, indexes_mapping))
         return false;
 
     /// `has` uses accurate equality for array elements, while MergeTreeSetIndex compares floating-point
