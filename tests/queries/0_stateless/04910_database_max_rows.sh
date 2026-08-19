@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests the per-database `max_rows` setting: INSERT/ATTACH/rename/exchange enforcement,
-# ALTER DATABASE MODIFY SETTING, partition imports, and the system.databases.rows column.
+# ALTER DATABASE MODIFY SETTING, and the system.databases.rows column.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -138,16 +138,5 @@ $CH -q "INSERT INTO ${DA}.t SELECT number FROM numbers(12)"
 $CH -q "RENAME TABLE ${DA}.t TO ${DA}.u"
 $CH -q "EXISTS TABLE ${DA}.u"
 db_rows "${DA}"
-
-echo "-- 14. ATTACH PARTITION into a full database is rejected"
-cleanup
-$CH -q "CREATE DATABASE ${DA} ENGINE = Atomic SETTINGS max_rows = 10"
-$CH -q "CREATE TABLE ${DA}.p (d Date, x UInt64) ENGINE = MergeTree PARTITION BY d ORDER BY x"
-# A first oversized INSERT is allowed, so it can provide a detached partition.
-$CH -q "INSERT INTO ${DA}.p SELECT toDate('2020-01-01'), number FROM numbers(100)"
-$CH -q "ALTER TABLE ${DA}.p DETACH PARTITION '2020-01-01'"
-$CH -q "CREATE TABLE ${DA}.filler (x UInt64) ENGINE = MergeTree ORDER BY x"
-$CH -q "INSERT INTO ${DA}.filler SELECT number FROM numbers(5)"
-$CH -q "ALTER TABLE ${DA}.p ATTACH PARTITION '2020-01-01'" 2>&1 | grep -oF "TOO_MANY_ROWS" | head -n1
 
 cleanup

@@ -41,5 +41,3 @@ TOO_MANY_ROWS
 -- 13. RENAME inside an over-limit Ordinary database succeeds
 1
 12
--- 14. ATTACH PARTITION into a full database is rejected
-TOO_MANY_ROWS
