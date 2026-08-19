@@ -21,7 +21,20 @@ const RESOLVED =
 const RESOLUTION =
   'margin-top:6px;padding-top:6px;border-top:1px dashed light-dark(#cde8d6,#1e3a29);' +
   'color:light-dark(#1a7f37,#3fb950);white-space:pre-wrap;overflow-wrap:anywhere;';
-const HEADER = 'font-weight:600;font-size:12px;margin-bottom:6px;color:light-dark(#555,#aaa);';
+const HEADER = 'font-weight:600;font-size:12px;color:light-dark(#555,#aaa);';
+/// The header is a row so that the fold control can sit at its end, and the rest
+/// of the box hangs off it: folded, the header is the whole box.
+const HEADER_ROW = 'display:flex;align-items:baseline;gap:8px;';
+const HEADER_GAP = 'margin-bottom:6px;';
+/// What a folded comment shows of itself, after the header: enough to recognise
+/// which one it is without reading it again.
+const PREVIEW =
+  'flex:1 1 auto;min-width:0;font-weight:400;overflow:hidden;text-overflow:ellipsis;' +
+  'white-space:nowrap;opacity:.8;';
+const FOLD_BUTTON =
+  'flex:0 0 auto;margin-left:auto;font:inherit;font-size:11px;line-height:1;' +
+  'padding:2px 6px;border-radius:5px;cursor:pointer;' +
+  'background:transparent;color:inherit;border:1px solid transparent;opacity:.6;';
 const EDITOR =
   'width:100%;min-height:64px;resize:vertical;font:inherit;padding:6px 8px;' +
   'border-radius:6px;border:1px solid light-dark(#ccc,#444);' +
@@ -44,21 +57,51 @@ function provenance(comment) {
   return tags;
 }
 
-/// `actions` is { onInput, onSave, onDiscard, onEdit, onDelete }.
+/// One line of the comment, for the header of a folded one.
+const oneLine = (text) => text.replace(/\s+/g, ' ').trim();
+
+/// `actions` is { onInput, onSave, onDiscard, onEdit, onDelete, onReply, onDismiss,
+/// onToggleFold }, plus `folded`. A box being written is never folded: there is
+/// nothing to fold away yet, and hiding a half-typed comment behind a chevron is
+/// how it gets lost.
 export function commentBox(comment, actions) {
   const lines =
     comment.start === comment.end ? `line ${comment.end}` : `lines ${comment.start}–${comment.end}`;
   const side = comment.side === 'deletions' ? 'old' : 'new';
   const tags = provenance(comment);
   const skin = comment.resolved ? RESOLVED : comment.carried ? CARRIED : '';
-  const box = el('div', { style: BOX + skin }, [
-    el('div', {
-      style: HEADER,
+  const foldable = comment.saved && actions.onToggleFold != null;
+  const folded = foldable && actions.folded === true;
+
+  const header = el('div', { style: HEADER_ROW + HEADER + (folded ? '' : HEADER_GAP) }, [
+    el('span', {
+      style: 'flex:0 0 auto;',
       text:
         `${comment.resolved ? 'Addressed ✓' : 'Your comment'} · ${lines} (${side})` +
         `${tags.length > 0 ? ' · ' + tags.join(' · ') : ''}`,
     }),
+    folded ? el('span', { style: PREVIEW, text: oneLine(comment.text) }) : null,
+    foldable
+      ? el('button', {
+          type: 'button',
+          style: FOLD_BUTTON,
+          title: folded ? 'Show this comment' : 'Fold this comment away',
+          text: folded ? '▸ show' : '▾ fold',
+          onClick: (e) => {
+            e.stopPropagation();
+            actions.onToggleFold();
+          },
+        })
+      : null,
   ]);
+  if (foldable) {
+    header.style.cursor = 'pointer';
+    header.title = folded ? 'Show this comment' : 'Fold this comment away';
+    header.addEventListener('click', () => actions.onToggleFold());
+  }
+
+  const box = el('div', { style: BOX + skin }, [header]);
+  if (folded) return box;
 
   if (comment.resolved) {
     box.append(
@@ -66,7 +109,29 @@ export function commentBox(comment, actions) {
       el('div', {
         style: RESOLUTION,
         text: comment.resolution ?? 'addressed by the session',
-      })
+      }),
+      // The same two moves the Comments pane offers, where the answer is being
+      // read: a follow-up on these lines, or off the page for good.
+      el('div', { style: ROW }, [
+        actions.onDismiss == null
+          ? null
+          : el('button', {
+              type: 'button',
+              style: BUTTON,
+              title: 'Take this off the page; the review file keeps it',
+              text: '× hide',
+              onClick: actions.onDismiss,
+            }),
+        actions.onReply == null
+          ? null
+          : el('button', {
+              type: 'button',
+              style: BUTTON,
+              title: 'Ask a follow-up on these lines, and dismiss this one',
+              text: '↩ reply',
+              onClick: actions.onReply,
+            }),
+      ])
     );
   } else if (!comment.saved) {
     const editor = el('textarea', {

@@ -18,6 +18,8 @@ export class Session {
     this.carried = payload.carried ?? []; // still open from an earlier round
     this.resolved = payload.resolved ?? []; // …and the ones the session addressed
     this.elsewhere = payload.elsewhere ?? []; // …on files this review does not show
+    this.pr = payload.pr ?? null; // the pull request this branch is open as, if any
+    this.ci = payload.ci ?? null; // …and the state of its checks, if they are known
     this.byPath = new Map(payload.files.map((f) => [f.path, f]));
     this.sidesByPath = new Map();
     this.inFlight = new Map();

@@ -350,6 +350,7 @@ function collectFiles() {
     return stat.isSymbolicLink() ? readlinkSync(join(ROOT, e.path)).length : stat.size;
   };
 
+  entryByPath.clear();
   const files = [];
   const skipped = [];
   for (const e of entries) {
@@ -422,13 +423,93 @@ function sidesFor(path) {
 
 const RANGE = `${BASE} → ${TARGET.label}`;
 
-const { files, skipped } = collectFiles();
+// ── The pull request this branch is already open as, if any ──────────────────
+// Looked up off the critical path: `gh` talks to the network, and the review must
+// open at once whether or not it answers. Until it does, and for a branch with no
+// pull request or a machine with no `gh`, the header simply has no link — the
+// state this asks about is "not every branch has one", not an error.
+//
+// One call answers the checks too, since they are a property of the pull request
+// rather than of the diff. It is repeated while the review is open, because checks
+// finish on their own schedule, but never faster than CI_TTL_MS.
+const CI_TTL_MS = 60_000;
+
+let pr = null; // { number, url, title, draft } once known
+let ci = null; // { state, failed, pending, passed, sameCommit } once known
+let ciAskedAt = 0;
+let ciAsking = false;
+
+/// GitHub reports two kinds of check on a commit — Actions runs and commit
+/// statuses — and the badge is the worst of them, one failure outweighing any
+/// number of passes. Skipped, neutral and cancelled ones count as neither: a pull
+/// request carries a dozen of those on its best day, and a badge that is red on
+/// every branch says nothing. An unrecognised conclusion counts as failed, so a
+/// state this does not know about shows up rather than passing for green.
+const UNCOUNTED_CONCLUSIONS = new Set(['NEUTRAL', 'SKIPPED', 'CANCELLED', 'STALE']);
+
+function rollUpChecks(checks) {
+  let failed = 0;
+  let pending = 0;
+  let passed = 0;
+  for (const c of checks) {
+    if (c.__typename === 'CheckRun') {
+      if (c.status !== 'COMPLETED') pending++;
+      else if (c.conclusion === 'SUCCESS') passed++;
+      else if (!UNCOUNTED_CONCLUSIONS.has(c.conclusion)) failed++;
+    } else {
+      if (c.state === 'SUCCESS') passed++;
+      else if (c.state === 'PENDING' || c.state === 'EXPECTED') pending++;
+      else if (c.state === 'FAILURE' || c.state === 'ERROR') failed++;
+    }
+  }
+  const state = failed > 0 ? 'failure' : pending > 0 ? 'pending' : passed > 0 ? 'success' : null;
+  return state == null ? null : { state, failed, pending, passed };
+}
+
+function lookUpPullRequest() {
+  if (ciAsking) return;
+  ciAsking = true;
+  ciAskedAt = Date.now();
+  const fields = 'number,url,title,isDraft,headRefOid,statusCheckRollup';
+  const proc = spawn('gh', ['pr', 'view', '--json', fields], {
+    cwd: ROOT,
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: 10_000, // a hung network call must not outlive its usefulness
+  });
+  proc.unref(); // …nor hold the process open when the review closes
+  let out = '';
+  proc.stdout.on('data', (d) => (out += d));
+  proc.on('error', () => (ciAsking = false)); // no `gh` on this machine
+  proc.on('close', (code) => {
+    ciAsking = false;
+    if (code !== 0) return; // most often: this branch has no pull request
+    try {
+      const v = JSON.parse(out);
+      // Only a github.com URL is ever put in the page, and only as a whole href.
+      if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(v.url ?? '')) return;
+      pr = { number: v.number, url: v.url, title: v.title ?? '', draft: v.isDraft === true };
+      const rolled = rollUpChecks(v.statusCheckRollup ?? []);
+      // Whether those checks are even about the code on screen: a branch whose
+      // local commits GitHub has not seen carries the checks of an older head.
+      // Read now rather than at startup, because committing during a review moves
+      // it. A HEAD this cannot read is not claimed to match.
+      const head = git(['rev-parse', 'HEAD']);
+      const sha = head.status === 0 ? head.stdout.toString('utf8').trim() : null;
+      ci = rolled == null ? null : { ...rolled, sameCommit: sha != null && v.headRefOid === sha };
+    } catch {
+      // not the JSON this asked for; there is nothing to link to
+    }
+  });
+}
+lookUpPullRequest();
+
+let { files, skipped } = collectFiles();
 if (files.length === 0 && skipped.length === 0) {
   process.stderr.write(`diff-review: nothing to review (${RANGE}) in ${ROOT}\n`);
   process.exit(3);
 }
 
-const servedPaths = new Set(files.map((f) => f.path));
+let servedPaths = new Set(files.map((f) => f.path));
 
 // ── The review file, which is the review's state ─────────────────────────────
 // A review file that already exists is read back, not overwritten: comments it
@@ -498,6 +579,59 @@ const sideOf = (c) => (c.side === 'old' ? 'old' : 'new');
 /// the life of the process: the review is a snapshot, and the same lines are
 /// read again every time a comment is anchored.
 const linesCache = new Map();
+
+// ── Files that have moved on since they were read ────────────────────────────
+// Only a working-tree review can go stale: the other two ends are git objects.
+// What is watched is what has been looked at — a file's `stat` is recorded as its
+// sides are served, so the set is bounded by what the reviewer has opened and a
+// poll costs one `stat` each. The page is told, and reloads on the word of the
+// reviewer rather than under their hands: a diff that moved while a comment was
+// being written on it is the one thing this review must not do.
+const WATCHED = TARGET.kind === 'worktree';
+const servedStat = new Map(); // path -> `${mtimeMs}:${size}`, as last handed out
+
+function statOf(path) {
+  try {
+    const st = lstatSync(join(ROOT, path));
+    return `${st.mtimeMs}:${st.size}`;
+  } catch {
+    return 'gone'; // deleted since it was served, which is a change like any other
+  }
+}
+
+function recordServed(path) {
+  if (WATCHED) servedStat.set(path, statOf(path));
+}
+
+/// The watched files whose bytes are not the ones the page holds. Reading them
+/// again is the reviewer's call, so the only thing done here is to drop what was
+/// derived from the old bytes — the lines a carried comment is anchored against,
+/// which a reload then recomputes.
+function changedOnDisk() {
+  if (!WATCHED) return [];
+  const changed = [];
+  for (const [path, seen] of servedStat) {
+    if (statOf(path) === seen) continue;
+    changed.push(path);
+    linesCache.delete(`old ${path}`);
+    linesCache.delete(`new ${path}`);
+  }
+  return changed;
+}
+
+/// Read the diff again, as a freshly started server would: the file set, each
+/// file's status and counts, and the bytes of both sides. This is what the page
+/// asks for when it loads, so a reload is a restart in everything but the round
+/// and the process. Nothing is refused when the diff has emptied - unlike at
+/// startup there is a review open, and its comments are still in the file, so it
+/// draws as a review of no files rather than taking the server down.
+function recollect() {
+  ({ files, skipped } = collectFiles());
+  servedPaths = new Set(files.map((f) => f.path));
+  linesCache.clear();
+  servedStat.clear();
+}
+
 function linesOf(path, side) {
   const key = `${side} ${path}`;
   if (linesCache.has(key)) return linesCache.get(key);
@@ -568,6 +702,8 @@ function dataPayload() {
     range: RANGE,
     // The far end, as something a tool can act on: 'worktree', 'index', or a ref.
     target: TARGET.kind === 'ref' ? TARGET.ref : TARGET.kind,
+    pr,
+    ci,
     files,
     skipped,
     out: OUT,
@@ -655,6 +791,13 @@ const ASSETS = await assetsOrDie();
 const UI_MODULE = /^[a-z][a-z0-9_]*\.mjs$/;
 const NO_STORE = { 'cache-control': 'no-store' };
 
+// The loopback bind keeps the network out but not a browser: a page served from
+// an attacker's domain whose DNS flips to 127.0.0.1 reaches this server
+// same-origin, so no CORS preflight and no Origin check sees anything wrong.
+// Host still names the domain the browser thought it had, and only these can
+// name this server. A browser always sends it; a request without one is refused.
+const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`]);
+
 // ── HTTP server ──────────────────────────────────────────────────────────────
 /// A request that has to read the review file. An unreadable file fails the
 /// request instead of the review: the page reports it and keeps what it holds,
@@ -671,6 +814,13 @@ function withReviewFile(res, fn) {
 }
 
 const server = createServer((req, res) => {
+  // Before anything else, including counting the request as a visitor: a
+  // rebinding probe is not the browser this server is waiting for.
+  if (!ALLOWED_HOSTS.has(req.headers.host ?? '')) {
+    res.writeHead(403, { 'content-type': 'application/json' });
+    res.end(`{"ok":false,"error":"bad host; this server answers only to localhost:${PORT}"}`);
+    return;
+  }
   // A request is the proof the environment signals could not give: some browser
   // does reach this server. From here on, wait for the review indefinitely.
   if (noVisitorTimer != null) {
@@ -724,6 +874,10 @@ const server = createServer((req, res) => {
     }
   } else if (req.method === 'GET' && url.pathname === '/data') {
     withReviewFile(res, () => {
+      // The page is (re)loading, which is the reviewer's own act - the one moment
+      // the diff may move. Between loads it is held still, so a comment is never
+      // written against lines that shift out from under it.
+      recollect();
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       res.end(dataPayload());
     });
@@ -735,12 +889,19 @@ const server = createServer((req, res) => {
     withReviewFile(res, () => {
       const resolved = readReviewFile().comments.filter(
         (c) => c.resolved === true && c.dismissed !== true);
+      // The page's own poll is what paces the check lookup: it runs while someone
+      // is reading and stops when they close the tab.
+      if (Date.now() - ciAskedAt > CI_TTL_MS) lookUpPullRequest();
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      const changed = changedOnDisk();
       res.end(
         JSON.stringify({
           round,
           submitted: lastSubmit?.round ?? 0,
           resolved: resolved.map((c) => ({ id: c.id, resolution: c.resolution ?? null })),
+          ...(changed.length > 0 ? { changed } : {}),
+          ...(pr != null ? { pr } : {}),
+          ...(ci != null ? { ci } : {}),
         })
       );
     });
@@ -756,6 +917,9 @@ const server = createServer((req, res) => {
       res.writeHead(413, { 'content-type': 'application/json' });
       res.end(`{"error":"file larger than ${MAX_FILE_BYTES} bytes"}`);
     } else {
+      // Before the write, so a file that changes between reading and answering is
+      // seen as changed rather than missed.
+      recordServed(path);
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(sides));
     }

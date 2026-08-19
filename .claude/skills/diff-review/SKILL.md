@@ -119,7 +119,7 @@ pull request and let review happen there.
    `,`/`.` (or `k`/`j`) previous/next file, `[`/`]` previous/next hunk, `c` the
    Comments pane, `shift+C` next comment, `e` whole file, `b` the tint behind
    changed lines, `t` light / dark / system, `/` filter by path,
-   `y` copy the file name and the selected range,
+   `y` copy the file name and the selected range, `r` read the diff again,
    `\` hide the sidebar.
    **Send** hands the round over and leaves the review up; **End review**, in the
    `?` overlay, closes it and stops the server.
@@ -208,15 +208,19 @@ pull request and let review happen there.
    way. A round that arrives while you are still working on the previous one is
    not a problem — finish, then read the file again.
 
-   The diff on screen stays as it was when the server started, so the lines the
-   user is commenting on do not move under them. To show them the code as your
-   fixes leave it, stop the monitor (TaskStop) and start a new one with **the
-   same `--out`**: unresolved comments are on screen when the page opens, in
-   amber, tagged with the round they came from and relocated to wherever your
-   fixes moved their line (or flagged if that line is gone). The ones you
-   resolved come back too, in green — the file tree badges count only the open
-   ones, so with everything resolved the badges are empty and `c` / `shift+C`
-   is how the user steps through what was addressed.
+   The diff on screen stays as it was until the user reloads, so the lines they
+   are commenting on never move under them. To show them the code as your fixes
+   leave it, just say it is ready to reload: the page's reload control (`r`) makes
+   the server re-read the whole diff — the file set, the statuses, both sides of
+   every file — exactly as a fresh start would, so there is no need to restart the
+   monitor. It turns amber on its own once a file on screen is no longer the bytes
+   on disk. Unresolved comments come back in amber, tagged with the round they came
+   from and relocated to wherever your fixes moved their line (or flagged if that
+   line is gone); the ones you resolved come back in green. A comment on a file
+   that has left the diff altogether cannot be drawn, so it moves to the
+   "Not shown" line and stays open in the review file. The file tree badges count
+   only the open ones, so with everything resolved the badges are empty and
+   `c` / `shift+C` is how the user steps through what was addressed.
 
 7. The review is over when `review closed` arrives (or the user tells you). Then
    `verdict: "approve"` with no open comments → proceed with the commit / PR.

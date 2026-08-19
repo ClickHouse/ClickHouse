@@ -56,6 +56,20 @@
   }
   header .meta .repo { font-weight: 650; }
   header .meta .base { color: light-dark(#8c8c8c, #8a8a8a); font-size: 12px; margin-left: 8px; }
+  /* The pull request this branch is already open as, when there is one. */
+  header .meta .pr {
+    color: light-dark(#0757ba, #4493f8); font-size: 12px; margin-left: 8px;
+    text-decoration: none;
+  }
+  header .meta .pr:hover { text-decoration: underline; }
+  /* …and the state of its checks, as one glyph. Dimmed when they belong to a
+     commit other than the one under review, which is what unpushed work looks
+     like: the badge is then about code that is not on screen. */
+  header .meta .ci { font-size: 12px; margin-left: 5px; font-weight: 700; cursor: default; }
+  header .meta .ci.pass { color: light-dark(#1a7f37, #3fb950); }
+  header .meta .ci.fail { color: light-dark(#a40e26, #f85149); }
+  header .meta .ci.run { color: light-dark(#9a6700, #d29922); }
+  header .meta .ci.elsewhere { opacity: .5; }
   button, textarea, input {
     font: inherit;
     color: inherit;
@@ -137,13 +151,6 @@
   }
   /* Dimmed only when neither end of the pair can go anywhere. */
   header .seg:not(:has(button:enabled)) .cap { opacity: .45; }
-  /* A toggle that is currently on, as opposed to one that offers a switch. */
-  header button.on {
-    background: light-dark(#e8f0fe, #15263d);
-    color: light-dark(#0b57b8, #7cb2ff);
-    font-weight: 600;
-  }
-  header button.on:hover { background: light-dark(#dbe8fd, #1a3050); }
   button.primary {
     background: light-dark(#0969da, #2f81f7);
     border-color: transparent;
@@ -157,6 +164,32 @@
   header .sep {
     flex: 0 0 auto; width: 1px; height: 20px; margin: 0 5px;
     background: light-dark(#e6e6e6, #232323);
+  }
+  /* In the header beside the range and the counts, because that is what it is
+     about: what this page is showing, and that the diff may have moved on. It
+     stands out once the files on screen are not the files on disk. */
+  header button#reload {
+    width: 22px; height: 22px; padding: 0; margin-left: 8px;
+    /* It carries a label once it goes stale, so it has a `span` at all times and
+       the `:not(:has(span))` rule above — which is what centres a bare glyph —
+       never applies to it. */
+    justify-content: center;
+    /* Centred against the text beside it: the button is an inline-flex box, so it
+       would otherwise sit on the baseline and hang below it. A zero line-height
+       keeps its own line box from adding leading on top of that. */
+    vertical-align: middle; line-height: 0;
+  }
+  header button#reload svg { width: 13px; height: 13px; }
+  /* The button's own `line-height: 0` is for the glyph alone; the label needs one. */
+  header button#reload span { line-height: 1; }
+  /* Amber, the colour this page already gives to something waiting to be dealt
+     with, and named rather than left as a glyph: once there is a reason to press
+     it, it is worth the width. No tile behind it — the header keeps one button
+     shape, and colour alone carries this. */
+  header button#reload.stale {
+    width: auto; padding: 0 7px; gap: 5px;
+    color: light-dark(#8a6100, #c98a12);
+    font-weight: 600;
   }
   #ccount { font-size: 12px; color: light-dark(#7a7a7a, #8f8f8f); }
   #ccount:disabled { opacity: .5; }
@@ -347,6 +380,28 @@
     background: light-dark(#ededed, #1e1e1e);
   }
   #splitter:hover::after, #splitter.dragging::after { background: light-dark(#93c5fd, #26456e); }
+  /* Over the diff, out of the way of the first lines of it: the browser's own
+     find bar cannot see into the viewer's shadow root, so this one stands in. */
+  #findbar {
+    position: absolute; top: 10px; right: 18px; z-index: 8;
+    display: flex; align-items: center; gap: 4px;
+    padding: 5px 6px; border-radius: 8px;
+    background: light-dark(#fff, #101010);
+    border: 1px solid light-dark(#d8d8d8, #2a2a2a);
+    box-shadow: 0 6px 18px light-dark(rgb(0 0 0 / .12), rgb(0 0 0 / .5));
+  }
+  #findbar[hidden] { display: none; }
+  #findInput { width: 220px; padding: 4px 8px; font-size: 13px; }
+  #findCount {
+    min-width: 74px; text-align: right; padding-right: 4px;
+    font-size: 12px; font-variant-numeric: tabular-nums; color: light-dark(#666, #999);
+  }
+  #findCount.none { color: light-dark(#a40e26, #f85149); }
+  #findbar button {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; padding: 0;
+  }
+  #findbar button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
   #busy {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -392,7 +447,10 @@
   <button id="sideToggle" class="icon" title="Show / hide the sidebar &nbsp;\">
     <svg viewBox="0 0 16 16"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>
   </button>
-  <div class="meta"><span class="repo" id="repo"></span><span class="base" id="base"></span></div>
+  <div class="meta"><span class="repo" id="repo"></span><a class="pr" id="pr" hidden target="_blank" rel="noopener noreferrer"></a><span class="ci" id="ci" hidden></span><span class="base" id="base"></span><button id="reload" class="icon" title="Read the diff again &nbsp;r">
+    <svg viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-3.9"/><path d="M13.9 2.3v3.2h-3.2"/></svg>
+    <span id="reloadLabel"></span>
+  </button></div>
   <div class="seg">
     <button id="prevFile" class="icon" title="Previous file &nbsp;, &nbsp;or&nbsp; k">
       <svg viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></svg>
@@ -471,6 +529,19 @@
       <div id="panemsg" hidden></div>
     </div>
     <div id="splitter" title="Drag to resize the split · double-click to even it out" hidden></div>
+    <div id="findbar" hidden>
+      <input id="findInput" type="text" placeholder="Find on this page…" autocomplete="off" spellcheck="false">
+      <span id="findCount"></span>
+      <button id="findPrev" type="button" title="Previous match &nbsp;shift+enter &nbsp;or&nbsp; shift+cmd+G">
+        <svg viewBox="0 0 16 16"><path d="m3 10 5-5 5 5"/></svg>
+      </button>
+      <button id="findNext" type="button" title="Next match &nbsp;enter &nbsp;or&nbsp; cmd+G">
+        <svg viewBox="0 0 16 16"><path d="m3 6 5 5 5-5"/></svg>
+      </button>
+      <button id="findClose" type="button" title="Close &nbsp;esc">
+        <svg viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
     <div id="busy" hidden></div>
   </div>
 </div>
@@ -479,7 +550,7 @@
   <div class="modal">
     <h2>Reviewing</h2>
     <p class="sub">Click the <b>+</b> over a line number, or drag across several, to comment. Every keystroke is written to <code id="help-out"></code>, so nothing is lost to a closed tab or a killed server — the bar only speaks up when a write <em>fails</em>. <b>Send round N</b> hands the open comments over and leaves the review up, so you can keep reading while they are worked on.</p>
-    <p class="sub">The sidebar's <b>Comments</b> tab lists every comment — amber with Claude, green addressed, with the answer under it. On an addressed one, <b>reply</b> asks a follow-up on the same lines and <b>hide</b> takes it off the page for good.</p>
+    <p class="sub">The sidebar's <b>Comments</b> tab lists every comment — amber with Claude, green addressed, with the answer under it. On an addressed one, <b>reply</b> asks a follow-up on the same lines and <b>hide</b> takes it off the page for good; both are on the comment in the diff too. Any saved comment folds away to its first line — click its header, or <b>fold</b> at the end of it.</p>
     <table class="keys">
       <tr><th>, .</th><td>previous / next file (also <b>k j</b>)</td></tr>
       <tr><th>[ ]</th><td>previous / next hunk</td></tr>
@@ -489,7 +560,10 @@
       <tr><th>b</th><td>tint behind changed lines, on / off</td></tr>
       <tr><th>t</th><td>theme: system → light → dark</td></tr>
       <tr><th>y</th><td>copy the file name and the selected range</td></tr>
+      <tr><th>r</th><td>read the diff again, as it is on disk now — comments follow their lines</td></tr>
       <tr><th>/</th><td>filter files by path</td></tr>
+      <tr><th>cmd+F</th><td>find text on this page — matches are marked where they are on screen</td></tr>
+      <tr><th>cmd+G</th><td>next match (shift+cmd+G for the previous one; enter does the same in the bar)</td></tr>
       <tr><th>\</th><td>show / hide the sidebar</td></tr>
       <tr><th>?</th><td>this</td></tr>
     </table>

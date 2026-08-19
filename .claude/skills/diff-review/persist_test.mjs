@@ -86,6 +86,11 @@ const post = (s, where, body) =>
     body: JSON.stringify(body),
   });
 const read = () => JSON.parse(readFileSync(OUT, 'utf8'));
+/// What a reload does: ask the running server for the review again.
+const reload = async (s) => {
+  s.data = await (await fetch(`http://localhost:${PORT}/data`)).json();
+  return s.data;
+};
 const wire = (c) => ({
   id: c.id, file: c.file, side: c.side === 'deletions' ? 'old' : 'new',
   startLine: c.start, endLine: c.end, comment: c.text, round: c.round,
@@ -276,6 +281,43 @@ check('a comment resolved while the page still holds it is not reopened',
   stillThere.length === 1 && stillThere[0].resolved === true &&
     stillThere[0].resolution === 'fixed while you read on',
   JSON.stringify(stillThere));
+
+// ── A reload re-reads the diff, as a restart would ───────────────────────────
+// The file set is not a startup constant: a fix that adds or removes a file has to
+// show up without the server being restarted, and a comment on a file that leaves
+// the diff has to survive in the file even though it can no longer be drawn.
+const before = s.data.files.length;
+writeFileSync(join(repo, 'g.txt'), 'brand new\n');
+await reload(s);
+check('a file that joins the diff appears on a reload',
+  s.data.files.length === before + 1 && s.data.files.some((f) => f.path === 'g.txt'),
+  s.data.files.map((f) => f.path).join(','));
+
+const gRes = await post(s, '/save', { overall: '', comments: [
+  ...s.data.carried.map(wire),
+  { file: 'g.txt', side: 'new', startLine: 1, endLine: 1, comment: 'on the new file' },
+] });
+check('a comment can be made on the file that joined', gRes.status === 200);
+
+rmSync(join(repo, 'g.txt'));
+await reload(s);
+check('…and it is gone again once the file leaves the diff',
+  !s.data.files.some((f) => f.path === 'g.txt') && s.data.files.length === before,
+  s.data.files.map((f) => f.path).join(','));
+check('…while the comment on it is kept, off the page but still open',
+  s.data.elsewhere.some((c) => c.file === 'g.txt') &&
+    read().comments.some((c) => c.file === 'g.txt' && c.resolved === false),
+  JSON.stringify(s.data.elsewhere));
+
+// Content, not just the file list: the bytes of a file already on screen are read
+// again too, which is what makes a comment follow its line after a round of fixes.
+writeFileSync(join(repo, 'f.txt'), 'inserted at the top\n' + readFileSync(join(repo, 'f.txt'), 'utf8'));
+const movedBy1 = read().comments.find((c) => c.file === 'f.txt' && c.resolved === false);
+await reload(s);
+const after = s.data.carried.find((c) => c.id === movedBy1.id);
+check('a reload re-reads the bytes and moves comments with them',
+  after != null && after.start === movedBy1.startLine + 1,
+  `${movedBy1.startLine} -> ${after?.start}`);
 
 // ── Ending the review ────────────────────────────────────────────────────────
 await post(s, '/close', {});

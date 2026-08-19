@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { buildRows, visibility, visiblePaths } from './ui/tree.mjs';
 import { Comments } from './ui/comments.mjs';
 import { Session } from './ui/session.mjs';
+import { findMatches, stepMatch } from './ui/search.mjs';
 import { splitLeftPx } from './ui/dom.mjs';
 
 const BASE_URL = process.env.DIFF_REVIEW_URL ?? 'http://localhost:3000';
@@ -173,6 +174,33 @@ check('collapsing leaves other files alone',
     comments.countsByFile().get(target) === 2, String(comments.countsByFile().get(target)));
   check('hearing the same resolution twice redraws nothing',
     comments.applyResolved([{ id: extId, resolution: 'renamed' }]) === false);
+}
+
+// ── Finding text on the page ─────────────────────────────────────────────────
+{
+  const sources = [
+    { path: 'a.cpp', side: 'additions', text: 'int Foo = 1;\nreturn foo(foo);\nnothing here\n' },
+    { path: 'b.cpp', side: 'deletions', text: 'gone: foo\n' },
+  ];
+
+  const hits = findMatches(sources, 'foo');
+  check('a match names the file, the side and the line',
+    hits.length === 3 && hits[0].path === 'a.cpp' && hits[0].side === 'additions' && hits[0].line === 1,
+    JSON.stringify(hits.map((h) => `${h.path}:${h.line}`)));
+  check('matching ignores case', hits[0].text === 'int Foo = 1;');
+  check('a line holding the query twice is still one match',
+    hits.filter((h) => h.path === 'a.cpp' && h.line === 2).length === 1);
+  check('every source is searched, on the side it was given',
+    hits[2].path === 'b.cpp' && hits[2].side === 'deletions');
+  check('an empty query matches nothing', findMatches(sources, '   ').length === 0);
+  check('a source with no text is skipped',
+    findMatches([{ path: 'c', side: 'additions', text: null }], 'foo').length === 0);
+
+  check('the walk enters at the first match going forwards', stepMatch(-1, 1, 3) === 0);
+  check('…and at the last one going backwards', stepMatch(-1, -1, 3) === 2);
+  check('the walk wraps at both ends',
+    stepMatch(2, 1, 3) === 0 && stepMatch(0, -1, 3) === 2);
+  check('nothing to walk stays nowhere', stepMatch(-1, 1, 0) === -1);
 }
 
 // ── Split geometry ───────────────────────────────────────────────────────────

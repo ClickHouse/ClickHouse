@@ -15,13 +15,77 @@ import { CommentPane } from './commentpane.mjs';
 import { ReviewViewer, ALL_FILES } from './viewer.mjs';
 import { Sidebar } from './sidebar.mjs';
 import { commentBox, headerCopyButton, headerFileSuffix } from './annotations.mjs';
+import { findMatches, stepMatch } from './search.mjs';
+import { clearMatches, paintMatches } from './highlight.mjs';
 
 const params = new URLSearchParams(location.search);
 const NONCE = document.querySelector('meta[name="diff-review-nonce"]').content;
 
+/// An added line over a removed one, on a tile tinted from the checkout under
+/// review, so two reviews open at once are told apart in the tab strip. Six
+/// colours named one by one rather than a hue swept around the wheel: at a tile
+/// dark enough to carry the marks, half the wheel comes out brown, and
+/// neighbouring hues from the half that does not are two blues nobody tells
+/// apart at 16 px. Each of these is its own step at that size.
+const TINTS = [
+  'oklch(0.36 0.10 195)', // teal
+  'oklch(0.55 0.11 230)', // sky
+  'oklch(0.34 0.13 255)', // blue
+  'oklch(0.36 0.13 350)', // wine
+  'oklch(0.30 0.02 255)', // graphite
+  'oklch(0.36 0.15 300)', // violet
+];
+function favicon(repo) {
+  let hash = 0;
+  for (const ch of repo) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">` +
+    `<rect width="16" height="16" rx="3.5" fill="${TINTS[hash % TINTS.length]}"/>` +
+    `<g stroke-width="2" stroke-linecap="round">` +
+    `<path d="M4 5.4h8" stroke="#56d364"/><path d="M4 10.6h5.4" stroke="#ff7b72"/></g></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
 const session = await Session.load();
 $('repo').textContent = session.name;
+
+/// The pull request this branch is already open as. Looked up on the server and
+/// off its critical path, so it can arrive with the review or a poll later.
+function showPr(pr) {
+  if (pr == null || $('pr').href === pr.url) return;
+  $('pr').href = pr.url;
+  $('pr').textContent = `#${pr.number}${pr.draft ? ' (draft)' : ''}`;
+  $('pr').title = pr.title ? `${pr.title} — opens on GitHub` : 'Opens on GitHub';
+  $('pr').hidden = false;
+}
+showPr(session.pr);
+
+/// The state of that pull request's checks, as one glyph: the worst of them, since
+/// one failure outweighs any number of passes. Redrawn only when it actually
+/// changes — the poll that carries it runs every couple of seconds.
+const CI_GLYPHS = { success: ['\u2713', 'pass'], failure: ['\u2717', 'fail'], pending: ['\u25cb', 'run'] };
+let ciShown = null;
+function showCi(ci) {
+  const glyph = ci == null ? null : CI_GLYPHS[ci.state];
+  if (glyph == null) return;
+  const signature = `${ci.state} ${ci.failed} ${ci.pending} ${ci.passed} ${ci.sameCommit}`;
+  if (signature === ciShown) return;
+  ciShown = signature;
+  const counts = [
+    ci.failed > 0 ? `${ci.failed} failing` : null,
+    ci.pending > 0 ? `${ci.pending} running` : null,
+    ci.passed > 0 ? `${ci.passed} passed` : null,
+  ].filter((c) => c != null).join(', ');
+  $('ci').textContent = glyph[0];
+  $('ci').className = `ci ${glyph[1]}${ci.sameCommit ? '' : ' elsewhere'}`;
+  $('ci').title = ci.sameCommit
+    ? `CI: ${counts}`
+    : `CI: ${counts} \u2014 on the pull request's head commit, not the one under review`;
+  $('ci').hidden = false;
+}
+showCi(session.ci);
 document.title = `review: ${session.name}`;
+document.head.append(el('link', { rel: 'icon', href: favicon(session.repo) }));
 
 /// The round being written now, and the last one handed to the session. Both
 /// move while the page is open — a submit advances one and sets the other — so
@@ -117,6 +181,8 @@ const viewer = new ReviewViewer({
     const comment = comments.get(annotation?.metadata?.commentId);
     if (comment == null) return document.createElement('div');
     return commentBox(comment, {
+      folded: folded.has(comment.extId),
+      onToggleFold: () => toggleFold(comment),
       onInput: (text) => {
         comments.setText(comment.id, text);
         scheduleSave(); // a draft is only lost once
@@ -129,6 +195,8 @@ const viewer = new ReviewViewer({
       onDiscard: () => comments.remove(comment.id),
       onEdit: () => comments.reopen(comment.id),
       onDelete: () => comments.remove(comment.id),
+      onReply: () => replyTo(comment),
+      onDismiss: () => dismiss(comment),
     });
   },
   onDraft: (path, range) => {
@@ -204,6 +272,20 @@ comments.onChange((path) => {
   updateCommentUi();
   scheduleSave();
 });
+
+// ── Comments folded away ─────────────────────────────────────────────────────
+// A comment box sits between two lines of the diff, which is where it belongs
+// while it is being dealt with and in the way once it has been. Folding leaves
+// the header — who said it, where, and the first line of it — and takes the rest
+// out of the flow. It is how the page looks, not what the review says, so it is
+// held by `extId` (stable for the life of a comment), never written anywhere,
+// and refreshes the file's annotations without touching the review file.
+const folded = new Set();
+
+function toggleFold(comment) {
+  if (!folded.delete(comment.extId)) folded.add(comment.extId);
+  viewer.refresh(comment.file);
+}
 
 // ── Keeping the review file up to date ───────────────────────────────────────
 // Every comment is written to the review file as it is made, not only on submit:
@@ -315,6 +397,7 @@ async function showFile(path) {
   viewer.display(key);
   current = path;
   hunkAt = -1;
+  if ($('findInput').value.trim() !== '') runFind({ jump: false });
   paneMessage(null);
   paneInfo(path == null ? 'Every file on one page, without syntax colours: highlighting them all would take minutes.' : null);
   sidebar.setActive(path);
@@ -456,6 +539,124 @@ async function stepComment(delta) {
   paneInfo(`Comment ${commentAt + 1} of ${list.length}`);
 }
 
+// ── Finding text on this page ────────────────────────────────────────────────
+// The browser's own find cannot read the diff: the viewer renders into a shadow
+// root and only lays out what is on screen, so `cmd+F` would walk past most of
+// the file. This searches what the page is made of instead — the file's own
+// text, as fetched — and points the viewer at each line it lands on.
+//
+// It is the page, not the review: one file, or every file of the all-files view.
+// A file is searched on the side it has, which for everything but a deletion is
+// the new one; that is the file as the change leaves it, which is what a line
+// number in the diff means.
+let findHits = [];
+let findAt = -1;
+
+function findSources() {
+  const paths = current == null ? session.files.map((f) => f.path) : [current];
+  return paths.flatMap((path) => {
+    const sides = session.sidesByPath.get(path);
+    if (sides == null) return []; // not fetched: it is not on screen either
+    const deleted = session.byPath.get(path)?.status === 'D';
+    return [{ path, side: deleted ? 'deletions' : 'additions', text: deleted ? sides.old : sides.new }];
+  });
+}
+
+/// The term is painted where it is rendered, so anything that changes what is on
+/// screen asks for it again: a jump, a scroll, a file switch. Coalesced to a
+/// frame, because a scroll asks on every one of them.
+let repaintQueued = false;
+
+function repaintFind() {
+  if (repaintQueued) return;
+  repaintQueued = true;
+  requestAnimationFrame(() => {
+    repaintQueued = false;
+    if ($('findbar').hidden) clearMatches();
+    else paintMatches(viewer.activePane(), $('findInput').value);
+  });
+}
+
+/// Scrolling renders lines that were not there to paint: `scroll` does not
+/// bubble, so this listens for it on the way down instead.
+document.addEventListener('scroll', () => {
+  if (!$('findbar').hidden) repaintFind();
+}, true);
+
+function showFind(on) {
+  $('findbar').hidden = !on;
+  if (on) {
+    $('findInput').focus();
+    $('findInput').select();
+    runFind({ jump: false });
+  } else {
+    // The query and where the walk had got to are kept: `cmd+G` goes on stepping
+    // it with the bar out of the way, which is what find-again means everywhere.
+    // What is painted does not outlive the bar, though — the page is for reading.
+    clearMatches();
+    $('findInput').blur(); // back to the page, so the review's own keys answer again
+  }
+}
+
+/// Re-runs the search over whatever the page now holds. `jump` goes to the first
+/// hit, which is what typing does; re-running after a file switch only recounts.
+function runFind({ jump = true } = {}) {
+  const query = $('findInput').value;
+  findHits = findMatches(findSources(), query);
+  findAt = -1;
+  updateFindCount();
+  repaintFind();
+  if (jump && findHits.length > 0) stepFind(1);
+}
+
+function updateFindCount() {
+  const query = $('findInput').value.trim();
+  const count = $('findCount');
+  count.textContent =
+    query === '' ? '' : findHits.length === 0 ? 'no match' : `${findAt < 0 ? '–' : findAt + 1}/${findHits.length} lines`;
+  count.className = query !== '' && findHits.length === 0 ? 'none' : '';
+}
+
+/// `cmd+G`: the next match of the search already made. With nothing searched for
+/// yet there is nothing to repeat, so it opens the bar to be typed into instead;
+/// with a query whose matches are stale — the page changed while the bar was
+/// closed — it counts them again before stepping.
+function findAgain(delta) {
+  if ($('findInput').value.trim() === '') {
+    showFind(true);
+    return;
+  }
+  $('findbar').hidden = false;
+  if (findHits.length === 0) runFind({ jump: false });
+  stepFind(delta);
+}
+
+function stepFind(delta) {
+  findAt = stepMatch(findAt, delta, findHits.length);
+  if (findAt < 0) return;
+  const hit = findHits[findAt];
+  viewer.goToLine(keyOf(current), hit.path, hit.line, hit.side, { select: true });
+  updateFindCount();
+  repaintFind(); // the lines it scrolled to may not have been rendered before
+}
+
+$('findInput').addEventListener('input', () => runFind());
+$('findInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') stepFind(e.shiftKey ? -1 : 1);
+  else if (e.key === 'Escape') showFind(false);
+  else if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
+    $('findInput').select();
+    e.preventDefault();
+  } else if (e.key === 'g' && (e.metaKey || e.ctrlKey)) {
+    findAgain(e.shiftKey ? -1 : 1);
+    e.preventDefault();
+  }
+  e.stopPropagation();
+});
+$('findNext').addEventListener('click', () => stepFind(1));
+$('findPrev').addEventListener('click', () => stepFind(-1));
+$('findClose').addEventListener('click', () => showFind(false));
+
 // ── Header, keys ─────────────────────────────────────────────────────────────
 $('prevFile').addEventListener('click', () => stepFile(-1));
 $('nextFile').addEventListener('click', () => stepFile(1));
@@ -565,6 +766,18 @@ function focusSidebar(input) {
 }
 
 document.addEventListener('keydown', (e) => {
+  // Before the guard below: this is the one combination the page takes over, and
+  // it has to work from anywhere, including out of a box being typed in.
+  if (e.key === 'f' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+    showFind(true);
+    e.preventDefault();
+    return;
+  }
+  if (e.key === 'g' && (e.metaKey || e.ctrlKey) && !e.altKey) {
+    findAgain(e.shiftKey ? -1 : 1);
+    e.preventDefault();
+    return;
+  }
   if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'Escape' && !$('help-overlay').hidden) showHelp(false);
@@ -576,6 +789,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'c') showSidePane($('side-comments').hidden ? 'comments' : 'files');
   else if (e.key === 'C') stepComment(1);
   else if (e.key === 'y') copiers.get(lineRef?.path ?? current)?.();
+  else if (e.key === 'r') $('reload').click();
   else if (e.key === 'e') $('foldToggle').click();
   else if (e.key === 'b') $('bgToggle').click();
   else if (e.key === 't') $('themeToggle').click();
@@ -739,7 +953,37 @@ setInterval(async () => {
   handedOver = status.submitted;
   updateHeader();
   if (comments.applyResolved(status.resolved)) updateCommentUi();
+  showReload(status.changed ?? []);
+  showPr(status.pr ?? null);
+  showCi(status.ci ?? null);
 }, 2000);
+
+// ── Reading the diff again ───────────────────────────────────────────────────
+// Always available, and always the reviewer's own act: the server re-reads the
+// whole diff — the file set, the statuses, both sides of every file — when this
+// page loads, and holds it still in between, because a diff that reflowed while a
+// comment was being written on it would take the lines that comment names with
+// it. A reload comes back to the same review, every comment re-anchored to where
+// its line has moved to.
+//
+// The server also watches what it has served, and says which of those files are
+// no longer the bytes on screen. That does not re-read anything; it colours the
+// control, so there is a reason to press it rather than a diff moving unasked.
+const changedOnDisk = new Set();
+
+function showReload(changed) {
+  for (const path of changed) changedOnDisk.add(path);
+  if (changedOnDisk.size === 0) return;
+  const names = [...changedOnDisk].map((p) => p.split('/').pop());
+  $('reload').classList.add('stale');
+  $('reloadLabel').textContent = 'Reload';
+  $('reload').title =
+    `${changedOnDisk.size} file${changedOnDisk.size === 1 ? '' : 's'} changed on disk since this page read ` +
+    `${changedOnDisk.size === 1 ? 'it' : 'them'} — ${names.slice(0, 6).join(', ')}` +
+    `${names.length > 6 ? ', …' : ''}. Read the diff again (r); comments follow their lines.`;
+}
+
+$('reload').addEventListener('click', () => location.reload());
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
 // The stored view choices go on before the first file is rendered: the viewer
