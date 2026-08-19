@@ -55,6 +55,7 @@ struct QueryPlanOptimizationSettings
     bool merge_expressions;
     bool merge_filters;
     bool filter_push_down;
+    bool fuse_filter_into_array_join;
     bool convert_outer_join_to_inner_join;
     bool short_circuit_constant_false_join;
     bool execute_functions_after_sorting;
