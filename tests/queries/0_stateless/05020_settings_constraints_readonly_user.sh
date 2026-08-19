@@ -23,7 +23,7 @@ INSERT INTO ${CLICKHOUSE_DATABASE}.${TABLE} VALUES (1, 'tenant1-own'), (2, 'tena
 CREATE SETTINGS PROFILE ${PROFILE} SETTINGS
     readonly = 1 CONST,
     max_memory_usage = 104857600 CONST,
-    additional_table_filters = '{\"${CLICKHOUSE_DATABASE}.${TABLE}\":\"tenant_id = 1\"}' CONST;
+    additional_table_filters = '{''${CLICKHOUSE_DATABASE}.${TABLE}'':''tenant_id = 1''}' CONST;
 CREATE USER ${USER} IDENTIFIED WITH no_password SETTINGS PROFILE ${PROFILE};
 GRANT SELECT ON ${CLICKHOUSE_DATABASE}.* TO ${USER};
 
@@ -44,19 +44,19 @@ echo "-- SET readonly = DEFAULT is rejected"
 ${RESTRICTED} --query "SET readonly = DEFAULT" 2>&1 | grep -c -F "Cannot modify 'readonly' setting in readonly mode"
 
 echo "-- the session is still readonly afterwards"
-${RESTRICTED} --multiquery --query "SET readonly = DEFAULT; CREATE TABLE should_not_exist_05020 (x UInt64) ENGINE = MergeTree ORDER BY x" 2>&1 | grep -c -F "Cannot execute query in readonly mode"
+${RESTRICTED} --multiquery --ignore-error --query "SET readonly = DEFAULT; CREATE TABLE should_not_exist_05020 (x UInt64) ENGINE = MergeTree ORDER BY x" 2>&1 | grep -c -F "Cannot execute query in readonly mode"
 
 echo "-- SET max_memory_usage = DEFAULT is rejected"
 ${RESTRICTED} --query "SET max_memory_usage = DEFAULT" 2>&1 | grep -c -F "Cannot modify 'max_memory_usage' setting in readonly mode"
 
 echo "-- a nested SETTINGS clause cannot lift the row filter"
-${RESTRICTED} --query "SELECT secret FROM (SELECT * FROM ${TABLE} SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.${TABLE}':'1'}) ORDER BY secret" 2>&1 | grep -c -E "Cannot modify 'additional_table_filters' setting in readonly mode|Setting additional_table_filters should not be changed"
+${RESTRICTED} --query "SELECT secret FROM (SELECT * FROM ${TABLE} SETTINGS additional_table_filters = {'${CLICKHOUSE_DATABASE}.${TABLE}':'1'}) ORDER BY secret" 2>&1 | grep -c -F "Cannot modify 'additional_table_filters' setting in readonly mode"
 
 echo "-- a SQL SECURITY DEFINER view with inner SETTINGS still reads"
 ${RESTRICTED} --query "SELECT c FROM v_definer_05020"
 
 echo "-- a SQL SECURITY INVOKER view with inner SETTINGS is now checked"
-${RESTRICTED} --query "SELECT c FROM v_invoker_05020" 2>&1 | grep -c -E "Cannot modify 'max_block_size' setting in readonly mode|Setting max_block_size should not be changed"
+${RESTRICTED} --query "SELECT c FROM v_invoker_05020" 2>&1 | grep -c -F "Cannot modify 'max_block_size' setting in readonly mode"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
 DROP VIEW ${CLICKHOUSE_DATABASE}.v_invoker_05020;

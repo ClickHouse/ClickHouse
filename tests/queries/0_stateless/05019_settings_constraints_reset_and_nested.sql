@@ -19,7 +19,7 @@ SET profile = 'profile_05019';
 
 SELECT '-- constraint is in force on the direct forms';
 SET max_execution_time = 20; -- { serverError 452 }
-SELECT count() FROM t_05019 SETTINGS additional_table_filters = {'default.t_05019': '1'}; -- { serverError 452 }
+SELECT count() FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}; -- { serverError 452 }
 
 SELECT '-- SET name = DEFAULT must not clear a CONST constraint';
 SET max_execution_time = DEFAULT; -- { serverError 452 }
@@ -34,8 +34,8 @@ SET SQL_tenant_id = DEFAULT; -- { serverError 452 }
 SELECT getSetting('SQL_tenant_id');
 
 SELECT '-- a nested SETTINGS clause is checked, in a subquery and in a CTE';
-SELECT count() FROM (SELECT * FROM t_05019 SETTINGS additional_table_filters = {'default.t_05019': '1'}); -- { serverError 452 }
-WITH cte AS (SELECT * FROM t_05019 SETTINGS additional_table_filters = {'default.t_05019': '1'}) SELECT count() FROM cte; -- { serverError 452 }
+SELECT count() FROM (SELECT * FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}); -- { serverError 452 }
+WITH cte AS (SELECT * FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}) SELECT count() FROM cte; -- { serverError 452 }
 
 SELECT '-- a nested SETTINGS name = DEFAULT is checked too';
 SELECT count() FROM (SELECT * FROM t_05019 SETTINGS max_execution_time = DEFAULT); -- { serverError 452 }
