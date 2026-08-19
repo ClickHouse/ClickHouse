@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -1923,6 +1924,54 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     return std::max(marks, min_marks);
 }
 
+BoolMask MergeTreeDataSelectExecutor::checkOffsetConditionsInRange(
+    const RangesInDataPart & part_with_ranges,
+    const MarkRange & range,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
+    BoolMask initial_mask)
+{
+    const auto & part = part_with_ranges.data_part;
+
+    auto begin = part->index_granularity->getMarkStartingRow(range.begin);
+    auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
+    if (begin > end)
+    {
+        /// Empty mark (final mark)
+        return {false, true};
+    }
+
+    /// For _part_offset and _part virtual columns
+    static const DataTypes part_offset_types
+        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
+
+    std::array<FieldRef, 2> left;
+    std::array<FieldRef, 2> right;
+
+    BoolMask result(true, false);
+
+    if (part_offset_condition)
+    {
+        left[0] = begin;
+        right[0] = end;
+
+        left[1] = part->name;
+        right[1] = part->name;
+
+        result = result & part_offset_condition->checkInRange(2, left.data(), right.data(), part_offset_types, initial_mask);
+    }
+
+    if (total_offset_condition)
+    {
+        left[0] = begin + part_with_ranges.part_starting_offset_in_query;
+        right[0] = end + part_with_ranges.part_starting_offset_in_query;
+
+        result = result & total_offset_condition->checkInRange(1, left.data(), right.data(), part_offset_types, initial_mask);
+    }
+
+    return result;
+}
+
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
@@ -2172,12 +2221,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         }
     }
 
-    /// For _part_offset and _part virtual columns
-    DataTypes part_offset_types
-        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
-    std::vector<FieldRef> part_offset_left(2);
-    std::vector<FieldRef> part_offset_right(2);
-
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2285,52 +2328,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
-        auto check_part_offset_condition = [&]()
-        {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
-            if (begin > end)
-            {
-                /// Empty mark (final mark)
-                return BoolMask(false, true);
-            }
-
-            part_offset_left[0] = begin;
-            part_offset_right[0] = end;
-
-            part_offset_left[1] = part->name;
-            part_offset_right[1] = part->name;
-
-            return part_offset_condition->checkInRange(
-                2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-        };
-
-        auto check_total_offset_condition = [&]()
-        {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
-            if (begin > end)
-            {
-                /// Empty mark (final mark)
-                return BoolMask(false, true);
-            }
-
-            part_offset_left[0] = begin + part_with_ranges.part_starting_offset_in_query;
-            part_offset_right[0] = end + part_with_ranges.part_starting_offset_in_query;
-            return total_offset_condition->checkInRange(
-                1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-        };
-
         BoolMask result(true, false);
 
         if (key_condition_useful)
             result = result & check_key_condition();
 
-        if (part_offset_condition_useful)
-            result = result & check_part_offset_condition();
-
-        if (total_offset_condition_useful)
-            result = result & check_total_offset_condition();
+        if (part_offset_condition_useful || total_offset_condition_useful)
+        {
+            result = result & checkOffsetConditionsInRange(
+                part_with_ranges,
+                range,
+                part_offset_condition_useful ? part_offset_condition : nullptr,
+                total_offset_condition_useful ? total_offset_condition : nullptr,
+                initial_mask);
+        }
 
         return result;
     };

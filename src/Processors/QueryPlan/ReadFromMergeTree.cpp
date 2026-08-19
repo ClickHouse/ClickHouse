@@ -3147,6 +3147,25 @@ void ReadFromMergeTree::applyFilters(ActionDAGNodes added_filter_nodes)
     }
 }
 
+static MarkRanges intersectRanges(const MarkRanges & lhs, const MarkRanges & rhs)
+{
+    MarkRanges res;
+    const auto * l = lhs.begin();
+    const auto * r = rhs.begin();
+    while (l != lhs.end() && r != rhs.end())
+    {
+        size_t begin = std::max(l->begin, r->begin);
+        size_t end = std::min(l->end, r->end);
+        if (begin < end)
+            res.emplace_back(begin, end);
+        if (l->end < r->end)
+            ++l;
+        else
+            ++r;
+    }
+    return res;
+}
+
 using PartsRangesMap = std::unordered_map<std::string, const RangesInDataPart *>;
 /// Same as filterPartsByPrimaryKeyAndSkipIndexes(), but accept part names and parts map to transform parts names to parts
 /// Used for distributed index analysis
@@ -3433,9 +3452,34 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
         else
         {
+            /// Filters over part offsets do not survive the trip to a remote replica (and the per-part
+            /// starting offsets there are numbered over the replica subset), so apply them upfront
+            /// via the regular per-part analysis under a no-op key condition (the offset conditions
+            /// are pure arithmetic over the granularity, the primary key index is not loaded); the
+            /// received ranges are then intersected with the ranges narrowed here.
+            if (indexes->part_offset_condition || indexes->total_offset_condition)
+            {
+                ActionsDAGWithInversionPushDown empty_predicate(nullptr, context_, /*boolean_context=*/ false);
+                KeyCondition no_key_condition(empty_predicate, context_, metadata_snapshot->getPrimaryKey(), /*single_point_=*/ false);
+                for (auto & part_ranges : res_parts)
+                {
+                    part_ranges.ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
+                        part_ranges,
+                        metadata_snapshot,
+                        no_key_condition,
+                        indexes->part_offset_condition ? &indexes->part_offset_condition->generateForPart(part_ranges.data_part) : nullptr,
+                        indexes->total_offset_condition ? &indexes->total_offset_condition->generateForPart(part_ranges.data_part) : nullptr,
+                        /*exact_ranges=*/ nullptr,
+                        /*pk_to_minmax_slot=*/ nullptr,
+                        settings,
+                        log);
+                }
+                std::erase_if(res_parts, [](const auto & part_ranges) { return part_ranges.ranges.empty(); });
+            }
+
             /// A single analysis never mixes projections (or projection parts with parent parts).
             std::optional<String> projection_name;
-            if (projection_parts_exist)
+            if (projection_parts_exist && !res_parts.empty())
             {
                 chassert(std::ranges::all_of(res_parts, [](const auto & part) { return part.data_part->isProjectionPart(); }));
                 projection_name = res_parts.front().data_part->name;
@@ -3512,11 +3556,13 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             for (const auto & [part_name, ranges] : analyzed_parts_ranges)
             {
                 auto part_range_info = *parts_ranges_map.at(part_name);
-                /// Note: part_range_info.ranges may have been split by Query Condition Cache,
-                /// so we cannot assert ranges.size() == 1 here.
                 chassert(part_range_info.exact_ranges.empty());
 
-                part_range_info.ranges = ranges;
+                /// A remote replica analyzes whole parts, so keep only what the local narrowing
+                /// (the query condition cache, the part offset conditions) already allowed.
+                part_range_info.ranges = intersectRanges(part_range_info.ranges, ranges);
+                if (part_range_info.ranges.empty())
+                    continue;
                 result_parts_ranges.push_back(part_range_info);
             }
 
