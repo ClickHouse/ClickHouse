@@ -7,12 +7,8 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-# The failpoint makes every segment the cache finds report itself as evicting or removed, so
-# `getOrSet` hands the executor DETACHED placeholders. Such a segment holds no bytes and can never
-# accept any, so it must be read from source rather than assigned a cache writer.
-
-# `read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0` pins populate-on-miss: at 1 the
-# executor's cache provider is read-only and never reaches the code path under test.
+# The failpoint makes `getOrSet` hand back DETACHED placeholders, which must be read from source, not
+# filled. bypass=0 pins populate-on-miss (the path under test); at 1 the provider is read-only.
 READ_SETTINGS=(
     --use_reader_executor=1
     --remote_filesystem_read_method=read
@@ -30,9 +26,8 @@ ${CLICKHOUSE_CLIENT} -q "
     INSERT INTO t_re_detached SELECT number, toString(number) FROM numbers(100000)
     SETTINGS enable_filesystem_cache_on_write_operations = 0"
 
-# The failpoint is server-global and stays armed until an explicit disable, so it must be cleared even
-# if the read below aborts the script. Otherwise every later filesystem cache lookup on this server
-# receives DETACHED placeholders and stops serving cached bytes, masking the failure that happened here.
+# The failpoint is server-global; clear it even if the read aborts, or later cache reads on this
+# server keep getting placeholders.
 trap '${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT file_cache_simulate_evicting_segment" > /dev/null 2>&1 || true' EXIT
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT file_cache_simulate_evicting_segment"
@@ -45,8 +40,7 @@ ${CLICKHOUSE_CLIENT} "${READ_SETTINGS[@]}" -q "SELECT count(), sum(k) FROM t_re_
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
-# `ReaderExecutorCacheGetRequests` is emitted only by the executor, and only on its cache path, so a
-# non-zero count pins that the armed read went through `resolve` rather than some other read stage.
+# A non-zero `ReaderExecutorCacheGetRequests` confirms the armed read went through the executor's cache path.
 ${CLICKHOUSE_CLIENT} -q "
     SELECT sumIf(ProfileEvents['ReaderExecutorCacheGetRequests'], log_comment = 'reader_executor_detached') > 0
     FROM system.query_log
