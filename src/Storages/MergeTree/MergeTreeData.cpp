@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -1022,6 +1023,38 @@ void MergeTreeData::checkProperties(
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
+
+    /// Check that the table sorting column is not compressed by a lossy codec (e.g. SZ3). Lossy codecs
+    /// lose precision and may destroy the sorting. Not on attach, so a table stored by an earlier version
+    /// stays loadable.
+    if (!attach)
+    {
+        /// Collecting the sort key columns.
+        for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+        {
+            const auto column = new_metadata.columns.tryGetColumnDescription(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
+            if (!column || !column->codec)
+                continue;
+
+            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+            /// so lossiness is resolved per substream the way the part writer resolves it.
+            bool is_lossy = false;
+            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            {
+                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                    return;
+                is_lossy = CompressionCodecFactory::instance()
+                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+            };
+            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+
+            if (is_lossy)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} is used in the sorting key, so it cannot be compressed with a lossy codec",
+                    backQuoteIfNeed(name));
+        }
+    }
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
