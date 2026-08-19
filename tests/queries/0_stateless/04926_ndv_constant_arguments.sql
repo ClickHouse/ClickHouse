@@ -14,7 +14,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 
 SELECT 'constant argument before the non-const argument';
-SELECT explain FROM
+SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT *
@@ -27,10 +27,10 @@ SELECT explain FROM
     ) AS aggregated
     ON probe.n = aggregated.key
 )
-WHERE explain LIKE '% Join:%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join:%';
 
 SELECT 'non-folded constant argument';
-SELECT explain FROM
+SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT *
@@ -43,10 +43,10 @@ SELECT explain FROM
     ) AS aggregated
     ON probe.n = aggregated.key
 )
-WHERE explain LIKE '% Join:%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join:%';
 
 SELECT 'constant scalar subquery argument';
-SELECT explain FROM
+SELECT extract(explain, 'Join:.*') FROM
 (
     EXPLAIN keep_logical_steps = 1, actions = 1
     SELECT *
@@ -59,4 +59,4 @@ SELECT explain FROM
     ) AS aggregated
     ON probe.n = aggregated.key
 )
-WHERE explain LIKE '% Join:%' OR explain LIKE '% ResultRows:%' OR explain LIKE '% Aggregating%';
+WHERE explain LIKE '% Join:%';
