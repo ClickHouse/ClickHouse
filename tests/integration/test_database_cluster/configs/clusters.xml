@@ -26,6 +26,14 @@
                 </replica>
             </shard>
         </one_shard_two_replicas>
+        <loopback>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </loopback>
         <secret_two_replicas>
             <secret>secret_key</secret>
             <shard>

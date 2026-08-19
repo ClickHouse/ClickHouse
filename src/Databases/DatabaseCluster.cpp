@@ -65,7 +65,9 @@ DatabaseRemote::ProxyClusters DatabaseCluster::getProxyClusters() const
     /// Macros (e.g. `{cluster}`) are expanded on every resolution: `StorageDistributed` expands them
     /// once per table object, but a database lives much longer than its per-lookup proxy tables, so
     /// the expansion has to follow the current configuration the same way the cluster itself does.
-    ClusterPtr current = getContext()->getCluster(getContext()->getMacros()->expand(cluster_name));
+    ClusterPtr current = getContext()->getCluster(
+        getContext()->getMacros()->expand(cluster_name),
+        getContext()->getApplicationType() == Context::ApplicationType::LOCAL);
 
     std::lock_guard lock(cluster_cache_mutex);
     if (cached_cluster != current)

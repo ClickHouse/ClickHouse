@@ -107,7 +107,8 @@ Cluster::Address::Address(
         const String & cluster_,
         const String & cluster_secret_,
         UInt32 shard_index_,
-        UInt32 replica_index_)
+        UInt32 replica_index_,
+        bool treat_local_port_as_remote)
     : cluster(cluster_)
     , cluster_secret(cluster_secret_)
     , shard_index(shard_index_)
@@ -130,6 +131,7 @@ Cluster::Address::Address(
     const char * port_type = secure == Protocol::Secure::Enable ? "tcp_port_secure" : "tcp_port";
     auto default_port = config.getInt(port_type, 0);
 
+    const bool has_explicit_port = config.has(config_prefix + ".port");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port", default_port));
     if (!port)
         throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG, "Port is not specified in cluster configuration: {}.port", config_prefix);
@@ -147,7 +149,9 @@ Cluster::Address::Address(
     stateless_worker_port = read_optional_port(".stateless_worker_port");
     streaming_exchange_port = read_optional_port(".streaming_exchange_port");
 
-    is_local = isLocal(static_cast<UInt16>(config.getInt(port_type, 0)));
+    is_local = !treat_local_port_as_remote || !has_explicit_port
+        ? isLocal(static_cast<UInt16>(config.getInt(port_type, 0)))
+        : false;
 
     /// By default compression is disabled if address looks like localhost.
     /// NOTE: it's still enabled when interacting with servers on different port, but we don't want to complicate the logic.
@@ -435,7 +439,8 @@ Clusters::Impl Clusters::getContainer() const
 Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
     const Settings & settings,
     const String & config_prefix_,
-    const String & cluster_name) : name(cluster_name)
+    const String & cluster_name,
+    bool treat_local_port_as_remote) : name(cluster_name)
 {
     auto config_prefix = config_prefix_ + "." + cluster_name;
 
@@ -489,7 +494,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         {
             /// Shard without replicas.
             Addresses addresses;
-            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1);
+            addresses.emplace_back(config, prefix, cluster_name, secret, current_shard_num, 1, treat_local_port_as_remote);
             const auto & address = addresses.back();
 
             ShardInfo info;
@@ -552,7 +557,8 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
                         cluster_name,
                         secret,
                         current_shard_num,
-                        current_replica_num);
+                        current_replica_num,
+                        treat_local_port_as_remote);
                     ++current_replica_num;
                 }
                 else

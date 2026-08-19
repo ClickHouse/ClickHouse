@@ -109,6 +109,29 @@ def test_cluster_database(started_cluster):
         node.query("DROP DATABASE src")
 
 
+def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
+    node1.query("CREATE DATABASE local_src")
+    node1.query("CREATE TABLE local_src.t (x UInt64) ENGINE = MergeTree ORDER BY x")
+    node1.query("INSERT INTO local_src.t VALUES (1), (2), (3)")
+
+    # The local tool does not listen on TCP port 9000. An explicitly configured loopback address
+    # must therefore be a remote replica, rather than resolving its database in the local tool.
+    assert (
+        node1.exec_in_container(
+            [
+                "clickhouse-local",
+                "--config-file=/etc/clickhouse-server/config.xml",
+                "--allow_experimental_database_cluster=1",
+                "--multiquery",
+                "--query=CREATE DATABASE proxy ENGINE = Cluster('loopback', 'local_src'); SELECT count() FROM proxy.t",
+            ]
+        )
+        == "3\n"
+    )
+
+    node1.query("DROP DATABASE local_src")
+
+
 def test_replica_fallback(started_cluster):
     # The database exists only on node2. On node1 the replica of the shard that points to node1
     # itself is a local one, so the metadata lookup prefers the local catalog; when the local

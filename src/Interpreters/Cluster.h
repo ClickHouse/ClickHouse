@@ -69,7 +69,8 @@ public:
     Cluster(const Poco::Util::AbstractConfiguration & config,
             const Settings & settings,
             const String & config_prefix_,
-            const String & cluster_name);
+            const String & cluster_name,
+            bool treat_local_port_as_remote = false);
 
     /// Construct a cluster by the names of shards and replicas.
     /// Local are treated as well as remote ones if treat_local_as_remote is true.
@@ -162,7 +163,8 @@ public:
             const String & cluster_,
             const String & cluster_secret_,
             UInt32 shard_index_ = 0,
-            UInt32 replica_index_ = 0);
+            UInt32 replica_index_ = 0,
+            bool treat_local_port_as_remote = false);
 
         Address(
             const DatabaseReplicaInfo & info,
