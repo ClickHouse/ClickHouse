@@ -32,12 +32,8 @@
 1
 1
 0
-SELECT count()
-FROM constraint_test_constants
-WHERE or(greater(b, 100), greater(c, 100))
-SELECT count()
-FROM constraint_test_constants
-WHERE greater(c, 100)
+SELECT count()\nFROM constraint_test_constants\nWHERE or(greater(b, 100), greater(c, 100))
+SELECT count()\nFROM constraint_test_constants\nWHERE greater(c, 100)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -53,9 +49,7 @@ QUERY id: 0
           COLUMN id: 6, column_name: c, result_type: Int64, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_100, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()
-FROM constraint_test_constants
-WHERE greater(c, 100)
+SELECT count()\nFROM constraint_test_constants\nWHERE greater(c, 100)
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
@@ -71,8 +65,7 @@ QUERY id: 0
           COLUMN id: 6, column_name: c, result_type: Int64, source_id: 3
           CONSTANT id: 7, constant_value: UInt64_100, constant_value_type: UInt8
   SETTINGS enable_analyzer=1
-SELECT count()
-FROM constraint_test_constants
+SELECT count()\nFROM constraint_test_constants
 QUERY id: 0
   PROJECTION COLUMNS
     count() UInt64
