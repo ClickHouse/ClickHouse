@@ -72,6 +72,25 @@ struct CountEqualAction
 /// How to perform the search depending on the arguments data types.
 namespace Impl
 {
+
+/// `Field` has no `FixedString` type, so `FixedString` values collapse to `String` once boxed
+/// here -- `accurateEquals` then does an exact-length comparison, unlike `equals()`'s zero-pad
+/// rule for `FixedString`s of different widths. The caller must say whether zero-padding applies
+/// (from the declared argument types), since a `Field` alone can no longer tell the two apart.
+inline bool arrayIndexFieldsEqual(const Field & left, const Field & right, bool zero_pad_string_compare)
+{
+    if (zero_pad_string_compare
+        && left.getType() == Field::Types::String && right.getType() == Field::Types::String)
+    {
+        const auto & l = left.safeGet<String>();
+        const auto & r = right.safeGet<String>();
+        return 0 == memcmpSmallLikeZeroPaddedAllowOverflow15(
+            reinterpret_cast<const UInt8 *>(l.data()), l.size(),
+            reinterpret_cast<const UInt8 *>(r.data()), r.size());
+    }
+    return accurateEquals(left, right);
+}
+
 template <
     typename ConcreteAction,
     bool RightArgIsConstant = false,
@@ -248,12 +267,12 @@ public:
         return current;
     }
 
-    static ResultType linearSearchConst(const Array & arr, const Field & value)
+    static ResultType linearSearchConst(const Array & arr, const Field & value, bool zero_pad_string_compare = false)
     {
         ResultType current = 0;
         for (size_t i = 0, size = arr.size(); i < size; ++i)
         {
-            if (!accurateEquals(arr[i], value))
+            if (!arrayIndexFieldsEqual(arr[i], value, zero_pad_string_compare))
                 continue;
 
             ConcreteAction::apply(current, i);
@@ -1201,6 +1220,15 @@ private:
         Array arr = col_array->getValue<Array>();
         const IColumn * item_arg = arguments[1].column.get();
 
+        /// See `Impl::arrayIndexFieldsEqual`'s comment.
+        bool zero_pad_string_compare = false;
+        if (const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].type.get()))
+        {
+            const auto & elem_type = array_type->getNestedType();
+            zero_pad_string_compare = isStringOrFixedString(elem_type) && isStringOrFixedString(arguments[1].type)
+                && (isFixedString(elem_type) || isFixedString(arguments[1].type));
+        }
+
         if (isColumnConst(*item_arg))
         {
             ResultType current = 0;
@@ -1209,13 +1237,13 @@ private:
             {
                 if (isColumnNullableOrLowCardinalityNullable(
                         assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData()))
-                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                    current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, zero_pad_string_compare);
                 else
                     current = Impl::Main<ConcreteAction, true>::lowerBound(arr, value, arr.size(), 0);
             }
             else
             {
-                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value);
+                current = Impl::Main<ConcreteAction, true>::linearSearchConst(arr, value, zero_pad_string_compare);
             }
 
             return result_type->createColumnConst(item_arg->size(), current);
@@ -1253,7 +1281,7 @@ private:
                 {
                     if (null_map && (*null_map)[row])
                         continue;
-                    if (!accurateEquals(arr[i], value))
+                    if (!Impl::arrayIndexFieldsEqual(arr[i], value, zero_pad_string_compare))
                         continue;
                 }
 
