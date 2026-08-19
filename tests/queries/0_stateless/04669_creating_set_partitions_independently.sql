@@ -7,9 +7,12 @@
 SET max_threads = 8;
 -- The optimization is disabled under parallel replicas.
 SET enable_parallel_replicas = 0;
--- The abandon cases below intentionally read multi-million-row tables, and the on/off comparisons read
--- them twice within one query; the stateless test profile caps `max_rows_to_read` at 20 million.
-SET max_rows_to_read = 0;
+-- The abandon cases below need every stream to cross the observation window of the preliminary
+-- deduplication (a fixed number of chunks, see `DeduplicationAbandonController`). A block size below
+-- the index granularity makes every read chunk a single granule of 8192 rows, shrinking the window
+-- about eightfold: with 8 streams it is crossed within a few hundred thousand rows instead of a few
+-- million.
+SET max_block_size = 6540;
 
 -- The pretty EXPLAIN output decorates plan lines with tree-drawing characters; use the legacy format
 -- so the assertions below match plain `Pre-distinct: 1` lines.
@@ -210,11 +213,11 @@ DROP TABLE test_in_global;
 DROP TABLE IF EXISTS test_in_mostly_unique;
 CREATE TABLE test_in_mostly_unique (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 SYSTEM STOP MERGES test_in_mostly_unique;
-INSERT INTO test_in_mostly_unique SELECT number FROM numbers_mt(3200000);
-INSERT INTO test_in_mostly_unique SELECT number FROM numbers_mt(1000);
-SELECT (SELECT count() FROM numbers(3200000) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(3200000) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 1);
+INSERT INTO test_in_mostly_unique SELECT number FROM numbers_mt(400000);
+INSERT INTO test_in_mostly_unique SELECT number FROM numbers_mt(100);
+SELECT (SELECT count() FROM numbers(400000) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(400000) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 1);
 -- the set stores exactly the unique keys even though the pre-deduplication stopped removing rows
-SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 3200000, set_overflow_mode = 'throw';
+SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_mostly_unique) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 400000, set_overflow_mode = 'throw';
 DROP TABLE test_in_mostly_unique;
 
 -- A heavy duplicate head anchors the cumulative unique rate below the abandon threshold, so the
@@ -223,11 +226,11 @@ DROP TABLE test_in_mostly_unique;
 DROP TABLE IF EXISTS test_in_dup_head_unique_tail;
 CREATE TABLE test_in_dup_head_unique_tail (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 SYSTEM STOP MERGES test_in_dup_head_unique_tail;
-INSERT INTO test_in_dup_head_unique_tail SELECT number % 100000 FROM numbers_mt(3200000);
-INSERT INTO test_in_dup_head_unique_tail SELECT 10000000 + number FROM numbers_mt(12800000);
-INSERT INTO test_in_dup_head_unique_tail SELECT number % 100000 FROM numbers_mt(1000);
-SELECT (SELECT count() FROM numbers(200000) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(200000) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 1);
-SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 12900000, set_overflow_mode = 'throw';
+INSERT INTO test_in_dup_head_unique_tail SELECT number % 10000 FROM numbers_mt(320000);
+INSERT INTO test_in_dup_head_unique_tail SELECT 1000000 + number FROM numbers_mt(1280000);
+INSERT INTO test_in_dup_head_unique_tail SELECT number % 10000 FROM numbers_mt(100);
+SELECT (SELECT count() FROM numbers(20000) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(20000) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 1);
+SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_dup_head_unique_tail) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 1290000, set_overflow_mode = 'throw';
 DROP TABLE test_in_dup_head_unique_tail;
 
 -- Mostly-unique wide String keys: the observation retains every unique key it sees, so for wide keys
@@ -237,11 +240,11 @@ DROP TABLE test_in_dup_head_unique_tail;
 DROP TABLE IF EXISTS test_in_wide_keys;
 CREATE TABLE test_in_wide_keys (a String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY sipHash64(a) % 8;
 SYSTEM STOP MERGES test_in_wide_keys;
-INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(3200000);
-INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 80)) FROM numbers_mt(1000);
-SELECT (SELECT count() FROM numbers(3200100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(3200100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1);
+INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 700)) FROM numbers_mt(320000);
+INSERT INTO test_in_wide_keys SELECT concat(toString(number), repeat('x', 700)) FROM numbers_mt(100);
+SELECT (SELECT count() FROM numbers(320100) WHERE concat(toString(number), repeat('x', 700)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(320100) WHERE concat(toString(number), repeat('x', 700)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1);
 -- the set stores exactly the unique keys even though the pre-deduplication stopped removing rows
-SELECT count() FROM numbers(100) WHERE concat(toString(number), repeat('x', 80)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 3200000, set_overflow_mode = 'throw';
+SELECT count() FROM numbers(100) WHERE concat(toString(number), repeat('x', 700)) IN (SELECT a FROM test_in_wide_keys) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 320000, set_overflow_mode = 'throw';
 DROP TABLE test_in_wide_keys;
 
 -- A small duplicate head: once the unique tail outweighs it, the cumulative unique rate crosses the
@@ -250,10 +253,10 @@ DROP TABLE test_in_wide_keys;
 DROP TABLE IF EXISTS test_in_small_dup_head;
 CREATE TABLE test_in_small_dup_head (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY a % 8;
 SYSTEM STOP MERGES test_in_small_dup_head;
-INSERT INTO test_in_small_dup_head SELECT number % 1000 FROM numbers_mt(512000);
-INSERT INTO test_in_small_dup_head SELECT 1000000 + number FROM numbers_mt(6400000);
-INSERT INTO test_in_small_dup_head SELECT number % 1000 FROM numbers_mt(1000);
-SELECT (SELECT count() FROM numbers(2000000) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(2000000) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 1);
+INSERT INTO test_in_small_dup_head SELECT number % 1000 FROM numbers_mt(51200);
+INSERT INTO test_in_small_dup_head SELECT 100000 + number FROM numbers_mt(640000);
+INSERT INTO test_in_small_dup_head SELECT number % 1000 FROM numbers_mt(100);
+SELECT (SELECT count() FROM numbers(200000) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 0) = (SELECT count() FROM numbers(200000) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 1);
 -- the set stores exactly the unique keys even though the pre-deduplication stopped removing rows
-SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 6401000, set_overflow_mode = 'throw';
+SELECT count() FROM numbers(100) WHERE number IN (SELECT a FROM test_in_small_dup_head) SETTINGS allow_creating_set_partitions_independently = 1, max_rows_in_set = 641000, set_overflow_mode = 'throw';
 DROP TABLE test_in_small_dup_head;
