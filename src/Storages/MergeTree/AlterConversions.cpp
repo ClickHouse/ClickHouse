@@ -588,10 +588,9 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
     };
 
-    /// Whether a column can be recalculated outside INSERT at all: it is MATERIALIZED and its expression
-    /// reads no EPHEMERAL column. The second half mirrors `MutationsInterpreter::prepare`, which leaves
-    /// such a column alone because an EPHEMERAL column exists only during INSERT — so the test is on what
-    /// the expression reads, not on the column itself.
+    /// Whether a column can be recalculated outside INSERT: it is MATERIALIZED, and its expression reads
+    /// no EPHEMERAL column, which exists only during INSERT. The test is on what the expression reads, not
+    /// on the column itself, matching what `MutationsInterpreter::prepare` skips.
     auto can_recalculate = [&](const String & column_name)
     {
         if (!is_materialized(column_name))
@@ -601,14 +600,13 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
-    /// Whether the interpreter recalculates this column, so the read set owes its whole expression: the
-    /// column can be recalculated at all, and something it reads changes. A dependency changes when a
-    /// command writes it — which is what terminates the descent, since a written column is usually a
-    /// plain one — or when it is itself recalculated.
+    /// Whether the interpreter recalculates this column: it can be recalculated, and a dependency either
+    /// is written by a command or is itself recalculated. The written case is tested here rather than by
+    /// recursing, because a written column is usually plain and fails `can_recalculate`; it ends the descent.
     ///
-    /// Memoised, and the entry inserted before descending also breaks a cycle, which well-formed
-    /// defaults cannot contain; on an acyclic graph an entry is only ever read once its value is final,
-    /// because a column still being visited is reachable exclusively from its own subtree.
+    /// Memoised. The entry is inserted before descending, so a cycle — which a well-formed default cannot
+    /// contain — reads it while still provisional and terminates. Otherwise an entry is only read once
+    /// final, because a column still being visited is reachable only from its own subtree.
     std::unordered_map<String, bool> is_recalculated_of;
     auto is_recalculated = [&](const String & column_name, auto && self) -> bool
     {
@@ -645,7 +643,6 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         if (!is_recalculated(column_name, is_recalculated))
             continue;
 
-        /// `is_recalculated` implies `can_recalculate`, so none of these is an EPHEMERAL column.
         for (const auto & dependency : get_dependencies(column_name))
         {
             if (read_columns_set.contains(dependency))
