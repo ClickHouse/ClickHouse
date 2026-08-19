@@ -18,6 +18,14 @@ def test_external_call_detection_ignores_non_ai_functions():
     assert not make_example("SELECT generateUUIDv4()").calls_external_services
 
 
+def test_global_object_detection_matches_generate_serial_id():
+    assert make_example("SELECT generateSerialID('id1')").creates_global_objects
+
+
+def test_global_object_detection_ignores_other_functions():
+    assert not make_example("SELECT generateUUIDv4()").creates_global_objects
+
+
 def test_client_does_not_retry_a_request_after_a_transport_error(monkeypatch):
     class FailingConnection:
         requests = 0

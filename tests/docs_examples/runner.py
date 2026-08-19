@@ -128,6 +128,10 @@ GLOBAL_OBJECT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# `generateSerialID` stores a counter in Keeper under the server-wide
+# `series_keeper_path`. Its state is therefore not isolated by the scratch database.
+GLOBAL_STATE_FUNCTION_RE = re.compile(r"\bgenerateSerialID\s*\(", re.IGNORECASE)
+
 # A call of a function that reaches out to an external service: the `ai*` family sends the given
 # text to a model provider. On a server that has provider credentials configured, such an example
 # would make a real outbound call, incur spend, and ship the example's text off the box, so it only
@@ -154,7 +158,9 @@ class Example:
 
     @property
     def creates_global_objects(self):
-        return any(GLOBAL_OBJECT_RE.match(statement) for statement in split_statements(self.query))
+        return any(GLOBAL_OBJECT_RE.match(statement) for statement in split_statements(self.query)) or bool(
+            GLOBAL_STATE_FUNCTION_RE.search(self.query)
+        )
 
     @property
     def calls_external_services(self):
