@@ -79,7 +79,7 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool use_iceberg_partition_pruning;
-extern const SettingsUInt64 iceberg_delete_manifest_decode_concurrency;
+extern const SettingsNonZeroUInt64 iceberg_delete_manifest_decode_concurrency;
 };
 
 
@@ -389,8 +389,7 @@ void IcebergIterator::decodeDeleteManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight
-        = std::max<size_t>(1, local_context->getSettingsRef()[Setting::iceberg_delete_manifest_decode_concurrency]);
+    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_delete_manifest_decode_concurrency];
 
     auto decode_runner
         = threadPoolCallbackRunnerUnsafe<DeleteManifestBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_ITERATOR);
