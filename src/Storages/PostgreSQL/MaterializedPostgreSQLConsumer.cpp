@@ -872,7 +872,10 @@ void MaterializedPostgreSQLConsumer::processReplicationMessage(const char * repl
                                 fmt::format("Table {} is skipped from replication because an UPDATE contains an "
                                             "unchanged TOAST replica identity value that cannot identify the row",
                                             table_name));
-                            markTableAsSkipped(relation_id, table_name);
+                            markTableAsSkipped(
+                                relation_id,
+                                table_name,
+                                "because an unchanged TOAST replica identity value cannot identify the row");
                         }
                         read_next = false;
                         break;
