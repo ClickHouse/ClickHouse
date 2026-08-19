@@ -1831,9 +1831,17 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Cannot ATTACH VIEW {}.{}, it is a Table",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
+        /// `isView()` also covers Window Views, which the view parser cannot spell, so the stub would
+        /// silently take the stored kind.
+        if (create.isView() && create_query.is_window_view)
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "Cannot ATTACH VIEW {0}.{1}, it is a WindowView. Use 'ATTACH TABLE {1};' instead",
+                backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
+
         /// `getRequiredAccess` ran on the stub, which has no definition, so nothing the stored
-        /// definition carries is authorized yet, and CREATE_VIEW alone reaches here.
-        if (create.isView())
+        /// definition carries is authorized yet, and CREATE_VIEW alone reaches here. An `IF NOT
+        /// EXISTS` no-op applies no definition, so it must not demand the definition's grants.
+        if (create.isView() && !(if_not_exists && database->isTableExist(create.getTable(), getContext())))
         {
             if (create_query.sql_security)
                 processSQLSecurityOption(

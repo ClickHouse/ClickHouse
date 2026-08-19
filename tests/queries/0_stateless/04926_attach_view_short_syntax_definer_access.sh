@@ -49,6 +49,14 @@ ATTACH VIEW $db.v_definer;
 ATTACH VIEW $db.v_none;
 SELECT name, definer = '$definer' FROM system.tables WHERE database = '$db' AND name IN ('v_definer', 'v_none') ORDER BY name;
 SELECT k FROM $db.v_definer;
+EOF
+
+# Both are attached now, so IF NOT EXISTS applies no definition and must not demand its grants.
+${CLICKHOUSE_CLIENT} --user "$weak" --query "ATTACH VIEW IF NOT EXISTS $db.v_definer" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --user "$weak" --query "ATTACH VIEW IF NOT EXISTS $db.v_none" 2>&1 | grep -q "ACCESS_DENIED" && echo "ACCESS_DENIED" || echo "NO ERROR"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM system.tables WHERE database = '$db' AND name IN ('v_definer', 'v_none')"
+
+${CLICKHOUSE_CLIENT} <<EOF
 DROP VIEW $db.v_definer;
 DROP VIEW $db.v_none;
 DROP VIEW $db.v_invoker;
