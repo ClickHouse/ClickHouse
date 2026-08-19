@@ -41,7 +41,7 @@ FROM (
 
 SELECT * FROM (SELECT * FROM t1 INNER JOIN t3 ON 1) WHERE a = c ORDER BY ALL;
 
-SELECT '-- a condition over different types is not merged into a `Join` table engine';
+SELECT '-- Conditions are not merged into a `Join` table engine';
 SELECT
     extract(arrayStringConcat(groupArray(explain), '\n'), 'Type: (\\w+)') AS join_kind,
     countIf(explain LIKE '%Filter column:%') AS filters_above_join
