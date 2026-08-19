@@ -71,31 +71,31 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       </Step>
 
       <Step title="Explorar sessões" id="explore-sessions-managed">
-        Suponha que tenhamos relatos de que nossos usuários estão enfrentando problemas ao pagar por produtos. Podemos visualizar a experiência deles usando os recursos de replay de sessão do HyperDX.
+        Suponha que tenhamos relatos de que nossos usuários estão enfrentando problemas para pagar por produtos. Podemos visualizar a experiência deles usando os recursos de session replay do HyperDX.
 
         Selecione `Client Sessions` no menu à esquerda.
 
         <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessões" size="lg" />
 
-        Esta visualização nos permite ver as sessões de front-end da nossa loja de e-commerce. As sessões permanecem como Anonymous até que os usuários finalizem a compra e tentem concluir um pagamento.
+        Essa visualização nos permite ver as sessões de front-end da nossa loja de e-commerce. As sessões permanecem anônimas até que os usuários avancem para o checkout e tentem concluir uma compra.
 
         Observe que algumas sessões com e-mails têm um erro associado, o que pode confirmar os relatos de transações com falha.
 
-        Selecione um trace com falha e um e-mail associado. A visualização seguinte nos permite reproduzir a sessão do usuário e analisar o problema. Pressione play para assistir à sessão.
+        Selecione um trace com falha e e-mail associado. A visualização seguinte nos permite reproduzir a sessão do usuário e analisar o problema. Pressione play para assistir à sessão.
 
         <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
 
-        A reprodução mostra o usuário navegando pelo site e adicionando itens ao carrinho. Sinta-se à vontade para avançar para um ponto mais adiante da sessão, quando ele tenta concluir o pagamento.
+        A reprodução mostra o usuário navegando pelo site e adicionando itens ao carrinho. Se quiser, avance para um ponto posterior da sessão, quando ele tenta concluir o pagamento.
 
         <Tip>
-          Os erros são anotados na linha do tempo em vermelho.
+          Todos os erros são marcados na linha do tempo em vermelho.
         </Tip>
 
-        O usuário não conseguiu concluir o pedido, sem nenhum erro óbvio. Role até a parte inferior do painel esquerdo, que contém os eventos de rede e de console do navegador do usuário. Você notará que um erro 500 foi gerado ao fazer uma chamada para `/api/checkout`.
+        O usuário não conseguiu finalizar o pedido, sem nenhum erro evidente. Role até a parte inferior do painel esquerdo, que contém os eventos de rede e console do navegador do usuário. Você notará que um erro 500 foi gerado ao fazer uma chamada para `/api/checkout`.
 
         <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Erro na sessão" size="lg" />
 
-        Selecione esse erro `500`. Nem `Overview` nem `Column Values` indicam a origem do problema, além do fato de que o erro é inesperado, resultando em um `Internal Error`.
+        Selecione esse erro `500`. Nem o `Overview` nem `Column Values` indicam a origem do problema, além do fato de que o erro é inesperado, causando um `Internal Error`.
       </Step>
 
       <Step title="Explore traces" id="explore-traces-managed">
@@ -119,9 +119,9 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       </Step>
 
       <Step title="Explorar logs" id="explore-logs-managed">
-        Para ver mais detalhes, podemos voltar para `Busca`:
+        Para mais detalhes, podemos voltar para a visualização `Busca`:
 
-        Selecione `Logs` nas fontes e aplique um filtro no serviço `payment`.
+        Selecione `Logs` nas fontes e aplique um filtro para o serviço `payment`.
 
         <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" size="lg" />
 
@@ -139,7 +139,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
   </Tab>
 
   <Tab title="ClickStack Open Source">
-    O exemplo a seguir pressupõe que você iniciou o Open Source ClickStack seguindo as [instruções para a imagem all-in-one](/pt-BR/clickstack/getting-started/oss) e se conectou à [instância local do ClickHouse](/pt-BR/clickstack/getting-started/oss#complete-connection-credentials).
+    O exemplo a seguir pressupõe que você iniciou o ClickStack Open Source usando a [imagem all-in-one](/pt-BR/clickstack/getting-started/oss) e copiou a [API key de ingestão](/pt-BR/clickstack/getting-started/oss#copy-ingestion-api-key).
 
     <Steps>
       <Step title="Acesse a ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
@@ -166,7 +166,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        Este arquivo contém logs, métricas e rastreamentos de exemplo do nosso [demo público do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) - uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
+        Este arquivo contém logs, métricas e traces de exemplo da nossa [demo pública do OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — uma loja virtual simples com microsserviços. Copie este arquivo para um diretório de sua escolha.
       </Step>
 
       <Step title="Carregar dados de exemplo" id="load-sample-data">
