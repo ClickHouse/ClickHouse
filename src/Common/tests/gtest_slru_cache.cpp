@@ -241,6 +241,29 @@ TEST(SLRUCache, MaxCount)
     }
 }
 
+TEST(SLRUCache, MaxCountDoesNotStarveProbationary)
+{
+    using SimpleCacheBase = DB::CacheBase<int, size_t, std::hash<int>, ValueWeight>;
+
+    size_t x = 5;
+    auto load_func = [&] { return std::make_shared<size_t>(x); };
+
+    SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                               /*max_size_in_bytes=*/1'000'000'000,
+                               /*max_count=*/4,
+                               /*size_ratio*/0.5);
+
+    /// A second access promotes an entry into the protected queue.
+    for (int i = 0; i < 4; ++i)
+    {
+        slru_cache.getOrSet(i, load_func);
+        slru_cache.getOrSet(i, load_func);
+    }
+
+    slru_cache.getOrSet(100, load_func);
+    ASSERT_NE(slru_cache.get(100), nullptr);
+}
+
 TEST(SLRUCache, noOnRemoveEntryCallback)
 {
     DB::SLRUCachePolicy<std::string, size_t> slru_cache = {CurrentMetrics::end(), CurrentMetrics::end(), 20, 1, 0.5, {}};

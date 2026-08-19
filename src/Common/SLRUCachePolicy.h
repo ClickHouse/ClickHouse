@@ -41,6 +41,7 @@ public:
         , max_size_in_bytes(max_size_in_bytes_)
         , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
         , max_count(max_count_)
+        , max_protected_count(calculateMaxProtectedCount(max_count_, size_ratio_))
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
@@ -75,7 +76,9 @@ public:
 
     void setMaxCount(size_t max_count_) override
     {
+        max_protected_count = calculateMaxProtectedCount(max_count_, size_ratio);
         max_count = max_count_;
+
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
         removeOverflow(probationary_queue, max_size_in_bytes, current_size_in_bytes, /*is_protected=*/false);
     }
@@ -267,6 +270,7 @@ private:
     size_t max_size_in_bytes;
     size_t max_protected_size;
     size_t max_count;
+    size_t max_protected_count;
     const double size_ratio;
     size_t current_protected_size = 0;
     size_t current_size_in_bytes = 0;
@@ -280,6 +284,15 @@ private:
     static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
     {
         return static_cast<size_t>(static_cast<double>(max_size_in_bytes) * std::max(0.0, std::min(1.0, size_ratio)));
+    }
+
+    /// The protected queue never occupies the whole cache: at least one slot always stays available for the probationary queue.
+    static size_t calculateMaxProtectedCount(size_t max_count, double size_ratio)
+    {
+        if (max_count == 0)
+            return 0;
+        const size_t protected_count = static_cast<size_t>(static_cast<double>(max_count) * std::max(0.0, std::min(1.0, size_ratio)));
+        return std::min(protected_count, max_count - 1);
     }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
@@ -299,7 +312,7 @@ private:
             /// because protected elements move to probationary part and still remain in cache.
             need_remove = [&]()
             {
-                return ((max_count != 0 && cells.size() - probationary_queue.size() > max_count)
+                return ((max_count != 0 && cells.size() - probationary_queue.size() > max_protected_count)
                 || (current_weight_size > max_weight_size)) && (queue_size > 0);
             };
         }
