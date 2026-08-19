@@ -556,6 +556,22 @@ static bool reachesUpdatedColumn(
     return false;
 }
 
+/// Extends the read set with the columns needed to recalculate the MATERIALIZED columns it contains.
+///
+/// A MATERIALIZED column is stored, so a query selecting it does not ask for the columns its expression
+/// reads. The read set must be closed over them: it gates which commands survive `filterMutationCommands`
+/// and which columns the interpreter can resolve expressions against, so a missing dependency leaves the
+/// pending mutation unapplied for this read task and returns the stale stored value.
+///
+/// Three rules govern the walk:
+/// 1. Transitive: the updated column may be reachable only through other MATERIALIZED columns
+///    (`m2 MATERIALIZED m1 + 1` over `m1 MATERIALIZED x + 1` with `x` updated), so the MATERIALIZED
+///    columns in between are read as well.
+/// 2. Reachability-gated: a dependency is added only when an updated column is reachable through it,
+///    so an unrelated chain is neither read nor keeps a command the query does not need alive.
+/// 3. EPHEMERAL-aware: a column reading an EPHEMERAL one is never recalculated outside INSERT, so it is
+///    not read to complete a chain passing through it and keeps its stored value. An EPHEMERAL column
+///    is not readable and appears in the analysis only so that such an expression resolves.
 void AlterConversions::addColumnsRequiredForMaterialized(
     Names & read_columns,
     NameSet & read_columns_set,
@@ -566,9 +582,8 @@ void AlterConversions::addColumnsRequiredForMaterialized(
     const auto & columns_desc = metadata_snapshot->getColumns();
     auto source_columns = columns_desc.getAllPhysical();
 
-    /// EPHEMERAL columns only exist during INSERT, so they are absent from `getAllPhysical`.
-    /// Analysing a MATERIALIZED expression that mentions one against physical columns alone fails
-    /// with UNKNOWN_IDENTIFIER, so add them here and exclude the columns reading them below.
+    /// `getAllPhysical` omits EPHEMERAL columns, but a MATERIALIZED expression may mention one and
+    /// analysing it without them fails with UNKNOWN_IDENTIFIER.
     NameSet ephemeral_columns;
     for (const auto & column : columns_desc.getEphemeral())
     {
@@ -576,10 +591,11 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         source_columns.push_back(column);
     }
 
+    /// `tryGet`, because the read set also holds virtual columns, which `columns_desc` does not know.
     auto is_materialized = [&](const String & column_name)
     {
-        auto default_desc = columns_desc.getDefault(column_name);
-        return default_desc && default_desc->kind == ColumnDefaultKind::Materialized;
+        const auto * column = columns_desc.tryGet(column_name);
+        return column && column->default_desc.kind == ColumnDefaultKind::Materialized && column->default_desc.expression;
     };
 
     std::unordered_map<String, Names> dependencies_of;
@@ -589,19 +605,18 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         if (it != dependencies_of.end())
             return it->second;
 
-        auto query = columns_desc.getDefault(column_name)->expression->clone();
-        /// Must match what `MutationsInterpreter::prepare` does before analysing the same
-        /// expression: without this, a default over a subcolumn yields `t.a` where the updated
-        /// column is named `t`, the dependency is not recognised, and the command that feeds it
-        /// is filtered out of the on-fly chain.
+        /// Cloned because both calls below rewrite the expression in place, and it belongs to the shared
+        /// metadata snapshot. Only reached for a column `is_materialized` accepted, so `get` cannot throw.
+        auto query = columns_desc.get(column_name).default_desc.expression->clone();
+        /// Must match `MutationsInterpreter::prepare`: without the rewrite a default over a subcolumn
+        /// depends on `t.a` while the updated column is named `t`, so the dependency goes unrecognised.
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
         auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
         return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
     };
 
-    /// A MATERIALIZED column reading an EPHEMERAL one cannot be recalculated outside INSERT, so
-    /// `MutationsInterpreter` leaves it alone. Pulling it into the read set would be pointless, and
-    /// pulling in an EPHEMERAL column is impossible.
+    /// Whether a dependency is a MATERIALIZED column the interpreter will actually recalculate, and so
+    /// may stand in the middle of a chain.
     auto can_recalculate = [&](const String & column_name)
     {
         if (!is_materialized(column_name))
@@ -611,11 +626,6 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
-    /// A MATERIALIZED column may reach an updated column only through another MATERIALIZED column.
-    /// The intermediate one then has to be read too, so that the interpreter recalculates the whole
-    /// chain; otherwise the mutation feeding it is filtered out by `filterMutationCommands` and the
-    /// deepest column is returned with its stale on-disk value. An intermediate is added only when
-    /// an updated column is reachable through it, so an unrelated chain is not read.
     std::deque<String> queue(read_columns_set.begin(), read_columns_set.end());
 
     while (!queue.empty())
