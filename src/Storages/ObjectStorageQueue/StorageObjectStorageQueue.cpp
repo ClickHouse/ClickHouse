@@ -1243,8 +1243,6 @@ void StorageObjectStorageQueue::commit(
         /// `ZooKeeperRetriesControl::canTry()` rethrows the stored exception directly, so
         /// `code` below is never set and this never reaches the `!code.has_value()` branch
         /// (previously dead code: that branch could never actually be reached).
-        /// NOTE: if a retry succeeds but lands on a different non-OK code (the "failed after
-        /// operation" case below), the label there reflects that later code, not this one.
         DimensionalMetrics::add(
             DimensionalMetrics::ObjectStorageQueueFailures,
             {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
@@ -1264,9 +1262,16 @@ void StorageObjectStorageQueue::commit(
     if (code.value() != Coordination::Error::ZOK)
     {
         ProfileEvents::increment(ProfileEvents::ObjectStorageQueueUnsuccessfulCommits);
+        /// If an earlier attempt hit a hardware error (e.g. ZCONNECTIONLOSS) that got retried,
+        /// prefer that stored transport error over `code.value()`: this retry may have applied
+        /// the earlier attempt's operation and be replaying into a synthetic ZNODEEXISTS/ZNONODE,
+        /// which would otherwise hide the actual cause behind that replay error.
+        const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
+            ? zk_retry.getLastKeeperErrorCode()
+            : code.value();
         DimensionalMetrics::add(
             DimensionalMetrics::ObjectStorageQueueFailures,
-            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(code.value()))});
+            {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
         if (try_num > 1)
         {
             /// We had at least one hardware error retry, so the first attempt may have succeeded

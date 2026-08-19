@@ -1871,9 +1871,15 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     if (code != Coordination::Error::ZOK)
     {
+        /// See the analogous comment in StorageObjectStorageQueue::commit(): prefer a stored
+        /// transport error from an earlier retried attempt over this "failed after operation"
+        /// replay code, if there is one.
+        const auto reported_code = zk_retry.getLastKeeperErrorCode() != Coordination::Error::ZOK
+            ? zk_retry.getLastKeeperErrorCode()
+            : code;
         DimensionalMetrics::add(
             DimensionalMetrics::ObjectStorageQueueFailures,
-            {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(code))});
+            {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(reported_code))});
         if (try_num > 1)
             setUncertainCommit();
         throw zkutil::KeeperMultiException(code, requests, responses);
