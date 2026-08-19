@@ -627,7 +627,9 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         partial_aggregation_node.step = aggregating_step->clone();
         auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
         partial_aggregation_step->setFinal(false);
-        partial_aggregation_step->setProduceResultsInBucketOrder(use_memory_efficient_merge);
+        /// Keep the bucket order when the original step already promised it to its consumer.
+        partial_aggregation_step->setProduceResultsInBucketOrder(
+            should_produce_results_in_order_of_bucket_number || use_memory_efficient_merge);
         partial_aggregation_node.step->setStepDescription("partial");
         partial_aggregation_node.children = {&exchange_scatter_node};
 

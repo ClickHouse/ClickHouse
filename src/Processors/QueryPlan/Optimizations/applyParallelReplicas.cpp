@@ -266,7 +266,9 @@ public:
             partial_aggregation_node.step = aggregating_step->clone();
             auto * partial_aggregation_step = typeid_cast<AggregatingStep *>(partial_aggregation_node.step.get());
             partial_aggregation_step->setFinal(false);
-            partial_aggregation_step->setProduceResultsInBucketOrder(memory_efficient_aggregation);
+            /// Keep the bucket order when the original step already promised it to its consumer.
+            partial_aggregation_step->setProduceResultsInBucketOrder(
+                should_produce_results_in_order_of_bucket_number || memory_efficient_aggregation);
             partial_aggregation_node.step->setStepDescription("partial");
             partial_aggregation_node.children = {original_split_node->children.front()};
 
