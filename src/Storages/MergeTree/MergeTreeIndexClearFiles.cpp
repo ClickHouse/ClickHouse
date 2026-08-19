@@ -151,14 +151,12 @@ bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndex
         if (checksums.has(file))
             return true;
 
-    /// Packed index files lack individual checksum entries. Inspect the cached archive listing
-    /// only when the archive itself has a checksum entry.
+    /// Packed index files lack individual checksum entries, so `candidates` is empty for an
+    /// archive-only index. Inspect the cached archive listing using the index's known substreams.
     if (checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage()))
-            for (const auto & file : candidates)
-                if (disk_storage->isFileInPackedSkipIndicesArchive(file))
-                    return true;
+        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
+        return skipIndexHasFilesInPackedArchive(*index, disk_storage, part.getMarksFileExtension());
     }
 
     return false;
