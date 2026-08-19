@@ -81,7 +81,7 @@ ORDER BY event_time DESC LIMIT 1;
 -- redundant work made concurrent copies of this test build a backlog that eventually timed out in
 -- `SYSTEM FLUSH LOGS`. `symbols` checks the same end-to-end symbolization result without that extra
 -- DWARF lookup. The `query_id` and `trace_type` filters keep the oracle specific to this sub-test.
-SELECT countIf(hasSubstr(arrayStringConcat(symbols, '\\n'), 'NumbersRangedSource')) > 0
+SELECT countIf(arrayExists(symbol -> symbol LIKE '%NumbersRangedSource%', symbols)) > 0
 FROM system.trace_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND trace_type = 'Real'
@@ -105,7 +105,7 @@ ORDER BY event_time DESC LIMIT 1;
 
 -- Check the stored symbolized frames as above. Filtering to CPU samples prevents a serverwide real
 -- time sample from satisfying this oracle.
-SELECT countIf(hasSubstr(arrayStringConcat(symbols, '\\n'), 'NumbersRangedSource')) > 0
+SELECT countIf(arrayExists(symbol -> symbol LIKE '%NumbersRangedSource%', symbols)) > 0
 FROM system.trace_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND trace_type = 'CPU'
