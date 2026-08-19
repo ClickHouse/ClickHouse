@@ -23,6 +23,11 @@ from ci.praktika.utils import Shell, Utils
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
+# Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
+# rather than imported so this script does not depend on the test helpers' imports;
+# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 
 MAX_FAILS_BEFORE_DROP = 5
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
@@ -98,6 +103,80 @@ def _mark_infrastructure_errors(results: list) -> int:
             count += 1
     if count:
         print(f"Marked {count} test result(s) as infrastructure errors")
+    return count
+
+
+def clear_rabbitmq_recreation_scan_inputs() -> None:
+    """Delete everything `report_rabbitmq_recreations` scans, before the first batch.
+
+    The reporter scans every line and the log handlers append, so anything left in
+    `temp_path` by an earlier job counts as an event of this one. Best effort: a job
+    must never fail because a stale file could not be removed.
+    """
+    try:
+        stale_files = sorted(Path(temp_path).glob("pytest_*.log")) + sorted(
+            Path(temp_path).glob("rabbit-*.log")
+        )
+    except OSError as ex:
+        print(f"WARNING: cannot list {temp_path} before RabbitMQ retry scan: {ex}")
+        return
+    for stale in stale_files:
+        try:
+            os.remove(stale)
+        except OSError as ex:
+            print(f"WARNING: cannot remove {stale} before RabbitMQ retry scan: {ex}")
+
+
+def report_rabbitmq_recreations(result: Result) -> int:
+    """Publish RabbitMQ container recreations, and the broker logs the waiter preserved.
+
+    Must be called once per job, after every batch: the per-worker log handlers append
+    and a sequential batch reuses one log file across repeats, so scanning per batch
+    would report a multiple of the real count.
+    """
+    snapshots = []
+    count = 0
+    for log_file in sorted(Path(temp_path).glob("pytest_*.log")):
+        # Streamed: these are the full per-worker integration logs, tens of MB each.
+        # A file contributes only once read to the end, so a partial read is no count.
+        file_count = 0
+        file_snapshots = []
+        try:
+            with log_file.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if RABBITMQ_RECREATE_TOKEN not in line:
+                        continue
+                    file_count += 1
+                    # The field is a bare file name in `temp_path`: the whitespace-
+                    # delimited parse below cannot carry a directory, which may contain
+                    # spaces.
+                    match = re.search(r"snapshot=(\S+)", line)
+                    if not match or os.path.basename(match.group(1)) != match.group(1):
+                        continue
+                    snapshot = os.path.join(temp_path, match.group(1))
+                    if os.path.isfile(snapshot):
+                        file_snapshots.append(snapshot)
+        except OSError as ex:
+            print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
+            continue
+        count += file_count
+        snapshots.extend(file_snapshots)
+    if not count:
+        return 0
+    # Only `info` and `files` are touched; status and labels stay as the results left them.
+    # `complete_job` appends `Failures: N/M` only while `info` is empty and runs after
+    # this, so emit it here on exactly the runs that would otherwise have received it.
+    if not result.info:
+        fail_cnt = sum(1 for r in result.results if not r.is_ok())
+        result.set_info(f"Failures: {fail_cnt}/{len(result.results)}")
+    result.set_info(
+        f"RabbitMQ container recreation was attempted {count} time(s)"
+        " after failing to start"
+    )
+    for snapshot in snapshots:
+        if snapshot not in result.files:
+            result.files.append(snapshot)
+    print(f"NOTE: RabbitMQ container recreations observed: {count}")
     return count
 
 
@@ -739,7 +818,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -747,7 +826,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
@@ -1069,6 +1148,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             Utils.clear_dmesg()
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
+
+    clear_rabbitmq_recreation_scan_inputs()
 
     if is_flaky_check or is_targeted_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
@@ -1518,6 +1599,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    report_rabbitmq_recreations(R)
 
     R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 
