@@ -1790,7 +1790,18 @@ mkdir metrics
 
 clickhouse-local --query "
 create view right_async_metric_log as
-    select * from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
+    select
+        multiIf(
+            key = '', metric,
+            startsWith(metric, 'OS') AND endsWith(metric, 'CPU'), concat(metric, key),
+            metric = 'Temperature' AND match(key, '^[0-9]+$'), concat(metric, key),
+            metric IN ('EDACCorrectable', 'EDACUncorrectable'), concat('EDAC', key, '_', substring(metric, 5)),
+            metric IN ('DeadBlobsQueueEstimate', 'MissingBlobsQueueEstimate'), concat(key, metric),
+            metric = 'AsyncLoggingQueueSize', concat('AsyncLogging', key, 'QueueSize'),
+            concat(metric, '_', key)) AS metric,
+        event_time,
+        value
+    from file('right-async-metric-log.tsv', TSVWithNamesAndTypes)
     ;
 
 -- Use the right log as time reference because it may have higher precision.
