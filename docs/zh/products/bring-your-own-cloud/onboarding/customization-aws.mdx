@@ -18,8 +18,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Steps>
   <Step title="配置现有 VPC" id="configure-existing-vpc">
     1. 为 VPC 添加标签 `clickhouse-byoc="true"`。
-    2. 在 3 个不同的可用区中，至少分配 3 个私有子网供 ClickHouse Cloud 使用。
-    3. 确保每个子网的最小 CIDR 范围为 `/23` (例如 `10.0.0.0/23`) 以便为 ClickHouse 部署提供足够的 IP 地址。
+    2. 在 3 个不同的可用区中，恰好分配 3 个私有子网供 ClickHouse Cloud 使用。
+    3. 确保每个子网的最小 CIDR 范围为 `/25` (例如 `10.0.0.0/25`)。每个 `/25` 在每个可用区大约支持 10 个 ClickHouse server 节点；大多数部署建议使用 `/24`，预计会扩展的部署则应使用更大的子网。Pod IP 地址从子网本身分配，因此每个副本都会占用子网地址。
     4. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`，以启用正确的负载均衡器配置。
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC 子网" />
@@ -42,7 +42,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="配置 AWS 账户" id="configure-aws-account">
-    初始 BYOC 设置会创建一个高权限 IAM 角色 (`ClickHouseManagementRole`)，使来自 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。这可以通过 [CloudFormation 模板](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) 或 [Terraform 模块](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz) 完成。
+    初始 BYOC 设置会创建一个高权限 IAM 角色 (`ClickHouseManagementRole`)，使来自 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。这可以通过 [CloudFormation 模板](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) 或 Terraform 模块 (见下文) 完成。
+
+    <Warning>
+      **IAM 角色名称是硬性要求。** 该角色必须保留其默认名称 `ClickHouseManagementRole` — 不得添加前缀、后缀，也不得为符合组织命名规范而重命名 — 除非 ClickHouse 事先明确同意使用其他名称 (Terraform 的 `role_name` 输入只能在与 ClickHouse 协调后更改) 。重命名的角色可以成功应用，但预配随后会失败，因为 ClickHouse 无法担任预期的角色。更一般地说，未经 ClickHouse 明确批准，请勿更改所提供模板或模块中的任何内容；支持的自定义项会以参数形式公开。
+    </Warning>
 
     部署 `BYO-VPC` 设置时，请将 `IncludeVPCWritePermissions` 参数设置为 `false`，以确保 ClickHouse Cloud 不会获得修改您客户管理的 VPC 的权限。
 
@@ -50,17 +54,27 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及您 AWS 账户中的其他必要资源。
     </Note>
 
-    #### Terraform 模块替代方案
+    #### Terraform 模块
 
-    如果您希望使用 Terraform 而不是 CloudFormation，请使用以下模块：
+    如果您希望使用 Terraform 而不是 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 
     ```hcl
     module "clickhouse_onboarding" {
-      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-      byoc_env                   = "production"
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
       include_vpc_write_permissions = false
     }
     ```
+
+    将 `<version>` 替换为模块[发行页面](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)中的最新标签 — 始终使用最新发行版。
+
+    该模块会输出 `clickhouse_management_role_arn`。在标准流程中，您无需对此执行任何操作 — 后续引导将在 ClickHouse Cloud 控制台中继续进行 — 但请保留好该值：如果您的设置偏离默认配置 (例如需要协调使用自定义角色名称) ，ClickHouse 将要求您提供该值。
+
+    `external_id` 值由 ClickHouse Cloud 控制台生成，同一 AWS 账户中的所有 BYOC 基础设施共用该值。有关详细信息 (包括旧版 `emptyid` 占位符) ，请参阅 [AWS 外部 ID](/zh/products/bring-your-own-cloud/onboarding/standard#aws-external-id)。
+
+    <Note>
+      该模块此前以 tarball 形式发布在 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`。该 URL 仍然可用，但已弃用 — 请使用上方的 GitHub 模块。
+    </Note>
   </Step>
 
   <Step title="设置 BYOC 基础设施" id="set-up-byoc-infrastructure">
@@ -96,9 +110,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 从用于跨账户访问的 `ClickHouseManagementRole` 中移除 IAM 写入权限
 * 完全掌控角色权限和信任关系
 
+以下两个模块都使用由 ClickHouse Cloud 控制台生成的 `external_id`；同一 AWS 账户中的所有 BYOC 基础设施共享同一个外部 ID。有关详细信息 (包括旧版 `emptyid` 占位符) ，请参阅 [AWS 外部 ID](/zh/products/bring-your-own-cloud/onboarding/standard#aws-external-id)。
+
 <Steps>
   <Step title="配置不含 IAM 写入权限的管理角色" id="byo-iam-management-role">
-    执行[初始 BYOC 设置](/zh/cloud/reference/byoc/onboarding/standard)时，请在管理角色上禁用 IAM 写入权限。若使用 CloudFormation 模板，请将 `IncludeIAMWritePermissions` 参数设置为 `false`。若使用 Terraform 模块：
+    执行[初始 BYOC 设置](/zh/products/bring-your-own-cloud/onboarding/standard)时，请在管理角色上禁用 IAM 写入权限。若使用 CloudFormation 模板，请将 `IncludeIAMWritePermissions` 参数设置为 `false`。若使用 Terraform 模块：
 
     ```hcl
     module "clickhouse_onboarding" {

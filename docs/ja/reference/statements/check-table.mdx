@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`:  (任意) テーブル内の特定の パート をチェックする場合は、パート 名を指定する文字列リテラルを追加できます。
 * `FORMAT format`:  (任意) 結果の出力フォーマットを指定できます。
 * `SETTINGS`:  (任意) 追加の設定を指定できます。
-  * (任意) : [check&#95;query&#95;single&#95;value&#95;result](/ja/reference/settings/session-settings#check_query_single_value_result): この設定は、出力を詳細表示 (`0`) にするか要約表示 (`1`) にするかを制御します。
+  * (任意) : [check&#95;query&#95;single&#95;value&#95;result](/ja/reference/settings/session-settings/check#check_query_single_value_result): この設定は、出力を詳細表示 (`0`) にするか要約表示 (`1`) にするかを制御します。
   * 他の設定も適用できます。結果の順序が決定論的である必要がない場合は、クエリを高速化するために max&#95;threads を 1 より大きい値に設定できます。
 
 クエリの応答は、`check_query_single_value_result` 設定の値によって異なります。
