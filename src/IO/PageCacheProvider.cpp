@@ -159,6 +159,7 @@ PageCacheProvider::PageCacheProvider(
     , bypass_if_missing(bypass_if_missing_)
     , file_size_in_bytes(file_size_in_bytes_)
 {
+    chassert(block_size > 0);  /// `resolve` divides by it
 }
 
 /// The page tier's residency walk over `range`: one resolution per whole block. It holds no per-call
@@ -170,19 +171,17 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
     VectorWithMemoryTracking<ICacheProvider::CacheResolution> out;
-    chassert(block_size > 0);
-    const size_t blk = block_size;
     const size_t file_size = file_size_in_bytes;
     if (range.offset >= file_size)
         return out;
 
     SipHash base_hash = file.baseHash();
     const size_t end_in_file = std::min(range.end(), file_size);
-    const size_t first_pos = range.offset / blk * blk;
-    out.reserve((end_in_file - first_pos + blk - 1) / blk);
-    for (size_t pos = first_pos; pos < end_in_file; pos += std::min(blk, file_size - pos))
+    const size_t first_pos = range.offset / block_size * block_size;
+    out.reserve((end_in_file - first_pos + block_size - 1) / block_size);
+    for (size_t pos = first_pos; pos < end_in_file; pos += std::min(block_size, file_size - pos))
     {
-        const ByteRange block{pos, std::min(blk, file_size - pos)};
+        const ByteRange block{pos, std::min(block_size, file_size - pos)};
         CacheResolution r;
         r.range = block;
         if (auto cell = cache->get(PageCacheByteRange{block.offset, block.size}.hash(base_hash), inject_eviction))

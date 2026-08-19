@@ -122,7 +122,7 @@ public:
 private:
     PageCachePtr cache;
     PageCacheFile file;
-    size_t block_size;
+    const size_t block_size;
     bool inject_eviction;
     bool bypass_if_missing;
     size_t file_size_in_bytes;
