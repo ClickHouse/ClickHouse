@@ -1821,6 +1821,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "Cannot ATTACH VIEW {}.{}, it is a Table",
                 backQuoteIfNeed(database_name), backQuoteIfNeed(create.getTable()));
 
+        /// `getRequiredAccess` ran on the stub, which has no definition, so the stored
+        /// `SQL SECURITY` clause is not authorized yet, and CREATE_VIEW alone reaches here.
+        if (create.isView() && create_query.sql_security)
+            processSQLSecurityOption(
+                getContext(), create_query.sql_security->as<ASTSQLSecurity &>(), create_query.is_materialized_view, mode);
+
         create = create_query; // Copy the saved create query, but use ATTACH instead of CREATE
 
         create.attach = true;
