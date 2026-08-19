@@ -608,3 +608,55 @@ def test_attach_table_does_not_persist_failed_replication_setup(started_cluster)
     cursor.execute("DROP TABLE attach_failure_table")
     cursor.close()
     conn.close()
+
+
+def test_attach_table_rejects_foreign_schema_bare_name_collision(started_cluster):
+    pg_table = "attach_collision_source"
+    table_to_attach = "attach_collision_target"
+    foreign_schema = "attach_collision_foreign"
+    mat_db = "attach_collision_database"
+    pg_manager.create_postgres_table(pg_table)
+
+    conn = get_postgres_conn(
+        ip=cluster.postgres_ip,
+        port=cluster.postgres_port,
+        database=True,
+    )
+    cursor = conn.cursor()
+    cursor.execute(f"CREATE TABLE {table_to_attach} (key integer PRIMARY KEY, value integer)")
+    cursor.execute(f"CREATE SCHEMA {foreign_schema}")
+    cursor.execute(
+        f"CREATE TABLE {foreign_schema}.{table_to_attach} (key integer PRIMARY KEY, value integer)"
+    )
+
+    node1.query(
+        f"""
+        CREATE DATABASE {mat_db}
+        ENGINE = MaterializedPostgreSQL(
+            '{started_cluster.postgres_ip}:{started_cluster.postgres_port}',
+            'postgres_database', 'postgres', '{pg_pass}')
+        SETTINGS materialized_postgresql_tables_list = '{pg_table}',
+                 materialized_postgresql_backoff_min_ms = 100,
+                 materialized_postgresql_backoff_max_ms = 100
+        """
+    )
+
+    cursor.execute("SELECT pubname FROM pg_publication")
+    publication = cursor.fetchone()[0]
+    cursor.execute(
+        f'ALTER PUBLICATION "{publication}" ADD TABLE ONLY {foreign_schema}.{table_to_attach}'
+    )
+
+    error = node1.query_and_get_error(f"ATTACH TABLE {mat_db}.{table_to_attach}")
+    assert "foreign-schema table(s) with the same bare name" in error
+    assert f"materialized_postgresql_tables_list = '{pg_table}'" in node1.query(
+        f"SHOW CREATE DATABASE {mat_db}"
+    )
+    assert pg_table == node1.query(f"SHOW TABLES FROM {mat_db}").strip()
+
+    node1.query(f"DROP DATABASE {mat_db} SYNC")
+    cursor.execute(f"DROP TABLE {foreign_schema}.{table_to_attach}")
+    cursor.execute(f"DROP SCHEMA {foreign_schema}")
+    cursor.execute(f"DROP TABLE {table_to_attach}")
+    cursor.close()
+    conn.close()

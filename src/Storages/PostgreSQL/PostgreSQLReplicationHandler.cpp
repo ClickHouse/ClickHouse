@@ -1730,7 +1730,24 @@ void PostgreSQLReplicationHandler::dropPublication(pqxx::nontransaction & tx)
 
 void PostgreSQLReplicationHandler::addTableToPublication(pqxx::nontransaction & ntx, const String & table_name)
 {
-    if (fetchPublishedTablePairs(ntx).contains(getNormalizedSchemaAndTableName(table_name)))
+    const auto published = fetchPublishedTablePairs(ntx);
+    const auto table = getNormalizedSchemaAndTableName(table_name);
+
+    /// In single-schema mode the WAL consumer identifies relations by their bare table name. Do not
+    /// extend an existing publication when it already contains a table from another schema with the
+    /// same name: its WAL would otherwise be applied to the newly attached table.
+    const std::set<std::pair<String, String>> expected{table};
+    const String colliding = collidingForeignPublishedTables(expected, published);
+    if (!colliding.empty())
+        throw Exception(
+            ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
+            "Cannot add table {} to MaterializedPostgreSQL replication: publication {} already publishes "
+            "foreign-schema table(s) with the same bare name: {}. In the single-schema modes the replication "
+            "consumer identifies tables by their bare name, so their WAL could be applied to the newly attached "
+            "table. Remove the colliding table(s) from the publication before attaching this table.",
+            doubleQuoteWithSchema(table_name), doubleQuoteString(publication_name), colliding);
+
+    if (published.contains(table))
     {
         LOG_TRACE(log, "Table {} is already in publication `{}`", doubleQuoteWithSchema(table_name), publication_name);
         return;

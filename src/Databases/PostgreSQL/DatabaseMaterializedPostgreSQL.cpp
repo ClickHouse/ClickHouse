@@ -468,6 +468,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         auto nested_table = DatabaseAtomic::tryGetTable(table_name, current_context);
         chassert(nested_table != nullptr);
 
+        bool added_to_replication = false;
         try
         {
             auto tables_to_replicate = (*settings)[MaterializedPostgreSQLSetting::materialized_postgresql_tables_list].value;
@@ -487,6 +488,7 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
                 std::lock_guard lock(handler_mutex);
                 replication_handler->addTableToReplication(dynamic_cast<StorageMaterializedPostgreSQL *>(storage.get()), table_name);
             }
+            added_to_replication = true;
 
             /// tables_to_replicate can be empty if postgres database had no tables when this database was created.
             SettingChange new_setting("materialized_postgresql_tables_list", tables_to_replicate.empty() ? table_name : (tables_to_replicate + "," + table_name));
@@ -503,6 +505,22 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
         }
         catch (...)
         {
+            /// `addTableToReplication` publishes the table and gives its nested storage to the consumer.
+            /// Roll both side effects back when persisting the table list or publishing the wrapper fails,
+            /// otherwise a failed ATTACH would leave a ghost replicated table behind.
+            if (added_to_replication)
+            {
+                try
+                {
+                    std::lock_guard lock(handler_mutex);
+                    replication_handler->removeTableFromReplication(table_name);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(log, "Failed to roll back MaterializedPostgreSQL replication after ATTACH TABLE failure");
+                }
+            }
+
             /// This is a failed attach table. Remove already created nested table.
             DatabaseAtomic::dropTable(current_context, table_name, true);
             throw;
