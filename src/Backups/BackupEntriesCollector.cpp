@@ -20,6 +20,7 @@
 #include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <base/sort.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/intExp2.h>
@@ -830,6 +831,33 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
 
         const String & metadata_path_in_backup = table_info.metadata_path_in_backup;
         backup_entries.emplace_back(metadata_path_in_backup, std::make_shared<BackupEntryFromMemory>(new_create_query->formatWithSecretsOneLine()));
+
+        /// Save the metadata version of a replicated table if it had ALTERs before the backup,
+        /// so that RESTORE can make the table's metadata version consistent with the restored parts.
+        /// It's stored with the table definition (not with the parts) to be saved regardless of `structure_only`.
+        std::optional<Int32> metadata_version;
+        if (table_info.replicated_table_zk_path)
+        {
+            /// Always read from ZooKeeper for replicated tables so that the saved version is consistent
+            /// with the backed-up table definition. Using the local in-memory value is wrong when this
+            /// replica is lagging: other replicas can write parts with metadata_version N into this
+            /// host's backup data path (via `IBackupCoordination::addReplicatedDataPath`) while this
+            /// replica still has an older in-memory version, causing a version mismatch on restore.
+            /// This branch also handles the case where `storage == nullptr` (table is known from a
+            /// `Replicated` database but has not been created on this replica yet).
+            /// The table's metadata_version equals the ZooKeeper stat version of its `metadata` znode.
+            auto component_guard = Coordination::setCurrentComponent("BackupEntriesCollector::makeBackupEntriesForTablesDefs");
+            auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zkutil::extractZooKeeperName(*table_info.replicated_table_zk_path));
+            String table_zk_path = zkutil::extractZooKeeperPath(*table_info.replicated_table_zk_path, /* check_starts_with_slash= */ false);
+            Coordination::Stat metadata_stat;
+            if (zookeeper->exists(fs::path(table_zk_path) / "metadata", &metadata_stat))
+                metadata_version = metadata_stat.version;
+        }
+
+        if (metadata_version.value_or(0) > 0)
+            backup_entries.emplace_back(
+                BackupUtils::getMetadataVersionPathInBackup(metadata_path_in_backup),
+                std::make_shared<BackupEntryFromMemory>(toString(*metadata_version)));
     }
 }
 
