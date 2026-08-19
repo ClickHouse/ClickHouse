@@ -125,10 +125,12 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
     if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
     {
         remove_filter_column = true;
-        /// the filter column is now dropped, apply the materialize-fold here too (#78166) -
-        /// `tryMergeExpressions` skipped this filter back when the column still survived
-        dag.foldFilterPredicateThroughMaterialize(filter_column_name);
     }
+
+    /// The filter column is dropped, so its `materialize` wrapper is no longer observable. This
+    /// includes filters that were already marked for removal by `ReadFromMergeTree`.
+    if (remove_filter_column)
+        dag.foldFilterPredicateThroughMaterialize(filter_column_name);
 
     required_dag_index_set.insert(filter_col_pre_erase_pos);
 
