@@ -21,6 +21,7 @@
 #include <Storages/StorageFactory.h>
 #include <Common/SettingsChanges.h>
 
+#include <algorithm>
 #include <utility>
 
 namespace DB
@@ -67,6 +68,77 @@ void rejectHTTPOnlyConstructionSettings(const ASTSetQuery & set_query)
     for (const auto & name : set_query.default_settings)
         reject(name);
 }
+
+/// `profile` is recognised by its literal name, as `Context::setSetting` does.
+bool hasProfileChange(const SettingsChanges & changes)
+{
+    return std::any_of(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
+}
+
+/// Applies `changes` and then the `name = DEFAULT` resets in `default_settings` to `context`, with
+/// every part checked against the settings constraints that are in force where it is applied.
+/// `changes` as a whole has already been checked by the caller against the constraints in force
+/// before the statement; what this adds is the `SET profile = 'p', …` case, where the `profile`
+/// change replaces the constraint set halfway through the statement. Anything assigned or reset
+/// after it has to be checked against the new constraints too, or a single statement overrides the
+/// very `CONST`, `MIN`/`MAX` or `readonly` constraint that the profile it names installs, while the
+/// same settings applied as two separate statements are rejected.
+///
+/// Checking the tail of the statement requires the profile to have been applied first, so the
+/// checking runs on a scratch copy of the context. Only once all of it passes is anything applied
+/// to `context`, so a rejected statement does not leave the profile applied and its tail dropped.
+/// The real application is a single call with the original list, so the order in which the changes
+/// take effect - and therefore which assignment wins - is exactly as before.
+void applySettingsChangesAndResets(
+    ContextMutablePtr context, const SettingsChanges & changes, const std::vector<String> & default_settings)
+{
+    if (hasProfileChange(changes))
+    {
+        auto scratch_context = Context::createCopy(context);
+        SettingsChanges pending;
+        bool constraints_replaced = false;
+
+        auto flush_pending = [&]
+        {
+            /// Not checked before the first `profile` change: the caller's check already covers it
+            /// against the same constraints.
+            if (constraints_replaced)
+                scratch_context->checkSettingsConstraints(std::as_const(pending), SettingSource::QUERY);
+            scratch_context->applySettingsChanges(pending);
+            pending.clear();
+        };
+
+        for (const auto & change : changes)
+        {
+            if (change.name != "profile")
+            {
+                pending.push_back(change);
+                continue;
+            }
+            flush_pending();
+            /// `Context::setCurrentProfile` checks the profile's own settings against the
+            /// constraints in force before it is applied.
+            scratch_context->applySettingsChanges(SettingsChanges{change});
+            constraints_replaced = true;
+        }
+        flush_pending();
+
+        scratch_context->checkSettingsConstraintsForDefaults(default_settings, SettingSource::QUERY);
+
+        context->applySettingsChanges(changes);
+        context->resetSettingsToDefaultValue(default_settings);
+        return;
+    }
+
+    context->applySettingsChanges(changes);
+    /// `SET name = DEFAULT` lands in `default_settings`, not in `changes`, and
+    /// `resetSettingsToDefaultValue` applies the compiled-in default without validating it. Without
+    /// this check the reset is a way to clear a `CONST`, `readonly`, `MIN`/`MAX` or feature-tier
+    /// constraint. Checked on the context the reset mutates, so "already at its default" is decided
+    /// against the values the reset would overwrite.
+    context->checkSettingsConstraintsForDefaults(default_settings, SettingSource::QUERY);
+    context->resetSettingsToDefaultValue(default_settings);
+}
 }
 
 BlockIO InterpreterSetQuery::execute()
@@ -82,15 +154,8 @@ BlockIO InterpreterSetQuery::execute()
     /// explicitly set to its current value. The original code applies const `ast.changes`.
     getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
-    /// `SET name = DEFAULT` lands in `default_settings`, not in `changes`, and
-    /// `resetSettingsToDefaultValue` applies the compiled-in default without validating it. Without
-    /// this check the reset is a way to clear a `CONST`, `readonly`, `MIN`/`MAX` or feature-tier
-    /// constraint. Checked against the session context because that is what the reset mutates, so
-    /// "already at its default" is decided against the values the reset would overwrite.
-    session_context->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
-    session_context->applySettingsChanges(changes);
+    applySettingsChangesAndResets(session_context, changes, ast.default_settings);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
-    session_context->resetSettingsToDefaultValue(ast.default_settings);
     return {};
 }
 
@@ -102,16 +167,17 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     /// Work on a copy so the original AST keeps the placeholders (see the note in execute()).
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
-    /// const on purpose - see the note in execute().
-    if (!ignore_setting_constraints)
+    if (ignore_setting_constraints)
     {
-        getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
-        /// See the note in execute(): the `name = DEFAULT` form needs its own check.
-        getContext()->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
-        rejectHTTPOnlyConstructionSettings(ast);
+        getContext()->applySettingsChanges(changes);
+        getContext()->resetSettingsToDefaultValue(ast.default_settings);
+        return;
     }
-    getContext()->applySettingsChanges(changes);
-    getContext()->resetSettingsToDefaultValue(ast.default_settings);
+
+    /// const on purpose - see the note in execute().
+    getContext()->checkSettingsConstraints(std::as_const(changes), SettingSource::QUERY);
+    rejectHTTPOnlyConstructionSettings(ast);
+    applySettingsChangesAndResets(getContext(), changes, ast.default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
