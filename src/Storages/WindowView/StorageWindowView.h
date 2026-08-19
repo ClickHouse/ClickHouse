@@ -252,9 +252,9 @@ private:
     String window_view_timezone;
     String function_now_timezone;
 
-    ASTPtr innerQueryParser(const ASTSelectQuery & query);
+    ASTPtr innerQueryParser(const ASTSelectQuery & query, bool validate_intervals);
     void eventTimeParser(const ASTCreateQuery & query);
-    ASTPtr initInnerQuery(ASTSelectQuery query, ContextPtr context);
+    ASTPtr initInnerQuery(ASTSelectQuery query, ContextPtr context, bool validate_intervals);
 
     UInt32 getCleanupBound();
     ASTPtr getCleanupQuery();
