@@ -429,7 +429,7 @@ endif()
 
 # musl: executables need explicit CRT objects because of -nostartfiles.
 if (USE_MUSL)
-    target_sources(llvm-min-tblgen PRIVATE ${MUSL_CRT_OBJECTS})
+    target_sources(llvm-min-tblgen PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
 endif()
 
 #
@@ -580,7 +580,7 @@ endif()
 
 # musl: executables need explicit CRT objects because of -nostartfiles.
 if (USE_MUSL)
-    target_sources(llvm-tblgen PRIVATE ${MUSL_CRT_OBJECTS})
+    target_sources(llvm-tblgen PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
 endif()
 
 # End of native tablegen build block

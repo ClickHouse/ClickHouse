@@ -196,7 +196,7 @@ add_library(ch_contrib::hdfs ALIAS _hdfs3)
 
 if (ENABLE_CLICKHOUSE_BENCHMARK)
     if (USE_MUSL)
-        add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp ${MUSL_CRT_OBJECTS})
+        add_executable(perf_checksum ${MUSL_CRT_START_OBJECTS} ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp ${MUSL_CRT_END_OBJECTS})
     else ()
         add_executable(perf_checksum ${HDFS3_SOURCE_DIR}/common/perf_checksum.cpp)
     endif ()

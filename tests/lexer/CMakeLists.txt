@@ -1,6 +1,6 @@
 # musl: executables need explicit CRT objects because of -nostartfiles.
 if (USE_MUSL)
-    add_executable(lexer_test main.c ${MUSL_CRT_OBJECTS})
+    add_executable(lexer_test ${MUSL_CRT_START_OBJECTS} main.c ${MUSL_CRT_END_OBJECTS})
 else ()
     add_executable(lexer_test main.c)
 endif ()

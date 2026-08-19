@@ -434,7 +434,7 @@ if (NOT USE_MUSL)
 endif()
 # musl: executables need explicit CRT objects because of -nostartfiles.
 if (USE_MUSL)
-    target_sources(protoc PRIVATE ${MUSL_CRT_OBJECTS})
+    target_sources(protoc PRIVATE ${MUSL_CRT_START_OBJECTS} ${MUSL_CRT_END_OBJECTS})
 endif()
 target_link_libraries(protoc
     utf8_validity

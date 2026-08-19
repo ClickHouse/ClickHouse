@@ -8,7 +8,7 @@ if (CMAKE_CROSSCOMPILING)
     # Use EXCLUDE_FROM_ALL so it doesn't get built for the target architecture.
     add_executable(hash-binary EXCLUDE_FROM_ALL hash-binary.cpp)
 elseif (USE_MUSL)
-    add_executable(hash-binary hash-binary.cpp ${MUSL_CRT_OBJECTS})
+    add_executable(hash-binary ${MUSL_CRT_START_OBJECTS} hash-binary.cpp ${MUSL_CRT_END_OBJECTS})
 else()
     add_executable(hash-binary hash-binary.cpp)
 endif()

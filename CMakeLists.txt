@@ -636,13 +636,23 @@ if (USE_MUSL)
     # musl's CRT objects are added to each of them explicitly. PIE builds (sanitizers and
     # builds without ThinLTO, see above) become static-PIE and need the self-relocating
     # rcrt1 instead of crt1.
+    # The link order invariant is crt1.o -> crti.o -> [program objects] -> crtn.o: crti.o
+    # opens the .init/.fini prologues and crtn.o closes them, so any object that contributes
+    # .init/.fini section fragments must land between the two. The objects are split into
+    # a start list (prepended before the program objects) and an end list (appended last).
+    # Note that CMake groups $<TARGET_OBJECTS:...> sources together on the link line ahead
+    # of the target's own objects, so the source-list position alone cannot bracket the
+    # program objects; the hard guarantee is that crti.o immediately precedes crtn.o and
+    # nothing else in the build emits .init/.fini fragments (clang only ever emits
+    # .init_array/.fini_array), which keeps _init/_fini well-formed.
     if (SANITIZE OR ENABLE_POSITION_INDEPENDENT_BINARY)
-        set (MUSL_CRT_OBJECTS $<TARGET_OBJECTS:musl-rcrt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+        set (MUSL_CRT_START_OBJECTS $<TARGET_OBJECTS:musl-rcrt1> $<TARGET_OBJECTS:musl-crti>)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-pie")
     else ()
-        set (MUSL_CRT_OBJECTS $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti> $<TARGET_OBJECTS:musl-crtn>)
+        set (MUSL_CRT_START_OBJECTS $<TARGET_OBJECTS:musl-crt1> $<TARGET_OBJECTS:musl-crti>)
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
     endif ()
+    set (MUSL_CRT_END_OBJECTS $<TARGET_OBJECTS:musl-crtn>)
 endif ()
 
 if (ENABLE_TESTS)
@@ -694,7 +704,7 @@ macro (clickhouse_add_executable target)
     # explicitly acquire and interpose malloc symbols by clickhouse_malloc
     # if USE_MUSL is on, also include musl CRT objects because we link with -nostartfiles.
     if (USE_MUSL)
-        add_executable (${ARGV} ${MUSL_CRT_OBJECTS} $<TARGET_OBJECTS:clickhouse_malloc>)
+        add_executable (${target} ${MUSL_CRT_START_OBJECTS} ${ARGN} $<TARGET_OBJECTS:clickhouse_malloc> ${MUSL_CRT_END_OBJECTS})
     else ()
         add_executable (${ARGV} $<TARGET_OBJECTS:clickhouse_malloc>)
     endif ()
