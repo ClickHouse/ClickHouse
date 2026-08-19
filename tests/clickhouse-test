@@ -1050,58 +1050,12 @@ def get_transactions_list(args):
         return f"Cannot get list of transactions: {e}"
 
 
-_LLDB_INSTALL_ATTEMPTED = False
-
-
-def _ensure_lldb_installed():
-    """Make sure `lldb` is on PATH, installing it on the fly if not.
-
-    TEMPORARY scaffolding: the CI base images currently ship `gdb` (from the
-    `clickhouse/cctools` layer), not `lldb`. While the switch to `lldb` is in
-    flight, install it at runtime so `print_c_stacktraces` keeps working.
-    Once `ci/docker/cctools/Dockerfile` (and the images that copy from it)
-    install `lldb` permanently, this helper and its single call site below
-    should be removed.
-
-    Never raise: `print_c_stacktraces` is a best-effort diagnostic. If the
-    install fails (no sudo, no network, no `brew`, ...), let
-    `shell_get_output` return "" so the surrounding diagnostic flow keeps
-    going instead of crashing during an already-broken run.
-
-    Bounded and idempotent: each subprocess call has a hard timeout so a
-    stalled package mirror cannot wedge stacktrace collection for minutes,
-    and a process-wide flag ensures only the first call attempts the
-    install — `print_c_stacktraces` iterates over every server PID, and we
-    must not pay the install cost (or timeout) for each one if the first
-    attempt already failed.
-    """
-    global _LLDB_INSTALL_ATTEMPTED
-    if shutil.which("lldb"):
-        return
-    if _LLDB_INSTALL_ATTEMPTED:
-        return
-    _LLDB_INSTALL_ATTEMPTED = True
-    try:
-        if platform.system() == "Darwin":
-            subprocess.run(["brew", "install", "llvm"], check=True, timeout=180)
-        else:
-            env = {**os.environ, "DEBIAN_FRONTEND": "noninteractive"}
-            subprocess.run(["apt-get", "update"], check=True, env=env, timeout=60)
-            subprocess.run(
-                ["apt-get", "install", "-y", "lldb"],
-                check=True, env=env, timeout=120,
-            )
-    except Exception as e:
-        print(f"Could not install lldb on the fly: {e}", file=sys.stderr)
-
-
 # collect server stacktraces using lldb (used uniformly on Linux and macOS)
 def get_stacktraces_from_lldb(pid):
     # 30s ceiling: `thread backtrace all` should finish in seconds even on a
     # debug build with many threads; anything beyond that means lldb itself
     # is wedged (e.g. signal-handler deadlock on the inferior). Killing lldb
     # leaves the server process untouched.
-    _ensure_lldb_installed()  # TEMPORARY: see _ensure_lldb_installed docstring.
     # macOS restricts task_for_pid(): in --batch mode a non-root lldb cannot
     # attach to the server on a CI runner (the user is not in the _developer
     # group and there is no interactive authorization), so it exits 1. The
@@ -1716,7 +1670,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
-        "use_projection_index_in_read_pools": lambda: random.randint(0, 1),
+        "use_indexes_refiner_in_read_pools": lambda: random.randint(0, 1),
         "enable_join_runtime_filters_index_analysis": lambda: random.randint(0, 1),
         "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
@@ -1875,6 +1829,7 @@ class MergeTreeSettingsRandomizer:
         ),
         "index_granularity_bytes": lambda: random.randint(1024, 30 * 1024 * 1024),
         "merge_max_block_size": lambda: random.randint(1, 8192 * 3),
+        "merge_use_batch_sorting_queue": lambda: random.randint(0, 1),
         "index_granularity": lambda: random.randint(1, 65536),
         "min_bytes_for_wide_part": threshold_generator(0.3, 0.3, 0, 1024 * 1024 * 1024),
         "compress_marks": lambda: random.randint(0, 1),
@@ -1901,6 +1856,7 @@ class MergeTreeSettingsRandomizer:
         "enable_index_granularity_compression": lambda: random.randint(0, 1),
         "enable_block_number_column": lambda: random.randint(0, 1),
         "enable_block_offset_column": lambda: random.randint(0, 1),
+        "patch_parts_version": lambda: random.choice(["v1", "v2"]),
         "use_primary_key_cache": lambda: random.randint(0, 1),
         "prewarm_primary_key_cache": lambda: random.randint(0, 1),
         "object_serialization_version": lambda: random.choice(["v2", "v3"]),
@@ -2339,6 +2295,23 @@ class TestCase:
     def http_format_settings(settings_list) -> str:
         return urllib.parse.urlencode(settings_list)
 
+    # A `no-<feature>` tag means the test does not work with that feature, so the feature
+    # must be off unless the test itself turns it on.
+    FEATURE_TAG_OVERRIDES = {
+        "no-parallel-replicas": "enable_parallel_replicas",
+        "no-async-insert": "async_insert",
+    }
+
+    def feature_tag_overrides(self) -> str:
+        tags = self.tags or set()
+        return self.cli_format_settings(
+            {
+                setting: 0
+                for tag, setting in self.FEATURE_TAG_OVERRIDES.items()
+                if tag in tags
+            }
+        )
+
     def has_show_create_table_in_test(self):
         return not subprocess.call(["grep", "-iq", "show create", self.case_file])
 
@@ -2388,6 +2361,14 @@ class TestCase:
 
         current_value = os.environ.get("CLICKHOUSE_CLIENT_OPT", "")
         os.environ["CLICKHOUSE_CLIENT_OPT"] = f"{current_value} --allow_repeated_settings".strip()
+
+        # Last, so that it beats an externally supplied --client-option that enabled the
+        # feature: with --allow_repeated_settings the last occurrence takes effect. A SET
+        # or SETTINGS clause inside the test still wins over any command line value.
+        overrides = self.feature_tag_overrides()
+        if overrides:
+            os.environ["CLICKHOUSE_CLIENT_OPT"] += f" {overrides}"
+            return f"{new_options} {client_options} {overrides}"
 
         return new_options + " " + client_options
 
@@ -4332,6 +4313,11 @@ class TestSuite:
         self.cloud_skip_list: List[str] = []
         self.private_skip_list: List[str] = []
         self.cloud_skip_errors_list: List[str] = []
+        # Keep this separate from the final test list. A selected-test job may
+        # legitimately find a test and subsequently filter it out for its
+        # flavor, but every selector must match a test before the benign
+        # filtered-out result is allowed.
+        self.explicit_test_selectors_matched: Set[str] = set()
         # List of tests included in a blacklist.
         # They will be run, and if they succeed, the test status will be changed to FAIL
         # to notify PR author that the changes in PR fixes this test.
@@ -4486,12 +4472,22 @@ class TestSuite:
         for test_name in os.listdir(self.suite_path):
             if not is_test_from_dir(self.suite_path, test_name):
                 continue
-            if self.args.test and not any(
-                re.search(pattern, test_name) for pattern in self.args.test
-            ):
+            matching_selectors = (
+                {
+                    pattern
+                    for pattern in self.args.test
+                    if re.search(pattern, test_name)
+                }
+                if self.args.test
+                else set()
+            )
+            if self.args.test and not matching_selectors:
                 continue
             if USE_JINJA and test_name.endswith(".gen.sql"):
                 continue
+
+            if self.args.test:
+                self.explicit_test_selectors_matched.update(matching_selectors)
 
             if not filter_func(test_name):
                 continue
@@ -6043,6 +6039,7 @@ ORDER BY (test_name, callee_offset)
         )
 
     total_tests_run = 0
+    explicit_test_selectors_matched = set()
     cloud_skip_list = try_get_skip_list(base_dir, "../queries-no-cloud-tests.txt")
     private_skip_list = try_get_skip_list(base_dir, "../queries-no-private-tests.txt")
     skip_list = []
@@ -6120,6 +6117,10 @@ ORDER BY (test_name, callee_offset)
             test_suite = TestSuite.read_test_suite(args, suite)
             if test_suite is None:
                 continue
+
+            explicit_test_selectors_matched.update(
+                test_suite.explicit_test_selectors_matched
+            )
 
             test_suite.skip_list = skip_list
             test_suite.cloud_skip_list = cloud_skip_list
@@ -6199,7 +6200,10 @@ ORDER BY (test_name, callee_offset)
                     "\nFound hung queries in processlist:", args, "red", attrs=["bold"]
                 )
             )
-            print(processlist.decode())
+            # The processlist may contain arbitrary bytes: under the AST fuzzer, query
+            # texts (e.g. of KILL QUERY attempts) can carry invalid UTF-8 sequences,
+            # and a strict decode would crash the hung check instead of reporting it.
+            print(processlist.decode(errors="replace"))
             print(get_transactions_list(args))
 
             # `processlist` above already shows per-thread stacks for
@@ -6228,7 +6232,14 @@ ORDER BY (test_name, callee_offset)
             print(test_result.description)
 
     if total_tests_run == 0:
-        print("No tests were run.")
+        if runner_process_killed.is_set() or exit_code.value != 0:
+            print("No tests were run.")
+        elif args.test and set(args.test).issubset(explicit_test_selectors_matched):
+            print(
+                "No tests were run because every explicitly requested test was filtered out."
+            )
+        else:
+            print("No tests were run.")
         sys.exit(1)
     else:
         print("All tests have finished.")
@@ -7103,6 +7114,18 @@ if __name__ == "__main__":
 
         if args.secure:
             os.environ["CLICKHOUSE_CLIENT_OPT"] += " --secure "
+
+    if not args.secure:
+        # Tell the client which protocol this run uses instead of letting it choose. A client that is
+        # given neither a port nor a TLS mode probes both the plain and the secure port and uses the one
+        # that answers first, and the test server listens on both, so an unspecified TLS mode would
+        # silently run the suite over an arbitrary protocol - including the tests that assert on the
+        # plain port and on `is_secure`.
+        #
+        # This covers the `.sql` tests; the shell tests get it from `shell_config.sh`. It must not go into
+        # CLICKHOUSE_CLIENT_OPT, which ends up on the command line of a `.sql` test next to this, and
+        # `--no-secure` cannot be specified more than once.
+        args.client += " --no-secure"
 
     if args.cloud:
         enable_analyzer = os.getenv("CLOUD_ENABLE_ANALYZER", "1")
