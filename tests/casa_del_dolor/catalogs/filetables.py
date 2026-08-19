@@ -449,10 +449,14 @@ def _spark_compatible_arrow_type(t):
     for unsigned, signed in _UNSIGNED_TO_SIGNED.items():
         if t.equals(unsigned):
             return signed
-    # Canonical extension types (`arrow.uuid`, `arrow.json`, written by ClickHouse for UUID
-    # and JSON columns) are unknown to Spark, but their storage type is not
+    # `arrow.json` (written for JSON columns) stores its own text, so unwrapping it renders the
+    # same string on both sides. `arrow.uuid` stores the raw 16 bytes that ClickHouse prints as
+    # canonical text and no arrow cast bridges the two, so leave it wrapped: Spark rejects the
+    # column and the caller drops it from the comparison rather than comparing it as bytes.
     if isinstance(t, pa.BaseExtensionType):
-        return _spark_compatible_arrow_type(t.storage_type)
+        if pa.types.is_string(t.storage_type) or pa.types.is_large_string(t.storage_type):
+            return _spark_compatible_arrow_type(t.storage_type)
+        return t
     if pa.types.is_decimal(t) and t.precision > _SPARK_MAX_DECIMAL_PRECISION:
         return pa.decimal128(
             _SPARK_MAX_DECIMAL_PRECISION, min(_SPARK_MAX_DECIMAL_PRECISION, t.scale)
@@ -497,9 +501,10 @@ def _spark_can_ingest(t) -> bool:
 
 def _to_spark_compatible_arrow(arrow_table):
     """Cast the types Spark's Arrow bridge rejects (unsigned integers, decimals wider than
-    38 digits, extension types, time-of-day), nested ones included. A column it still cannot
-    ingest - the union a ClickHouse-written `Variant` becomes - is replaced with NULLs and
-    its name returned, so the row count and every other column stay comparable."""
+    38 digits, text-backed extension types, time-of-day), nested ones included. A column it
+    still cannot ingest - the union a ClickHouse-written `Variant` becomes, or an `arrow.uuid`
+    whose bytes have no textual cast - is replaced with NULLs and its name returned, so the
+    row count and every other column stay comparable."""
     unsupported = [
         f.name
         for f in arrow_table.schema
