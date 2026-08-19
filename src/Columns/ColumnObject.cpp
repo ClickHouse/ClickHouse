@@ -1116,7 +1116,7 @@ void ColumnObject::restoreSizes(size_t prev_size)
         if (column->size() > prev_size)
             column->popBack(column->size() - prev_size);
     }
-    
+
     if (shared_data->size() > prev_size)
         shared_data->popBack(shared_data->size() - prev_size);
 
