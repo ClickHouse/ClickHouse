@@ -623,6 +623,262 @@ ensure_worktree()
     fi
 }
 
+# Return the available space, in KiB, on the filesystem containing the worker
+# pool. `df -P` keeps the available-space column stable across platforms.
+free_space_kib()
+{
+    df -Pk "$(dirname "$WORKTREE_BASE")" | awk 'NR == 2 { print $4 }'
+}
+
+is_registered_worktree()
+{
+    local candidate="$1"
+    git -C "$MAIN_REPO" worktree list --porcelain \
+        | grep -xF "worktree $candidate" >/dev/null
+}
+
+is_managed_worktree()
+{
+    local candidate="$1"
+    [[ "$candidate" != "$MAIN_REPO" && "$candidate" == "$WORKTREE_BASE-"* ]] \
+        && [[ "${candidate#"$WORKTREE_BASE"-}" =~ ^[0-9]+$ ]]
+}
+
+is_active_worker_worktree()
+{
+    local candidate="$1" i
+    for (( i = 0; i < WORKERS; ++i )); do
+        [[ "$candidate" == "${WORKTREE_BASE}-${i}" ]] && return 0
+    done
+    return 1
+}
+
+# List processes whose current directory is the worker or one of its
+# descendants. Agents can accidentally leave servers running after their turn;
+# those processes race with `git clean` by recreating files as it removes them.
+worktree_processes()
+{
+    local wt="$1" proc pid
+
+    while IFS= read -r proc; do
+        pid=${proc##*/}
+        [[ "$pid" != "$$" && "$pid" != "$BASHPID" ]] || continue
+        printf '%s\n' "$pid"
+    done < <(
+        find /proc -mindepth 2 -maxdepth 2 -type l -name cwd \
+            \( -lname "$wt" -o -lname "$wt (deleted)" -o -lname "$wt/*" \) \
+            -printf '%h\n' 2>/dev/null
+    )
+}
+
+stop_worktree_processes()
+{
+    local wt="$1" pid attempt
+    local -a pids=()
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to stop processes in an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ${#pids[@]} )) || return 0
+    echo "Stopping leftover processes in $wt: ${pids[*]}" >&2
+
+    for pid in "${pids[@]}"; do
+        kill -TERM "$pid" 2>/dev/null || sudo -n kill -TERM "$pid" 2>/dev/null || true
+    done
+
+    # A watchdog can replace a server while the first process snapshot is
+    # being terminated. Rescan before escalating so the replacement is also
+    # removed. `SIGKILL` is appropriate here: these are orphaned processes from
+    # a completed task, and cleanup cannot safely proceed while they are live.
+    for attempt in 1 2 3; do
+        mapfile -t pids < <(worktree_processes "$wt")
+        (( ${#pids[@]} )) || return 0
+        for pid in "${pids[@]}"; do
+            kill -KILL "$pid" 2>/dev/null || sudo -n kill -KILL "$pid" 2>/dev/null || true
+        done
+        sleep 0.1
+    done
+
+    mapfile -t pids < <(worktree_processes "$wt")
+    (( ! ${#pids[@]} )) || {
+        echo "Could not stop leftover processes in $wt: ${pids[*]}" >&2
+        return 1
+    }
+}
+
+# Remove registered worktrees nested below a directory before deleting that
+# directory. Git otherwise leaves their administrative entries behind and can
+# refuse to remove the parent. Deepest paths go first.
+remove_registered_descendants()
+{
+    local parent="$1" candidate
+    local -a descendants=()
+
+    mapfile -t descendants < <(
+        git -C "$MAIN_REPO" worktree list --porcelain \
+            | sed -n 's/^worktree //p' \
+            | awk -v prefix="$parent/" 'index($0, prefix) == 1 { print length($0) "\t" $0 }' \
+            | sort -rn \
+            | cut -f2-
+    )
+    for candidate in "${descendants[@]}"; do
+        is_managed_worktree "$candidate" || {
+            echo "Refusing to remove unmanaged nested worktree: $candidate" >&2
+            return 1
+        }
+        if ! git -C "$MAIN_REPO" worktree remove --force "$candidate"; then
+            echo "Retrying worktree removal with elevated permissions: $candidate" >&2
+            sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$candidate"
+        fi
+    done
+}
+
+# Prepare a reusable worker for a new PR. Root-level build directories remain
+# available for reuse; all other tracked, untracked and ignored changes go.
+prepare_worktree_for_task()
+{
+    local wt="$1"
+
+    if ! is_active_worker_worktree "$wt" || ! is_registered_worktree "$wt"; then
+        echo "Refusing to clean an unexpected worktree: $wt" >&2
+        return 1
+    fi
+
+    stop_worktree_processes "$wt"
+    git -C "$wt" reset --hard -q HEAD
+    git -C "$wt" checkout --detach -q HEAD
+    remove_registered_descendants "$wt"
+    # `git submodule foreach` visits only initialized submodules. Always clean
+    # those existing worktrees: `--skip-submodules` avoids initialization, but
+    # must not let dirt from an earlier non-skipped run leak into the next PR.
+    # shellcheck disable=SC2016 # `$PWD` expands in each `git submodule foreach` shell.
+    git -C "$wt" submodule foreach --quiet --recursive \
+        'git reset --hard -q HEAD && { git clean -ffdx -e "/build*/" || { echo "Retrying cleanup with elevated permissions: $PWD" >&2; sudo -n git -c safe.directory="$PWD" -C "$PWD" clean -ffdx -e "/build*/"; }; }' >/dev/null
+    if (( SKIP_SUBMODULES )); then
+        # Restore initialized submodules to the superproject gitlinks without
+        # initializing absent ones. `submodule update` can nevertheless
+        # initialize submodules selected by `submodule.active`, so check out
+        # the recorded SHA directly in the submodules that `foreach` found.
+        git -C "$wt" submodule foreach --quiet --recursive \
+            'git checkout --detach -q "$sha1"'
+    else
+        git -C "$wt" submodule update --init --checkout --force --recursive --no-fetch
+    fi
+    # Integration tests can leave root-owned artifacts, and stale servers can
+    # briefly recreate files while cleanup is traversing a directory. Retry
+    # the identical, path-scoped cleanup after stopping any replacement
+    # processes. If elevation is unavailable, fail closed.
+    local attempt
+    for attempt in 1 2 3; do
+        git -C "$wt" clean -ffdx -e '/build*/' && return 0
+        stop_worktree_processes "$wt"
+        echo "Retrying cleanup with elevated permissions ($attempt/3): $wt" >&2
+        sudo -n git -c safe.directory="$wt" -C "$wt" clean -ffdx -e '/build*/' && return 0
+    done
+    echo "Worktree cleanup did not converge after 3 attempts: $wt" >&2
+    return 1
+}
+
+remove_managed_cache_dir()
+{
+    local wt="$1" candidate="$2" base
+    base="${candidate##*/}"
+
+    if ! is_registered_worktree "$wt" || ! is_managed_worktree "$wt" \
+        || [[ "$candidate" != "$wt/"* ]] \
+        || [[ "${candidate%/*}" != "$wt" ]] \
+        || { [[ "$base" != tmp ]] && [[ "$base" != build* ]]; }; then
+            echo "Refusing to remove unexpected cache directory: $candidate" >&2
+            return 1
+    fi
+
+    banner "Low disk space: removing $candidate"
+    remove_registered_descendants "$candidate"
+    if ! rm -rf -- "$candidate"; then
+        echo "Retrying cleanup with elevated permissions: $candidate" >&2
+        sudo -n rm -rf -- "$candidate"
+    fi
+}
+
+# Run only while the worker pool is idle. First discard old `tmp` and `build*`
+# directories, then stale managed worktrees, until the requested reserve is
+# restored. Active worker roots are never removed wholesale.
+cleanup_worktrees_if_disk_low()
+{
+    (( DRY_RUN )) && return 0
+
+    local minimum_kib=$(( MIN_FREE_GB * 1024 * 1024 )) available wt candidate mtime
+    local -a worktrees=() cache_candidates=() stale_worktrees=()
+    local -A worktree_mtime=()
+    available=$(free_space_kib)
+    [[ "$available" =~ ^[0-9]+$ ]] || {
+        echo "${S}Error: could not determine available disk space${R}" >&2
+        return 1
+    }
+    (( available < minimum_kib )) || return 0
+
+    banner "Low disk space: $(( available / 1024 / 1024 )) GiB free; cleaning managed worktrees to restore ${MIN_FREE_GB} GiB"
+    mapfile -t worktrees < <(git -C "$MAIN_REPO" worktree list --porcelain | sed -n 's/^worktree //p')
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        [[ -d "$wt" ]] || continue
+        # Cache this before removing child directories, which changes the
+        # worktree root's mtime and would destroy the old-to-new ordering.
+        worktree_mtime["$wt"]=$(stat -c %Y "$wt")
+        while IFS= read -r -d '' candidate; do
+            mtime=$(stat -c %Y "$candidate")
+            cache_candidates+=("$mtime"$'\t'"$wt"$'\t'"$candidate")
+        done < <(find "$wt" -mindepth 1 -maxdepth 1 -type d \( -name tmp -o -name 'build*' \) -print0 2>/dev/null)
+    done
+
+    if (( ${#cache_candidates[@]} )); then
+        mapfile -t cache_candidates < <(printf '%s\n' "${cache_candidates[@]}" | sort -n)
+        for candidate in "${cache_candidates[@]}"; do
+            IFS=$'\t' read -r mtime wt candidate <<< "$candidate"
+            [[ -d "$candidate" ]] || continue
+            remove_managed_cache_dir "$wt" "$candidate"
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    for wt in "${worktrees[@]}"; do
+        is_managed_worktree "$wt" || continue
+        is_active_worker_worktree "$wt" && continue
+        [[ -d "$wt" ]] || continue
+        mtime=${worktree_mtime["$wt"]:-$(stat -c %Y "$wt")}
+        stale_worktrees+=("$mtime"$'\t'"$wt")
+    done
+    if (( ${#stale_worktrees[@]} )); then
+        mapfile -t stale_worktrees < <(printf '%s\n' "${stale_worktrees[@]}" | sort -n)
+        for candidate in "${stale_worktrees[@]}"; do
+            wt=${candidate#*$'\t'}
+            # Removing a parent also unregisters its nested worktrees, which
+            # may still occur later in this snapshot.
+            is_registered_worktree "$wt" || continue
+            if ! is_managed_worktree "$wt" || is_active_worker_worktree "$wt"; then
+                echo "Refusing to remove unexpected worktree: $wt" >&2
+                return 1
+            fi
+            banner "Low disk space: removing stale worktree $wt"
+            remove_registered_descendants "$wt"
+            if ! git -C "$MAIN_REPO" worktree remove --force "$wt"; then
+                echo "Retrying worktree removal with elevated permissions: $wt" >&2
+                sudo -n git -c safe.directory="$MAIN_REPO" -C "$MAIN_REPO" worktree remove --force "$wt"
+            fi
+            available=$(free_space_kib)
+            (( available >= minimum_kib )) && return 0
+        done
+    fi
+
+    echo "${S}Error: only $(( available / 1024 / 1024 )) GiB free after cleaning managed worktrees; ${MIN_FREE_GB} GiB required${R}" >&2
+    return 1
+}
+
 # ----------------------------------------------------------------------------
 # Work queue (shared file + flock). Workers pop the next PR atomically, so the
 # next free worker always gets the next PR -> even distribution.
