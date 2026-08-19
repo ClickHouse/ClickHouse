@@ -1372,6 +1372,10 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     InsertData::EntryPtr current_entry;
     String current_exception;
 
+    /// `InterpreterInsertQuery` can adjust the query context while preparing the pipeline. Restore
+    /// the INSERT settings before resolving the parser for queued data.
+    InterpreterSetQuery::applySettingsFromQuery(key.query, insert_context);
+
     auto format = getInputFormatFromASTInsertQuery(key.query, false, header, insert_context, nullptr);
     std::shared_ptr<ISimpleTransform> adding_defaults_transform;
 
