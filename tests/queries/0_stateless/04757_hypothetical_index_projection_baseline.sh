@@ -16,13 +16,13 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- projection-served read: baseline is reported, candidate is not_applicable ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42;
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42 SETTINGS optimize_use_projections = 1;
 " 2>&1 | grep -oE "Baseline \(after PK \+ partition \+ existing indexes\):|est_bytes:.*|status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
 
 echo "--- and the statement succeeds ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42;
+    EXPLAIN WHATIF SELECT a FROM t_hypo_proj_baseline WHERE b = 42 SETTINGS optimize_use_projections = 1;
 " > /dev/null 2>&1 && echo "no exception" || echo "FAILED"
 
 echo "--- with projections off the same candidate is estimated as usual ---"
@@ -36,7 +36,7 @@ $CLICKHOUSE_CLIENT -q "
 echo "--- a plan with no MergeTree read step still reports candidates ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline;
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1;
 " 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
 
 # the no-scan path is still single-table only, and still honours force_data_skipping_indices
@@ -46,13 +46,13 @@ $CLICKHOUSE_CLIENT -q "EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline A
 echo "--- a forced index still fails when nothing is read ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS force_data_skipping_indices = 'hi_b';
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1, force_data_skipping_indices = 'hi_b';
 " 2>&1 | grep -m1 -oE 'INDEX_NOT_USED'
 
 echo "--- but not when skip indexes are off, since a real read ignores the setting ---"
 $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL INDEX hi_b ON t_hypo_proj_baseline (b) TYPE minmax GRANULARITY 1;
-    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS use_skip_indexes = 0, force_data_skipping_indices = 'hi_b';
+    EXPLAIN WHATIF SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1, use_skip_indexes = 0, force_data_skipping_indices = 'hi_b';
 " > /dev/null 2>&1 && echo "no exception" || echo "FAILED"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_hypo_proj_baseline;"
