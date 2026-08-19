@@ -3058,6 +3058,46 @@ def test_leader_election_without_keeper(started_cluster):
         )
 
         leader.start_clickhouse()
+
+        # The restarted original leader must rejoin as a follower. Retry until its
+        # table is loaded, but reject a single successful write because the new
+        # leader still owns the lease.
+        deadline = time.monotonic() + 60
+        old_leader_is_readonly = False
+        while time.monotonic() < deadline:
+            try:
+                leader.query(f"INSERT INTO {table} VALUES (999)")
+            except Exception as e:
+                if "TABLE_IS_READ_ONLY" in str(e):
+                    old_leader_is_readonly = True
+                    break
+                time.sleep(1)
+                continue
+            raise AssertionError(
+                "Restarted old leader without Keeper accepted a write while the "
+                "new leader holds the lease"
+            )
+
+        assert old_leader_is_readonly, (
+            "Restarted old leader without Keeper did not become read-only"
+        )
+
+        # Rejoining as a follower must also refresh the row written after
+        # failover, without relying on ClickHouse Keeper.
+        expected = "1\n2\n3\n10"
+        deadline = time.monotonic() + 60
+        rows = ""
+        while time.monotonic() < deadline:
+            rows = leader.query(
+                f"SELECT x FROM {table} WHERE x > 0 ORDER BY x"
+            ).strip()
+            if rows == expected:
+                break
+            time.sleep(1)
+        assert rows == expected, (
+            "Restarted old leader without Keeper did not refresh the full "
+            f"post-failover row set, got: {rows!r}"
+        )
     finally:
         ensure_node_up(node4_no_keeper)
         for node in (node4_no_keeper, node5_no_keeper):
