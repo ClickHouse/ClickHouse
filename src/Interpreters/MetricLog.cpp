@@ -161,12 +161,15 @@ void MetricLog::stepFunction(const std::chrono::system_clock::time_point current
 {
     std::lock_guard lock(previous_profile_events_mutex);
 
-    MetricLogElement elem;
-    collectMetricLogElement(
-        elem, current_time, previous_profile_events,
-        getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms]);
+    const bool show_zero_values = getContext()->getSettingsRef()[Setting::system_metric_log_show_zero_values_in_histograms];
 
-    add(std::move(elem));
+    add([&](MetricLogElement & element)
+    {
+        /// previous_profile_events is guarded by the mutex held above; thread-safety analysis cannot
+        /// see the lock through this callback, so suppress the false positive on this access.
+        collectMetricLogElement(
+            element, current_time, TSA_SUPPRESS_WARNING_FOR_WRITE(previous_profile_events), show_zero_values);
+    });
 }
 
 }

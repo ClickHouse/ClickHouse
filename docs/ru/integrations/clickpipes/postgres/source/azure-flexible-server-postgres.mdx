@@ -76,16 +76,16 @@ ClickPipes поддерживает Postgres версии 12 и более по�
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-Публикация `clickpipes` будет содержать набор событий изменений, сгенерированных указанными таблицами, и позднее будет использоваться для приёма потока репликации.
+Публикация `clickpipes` определяет набор таблиц, события изменений из которых будут передаваться в ClickPipes. Мы не рекомендуем использовать `FOR ALL TABLES`, если только вы не собираетесь реплицировать все таблицы, поскольку включение лишних таблиц увеличивает WAL-трафик из Postgres в ClickPipes и снижает общую эффективность репликации.
 
 <div id="add-clickpipes-ips-to-firewall">
   ## Добавьте IP-адреса ClickPipes в брандмауэр
 </div>
 
-Чтобы добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в свою сеть, выполните следующие действия.
+Чтобы добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в свою сеть, выполните следующие действия.
 
-1. Перейдите на вкладку **Networking** и добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) в брандмауэр
-   вашего Azure Flexible Server Postgres или jump server/бастиона, если вы используете SSH-туннелирование.
+1. Перейдите на вкладку **Networking** и добавьте [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в брандмауэр
+   вашего Azure Flexible Server Postgres или Jump Server/бастиона, если вы используете SSH-туннелирование.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="Добавление IP-адресов ClickPipes в брандмауэр Azure Flexible Server for Postgres" size="lg" />
 

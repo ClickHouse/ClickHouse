@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/Passes/CNFAtomicFormula.h>
 
 #include <Interpreters/Context_fwd.h>
 
+#include <functional>
 #include <set>
 
 namespace DB::Analyzer

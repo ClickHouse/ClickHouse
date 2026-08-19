@@ -75,7 +75,7 @@ clickhousectl local client
 
 [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) is a powerful command-line tool that provides the complete functionality of ClickHouse in a standalone executable. It's essentially the same database as ClickHouse Server, but packaged in a way that lets you harness all of ClickHouse's capabilities directly from the command line without running a server instance.
 
-<Image img="/images/deployment-modes/ch-local.webp" alt="clickHouse-local" size="sm"/>
+<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm"/>
 
 This tool excels at ad-hoc data analysis, particularly when working with local files or data stored in cloud storage services. You can directly query files in various formats (CSV, JSON, Parquet, etc.) using ClickHouse's SQL dialect, making it an excellent choice for quick data exploration or one-off analysis tasks.
 
@@ -85,7 +85,7 @@ The combination of remote table functions and access to the local file system ma
 
 ## chDB {#chdb}
 
-[chDB](/products/chdb/index) is ClickHouse embedded as an in-process database engine, with Python being the primary implementation, though it's also available for Go, Rust, NodeJS, and Bun. This deployment option brings ClickHouse's powerful OLAP capabilities directly into your application's process, eliminating the need for a separate database installation.
+[chDB](/chdb/index) is ClickHouse embedded as an in-process database engine, with Python being the primary implementation, though it's also available for Go, Rust, NodeJS, and Bun. This deployment option brings ClickHouse's powerful OLAP capabilities directly into your application's process, eliminating the need for a separate database installation.
 
 <Image img="/images/deployment-modes/chdb.webp" alt="chDB - Embedded ClickHouse" size="sm"/>
 

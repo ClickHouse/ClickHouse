@@ -7,7 +7,7 @@ keywords: ['postgres', 'postgresql', '논리적 복제', '마이그레이션', '
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
@@ -71,13 +71,45 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 **다음**을 클릭합니다.
 
-<div id="step-2-export-schema">
-  ## 2단계: 데이터베이스 스키마 내보내기
+<div id="automated-schema-migration">
+  ## 자동 스키마 마이그레이션
 </div>
 
-마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 이를 실행하세요:
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="2단계: 대상 데이터베이스 셀렉터를 사용한 자동 스키마 마이그레이션" size="lg" border />
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="2단계: 스키마 내보내기용 pg_dump 명령" size="lg" border />
+이 옵션을 선택하면 ClickPipe가 생성된 후 [Setup 단계](/ko/integrations/clickpipes/postgres/lifecycle#setup)에서 원본 데이터베이스의 스키마를 자동으로 가져와 Managed Postgres 서비스에 적용합니다.
+
+이 기능은 이후 마법사에서 선택하는 테이블과 관계없이 원본 데이터베이스의 모든 데이터베이스 객체를 가져오므로 **비어 있는 대상 데이터베이스**가 필요합니다. 대상 데이터베이스에 기존 데이터가 있거나 더 세부적인 구성이 필요하다면 [**수동**](#manual-schema-migration) 모드를 선택해야 합니다.
+
+드롭다운에서 대상 데이터베이스를 선택하거나 **새 데이터베이스 만들기**를 클릭하여 새 데이터베이스를 프로비저닝합니다.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="새 Postgres 데이터베이스 만들기 대화 상자" size="lg" border />
+
+<div id="monitoring">
+  ### 모니터링
+</div>
+
+ClickPipes 세부 정보 보기에서 스키마 마이그레이션 진행 상황을 확인할 수 있습니다. **로그**에는 스키마 마이그레이션 상태와 발생한 오류가 표시됩니다.
+
+이 모드에는 다음과 같은 제한 사항이 있습니다.
+
+* SSH tunneling을 사용하는 파이프에는 자동 스키마 마이그레이션을 사용할 수 없습니다. 스키마는 [수동으로 내보내고 가져와야 합니다](#manual-schema-migration).
+
+<div id="manual-schema-migration">
+  ## 수동 스키마 마이그레이션
+</div>
+
+대상 데이터베이스에 이미 데이터가 있거나 자동화 모드에서 전제하는 초기 상태 대신 더 맞춤화된 설정이 필요한 경우, 여기에서 **수동** 모드를 선택할 수 있습니다.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="2단계: pg_dump 내보내기 명령을 사용한 수동 스키마 마이그레이션" size="lg" border />
+
+<div id="step-2-export-schema">
+  ### 데이터베이스 스키마 내보내기
+</div>
+
+마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 실행합니다:
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="2단계: 스키마 내보내기를 위한 pg_dump 명령" size="lg" border />
 
 ```shell
 pg_dump \
@@ -88,19 +120,19 @@ pg_dump \
   -f pg.sql
 ```
 
-이 명령을 실행하면 현재 작업 디렉터리에 `pg.sql` 파일이 생성됩니다.
+이 명령을 실행하면 현재 디렉터리에 `pg.sql`이 생성됩니다.
 
 <Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 실행 후 터미널 출력" size="lg" border />
 
-**다음**을 클릭하세요.
+**다음**을 클릭합니다.
 
 <div id="step-3-import-schema">
-  ## 3단계: 스키마를 Managed Postgres 서비스로 가져오기
+  ### Managed Postgres 서비스로 스키마 가져오기
 </div>
 
-드롭다운에서 대상 데이터베이스를 선택하거나, **Create a new database**를 클릭해 새 데이터베이스를 생성합니다.
+드롭다운에서 대상 데이터베이스를 선택하거나 **새 데이터베이스 만들기**를 클릭해 새 데이터베이스를 프로비저닝합니다.
 
-마법사에서 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령을 표시합니다. 터미널에서 실행하세요:
+마법사에 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령이 표시됩니다. 터미널에서 실행합니다:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="3단계: 스키마 가져오기를 위한 psql 명령" size="lg" border />
 
@@ -115,7 +147,7 @@ psql \
 
 <Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql 스키마 가져오기 실행 후 터미널 출력" size="lg" border />
 
-**다음**을 클릭하세요.
+**다음**을 클릭합니다.
 
 <div id="step-4-ingestion-settings">
   ## Step 4: 수집 설정 구성

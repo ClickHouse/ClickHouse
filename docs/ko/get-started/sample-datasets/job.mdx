@@ -1,10 +1,10 @@
 ---
-description: 'Join Order Benchmark (JOB) 데이터셋 및 쿼리.'
-sidebarTitle: 'JOB'
-slug: /getting-started/example-datasets/job
-title: 'Join Order Benchmark (JOB)'
-doc_type: 'guide'
-keywords: ['예시 데이터셋', 'job', 'join order benchmark', '벤치마크', '성능 테스트', '쿼리 최적화기', 'join ordering']
+title: "Join Order Benchmark (JOB)"
+description: "Join Order Benchmark (JOB) 데이터 집합 및 쿼리."
+sidebarTitle: "JOB"
+slug: "/getting-started/example-datasets/job"
+doc_type: "guide"
+keywords: ["예시 데이터셋", "job", "join order benchmark", "벤치마크", "성능 테스트", "쿼리 최적화기", "join ordering"]
 ---
 
 Join Order Benchmark (JOB)는 실제 데이터셋(IMDb의 스냅샷)을 기반으로 한, 상관관계가 높은 데이터에 대해 113개의 분석 쿼리로 쿼리 최적화기를 검증하는 벤치마크입니다. 도입 이후 JOB 벤치마크는 카디널리티 추정과 조인 순서 최적화를 포함해 관계형 데이터베이스 쿼리 최적화기의 성능을 평가하는 사실상의 표준이 되었습니다. 균등하고 서로 독립적인 데이터를 가정하는 합성 벤치마크와 달리, JOB는 편향과 상관관계가 있는 실제 데이터를 사용하므로 조인 순서 최적화와 카디널리티 추정에 까다로운 테스트입니다.
@@ -24,7 +24,7 @@ Join Order Benchmark (JOB)는 실제 데이터셋(IMDb의 스냅샷)을 기반�
 
 JOB 데이터셋은 21개의 테이블로 구성된 IMDb의 스냅샷입니다. 테이블 정의는 ClickHouse 리포지토리의 [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql)에서 확인할 수 있습니다.
 
-각 테이블은 프라이머리 키 컬럼 `id`를 기준으로 정렬된 [`MergeTree`](/ko/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하며, 이는 모든 테이블이 `id integer NOT NULL PRIMARY KEY`를 선언하는 원본 PostgreSQL 스키마를 반영한 것입니다. 널 허용 PostgreSQL 컬럼은 `Nullable(...)` 타입에 매핑됩니다.
+각 테이블은 프라이머리 키 컬럼 `id`를 기준으로 정렬된 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진을 사용하며, 이는 모든 테이블이 `id integer NOT NULL PRIMARY KEY`를 선언하는 원본 PostgreSQL 스키마를 반영한 것입니다. 널 허용 PostgreSQL 컬럼은 `Nullable(...)` 타입에 매핑됩니다.
 
 테이블을 생성하세요:
 
@@ -38,12 +38,9 @@ clickhouse client --database job --queries-file init_cloud.sql
   ## 데이터 로드
 </div>
 
-데이터는 JOB에서 사용된 원본 IMDb 스냅샷에서 가져오며, 각 테이블별 CSV file 하나(`aka_name.csv`, `title.csv`, ...)로 배포됩니다.
-이 CSV들은 `ESCAPE '\'`를 사용하는 PostgreSQL `COPY` 의미 체계를 따릅니다. 즉, 백슬래시는 따옴표로 묶인 field 안에서만 따옴표 문자를 이스케이프하고, 따옴표 밖에서는 문자 그대로 취급됩니다.
-ClickHouse는 RFC 4180 CSV(따옴표 이중화, 백슬래시 이스케이프 없음)를 기대하므로, 먼저 파일을 다시 인코딩해야 합니다.
+데이터는 JOB에서 사용된 원본 IMDb 스냅샷에서 가져오며, 각 테이블별 CSV file 하나(`aka_name.csv`, `title.csv`, ...)로 배포됩니다. 이 CSV들은 `ESCAPE '\'`를 사용하는 PostgreSQL `COPY` 의미 체계를 따릅니다. 즉, 백슬래시는 따옴표로 묶인 field 안에서만 따옴표 문자를 이스케이프하고, 따옴표 밖에서는 문자 그대로 취급됩니다. ClickHouse는 RFC 4180 CSV(따옴표 이중화, 백슬래시 이스케이프 없음)를 기대하므로, 먼저 파일을 다시 인코딩해야 합니다.
 
-[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py)는 이 재인코딩을 수행합니다.
-이 스크립트는 원본 CSV를 stdin에서 읽고 표준 CSV를 stdout에 기록하며, 내부 따옴표는 이중화하고 따옴표로 묶이지 않은 빈 field는 그대로 유지합니다(ClickHouse는 이를 `Nullable` 컬럼의 `NULL`로 매핑합니다).
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py)는 이 재인코딩을 수행합니다. 이 스크립트는 원본 CSV를 stdin에서 읽고 표준 CSV를 stdout에 기록하며, 내부 따옴표는 이중화하고 따옴표로 묶이지 않은 빈 field는 그대로 유지합니다(ClickHouse는 이를 `널 허용` 컬럼의 `NULL`로 매핑합니다).
 
 원본 CSV로 테이블을 빌드하려면:
 
@@ -64,8 +61,7 @@ for table in aka_name aka_title cast_info char_name comp_cast_type company_name 
 done
 ```
 
-테이블(table)에 데이터가 채워지면, 나중에 더 빠르게 다시 가져올 수 있도록 Parquet로 내보낼 수 있습니다. 예:
-`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+테이블(table)에 데이터가 채워지면, 나중에 더 빠르게 다시 가져올 수 있도록 Parquet로 내보낼 수 있습니다. 예: `clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
 
 상세 테이블 크기:
 
@@ -100,9 +96,7 @@ done
   ## 쿼리
 </div>
 
-113개의 JOB 쿼리는 ClickHouse 리포지토리의 [여기](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)에서 확인할 수 있습니다.
-실행에 사용된 설정은 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json)에 있습니다.
-알려진 문제와 특정 쿼리에 관한 참고 사항은 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md)를 참조하십시오.
+113개의 JOB 쿼리는 ClickHouse 리포지토리의 [여기](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)에서 확인할 수 있습니다. 실행에 사용된 설정은 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json)에 있습니다. 알려진 문제와 특정 쿼리에 관한 참고 사항은 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md)를 참조하십시오.
 
 쿼리는 테이블 이름을 직접 참조하므로 `job` 데이터베이스에서 실행하십시오(예: `clickhouse client --database job`).
 
@@ -128,3 +122,9 @@ WHERE ct.kind = 'production companies'
   AND mc.movie_id = mi_idx.movie_id
   AND it.id = mi_idx.info_type_id;
 ```
+
+<div id="performance-benchmark">
+  ## 성능 벤치마크
+</div>
+
+ClickHouse는 출시된 모든 버전에서 JOB 쿼리 성능을 추적합니다. [ClickHouse versions benchmark](https://benchmark.clickhouse.com/versions/#version=+s\&dataset=+ob\&metric=hot\&queries=-) 페이지에서 113개 JOB 쿼리의 실행 시간을 확인하고 시간에 따른 성능 변화를 살펴볼 수 있습니다.

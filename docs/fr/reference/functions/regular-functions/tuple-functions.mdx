@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **Valeur renvoyée**
 
-Renvoie le produit scalaire des deux vecteurs. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
+Renvoie le produit scalaire des deux vecteurs. Deux tableaux `BFloat16` accumulent en `Float32` et renvoient un `Float32`. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
 
 **Exemples**
 
@@ -353,7 +353,7 @@ Introduit dans : v21.1.0
 Renvoie la [distance de Hamming](https://en.wikipedia.org/wiki/Hamming_distance) entre deux tuples de même taille.
 
 <Note>
-  Le type du résultat est déterminé de la même manière que pour les [fonctions arithmétiques](/fr/reference/functions/regular-functions/arithmetic-functions), en fonction du nombre d&#39;éléments des tuples d&#39;entrée.
+  Le type du résultat est déterminé de la même manière que pour les [fonctions arithmétiques](/fr/reference/functions/regular-functions/arithmetic-functions), en fonction du nombre d’éléments des tuples d’entrée.
 
   ```sql
   SELECT
