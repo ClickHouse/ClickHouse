@@ -79,5 +79,26 @@ SETTINGS
     vector_search_with_rescoring = 0,
     query_plan_optimize_lazy_materialization = 0;
 
+-- Materializing a decorrelated correlated subquery clones the common subplan. One cloned read
+-- applies the no-rescoring rewrite, while its sibling still replays the deferred row policy.
+-- The two reads must not share the mutable row-policy DAG.
+CREATE TABLE tab_vec_row_policy_keys (id Int32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tab_vec_row_policy_keys VALUES (5), (6), (7);
+
+SELECT count() FROM
+(
+    SELECT id FROM tab_vec_row_policy FINAL
+    WHERE EXISTS (SELECT 1 FROM tab_vec_row_policy_keys WHERE tab_vec_row_policy_keys.id = tab_vec_row_policy.id)
+    ORDER BY L2Distance(vec, [0., 2.]) ASC
+    LIMIT 3
+)
+SETTINGS
+    allow_experimental_correlated_subqueries = 1,
+    correlated_subqueries_use_in_memory_buffer = 0,
+    vector_search_with_rescoring = 0,
+    query_plan_optimize_lazy_materialization = 0;
+
+DROP TABLE tab_vec_row_policy_keys;
+
 DROP ROW POLICY 04907_vector_row_policy ON tab_vec_row_policy;
 DROP TABLE tab_vec_row_policy;
