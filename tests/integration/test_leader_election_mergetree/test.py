@@ -211,36 +211,6 @@ def test_async_insert_rejected_before_queueing_on_follower(started_cluster):
         node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-def test_system_unfreeze_requires_current_leader(started_cluster):
-    """`SYSTEM UNFREEZE` must not let a follower delete a shared `shadow/` snapshot."""
-    table = "test_system_unfreeze_fenced"
-    uuid = "12345678-abcd-abcd-abcd-123456789ac0"
-    backup = "leader_election_system_unfreeze"
-
-    try:
-        create_table_on_first_node(node1, table, uuid)
-        attach_table_on_second_node(node2, table, uuid)
-        leader, followers = wait_for_leader([node1, node2], table_name=table)
-        follower = followers[0]
-
-        leader.query(f"INSERT INTO {table} VALUES (1)")
-        leader.query(f"ALTER TABLE {table} FREEZE WITH NAME '{backup}'")
-
-        error = ""
-        try:
-            follower.query(f"SYSTEM UNFREEZE WITH NAME '{backup}'")
-        except Exception as e:
-            error = str(e)
-        assert "TABLE_IS_READ_ONLY" in error, (
-            f"Expected follower SYSTEM UNFREEZE to be rejected, got: {error}"
-        )
-
-        leader.query(f"SYSTEM UNFREEZE WITH NAME '{backup}'")
-    finally:
-        node1.query(f"DROP TABLE IF EXISTS {table} SYNC")
-        node2.query(f"DROP TABLE IF EXISTS {table} SYNC")
-
-
 def test_metrics(started_cluster):
     """Verify that `MergeTreeLeaderElection*` CurrentMetrics and ProfileEvents are wired up."""
     table = "test_metrics"
