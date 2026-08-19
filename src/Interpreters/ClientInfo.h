@@ -105,6 +105,9 @@ public:
 
     /// For tcp
     String os_user;
+    /// Hostname of the client machine. Prefer `getClientHostName` over reading this member: for our own
+    /// process the name is resolved on demand (see `resolve_client_hostname_on_demand`) and this member
+    /// stays empty. It is only filled directly when the value arrives from a peer in `read`.
     String client_hostname;
     String client_name;
     /// Canonical id of the AI coding agent that invoked the client (e.g. `claude-code`, `cursor`),
@@ -211,6 +214,14 @@ public:
 
     String getVersionStr() const;
 
+    /// Hostname of the machine this `ClientInfo` describes.
+    /// Resolving our own name goes through `getFQDNOrHostName`, which performs a blocking DNS lookup. Doing that
+    /// eagerly in `setInitialQuery` made every `clickhouse local` and `clickhouse client` invocation pay for a
+    /// `getaddrinfo` (including dlopen of the NSS modules) even when nothing ever asked for the name, and it put a
+    /// network-dependent call with no short timeout on the startup path. So it is resolved on first use instead.
+    /// `getFQDNOrHostName` caches process-wide, so repeated calls are free.
+    const String & getClientHostName() const;
+
 private:
     struct ForwardedForCache;
 
@@ -219,6 +230,10 @@ private:
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
 
     void fillOSUserHostNameAndVersionInfo();
+
+    /// Set when this `ClientInfo` describes the current process, so `getClientHostName` may resolve the name
+    /// itself. Stays false when the name was received from a peer, in which case `client_hostname` holds it.
+    bool resolve_client_hostname_on_demand = false;
 };
 
 String toString(ClientInfo::Interface interface);
