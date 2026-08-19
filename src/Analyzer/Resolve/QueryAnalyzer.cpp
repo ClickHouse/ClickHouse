@@ -964,9 +964,6 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
             if (sibling.get() != table_expression_node.get() && sibling.get() != unaliased_expression_node.get())
                 enclosing_sibling_table_expressions.push_back(sibling);
 
-        if (enclosing_sibling_table_expressions.empty())
-            return;
-
         if (const auto * nested_join = unaliased_expression_node->as<const JoinNode>())
         {
             validateJoinTableExpressionWithoutAlias(join_node, nested_join->getLeftTableExpressionNode(), enclosing_sibling_table_expressions, scope);
@@ -1047,6 +1044,8 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(
                 if (const auto * function_node = expression->as<FunctionNode>(); function_node && !function_node->isResolved())
                     return true;
                 if (expression->as<IdentifierNode>())
+                    return true;
+                if (expression->as<QueryNode>() || expression->as<UnionNode>())
                     return true;
 
                 auto result_type = expression->getResultType();

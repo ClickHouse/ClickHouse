@@ -165,6 +165,12 @@ SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`) FORMAT Null;
 WITH (SELECT CAST(tuple(1), 'Tuple(x UInt8)')) AS n
 SELECT `n.x` FROM numbers(1), (SELECT 2 AS `n.x`); -- { serverError ALIAS_REQUIRED }
 
+-- A scalar subquery used as an `ARRAY JOIN` alias is unresolved while its inner join tree is
+-- validated. Treat the dotted output conservatively instead of asking the raw query node for its type.
+SELECT `a.x`
+FROM numbers(1), (SELECT 2 AS `a.x`)
+ARRAY JOIN (SELECT [tuple(1)]) AS a; -- { serverError ALIAS_REQUIRED }
+
 -- An `ARRAY JOIN` expression that is neither aliased nor a plain identifier (here a `COLUMNS(...)` matcher)
 -- exposes names that are only known after resolution, so the validation cannot prove the absence of a
 -- collision and keeps the strict behavior: the unaliased subquery is rejected even without a provable
@@ -271,6 +277,10 @@ SELECT x FROM (SELECT [1] AS arr, 2 AS x) ARRAY JOIN arr INNER JOIN (SELECT 0 AS
 -- A collision with a sibling-independent binder is final, so it is reported before resolving a
 -- later table function with side effects.
 WITH 1 AS x SELECT x FROM (SELECT 2 AS x) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError ALIAS_REQUIRED }
+
+-- Descendants of a nested join need the same sibling-independent precheck. The scope alias makes
+-- the innermost unaliased subquery invalid before the later table function is resolved.
+WITH 1 AS x SELECT x FROM (SELECT 2 AS x), numbers(1) INNER JOIN nonexistent_table_function_04502() ON true; -- { serverError ALIAS_REQUIRED }
 
 -- Without such a collision the verdict does need the sibling columns, so the right operand is resolved
 -- first and its own error is reported.
