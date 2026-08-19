@@ -709,27 +709,30 @@ which stores token positions to support exact phrase matching.
     DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
 The preferred on-disk serialization format version for writing text indexes.
 
-The setting is a preference, not a hard constraint: every index is written in the preferred
-format if that format can represent it, and in the oldest format that can otherwise. An index
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically. An index
 with `support_phrase_search` is always written in `v2_with_positions` (older formats cannot
-represent positions), and an index with a posting list codec is written at least in
-`v1_with_codec` (older formats do not persist the codec type). An index without positions is
-written in the preferred format as well, and its header records that it has no positions.
+represent positions), and an index with a posting list codec other than `none` is written at
+least in `v1_with_codec` (the `v0_initial` format does not persist the codec type). Writing
+a text index never fails because of this setting; readers take the format version from the
+on-disk header of each part.
 
 Explicit contradictions are rejected at creation time: an index with `support_phrase_search`
 cannot be created while this setting is below `v2_with_positions`, and an index with a
 `posting_list_codec` argument other than `none` cannot be created while it is `v0_initial`.
 
-During a rolling upgrade, set this to an older version so that newer servers keep writing
-text index parts in the on-disk format that older servers can still read. After all
-replicas are upgraded, switch back to the default. The `compatibility` setting adjusts
-this value automatically when set to a version older than the one that introduced the
-corresponding format.
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers: when it is set to a version older than the one that introduced
+the corresponding format, this setting reverts to an older value automatically and newer
+servers keep writing the format that older servers can still read. Remove the pin after all
+replicas are upgraded. Do not use `ALTER TABLE ... MODIFY SETTING` for a rolling upgrade of
+a replicated table: the modified setting is persisted in the table metadata, which replicas
+still running an older version cannot parse.
 
 Possible values:
 
-- `v0_initial` — The original format. Does not persist the posting list codec type and is
-  therefore only compatible with `text_index_posting_list_codec = none`.
+- `v0_initial` — The original format. Does not persist the posting list codec type; an index
+  with a codec other than `none` is automatically written in `v1_with_codec` instead.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with the
   `support_phrase_search` argument enabled (such indexes are always written in this format).
