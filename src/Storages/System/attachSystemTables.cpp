@@ -174,6 +174,22 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
 }
 
+void validateUserQueryLogConfig(ContextPtr context)
+{
+    if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
+        return;
+
+    /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
+    /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
+    /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
+    if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The `query_log.table` server setting cannot be set to `user_query_log`: "
+            "the query log table is always created in the `system` database, where `system.user_query_log` "
+            "shows the query log records of the current user. "
+            "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+}
+
 void attachSystemTableOne(ContextPtr context, IDatabase & system_database)
 {
     attachNoDescription<StorageSystemOne>(context, system_database, "one", "This table contains a single row with a single dummy UInt8 column containing the value 0. Used when the table is not specified explicitly, for example in queries like `SELECT 1`.");
@@ -355,15 +371,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
 
     if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
     {
-        /// The query log table is always created in the `system` database: `SystemLog::createSystemLog` coerces any
-        /// other configured `query_log.database` back to `system`. So the collision with `system.user_query_log`
-        /// happens for `query_log.table = user_query_log` regardless of the configured `query_log.database`.
-        if (context->getConfigRef().getString("query_log.table", "query_log") == "user_query_log")
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "The `query_log.table` server setting cannot be set to `user_query_log`: "
-                "the query log table is always created in the `system` database, where `system.user_query_log` "
-                "shows the query log records of the current user. "
-                "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+        validateUserQueryLogConfig(context);
 
         /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
         if (system_database.isTableExist("user_query_log", context))

@@ -1752,15 +1752,22 @@ void LocalServer::processConfig()
         }
 
         if (!attached_system_database)
+        {
+            /// Part of `attachSystemTablesServer`, which is deferred below. It checks the configuration rather than
+            /// the database, so it has to run right here: a bad configuration must be rejected at startup, instead
+            /// of on the first query that happens to read a system table.
+            validateUserQueryLogConfig(global_context);
             createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::SYSTEM_DATABASE,
                 [context = global_context](IDatabase & database) { attachSystemTablesServerExceptOne(context, database, false, false); },
                 [context = global_context](IDatabase & database) { attachSystemTableOne(context, database); });
+        }
 
         if (fs::exists(fs::path(path) / "user_defined"))
             global_context->getUserDefinedSQLObjectsStorage().loadObjects();
     }
     else if (!getClientConfiguration().has("no-system-tables"))
     {
+        validateUserQueryLogConfig(global_context);
         createMemoryDatabaseWithDeferredTables(global_context, DatabaseCatalog::SYSTEM_DATABASE,
             [context = global_context](IDatabase & database) { attachSystemTablesServerExceptOne(context, database, false, false); },
             [context = global_context](IDatabase & database) { attachSystemTableOne(context, database); });
