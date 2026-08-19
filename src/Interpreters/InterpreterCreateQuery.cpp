@@ -223,7 +223,7 @@ void removeGeneratedScalarSubqueryAliases(IAST & ast)
         with_alias->setPreferAliasToColumnName(false);
     }
 
-    for (auto & child : ast->children)
+    for (auto & child : ast.children)
         removeGeneratedScalarSubqueryAliases(*child);
 }
 
