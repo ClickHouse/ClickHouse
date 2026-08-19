@@ -637,20 +637,23 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         auto column_name = std::move(columns_to_visit.front());
         columns_to_visit.pop();
 
-        if (!is_materialized(column_name))
+        /// Only a column the interpreter recalculates needs its dependencies in the read set, and it
+        /// needs all of them, because the stage that rewrites it evaluates its whole expression against
+        /// the block — including the parts that read a column no mutation touches. A column that keeps
+        /// its stored value needs nothing, and one that cannot be recalculated at all (a plain or virtual
+        /// column, or a MATERIALIZED column reading an EPHEMERAL one) is not rewritten either.
+        if (!can_recalculate(column_name) || !needs_reading(column_name, needs_reading))
             continue;
 
+        /// `can_recalculate` held, so none of these is an EPHEMERAL column.
         for (const auto & dependency : get_dependencies(column_name))
         {
-            if (ephemeral_columns.contains(dependency) || read_columns_set.contains(dependency))
+            if (read_columns_set.contains(dependency))
                 continue;
 
-            if (needs_reading(dependency, needs_reading))
-            {
-                read_columns_set.insert(dependency);
-                read_columns.push_back(dependency);
-                columns_to_visit.push(dependency);
-            }
+            read_columns_set.insert(dependency);
+            read_columns.push_back(dependency);
+            columns_to_visit.push(dependency);
         }
     }
 }

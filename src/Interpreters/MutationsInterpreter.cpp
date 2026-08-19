@@ -776,9 +776,14 @@ void MutationsInterpreter::prepare(bool dry_run)
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
     if (need_materialized_analysis)
     {
-        /// Collect ephemeral columns and include them in the analysis set so
-        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
-        NamesAndTypesList all_columns_with_ephemeral = all_columns;
+        /// Analysed against every column of the table, not only the ones this task reads. Deciding
+        /// whether a MATERIALIZED column has to be recalculated must not require reading the columns it
+        /// depends on: an on-fly read narrows `available_columns` to what the query asked for plus what
+        /// a recalculated column needs, so a MATERIALIZED column that keeps its stored value has
+        /// dependencies that are legitimately absent, and resolving its expression against the narrow
+        /// list would fail with UNKNOWN_IDENTIFIER. Widening this changes nothing for a materialising
+        /// mutation, where `available_columns` already covers the part.
+        NamesAndTypesList all_columns_with_ephemeral = storage_snapshot->getColumns(options);
         std::unordered_set<String> ephemeral_columns;
         for (const auto & col : columns_desc.getEphemeral())
         {

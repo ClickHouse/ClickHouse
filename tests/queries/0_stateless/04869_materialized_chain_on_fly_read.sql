@@ -101,6 +101,40 @@ SELECT m2 FROM t_on_fly_delete;
 
 SYSTEM START MERGES t_on_fly_delete;
 
+SELECT 'on the fly, unaffected columns';
+
+-- Not every MATERIALIZED column of the table takes part. One the mutation does not affect keeps its
+-- stored value, and deciding that must not require reading the columns it reads: `n` depends on `y`,
+-- which no command touches, so `y` stays out of the read set and the expression of `n` still has to
+-- resolve. A column that IS recalculated needs its whole expression readable instead, including the
+-- part that reads such a column: `c` reads `y` next to the recalculated `m1`.
+DROP TABLE IF EXISTS t_on_fly_unaffected;
+
+CREATE TABLE t_on_fly_unaffected
+(
+    x Int32,
+    y Int32,
+    m1 Int32 MATERIALIZED x + 1,
+    m2 Int32 MATERIALIZED m1 + 1,
+    n Int32 MATERIALIZED y + 1,
+    c Int32 MATERIALIZED m1 + y
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_on_fly_unaffected (x, y) VALUES (10, 5);
+
+SYSTEM STOP MERGES t_on_fly_unaffected;
+
+ALTER TABLE t_on_fly_unaffected UPDATE x = 20 WHERE 1;
+
+SELECT m2, n FROM t_on_fly_unaffected;
+SELECT n FROM t_on_fly_unaffected;
+SELECT c FROM t_on_fly_unaffected;
+SELECT x, n FROM t_on_fly_unaffected;
+SELECT x, m1, m2, n, c FROM t_on_fly_unaffected;
+
+SYSTEM START MERGES t_on_fly_unaffected;
+
 SELECT 'on the fly, subcolumn';
 
 -- A MATERIALIZED column defined over a subcolumn depends on the top-level column `t`, which is
@@ -161,5 +195,6 @@ SYSTEM START MERGES t_on_fly_ephemeral;
 DROP TABLE t_on_fly;
 DROP TABLE t_on_fly_multi;
 DROP TABLE t_on_fly_delete;
+DROP TABLE t_on_fly_unaffected;
 DROP TABLE t_on_fly_subcolumn;
 DROP TABLE t_on_fly_ephemeral;

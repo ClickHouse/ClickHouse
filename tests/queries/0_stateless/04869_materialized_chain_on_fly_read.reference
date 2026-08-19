@@ -11,6 +11,12 @@ on the fly, multiple assignments
 1
 on the fly, pending delete
 22
+on the fly, unaffected columns
+22	6
+6
+26
+20	6
+20	21	22	6	26
 on the fly, subcolumn
 0	21
 21
