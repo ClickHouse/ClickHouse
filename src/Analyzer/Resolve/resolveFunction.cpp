@@ -406,6 +406,7 @@ static void validateInColumnsCountMatch(const QueryTreeNodePtr & in_first_argume
         /// set builder also rejects this conversion, but it must be reported here before
         /// constant folding can remove the `IN` expression from an unreachable predicate.
         if (right_columns_count == 1 && !left_tuple_type
+            && !in_first_argument_result_type->hasDynamicStructure()
             && !isNothing(removeNullable(in_first_argument_result_type)))
         {
             const auto right_single_key_type = removeNullable(recursiveRemoveLowCardinality(right_projection_columns.front().type));
