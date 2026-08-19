@@ -77,6 +77,12 @@ BlockIO InterpreterSetQuery::execute()
     /// old-server compatibility rewrite in ClientBase::processOrdinaryQuery.
     SettingsChanges changes = ast.changes;
     replaceQueryParametersInSettingsChanges(changes, getContext()->getQueryParameters());
+    /// A session-wide value would also detach the `SET` that turns it back off,
+    /// which is likely to cause confusion.
+    if (changes.tryGet("run_query_in_background"))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "run_query_in_background cannot be changed with SET, because it must be requested per query. "
+            "Pass it as a query setting, or set it at the user or profile level");
     /// Pass as const on purpose: the non-const checkSettingsConstraints overload rewrites the
     /// changes (dropping no-op changes), which would lose the "changed" flag for a setting
     /// explicitly set to its current value. The original code applies const `ast.changes`.

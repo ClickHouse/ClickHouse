@@ -188,7 +188,7 @@ OptimizerStatisticsPtr createEmptyStatistics()
 std::unordered_map<String, Float64> estimateReadColumnWidths(const ReadFromMergeTree & read_step)
 {
     const auto & storage = read_step.getStorageSnapshot()->storage;
-    const auto total_rows_opt = storage.totalRows(nullptr);
+    const auto total_rows_opt = storage.totalRows(read_step.getContext());
     /// `getColumnSizes(names)` also includes the requested subcolumns' sizes (`Map`/`JSON` reads).
     const auto column_sizes = storage.getColumnSizes(read_step.getAllColumnNames(), /*calculate_subcolumn_sizes=*/ true);
     const Float64 total_rows = (total_rows_opt && *total_rows_opt > 0) ? Float64(*total_rows_opt) : 0;
@@ -310,7 +310,7 @@ std::optional<ExpressionStatistics> estimateStatistics(QueryPlan::Node & node)
             /// hints can deliberately claim more rows than the table physically has (tiny tables
             /// standing in for big ones in tests), so never put the bound below the estimate.
             stats->max_row_count = std::max(stats->estimated_row_count,
-                Float64(read_step->getStorageSnapshot()->storage.totalRows(nullptr)
+                Float64(read_step->getStorageSnapshot()->storage.totalRows(read_step->getContext())
                     .value_or(std::numeric_limits<UInt64>::max())));
 
             auto analyzed_result = read_step->getAnalyzedResult();
