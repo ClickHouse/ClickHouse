@@ -339,7 +339,7 @@ ENGINE = MergeTree ORDER BY x
 SETTINGS min_bytes_for_wide_part = 0;
 SYSTEM STOP TTL MERGES t_future_ttl_after_modify;
 INSERT INTO t_future_ttl_after_modify (ts, x) VALUES ('2020-01-15 00:00:00', 7), ('2020-02-15 00:00:00', 8);
-CREATE TABLE t_future_ttl_after_modify_saved ENGINE = Memory AS SELECT * FROM t_future_ttl_after_modify;
+CREATE TABLE t_future_ttl_after_modify_saved ENGINE = Memory AS SELECT x, m FROM t_future_ttl_after_modify;
 SET materialize_ttl_after_modify = 0;
 ALTER TABLE t_future_ttl_after_modify MODIFY TTL ts + toIntervalYear(30) GROUP BY x SET x = max(x) + 1;
 SET materialize_ttl_after_modify = 1;
