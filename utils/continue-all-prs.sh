@@ -735,8 +735,21 @@ prepare_worktree_for_task()
     fi
 
     stop_worktree_processes "$wt"
-    git -C "$wt" reset --hard -q HEAD
-    git -C "$wt" checkout --detach -q HEAD
+    if (( SKIP_SUBMODULES )); then
+        # `reset` and `checkout` initialize submodules selected by
+        # `submodule.active`, even with `--no-recurse-submodules`. Restore
+        # only non-gitlink paths, and let `submodule foreach` below restore
+        # submodules that are already initialized.
+        local -a pathspecs=(.)
+        local submodule_path
+        while IFS=$'\t' read -r _ submodule_path; do
+            pathspecs+=(":(exclude)$submodule_path")
+        done < <(git -C "$wt" config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+        git -C "$wt" restore --source=HEAD --staged --worktree -- "${pathspecs[@]}"
+    else
+        git -C "$wt" reset --hard -q HEAD
+        git -C "$wt" checkout --detach -q HEAD
+    fi
     remove_registered_descendants "$wt"
     # `git submodule foreach` visits only initialized submodules. Always clean
     # those existing worktrees: `--skip-submodules` avoids initialization, but

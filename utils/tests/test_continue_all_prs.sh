@@ -85,6 +85,21 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
 [[ -z "$(git -C "$submodule" status --short)" ]]
 [[ "$(git -C "$submodule" rev-parse HEAD)" == "$(git -C "$worker" rev-parse HEAD:contrib/FP16)" ]]
 
+# `submodule update` initializes submodules selected by `submodule.active`.
+# With `--skip-submodules`, an absent matching submodule must stay absent.
+rm -rf "$submodule"
+[[ ! -e "$submodule" ]]
+
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=submodule.active GIT_CONFIG_VALUE_0='path:contrib/FP16' \
+    PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
+    "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key --timeout 1 --once \
+        --skip-submodules --no-status --worktree-base "$worktree_base" --color never > "$scratch/absent-submodule.log" 2>&1
+
+if [[ -e "$submodule" ]]; then
+    echo "Expected --skip-submodules not to initialize $submodule" >&2
+    exit 1
+fi
+
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
 rm -rf "${worktree_base}-0"
