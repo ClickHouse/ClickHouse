@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS t_uuid2_default;
 DROP TABLE IF EXISTS t_uuid2_as_select;
 DROP TABLE IF EXISTS t_uuid2_operator;
 DROP TABLE IF EXISTS t_uuid2_array;
+DROP TABLE IF EXISTS t_uuid2_constant_type_name;
 DROP TABLE IF EXISTS t_uuid2_alter;
 DROP TABLE IF EXISTS t_uuid2_explicit;
 DROP TABLE IF EXISTS t_uuid1_default;
@@ -32,6 +33,10 @@ SELECT 'nested type in the cast literal';
 CREATE TABLE t_uuid2_array ENGINE = Memory AS SELECT CAST([generateUUIDv4()] AS Array(UUID)) AS x;
 SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_array';
 
+SELECT 'constant expression in the type-name argument';
+CREATE TABLE t_uuid2_constant_type_name ENGINE = Memory AS SELECT CAST(generateUUIDv4(), concat('UU', 'ID')) AS x;
+SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = 't_uuid2_constant_type_name';
+
 SELECT 'DEFAULT expression added by ALTER is materialized too';
 CREATE TABLE t_uuid2_alter (k UInt8) ENGINE = MergeTree ORDER BY k;
 ALTER TABLE t_uuid2_alter ADD COLUMN x UUID DEFAULT CAST(generateUUIDv4() AS UUID);
@@ -54,6 +59,7 @@ DROP TABLE t_uuid2_default;
 DROP TABLE t_uuid2_as_select;
 DROP TABLE t_uuid2_operator;
 DROP TABLE t_uuid2_array;
+DROP TABLE t_uuid2_constant_type_name;
 DROP TABLE t_uuid2_alter;
 DROP TABLE t_uuid2_explicit;
 DROP TABLE t_uuid1_default;

@@ -28,14 +28,21 @@ WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v2_tags_uuid');
 DROP TABLE ts_v2_tags_uuid;
 
--- 3. version = 2: a non-UUID id (UInt64) is left untouched.
+-- 3. version = 2: an explicitly requested historical UUID remains UUID.
+CREATE TABLE ts_v2_tags_uuid1 ENGINE = TimeSeries TAGS INNER COLUMNS (id UUID1);
+SELECT 'v2_tags_uuid1', arraySort(groupUniqArray(type)) FROM system.columns
+WHERE database = currentDatabase() AND name = 'id'
+  AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v2_tags_uuid1');
+DROP TABLE ts_v2_tags_uuid1;
+
+-- 4. version = 2: a non-UUID id (UInt64) is left untouched.
 CREATE TABLE ts_v2_uint64 ENGINE = TimeSeries TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, tags));
 SELECT 'v2_uint64', arraySort(groupUniqArray(type)) FROM system.columns
 WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v2_uint64');
 DROP TABLE ts_v2_uint64;
 
--- 4. An explicit `UUID2` id works regardless of the setting.
+-- 5. An explicit `UUID2` id works regardless of the setting.
 SET uuid_type_version = 1;
 CREATE TABLE ts_explicit_uuid2 ENGINE = TimeSeries TAGS INNER COLUMNS (id UUID2);
 SELECT 'explicit_uuid2', arraySort(groupUniqArray(type)) FROM system.columns
@@ -43,14 +50,14 @@ WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_explicit_uuid2');
 DROP TABLE ts_explicit_uuid2;
 
--- 5. version = 1: a bare `UUID` id stays `UUID` (the setting does not change existing behavior).
+-- 6. version = 1: a bare `UUID` id stays `UUID` (the setting does not change existing behavior).
 CREATE TABLE ts_v1_uuid ENGINE = TimeSeries TAGS INNER COLUMNS (id UUID);
 SELECT 'v1_uuid', arraySort(groupUniqArray(type)) FROM system.columns
 WHERE database = currentDatabase() AND name = 'id'
   AND table LIKE '.inner_id.%.' || (SELECT toString(uuid) FROM system.tables WHERE database = currentDatabase() AND name = 'ts_v1_uuid');
 DROP TABLE ts_v1_uuid;
 
--- 6. The auto-generated `id` with a `UUID2` component is a valid, non-zero identifier.
+-- 7. The auto-generated `id` with a `UUID2` component is a valid, non-zero identifier.
 SET uuid_type_version = 2;
 CREATE TABLE ts_insert ENGINE = TimeSeries;
 INSERT INTO ts_insert (metric_name, tags, time_series) VALUES ('http_requests', map('job', 'api'), [(toDateTime64('2020-01-01 00:00:00', 3), 42.0)]);

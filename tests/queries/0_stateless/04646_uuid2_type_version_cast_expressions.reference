@@ -7,6 +7,8 @@ inferred from AS SELECT with the cast operator
 x	UUID2
 nested type in the cast literal
 x	Array(UUID2)
+constant expression in the type-name argument
+x	UUID2
 DEFAULT expression added by ALTER is materialized too
 x	UUID2
 CREATE TABLE default.t_uuid2_alter\n(\n    `k` UInt8,\n    `x` UUID2 DEFAULT CAST(generateUUIDv4(), \'UUID2\')\n)\nENGINE = MergeTree\nORDER BY k\nSETTINGS index_granularity = 8192
