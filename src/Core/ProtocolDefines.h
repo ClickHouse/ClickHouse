@@ -91,11 +91,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// narrowing flag on `UnionStep`, the bucketed-read task parameter name on `ReadFromMergeTree`,
 /// and the in-order aggregation payload on `AggregatingStep`. Only the sort limit has a
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
-/// Version 9 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
+/// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
+/// or `WITH CUBE` can be shipped under `make_distributed_plan`.
+/// Version 10 adds the per-step security-barrier flag that keeps plan optimizations from crossing the
 /// filtering of a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view. An older worker does not read the
 /// flag and would optimize the fragment as if the view were an ordinary subquery, which is exactly the
 /// row disclosure the flag prevents, so the serializer fails closed on a plan that carries a barrier.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -115,7 +117,7 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AG
 /// First query-plan serialization version that carries the per-step security-barrier flag. Used to fail
 /// closed when a plan containing a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view is about to be sent
 /// to a peer that would silently optimize the barrier away.
-static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 9;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SECURITY_BARRIER = 10;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
