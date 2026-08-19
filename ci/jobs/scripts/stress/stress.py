@@ -285,18 +285,21 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if i % 2 == 1:
         join_alg_num = i // 2
-        if join_alg_num % 5 == 0:
+        if join_alg_num % 6 == 0:
             client_options.append("join_algorithm='parallel_hash'")
-        if join_alg_num % 5 == 1:
+        if join_alg_num % 6 == 1:
             client_options.append("join_algorithm='partial_merge'")
-        if join_alg_num % 5 == 2:
+        if join_alg_num % 6 == 2:
             client_options.append("join_algorithm='full_sorting_merge'")
-        if join_alg_num % 5 == 3 and not upgrade_check:
+        if join_alg_num % 6 == 3 and not upgrade_check:
             # Some crashes are not fixed in 23.2 yet, so ignore the setting in Upgrade check
             client_options.append("join_algorithm='grace_hash'")
-        if join_alg_num % 5 == 4:
+        if join_alg_num % 6 == 4:
             client_options.append("join_algorithm='auto'")
             client_options.append("max_rows_in_join=1000")
+        if join_alg_num % 6 == 5 and not upgrade_check:
+            # The previous release may not know this value yet, so ignore the setting in Upgrade check
+            client_options.append("join_algorithm='parallel_full_sorting_merge'")
 
     # Rarely enable the query cache; independently, half the time also pin the
     # `*_overflow_mode` settings to 'throw'.
