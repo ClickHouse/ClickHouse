@@ -1215,3 +1215,38 @@ def test_url_database_file_scheme(node):
     assert node.query("EXISTS TABLE test_url_db.`no_such_file.csv`").strip() == "0"
 
     node.query("DROP DATABASE test_url_db")
+
+
+@pytest.mark.parametrize("node", [node_local, node_s3], ids=["local", "s3"])
+def test_url_database_file_scheme_does_not_probe_without_file_grant(node):
+    """A user without the `FILE` source grant must not learn whether a policy-backed
+    `file://` target exists through `EXISTS TABLE` or a different error from `SELECT`."""
+    user = "user_files_policy_no_file_grant"
+    database = "test_url_access_db"
+    filename = "url_access.csv"
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"DROP DATABASE IF EXISTS {database}")
+    node.query(
+        f"INSERT INTO FUNCTION file('{filename}', 'CSV', 'x UInt64') SELECT 42 "
+        "SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    node.query(f"CREATE DATABASE {database} ENGINE = URL('file://')")
+    node.query(f"CREATE USER {user}")
+    node.query(f"GRANT SHOW TABLES ON {database}.* TO {user}")
+
+    try:
+        assert node.query(f"EXISTS TABLE {database}.`{filename}`", user=user).strip() == "1"
+        assert node.query(f"EXISTS TABLE {database}.`missing.csv`", user=user).strip() == "1"
+
+        existing_error = node.query_and_get_error(
+            f"SELECT * FROM {database}.`{filename}`", user=user
+        )
+        missing_error = node.query_and_get_error(
+            f"SELECT * FROM {database}.`missing.csv`", user=user
+        )
+        assert "ACCESS_DENIED" in existing_error, existing_error
+        assert "ACCESS_DENIED" in missing_error, missing_error
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(f"DROP DATABASE IF EXISTS {database}")

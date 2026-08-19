@@ -163,14 +163,16 @@ public:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     static std::pair<ColumnsDescription, String> getTableStructureAndFormatFromFile(
         const std::vector<String> & paths,
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     static SchemaCache & getSchemaCache(const ContextPtr & context);
 
@@ -192,7 +194,8 @@ private:
         const String & compression_method,
         const std::optional<FormatSettings> & format_settings,
         const ContextPtr & context,
-        const std::optional<ArchiveInfo> & archive_info = std::nullopt);
+        const std::optional<ArchiveInfo> & archive_info = std::nullopt,
+        VolumePtr user_files_volume = {});
 
     void setStorageMetadata(CommonArguments args);
 

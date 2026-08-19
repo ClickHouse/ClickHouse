@@ -304,6 +304,15 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (containsGlobs(path))
         return true;
 
+    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
+    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
+    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
+    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
+    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
+    /// answers what it answers for a remote URL, which is not probed either.
+    if (!isFileReadGranted(context_))
+        return true;
+
     /// When `user_files_policy` is configured, `fs::exists` only checks the local filesystem
     /// and would reject valid paths that exist on the configured `IDisk`. Route the existence
     /// check through `IDisk`, mirroring `DatabaseFilesystem::checkTableFilePath`.
@@ -338,15 +347,6 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     /// whether such a file exists through the error message, claim the table and let the `file`
     /// engine report the access error.
     if (!is_local && !weaklyCanonicalPathStartsWith(path, context_->getUserFilesPath()))
-        return true;
-
-    /// The result of this probe is reported to the user (`EXISTS TABLE` returns it, and the
-    /// resolution of a table reports `FILE_DOESNT_EXIST` instead of `ACCESS_DENIED`), so it must
-    /// not be performed without the read source grant: `EXISTS TABLE` requires only `SHOW TABLES`,
-    /// which would otherwise turn a `URL` database into an oracle for the contents of `user_files`.
-    /// Claim the table, as above: a resolution of it fails with the access error, and `EXISTS`
-    /// answers what it answers for a remote URL, which is not probed either.
-    if (!isFileReadGranted(context_))
         return true;
 
     if (!fs::exists(path))

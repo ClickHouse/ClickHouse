@@ -1209,12 +1209,14 @@ namespace
             std::optional<String> format_,
             const String & compression_method_,
             const std::optional<FormatSettings> & format_settings_,
-            const ContextPtr & context_)
+            const ContextPtr & context_,
+            VolumePtr user_files_volume_)
             : WithContext(context_)
             , paths(paths_)
             , format(std::move(format_))
             , compression_method(compression_method_)
             , format_settings(format_settings_)
+            , user_files_volume(std::move(user_files_volume_))
         {
         }
 
@@ -1249,7 +1251,6 @@ namespace
             }
 
             String path;
-            const auto user_files_volume = getContext()->getUserFilesVolume();
             const bool skip_empty = getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files];
 
             while (true)
@@ -1347,7 +1348,7 @@ namespace
             chassert(current_index > 0 && current_index <= paths.size());
             auto path = paths[current_index - 1];
 
-            if (auto user_files_volume = getContext()->getUserFilesVolume())
+            if (user_files_volume)
             {
                 auto [disk, relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
                 if (!disk)
@@ -1369,7 +1370,6 @@ namespace
 
             /// Check if the cache contains one of the paths.
             auto & schema_cache = StorageFile::getSchemaCache(context);
-            const auto user_files_volume = context->getUserFilesVolume();
             struct stat file_stat{};
             for (const auto & path : paths_)
             {
@@ -1429,6 +1429,7 @@ namespace
         std::optional<String> format;
         String compression_method;
         const std::optional<FormatSettings> & format_settings;
+        VolumePtr user_files_volume;
     };
 
     struct ReadBufferFromArchiveIterator : public IReadBufferIterator, WithContext
@@ -1806,7 +1807,8 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     const String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const std::optional<ArchiveInfo> & archive_info)
+    const std::optional<ArchiveInfo> & archive_info,
+    VolumePtr user_files_volume)
 {
     if (format == "Distributed")
     {
@@ -1841,7 +1843,7 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
         return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
     }
 
-    ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context);
+    ReadBufferFromFileIterator read_buffer_iterator(paths, format, compression_method, format_settings, context, std::move(user_files_volume));
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
 
@@ -1854,9 +1856,10 @@ ColumnsDescription StorageFile::getTableStructureFromFile(
     const DB::String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const std::optional<ArchiveInfo> & archive_info)
+    const std::optional<ArchiveInfo> & archive_info,
+    VolumePtr user_files_volume)
 {
-    return getTableStructureAndFormatFromFileImpl(format, paths, compression_method, format_settings, context, archive_info).first;
+    return getTableStructureAndFormatFromFileImpl(format, paths, compression_method, format_settings, context, archive_info, std::move(user_files_volume)).first;
 }
 
 std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFromFile(
@@ -1864,9 +1867,10 @@ std::pair<ColumnsDescription, String> StorageFile::getTableStructureAndFormatFro
     const DB::String & compression_method,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context,
-    const std::optional<ArchiveInfo> & archive_info)
+    const std::optional<ArchiveInfo> & archive_info,
+    VolumePtr user_files_volume)
 {
-    return getTableStructureAndFormatFromFileImpl(std::nullopt, paths, compression_method, format_settings, context, archive_info);
+    return getTableStructureAndFormatFromFileImpl(std::nullopt, paths, compression_method, format_settings, context, archive_info, std::move(user_files_volume));
 }
 
 bool StorageFile::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -2022,9 +2026,9 @@ void StorageFile::setStorageMetadata(CommonArguments args)
         else
         {
             if (format_name == "auto")
-                std::tie(columns, format_name) = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info);
+                std::tie(columns, format_name) = getTableStructureAndFormatFromFile(paths, compression_method, format_settings, args.getContext(), archive_info, user_files_volume);
             else
-                columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext(), archive_info);
+                columns = getTableStructureFromFile(format_name, paths, compression_method, format_settings, args.getContext(), archive_info, user_files_volume);
 
             if (!args.columns.empty() && args.columns != columns)
                 throw Exception(ErrorCodes::INCOMPATIBLE_COLUMNS, "Table structure and file structure are different");

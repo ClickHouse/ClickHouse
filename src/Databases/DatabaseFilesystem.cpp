@@ -114,7 +114,6 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
 {
     /// If run in Local mode, no need for path checking.
     bool check_path = context_->getApplicationType() != Context::ApplicationType::LOCAL;
-    const auto user_files_path = context_->getUserFilesPath();
     auto user_files_volume = check_path ? context_->getUserFilesVolume() : VolumePtr{};
 
     /// When `user_files_policy` is configured with a non-local disk (e.g. `s3_plain`),
