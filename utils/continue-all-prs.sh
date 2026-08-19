@@ -604,10 +604,28 @@ ensure_worktree()
     git -C "$MAIN_REPO" worktree add --no-checkout --detach "$canonical_wt" HEAD
 
     if (( SKIP_SUBMODULES )); then
-        git -C "$canonical_wt" -c checkout.workers=0 -c core.fsync=none -c gc.auto=0 checkout -q -f HEAD -- .
+        restore_non_submodule_paths "$canonical_wt"
     else
         setup_worktree_submodules "$canonical_wt"
     fi
+}
+
+# Restore the superproject without checking out gitlinks: Git can initialize
+# submodules selected by `submodule.active` even when recursion is disabled.
+restore_non_submodule_paths()
+{
+    local wt="$1"
+    local -a pathspecs=(.)
+    local submodule_path
+
+    while IFS=$'\t' read -r _ submodule_path; do
+        pathspecs+=(":(exclude)$submodule_path")
+    done < <(git -C "$wt" config --file .gitmodules --get-regexp '^submodule\..*\.path$')
+
+    # Reset all index entries, including gitlinks, before restoring the
+    # worktree. Index-only restoration does not initialize submodules.
+    git -C "$wt" restore --source=HEAD --staged -- .
+    git -C "$wt" restore --source=HEAD --worktree -- "${pathspecs[@]}"
 }
 
 # Return the available space, in KiB, on the filesystem containing the worker
@@ -736,16 +754,7 @@ prepare_worktree_for_task()
 
     stop_worktree_processes "$wt"
     if (( SKIP_SUBMODULES )); then
-        # `reset` and `checkout` initialize submodules selected by
-        # `submodule.active`, even with `--no-recurse-submodules`. Restore
-        # only non-gitlink paths, and let `submodule foreach` below restore
-        # submodules that are already initialized.
-        local -a pathspecs=(.)
-        local submodule_path
-        while IFS=$'\t' read -r _ submodule_path; do
-            pathspecs+=(":(exclude)$submodule_path")
-        done < <(git -C "$wt" config --file .gitmodules --get-regexp '^submodule\..*\.path$')
-        git -C "$wt" restore --source=HEAD --staged --worktree -- "${pathspecs[@]}"
+        restore_non_submodule_paths "$wt"
     else
         git -C "$wt" reset --hard -q HEAD
         git -C "$wt" checkout --detach -q HEAD

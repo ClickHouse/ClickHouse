@@ -74,8 +74,10 @@ worker="${worktree_base}-0"
 submodule="$worker/contrib/FP16"
 git clone --quiet --shared "$repo/contrib/FP16" "$submodule"
 git -C "$submodule" checkout --detach --quiet HEAD~1
+git -C "$worker" add -- contrib/FP16
 printf 'dirty\n' > "$submodule/continue-all-prs-test-untracked"
 [[ -n "$(git -C "$submodule" status --short)" ]]
+[[ -n "$(git -C "$worker" diff --cached -- contrib/FP16)" ]]
 
 PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
     "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key --timeout 1 --once \
@@ -84,6 +86,10 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
 [[ -z "$(git -C "$worker" status --short)" ]]
 [[ -z "$(git -C "$submodule" status --short)" ]]
 [[ "$(git -C "$submodule" rev-parse HEAD)" == "$(git -C "$worker" rev-parse HEAD:contrib/FP16)" ]]
+
+# A staged gitlink from a prior task must not leak through `--skip-submodules`
+# cleanup, even though the submodule itself is intentionally not checked out.
+[[ -z "$(git -C "$worker" status --short)" ]]
 
 # `submodule update` initializes submodules selected by `submodule.active`.
 # With `--skip-submodules`, an absent matching submodule must stay absent.
@@ -99,6 +105,21 @@ if [[ -e "$submodule" ]]; then
     echo "Expected --skip-submodules not to initialize $submodule" >&2
     exit 1
 fi
+
+# The first creation of a worker must also leave active, absent submodules
+# absent. This exercises `ensure_worktree`, before reusable-worker cleanup.
+fresh_worktree_base="$scratch/fresh-worktree"
+fresh_submodule="${fresh_worktree_base}-0/contrib/FP16"
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=submodule.active GIT_CONFIG_VALUE_0='path:contrib/FP16' \
+    PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" \
+    "$repo/utils/continue-all-prs.sh" --agent codex --api-key test-key --timeout 1 --once \
+        --skip-submodules --no-status --worktree-base "$fresh_worktree_base" --color never > "$scratch/fresh-absent-submodule.log" 2>&1
+
+if [[ -e "$fresh_submodule" ]]; then
+    echo "Expected first --skip-submodules worker not to initialize $fresh_submodule" >&2
+    exit 1
+fi
+git -C "$repo" worktree remove --force "${fresh_worktree_base}-0"
 
 relative_worktree_base=${worktree_base#"$repo/"}
 git -C "$repo" worktree remove --force "${worktree_base}-0" 2>/dev/null || true
