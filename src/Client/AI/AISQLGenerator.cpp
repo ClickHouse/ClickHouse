@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
 extern const int NETWORK_ERROR;
 }
 
@@ -80,7 +79,7 @@ std::string AISQLGenerator::generateSQL(const std::string & prompt)
 
         if (!result)
         {
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "AI generation failed: {}", result.error_message());
+            throw Exception(ErrorCodes::NETWORK_ERROR, "AI generation failed: {}", result.error_message());
         }
 
         display.showSeparator();
