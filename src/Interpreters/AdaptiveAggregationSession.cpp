@@ -42,7 +42,7 @@ AdaptiveAggregationSession::ThawSampler::fold(const PaddedPODArray<UInt64> & has
         staged_records,
         staged_bytes,
         repeat,
-        static_cast<size_t>((repeat - 1.0) * static_cast<double>(staged_bytes / staged_records))};
+        static_cast<size_t>((repeat - 1.0) * (static_cast<double>(staged_bytes) / static_cast<double>(staged_records)))};
 }
 
 void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & chunk)
