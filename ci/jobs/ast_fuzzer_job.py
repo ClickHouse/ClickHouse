@@ -361,8 +361,10 @@ def run_fuzz_job(check_name: str):
     if not buzzhouse:
         if is_old_compatibility:
             # The minimum version is 24.3 because that's when enable_analyzer
-            # became enabled by default, and the fuzzer has a readonly constraint
-            # on enable_analyzer to avoid wasting cycles on the old interpreter.
+            # became enabled by default, and the fuzzer profile constrains
+            # enable_analyzer to >= 1 to avoid wasting cycles on the old
+            # interpreter. An older compatibility version would revert the
+            # setting instead of tripping the constraint.
             compatibility_setting = "24.3"
         elif is_targeted:
             compatibility_setting = None
