@@ -638,24 +638,21 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         allow_niladic_functions);
 
     /// The projection name of the whole `UNIQUE` predicate must be stable: it must not depend on the
-    /// boolean result, and it must be identical in `only_analyze` and execution modes. A distributed
-    /// query builds the initiator header via `only_analyze` (the predicate folds to a placeholder
-    /// value below) while the shards build their header by executing the predicate (it folds to the
-    /// real `0`/`1` value). If the projection name were the folded constant's string representation,
-    /// the two headers would differ only in the column name (`0` vs `1`) and the query would fail
-    /// with "Block structure mismatch in ... stream: different columns". Name the predicate like
-    /// every other function, from the rewritten subquery's projection name, so both paths agree —
-    /// this mirrors how a scalar subquery keeps a stable `_subquery_N` name across both paths.
-    auto unique_projection_name = calculateFunctionProjectionName(
-        function_node_ptr, {} /*parameters_projection_names*/, unique_subquery_projection_names);
+    /// boolean result or on synthetic scalar-subquery numbers. The rewritten subquery can be cloned
+    /// while a view is analyzed, assigning it a different `_subquery_N` name and making an enclosing
+    /// parametric aggregate look up a non-existent column. Keep the internal predicate name instead;
+    /// it is identical in `only_analyze` and execution modes.
+    auto unique_projection_name = function_node_ptr->getFunctionName();
 
-    /// Table function and parameterized view arguments are resolved into a storage during
-    /// analysis (its header is needed), so they require real argument values even in
-    /// only_analyze mode — the same contract `evaluateScalarSubqueryIfNeeded` implements for
-    /// every scalar subquery. Fall through to real execution below in these contexts, e.g.
-    /// `EXPLAIN SELECT * FROM numbers(UNIQUE(SELECT number FROM numbers(3)))`.
+    /// Table function, parameterized view, and constant-expression arguments need their actual
+    /// values during analysis. They configure a storage or the query structure itself, so use
+    /// the same evaluation contract as scalar subqueries even in only_analyze mode. This covers,
+    /// for example, `EXPLAIN SELECT * FROM numbers(UNIQUE(SELECT number FROM numbers(3)))` and
+    /// `topK(UNIQUE(SELECT number FROM numbers(3)))(number)`.
     const bool analysis_needs_real_value
-        = table_function_arguments_in_resolve_process || parameterized_view_arguments_in_resolve_process;
+        = table_function_arguments_in_resolve_process
+        || parameterized_view_arguments_in_resolve_process
+        || constant_expression_in_resolve_process;
 
     if (only_analyze && !analysis_needs_real_value)
     {
@@ -673,40 +670,19 @@ ProjectionNames QueryAnalyzer::resolveUniquePredicate(
         /// dry-run path such as `CREATE VIEW v AS SELECT UNIQUE(SELECT number FROM numbers(3))`
         /// would fail even though the same `SELECT` executes normally.
         auto placeholder_column = ColumnUInt8::create();
-        placeholder_column->getData().push_back(static_cast<UInt8>(0));
+        /// Use a truthy value for the placeholder. While the `materialize` wrapper below
+        /// prevents normal constant folding, some only-analyze consumers execute projection
+        /// actions while constructing a sample block. A false placeholder could then make a
+        /// valid view definition such as `intDiv(1, UNIQUE(...))` fail validation.
+        placeholder_column->getData().push_back(static_cast<UInt8>(1));
         ConstantValue placeholder_value(ColumnConst::create(std::move(placeholder_column), 1), std::make_shared<DataTypeUInt8>());
         auto placeholder_const_node = std::make_shared<ConstantNode>(std::move(placeholder_value), new_unique_subquery);
 
-        /// Constant-only contexts (LIMIT/OFFSET, window frame offsets, WITH FILL) reject
-        /// anything but a plain `ConstantNode` at analysis time, so the `materialize` wrapper
-        /// below would turn a valid query such as
-        /// `EXPLAIN SELECT 1 LIMIT UNIQUE((SELECT number FROM numbers(3)))`
-        /// into "LIMIT expression must be constant". The wrapper exists to hide the fabricated
-        /// placeholder value from outer expressions, but in these contexts the value is consumed
-        /// by the analyzed plan itself and never observable by an outer expression, so a plain
-        /// constant is both required and sufficient.
-        if (constant_expression_in_resolve_process)
-        {
-            node = std::move(placeholder_const_node);
-            return {unique_projection_name};
-        }
-
-        /// The placeholder value is fabricated, so it must not be observable by outer constant
-        /// folding or branch pruning: `intDiv(1, UNIQUE(...))` would fold to `intDiv(1, 0)` and
-        /// throw during `CREATE VIEW` validation even though the executed query is valid, and a
-        /// conditional such as `if(UNIQUE(...), a, b)` could prune the branch that actually
-        /// executes. Wrap the constant in `materialize`: it is not suitable for constant folding
-        /// AND it breaks constness, so outer value-sensitive functions run over the zero rows of
-        /// the `only_analyze` sample block instead of evaluating the fake boolean. An identity
-        /// wrapper such as `__scalarSubqueryResult` would not be enough: it forwards the constant
-        /// column, and executing the projection actions over the sample block would still compute
-        /// e.g. `intDiv` on the fabricated constant and throw. The wrapper keeps the correct
-        /// `UInt8` result type, so analyze-time and execute-time headers still agree.
-        auto placeholder_wrapper_node = std::make_shared<FunctionNode>("materialize");
-        placeholder_wrapper_node->getArguments().getNodes().push_back(std::move(placeholder_const_node));
-        auto placeholder_wrapper_function = FunctionFactory::instance().get("materialize", scope.context);
-        placeholder_wrapper_node->resolveAsFunction(placeholder_wrapper_function->build(placeholder_wrapper_node->getArgumentColumns()));
-        node = std::move(placeholder_wrapper_node);
+        /// Keep the placeholder constant. `materialize` turns it into the default value while
+        /// sample-block actions are built, which makes `CREATE VIEW ... intDiv(1, UNIQUE(...))`
+        /// fail analysis with division by zero. The original query is retained for execution, so
+        /// this value is used only while deriving the result type and header.
+        node = std::move(placeholder_const_node);
         return {unique_projection_name};
     }
 

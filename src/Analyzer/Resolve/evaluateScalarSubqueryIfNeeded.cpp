@@ -106,7 +106,8 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
     /// or a default (empty) value substituted for a parameterized view parameter.
     const bool only_analyze_subquery = only_analyze
         && !table_function_arguments_in_resolve_process
-        && !parameterized_view_arguments_in_resolve_process;
+        && !parameterized_view_arguments_in_resolve_process
+        && !constant_expression_in_resolve_process;
 
     Block scalar_block;
 
