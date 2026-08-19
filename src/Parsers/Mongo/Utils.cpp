@@ -1,5 +1,6 @@
 #include <Parsers/Mongo/Utils.h>
 
+#include <charconv>
 #include <optional>
 #include <string>
 
@@ -367,35 +368,28 @@ std::optional<Int64> MongoQueryKeyNameExtractor::extractInt(const char * begin, 
         return std::nullopt;
     }
     auto start_position = *maybe_start_position;
-    std::string str_representation;
     /// The end of the text bounds the walk: an unclosed `(` would otherwise read past it.
-    if (begin + start_position != end && begin[start_position] == '-')
-    {
-        str_representation.push_back(begin[start_position]);
-        ++start_position;
-    }
-
+    const char * value_begin = begin + start_position;
     while (begin + start_position != end && begin[start_position] != ')')
     {
-        if (begin[start_position] < '0' || begin[start_position] > '9')
+        if ((begin[start_position] < '0' || begin[start_position] > '9') && (start_position != *maybe_start_position || begin[start_position] != '-'))
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : pattern {} should contain only numbers", pattern);
         }
-        str_representation.push_back(begin[start_position]);
         ++start_position;
     }
     if (begin + start_position == end)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is not closed", pattern);
-    if (str_representation.empty() || str_representation == "-")
+    const char * value_end = begin + start_position;
+    if (value_begin == value_end || (value_end == value_begin + 1 && *value_begin == '-'))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' has no argument", pattern);
-    try
-    {
-        return std::stoll(str_representation);
-    }
-    catch (const std::out_of_range &)
+    Int64 result;
+    const auto [parse_end, error] = std::from_chars(value_begin, value_end, result);
+    if (error != std::errc{} || parse_end != value_end)
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect query : the '{}' is out of range", pattern);
     }
+    return result;
 }
 
 std::optional<std::string> MongoQueryKeyNameExtractor::extractString(const char * begin, const char * end)
