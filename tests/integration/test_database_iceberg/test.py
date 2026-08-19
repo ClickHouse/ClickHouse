@@ -2180,3 +2180,67 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
     assert "table_x" in result
 
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
+
+
+def test_incremental_refreshable_mv_rest_catalog(started_cluster):
+    # Exactly-once incremental refreshable MV writing MergeTree -> a REST-catalog Iceberg table.
+    # The refresh appends through the catalog's compare-and-swap commit and embeds the advanced cursor
+    # in the append snapshot's summary, so data and cursor commit together. The MV lives in an Atomic
+    # database (no Keeper coordination znode), so a restart between rounds proves the cursor was read
+    # back from the catalog: round 2 appends only the new rows (exactly-once), not the whole source.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"irmv_ns_{uid}"
+    tgt_table = f"irmv_tgt_{uid}"
+    src = f"irmv_src_{uid}"
+    mv = f"irmv_mv_{uid}"
+    tgt = f"{CATALOG_NAME}.`{namespace}.{tgt_table}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+
+    # MergeTree source with the block-number/offset columns the streaming cursor reads.
+    node.query(
+        f"""
+        CREATE TABLE {src} (k Int64)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            add_minmax_index_for_block_number_column = 1,
+            add_minmax_index_for_block_offset_column = 1,
+            part_minmax_index_columns = 'with_block_number_offset'
+        """
+    )
+
+    # REFRESH EVERY 10 YEAR + EMPTY: no automatic refresh; every refresh below is triggered manually.
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR SETTINGS refresh_incremental = 1 APPEND
+            TO {tgt} EMPTY
+            AS SELECT k FROM {src}
+        """
+    )
+
+    # Round 1: commit rows 0..4 and refresh. The advanced cursor is committed inside the catalog snapshot.
+    node.query(f"INSERT INTO {src} SELECT number FROM numbers(5)")
+    node.query(f"SYSTEM REFRESH VIEW {mv}")
+    node.query(f"SYSTEM WAIT VIEW {mv}")
+    assert node.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == "5\t5"
+
+    # Restart wipes in-memory RefreshTask state; only the cursor persisted in the catalog snapshot
+    # summary can let the next refresh resume instead of re-reading from the beginning.
+    node.restart_clickhouse()
+
+    # Round 2: commit rows 5..9. If the cursor survived (catalog), only the new rows are appended ->
+    # 10 rows, 10 distinct (exactly-once). If it were lost, round 2 re-reads all 10 -> 15 rows.
+    node.query(f"INSERT INTO {src} SELECT number FROM numbers(5, 5)")
+    node.query(f"SYSTEM REFRESH VIEW {mv}")
+    node.query(f"SYSTEM WAIT VIEW {mv}")
+    assert node.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == "10\t10"
+
+    node.query(f"DROP TABLE {mv}")
+    node.query(f"DROP TABLE {src}")
+    node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
