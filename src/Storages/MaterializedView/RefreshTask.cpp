@@ -854,8 +854,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
                     /// Finished (same as the is_shutdown block after readZnodesIfNeeded) so the
                     /// reconciliation below actually clears `refresh_running` and `/running`.
                     chassert(execution.state != ExecutionState::State::Running);
-                    if (execution.state == ExecutionState::State::Requested
-                        || execution.state == ExecutionState::State::WaitingForResource)
+                    if (execution.state == ExecutionState::State::Requested)
                     {
                         execution.znode.last_attempt_error = "shutdown";
                         execution.znode.refresh_running = false;
@@ -989,8 +988,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
             if (is_shutdown)
             {
                 chassert(execution.state != ExecutionState::State::Running);
-                if (execution.state == ExecutionState::State::Requested
-                    || execution.state == ExecutionState::State::WaitingForResource)
+                if (execution.state == ExecutionState::State::Requested)
                 {
                     /// execution_task was deactivated by shutdown before refresh started.
                     execution.znode.last_attempt_error = "shutdown";
