@@ -74,6 +74,8 @@ DROP TABLE test_03562_empty;
 SELECT 'Test late table filters in count subqueries fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM test_03562) > 0)
     SETTINGS additional_table_filters = {'test_03562': 'throwIf(1) = 0'}; -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT 1 OR ((SELECT count() FROM test_03562
+    SETTINGS additional_table_filters = {'test_03562': 'throwIf(1) = 0'}) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 
 SELECT 'Test nested scalars in count subqueries fall back to normal analysis';
 SELECT 1 OR ((SELECT count() FROM numbers(assumeNotNull((SELECT 3)))) > 0);

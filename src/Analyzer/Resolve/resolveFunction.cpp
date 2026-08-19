@@ -396,11 +396,16 @@ bool isViewBackedOrRemoteSource(const QueryTreeNodePtr & join_tree, const Identi
     return table->getStorage()->isView() || table->getStorage()->isRemote();
 }
 
-bool hasLateAttachedTableFilter(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+bool hasLateAttachedTableFilter(
+    const QueryTreeNodePtr & join_tree,
+    const ContextPtr & query_context,
+    const IdentifierResolveScope & scope)
 {
     /// Additional filters are parsed only by the planner, after the speculative type-only
-    /// analysis. Any configured filter may affect the selected table, so fail closed.
-    if (!scope.context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+    /// analysis. They can be configured by either the outer query or the scalar subquery.
+    /// Any configured filter may affect the selected table, so fail closed.
+    if (!scope.context->getSettingsRef()[Setting::additional_table_filters].value.empty()
+        || !query_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
         return true;
 
     QueryTreeNodePtr resolved_table = join_tree;
@@ -435,7 +440,7 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
             && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
         || isViewBackedOrRemoteSource(join_tree, scope)
-        || hasLateAttachedTableFilter(join_tree, scope)
+        || hasLateAttachedTableFilter(join_tree, query.getContext(), scope)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
         || query.hasPrewhere()
