@@ -42,24 +42,24 @@ struct AggregationEntry
     bool shouldBeUpdated(const AggregationEntry & new_entry) const
     {
         return new_entry.sum_of_sizes < sum_of_sizes / 2 || sum_of_sizes < new_entry.sum_of_sizes || new_entry.median_size < median_size / 2
-            || median_size < new_entry.median_size || new_entry.adaptive_staging_repeat_dominated != adaptive_staging_repeat_dominated;
+            || median_size < new_entry.median_size || new_entry.adaptive_staging_wasteful != adaptive_staging_wasteful;
     }
 
     std::string dump() const
     {
         return fmt::format(
-            "sum_of_sizes={}, median_size={}, adaptive_staging_repeat_dominated={}",
+            "sum_of_sizes={}, median_size={}, adaptive_staging_wasteful={}",
             sum_of_sizes,
             median_size,
-            adaptive_staging_repeat_dominated);
+            adaptive_staging_wasteful);
     }
 
     size_t sum_of_sizes = 0; // used to determine if it's better to convert aggregation to two-level from the beginning
     size_t median_size = 0; // roughly the size we're going to preallocate on each thread
-    /// Whether the adaptive aggregator measured the query's staged stream as repeat-dominated and
+    /// Whether the adaptive aggregator measured the query's staged stream as wasteful and
     /// thawed: freezing cannot pay for such a query, so later runs do not engage it at all. Runs
     /// without an adaptive measurement carry the stored verdict over (see `updateStatistics`).
-    bool adaptive_staging_repeat_dominated = false;
+    bool adaptive_staging_wasteful = false;
 };
 
 struct HashJoinEntry

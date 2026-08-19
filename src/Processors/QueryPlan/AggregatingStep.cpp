@@ -27,6 +27,7 @@
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/AggregatingInOrderTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
+#include <Processors/Transforms/AdaptiveAggregationMergeTransform.h>
 #include <Processors/Transforms/BufferedShardByHashTransform.h>
 #include <Processors/Transforms/CopyTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -65,6 +66,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_parallel_single_level_merge;
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
+    extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
     extern const QueryPlanSerializationSettingsBool serialize_string_in_memory_with_zero_byte;
     extern const QueryPlanSerializationSettingsBool enable_packed_string_keys_in_aggregation;
 }
@@ -413,15 +415,15 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     if (params.group_by_two_level_threshold == 0 && params.group_by_two_level_threshold_bytes == 0)
         return "two-level aggregation is disabled";
 
-    /// A prior run measured the query's staged stream as repeat-dominated and thawed: freezing
+    /// A prior run measured the query's staged stream as wasteful and thawed: freezing
     /// cannot pay for this query, so do not engage it again. The verdict lives in the hash-table
     /// statistics; a run without it takes the ordinary path with the statistics-driven
     /// initialization, exactly as if the feature were off.
     if (params.stats_collecting_params.isCollectionAndUseEnabled())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
-        if (hint && hint->adaptive_staging_repeat_dominated)
-            return "a prior run measured the staged stream as repeat-dominated";
+        if (hint && hint->adaptive_staging_wasteful)
+            return "a prior run measured the staged stream as wasteful";
     }
 
     /// TODO (nihalzp): Support LowCardinality and Nullable keys.
@@ -833,6 +835,23 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     dataflow_cache_updater);
             });
 
+        if (use_adaptive_aggregator)
+        {
+            /// The staged-chunk store: the producers' staged chunks travel their output ports
+            /// into it, and it assembles the merge once every producer finished (see
+            /// `AdaptiveAggregationMergeTransform`). The admission rejected bucket-ordered
+            /// output, so the merged single stream resizes exactly as the non-adaptive path.
+            chassert(!should_produce_results_in_order_of_bucket_number && !skip_merging);
+            pipeline.addTransform(std::make_shared<AdaptiveAggregationMergeTransform>(
+                pipeline.getSharedHeader(),
+                pipeline.getNumStreams(),
+                transform_params,
+                many_data,
+                new_merge_threads,
+                new_temporary_data_merge_threads,
+                dataflow_cache_updater));
+        }
+
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
 
         aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
@@ -861,6 +880,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+
+    if (params.bucket_top_k)
+        settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
+                     << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -868,6 +891,8 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (params.bucket_top_k)
+        map.add("Bucket Top-K", params.bucket_top_k);
     map.add("Skip merging", skip_merging);
 }
 
@@ -1113,6 +1138,8 @@ void AggregatingStep::serializeSettings(QueryPlanSerializationSettings & setting
     {
         settings[QueryPlanSerializationSetting::enable_adaptive_aggregator] = params.enable_adaptive_aggregator;
         settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold] = params.adaptive_aggregator_freeze_threshold;
+        settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]
+            = params.adaptive_aggregator_freeze_threshold_bytes;
     }
 
     /// Both values, every version: a peer predating the name serializes String keys the way `false` does, so
@@ -1317,7 +1344,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::enable_parallel_single_level_merge],
         ctx.settings[QueryPlanSerializationSetting::enable_packed_string_keys_in_aggregation],
         ctx.settings[QueryPlanSerializationSetting::enable_adaptive_aggregator],
-        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold]};
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
+        ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes]};
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),

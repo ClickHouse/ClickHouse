@@ -1,4 +1,5 @@
 #pragma once
+#include <deque>
 #include <optional>
 
 #include <Compression/CompressedReadBuffer.h>
@@ -90,6 +91,7 @@ struct ManyAggregatedData
 using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams>;
 using ManyAggregatedDataPtr = std::shared_ptr<ManyAggregatedData>;
 
+
 /** Aggregates the stream of blocks using the specified key columns and aggregate functions.
   * Columns with aggregate functions adds to the end of the block.
   * If final = false, the aggregate functions are not finalized, that is, they are not replaced by their value, but contain an intermediate state of calculations.
@@ -135,7 +137,6 @@ protected:
     void consume(Chunk chunk);
 
 private:
-    size_t getGeneratingStepGroup() const;
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;
@@ -188,8 +189,41 @@ private:
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
+    /// The adaptive path: sealed staged chunks waiting to be pushed through the output port
+    /// to the staged-chunk store (see `AdaptiveAggregationMergeTransform`), and the flag that
+    /// this producer ran its finish work (flush, own spill, countdown). On this path the
+    /// transform never assembles or forwards the merge - the store does.
+    std::deque<Chunk> staged_outbox;
+    bool adaptive_producer_finished = false;
+
+    Status prepareAdaptive();
+    void finishAdaptiveProducer();
+    void logAggregatedAndSpillOwnVariants();
+
     void initGenerate();
 };
+
+/// The merge-assembly tail of the aggregation finish, shared by the last-finishing
+/// AggregatingTransform (non-adaptive path) and the adaptive staged-chunk store (with the
+/// engaged session passed in): chooses the in-memory or the external merge and creates its
+/// processors. `tmp_files` keeps the spilled files of an external merge alive for the sources
+/// reading them.
+Processors assembleAggregatedMerge(
+    const AggregatingTransformParamsPtr & params,
+    const ManyAggregatedDataPtr & many_data,
+    AdaptiveAggregationSessionPtr adaptive_session,
+    const RuntimeDataflowStatisticsCacheUpdaterPtr & updater,
+    size_t max_threads,
+    size_t temporary_data_merge_threads,
+    bool should_produce_results_in_order_of_bucket_number,
+    bool skip_merging,
+    const LoggerPtr & log,
+    std::list<TemporaryBlockStreamHolder> & tmp_files);
+
+/// The processors an aggregation expander creates perform the merge / final part of the
+/// aggregation. They belong to the corresponding generating stage, not to the expander's own
+/// (partial) aggregation stage, which is why its group maps to the generating counterpart.
+size_t generatingStepGroupOf(const IProcessor & expander);
 
 Chunk convertToChunk(const Block & block);
 
