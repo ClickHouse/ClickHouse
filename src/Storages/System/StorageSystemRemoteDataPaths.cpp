@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemRemoteDataPaths.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -37,7 +36,7 @@ namespace ErrorCodes
 }
 
 
-class SystemRemoteDataPathsSource final : public ISource
+class SystemRemoteDataPathsSource : public ISource
 {
 public:
     SystemRemoteDataPathsSource(
@@ -445,6 +444,3 @@ Chunk SystemRemoteDataPathsSource::generate()
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemRemoteDataPaths) }

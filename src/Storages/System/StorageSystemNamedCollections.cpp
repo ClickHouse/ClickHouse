@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemNamedCollections.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <base/EnumReflection.h>
 #include <Columns/ColumnArray.h>
@@ -84,6 +83,3 @@ void StorageSystemNamedCollections::fillData(MutableColumns & res_columns, Conte
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemNamedCollections) }

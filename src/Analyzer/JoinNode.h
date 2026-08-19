@@ -10,7 +10,6 @@
 #include <Interpreters/StorageID.h>
 
 #include <Analyzer/IQueryTreeNode.h>
-#include <Common/assert_cast.h>
 
 namespace DB
 {
@@ -30,7 +29,7 @@ namespace DB
 class JoinNode;
 using JoinNodePtr = std::shared_ptr<JoinNode>;
 
-class JoinNode final : public ITableExpressionNode
+class JoinNode final : public IQueryTreeNode
 {
 public:
     /** Construct join node with left table expression, right table expression and join expression.
@@ -49,52 +48,27 @@ public:
         bool is_using_join_expression_);
 
     /// Get left table expression
-    const ITableExpressionNode & getLeftTableExpression() const
-    {
-        return children[left_table_expression_child_index]->assertTableExpression();
-    }
-
-    /// Get left table expression
-    QueryTreeNodePtr & getLeftTableExpressionNode()
-    {
-        return children[left_table_expression_child_index];
-    }
-
-    const QueryTreeNodePtr & getLeftTableExpressionNode() const
+    const QueryTreeNodePtr & getLeftTableExpression() const
     {
         return children[left_table_expression_child_index];
     }
 
     /// Get left table expression
-    TableExpressionNodePtr getLeftTableExpressionNodeTyped() const
+    QueryTreeNodePtr & getLeftTableExpression()
     {
-        children[left_table_expression_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]);
+        return children[left_table_expression_child_index];
     }
 
     /// Get right table expression
-    const ITableExpressionNode & getRightTableExpression() const
-    {
-        return children[right_table_expression_child_index]->assertTableExpression();
-    }
-
-    /// Get right table expression
-    QueryTreeNodePtr & getRightTableExpressionNode()
+    const QueryTreeNodePtr & getRightTableExpression() const
     {
         return children[right_table_expression_child_index];
     }
 
     /// Get right table expression
-    const QueryTreeNodePtr & getRightTableExpressionNode() const
+    QueryTreeNodePtr & getRightTableExpression()
     {
         return children[right_table_expression_child_index];
-    }
-
-    /// Get right table expression
-    TableExpressionNodePtr getRightTableExpressionNodeTyped() const
-    {
-        children[right_table_expression_child_index]->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]);
     }
 
     /// Returns true if join has join expression, false otherwise
@@ -220,7 +194,7 @@ using CrossJoinNodePtr = std::shared_ptr<CrossJoinNode>;
 /** CrossJoin node represents cross/comma join in query tree.
   * Example: SELECT * FROM t1, t2, t3
   */
-class CrossJoinNode final : public ITableExpressionNode
+class CrossJoinNode final : public IQueryTreeNode
 {
 public:
     struct JoinType
@@ -244,27 +218,14 @@ public:
 
     void appendTable(QueryTreeNodePtr table_expression, JoinType join_type);
 
-    QueryTreeNodes & getTableExpressions()
-    {
-        return children;
-    }
-
     const QueryTreeNodes & getTableExpressions() const
     {
         return children;
     }
 
-    const ITableExpressionNode & getTableExpressionAt(size_t pos)
+    QueryTreeNodes & getTableExpressions()
     {
-        auto & child = children.at(pos);
-        return child->assertTableExpression();
-    }
-
-    TableExpressionNodePtr getTableExpressionTypedAt(size_t pos) const
-    {
-        const auto & child = children.at(pos);
-        child->assertTableExpression();
-        return static_pointer_cast<ITableExpressionNode>(child);
+        return children;
     }
 
     /// The size is getTableExpressions.size() - 1

@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
-#include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
 #include <ranges>
@@ -58,8 +57,7 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         settings.read_settings,
         settings_.load_marks_asynchronously ? &data_part_info_for_read_->getContext()->getLoadMarksThreadpool() : nullptr,
         data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams
-            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size(),
-        settings.use_streaming_marks_compression))
+            ? columns_substreams.getTotalSubstreams() : data_part_info_for_read_->getColumns().size()))
     , profile_callback(profile_callback_)
     , clock_type(clock_type_)
     , has_substream_marks(data_part_info_for_read_->getIndexGranularityInfo().mark_type.with_substreams)
@@ -80,8 +78,8 @@ void MergeTreeReaderCompact::fillColumnPositions()
         auto & column_to_read = columns_to_read[i];
         auto position = data_part_info_for_read->getColumnPosition(column_to_read.getNameInStorage());
 
-        /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
-        if (position.has_value() && (isColumnDroppedByPendingMutation(i) || isSystemColumnInvalidated(i)))
+        /// Column was dropped by a pending mutation. Don't read stale data; let defaults be used.
+        if (position.has_value() && isColumnDroppedByPendingMutation(i))
             position.reset();
 
         if (position.has_value() && column_to_read.isSubcolumn())
@@ -90,15 +88,7 @@ void MergeTreeReaderCompact::fillColumnPositions()
             auto subcolumn_name = column_to_read.getSubcolumnName();
             auto storage_column_from_part = part_columns.getColumn(GetColumnsOptions::All, name_in_storage);
 
-            /// The `Quantize` codec's custom serialization exposes companion `quantized`/`pq_codebook` subcolumns that
-            /// the part's plain columns list cannot represent - they round-trip to the bare type name and are lost, so
-            /// the subcolumn would be treated as missing and recomputed/defaulted after a reload. Decide presence from
-            /// the requested column's storage type in that case. Restricted to that specific serialization so it does
-            /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
-            const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
-            const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
-            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
+            if (!storage_column_from_part.type->hasSubcolumn(subcolumn_name))
                 position.reset();
         }
 
@@ -298,15 +288,9 @@ void MergeTreeReaderCompact::readData(
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())
-                {
                     column = IColumn::mutate(subcolumn);
-                }
                 else
-                {
-                    auto mutable_column = IColumn::mutate(std::move(column));
-                    mutable_column->insertRangeFrom(*subcolumn, 0, subcolumn->size());
-                    column = std::move(mutable_column);
-                }
+                    column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
             }
         }
         else
@@ -330,7 +314,7 @@ void MergeTreeReaderCompact::readData(
     }
 }
 
-void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark)
+void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark)
 {
     if (!has_subcolumns || !has_substream_marks)
         return;
@@ -339,7 +323,7 @@ void MergeTreeReaderCompact::readSubcolumnsPrefixes(size_t from_mark)
     /// We don't call it during prefixes deserialization because we can get prefixes from cache and
     /// don't call it at all.
     for (auto index : column_to_subcolumns_indexes | std::views::values | std::views::join)
-        getStream(columns_to_read[index]).adjustRightMark(last_mark_to_read);
+        getStream(columns_to_read[index]).adjustRightMark(current_task_last_mark);
 
     /// Second, deserialize prefixes of get the from cache.
     auto deserialize = [&]() -> DeserializeBinaryBulkStateMap
@@ -413,9 +397,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
         enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            auto substream = ISerialization::getFileNameForStream(
-                column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            return columns_substreams.tryGetSubstreamPosition(column_pos, substream).has_value();
+            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, storage_settings).has_value();
         };
 
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
@@ -466,9 +448,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
     {
         check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            auto substream = ISerialization::getFileNameForStream(
-                column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], substream).has_value();
+            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings).has_value();
         };
     }
 
@@ -558,37 +538,6 @@ bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerializat
 
     bool is_offsets = !substream.empty() && substream.back().type == ISerialization::Substream::ArraySizes;
     return !is_offsets || columns_for_offsets[column_pos]->level < ISerialization::getArrayLevel(substream);
-}
-
-void MergeTreeReaderCompact::validateColumnsOwnership(
-    [[maybe_unused]] const Columns & res_columns,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache,
-    [[maybe_unused]] const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
-    [[maybe_unused]] const ISerialization::SubstreamsCache * substreams_cache,
-    [[maybe_unused]] const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const
-{
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    ColumnsOwnershipValidator ownership_validator;
-    if (substreams_cache)
-        ownership_validator.add(*substreams_cache);
-    if (columns_cache)
-        for (const auto & [_, cached_column] : *columns_cache)
-            ownership_validator.add(cached_column);
-    if (columns_cache_for_subcolumns)
-        for (const auto & [_, cached_column] : *columns_cache_for_subcolumns)
-            ownership_validator.add(cached_column);
-    if (deserialize_states_caches)
-        for (const auto & [_, states] : *deserialize_states_caches)
-            ownership_validator.add(states);
-    ownership_validator.add(deserialize_binary_bulk_state_map);
-    ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
-    /// The reader-local `deserialize_binary_bulk_state_map_for_subcolumns` holds clones of the prefix
-    /// states; the originals stay in the shared cache and share the same column references, so count
-    /// those cache-held holders too.
-    if (deserialization_prefixes_cache)
-        deserialization_prefixes_cache->addToOwnershipValidator(ownership_validator);
-    ownership_validator.validate(res_columns);
-#endif
 }
 
 }

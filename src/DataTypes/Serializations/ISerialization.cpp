@@ -1,5 +1,4 @@
 #include <Columns/ColumnBLOB.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/IColumn.h>
@@ -8,8 +7,6 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationObjectPool.h>
-#include <Formats/FormatSettings.h>
-#include <Formats/ParseError.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
@@ -36,7 +33,6 @@ namespace ErrorCodes
     extern const int MULTIPLE_STREAMS_REQUIRED;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int LOGICAL_ERROR;
-    extern const int NOT_IMPLEMENTED;
 }
 
 void throwEmptySerializationState(const ISerialization * serialization)
@@ -174,8 +170,6 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
-    QuantizedCodes,
-    ProductQuantizationCodebook,
 };
 
 String ISerialization::Substream::toString() const
@@ -278,10 +272,7 @@ void ISerialization::deserializeBinaryBulkWithMultipleStreams(
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
         size_t prev_size = column->size();
-        /// `column` may be shared — e.g. it was placed into the substreams cache by an earlier substream
-        /// read — and appending to it in place would then mutate data still referenced by another owner.
-        /// Clone it when shared; `IColumn::mutate` is a no-op for the common uniquely-owned case.
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+        auto mutable_column = column->assumeMutable();
         double avg_value_size_hint = 0.0;
         if (settings.get_avg_value_size_hint_callback)
             avg_value_size_hint = settings.get_avg_value_size_hint_callback(settings.path);
@@ -314,7 +305,7 @@ String getNameForSubstreamPath(
     size_t array_level = initial_array_level;
     for (auto it = begin; it != end; ++it)
     {
-        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap || it->type == Substream::NullMapHidden)
+        if (it->type == Substream::NullMap || it->type == Substream::SparseNullMap)
             stream_name += ".null";
         else if (it->type == Substream::ArraySizes)
             stream_name += ".size" + toString(array_level);
@@ -499,12 +490,6 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 {
     explicit SubstreamsCacheColumnWithNumReadRowsElement(ColumnPtr column_, size_t num_read_rows_) : column(column_), num_read_rows(num_read_rows_) {}
 
-    void forEachColumn(const std::function<void(const ColumnPtr &)> & callback) const override
-    {
-        if (column)
-            callback(column);
-    }
-
     ColumnPtr column;
     size_t num_read_rows;
 };
@@ -513,11 +498,6 @@ struct SubstreamsCacheColumnWithNumReadRowsElement : public ISerialization::ISub
 
 void ISerialization::addColumnWithNumReadRowsToSubstreamsCache(SubstreamsCache * cache, const SubstreamPath & path, ColumnPtr column, size_t num_read_rows)
 {
-    /// The consumers of this cache element insert the last num_read_rows rows of the column into the
-    /// result (see insertDataFromCachedColumn), so the column must contain at least that many rows,
-    /// otherwise the range arithmetic there would underflow.
-    chassert(column);
-    chassert(column->size() >= num_read_rows);
     addElementToSubstreamsCache(cache, path, std::make_unique<SubstreamsCacheColumnWithNumReadRowsElement>(column, num_read_rows));
 }
 
@@ -528,11 +508,6 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
         return std::nullopt;
 
     auto * typed_element = assert_cast<SubstreamsCacheColumnWithNumReadRowsElement *>(element);
-    /// The invariant established at insertion must still hold at lookup. If it does not, the cached
-    /// column was mutated in place through another reference after it was cached (broken copy-on-write
-    /// discipline, see https://github.com/ClickHouse/ClickHouse/issues/105626).
-    chassert(typed_element->column);
-    chassert(typed_element->column->size() >= typed_element->num_read_rows);
     return std::make_pair(typed_element->column, typed_element->num_read_rows);
 }
 
@@ -575,7 +550,6 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
     for (const auto & elem : path)
     {
         if (elem.type == Substream::NullMap
-            || elem.type == Substream::NullMapHidden
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
@@ -601,7 +575,6 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
     {
         if (column.size() > prev_size)
             column.popBack(column.size() - prev_size);
-        rethrowIfNotParseError();
         return false;
     }
 }
@@ -611,34 +584,6 @@ bool tryDeserializeText(const F deserialize, DB::IColumn & column)
 void ISerialization::serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const
 {
     serializeBinary(column, row_num, ostr, {});
-}
-
-void ISerialization::serializeTextHive(const IColumn & /*column*/, size_t /*row_num*/, WriteBuffer & /*ostr*/, const FormatSettings & /*settings*/) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method serializeTextHive is not implemented for this type");
-}
-
-char getHiveTextDelimiter(const FormatSettings & settings, size_t nesting_level)
-{
-    /// Apache Hive's LazySimpleSerDe uses a fixed list of separators indexed by nesting depth.
-    /// The first three are the configurable field, collection-items and map-keys delimiters; the
-    /// deeper ones default to consecutive control characters (0x04, 0x05, ..., 0x08). See
-    /// org.apache.hadoop.hive.serde2.lazy.LazySerDeParameters.
-    switch (nesting_level)
-    {
-        case 0:
-            return settings.hive_text.fields_delimiter;
-        case 1:
-            return settings.hive_text.collection_items_delimiter;
-        case 2:
-            return settings.hive_text.map_keys_delimiter;
-        default:
-            if (nesting_level <= 7)
-                return static_cast<char>(nesting_level + 1);
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                "The data is nested too deeply for the HiveText output format, which supports at "
-                "most 8 nesting levels of separators (matching Apache Hive's LazySimpleSerDe)");
-    }
 }
 
 bool ISerialization::tryDeserializeTextCSV(DB::IColumn & column, DB::ReadBuffer & istr, const DB::FormatSettings & settings) const
@@ -717,9 +662,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::InlinedStringSizes
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
-            || path[last_elem].type == Substream::ObjectTypedPath
-            || path[last_elem].type == Substream::QuantizedCodes
-            || path[last_elem].type == Substream::ProductQuantizationCodebook;
+            || path[last_elem].type == Substream::ObjectTypedPath;
 }
 
 bool ISerialization::isEphemeralSubcolumn(const DB::ISerialization::SubstreamPath & path, size_t prefix_len)
@@ -764,18 +707,6 @@ bool ISerialization::isMetadataStream(const DB::ISerialization::SubstreamPath & 
         || path[path.size() - 1].type == SubstreamType::MapBucketsInfo;
 }
 
-bool ISerialization::isSingleValuePerPartStream(const DB::ISerialization::SubstreamPath & path)
-{
-    /// The whole path is scanned rather than only its last element, because the codebook substream is terminal
-    /// only when the column itself is enumerated; when the subcolumn is read on its own, the path of its stream
-    /// is `ProductQuantizationCodebook` followed by the `Regular` substream of the underlying `FixedString`.
-    for (const auto & elem : path)
-        if (elem.type == SubstreamType::ProductQuantizationCodebook)
-            return true;
-
-    return false;
-}
-
 bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, bool use_specialized_prefixes_and_suffixes_substreams)
 {
     if (path.empty())
@@ -799,7 +730,7 @@ bool ISerialization::hasPrefix(const DB::ISerialization::SubstreamPath & path, b
 
 ISerialization::SubstreamData ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len)
 {
-    chassert(prefix_len <= path.size());
+    assert(prefix_len <= path.size());
     if (prefix_len == 0)
         return {};
 
@@ -866,9 +797,6 @@ bool ISerialization::insertDataFromSubstreamsCacheIfAny(SubstreamsCache * cache,
 
 void ISerialization::insertDataFromCachedColumn(const ISerialization::DeserializeBinaryBulkSettings & settings, ColumnPtr & result_column, const ColumnPtr & cached_column, size_t num_read_rows, SubstreamsCache * cache, bool update_cache_after_insert)
 {
-    /// The range arithmetic below relies on this invariant, otherwise `cached_column->size() - num_read_rows` underflows.
-    chassert(cached_column);
-    chassert(cached_column->size() >= num_read_rows);
     /// Usually substreams cache contains the whole column from currently deserialized block with rows from multiple ranges.
     /// It's done to avoid extra data copy, in this case we just use this cached column as the result column.
     /// But sometimes in cache we might have column with rows from the current range only (for example when we don't store this column but need it for
@@ -876,12 +804,7 @@ void ISerialization::insertDataFromCachedColumn(const ISerialization::Deserializ
     /// To determine what case we have we store number of read rows in last range in cache.
     if ((settings.insert_only_rows_in_current_range_from_substreams_cache) || (result_column != cached_column && !result_column->empty() && cached_column->size() == num_read_rows))
     {
-        /// `result_column` may be shared (it can be handed to the substreams cache below and reused for
-        /// another substream in the same range), so clone it when shared instead of appending in place to
-        /// a buffer still referenced elsewhere. `IColumn::mutate` is a no-op when uniquely owned.
-        MutableColumnPtr mutable_column = IColumn::mutate(std::move(result_column));
-        mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
-        result_column = std::move(mutable_column);
+        result_column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
         if (update_cache_after_insert)
         {
             /// Replace column in the cache with the new column to avoid inserting into it again
@@ -908,162 +831,13 @@ bool ISerialization::isVariantSubcolumn(const SubstreamPath & substream_path)
 
 bool ISerialization::tryToChangeStreamFileNameSettingsForNotFoundStream(const ISerialization::SubstreamPath & substream_path, ISerialization::StreamFileNameSettings & stream_file_name_settings)
 {
-    if (isVariantSubcolumn(substream_path) && stream_file_name_settings.escape_variant_substreams)
+    if (isVariantSubcolumn(substream_path))
     {
-        stream_file_name_settings.escape_variant_substreams = false;
+        stream_file_name_settings.escape_variant_substreams = !stream_file_name_settings.escape_variant_substreams;
         return true;
     }
 
     return false;
 }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-
-void ColumnsOwnershipValidator::addColumnReference(const ColumnPtr & column, size_t References::* counter)
-{
-    if (column)
-        ++(known_references[column.get()].*counter);
-}
-
-void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache & cache)
-{
-    for (const auto & [_, element] : cache)
-    {
-        if (element)
-            element->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column, &References::from_substreams_cache); });
-    }
-}
-
-void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsDeserializeStatesCache & states)
-{
-    for (const auto & [_, state] : states)
-        add(state);
-}
-
-void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkStatePtr & state)
-{
-    if (!state)
-        return;
-
-    if (!seen_states.emplace(state.get()).second)
-        return;
-
-    state->forEachColumn([this](const ColumnPtr & column) { addColumnReference(column, &References::from_deserialize_states); });
-
-    /// A nested state is not necessarily registered in any SubstreamsDeserializeStatesCache
-    /// (e.g. the LowCardinality state holding the global dictionary inside a Variant state),
-    /// so the columns it owns are reachable only by recursing from its holder. The `seen_states`
-    /// check above guarantees that a state reachable both from a cache and from a parent state
-    /// is enumerated only once.
-    state->forEachNestedState([this](const ISerialization::DeserializeBinaryBulkStatePtr & nested_state) { add(nested_state); });
-}
-
-void ColumnsOwnershipValidator::add(const ColumnPtr & column)
-{
-    addColumnReference(column, &References::direct);
-}
-
-void ColumnsOwnershipValidator::validate(const Columns & result_columns) const
-{
-    /// Each reference enumerated here is a live ColumnPtr owned by a structure of the current thread,
-    /// so it cannot go away concurrently, and concurrent activity of other threads can only make the
-    /// reference count larger than what we enumerate, never smaller.
-    std::unordered_map<const IColumn *, size_t> tree_references;
-    std::unordered_set<const IColumn *> visited;
-
-    /// Walk the subcolumn trees manually and descend into each column object only once: the children
-    /// of a column are referenced by the members of that single object, so when the same object is
-    /// reachable through several parents (e.g. a full column and its subcolumn in one result block
-    /// sharing a nested column), descending into it repeatedly would count the same member references
-    /// multiple times and produce false positives. The reference TO a shared object is counted once
-    /// per referencing parent, which is exact: each parent holds its own counted pointer.
-    std::function<void(const IColumn &)> walk = [&](const IColumn & column)
-    {
-        if (!visited.emplace(&column).second)
-            return;
-
-        column.forEachSubcolumn([&](const IColumn::WrappedPtr & child)
-        {
-            if (!child)
-                return;
-
-            ++tree_references[child.get()];
-            walk(*child);
-        });
-
-        /// ColumnLowCardinality::forEachSubcolumn hides the dictionary when it is shared (the
-        /// column is not its exclusive owner and must not mutate it), but the reference is still
-        /// a counted ColumnPtr, and a shared dictionary is exactly the place where broken reference
-        /// counting turns into a use-after-free, so it must participate in the ownership check.
-        if (const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column))
-        {
-            const auto & dictionary = low_cardinality->getDictionaryPtr();
-            if (low_cardinality->isSharedDictionary() && dictionary)
-            {
-                ++tree_references[dictionary.get()];
-                walk(*dictionary);
-            }
-        }
-    };
-
-    for (const auto & column : result_columns)
-    {
-        if (!column)
-            continue;
-
-        ++tree_references[column.get()];
-        walk(*column);
-    }
-
-    /// A column held by a substreams cache or a deserialize state is a parent too: its own subcolumn
-    /// tree can share children with a result column's subcolumn tree (e.g. `IDataType::getSubcolumn`
-    /// materializing `map.keys`/`map.values` as new `ColumnArray`s over the cached `ColumnMap`'s
-    /// `offsets`/nested column). Walk from every known holder as well, so the cache/state side of such
-    /// a shared child is counted too; `walk`'s `visited` set still descends into any given column object
-    /// only once, and the holder's own reference is already counted via `known_references`, not here.
-    for (const auto & known_reference : known_references)
-        walk(*known_reference.first);
-
-    auto check = [](const IColumn * column, const References & references, size_t from_result_columns)
-    {
-        size_t num_references = references.total() + from_result_columns;
-        /// A single enumerated reference proves nothing beyond the column being alive;
-        /// only columns reachable from two or more holders can expose an inconsistency.
-        if (num_references > 1 && column->use_count() < num_references)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Column {} of type {} has reference count {} which is less than the number of its known holders "
-                "({}: {} from the substreams cache, {} from deserialize states, {} direct, {} from the result columns). "
-                "Copy-on-write reference counting was broken somewhere on the read path, which leads to use-after-free "
-                "(see https://github.com/ClickHouse/ClickHouse/issues/105626)",
-                reinterpret_cast<const void *>(column), column->getName(), column->use_count(),
-                num_references, references.from_substreams_cache, references.from_deserialize_states,
-                references.direct, from_result_columns);
-    };
-
-    for (const auto & [column, num_tree_references] : tree_references)
-    {
-        auto it = known_references.find(column);
-        check(column, it != known_references.end() ? it->second : References{}, num_tree_references);
-    }
-
-    /// Columns held only by the caches and states (not reachable from any result column)
-    /// can be inconsistent among themselves as well.
-    for (const auto & [column, references] : known_references)
-    {
-        if (!tree_references.contains(column))
-            check(column, references, 0);
-    }
-}
-
-#else
-
-void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsCache &) {}
-void ColumnsOwnershipValidator::add(const ISerialization::SubstreamsDeserializeStatesCache &) {}
-void ColumnsOwnershipValidator::add(const ISerialization::DeserializeBinaryBulkStatePtr &) {}
-void ColumnsOwnershipValidator::add(const ColumnPtr &) {}
-void ColumnsOwnershipValidator::validate(const Columns &) const {}
-
-#endif
 
 }

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Columns/IColumn_fwd.h>
-#include <DataTypes/IDataType_fwd.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -23,9 +22,9 @@ using MergeTreeSettingsPtr = std::shared_ptr<const MergeTreeSettings>;
 
 using WrittenOffsetSubstreams = std::set<std::string>;
 
-Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
+Block getIndexBlockAndPermute(const Block & block, const Names & names, const IColumnPermutation * permutation);
 
-Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache = nullptr);
+Block permuteBlockIfNeeded(const Block & block, const IColumnPermutation * permutation);
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
@@ -45,20 +44,7 @@ public:
 
     virtual ~IMergeTreeDataPartWriter();
 
-    virtual void write(const Block & block, const IColumnPermutation * permutation, Block * permuted_columns_cache) = 0;
-
-    /// Copy a set of virtual files from another part's packed skip-index archive into this
-    /// writer's in-flight archive, BEFORE any block is written. Used by mutations to preserve
-    /// surviving in-archive indices when the source archive cannot be hardlinked (e.g. because
-    /// the writer is also producing fresh entries that would otherwise truncate the shared
-    /// inode). Default implementation is a no-op for writers that don't pack skip indices.
-    virtual void preloadPackedSkipIndicesArchive(const class DataPartStorageOnDiskBase & /*source*/, const NameSet & /*files*/) {}
-
-    /// Expose this writer's packed skip-indices archive (if any) so a secondary writer
-    /// (vertical-merge per-column `MergedColumnOnlyOutputStream`) can contribute its own
-    /// packed substreams to the same archive instead of racing on `skp_idx.packed`. Returns
-    /// nullptr if this writer is not packing skip indices.
-    virtual class PackedFilesWriter * getSkipIndicesPackedWriter() { return nullptr; }
+    virtual void write(const Block & block, const IColumnPermutation * permutation) = 0;
 
     virtual void finalizeIndexGranularity() = 0;
     virtual void fillChecksums(MergeTreeDataPartChecksums & checksums, NameSet & checksums_to_remove) = 0;
@@ -85,13 +71,6 @@ protected:
 
     ASTPtr getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const;
 
-    /// True if `column_name` uses the default codec (no `CODEC` clause, or an explicit lone `CODEC(Default)`).
-    bool columnUsesDefaultCodec(const String & column_name) const;
-
-    /// Codec for a default-coded substream: adaptive when enabled and the type has a non-default codec, else `resolved_codec`.
-    CompressionCodecPtr
-    maybeAdaptiveDefaultCodec(bool column_uses_default_codec, const DataTypePtr & substream_type, CompressionCodecPtr resolved_codec) const;
-
     IDataPartStorage & getDataPartStorage() { return *data_part_storage; }
 
     const String data_part_name;
@@ -114,9 +93,7 @@ protected:
 };
 
 using MergeTreeDataPartWriterPtr = std::unique_ptr<IMergeTreeDataPartWriter>;
-/// The same map as `SharedPartColumns::NameToNumber`: the keys view into the column names of the
-/// data part's shared metadata bundle, which outlives the writer.
-using ColumnPositions = std::unordered_map<std::string_view, size_t>;
+using ColumnPositions = std::unordered_map<std::string, size_t>;
 
 MergeTreeDataPartWriterPtr createMergeTreeDataPartWriter(
         MergeTreeDataPartType part_type,

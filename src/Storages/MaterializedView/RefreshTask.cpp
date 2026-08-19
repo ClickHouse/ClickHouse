@@ -1,4 +1,3 @@
-#include <thread>
 #include <Storages/MaterializedView/RefreshTask.h>
 
 #include <Core/BackgroundSchedulePool.h>
@@ -21,8 +20,6 @@
 #include <Processors/Executors/PipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
-#include <base/EnumReflection.h>
-#include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/QueryScope.h>
 #include <Common/FailPoint.h>
@@ -44,7 +41,6 @@ namespace ProfileEvents
     extern const Event RefreshableViewSyncReplicaSuccess;
     extern const Event RefreshableViewSyncReplicaRetry;
     extern const Event RefreshableViewLockTableRetry;
-    extern const Event ZooKeeperWatchTriggeredMaterializedViewRefresh;
 }
 
 namespace DB
@@ -66,6 +62,8 @@ namespace ServerSetting
 namespace RefreshSetting
 {
     extern const RefreshSettingsBool all_replicas;
+    extern const RefreshSettingsBool prefer_dependency_replica;
+    extern const RefreshSettingsUInt64 prefer_dependency_replica_delay_ms;
     extern const RefreshSettingsInt64 refresh_retries;
     extern const RefreshSettingsUInt64 refresh_retry_initial_backoff_ms;
     extern const RefreshSettingsUInt64 refresh_retry_max_backoff_ms;
@@ -80,86 +78,13 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int INCORRECT_QUERY;
     extern const int ABORTED;
-    extern const int TABLE_UUID_MISMATCH;
-}
-
-namespace FailPoints
-{
-    /// Simulates the Keeper feature-flag propagation race on attach: makes the constructor's
-    /// up-front MULTI_READ / CREATE_IF_NOT_EXISTS check behave as if the flags were present, even
-    /// when the Keeper actually lacks them. Used to test that doScheduling re-detects the missing
-    /// flags and stops the view gracefully instead of crashing the scheduling thread.
-    extern const char refresh_mv_skip_attach_feature_flag_check[];
-    /// Forces the doScheduling re-check to see the Keeper feature flags as missing, even on a Keeper
-    /// that has them. Used to test that a scheduling pass which discovers missing flags while a
-    /// refresh is already in flight cancels the local refresh before giving up coordination,
-    /// instead of leaving Keeper thinking the refresh is still running.
-    extern const char refresh_mv_force_scheduling_feature_flags_missing[];
-    /// Pauses the refresh thread after the insert pipeline finished but before the target-table
-    /// exchange, so a test can deterministically hit the post-insert window where the executor is
-    /// already gone and only the interrupt_execution flag can stop the exchange.
-    extern const char refresh_mv_pause_before_exchange[];
-    /// Pauses the refresh thread AFTER the pre-exchange interrupt re-check has already passed (the
-    /// executor_mutex was read and released) but BEFORE the exchange, so a test can deterministically
-    /// hit the window where a scheduling pass that gives up coordination must not still cause the
-    /// exchange to be lost / the view to be disabled mid-flight.
-    extern const char refresh_mv_pause_after_interrupt_check[];
-    /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
-    /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
-    /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
-    /// the lost-ownership conflict is treated as terminal (the view converges to Disabled) instead
-    /// of retrying with the same stale version and looping in Scheduling forever.
-    extern const char refresh_mv_force_coordination_version_conflict[];
-    /// Deletes the ephemeral '/running' znode just before the feature-flags-missing give-up path
-    /// reconciles, so the reconciling multi's `remove` gets a real `ZNONODE` back from Keeper. This is
-    /// the other shape of the same lost-ownership race (a Keeper session loss drops '/running'
-    /// without necessarily advancing the root znode version), used to test that it is terminal too.
-    extern const char refresh_mv_force_coordination_running_znode_lost[];
-    /// Makes the execution task return immediately without starting the refresh, so a test can hold
-    /// the "scheduled but never started" state (execution.state == Requested) that shutdown has to
-    /// normalize before giving up coordination.
-    extern const char refresh_mv_skip_execution[];
-}
-
-namespace
-{
-
-/// Whether the Keeper this view is coordinated through is missing a feature flag that coordination
-/// requires (MULTI_READ, CREATE_IF_NOT_EXISTS). readZnodesIfNeeded uses multi-read on the
-/// scheduling thread, where a throw aborts the whole server, so this must be detected up front and
-/// turned into a graceful permanent stop instead.
-bool coordinationFeatureFlagsMissing(const zkutil::ZooKeeper & zookeeper)
-{
-    return !zookeeper.isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
-        !zookeeper.isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS);
-}
-
-/// Build the dependency StorageIDs, resolving unqualified names against the view's database.
-/// An empty database would later throw from StorageID::getFullTableName() during scheduling.
-std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strategy, const String & default_database)
-{
-    std::vector<StorageID> deps;
-    if (!strategy.dependencies)
-        return deps;
-    for (auto && dependency : strategy.dependencies->children)
-    {
-        StorageID id = dependency->as<const ASTTableIdentifier &>();
-        if (id.database_name.empty() && !default_database.empty())
-            id.database_name = default_database;
-        deps.push_back(std::move(id));
-    }
-    return deps;
-}
-
 }
 
 RefreshTask::RefreshTask(
-    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup)
+    StorageMaterializedView * view_, ContextPtr context, const DB::ASTRefreshStrategy & strategy, bool attach, bool coordinated, bool empty, bool is_restore_from_backup)
     : view(view_)
     , refresh_schedule(strategy)
-    , initial_dependencies(std::move(initial_dependencies_))
     , refresh_append(strategy.append)
-    , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
 
@@ -169,20 +94,7 @@ RefreshTask::RefreshTask(
 
     coordination.root_znode.randomize();
     if (empty)
-    {
-        /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
-
         coordination.root_znode.last_completed_timeslot = std::chrono::floor<std::chrono::seconds>(currentTime());
-
-        if (coordinated || !attach)
-        {
-            /// We want `CREATE ... REFRESH DEPENDS ON ... EMPTY` to do first refresh after
-            /// dependencies' *next* refresh after this view is created.
-            AllDependenciesInfo dependencies;
-            collectDependencyStatesUnlocked(dependencies, initial_dependencies);
-            coordination.root_znode.last_success_dependencies = dependencies;
-        }
-    }
     if (coordinated)
     {
         coordination.coordinated = true;
@@ -198,30 +110,18 @@ RefreshTask::RefreshTask(
         String replica_path = coordination.path + "/replicas/" + coordination.replica_name;
         bool replica_path_existed = zookeeper->exists(replica_path);
 
-        /// Coordination needs these Keeper feature flags on every path: readZnodesIfNeeded uses
-        /// multi-read on the scheduling thread, where a throw aborts the whole server.
-        /// (It would be possible to avoid using these features, if needed.)
-        bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
-        /// The flags are read once per Keeper connection, when the connection is established. Right
-        /// after a (re)start the freshly-attached view may read them before the connection settles
-        /// on the current Keeper, so this up-front check is not authoritative: doScheduling
-        /// re-checks before touching Keeper and stops the view gracefully if they turn out missing.
-        fiu_do_on(FailPoints::refresh_mv_skip_attach_feature_flag_check, { feature_flags_missing = false; });
-        if (feature_flags_missing)
-        {
-            /// Fresh CREATE rejects. ATTACH/restore must not throw (it would fail server startup),
-            /// so enter a permanent non-resumable "coordination unavailable" state instead.
-            if (!attach && !is_restore_from_backup)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
-
-            markCoordinationUnavailable();
-            return;
-        }
-
         /// Create znodes even if it's ATTACH query. This seems weird, possibly incorrect, but
         /// currently both DatabaseReplicated and DatabaseShared seem to require this behavior.
         if (!replica_path_existed)
         {
+            if (!attach && !is_restore_from_backup)
+            {
+                /// (It would be possible to avoid using these features, if needed.)
+                if (!zookeeper->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ) ||
+                    !zookeeper->isFeatureEnabled(KeeperFeatureFlag::CREATE_IF_NOT_EXISTS))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS");
+            }
+
             zookeeper->createAncestors(coordination.path);
             Coordination::Requests ops;
             ops.emplace_back(zkutil::makeCreateRequest(coordination.path, coordination.root_znode.toString(), zkutil::CreateMode::Persistent, /*ignore_if_exists*/ true));
@@ -256,18 +156,6 @@ RefreshTask::RefreshTask(
     }
 }
 
-void RefreshTask::markCoordinationUnavailable()
-{
-    /// Enter a permanent, non-resumable "coordination unavailable" state. `coordinated` is left
-    /// true so the view never degrades into an uncoordinated local refresh (that would corrupt the
-    /// replicated target table); `unavailable` keeps it Disabled and makes start() /
-    /// finalizeRestoreFromBackup() refuse to resume it.
-    LOG_ERROR(getLogger(), "Keeper server doesn't have all feature flags required by refreshable MV: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.");
-    coordination.unavailable = true;
-    scheduling.stop_requested = true;
-    scheduling.unexpected_error = "Keeper server doesn't have all feature flags required by refreshable materialized view: MULTI_READ, CREATE_IF_NOT_EXISTS. The view is stopped.";
-}
-
 void RefreshTask::createLogger(const StorageID & storage_id)
 {
     std::lock_guard lock(logger_mutex);
@@ -287,16 +175,13 @@ OwnedRefreshTask RefreshTask::create(
     bool attach,
     bool coordinated,
     bool empty,
-    bool start_paused,
     bool is_restore_from_backup)
 {
-    std::vector<StorageID> deps = parseRefreshDependencies(strategy, view->getStorageID().database_name);
+    auto task = std::make_shared<RefreshTask>(view, context, strategy, attach, coordinated, empty, is_restore_from_backup);
 
-    auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
-
-    task->scheduling_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshSched",
+    task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
-    task->execution_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshExec",
+    task->execution_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshExec",
         [self = task.get()] { self->executeRefresh(); });
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -304,6 +189,10 @@ OwnedRefreshTask RefreshTask::create(
         w->should_reread_znodes.store(true);
         (*task_waker)(response);
     });
+
+    if (strategy.dependencies)
+        for (auto && dependency : strategy.dependencies->children)
+            task->initial_dependencies.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
     return OwnedRefreshTask(task);
 }
@@ -315,7 +204,7 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
@@ -326,10 +215,6 @@ void RefreshTask::startup()
 
 void RefreshTask::finalizeRestoreFromBackup()
 {
-    /// Both `start` and `startReplicated` refuse to resume a view whose coordination is permanently
-    /// unavailable, each checking under `mutex`. Checking it here too would only be a racy
-    /// duplicate: `unavailable` is also written by the scheduling thread
-    /// (markCoordinationUnavailable), so it can be set right after an unlocked read here.
     if (coordination.coordinated)
         startReplicated();
     else
@@ -376,25 +261,15 @@ void RefreshTask::shutdown()
     /// This matters because a table may get dropped and immediately created again with the same name,
     /// while the old table's IStorage still exists (pinned by ongoing queries).
     /// (Also, RefreshSet holds a shared_ptr to us.)
-    ContextPtr context;
-    StorageID storage_id = StorageID::createEmpty();
-    {
-        std::lock_guard guard(mutex);
-        storage_id = set_handle.getID();
-        set_handle.reset();
-        if (view)
-            context = view->getContext();
-        view = nullptr;
-    }
+    std::lock_guard guard(mutex);
+    set_handle.reset();
+
+    view = nullptr;
 
     /// Wake up any threads blocked in wait(), so they can see !view and throw TABLE_IS_DROPPED.
     /// Without this, wait() would block forever after deactivate() prevents the background task
-    /// from running (and therefore from ever notifying wait_cv).
-    wait_cv.notify_all();
-
-    if (context)
-        /// If another view DEPENDS ON this one, let it know that its dependency is missing now.
-        context->getRefreshSet().notifyDependents(storage_id);
+    /// from running (and therefore from ever notifying refresh_cv).
+    refresh_cv.notify_all();
 }
 
 void RefreshTask::drop(ContextPtr context, bool is_shared_db)
@@ -434,27 +309,10 @@ void RefreshTask::drop(ContextPtr context, bool is_shared_db)
 
 void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 {
-    ContextPtr context;
-    StorageID old_id = StorageID::createEmpty();
-    {
-        std::lock_guard guard(mutex);
-        createLogger(new_id);
-        if (set_handle)
-        {
-            old_id = set_handle.getID();
-            set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
-        }
-        if (view)
-            context = view->getContext();
-    }
-    if (context)
-    {
-        /// If another view DEPENDS ON the new name of this view, let it know that a view with such
-        /// name now exists.
-        context->getRefreshSet().notifyDependents(new_id);
-        if (!old_id.empty())
-            context->getRefreshSet().notifyDependents(old_id);
-    }
+    std::lock_guard guard(mutex);
+    createLogger(new_id);
+    if (set_handle)
+        set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
 }
 
 void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strategy)
@@ -476,14 +334,17 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        std::vector<StorageID> deps = parseRefreshDependencies(
-            new_strategy, view ? view->getStorageID().database_name : String{});
+        std::vector<StorageID> deps;
+        if (new_strategy.dependencies)
+            for (auto && dependency : new_strategy.dependencies->children)
+                deps.emplace_back(dependency->as<const ASTTableIdentifier &>());
 
         /// Update dependency graph.
         if (set_handle)
             set_handle.changeDependencies(deps);
 
         scheduleRefresh(guard);
+        scheduling.should_recalculate_dependencies = true;
 
         refresh_settings = {};
         if (new_strategy.settings != nullptr)
@@ -510,11 +371,6 @@ RefreshTask::Info RefreshTask::getInfo() const
 void RefreshTask::start()
 {
     std::lock_guard guard(mutex);
-    if (coordination.unavailable)
-        /// Coordination is permanently unavailable for this coordinated view. Refuse to resume:
-        /// running it now would be an uncoordinated local refresh that corrupts the replicated
-        /// target table. The view stays Disabled until the table is re-created on a capable Keeper.
-        return;
     if (!std::exchange(scheduling.stop_requested, false))
         return;
     scheduling.unexpected_error = std::nullopt;
@@ -550,30 +406,13 @@ void RefreshTask::startReplicated()
     if (!coordination.coordinated)
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Refreshable materialized view is not coordinated.");
 
-    const auto zookeeper = [this]() -> std::shared_ptr<zkutil::ZooKeeper>
+    const auto zookeeper = [this]()
     {
         std::lock_guard guard(mutex);
         if (!view)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-        if (coordination.unavailable)
-            /// Coordination is permanently unavailable (Keeper lacks the required feature flags), so
-            /// this view can never refresh again. Removing '/paused' would unpause it on every
-            /// replica while this one stays Disabled. Refuse, like `start` does.
-            return nullptr;
         return view->getContext()->getZooKeeper();
     }();
-    if (!zookeeper)
-        return;
-
-    /// `coordination.unavailable` is only set once doScheduling has re-checked the flags, and that
-    /// pass is scheduled asynchronously - so on the restore path it can still be false here while
-    /// this connection already shows the flags missing. Removing `/paused` would unpause the view on
-    /// every replica moments before this one is disabled permanently, so check the connection too.
-    if (coordinationFeatureFlagsMissing(*zookeeper))
-    {
-        LOG_INFO(getLogger(), "Not unpausing the refreshable materialized view: this Keeper is missing feature flags required for coordination (MULTI_READ, CREATE_IF_NOT_EXISTS).");
-        return;
-    }
 
     String path = coordination.path + "/paused";
     auto code = zookeeper->tryRemove(path);
@@ -616,114 +455,49 @@ void RefreshTask::cancel()
     scheduleRefresh(guard);
 }
 
-void RefreshTask::wait(const ContextPtr & context)
+void RefreshTask::wait()
 {
-    std::unique_lock lock(mutex);
-
-    /// Complicated wait logic to make sure SYSTEM WAIT VIEW behaves intuitively in various cases, e.g.:
-    ///  * After SYSTEM REFRESH VIEW - wait for the requested refresh (out_of_schedule_refresh_requested).
-    ///     - If SYSTEM REFRESH VIEW happened when another refresh was in progress, wait for both
-    ///       refreshes. (That's why there are two wait_cv.wait calls here.)
-    ///  * After SYSTEM START VIEW - if it starts a refresh right away (e.g. the view was paused for
-    ///    longer than refresh period), wait for that refresh.
-    ///    (That's why we set state to Scheduling in start().)
-    ///  * If a refresh finished (successfully or not) and another one started immediately, stop
-    ///    waiting (except in the out_of_schedule_refresh_requested case per above).
-    ///    (That's why we check for last_success_end_time and attempt_number change.)
-    /// Perhaps this could be simplified e.g. by adding a global refresh attempt counter; but note
-    /// that we'd still need two wait_cv.wait calls.
-
-    /// If an out-of-schedule refresh was requested, wait for that requested refresh to *start*
-    /// (or for the view to be stopped / shut down).
-    wait_cv.wait(lock, [&]
-        {
-            return !scheduling.out_of_schedule_refresh_requested || !view || state == RefreshState::Disabled;
-        });
-    /// Wait for currently running refresh to complete.
-    auto seen_success_end_time = coordination.root_znode.last_success_end_time;
-    wait_cv.wait(lock, [&] {
-        if (!view)
-            /// Table was dropped, or server shutdown. Stop waiting.
-            return true;
-        if (state == RefreshState::Scheduling)
-            /// We're not sure whether refresh is running. Keep waiting.
-            return false;
-        if (state == RefreshState::Running || state == RefreshState::RunningOnAnotherReplica)
-        {
-            if (coordination.root_znode.last_success_end_time > seen_success_end_time)
-                /// Refresh completed, and immediately another one started.
-                return true;
-            /// Wait for refresh to complete.
-            return false;
-        }
-        /// No refresh running.
-        return true;
-    });
-
-    if (!view)
-        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-    if (state == RefreshState::Disabled)
-        return;
-    if (!coordination.root_znode.refresh_running && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)
-        throw Exception(ErrorCodes::REFRESH_FAILED,
-            "Refresh failed{}: {}", coordination.coordinated ? " (on replica " + coordination.root_znode.last_attempt_replica + ")" : "",
-            coordination.root_znode.last_attempt_error.empty() ? "Replica went away" : coordination.root_znode.last_attempt_error);
-    if (coordination.root_znode.refresh_running && !coordination.root_znode.previous_attempt_error.empty())
-        throw Exception(ErrorCodes::REFRESH_FAILED,
-            "Refresh failed: {}", coordination.root_znode.previous_attempt_error);
-
-    lock.unlock();
-
-    if (coordination.coordinated && !refresh_append)
-        waitForLatestTargetTable(context);
-}
-
-void RefreshTask::waitForLatestTargetTable(const ContextPtr & context)
-{
-    chassert(coordination.coordinated);
-    chassert(!refresh_append);
-
-    UInt64 backoff_ms = 100;
-    const UInt64 max_backoff_ms = 1000;
-    const int max_attempts = 10;
-    auto start_time = std::chrono::steady_clock::now();
-
-    UUID expected_table_uuid {};
-    std::optional<UUID> found_table_uuid;
-
-    for (int attempt = 0; attempt < max_attempts; ++attempt)
+    auto throw_if_error = [&]
     {
-        if (attempt > 0)
-        {
-            std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
-            backoff_ms = std::min(backoff_ms * 2, max_backoff_ms);
-        }
-
-        std::unique_lock lock(mutex);
-
-        if (coordination.root_znode.last_success_time.time_since_epoch().count() == 0)
-            return; // no refreshes happened yet, nothing to sync
         if (!view)
             throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
+        if (!coordination.root_znode.refresh_running && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)
+            throw Exception(ErrorCodes::REFRESH_FAILED,
+                "Refresh failed{}: {}", coordination.coordinated ? " (on replica " + coordination.root_znode.last_attempt_replica + ")" : "",
+                coordination.root_znode.last_attempt_error.empty() ? "Replica went away" : coordination.root_znode.last_attempt_error);
+    };
 
-        expected_table_uuid = coordination.root_znode.last_success_table_uuid;
-        StorageID storage_id = view->getTargetTableId();
+    std::unique_lock lock(mutex);
+    refresh_cv.wait(lock, [&] {
+        return !view
+            || (state != RefreshState::Running && state != RefreshState::Scheduling
+                && state != RefreshState::RunningOnAnotherReplica
+                && (state == RefreshState::Disabled || !scheduling.out_of_schedule_refresh_requested));
+    });
+    throw_if_error();
 
-        lock.unlock();
+    if (coordination.coordinated && !refresh_append)
+    {
+        /// Wait until we see the table produced by the latest refresh.
+        while (true)
+        {
+            UUID expected_table_uuid = coordination.root_znode.last_success_table_uuid;
+            StorageID storage_id = view->getTargetTableId();
+            ContextPtr context = view->getContext();
+            lock.unlock();
 
-        /// (Can't use `view` here because shutdown() may unset it in parallel with us.)
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-        if (!storage)
-            continue;
-        found_table_uuid = storage->getStorageID().uuid;
-        if (found_table_uuid == expected_table_uuid)
-            return;
+            /// (Can't use `view` here because shutdown() may unset it in parallel with us.)
+            StoragePtr storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
+            if (storage && storage->getStorageID().uuid == expected_table_uuid)
+                return;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            lock.lock();
+            /// Re-check last_attempt_succeeded in case another refresh EXCHANGEd the table but failed to write its uuid to keeper.
+            throw_if_error();
+        }
     }
-
-    throw Exception(ErrorCodes::TABLE_UUID_MISMATCH,
-        "Table with UUID {} produced by latest refresh hasn't appeared on this replica for {:.3}s. {}",
-        expected_table_uuid, std::chrono::duration_cast<std::chrono::duration<double>>(std::chrono::steady_clock::now() - start_time).count(),
-        found_table_uuid.has_value() ? fmt::format("Saw table with UUID {} instead.", *found_table_uuid) : String("There's no table at all, on this replica."));
 }
 
 bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point deadline)
@@ -736,30 +510,27 @@ bool RefreshTask::tryJoinBackgroundTask(std::chrono::steady_clock::time_point de
     /// (Manually clamping to 0 because the standard library used to have (and possibly still has?)
     ///  a bug that wait_until would wait forever if the timestamp is in the past.)
     duration = std::max(duration, std::chrono::steady_clock::duration(0));
-    return wait_cv.wait_for(lock, duration, [&]
+    return refresh_cv.wait_for(lock, duration, [&]
         {
             return state != RefreshState::Running && state != RefreshState::Scheduling;
         });
 }
 
-RefreshTask::DependencyRefreshInfo RefreshTask::getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const
+RefreshTask::DependencyRefreshInfo RefreshTask::getDependencyInfo() const
 {
+    std::lock_guard guard(mutex);
     DependencyRefreshInfo info;
-    info.last_success_end_time = coordination.root_znode.last_success_end_time;
-    if (refresh_schedule.kind == RefreshScheduleKind::EVERY)
-        info.next_refresh_timeslot = refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
+    info.next_refresh_timeslot = refresh_schedule.advance(coordination.root_znode.last_completed_timeslot);
+    info.last_refresh_replica = coordination.root_znode.last_attempt_replica;
     return info;
-}
-
-RefreshTask::DependencyRefreshInfo RefreshTask::getInfoForDependentViews() const
-{
-    std::unique_lock lock(mutex);
-    return getInfoForDependentViewsLocked(lock);
 }
 
 void RefreshTask::notify()
 {
     std::lock_guard guard(mutex);
+    if (view && view->getContext()->getRefreshSet().refreshesStopped())
+        interruptExecution();
+    scheduling.should_recalculate_dependencies = true;
     scheduleRefresh(guard);
 }
 
@@ -778,11 +549,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
     auto component_guard = Coordination::setCurrentComponent("RefreshTask::doScheduling");
     std::unique_lock lock(mutex);
 
-    /// shutdown() runs doScheduling(is_shutdown=true) without holding the mutex, so a parallel
-    /// shutdown() can null `view` before we enter. Bail before dereferencing it below.
-    if (!view)
-        return;
-
     /// The way this function generally works is:
     ///  * Look at state in zookeeper and in memory and at current time.
     ///  * If some change is needed (e.g. write to zookeeper or start a refresh), make that change,
@@ -796,166 +562,9 @@ void RefreshTask::doScheduling(bool is_shutdown)
     {
         setState(RefreshState::Scheduling, lock);
 
-        if (coordination.unavailable)
-        {
-            /// Coordination is permanently unavailable (Keeper lacks required feature flags, detected
-            /// on attach/restore). Never touch Keeper here: readZnodesIfNeeded would throw on the
-            /// scheduling thread and the catch-all below would abort the server. Stay Disabled.
-            setState(RefreshState::Disabled, lock);
-            return;
-        }
-
         std::shared_ptr<zkutil::ZooKeeper> zookeeper;
         if (coordination.coordinated)
-        {
             zookeeper = view->getContext()->getZooKeeper();
-
-            /// Re-check the Keeper feature flags the constructor checked on attach. The flags are
-            /// read once per Keeper connection, so a view attached during a (re)start can read them
-            /// before the connection settles on the current Keeper and miss that coordination is
-            /// actually unavailable. If we proceeded, readZnodesIfNeeded below would throw
-            /// NOT_IMPLEMENTED on this scheduling thread and the catch-all would abort the server.
-            /// Detect it here and stop the view gracefully, same as the constructor does on attach.
-            bool feature_flags_missing = coordinationFeatureFlagsMissing(*zookeeper);
-            fiu_do_on(FailPoints::refresh_mv_force_scheduling_feature_flags_missing, { feature_flags_missing = true; });
-            if (feature_flags_missing)
-            {
-                /// An in-flight refresh must NOT set coordination.unavailable yet: a later
-                /// `doScheduling` would then bail at the top before the attempt is reconciled, and
-                /// `interruptExecution` can lose the race against the exchange step (which runs with
-                /// `mutex` released). Only interrupt, and let the attempt reach Finished; the next
-                /// pass (Finished -> None below) gives up coordination. `executeRefresh` schedules
-                /// that pass when it sets Finished. Under shutdown there is no next pass, so the
-                /// give-up happens here.
-                if (!is_shutdown
-                    && (execution.state == ExecutionState::State::Requested
-                        || execution.state == ExecutionState::State::Running))
-                {
-                    interruptExecution();
-                    setState(RefreshState::Running, lock);
-                    return;
-                }
-
-                if (is_shutdown)
-                {
-                    /// execution_task is already deactivated, so a Requested attempt will never run
-                    /// and `interruptExecution` would only set a flag nobody reads. Normalize it to
-                    /// Finished (same as the is_shutdown block after readZnodesIfNeeded) so the
-                    /// reconciliation below actually clears `refresh_running` and `/running`.
-                    chassert(execution.state != ExecutionState::State::Running);
-                    if (execution.state == ExecutionState::State::Requested)
-                    {
-                        execution.znode.last_attempt_error = "shutdown";
-                        execution.znode.refresh_running = false;
-                        execution.state = ExecutionState::State::Finished;
-                    }
-                }
-
-                if (execution.state == ExecutionState::State::Finished)
-                {
-                    /// Reconcile the finished attempt in Keeper before giving up coordination, so
-                    /// '/running' and last_* do not keep claiming a refresh is in progress here.
-                    /// updateCoordinationState only does set + optional remove, so it needs neither
-                    /// MULTI_READ nor CREATE_IF_NOT_EXISTS and works on this downgraded Keeper.
-                    ///
-                    /// That is a multi of a version-checked `set` plus a `remove` of `/running`, so
-                    /// lost ownership surfaces as `ZBADVERSION` (someone advanced the znode) or `ZNONODE`
-                    /// (`/running` already gone). Neither can be retried here: this path returns
-                    /// before readZnodesIfNeeded, the only place a fresh version is read, so a retry
-                    /// reuses the same stale state and loops in Scheduling forever. Both are terminal
-                    /// anyway, so converge to Disabled.
-                    fiu_do_on(FailPoints::refresh_mv_force_coordination_version_conflict, {
-                        /// Make the cached version stale so the `set` below is rejected with
-                        /// `ZBADVERSION`. `max` keeps it a real version, never the -1 "any" sentinel.
-                        execution.znode.version = std::max(execution.znode.version - 1, 0);
-                        coordination.root_znode.version = std::max(coordination.root_znode.version - 1, 0);
-                    });
-                    fiu_do_on(FailPoints::refresh_mv_force_coordination_running_znode_lost, {
-                        /// Drop the real `/running` znode while `running_znode_exists` stays cached
-                        /// true, so the multi's `remove` gets a genuine `ZNONODE` back from Keeper.
-                        zookeeper->tryRemove(coordination.path + "/running");
-                    });
-
-                    /// Only reconcile while this replica still owns the coordination state - the same
-                    /// condition the normal path requires before touching it. A reconnect re-reads the
-                    /// root, so the cached copy can already belong to another replica that took the
-                    /// lock over while our execution was in flight; clearing `refresh_running` or
-                    /// removing `/running` would then cancel THEIR active refresh. Our own result is
-                    /// worthless in that case anyway.
-                    if (!coordination.root_znode.refresh_running
-                        || coordination.root_znode.last_attempt_replica != coordination.replica_name)
-                    {
-                        LOG_INFO(getLogger(), "Replica '{}' owns the refresh coordination state now, discarding the local result while giving up coordination on this Keeper.", coordination.root_znode.last_attempt_replica);
-                        execution.state = ExecutionState::State::None;
-                        markCoordinationUnavailable();
-                        setState(RefreshState::Disabled, lock);
-                        return;
-                    }
-
-                    try
-                    {
-                        if (execution.znode.version == coordination.root_znode.version)
-                        {
-                            if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
-                                return;
-                        }
-                        else
-                        {
-                            CoordinationZnode znode = coordination.root_znode;
-                            znode.refresh_running = false;
-                            updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
-                        }
-                    }
-                    catch (const Coordination::Exception & e)
-                    {
-                        if (e.code != Coordination::Error::ZBADVERSION && e.code != Coordination::Error::ZNONODE)
-                            throw;
-                        if (!lock.owns_lock())
-                            lock.lock();
-                        /// `magic_enum` gives the error's symbolic name (`ZBADVERSION` / `ZNONODE`); the
-                        /// `fmt` formatter for `Coordination::Error` would print `errorMessage`'s prose
-                        /// instead, which is harder to grep for and to match against Keeper docs.
-                        LOG_INFO(getLogger(), "Lost the refresh coordination lock ({}) while giving up coordination on this Keeper. Treating as terminal and stopping the view.", magic_enum::enum_name(e.code));
-
-                        /// A multi is atomic, so if only the `/running` removal failed (`ZNONODE`, the
-                        /// znode is already gone) the root update was rolled back even though its
-                        /// version check passed - which would silently discard this attempt's result
-                        /// (last_success_*/last_attempt_*) and leave persistent `refresh_running`
-                        /// set. `/running` being absent is the state we wanted anyway, so redo the
-                        /// root update alone. `ZBADVERSION` means someone else owns the state now, so
-                        /// there is nothing of ours left to write.
-                        const auto * multi = dynamic_cast<const zkutil::KeeperMultiException *>(&e);
-                        if (e.code == Coordination::Error::ZNONODE && multi != nullptr && multi->failed_op_index > 0)
-                        {
-                            coordination.running_znode_exists = false;
-                            try
-                            {
-                                CoordinationZnode znode = execution.znode.version == coordination.root_znode.version
-                                    ? execution.znode
-                                    : coordination.root_znode;
-                                znode.refresh_running = false;
-                                updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
-                            }
-                            catch (const Coordination::Exception & retry_error)
-                            {
-                                if (retry_error.code != Coordination::Error::ZBADVERSION)
-                                    throw;
-                                if (!lock.owns_lock())
-                                    lock.lock();
-                                LOG_INFO(getLogger(), "Lost the refresh coordination lock (ZBADVERSION) while recording the finished refresh. Treating as terminal and stopping the view.");
-                            }
-                        }
-                    }
-                    execution.state = ExecutionState::State::None;
-                }
-                else if (execution.state != ExecutionState::State::None)
-                    interruptExecution();
-
-                markCoordinationUnavailable();
-                setState(RefreshState::Disabled, lock);
-                return;
-            }
-        }
         readZnodesIfNeeded(zookeeper, lock);
         chassert(lock.owns_lock());
 
@@ -986,6 +595,7 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 }
             }
 
+
             switch (execution.state)
             {
                 case ExecutionState::State::None:
@@ -1005,6 +615,13 @@ void RefreshTask::doScheduling(bool is_shutdown)
                         if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
                             return;
                         chassert(!coordination.root_znode.refresh_running);
+
+                        if (coordination.root_znode.last_attempt_succeeded)
+                        {
+                            lock.unlock();
+                            view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+                            lock.lock();
+                        }
                     }
                     else
                     {
@@ -1016,6 +633,9 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
                     chassert(lock.owns_lock());
                     execution.state = ExecutionState::State::None;
+                    /// Go to Scheduled state after each refresh, even if for a moment before
+                    /// starting the next refresh. This gives `wait()` a chance to complete.
+                    setState(RefreshState::Scheduled, lock);
                     scheduling_task->schedule();
                     break;
                 }
@@ -1027,9 +647,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
                         LOG_WARNING(getLogger(), "Re-creating ephemeral znode '{}', presumably lost on zookeeper reconnect.", coordination.path + "/running");
                         updateCoordinationState(coordination.root_znode, /*running=*/ true, zookeeper, lock, /*only_running_znode=*/ true);
                     }
-
-                    if (view->getContext()->getRefreshSet().refreshesStopped())
-                        interruptExecution();
 
                     setState(RefreshState::Running, lock);
                     break;
@@ -1107,18 +724,18 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         /// Decide when to do the next refresh.
 
+        updateDependenciesIfNeeded(lock);
+        chassert(lock.owns_lock());
+
         if (scheduling.stop_requested || coordination.paused_znode_exists || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
         {
             setState(RefreshState::Disabled, lock);
             return;
         }
 
-        AllDependenciesInfo dependencies;
-        bool dependencies_ok = collectDependencyStates(dependencies, lock);
-        chassert(lock.owns_lock());
-
         auto start_time = currentTime();
-        auto [when, waiting_for_dependencies, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
+        auto start_time_seconds = std::chrono::floor<std::chrono::seconds>(start_time);
+        auto [when, timeslot, start_znode] = determineNextRefreshTime(start_time_seconds);
         next_refresh_time = when;
         bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
         if (out_of_schedule)
@@ -1126,27 +743,19 @@ void RefreshTask::doScheduling(bool is_shutdown)
             chassert(start_znode.attempt_number > 0);
             start_znode.attempt_number -= 1;
         }
-        else if (start_time < when || waiting_for_dependencies)
+        else if (start_time < when)
         {
-            /// If we're not refreshing for two reasons at once (dependencies not satisfied,
-            /// scheduled time not arrived yet), we'd like system.view_refreshes to show
-            /// state Scheduled rather than WaitingForDependencies.
-            if (when == std::chrono::system_clock::time_point::max() || start_time >= when || !dependencies_ok)
-            {
-                if (dependencies_ok)
-                    setState(RefreshState::WaitingForDependencies, lock);
-                else
-                    setState(RefreshState::MissingDependencies, lock);
-            }
-            else
-            {
-                size_t delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(when - start_time).count();
-                /// If we're in a test that fakes the clock, poll every 100ms.
-                if (scheduling.fake_clock.load(std::memory_order_relaxed) != INT64_MIN)
-                    delay_ms = 100;
-                scheduling_task->scheduleAfter(delay_ms);
-                setState(RefreshState::Scheduled, lock);
-            }
+            size_t delay_ms = std::chrono::duration_cast<std::chrono::milliseconds>(when - start_time).count();
+            /// If we're in a test that fakes the clock, poll every 100ms.
+            if (scheduling.fake_clock.load(std::memory_order_relaxed) != INT64_MIN)
+                delay_ms = 100;
+            scheduling_task->scheduleAfter(delay_ms);
+            setState(RefreshState::Scheduled, lock);
+            return;
+        }
+        else if (timeslot >= scheduling.dependencies_satisfied_until)
+        {
+            setState(RefreshState::WaitingForDependencies, lock);
             return;
         }
 
@@ -1163,7 +772,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
         execution.interrupt_execution.store(false);
         execution.znode = coordination.root_znode;
         execution.start_time = start_time;
-        execution.dependencies = std::move(dependencies);
         execution.out_of_schedule = out_of_schedule;
         execution.state = ExecutionState::State::Requested;
 
@@ -1201,13 +809,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
 void RefreshTask::executeRefresh()
 {
-    /// Returns before touching `mutex` or execution.state, so the attempt stays Requested exactly as
-    /// if the execution task had never been dispatched. Lets a test hold the state the normal path
-    /// calls "execution_task was deactivated by shutdown before refresh started", which is otherwise
-    /// only reachable through a background-pool dispatch race. Returning (rather than pausing) also
-    /// keeps shutdown unblocked: execution_task->deactivate() waits for this callback to return.
-    fiu_do_on(FailPoints::refresh_mv_skip_execution, { return; });
-
     std::unique_lock lock(mutex);
 
     chassert(execution.state == ExecutionState::State::Requested);
@@ -1220,23 +821,13 @@ void RefreshTask::executeRefresh()
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
     if (execution.znode.attempt_number > 1)
-    {
-        Int64 retries = refresh_settings[RefreshSetting::refresh_retries];
-        if (retries < 0)
-            /// Infinite retries: no fixed total to show.
-            log_comment += fmt::format(" (attempt {})", execution.znode.attempt_number);
-        else
-            /// Total attempts = retries + 1. Compute in UInt64 to avoid signed overflow at INT64_MAX.
-            log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, static_cast<UInt64>(retries) + 1);
-    }
-
-    std::vector<StorageID> deps = set_handle.getDependencies();
+        log_comment += fmt::format(" (attempt {}/{})", execution.znode.attempt_number, refresh_settings[RefreshSetting::refresh_retries] + 1);
 
     lock.unlock();
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, log_comment, error_message);
     }
     catch (...)
     {
@@ -1247,8 +838,7 @@ void RefreshTask::executeRefresh()
     lock.lock();
 
     auto start_time_seconds = std::chrono::floor<std::chrono::seconds>(execution.start_time);
-    auto now = currentTime();
-    auto end_time_seconds = std::chrono::floor<std::chrono::seconds>(now);
+    auto end_time_seconds = std::chrono::floor<std::chrono::seconds>(currentTime());
     CoordinationZnode znode = execution.znode;
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
@@ -1260,12 +850,6 @@ void RefreshTask::executeRefresh()
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
-        if (now > znode.last_success_end_time)
-            znode.last_success_end_time = now;
-        else
-            /// Must monotonically increase, dependencies rely on it.
-            znode.last_success_end_time += std::chrono::nanoseconds(1);
-        znode.last_success_dependencies = std::move(execution.dependencies);
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
         znode.randomize();
@@ -1278,7 +862,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, const String & log_comment, String & out_error_message)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1301,8 +885,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     try
     {
         refresh_context = view->createRefreshContext(log_comment);
-
-        syncDependenciesForRefresh(deps, refresh_context);
 
         if (!refresh_append)
         {
@@ -1343,10 +925,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 execution.executing_query_status = nullptr;
             });
 
-            /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
-            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
-            /// pattern's bucket instead of the shared hash-0 bucket.
-            refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);
@@ -1368,7 +946,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             /// cover the surrounding CREATE, EXCHANGE, and DROP queries.
             query_log_elem = logQueryStart(
                 currentTime(), refresh_context, query_for_logging, normalized_query_hash, refresh_query, pipeline,
-                &interpreter, /*internal*/ internal, /*log_as_internal*/ internal, view_storage_id.database_name,
+                &interpreter, /*internal*/ internal, view_storage_id.database_name,
                 view_storage_id.table_name, /*async_insert*/ false);
 
             if (!pipeline.completed())
@@ -1404,7 +982,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 /// `executor` must be destroyed before `pipeline`!
             }
 
-            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal, /*log_as_internal=*/internal);
+            logQueryFinish(*query_log_elem, refresh_context, refresh_query, std::move(pipeline), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, /*internal=*/internal);
             query_log_elem = std::nullopt;
             query_span = nullptr;
         }
@@ -1412,24 +990,6 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         /// Exchange tables.
         if (!refresh_append)
         {
-            /// The executor is gone once its block above returns, so interruptExecution() is a no-op
-            /// past this point. The exchange is the destructive coordinated step, so re-check the
-            /// interrupt flag here: a cancellation that lands in this post-pipeline window must still
-            /// skip the exchange, not swap the target table after the refresh was cancelled.
-            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_before_exchange);
-            {
-                std::unique_lock exec_lock(execution.executor_mutex);
-                if (execution.interrupt_execution.load())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
-            }
-
-            /// The interrupt flag was just read and executor_mutex released, but the exchange has not
-            /// started. A scheduling pass that gives up coordination can land in exactly this window;
-            /// this pause lets a test reproduce it deterministically. It is safe for the exchange to
-            /// win this race: doScheduling only interrupts (does not disable) while the refresh is in
-            /// flight, so the attempt still reaches Finished and is reconciled by the next pass.
-            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_after_interrupt_check);
-
             query_for_logging = "(exchange tables)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             table_to_drop = view->exchangeTargetTable(new_table_id, refresh_context);
@@ -1449,13 +1009,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
         if (query_log_elem.has_value())
         {
-            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_as_internal*/ internal, /*log_error*/ !cancelled);
+            logQueryException(*query_log_elem, refresh_context, stopwatch, refresh_query, query_span, /*internal*/ internal, /*log_error*/ !cancelled);
         }
         else
         {
             /// Failed when creating new table or when swapping tables.
             logExceptionBeforeStart(query_for_logging, normalized_query_hash, refresh_context,
-                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal, /*log_as_internal*/ internal);
+                                    /*ast*/ nullptr, query_span, stopwatch.elapsedMilliseconds(), /*internal*/ internal);
         }
 
         if (cancelled)
@@ -1474,79 +1034,87 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     return new_table_id.uuid;
 }
 
-void RefreshTask::notifyDependentsIfNeeded(std::unique_lock<std::mutex> & lock)
+void RefreshTask::updateDependenciesIfNeeded(std::unique_lock<std::mutex> & lock)
 {
-    chassert(lock.owns_lock());
-    auto info = getInfoForDependentViewsLocked(lock);
-    if (info != coordination.notified_dependents)
+    if (!scheduling.should_recalculate_dependencies)
+        return;
+
+    while (true)
     {
-        /// Our callers (readZnodesIfNeeded, updateCoordinationState) release the mutex before
-        /// reaching here, so a parallel shutdown() may have nulled `view`. Bail in that case
-        /// (shutdown() does its own final notifyDependents()), and snapshot the accessors before
-        /// unlocking so they can't turn into a null deref while we are unlocked.
-        if (!view)
+        chassert(lock.owns_lock());
+        scheduling.should_recalculate_dependencies = false;
+        auto deps = set_handle.getDependencies();
+        if (deps.empty())
+        {
+            scheduling.dependencies_satisfied_until = std::chrono::sys_seconds::max();
             return;
-        coordination.notified_dependents = info;
-        ContextPtr context = view->getContext();
-        StorageID view_storage_id = view->getStorageID();
+        }
         lock.unlock();
-        context->getRefreshSet().notifyDependents(view_storage_id);
+
+        /// Consider a dependency satisfied if its next scheduled refresh time is greater than ours.
+        /// This seems to produce reasonable behavior in practical cases, e.g.:
+        ///  * REFRESH EVERY 1 DAY depends on REFRESH EVERY 1 DAY
+        ///    The second refresh starts after the first refresh completes *for the same day*.
+        ///  * REFRESH EVERY 1 DAY OFFSET 2 HOUR depends on REFRESH EVERY 1 DAY OFFSET 1 HOUR
+        ///    The second refresh starts after the first refresh completes for the same day as well (scheduled 1 hour earlier).
+        ///  * REFRESH EVERY 1 DAY OFFSET 1 HOUR depends on REFRESH EVERY 1 DAY OFFSET 23 HOUR
+        ///    The dependency's refresh on day X triggers dependent's refresh on day X+1.
+        ///  * REFRESH EVERY 2 HOUR depends on REFRESH EVERY 1 HOUR
+        ///    The 2 HOUR refresh happens after the 1 HOUR refresh for every other hour, e.g.
+        ///    after the 2pm refresh, then after the 4pm refresh, etc.
+        ///
+        /// We currently don't allow dependencies in REFRESH AFTER case, because its unclear what their meaning should be.
+
+        const RefreshSet & set = view->getContext()->getRefreshSet();
+        auto min_ts = std::chrono::sys_seconds::max();
+        bool need_delay = false;
+        for (const StorageID & id : deps)
+        {
+            auto tasks = set.findTasks(id);
+            if (tasks.empty())
+            {
+                min_ts = {}; // missing table, dependency unsatisfied
+            }
+            else
+            {
+                auto info = (*tasks.begin())->getDependencyInfo();
+                need_delay |=
+                    refresh_settings[RefreshSetting::prefer_dependency_replica] &&
+                    info.last_refresh_replica != coordination.replica_name;
+                min_ts = std::min(min_ts, info.next_refresh_timeslot);
+            }
+        }
+
         lock.lock();
-    }
-}
 
-bool RefreshTask::collectDependencyStates(AllDependenciesInfo & out, std::unique_lock<std::mutex> & lock)
-{
-    chassert(lock.owns_lock());
-    AllDependenciesInfo res;
-    auto deps = set_handle.getDependencies();
-    if (deps.empty())
-        return true;
-
-    lock.unlock();
-    bool ok = collectDependencyStatesUnlocked(out, deps);
-    lock.lock();
-
-    return ok;
-}
-
-bool RefreshTask::collectDependencyStatesUnlocked(AllDependenciesInfo & out, const std::vector<StorageID> & deps)
-{
-    const RefreshSet & set = view->getContext()->getRefreshSet();
-    bool all_found = true;
-    for (const StorageID & id : deps)
-    {
-        DependencyRefreshInfo info;
-        auto tasks = set.findTasks(id);
-        if (tasks.empty())
+        if (scheduling.should_recalculate_dependencies)
         {
-            all_found = false;
+            /// Dependencies changed again after we started looking at them. Have to re-check.
+            continue;
         }
-        else
+
+        if (min_ts != scheduling.dependencies_satisfied_until)
         {
-            info = (*tasks.begin())->getInfoForDependentViews();
+            scheduling.dependencies_satisfied_until = min_ts;
+            if (need_delay)
+            {
+                UInt64 delay_ms = refresh_settings[RefreshSetting::prefer_dependency_replica_delay_ms];
+                scheduling.dependencies_delay = currentTime() + std::chrono::milliseconds(Int64(delay_ms));
+                LOG_DEBUG(getLogger(), "Delaying {} ms for pod affinity (non-preferred replica for dependency chain)", delay_ms);
+            }
+            else
+            {
+                scheduling.dependencies_delay.reset();
+            }
         }
-        info.database_and_table = id.getFullTableName();
-        out.tables.push_back(std::move(info));
-    }
 
-    return all_found;
-}
-
-void RefreshTask::syncDependenciesForRefresh(const std::vector<StorageID> & deps, const ContextPtr & context)
-{
-    const RefreshSet & set = view->getContext()->getRefreshSet();
-    for (const StorageID & id : deps)
-    {
-        auto tasks = set.findTasks(id);
-        if (!tasks.empty())
-            (*tasks.begin())->syncForDependentRefresh(context);
+        return;
     }
 }
 
 static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings & refresh_settings)
 {
-    UInt64 delay_ms = 0;
+    UInt64 delay_ms;
     UInt64 multiplier = UInt64(1) << std::min(retry_idx, Int64(62));
     /// Overflow check: a*b <= c iff a <= c/b iff a <= floor(c/b).
     if (refresh_settings[RefreshSetting::refresh_retry_initial_backoff_ms] <= refresh_settings[RefreshSetting::refresh_retry_max_backoff_ms] / multiplier)
@@ -1556,10 +1124,9 @@ static std::chrono::milliseconds backoff(Int64 retry_idx, const RefreshSettings 
     return std::chrono::milliseconds(delay_ms);
 }
 
-std::tuple<std::chrono::system_clock::time_point, bool /*waiting_for_dependencies*/, RefreshTask::CoordinationZnode>
-RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock)
+std::tuple<std::chrono::system_clock::time_point, std::chrono::sys_seconds, RefreshTask::CoordinationZnode>
+RefreshTask::determineNextRefreshTime(std::chrono::sys_seconds now)
 {
-    chassert(lock.owns_lock());
     auto znode = coordination.root_znode;
     if (refresh_settings[RefreshSetting::refresh_retries] >= 0 && znode.attempt_number > refresh_settings[RefreshSetting::refresh_retries])
     {
@@ -1567,88 +1134,16 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         znode.last_completed_timeslot = refresh_schedule.timeslotForCompletedRefresh(znode.last_completed_timeslot, znode.last_attempt_time, znode.last_attempt_time, false);
         znode.attempt_number = 0;
     }
+    auto timeslot = refresh_schedule.advance(znode.last_completed_timeslot);
 
-    std::chrono::system_clock::time_point when = std::chrono::system_clock::time_point::max();
-    bool waiting_for_dependencies = false;
-    if (znode.attempt_number != 0)
-    {
-        /// Retrying refresh. Ignore schedule and dependencies.
+    std::chrono::system_clock::time_point when;
+    if (znode.attempt_number == 0)
+        when = refresh_schedule.addRandomSpread(timeslot, znode.randomness);
+    else
         when = znode.last_attempt_time + backoff(znode.attempt_number - 1, refresh_settings);
-    }
-    else if (dependencies.tables.empty())
-    {
-        /// No dependencies, use schedule.
-        when = refresh_schedule.advance(znode.last_completed_timeslot);
-    }
-    else
-    {
-        std::unordered_map<String, std::chrono::sys_time<std::chrono::nanoseconds>> last_refresh_deps;
-        for (const DependencyRefreshInfo & info : znode.last_success_dependencies.tables)
-            last_refresh_deps[info.database_and_table] = info.last_success_end_time;
 
-        /// Trigger refresh if all dependencies refreshed at least once since our last refresh.
-        bool all_advanced = true;
-        bool all_kind_every = true;
-        std::chrono::sys_time<std::chrono::nanoseconds> max_time {};
-        auto min_next_refresh_timeslot = std::chrono::sys_seconds::max();
-        for (const DependencyRefreshInfo & info : dependencies.tables)
-        {
-            if (info.next_refresh_timeslot.has_value())
-                min_next_refresh_timeslot = std::min(min_next_refresh_timeslot, *info.next_refresh_timeslot);
-            else
-                all_kind_every = false;
-
-            auto threshold = last_refresh_deps[info.database_and_table];
-            auto current = info.last_success_end_time;
-            if (current > threshold)
-            {
-                /// The dependency has refreshed since our last refresh.
-                auto & seen = scheduling.seen_dep_refresh_times[info.database_and_table];
-                if (seen > threshold)
-                    /// If the dependency refreshed more than once, use the oldest of these refresh times,
-                    /// to avoid waiting for REFRESH AFTER indefinitely if dependency keeps refreshing.
-                    current = seen;
-                else
-                    seen = current;
-                max_time = std::max(max_time, seen);
-            }
-            else
-            {
-                all_advanced = false;
-            }
-        }
-
-        /// Dependency semantics are awkward. Two different behaviors:
-        ///  1. If both dependency and dependent use REFRESH EVERY, align their timeslots.
-        ///     Start refresh for a given timeslot only after all dependencies moved past that timeslot.
-        ///  2. Otherwise start refresh if all dependencies refreshed at least once since our last refresh.
-        if (refresh_schedule.kind == RefreshScheduleKind::EVERY)
-        {
-            auto timeslot = refresh_schedule.advance(znode.last_completed_timeslot);
-            when = timeslot;
-            if (all_kind_every)
-                waiting_for_dependencies = min_next_refresh_timeslot <= timeslot;
-            else
-                waiting_for_dependencies = !all_advanced;
-        }
-        else
-        {
-            if (all_advanced)
-            {
-                if (refresh_schedule.period.maxSeconds() == 0)
-                    /// (Unnecessary pedantic special case: use `now` instead of `max_time` to
-                    ///  refresh right away even if `max_time` is in the future because of clock skew.)
-                    when = now;
-                else
-                    when = refresh_schedule.period.advance(std::chrono::floor<std::chrono::system_clock::duration>(max_time));
-            }
-        }
-    }
-
-    if (when == std::chrono::system_clock::time_point::max())
-        waiting_for_dependencies = true;
-    else
-        when = refresh_schedule.addRandomSpread(when, znode.randomness);
+    if (scheduling.dependencies_delay.has_value())
+        when = std::max(when, scheduling.dependencies_delay.value());
 
     znode.previous_attempt_error = "";
     if (!znode.last_attempt_succeeded && znode.last_attempt_time.time_since_epoch().count() != 0)
@@ -1660,13 +1155,13 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
     }
 
     znode.attempt_number += 1;
-    znode.last_attempt_time = std::chrono::floor<std::chrono::seconds>(now);
+    znode.last_attempt_time = now;
     znode.last_attempt_replica = coordination.replica_name;
     znode.last_attempt_error = "";
     znode.last_attempt_succeeded = false;
     znode.refresh_running = true;
 
-    return {when, waiting_for_dependencies, znode};
+    return {when, timeslot, znode};
 }
 
 void RefreshTask::scheduleRefresh(std::lock_guard<std::mutex> &)
@@ -1680,8 +1175,8 @@ void RefreshTask::setState(RefreshState s, std::unique_lock<std::mutex> & lock)
 {
     chassert(lock.owns_lock());
     state = s;
-    if (s != RefreshState::Scheduling)
-        wait_cv.notify_all();
+    if (s != RefreshState::Running && s != RefreshState::Scheduling)
+        refresh_cv.notify_all();
 }
 
 void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock)
@@ -1691,6 +1186,7 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         return;
 
     coordination.watches->should_reread_znodes.store(false);
+    auto prev_last_completed_timeslot = coordination.root_znode.last_completed_timeslot;
 
     lock.unlock();
 
@@ -1698,14 +1194,14 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Keeper server doesn't support multi-reads. Refreshable materialized views won't work.");
 
     /// Do separate requests just to add watches.
-    Coordination::WatchCallbackPtrOrEventPtr labelled_watch{
-        watch_callback, ProfileEvents::ZooKeeperWatchTriggeredMaterializedViewRefresh};
-    zookeeper->existsWatch(coordination.path, nullptr, labelled_watch);
-    zookeeper->getChildrenWatch(coordination.path, nullptr, labelled_watch);
+    zookeeper->existsWatch(coordination.path, nullptr, watch_callback);
+    zookeeper->getChildrenWatch(coordination.path, nullptr, watch_callback);
 
     /// Do an atomic multi-read.
     Strings paths {coordination.path, coordination.path + "/running", coordination.path + "/paused"};
     auto responses = zookeeper->tryGet(paths.begin(), paths.end());
+
+    lock.lock();
 
     if (responses[0].error != Coordination::Error::ZOK)
         throw Coordination::Exception::fromPath(responses[0].error, paths[0]);
@@ -1714,18 +1210,18 @@ void RefreshTask::readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeepe
             throw Coordination::Exception::fromPath(responses[i].error, paths[i]);
 
     bool running_znode_exists = responses[1].error == Coordination::Error::ZOK;
-    CoordinationZnode znode;
-    znode.parse(responses[0].data, running_znode_exists, getLogger());
 
-    lock.lock();
-
-    coordination.root_znode = znode;
+    coordination.root_znode.parse(responses[0].data, running_znode_exists, getLogger());
     coordination.root_znode.version = responses[0].stat.version;
     coordination.running_znode_exists = running_znode_exists;
     coordination.paused_znode_exists = responses[2].error == Coordination::Error::ZOK;
 
-    notifyDependentsIfNeeded(lock);
-    wait_cv.notify_all();
+    if (coordination.root_znode.last_completed_timeslot != prev_last_completed_timeslot)
+    {
+        lock.unlock();
+        view->getContext()->getRefreshSet().notifyDependents(view->getStorageID());
+        lock.lock();
+    }
 }
 
 bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode)
@@ -1781,10 +1277,6 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     coordination.root_znode = root;
     coordination.root_znode.version = version;
     coordination.running_znode_exists = running;
-
-    notifyDependentsIfNeeded(lock);
-    wait_cv.notify_all();
-
     return true;
 }
 
@@ -1806,9 +1298,9 @@ void RefreshTask::interruptExecution()
 
     /// Also mark the refresh query killed, not just cancel the pipeline: a refresh blocked in I/O
     /// (e.g. a filesystem-cache download wait) doesn't observe pipeline cancellation and would keep
-    /// running, so shutdown()'s deactivate() — and any DROP / SYSTEM STOP VIEW driving it — would
-    /// block until the I/O returned on its own. Done outside executor_mutex because cancelQuery()
-    /// cancels registered executors, which take their own locks.
+    /// running, so shutdown()'s deactivate() — and any DROP driving it, including SharedCatalog
+    /// state apply — would block until the I/O returned on its own. Done outside executor_mutex
+    /// because cancelQuery() cancels registered executors, which take their own locks.
     if (query_status)
         query_status->cancelQuery(CancelReason::CANCELLED_BY_USER);
 }
@@ -1827,11 +1319,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
     bool prev_table_dropped_locally = false;
     std::exception_ptr exception;
 
-    UInt64 backoff_ms = 100;
-    const UInt64 max_backoff_ms = 1000;
-    const int max_attempts = 10;
-
-    for (int attempt = 0; attempt < max_attempts; ++attempt)
+    for (int attempt = 0; attempt < 10; ++attempt)
     {
         if (attempt > 0)
         {
@@ -1843,8 +1331,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
             {
                 /// We're waiting for DatabaseReplicated to catch up and see the new table.
                 ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaRetry);
-                std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
-                backoff_ms = std::min(backoff_ms * 2, max_backoff_ms);
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
         }
 
@@ -1869,7 +1356,7 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
 
         if (coordination.coordinated)
         {
-            std::lock_guard sync_lock(replica_sync_mutex);
+            std::lock_guard lock(replica_sync_mutex);
             UUID uuid = storage->getStorageID().uuid;
             if (uuid != last_synced_inner_uuid)
             {
@@ -1914,56 +1401,6 @@ std::tuple<StoragePtr, TableLockHolder> RefreshTask::getAndLockTargetTable(const
         std::rethrow_exception(exception);
 }
 
-void RefreshTask::syncForDependentRefresh(const ContextPtr & context)
-{
-    if (!coordination.coordinated)
-        return;
-
-    if (refresh_append)
-    {
-        /// Do a SYNC REPLICA to make sure dependent refresh sees the rows appended by the latest dependency refresh.
-
-        std::unique_lock lock(mutex);
-
-        if (!view)
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Dependency's table was dropped or detached");
-
-        auto last_success_end_time = coordination.root_znode.last_success_end_time;
-        StorageID storage_id = view->getTargetTableId();
-
-        lock.unlock();
-
-        if (last_success_end_time.time_since_epoch().count() == 0)
-            return; // never refreshed
-
-        StoragePtr storage = DatabaseCatalog::instance().tryGetTable(storage_id, context);
-        if (!storage)
-            return;
-
-        std::lock_guard sync_lock(replica_sync_mutex);
-
-        if (last_success_end_time == last_synced_refresh_end_time)
-            /// There was no refresh since last sync. Don't sync again.
-            /// Useful if there are many dependent views.
-            return;
-
-        InterpreterSystemQuery::trySyncReplica(storage, SyncReplicaMode::DEFAULT, {}, context);
-        ProfileEvents::increment(ProfileEvents::RefreshableViewSyncReplicaSuccess);
-
-        last_synced_refresh_end_time = last_success_end_time;
-    }
-    else
-    {
-        /// Wait until we see the table produced by the latest refresh.
-        /// No need to SYNC REPLICA because getAndLockTargetTable will do that, as part of SELECT.
-        /// (Alternatively, we could do waitForLatestTargetTable() in getAndLockTargetTable. But it
-        ///  doesn't seem useful there for anything other than DEPENDS ON, because the
-        ///  `root_znode.last_success_table_uuid` may itself be stale. For dependent refresh we know
-        ///  it's not stale because the refresh is triggered based on the same `root_znode` contents.)
-        waitForLatestTargetTable(context);
-    }
-}
-
 std::chrono::system_clock::time_point RefreshTask::currentTime() const
 {
     Int64 fake = scheduling.fake_clock.load(std::memory_order::relaxed);
@@ -1975,80 +1412,6 @@ std::chrono::system_clock::time_point RefreshTask::currentTime() const
 void RefreshTask::setRefreshSetHandleUnlock(RefreshSet::Handle && set_handle_)
 {
     set_handle = std::move(set_handle_);
-}
-
-void RefreshTask::AllDependenciesInfo::writeText(WriteBuffer & out) const
-{
-    static FormatSettings format_settings;
-
-    /// One line, formatted like this (subset of json):
-    /// {"foo.bar": {"last_success_end_time_ns": 123456, "unrecognized_ignored_field": 42, "unrecognized_ignored_quoted_string": "cat says: \"meow\"!"}, "xx.yy": {"last_success_end_time_ns": 654321}}
-    /// For compatibility, only string and int fields can be added, see AllDependenciesInfo::readText.
-    out << "{";
-    bool first = true;
-    for (const DependencyRefreshInfo & t : tables)
-    {
-        if (!first)
-            out << ", ";
-        first = false;
-        writeJSONString(t.database_and_table, out, format_settings);
-        out << ": {\"last_success_end_time_ns\": " << Int64(t.last_success_end_time.time_since_epoch().count()) << "}";
-    }
-    out << "}";
-}
-
-void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
-{
-    static FormatSettings::JSON json_settings;
-
-    /// Don't be picky about whitespace, in case someone edits the znode contents by hand and assumes it's just json.
-    /// (Maybe we should use a full json parser at this point.)
-    skipWhitespaceIfAny(in, /*one_line=*/ true);
-    in >> "{";
-    skipWhitespaceIfAny(in, /*one_line=*/ true);
-    while (!checkChar('}', in))
-    {
-        /// {"foo.bar": {
-        DependencyRefreshInfo t;
-        readJSONString(t.database_and_table, in, json_settings);
-        skipWhitespaceIfAny(in, /*one_line=*/ true);
-        in >> ":";
-        skipWhitespaceIfAny(in, /*one_line=*/ true);
-        in >> "{";
-
-        while (!checkChar('}', in))
-        {
-            /// "field_name":
-            String field_name;
-            readJSONString(field_name, in, json_settings);
-            skipWhitespaceIfAny(in, /*one_line=*/ true);
-            in >> ":";
-            skipWhitespaceIfAny(in, /*one_line=*/ true);
-
-            /// Unquoted int or quoted json string.
-            Int64 int_val = 0;
-            String string_val;
-            char c = 0;
-            if (in.peek(c) && c != '"')
-                in >> int_val;
-            else
-                readJSONString(string_val, in, json_settings);
-
-            skipWhitespaceIfAny(in, /*one_line=*/ true);
-            checkChar(',', in);
-            skipWhitespaceIfAny(in, /*one_line=*/ true);
-
-            if (field_name == "last_success_end_time_ns")
-                t.last_success_end_time = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(int_val));
-        }
-
-        skipWhitespaceIfAny(in, /*one_line=*/ true);
-        checkChar(',', in);
-        skipWhitespaceIfAny(in, /*one_line=*/ true);
-
-        tables.push_back(std::move(t));
-    }
-    skipWhitespaceIfAny(in, /*one_line=*/ true);
 }
 
 void RefreshTask::CoordinationZnode::randomize()
@@ -2084,20 +1447,12 @@ String RefreshTask::CoordinationZnode::toString() const
         << "previous_attempt_error: " << escape << previous_attempt_error << "\n"
         << "attempt_number: " << attempt_number << "\n"
         << "randomness: " << randomness << "\n"
-        << "refresh_running: " << refresh_running << "\n"
-        << "last_success_end_time_ns: " << Int64(last_success_end_time.time_since_epoch().count()) << "\n";
-
-    out << "last_success_dependencies: ";
-    last_success_dependencies.writeText(out);
-    out << "\n";
-
+        << "refresh_running: " << refresh_running << "\n";
     return out.str();
 }
 
 void RefreshTask::CoordinationZnode::parse(const String & data, bool running_znode_exists, const LoggerPtr & log_)
 {
-    *this = {};
-
     ReadBufferFromString in(data);
 
     String next_field_name;
@@ -2112,7 +1467,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         readStringUntilColon(next_field_name, in);
         assertString(": ", in);
     };
-    auto optional_field = [&](const char * name, auto & out) -> bool
+    auto try_read_field = [&](const char * name, auto & out) -> bool
     {
         using T = std::remove_reference_t<decltype(out)>;
 
@@ -2125,25 +1480,15 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
         }
         else if constexpr (std::is_same_v<T, std::chrono::sys_seconds>)
         {
-            Int64 v = 0;
+            Int64 v;
             in >> v;
             out = std::chrono::sys_seconds(std::chrono::seconds(v));
         }
         else if constexpr (std::is_same_v<T, std::chrono::milliseconds>)
         {
-            Int64 v = 0;
+            Int64 v;
             in >> v;
             out = std::chrono::milliseconds(v);
-        }
-        else if constexpr (std::is_same_v<T, std::chrono::sys_time<std::chrono::nanoseconds>>)
-        {
-            Int64 v = 0;
-            in >> v;
-            out = std::chrono::sys_time<std::chrono::nanoseconds>(std::chrono::nanoseconds(v));
-        }
-        else if constexpr (std::is_same_v<T, AllDependenciesInfo>)
-        {
-            out.readText(in);
         }
         else
         {
@@ -2156,8 +1501,13 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     auto required_field = [&](const char * name, auto & out)
     {
-        if (!optional_field(name, out))
+        if (!try_read_field(name, out))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "RMV coordination znode fields are missing or reordered: not found field '{}'", name);
+    };
+    auto optional_field = [&](const char * name, auto & out, auto default_value)
+    {
+        if (!try_read_field(name, out))
+            out = default_value;
     };
 
     in >> "format version: 1";
@@ -2174,12 +1524,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     required_field("previous_attempt_error", previous_attempt_error);
     required_field("attempt_number", attempt_number);
     required_field("randomness", randomness);
-
-    refresh_running = running_znode_exists;
-    optional_field("refresh_running", refresh_running);
-
-    optional_field("last_success_end_time_ns", last_success_end_time);
-    optional_field("last_success_dependencies", last_success_dependencies);
+    optional_field("refresh_running", refresh_running, running_znode_exists);
 
     if (!next_field_name.empty())
     {

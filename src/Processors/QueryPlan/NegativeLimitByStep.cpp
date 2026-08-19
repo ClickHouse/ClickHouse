@@ -16,9 +16,9 @@ static ITransformingStep::Traits getTraits()
     return ITransformingStep::Traits
     {
         {
-            .returns_single_stream = false,
+            .returns_single_stream = true,
             .preserves_number_of_streams = false,
-            .preserves_sorting = false,
+            .preserves_sorting = true,
         },
         {
             .preserves_number_of_rows = false,
@@ -46,8 +46,8 @@ void NegativeLimitByStep::transformPipeline(QueryPipelineBuilder & pipeline, con
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
 
-        if (!sorted_columns_descr.empty())
-            return std::make_shared<NegativeLimitBySortedStreamTransform>(header, group_length, group_offset, sorted_columns_descr);
+        if (in_order)
+            return std::make_shared<NegativeLimitBySortedStreamTransform>(header, group_length, group_offset, columns);
 
         return std::make_shared<NegativeLimitByTransform>(header, group_length, group_offset, columns);
     });
@@ -102,13 +102,13 @@ void NegativeLimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt64 group_length = 0;
-    UInt64 group_offset = 0;
+    UInt64 group_length;
+    UInt64 group_offset;
 
     readVarUInt(group_length, ctx.in);
     readVarUInt(group_offset, ctx.in);
 
-    UInt64 num_columns = 0;
+    UInt64 num_columns;
     readVarUInt(num_columns, ctx.in);
     Names columns(num_columns);
     for (auto & column : columns)
@@ -117,12 +117,11 @@ QueryPlanStepPtr NegativeLimitByStep::deserialize(Deserialization & ctx)
     return std::make_unique<NegativeLimitByStep>(ctx.input_headers.front(), group_length, group_offset, std::move(columns));
 }
 
-void NegativeLimitByStep::applyOrder(const SortDescription & sort_description)
+void NegativeLimitByStep::applyOrder(SortDescription sort_description)
 {
-    sorted_columns_descr = sort_description;
+    in_order = sort_description.hasPrefix(columns);
 }
 
-void registerNegativeLimitByStep(QueryPlanStepRegistry & registry);
 void registerNegativeLimitByStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("NegativeLimitBy", NegativeLimitByStep::deserialize);

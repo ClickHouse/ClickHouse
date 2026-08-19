@@ -5,7 +5,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionVector.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
@@ -21,8 +20,7 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece applyFunction(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     std::string_view function_name = function_node->function_name;
 
@@ -49,9 +47,6 @@ SQLQueryPiece applyFunction(
 
     if (isFunctionOverRange(function_name))
         return applyFunctionOverRange(function_node, std::move(arguments), context);
-
-    if (isHistogramQuantile(function_name))
-        return applyHistogramQuantile(function_node, std::move(arguments), context);
 
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Function {} is not implemented", function_name);
 }

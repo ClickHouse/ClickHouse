@@ -1,5 +1,4 @@
 #include <Storages/HivePartitioningUtils.h>
-#include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <Core/Settings.h>
@@ -150,7 +149,7 @@ void addPartitionColumnsToChunk(
     }
 }
 
-static void sanityCheckSchemaAndHivePartitionColumns(
+void sanityCheckSchemaAndHivePartitionColumns(
     const NamesAndTypesList & hive_partition_columns_to_read_from_file_path,
     const ColumnsDescription & storage_columns,
     bool check_contained_in_schema)
@@ -183,7 +182,7 @@ static void sanityCheckSchemaAndHivePartitionColumns(
     }
 }
 
-static NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
+NamesAndTypesList extractPartitionColumnsFromPathAndEnrichStorageColumns(
     ColumnsDescription & storage_columns,
     const std::string & path,
     bool inferred_schema,

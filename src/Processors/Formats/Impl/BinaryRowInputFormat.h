@@ -37,7 +37,7 @@ public:
 private:
     /// Data types read from input data.
     DataTypes read_data_types;
-    UInt64 read_columns{};
+    UInt64 read_columns;
 };
 
 template <bool with_defaults = false>
@@ -56,7 +56,7 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
 };
 
-class BinaryWithNamesAndTypesSchemaReader final : public FormatWithNamesAndTypesSchemaReader
+class BinaryWithNamesAndTypesSchemaReader : public FormatWithNamesAndTypesSchemaReader
 {
 public:
     BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);
