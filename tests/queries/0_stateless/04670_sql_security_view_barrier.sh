@@ -30,7 +30,7 @@ CREATE VIEW $db.policy_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.secrets;
 
--- A session `additional_table_filters` predicate is applied in the view's output namespace.
+-- A session additional-table-filter predicate is applied in the view's output namespace.
 CREATE VIEW $db.additional_filter_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.secrets;
