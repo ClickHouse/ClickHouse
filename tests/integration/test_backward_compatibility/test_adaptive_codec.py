@@ -39,7 +39,7 @@ def fill(table, adaptive, x_expr):
         ORDER BY id
         SETTINGS min_bytes_for_wide_part = 0, max_compress_block_size = 65536,
             serialization_info_version = 'basic',
-            allow_experimental_adaptive_codec_selection = {adaptive}
+            enable_adaptive_codec_selection = {adaptive}
         """)
     node_new.query(f"INSERT INTO {table} SELECT number, {x_expr} FROM numbers(1000000)")
     node_new.query(
