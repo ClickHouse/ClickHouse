@@ -1,11 +1,14 @@
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesCache.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeObject.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnVariant.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteBufferFromVector.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/PODArray.h>
@@ -60,21 +63,31 @@ const SerializationPtr & getDynamicSerialization()
     return dynamic_serialization;
 }
 
+/// JSON text of a default (empty) object stored in the source column.
+constexpr std::string_view EMPTY_OBJECT_SOURCE = "{}";
+
 struct ColumnObjectCheckpoint : public ColumnCheckpoint
 {
     using CheckpointsMap = UnorderedMapWithMemoryTracking<std::string_view, ColumnCheckpointPtr>;
 
-    ColumnObjectCheckpoint(size_t size_, CheckpointsMap typed_paths_, CheckpointsMap dynamic_paths_, ColumnCheckpointPtr shared_data_)
+    ColumnObjectCheckpoint(
+        size_t size_,
+        CheckpointsMap typed_paths_,
+        CheckpointsMap dynamic_paths_,
+        ColumnCheckpointPtr shared_data_,
+        ColumnCheckpointPtr source_)
         : ColumnCheckpoint(size_)
         , typed_paths(std::move(typed_paths_))
         , dynamic_paths(std::move(dynamic_paths_))
         , shared_data(std::move(shared_data_))
+        , source(std::move(source_))
     {
     }
 
     CheckpointsMap typed_paths;
     CheckpointsMap dynamic_paths;
     ColumnCheckpointPtr shared_data;
+    ColumnCheckpointPtr source;
 };
 
 }
@@ -86,13 +99,20 @@ ColumnObject::ColumnObject(
     size_t max_dynamic_paths_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
-    const StatisticsPtr & statistics_)
+    const StatisticsPtr & statistics_,
+    DataTypePtr object_type_,
+    MutableColumnPtr source_)
     : shared_data(std::move(shared_data_))
+    , source(std::move(source_))
+    , object_type(std::move(object_type_))
     , max_dynamic_paths(max_dynamic_paths_)
     , global_max_dynamic_paths(global_max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
     , statistics(statistics_)
 {
+    if (source && !object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+
     typed_paths.reserve(typed_paths_.size());
     sorted_typed_paths.reserve(typed_paths_.size());
     for (auto & [path, column] : typed_paths_)
@@ -113,9 +133,23 @@ ColumnObject::ColumnObject(
 }
 
 ColumnObject::ColumnObject(
-    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
-    : max_dynamic_paths(max_dynamic_paths_), global_max_dynamic_paths(max_dynamic_paths_), max_dynamic_types(max_dynamic_types_)
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+    size_t max_dynamic_paths_,
+    size_t max_dynamic_types_,
+    bool with_source_,
+    DataTypePtr object_type_)
+    : object_type(std::move(object_type_))
+    , max_dynamic_paths(max_dynamic_paths_)
+    , global_max_dynamic_paths(max_dynamic_paths_)
+    , max_dynamic_types(max_dynamic_types_)
 {
+    if (with_source_)
+    {
+        if (!object_type)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+        source = ColumnString::create();
+    }
+
     typed_paths.reserve(typed_paths_.size());
     sorted_typed_paths.reserve(typed_paths_.size());
     for (auto & [path, column] : typed_paths_)
@@ -140,6 +174,9 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     , dynamic_paths(other.dynamic_paths)
     , dynamic_paths_ptrs(other.dynamic_paths_ptrs)
     , shared_data(other.shared_data)
+    , source(other.source)
+    , object_type(other.object_type)
+    , object_serialization(other.object_serialization)
     , max_dynamic_paths(other.max_dynamic_paths)
     , global_max_dynamic_paths(other.global_max_dynamic_paths)
     , max_dynamic_types(other.max_dynamic_types)
@@ -164,7 +201,9 @@ ColumnObject::Ptr ColumnObject::create(
     size_t max_dynamic_paths_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
-    const ColumnObject::StatisticsPtr & statistics_)
+    const ColumnObject::StatisticsPtr & statistics_,
+    const DataTypePtr & object_type_,
+    const ColumnPtr & source_)
 {
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> mutable_typed_paths;
     mutable_typed_paths.reserve(typed_paths_.size());
@@ -183,7 +222,9 @@ ColumnObject::Ptr ColumnObject::create(
         max_dynamic_paths_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
-        statistics_);
+        statistics_,
+        object_type_,
+        source_ ? source_->assumeMutable() : nullptr);
 }
 
 ColumnObject::MutablePtr ColumnObject::create(
@@ -193,20 +234,38 @@ ColumnObject::MutablePtr ColumnObject::create(
     size_t max_dynamic_paths_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
-    const ColumnObject::StatisticsPtr & statistics_)
+    const ColumnObject::StatisticsPtr & statistics_,
+    DataTypePtr object_type_,
+    MutableColumnPtr source_)
 {
-    return Base::create(std::move(typed_paths_), std::move(dynamic_paths_), std::move(shared_data_), max_dynamic_paths_, global_max_dynamic_paths_, max_dynamic_types_, statistics_);
+    return Base::create(
+        std::move(typed_paths_),
+        std::move(dynamic_paths_),
+        std::move(shared_data_),
+        max_dynamic_paths_,
+        global_max_dynamic_paths_,
+        max_dynamic_types_,
+        statistics_,
+        std::move(object_type_),
+        std::move(source_));
 }
 
-ColumnObject::MutablePtr ColumnObject::create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
+ColumnObject::MutablePtr ColumnObject::create(
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+    size_t max_dynamic_paths_,
+    size_t max_dynamic_types_,
+    bool with_source_,
+    DataTypePtr object_type_)
 {
-    return Base::create(std::move(typed_paths_), max_dynamic_paths_, max_dynamic_types_);
+    return Base::create(std::move(typed_paths_), max_dynamic_paths_, max_dynamic_types_, with_source_, std::move(object_type_));
 }
 
 std::string ColumnObject::getName() const
 {
     WriteBufferFromOwnString ss;
     ss << "Object(";
+    if (hasSource())
+        ss << "with_source=1, ";
     ss << "max_dynamic_paths=" << global_max_dynamic_paths;
     ss << ", max_dynamic_types=" << max_dynamic_types;
     for (const auto & path : sorted_typed_paths)
@@ -234,7 +293,9 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
+        statistics,
+        object_type,
+        source ? source->cloneEmpty() : nullptr);
 }
 
 MutableColumnPtr ColumnObject::cloneResized(size_t size) const
@@ -256,12 +317,19 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
         max_dynamic_paths,
         global_max_dynamic_paths,
         max_dynamic_types,
-        statistics);
+        statistics,
+        object_type,
+        source ? cloneResizedSource(size) : nullptr);
 }
 
 Field ColumnObject::operator[](size_t n) const
 {
     Object object;
+
+    /// Keep the JSON text of the row in the Field, so it's not lost when the Field is inserted back
+    /// into an Object column (for example when a constant expression is folded into a literal).
+    if (hasSource())
+        object[DataTypeObject::SOURCE_SUBCOLUMN_NAME] = getSourceColumn()[n];
 
     for (const auto & [path, column] : typed_paths)
         object[path] = (*column)[n];
@@ -552,7 +620,12 @@ void ColumnObject::insert(const Field & x)
     size_t current_size = size();
     for (const auto & [path, value_field] : object)
     {
-        if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
+        /// The source of the object is stored in a separate column and not as a path.
+        if (hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+        {
+            insertSource(value_field.safeGet<String>());
+        }
+        else if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
         {
             typed_it->second->insert(value_field);
         }
@@ -593,6 +666,11 @@ void ColumnObject::insert(const Field & x)
         if (column->size() == current_size)
             column->insertDefault();
     }
+
+    /// A field may come from a column without source or from a literal, then create the source
+    /// from the inserted object.
+    if (hasSource() && source->size() == current_size)
+        materializeSourceForLastRow();
 }
 
 bool ColumnObject::tryInsert(const Field & x)
@@ -635,11 +713,24 @@ bool ColumnObject::tryInsert(const Field & x)
             shared_data_paths->popBack(shared_data_paths->size() - prev_paths_size);
         if (shared_data_values->size() != prev_values_size)
             shared_data_values->popBack(shared_data_values->size() - prev_values_size);
+
+        if (hasSource() && source->size() != prev_size)
+            source->popBack(source->size() - prev_size);
     };
 
     for (const auto & [path, value_field] : object)
     {
-        if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
+        /// The source of the object is stored in a separate column and not as a path.
+        if (hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+        {
+            if (value_field.getType() != Field::Types::Which::String)
+            {
+                restore_sizes();
+                return false;
+            }
+            insertSource(value_field.safeGet<String>());
+        }
+        else if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
         {
             if (!typed_it->second->tryInsert(value_field))
             {
@@ -691,6 +782,11 @@ bool ColumnObject::tryInsert(const Field & x)
             column->insertDefault();
     }
 
+    /// A field may come from a column without source or from a literal, then create the source
+    /// from the inserted object.
+    if (hasSource() && source->size() == prev_size)
+        materializeSourceForLastRow();
+
     return true;
 }
 
@@ -701,6 +797,12 @@ void ColumnObject::doInsertFrom(const IColumn & src, size_t n)
 #endif
 {
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
+
+    if (hasSource() != src_object_column.hasSource())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert data from Object column {} into Object column {}", src_object_column.getName(), getName());
+
+    if (hasSource())
+        source->insertFrom(*src_object_column.source, n);
 
     /// First, insert typed paths, they must be the same for both columns.
     for (const auto & [path, column] : src_object_column.typed_paths)
@@ -747,6 +849,12 @@ void ColumnObject::doInsertRangeFrom(const IColumn & src, size_t start, size_t l
 
     /// TODO: try to parallelize doInsertRangeFrom over typed/dynamic paths if it makes sense.
     const auto & src_object_column = assert_cast<const ColumnObject &>(src);
+
+    if (hasSource() != src_object_column.hasSource())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot insert data from Object column {} into Object column {}", src_object_column.getName(), getName());
+
+    if (hasSource())
+        source->insertRangeFrom(*src_object_column.source, start, length);
 
     /// First, insert typed paths, they must be the same for both columns.
     for (const auto & [path, column] : src_object_column.typed_paths)
@@ -906,6 +1014,52 @@ void ColumnObject::deserializeValueFromSharedData(const ColumnString * shared_da
     getDynamicSerialization()->deserializeBinary(column, buf, getFormatSettings());
 }
 
+void ColumnObject::insertSource(std::string_view text, size_t max_string_column_growth_step)
+{
+    auto & source_column = getSourceColumn();
+    auto & chars = source_column.getChars();
+    ColumnStringHelpers::reserveCharsWithGrowthCap(chars, chars.size() + text.size(), max_string_column_growth_step);
+    source_column.insertData(text.data(), text.size());
+}
+
+void ColumnObject::materializeSourceForLastRow()
+{
+    if (!object_type)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Object type is not provided for ColumnObject with source");
+
+    /// Created on first use: it's needed only on the rare paths where the original JSON text is not
+    /// available, and creating it is not free (it resolves serializations of all typed paths).
+    if (!object_serialization)
+        object_serialization = object_type->getDefaultSerialization();
+
+    /// The source of this row is not written yet, so it cannot be used during serialization.
+    FormatSettings format_settings = getFormatSettings();
+    format_settings.json.json_type_use_source = false;
+
+    auto & source_column = getSourceColumn();
+    WriteBufferFromVector<ColumnString::Chars> buf(source_column.getChars(), AppendModeTag());
+    object_serialization->serializeText(*this, size() - 1, buf, format_settings);
+    buf.finalize();
+    source_column.getOffsets().push_back(source_column.getChars().size());
+}
+
+void ColumnObject::insertDefaultIntoSource(size_t length)
+{
+    auto & source_column = getSourceColumn();
+    for (size_t i = 0; i != length; ++i)
+        source_column.insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+}
+
+MutableColumnPtr ColumnObject::cloneResizedSource(size_t new_size) const
+{
+    auto result = source->cloneEmpty();
+    size_t rows_to_copy = std::min(new_size, source->size());
+    result->insertRangeFrom(*source, 0, rows_to_copy);
+    for (size_t i = rows_to_copy; i != new_size; ++i)
+        result->insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+    return result;
+}
+
 void ColumnObject::insertDefault()
 {
     /// Exception-safe: if some sub-column's insertDefault throws (e.g. on a memory limit),
@@ -919,17 +1073,12 @@ void ColumnObject::insertDefault()
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertDefault();
         shared_data->insertDefault();
+        if (hasSource())
+            insertDefaultIntoSource();
     }
     catch (...)
     {
-        for (auto & [_, column] : typed_paths)
-            if (column->size() > prev_size)
-                column->popBack(column->size() - prev_size);
-        for (auto & [_, column] : dynamic_paths_ptrs)
-            if (column->size() > prev_size)
-                column->popBack(column->size() - prev_size);
-        if (shared_data->size() > prev_size)
-            shared_data->popBack(shared_data->size() - prev_size);
+        restoreSizes(prev_size);
         throw;
     }
 }
@@ -944,19 +1093,35 @@ void ColumnObject::insertManyDefaults(size_t length)
         for (auto & [_, column] : dynamic_paths_ptrs)
             column->insertManyDefaults(length);
         shared_data->insertManyDefaults(length);
+        if (hasSource())
+            insertDefaultIntoSource(length);
     }
     catch (...)
     {
-        for (auto & [_, column] : typed_paths)
-            if (column->size() > prev_size)
-                column->popBack(column->size() - prev_size);
-        for (auto & [_, column] : dynamic_paths_ptrs)
-            if (column->size() > prev_size)
-                column->popBack(column->size() - prev_size);
-        if (shared_data->size() > prev_size)
-            shared_data->popBack(shared_data->size() - prev_size);
+        restoreSizes(prev_size);
         throw;
     }
+}
+
+void ColumnObject::restoreSizes(size_t prev_size)
+{
+    for (auto & [_, column] : typed_paths)
+    {
+        if (column->size() > prev_size)
+            column->popBack(column->size() - prev_size);
+    }
+
+    for (auto & [_, column] : dynamic_paths_ptrs)
+    {
+        if (column->size() > prev_size)
+            column->popBack(column->size() - prev_size);
+    }
+    
+    if (shared_data->size() > prev_size)
+        shared_data->popBack(shared_data->size() - prev_size);
+
+    if (hasSource() && source->size() > prev_size)
+        source->popBack(source->size() - prev_size);
 }
 
 void ColumnObject::popBack(size_t n)
@@ -966,6 +1131,8 @@ void ColumnObject::popBack(size_t n)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->popBack(n);
     shared_data->popBack(n);
+    if (hasSource())
+        source->popBack(n);
 }
 
 ColumnCheckpointPtr ColumnObject::getCheckpoint() const
@@ -979,7 +1146,12 @@ ColumnCheckpointPtr ColumnObject::getCheckpoint() const
         return checkpoints;
     };
 
-    return std::make_shared<ColumnObjectCheckpoint>(size(), get_checkpoints(typed_paths), get_checkpoints(dynamic_paths_ptrs), shared_data->getCheckpoint());
+    return std::make_shared<ColumnObjectCheckpoint>(
+        size(),
+        get_checkpoints(typed_paths),
+        get_checkpoints(dynamic_paths_ptrs),
+        shared_data->getCheckpoint(),
+        hasSource() ? source->getCheckpoint() : nullptr);
 }
 
 void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
@@ -1002,6 +1174,8 @@ void ColumnObject::updateCheckpoint(ColumnCheckpoint & checkpoint) const
     update_checkpoints(typed_paths, object_checkpoint.typed_paths);
     update_checkpoints(dynamic_paths, object_checkpoint.dynamic_paths);
     shared_data->updateCheckpoint(*object_checkpoint.shared_data);
+    if (hasSource())
+        source->updateCheckpoint(*object_checkpoint.source);
 }
 
 void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
@@ -1037,6 +1211,8 @@ void ColumnObject::rollback(const ColumnCheckpoint & checkpoint)
     rollback_columns(typed_paths, object_checkpoint.typed_paths, false);
     rollback_columns(dynamic_paths, object_checkpoint.dynamic_paths, true);
     shared_data->rollback(*object_checkpoint.shared_data);
+    if (hasSource())
+        source->rollback(*object_checkpoint.source);
 }
 
 std::string_view ColumnObject::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin, const IColumn::SerializationSettings * settings) const
@@ -1123,6 +1299,11 @@ void ColumnObject::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
 
     /// Second deserialize all other paths and values and insert them into dynamic paths or shared data.
     deserializeDynamicPathsAndSharedDataFromArena(in);
+
+    /// The source is not serialized into the arena: it would make objects with equal paths and values
+    /// but different JSON text different aggregation keys. So create it from the restored object.
+    if (hasSource())
+        materializeSourceForLastRow();
 }
 
 void ColumnObject::deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in)
@@ -1348,7 +1529,8 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto filtered_source = source ? source->filter(filt, result_size_hint) : nullptr;
+    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics, object_type, filtered_source);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1360,6 +1542,8 @@ void ColumnObject::filter(const Filter & filt)
         column->filter(filt);
 
     shared_data->filter(filt);
+    if (hasSource())
+        source->filter(filt);
 
     statistics.reset();
 }
@@ -1371,6 +1555,40 @@ void ColumnObject::expand(const Filter & mask, bool inverted)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->expand(mask, inverted);
     shared_data->expand(mask, inverted);
+    if (hasSource())
+        expandSource(mask, inverted);
+}
+
+void ColumnObject::expandSource(const Filter & mask, bool inverted)
+{
+    /// Cannot use ColumnString::expand here: it fills the gaps with empty strings, but rows added
+    /// by expand are default objects and their source is the JSON text of an empty object.
+    const auto & source_column = getSourceColumn();
+    if (mask.size() < source_column.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
+
+    auto expanded_source = ColumnString::create();
+    expanded_source->reserve(mask.size());
+    size_t from = 0;
+    for (char8_t value : mask)
+    {
+        if (!!value ^ inverted)
+        {
+            if (from == source_column.size())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many bytes in mask");
+            expanded_source->insertFrom(source_column, from);
+            ++from;
+        }
+        else
+        {
+            expanded_source->insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+        }
+    }
+
+    if (from != source_column.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Not enough bytes in mask");
+
+    source = std::move(expanded_source);
 }
 
 ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
@@ -1386,7 +1604,8 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         permuted_dynamic_paths[path] = column->permute(perm, limit);
 
     auto permuted_shared_data = shared_data->permute(perm, limit);
-    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto permuted_source = source ? source->permute(perm, limit) : nullptr;
+    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics, object_type, permuted_source);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
@@ -1402,7 +1621,8 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto indexed_source = source ? source->index(indexes, limit) : nullptr;
+    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics, object_type, indexed_source);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
@@ -1418,7 +1638,8 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    auto replicated_source = source ? source->replicate(replicate_offsets) : nullptr;
+    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics, object_type, replicated_source);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1446,10 +1667,23 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
     }
 
     auto scattered_shared_data_columns = shared_data->scatter(num_columns, selector);
+    VectorWithMemoryTracking<MutableColumnPtr> scattered_source_columns;
+    if (hasSource())
+        scattered_source_columns = source->scatter(num_columns, selector);
+
     VectorWithMemoryTracking<MutableColumnPtr> result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
-        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics));
+        result_columns.emplace_back(ColumnObject::create(
+            std::move(scattered_typed_paths[i]),
+            std::move(scattered_dynamic_paths[i]),
+            std::move(scattered_shared_data_columns[i]),
+            max_dynamic_paths,
+            global_max_dynamic_paths,
+            max_dynamic_types,
+            statistics,
+            object_type,
+            hasSource() ? std::move(scattered_source_columns[i]) : nullptr));
     return result_columns;
 }
 
@@ -1506,6 +1740,8 @@ void ColumnObject::reserve(size_t n)
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->reserve(n);
     shared_data->reserve(n);
+    if (hasSource())
+        source->reserve(n);
 }
 
 size_t ColumnObject::capacity() const
@@ -1520,6 +1756,8 @@ void ColumnObject::shrinkToFit()
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->shrinkToFit();
     shared_data->shrinkToFit();
+    if (hasSource())
+        source->shrinkToFit();
 }
 
 void ColumnObject::ensureOwnership()
@@ -1529,6 +1767,8 @@ void ColumnObject::ensureOwnership()
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->ensureOwnership();
     shared_data->ensureOwnership();
+    if (hasSource())
+        source->ensureOwnership();
 }
 
 size_t ColumnObject::byteSize() const
@@ -1539,6 +1779,8 @@ size_t ColumnObject::byteSize() const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->byteSize();
     size += shared_data->byteSize();
+    if (hasSource())
+        size += source->byteSize();
     return size;
 }
 
@@ -1550,6 +1792,8 @@ size_t ColumnObject::byteSizeAt(size_t n) const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->byteSizeAt(n);
     size += shared_data->byteSizeAt(n);
+    if (hasSource())
+        size += source->byteSizeAt(n);
     return size;
 }
 
@@ -1561,6 +1805,8 @@ size_t ColumnObject::allocatedBytes() const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         size += column->allocatedBytes();
     size += shared_data->allocatedBytes();
+    if (hasSource())
+        size += source->allocatedBytes();
     return size;
 }
 
@@ -1571,6 +1817,8 @@ void ColumnObject::protect()
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->protect();
     shared_data->protect();
+    if (hasSource())
+        source->protect();
 }
 
 void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback callback)
@@ -1584,6 +1832,8 @@ void ColumnObject::forEachMutableSubcolumn(DB::IColumn::MutableColumnCallback ca
         dynamic_paths_ptrs[it->first] = assert_cast<ColumnDynamic *>(it->second.get());
     }
     callback(shared_data);
+    if (hasSource())
+        callback(source);
 }
 
 void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMutableColumnCallback callback)
@@ -1603,6 +1853,11 @@ void ColumnObject::forEachMutableSubcolumnRecursively(DB::IColumn::RecursiveMuta
     }
     callback(*shared_data);
     shared_data->forEachMutableSubcolumnRecursively(callback);
+    if (hasSource())
+    {
+        callback(*source);
+        source->forEachMutableSubcolumnRecursively(callback);
+    }
 }
 
 void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
@@ -1613,6 +1868,8 @@ void ColumnObject::forEachSubcolumn(DB::IColumn::ColumnCallback callback) const
         callback(dynamic_paths.find(path)->second);
 
     callback(shared_data);
+    if (hasSource())
+        callback(source);
 }
 
 void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallback callback) const
@@ -1631,13 +1888,20 @@ void ColumnObject::forEachSubcolumnRecursively(DB::IColumn::RecursiveColumnCallb
     }
     callback(*shared_data);
     shared_data->forEachSubcolumnRecursively(callback);
+    if (hasSource())
+    {
+        callback(*source);
+        source->forEachSubcolumnRecursively(callback);
+    }
 }
 
 bool ColumnObject::structureEquals(const IColumn & rhs) const
 {
-    /// 2 Object columns have equal structure if they have the same typed paths and global_max_dynamic_paths/max_dynamic_types.
+    /// 2 Object columns have equal structure if they have the same typed paths, the same source presence
+    /// and global_max_dynamic_paths/max_dynamic_types.
     const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
-    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size() || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types)
+    if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size() || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths
+        || max_dynamic_types != rhs_object->max_dynamic_types || hasSource() != rhs_object->hasSource())
         return false;
 
     for (const auto & [path, column] : typed_paths)
@@ -1674,10 +1938,19 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
     auto compressed_shared_data = shared_data->compress(force_compression);
     byte_size += compressed_shared_data->byteSize();
 
+    ColumnPtr compressed_source;
+    if (hasSource())
+    {
+        compressed_source = source->compress(force_compression);
+        byte_size += compressed_source->byteSize();
+    }
+
     auto decompress =
         [my_compressed_typed_paths = std::move(compressed_typed_paths),
          my_compressed_dynamic_paths = std::move(compressed_dynamic_paths),
          my_compressed_shared_data = std::move(compressed_shared_data),
+         my_compressed_source = std::move(compressed_source),
+         my_object_type = object_type,
          my_max_dynamic_paths = max_dynamic_paths,
          my_global_max_dynamic_paths = global_max_dynamic_paths,
          my_max_dynamic_types = max_dynamic_types,
@@ -1694,7 +1967,8 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
             decompressed_dynamic_paths[path] = column->decompress();
 
         auto decompressed_shared_data = my_compressed_shared_data->decompress();
-        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
+        auto decompressed_source = my_compressed_source ? my_compressed_source->decompress() : nullptr;
+        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics, my_object_type, decompressed_source);
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
@@ -1707,6 +1981,8 @@ void ColumnObject::finalize()
     for (auto & [_, column] : dynamic_paths_ptrs)
         column->finalize();
     shared_data->finalize();
+    if (hasSource())
+        source->finalize();
 }
 
 bool ColumnObject::isFinalized() const
@@ -1717,6 +1993,8 @@ bool ColumnObject::isFinalized() const
     for (const auto & [_, column] : dynamic_paths_ptrs)
         finalized &= column->isFinalized();
     finalized &= shared_data->isFinalized();
+    if (hasSource())
+        finalized &= source->isFinalized();
     return finalized;
 }
 
@@ -1820,6 +2098,9 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     /// Also we can preallocate memory for dynamic paths and shared data.
     VectorWithMemoryTracking<ColumnPtr> shared_data_source_columns;
     shared_data_source_columns.reserve(source_columns.size());
+    VectorWithMemoryTracking<ColumnPtr> source_source_columns;
+    if (hasSource())
+        source_source_columns.reserve(source_columns.size());
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> typed_paths_source_columns;
     typed_paths_source_columns.reserve(typed_paths.size());
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<ColumnPtr>> dynamic_paths_source_columns;
@@ -1837,6 +2118,8 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
         const auto & source_object_column = assert_cast<const ColumnObject &>(*source_column);
         total_size += source_object_column.size();
         shared_data_source_columns.push_back(source_object_column.shared_data);
+        if (hasSource())
+            source_source_columns.push_back(source_object_column.source);
 
         for (const auto & [path, column] : source_object_column.typed_paths)
             typed_paths_source_columns.at(path).push_back(column);
@@ -1849,6 +2132,8 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     }
 
     shared_data->prepareForSquashing(shared_data_source_columns, factor);
+    if (hasSource())
+        source->prepareForSquashing(source_source_columns, factor);
 
     for (const auto & [path, source_typed_columns] : typed_paths_source_columns)
         typed_paths[path]->prepareForSquashing(source_typed_columns, factor);
@@ -1870,7 +2155,7 @@ bool ColumnObject::dynamicStructureEquals(const IColumn & rhs) const
     const auto * rhs_object = typeid_cast<const ColumnObject *>(&rhs);
     if (!rhs_object || typed_paths.size() != rhs_object->typed_paths.size()
         || global_max_dynamic_paths != rhs_object->global_max_dynamic_paths || max_dynamic_types != rhs_object->max_dynamic_types
-        || dynamic_paths.size() != rhs_object->dynamic_paths.size())
+        || dynamic_paths.size() != rhs_object->dynamic_paths.size() || hasSource() != rhs_object->hasSource())
         return false;
 
     for (const auto & [path, column] : typed_paths)
@@ -2012,12 +2297,12 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     }
 }
 
-void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
+void ColumnObject::takeExactDynamicStructureFrom(const IColumn & src)
 {
     if (!empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "takeExactDynamicStructureFrom should be called only on empty Object column");
 
-    const auto & source_object = assert_cast<const ColumnObject &>(source);
+    const auto & source_object = assert_cast<const ColumnObject &>(src);
 
     for (auto & [path, column] : typed_paths)
         column->takeExactDynamicStructureFrom(*source_object.typed_paths.at(path));
@@ -2545,6 +2830,9 @@ void ColumnObject::validateDynamicPathsSizes() const
         if (column->size() != expected_size)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {} != {}", path, column->size(), expected_size);
     }
+
+    if (hasSource() && source->size() != expected_size)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of the source column: {} != {}", source->size(), expected_size);
 }
 
 bool ColumnObject::isEmptyAt(size_t n) const

@@ -1,0 +1,12 @@
+typed path with source
+{"a" : {"b" : 42,  "c" : "Hello"},   "d" : 1}
+{"b":42,"c":"Hello"}
+String	String
+{"a":{"b":42,"c":"Hello"},"d":1}
+array of JSON with source
+{"a" : [{"b" : 42}, {"c" :  "Hello"}]}
+['{"b":42}','{"c":"Hello"}']
+no original text at any level
+{"a":{"b":42},"d":1}	{"b":42}
+null with input_format_null_as_default
+{}

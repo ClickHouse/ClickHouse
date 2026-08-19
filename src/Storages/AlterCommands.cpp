@@ -1253,6 +1253,10 @@ bool isJSONTypeHintOnlyChange(const IDataType * from_type, const IDataType * to_
     if (from_json->getPathRegexpsToSkip() != to_json->getPathRegexpsToSkip())
         return false;
 
+    /// Adding or removing the source subcolumn changes the set of streams, so parts must be rewritten.
+    if (from_json->hasSource() != to_json->hasSource())
+        return false;
+
     return true;
 }
 

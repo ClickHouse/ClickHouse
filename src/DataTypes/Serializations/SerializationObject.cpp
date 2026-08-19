@@ -81,12 +81,14 @@ SerializationObject::SerializationObject(
     const std::unordered_set<String> & paths_to_skip_,
     const std::vector<String> & path_regexps_to_skip_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
+    const SerializationPtr & dynamic_serialization_,
+    const SerializationPtr & source_serialization_)
     : typed_paths_types(typed_paths_types_)
     , typed_paths_serializations(typed_paths_serializations_)
     , paths_to_skip(paths_to_skip_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , source_serialization(source_serialization_)
 {
     /// We will need sorted order of typed paths to serialize them in order for consistency.
     sorted_typed_paths.reserve(typed_paths_serializations.size());
@@ -98,6 +100,15 @@ SerializationObject::SerializationObject(
     std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
     for (const auto & regexp_str : path_regexps_to_skip_)
         path_regexps_to_skip.emplace_back(regexp_str);
+}
+
+void SerializationObject::checkPathIsNotReserved(const String & path) const
+{
+    if (source_serialization && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Path '{}' is not allowed in JSON types with 'with_source=1' because this name is reserved for the subcolumn with JSON source",
+            path);
 }
 
 bool SerializationObject::shouldSkipPath(const String & path) const
@@ -153,6 +164,7 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     std::unordered_map<String, ISerialization::SerializeBinaryBulkStatePtr> dynamic_path_states;
     ISerialization::SerializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
+    ISerialization::SerializeBinaryBulkStatePtr source_state;
     /// Paths statistics.
     ColumnObject::Statistics statistics;
     /// If true, statistics will be recalculated during serialization.
@@ -175,6 +187,7 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     ISerialization::DeserializeBinaryBulkStatePtr shared_data_state;
     SerializationPtr shared_data_serialization;
     ISerialization::DeserializeBinaryBulkStatePtr structure_state;
+    ISerialization::DeserializeBinaryBulkStatePtr source_state;
 
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
@@ -190,6 +203,7 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
 
         new_state->shared_data_state = shared_data_state ? shared_data_state->clone() : nullptr;
         new_state->structure_state = structure_state ? structure_state->clone() : nullptr;
+        new_state->source_state = source_state ? source_state->clone() : nullptr;
 
         return new_state;
     }
@@ -210,6 +224,8 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
             callback(shared_data_state);
         if (structure_state)
             callback(structure_state);
+        if (source_state)
+            callback(source_state);
     }
 };
 
@@ -223,6 +239,18 @@ void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, 
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObject>(data.deserialize_state) : nullptr;
     const auto * structure_state = deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state) : nullptr;
+
+    /// The source subcolumn is not a path, it's a separate String column that is enumerated
+    /// (and serialized) before the object data.
+    if (source_serialization)
+    {
+        auto source_data = SubstreamData(source_serialization)
+                               .withType(DataTypeObject::getTypeOfSource())
+                               .withColumn(column_object ? column_object->getSourcePtr() : nullptr)
+                               .withSerializationInfo(data.serialization_info)
+                               .withDeserializeState(deserialize_state ? deserialize_state->source_state : nullptr);
+        source_serialization->enumerateStreams(settings, callback, source_data);
+    }
 
     settings.path.push_back(Substream::ObjectData);
 
@@ -346,6 +374,13 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
     {
         state = std::move(object_state);
         return;
+    }
+
+    if (source_serialization)
+    {
+        if (!column_object.hasSource())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
+        source_serialization->serializeBinaryBulkStatePrefix(*column_object.getSourcePtr(), settings, object_state->source_state);
     }
 
     if (serialization_version.value == SerializationVersion::FLATTENED)
@@ -517,6 +552,9 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
         state = std::move(object_state);
         return;
     }
+
+    if (source_serialization)
+        source_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->source_state, cache);
 
     settings.path.push_back(Substream::ObjectData);
 
@@ -888,6 +926,9 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
     const auto & column_object = assert_cast<const ColumnObject &>(column);
     const auto & typed_paths = column_object.getTypedPaths();
 
+    if (source_serialization)
+        source_serialization->serializeBinaryBulkWithMultipleStreams(*column_object.getSourcePtr(), offset, limit, settings, object_state->source_state);
+
     if (object_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
         settings.path.push_back(Substream::ObjectData);
@@ -978,6 +1019,9 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
     auto * object_state = checkAndGetState<SerializeBinaryBulkStateObject>(state);
     if (object_state->serialization_version.value == SerializationVersion::STRING)
         return;
+
+    if (source_serialization)
+        source_serialization->serializeBinaryBulkStateSuffix(settings, object_state->source_state);
 
     /// Write statistics in suffix if needed.
     if (settings.write_statistics == SerializeBinaryBulkSettings::StatisticsMode::SUFFIX)
@@ -1083,6 +1127,13 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
     auto & column_object = assert_cast<ColumnObject &>(*mutable_column);
     auto & typed_paths = column_object.getTypedPaths();
 
+    if (source_serialization)
+    {
+        if (!column_object.hasSource())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Object column {} doesn't have the source column", column_object.getName());
+        source_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSourcePtr(), rows_offset, limit, settings, object_state->source_state, cache);
+    }
+
     if (structure_state->serialization_version.value == SerializationVersion::FLATTENED)
     {
         settings.path.push_back(Substream::ObjectData);
@@ -1157,6 +1208,9 @@ void SerializationObject::deserializeBinaryBulkWithMultipleStreams(
         if (path_column->size() != expected_size)
             throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of dynamic path {}: {}. Expected size {}", path, path_column->size(), expected_size);
     }
+
+    if (column_object.hasSource() && column_object.getSourceColumn().size() != expected_size)
+        throw Exception(settings.native_format ? ErrorCodes::INCORRECT_DATA : ErrorCodes::LOGICAL_ERROR, "Unexpected size of the source column: {}. Expected size {}", column_object.getSourceColumn().size(), expected_size);
 
     column_object.repairDuplicatesInDynamicPathsAndSharedData(shared_data_previous_size);
 }
@@ -1243,6 +1297,7 @@ void SerializationObject::deserializeBinary(Field & field, ReadBuffer & istr, co
     {
         String path;
         readStringBinary(path, istr);
+        checkPathIsNotReserved(path);
         if (!shouldSkipPath(path))
         {
             if (auto it = typed_paths_serializations.find(path); it != typed_paths_serializations.end())
@@ -1316,6 +1371,9 @@ void SerializationObject::restoreColumnObject(ColumnObject & column_object, size
             column->popBack(column->size() - prev_size);
     }
 
+    if (column_object.hasSource() && column_object.getSourceColumn().size() > prev_size)
+        column_object.getSourceColumn().popBack(column_object.getSourceColumn().size() - prev_size);
+
     if (shared_data_offsets.size() > prev_size)
         shared_data_offsets.resize(prev_size);
     size_t prev_shared_data_offset = shared_data_offsets.back();
@@ -1354,6 +1412,7 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
         {
             String path;
             readStringBinary(path, istr);
+            checkPathIsNotReserved(path);
             if (!shouldSkipPath(path))
             {
                 /// Check if we have this path in typed paths.
@@ -1423,24 +1482,35 @@ void SerializationObject::deserializeBinary(IColumn & col, ReadBuffer & istr, co
             }
         }
         shared_data_offsets.push_back(shared_data_paths->size());
+
+        /// Insert default to all remaining typed and dynamic paths.
+        for (auto & [_, column] : typed_paths)
+        {
+            if (column->size() == prev_size)
+                column->insertDefault();
+        }
+
+        for (auto & [_, column] : column_object.getDynamicPathsPtrs())
+        {
+            if (column->size() == prev_size)
+                column->insertDefault();
+        }
+
+        /// The binary representation has no JSON text, so create it from the object,
+        /// after every path got the value for this row.
+        if (column_object.hasSource())
+        {
+            FormatSettings format_settings_without_source = settings;
+            format_settings_without_source.json.json_type_use_source = false;
+            WriteBufferFromOwnString buf;
+            serializeText(column_object, prev_size, buf, format_settings_without_source);
+            column_object.insertSource(buf.str(), settings.json_max_string_column_growth_step);
+        }
     }
     catch (...)
     {
         restoreColumnObject(column_object, prev_size);
         throw;
-    }
-
-    /// Insert default to all remaining typed and dynamic paths.
-    for (auto & [_, column] : typed_paths)
-    {
-        if (column->size() == prev_size)
-            column->insertDefault();
-    }
-
-    for (auto & [_, column] : column_object.getDynamicPathsPtrs())
-    {
-        if (column->size() == prev_size)
-            column->insertDefault();
     }
 }
 

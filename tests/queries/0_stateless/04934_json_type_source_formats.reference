@@ -1,0 +1,14 @@
+Native (structured)
+{"a":42,"b":"Hello"}	{"b" : "Hello",  "a" : 42}
+Native (JSON as string)
+{"a":42,"b":"Hello"}	{"a":42,"b":"Hello"}
+Native (flattened)
+{"a":42,"b":"Hello"}	{"b" : "Hello",  "a" : 42}
+RowBinary (structured input, source is created from the object)
+{"a":42,"b":"Hello"}	{"a":42,"b":"Hello"}
+RowBinary (JSON as string on both sides, original text is preserved)
+{"a":42,"b":"Hello"}	{"b" : "Hello",  "a" : 42}
+RowBinary (typed paths that are not in the data)
+{"arr":[],"b":1,"s":""}	{"arr":[],"b":1,"s":""}
+A reserved key in RowBinary input is rejected
+1

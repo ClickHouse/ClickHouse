@@ -50,7 +50,13 @@ public:
 private:
     friend class COWHelper<IColumnHelper<ColumnObject>, ColumnObject>;
 
-    ColumnObject(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    ColumnObject(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        bool with_source_ = false,
+        DataTypePtr object_type_ = nullptr);
+
     ColumnObject(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
@@ -58,7 +64,9 @@ private:
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr object_type_ = nullptr,
+        MutableColumnPtr source_ = nullptr);
 
     ColumnObject(const ColumnObject & other);
 
@@ -78,7 +86,9 @@ public:
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        const DataTypePtr & object_type_ = nullptr,
+        const ColumnPtr & source_ = nullptr);
 
     static MutablePtr create(
         UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
@@ -87,9 +97,16 @@ public:
         size_t max_dynamic_paths_,
         size_t global_max_dynamic_paths_,
         size_t max_dynamic_types_,
-        const StatisticsPtr & statistics_ = {});
+        const StatisticsPtr & statistics_ = {},
+        DataTypePtr object_type_ = nullptr,
+        MutableColumnPtr source_ = nullptr);
 
-    static MutablePtr create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_);
+    static MutablePtr create(
+        UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_,
+        size_t max_dynamic_paths_,
+        size_t max_dynamic_types_,
+        bool with_source_ = false,
+        DataTypePtr object_type_ = nullptr);
 
     std::string getName() const override;
 
@@ -202,7 +219,7 @@ public:
 
     bool hasDynamicStructure() const override { return true; }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
-    void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void takeExactDynamicStructureFrom(const IColumn & src) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override;
 
@@ -257,6 +274,22 @@ public:
         const auto & column_tuple = assert_cast<const ColumnTuple &>(column_array.getData());
         return {assert_cast<const ColumnString *>(&column_tuple.getColumn(0)), assert_cast<const ColumnString *>(&column_tuple.getColumn(1)), &column_array.getOffsets()};
     }
+
+    /// The column with the JSON text of each row, present only with `with_source=1`.
+    bool hasSource() const { return source != nullptr; }
+    const ColumnPtr & getSourcePtr() const { return source; }
+    ColumnPtr & getSourcePtr() { return source; }
+    const ColumnString & getSourceColumn() const { return assert_cast<const ColumnString &>(*source); }
+    ColumnString & getSourceColumn() { return assert_cast<ColumnString &>(*source); }
+
+    /// Append the JSON text of the next row to the source column.
+    /// max_string_column_growth_step limits the growth of the internal buffer (0 - no limit).
+    void insertSource(std::string_view text, size_t max_string_column_growth_step = 0);
+    /// Create the source of the last inserted row from the object itself. Used when the original JSON
+    /// text is not available (for example when the row was restored from an aggregation key).
+    void materializeSourceForLastRow();
+    /// Append the JSON text of default (empty) objects to the source column.
+    void insertDefaultIntoSource(size_t length = 1);
 
     size_t getMaxDynamicTypes() const { return max_dynamic_types; }
     size_t getMaxDynamicPaths() const { return max_dynamic_paths; }
@@ -369,6 +402,11 @@ public:
 private:
 
     void insertFromSharedDataAndFillRemainingDynamicPaths(const ColumnObject & src_object_column, VectorWithMemoryTracking<std::string_view> && src_dynamic_paths_for_shared_data, size_t start, size_t length);
+    /// Pop back all the values that were inserted after the column had prev_size rows.
+    void restoreSizes(size_t prev_size);
+    void expandSource(const Filter & mask, bool inverted);
+    /// Copy the source column and fill rows after the end of the original column with default values.
+    MutableColumnPtr cloneResizedSource(size_t new_size) const;
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
     void serializeDynamicPathsAndSharedDataIntoArena(size_t n, Arena & arena, const char *& begin, std::string_view & res) const;
     void deserializeDynamicPathsAndSharedDataFromArena(ReadBuffer & in);
@@ -393,6 +431,14 @@ private:
     /// It has type Array(Tuple(String, String)) and stores
     /// an array of pairs (path, binary serialized dynamic value) for each row.
     WrappedPtr shared_data;
+
+    /// String column with the JSON text of each row. It's not null only for JSON types with `with_source=1`.
+    WrappedPtr source;
+    /// Type of this column. Used to create the JSON text of a row for the source column when the
+    /// original text is not available.
+    DataTypePtr object_type;
+    /// Serialization of object_type, created on first use.
+    SerializationPtr object_serialization;
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
     /// This limit can be different for different instances of Object column. For example, we can decrease it

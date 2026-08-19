@@ -20,6 +20,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
@@ -245,28 +246,6 @@ bool tryGetNumericValueFromJSONElement(
 
 namespace
 {
-
-/// Reserve capacity for a chars buffer that is grown incrementally (one document per call). Keeps the
-/// default power-of-two doubling (amortized O(1) appends) until a single growth increment would exceed
-/// `max_growth_step`, after which it grows by exact step-sized chunks. This bounds the over-allocation
-/// for large buffers (e.g. shared-data path names) without reallocating on every row, which a plain
-/// per-row `reserve_exact` would cause. `max_growth_step == 0` keeps pure power-of-two growth.
-void reserveCharsWithGrowthCap(ColumnString::Chars & chars, size_t required, size_t max_growth_step)
-{
-    if (required <= chars.capacity())
-        return;
-
-    if (max_growth_step == 0)
-    {
-        chars.reserve(required);
-        return;
-    }
-
-    size_t new_capacity = chars.capacity() * 2;
-    if (new_capacity - chars.capacity() > max_growth_step)
-        new_capacity = chars.capacity() + max_growth_step;
-    chars.reserve_exact(std::max(new_capacity, required));
-}
 
 template <typename JSONParser>
 String jsonElementToString(const typename JSONParser::Element & element, const FormatSettings & format_settings)
@@ -1904,12 +1883,14 @@ public:
         std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes_,
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
-        const DataTypePtr & type_of_nested_objects)
+        const DataTypePtr & type_of_nested_objects,
+        bool source_filled_by_caller_ = false)
         : typed_paths_types(typed_paths_types_)
         , typed_path_nodes(std::move(typed_path_nodes_))
         , paths_to_skip(paths_to_skip_)
         , dynamic_node(std::make_unique<DynamicNode<JSONParser>>(type_of_nested_objects))
         , dynamic_serialization(DataTypeDynamic().getDefaultSerialization())
+        , source_filled_by_caller(source_filled_by_caller_)
     {
         sorted_paths_to_skip.assign(paths_to_skip.begin(), paths_to_skip.end());
         std::sort(sorted_paths_to_skip.begin(), sorted_paths_to_skip.end());
@@ -1927,6 +1908,8 @@ public:
             for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
                 dynamic_column->insertDefault();
             column_object.getSharedDataColumn().insertDefault();
+            if (column_object.hasSource())
+                column_object.insertDefaultIntoSource();
             return true;
         }
 
@@ -1959,7 +1942,7 @@ public:
             new_paths_total_size += path.size();
 
         auto [shared_data_paths, shared_data_values] = column_object.getSharedDataPathsAndValues();
-        reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
+        ColumnStringHelpers::reserveCharsWithGrowthCap(shared_data_paths->getChars(), shared_data_paths->getChars().size() + new_paths_total_size, format_settings.json_max_string_column_growth_step);
         shared_data_paths->getOffsets().reserve(shared_data_paths->getOffsets().size() + paths_and_values_for_shared_data.size());
         auto & shared_data_values_chars = shared_data_values->getChars();
         auto & shared_data_values_offsets = shared_data_values->getOffsets();
@@ -2007,6 +1990,11 @@ public:
             if (dynamic_column->size() == prev_size)
                 dynamic_column->insertDefault();
         }
+
+        /// Only the caller of the top level JSON type has the original JSON text, for nested JSON types
+        /// the text is created from their element.
+        if (column_object.hasSource() && !source_filled_by_caller)
+            column_object.insertSource(jsonElementToString<JSONParser>(element, format_settings), format_settings.json_max_string_column_growth_step);
 
         return true;
     }
@@ -2091,6 +2079,14 @@ private:
             for (auto [key, value] : element.getObject())
             {
                 String path = buildChildPath(current_path, key, insert_settings, is_root);
+                /// The JSON source is stored in a separate subcolumn, so a top level key with this name
+                /// cannot be stored as a path.
+                if (is_root && column_object.hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
+                {
+                    error = fmt::format("Key '{}' is reserved for the subcolumn with JSON source in JSON types with 'with_source=1'", path);
+                    return false;
+                }
+
                 auto value_element_type = getJSONElementType(value);
                 auto it = visited_keys.find(key);
                 if (it != visited_keys.end())
@@ -2502,6 +2498,7 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
+    bool source_filled_by_caller = false;
     const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
@@ -2536,7 +2533,8 @@ private:
 }
 
 template <typename JSONParser>
-std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message)
+std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(
+    const DataTypePtr & type, const char * source_for_exception_message, bool json_source_filled_by_caller)
 {
     switch (type->getTypeId())
     {
@@ -2704,7 +2702,8 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
                         object_type.getPathRegexpsToSkip(),
-                        object_type.getTypeOfNestedObjects());
+                        object_type.getTypeOfNestedObjects(),
+                        json_source_filled_by_caller);
             }
         }
         default:
@@ -2718,16 +2717,16 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const Data
 
 #if USE_SIMDJSON
 template void jsonElementToString<SimdJSONParser>(const SimdJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
-template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTree<SimdJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template std::unique_ptr<JSONExtractTreeNode<SimdJSONParser>> buildJSONExtractTree<SimdJSONParser>(const DataTypePtr & type, const char * source_for_exception_message, bool json_source_filled_by_caller);
 #endif
 
 #if USE_RAPIDJSON
 template void jsonElementToString<RapidJSONParser>(const RapidJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
-template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template std::unique_ptr<JSONExtractTreeNode<RapidJSONParser>> buildJSONExtractTree<RapidJSONParser>(const DataTypePtr & type, const char * source_for_exception_message, bool json_source_filled_by_caller);
 template bool tryGetNumericValueFromJSONElement<RapidJSONParser, Float64>(Float64 & value, const RapidJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 #else
 template void jsonElementToString<DummyJSONParser>(const DummyJSONParser::Element & element, WriteBuffer & buf, const FormatSettings & format_settings);
-template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message);
+template std::unique_ptr<JSONExtractTreeNode<DummyJSONParser>> buildJSONExtractTree<DummyJSONParser>(const DataTypePtr & type, const char * source_for_exception_message, bool json_source_filled_by_caller);
 template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Float64>(Float64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 template bool tryGetNumericValueFromJSONElement<DummyJSONParser, Int64>(Int64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);
 template bool tryGetNumericValueFromJSONElement<DummyJSONParser, UInt64>(UInt64 & value, const DummyJSONParser::Element & element, bool convert_bool_to_number, bool allow_type_conversion, bool no_int_truncation_from_double, bool precise_float_parsing, String & error);

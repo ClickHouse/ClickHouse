@@ -72,7 +72,8 @@ public:
         const std::unordered_set<String> & paths_to_skip_,
         const std::vector<String> & path_regexps_to_skip_,
         const DataTypePtr & dynamic_type_,
-        const SerializationPtr & dynamic_serialization_);
+        const SerializationPtr & dynamic_serialization_,
+        const SerializationPtr & source_serialization_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -120,6 +121,8 @@ public:
     static void restoreColumnObject(ColumnObject & column_object, size_t prev_size);
 
     const SerializationPtr & getDynamicPathSerialization() const { return dynamic_serialization; }
+    /// Not null if the type stores the JSON text of each row in the source subcolumn.
+    const SerializationPtr & getSourceSerialization() const { return source_serialization; }
     const std::unordered_map<String, SerializationPtr> & getTypedPathsSerializations() const { return typed_paths_serializations; }
 
 private:
@@ -170,6 +173,8 @@ private:
 
 protected:
     bool shouldSkipPath(const String & path) const;
+    /// Top-level path with the name of the source subcolumn is not allowed in types with `with_source=1`.
+    void checkPathIsNotReserved(const String & path) const;
 
     void updateMaxDynamicPathsLimitIfNeeded(IColumn & column, const FormatSettings & format_settings) const;
 
@@ -180,6 +185,7 @@ protected:
     std::list<re2::RE2> path_regexps_to_skip;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    SerializationPtr source_serialization;
 
 private:
     std::vector<String> sorted_typed_paths;

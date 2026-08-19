@@ -63,14 +63,25 @@ DataTypeObject::DataTypeObject(
     std::unordered_set<String> paths_to_skip_,
     std::vector<String> path_regexps_to_skip_,
     size_t max_dynamic_paths_,
-    size_t max_dynamic_types_)
+    size_t max_dynamic_types_,
+    bool with_source_)
     : schema_format(schema_format_)
     , typed_paths(std::move(typed_paths_))
     , paths_to_skip(std::move(paths_to_skip_))
     , path_regexps_to_skip(std::move(path_regexps_to_skip_))
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
+    , with_source(with_source_)
 {
+    if (with_source)
+    {
+        if (typed_paths.contains(SOURCE_SUBCOLUMN_NAME))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified with the data type because this name is reserved for the subcolumn with JSON source in types with 'with_source=1'", SOURCE_SUBCOLUMN_NAME);
+
+        if (paths_to_skip.contains(SOURCE_SUBCOLUMN_NAME))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' cannot be specified in the SKIP section because this name is reserved for the subcolumn with JSON source in types with 'with_source=1'", SOURCE_SUBCOLUMN_NAME);
+    }
+
     /// Check if regular expressions are valid.
     for (const auto & regexp_str : path_regexps_to_skip)
     {
@@ -102,6 +113,7 @@ DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_f
     : schema_format(schema_format_)
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
+    , with_source(false)
 {
 }
 
@@ -113,6 +125,8 @@ void DataTypeObject::insertDefaultInto(IColumn & column) const
     for (auto & [_, dynamic_column] : column_object.getDynamicPathsPtrs())
         dynamic_column->insertDefault();
     column_object.getSharedDataColumn().insertDefault();
+    if (column_object.hasSource())
+        column_object.insertDefaultIntoSource();
 }
 
 bool DataTypeObject::equals(const IDataType & rhs) const
@@ -132,7 +146,8 @@ bool DataTypeObject::equals(const IDataType & rhs) const
         }
 
         return schema_format == object->schema_format && paths_to_skip == object->paths_to_skip && path_regexps_to_skip == object->path_regexps_to_skip
-            && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths;
+            && max_dynamic_types == object->max_dynamic_types && max_dynamic_paths == object->max_dynamic_paths
+            && with_source == object->with_source;
     }
 
     return false;
@@ -149,6 +164,15 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
         ? getDynamicType()->getSerialization(settings)
         : getDynamicType()->getDefaultSerialization();
 
+    SerializationPtr source_serialization;
+    if (with_source)
+    {
+        auto string_serialization = settings.propagate_types_serialization_versions_to_nested_types
+            ? getTypeOfSource()->getSerialization(settings)
+            : getTypeOfSource()->getDefaultSerialization();
+        source_serialization = SerializationNamed::create(string_serialization, SOURCE_SUBCOLUMN_NAME, ISerialization::Substream::ObjectSource);
+    }
+
     switch (schema_format)
     {
         case SchemaFormat::JSON:
@@ -164,7 +188,8 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                     path_regexps_to_skip,
                     getDynamicType(),
                     dynamic_serialization,
-                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization"));
+                    source_serialization,
+                    buildJSONExtractTree<SimdJSONParser>(getPtr(), "JSON serialization", with_source));
 #endif
 
 #if USE_RAPIDJSON
@@ -175,7 +200,8 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
-                buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization"));
+                source_serialization,
+                buildJSONExtractTree<RapidJSONParser>(getPtr(), "JSON serialization", with_source));
 #else
             return SerializationJSON<DummyJSONParser>::create(
                 typed_paths,
@@ -184,7 +210,8 @@ SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSetti
                 path_regexps_to_skip,
                 getDynamicType(),
                 dynamic_serialization,
-                buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization"));
+                source_serialization,
+                buildJSONExtractTree<DummyJSONParser>(getPtr(), "JSON serialization", with_source));
 #endif
     }
 }
@@ -211,6 +238,12 @@ String DataTypeObject::doGetName() const
             first = false;
         }
     };
+
+    if (with_source)
+    {
+        write_separator();
+        out << "with_source=1";
+    }
 
     if (max_dynamic_types != DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES)
     {
@@ -269,7 +302,7 @@ MutableColumnPtr DataTypeObject::createColumn() const
     for (const auto & [path, type] : typed_paths)
         typed_path_columns[path] = type->createColumn();
 
-    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types);
+    return ColumnObject::create(std::move(typed_path_columns), max_dynamic_paths, max_dynamic_types, with_source, getPtr());
 }
 
 void DataTypeObject::forEachChild(const ChildCallback & callback) const
@@ -744,6 +777,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
 
     size_t max_dynamic_types = DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
     size_t max_dynamic_paths = DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
+    bool with_source = false;
 
     for (const auto & argument : arguments->children)
     {
@@ -762,25 +796,32 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
             /// The `equals` function expects exactly two children: an identifier and a literal.
             /// Validate the argument list shape before indexing.
             if (!function->arguments || function->arguments->children.size() != 2)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected expression 'max_dynamic_types=N', 'max_dynamic_paths=N' or 'with_source=1'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             const auto * identifier = function->arguments->children[0]->as<ASTIdentifier>();
             if (!identifier)
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected {} type argument: {}. Expected expression 'max_dynamic_types=N' or 'max_dynamic_paths=N'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected {} type argument: {}. Expected expression 'max_dynamic_types=N', 'max_dynamic_paths=N' or 'with_source=1'", magic_enum::enum_name(schema_format), function->formatForErrorMessage());
 
             auto identifier_name = identifier->name();
-            if (identifier_name != "max_dynamic_types" && identifier_name != "max_dynamic_paths")
-                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected 'max_dynamic_types' or `max_dynamic_paths`", magic_enum::enum_name(schema_format), identifier_name);
+            if (identifier_name != "max_dynamic_types" && identifier_name != "max_dynamic_paths" && identifier_name != "with_source")
+                throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "Unexpected parameter in {} type arguments: {}. Expected 'max_dynamic_types', 'max_dynamic_paths' or 'with_source'", magic_enum::enum_name(schema_format), identifier_name);
 
             auto * literal = function->arguments->children[1]->as<ASTLiteral>();
-            size_t max_value = identifier_name == "max_dynamic_types" ? ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT : DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT;
+            size_t max_value = 1;
+            if (identifier_name == "max_dynamic_types")
+                max_value = ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT;
+            else if (identifier_name == "max_dynamic_paths")
+                max_value = DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT;
+
             if (!literal || literal->value.getType() != Field::Types::UInt64 || literal->value.safeGet<UInt64>() > max_value)
                 throw Exception(ErrorCodes::UNEXPECTED_AST_STRUCTURE, "'{}' parameter for {} type should be a positive integer between 0 and {}. Got {}", identifier_name, magic_enum::enum_name(schema_format), max_value, function->arguments->children[1]->formatForErrorMessage());
 
             if (identifier_name == "max_dynamic_types")
                 max_dynamic_types = literal->value.safeGet<UInt64>();
-            else
+            else if (identifier_name == "max_dynamic_paths")
                 max_dynamic_paths = literal->value.safeGet<UInt64>();
+            else
+                with_source = literal->value.safeGet<UInt64>() != 0;
         }
         else if (object_type_argument->path_with_type)
         {
@@ -814,7 +855,7 @@ static DataTypePtr createObject(const ASTPtr & arguments, const DataTypeObject::
     }
 
     std::sort(path_regexps_to_skip.begin(), path_regexps_to_skip.end());
-    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types);
+    return std::make_shared<DataTypeObject>(schema_format, std::move(typed_paths), std::move(paths_to_skip), std::move(path_regexps_to_skip), max_dynamic_paths, max_dynamic_types, with_source);
 }
 
 const DataTypePtr & DataTypeObject::getTypeOfSharedData()
@@ -824,11 +865,18 @@ const DataTypePtr & DataTypeObject::getTypeOfSharedData()
     return type;
 }
 
+DataTypePtr DataTypeObject::getTypeOfSource()
+{
+    thread_local static DataTypePtr type = std::make_shared<DataTypeString>();
+    return type;
+}
+
 void DataTypeObject::updateHashImpl(SipHash & hash) const
 {
     hash.update(static_cast<UInt8>(schema_format));
     hash.update(max_dynamic_paths);
     hash.update(max_dynamic_types);
+    hash.update(with_source);
 
     // Include the sorted paths in the hash for deterministic ordering
     std::vector<String> sorted_paths;
@@ -901,6 +949,7 @@ To declare a column of `JSON` type, you can use the following syntax:
 (
     max_dynamic_paths=N,
     max_dynamic_types=M,
+    with_source=1,
     some.path TypeName,
     SKIP path.to.skip,
     SKIP REGEXP 'paths_regexp'
@@ -912,6 +961,7 @@ Where the parameters in the syntax above are defined as:
 |-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `max_dynamic_paths`         | An optional parameter indicating how many paths can be stored separately as sub-columns across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all other paths will be stored together in a single structure called [shared data](#shared-data-structure).<br/><br/>There are also [ways](#controlling-the-number-of-dynamic-paths) how to change the limit on dynamic paths without changing this parameter. | `1024`        |
 | `max_dynamic_types`         | An optional parameter between `1` and `255` indicating how many different data types can be stored separately inside a single path column with type `Dynamic` across single block of data that is stored separately (for example across single data part for MergeTree table). <br/><br/>If this limit is exceeded, all new types will be stored together in a single structure called `shared variant`.                                                                                    | `32`          |
+| `with_source`               | An optional parameter that enables storing the JSON text of each row in a separate `String` sub-column `__source`. It makes reading the whole JSON value as a string much cheaper, see [the `__source` sub-column](#reading-json-source-sub-column).                                                                                                                                                                                                                                        | `0`           |
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
@@ -1238,6 +1288,95 @@ FROM test;
 
 <Note>
 When paths are stored in basic (`map`) [shared data](#shared-data-structure), reading combined sub-columns may be inefficient as it requires scanning the entire shared data structure. With `map_with_buckets` or `advanced` shared data serialization, reading sub-columns from shared data is highly optimized.
+</Note>
+
+## Reading the whole JSON value as a String: the `__source` sub-column {#reading-json-source-sub-column}
+
+Reading a whole `JSON` value as a `String` (for example with `toString(json)`) is expensive: ClickHouse
+has to read all sub-columns of the `JSON` column (every typed path, every dynamic path and the shared
+data structure) and construct the JSON object back for every row.
+
+If you often need the whole JSON document as text, declare the column with the `with_source=1`
+parameter. In this case ClickHouse additionally stores the JSON text of each row in a separate `String`
+sub-column `__source`, so reading it requires reading a single sub-column:
+
+```sql title="Query"
+CREATE TABLE test (json JSON(with_source=1)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test VALUES ('{"b" : "Hello", "a" : 42}');
+SELECT json, json.__source FROM test;
+```
+
+```text title="Response"
+┌─json─────────────────┬─json.__source─────────────┐
+│ {"a":42,"b":"Hello"} │ {"b" : "Hello", "a" : 42} │
+└──────────────────────┴───────────────────────────┘
+```
+
+As you can see, the sub-column contains the JSON text exactly as it was inserted, while the text
+constructed from the object has the canonical formatting with sorted keys.
+
+The setting [output_format_json_type_use_source](/reference/settings/formats/output-format#output_format_json_type_use_source)
+makes all text output of such a column use the stored text instead of constructing it from the object:
+
+```sql title="Query"
+SELECT json FROM test SETTINGS output_format_json_type_use_source = 1;
+SELECT json FROM test SETTINGS output_format_json_type_use_source = 0;
+```
+
+```text title="Response"
+{"b" : "Hello", "a" : 42}
+{"a":42,"b":"Hello"}
+```
+
+<Note>
+This setting saves only constructing the JSON text: reading the `JSON` column still reads all its
+sub-columns, which is the expensive part. To avoid reading the object at all, read the `__source`
+sub-column instead of the whole column.
+</Note>
+
+### When the original text is not preserved {#json-source-sub-column-text-is-not-always-original}
+
+The `__source` sub-column always contains a valid JSON object, but for some rows it's constructed from
+the object instead of the input, and then it has the canonical formatting of the `JSON` type output
+(no extra spaces, keys sorted, values formatted according to their inferred types). It happens when the
+original text is not available:
+
+- values that went through aggregation or a `JOIN` key (the JSON text is not a part of the key),
+- values inserted in a binary format without the JSON text, for example `RowBinary` without the setting
+  [input_format_binary_read_json_as_string](/reference/settings/formats/input-format#input_format_binary_read_json_as_string),
+- values of nested `JSON(with_source=1)` type hints (for example `JSON(with_source=1, a JSON(with_source=1))`):
+  only the top level column receives the original text, `json.a.__source` is constructed from the
+  sub-object,
+- results of functions that create JSON objects, such as `mergedJSONPatch`.
+
+The created text is written without the settings that were used during parsing, so with
+[json_type_escape_dots_in_keys](/reference/settings/formats/other#json_type_escape_dots_in_keys) enabled
+keys with dots appear in it in the escaped form (`{"a%2Eb" : 42}` instead of `{"a.b" : 42}`).
+
+### The `__source` name is reserved {#json-source-sub-column-name-is-reserved}
+
+For columns declared with `with_source=1` the name `__source` cannot be used as a top level JSON key,
+because it would be ambiguous with the sub-column. Such keys are rejected during parsing, and the name
+cannot be used as a type hint or in the `SKIP` section either. Keys with this name on deeper levels are
+allowed, because they don't collide with the sub-column:
+
+```sql title="Query"
+SELECT '{"a" : {"__source" : 42}}'::JSON(with_source=1) AS json, json.a.`__source`;
+```
+
+```text title="Response"
+┌─json──────────────────────┬─json.a.__source─┐
+│ {"a":{"__source":42}}     │ 42              │
+└───────────────────────────┴─────────────────┘
+```
+
+<Note>
+The stored text is not a JSON path: it's not returned by [introspection functions](#introspection-functions)
+like `JSONAllPaths`, and it doesn't participate in [comparison](#comparison-between-values-of-the-json-type)
+of `JSON` values, so two values with the same content but different formatting are still equal.
+
+Adding or removing the `with_source` parameter with `ALTER TABLE ... MODIFY COLUMN` always rewrites the
+data of existing parts, because it changes the set of sub-columns stored in a part.
 </Note>
 
 ## Type inference for paths {#type-inference-for-paths}

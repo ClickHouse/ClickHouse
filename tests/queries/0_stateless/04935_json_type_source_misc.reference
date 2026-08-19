@@ -1,0 +1,17 @@
+subcolumn of the source
+10
+the source is listed in subcolumns
+json	JSON(with_source=1)						0
+json.__source	String						1
+json.__source.size	UInt64						1
+['__source','__source.size']
+inserting into a type without the source does not create a path
+['a']
+inserting from a type without the source creates the text
+{"a" :  42}
+{"a":42}
+inside Nullable and Array
+{"x" :  1}	['{"y" :  2}']
+\N	[]
+ALTER to the type with the source creates the text from existing data
+{"a":42,"b":"x"}	{"a":42,"b":"x"}

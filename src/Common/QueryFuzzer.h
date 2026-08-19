@@ -276,7 +276,8 @@ private:
         std::unordered_set<String> paths_to_skip = {},
         std::vector<String> path_regexps_to_skip = {},
         std::optional<size_t> source_max_dynamic_paths = std::nullopt,
-        std::optional<size_t> source_max_dynamic_types = std::nullopt);
+        std::optional<size_t> source_max_dynamic_types = std::nullopt,
+        std::optional<bool> source_with_source = std::nullopt);
     /// An (Simple)AggregateFunction re-validated via the factory; nullptr if the aggregate rejects the
     /// arguments or the emitted name does not reparse. version is the one parsed from the source AST.
     DataTypePtr makeAggregateFunctionType(

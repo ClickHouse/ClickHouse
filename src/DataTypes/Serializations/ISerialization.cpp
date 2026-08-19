@@ -171,6 +171,7 @@ const std::set<SubstreamType> ISerialization::Substream::named_types
     StringSizes,
     InlinedStringSizes,
     TupleElement,
+    ObjectSource,
     NamedOffsets,
     NamedNullMap,
     NamedVariantDiscriminators,
@@ -718,6 +719,7 @@ bool ISerialization::hasSubcolumnForPath(const SubstreamPath & path, size_t pref
             || path[last_elem].type == Substream::VariantElement
             || path[last_elem].type == Substream::VariantElementNullMap
             || path[last_elem].type == Substream::ObjectTypedPath
+            || path[last_elem].type == Substream::ObjectSource
             || path[last_elem].type == Substream::QuantizedCodes
             || path[last_elem].type == Substream::ProductQuantizationCodebook;
 }

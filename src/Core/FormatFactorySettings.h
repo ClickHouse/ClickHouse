@@ -591,6 +591,9 @@ When enabled, during parsing JSON object into JSON type regular expressions spec
     DECLARE(Bool, json_type_escape_dots_in_keys, false, R"(
 When enabled, dots in JSON keys will be escaped during parsing.
 )", 0) \
+    DECLARE(Bool, output_format_json_type_use_source, false, R"(
+When enabled, values of the [`JSON`](/reference/data-types/newjson) type declared with `with_source=1` are written as the JSON text stored in the `__source` sub-column instead of the text constructed from the parsed object. It's much cheaper, but the stored text keeps the formatting of the original JSON (and for rows where the original text is not available it's constructed from the object anyway).
+)", 0) \
     DECLARE(UInt64, input_format_json_max_depth, 1000, R"(
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
 )", 0) \

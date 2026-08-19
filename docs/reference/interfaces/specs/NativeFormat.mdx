@@ -1146,6 +1146,7 @@ A few things worth noting about the table:
 - **The values are not contiguous.** `Dynamic` uses `1`, `2`, `3`, `4` with `V3` at `4` and `FLATTENED` at `3`. A higher number is not necessarily newer.
 - **Some values are native-format-only.** `Object::STRING`, `Object::FLATTENED`, and `Dynamic::FLATTENED` exist for native-protocol compatibility with clients that do not implement full Object/Dynamic. They do not appear in MergeTree on-disk storage.
 - **`V3` is primarily on-disk.** Clients consuming the native TCP protocol typically see `FLATTENED` (value `3`) rather than `V3` (value `4`).
+- **The `with_source` type parameter adds a sub-column, not a version.** `JSON(with_source=1)` keeps the same serialization versions and adds a `__source` `String` sub-column in every version except `STRING` (where the JSON text is the payload itself). The parameter is a part of the type name, and in [binary type encoding](/reference/data-types/data-types-binary-encoding) it bumps the `JSON` type encoding version to `1`.
 
 #### LowCardinality(T) {#lowcardinality}
 
@@ -1233,6 +1234,8 @@ Type string: `JSON`.
 [per block with rows > 0]:
   [N bytes: String column encoding for num_rows JSON text values]
 ```
+
+When the type is declared with `with_source=1` and the setting `output_format_json_type_use_source = 1` is set, the emitted text is the JSON text stored in the column's `__source` sub-column (so the original formatting of the input is preserved); otherwise it's constructed from the parsed object. Either way the wire layout is the same, and there is no separate `__source` stream in this tier.
 
 The state prefix value is `1` for this String fallback. The other values denote different `JSON`/`Object` encodings: `0` = V1, `2` = V2 (the default over the native TCP protocol), `3` = FLATTENED, `4` = V3 (see [the serialization version reference](#serialization-version-reference)). A decoder that sees a value other than `1` here is not looking at the String fallback. The prefix is read at the start of every block with rows > 0, and the values stream is a standard [String](#string-type) column for `num_rows` rows.
 
@@ -1377,15 +1380,19 @@ There are two kinds of path:
 
 In FLATTENED mode there is **no shared-data column** (that overflow store belongs to the non-flat V2/V3 Object encodings). Every path is a full column of `num_rows` values.
 
+A column whose type is declared with `with_source=1` carries one more sub-column, the `__source` sub-column with the JSON text of every row. It's a plain `String` column that is not a path, and it comes right after the version, before any path state prefix and path data:
+
 ```text
 [per block with rows > 0]:
   -- prefix phase (repeated at the start of every non-empty block):
   [8 bytes:  UInt64 LE version = 3]                ← state prefix
+  [__source state prefix]                          ← only with `with_source=1`; String state prefix
   [VarUInt num_dynamic_paths]
   [num_dynamic_paths × String]                     ← dynamic path names, in wire order
   [per typed path: its column's state prefix]      ← empty for leaf types
   [per dynamic path: a Dynamic state prefix]       ← version + type list (see Dynamic)
   -- data phase:
+  [__source data]                                  ← only with `with_source=1`; num_rows JSON texts
   [for each typed path:   its column's data]       ← num_rows values in the declared type
   [for each dynamic path: its Dynamic data]        ← num_rows values (discriminators + runs)
 ```
@@ -1415,7 +1422,7 @@ The non-flat `V3` prefix additionally carries a `shared_data_buckets` count (pre
 
 #### JSON non-flat (V2/V3) {#json-non-flat}
 
-The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-disk storage and are what the server emits over the wire when the flattened flag is off — `V1` over `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` over the native TCP protocol. They carry a shared-data column and are **not** specified on this page. Note that they do **not** carry per-path statistics over the Native wire: `NativeWriter` leaves statistics disabled, so the `Object` structure prefix has no statistics section and the bytes after it are the typed/dynamic/shared-data prefixes and data directly. Statistics appear only on the MergeTree on-disk paths that enable them. To decode a `JSON` column with this page, a client must select one of the documented tiers: set `output_format_native_write_json_as_string = 1` for the [String fallback](#json-tier-1-string-fallback), or `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (with `output_format_native_write_json_as_string = 0`) for the [FLATTENED Object](#json-tier-2-flattened-object) layout.
+The non-flattened `Object` encodings (`V1`/`V2`/`V3`) are used by MergeTree on-disk storage and are what the server emits over the wire when the flattened flag is off — `V1` over `clickhouse-client` / HTTP `FORMAT Native` (revision `0`), `V2` over the native TCP protocol. They carry a shared-data column (and, for types declared with `with_source=1`, a `__source` `String` sub-column written before the typed/dynamic paths) and are **not** specified on this page. Note that they do **not** carry per-path statistics over the Native wire: `NativeWriter` leaves statistics disabled, so the `Object` structure prefix has no statistics section and the bytes after it are the typed/dynamic/shared-data prefixes and data directly. Statistics appear only on the MergeTree on-disk paths that enable them. To decode a `JSON` column with this page, a client must select one of the documented tiers: set `output_format_native_write_json_as_string = 1` for the [String fallback](#json-tier-1-string-fallback), or `output_format_native_use_flattened_dynamic_and_json_serialization = 1` (with `output_format_native_write_json_as_string = 0`) for the [FLATTENED Object](#json-tier-2-flattened-object) layout.
 
 ## Compression frame {#compression-frame}
 

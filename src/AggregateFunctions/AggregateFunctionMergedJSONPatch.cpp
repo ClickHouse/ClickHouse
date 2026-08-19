@@ -355,6 +355,10 @@ struct AggregateFunctionMergedJSONPatchData
         for (auto & [_, column] : result_column.getDynamicPathsPtrs())
             if (column->size() == current_size)
                 column->insertDefault();
+
+        /// There is no original JSON text for the merged object, create it from the object itself.
+        if (result_column.hasSource())
+            result_column.materializeSourceForLastRow();
     }
 };
 

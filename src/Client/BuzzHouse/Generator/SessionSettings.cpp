@@ -1420,6 +1420,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"output_format_json_pretty_print", trueOrFalseSettingNoOracle},
     {"output_format_json_quote_64bit_floats", trueOrFalseSettingNoOracle},
     {"output_format_json_quote_64bit_integers", trueOrFalseSettingNoOracle},
+    {"output_format_json_type_use_source", trueOrFalseSettingNoOracle},
     {"output_format_json_quote_decimals", trueOrFalseSettingNoOracle},
     {"output_format_json_quote_denormals", trueOrFalseSettingNoOracle},
     {"output_format_json_skip_null_value_in_named_tuples", trueOrFalseSettingNoOracle},
