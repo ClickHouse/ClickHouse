@@ -347,9 +347,6 @@ void StorageMergeTreeAnalyzeIndexes::readImpl(
     size_t /*max_block_size*/,
     size_t num_streams)
 {
-    /// No row-policy enforcement here: the analysis returns only mark ranges that may match the predicate,
-    /// not column values - the same information `EXPLAIN indexes = 1` already exposes. It is also used
-    /// internally for distributed index analysis, which enforcing a policy here would break.
     context->checkAccess(AccessType::SELECT, source_table->getStorageID());
 
     auto sample = storage_snapshot->metadata->getSampleBlock();
