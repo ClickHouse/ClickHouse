@@ -28,9 +28,8 @@ CREATE SETTINGS PROFILE profile_05019 SETTINGS
 
 SET profile = 'profile_05019';
 
-SELECT '-- constraint is in force on the direct forms';
+SELECT '-- constraint is in force on a direct SET';
 SET max_execution_time = 20; -- { serverError 452 }
-SELECT count() FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}; -- { serverError 452 }
 
 SELECT '-- SET name = DEFAULT must not clear a CONST constraint';
 SET max_execution_time = DEFAULT; -- { serverError 452 }
@@ -59,6 +58,12 @@ SELECT c FROM v_definer_05019;
 
 SELECT '-- a SQL SECURITY INVOKER view with inner SETTINGS is checked';
 SELECT c FROM v_invoker_05019; -- { serverError 452 }
+
+-- Kept last on purpose. A constraint violation on a top-level SETTINGS clause is raised while the
+-- server receives the settings packet, so the connection is dropped and the client silently
+-- reconnects into a fresh session, losing the `SET profile` above for anything that follows.
+SELECT '-- a top-level SETTINGS clause overriding a CONST setting is checked';
+SELECT count() FROM t_05019 SETTINGS additional_table_filters = {'t_05019': '1'}; -- { serverError 452 }
 
 DROP TABLE t_05019;
 DROP VIEW v_invoker_05019;

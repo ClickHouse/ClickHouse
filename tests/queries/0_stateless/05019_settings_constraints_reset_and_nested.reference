@@ -1,4 +1,4 @@
--- constraint is in force on the direct forms
+-- constraint is in force on a direct SET
 -- SET name = DEFAULT must not clear a CONST constraint
 10
 -- resetting a setting that already holds its default stays allowed
@@ -12,3 +12,4 @@
 -- a SQL SECURITY DEFINER view with inner SETTINGS still reads
 3
 -- a SQL SECURITY INVOKER view with inner SETTINGS is checked
+-- a top-level SETTINGS clause overriding a CONST setting is checked
