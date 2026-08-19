@@ -810,6 +810,18 @@ O tamanho, em bytes, da arena de memória para chaves do ClickHouse Keeper.
 
 Índice do último log confirmado no ClickHouse Keeper.
 
+<div id="keeperlastleaderelectiontime">
+  ### KeeperLastLeaderElectionTime
+</div>
+
+Duração, em milissegundos, da janela mais recente sem líder observada localmente, que terminou quando esta instância do ClickHouse Keeper se tornou líder. Transferências de liderança que não expõem um estado sem líder amostrado não são registradas. `0` se esta instância não for o líder ativo ou não tiver nenhuma janela concluída registrada.
+
+<div id="keeperlastleaderunavailabletime">
+  ### KeeperLastLeaderUnavailableTime
+</div>
+
+Duração, em milissegundos, da janela sem líder mais recente concluída e observada localmente por este líder do ClickHouse Keeper. `0` se esta instância não for o líder ativo ou não houver registro de uma janela sem líder concluída.
+
 <div id="keeperlastlogidx">
   ### KeeperLastLogIdx
 </div>
