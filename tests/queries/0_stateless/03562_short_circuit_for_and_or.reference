@@ -29,6 +29,8 @@ Test aggregate and arrayJoin branches are not erased
 0
 1
 1
+Test JOIN ON scalar subqueries remain planner-safe
+1	1
 Test EXISTS falls back when its runtime value is unknown
 0
 1

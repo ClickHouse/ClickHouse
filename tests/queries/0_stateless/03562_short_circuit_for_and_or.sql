@@ -50,6 +50,12 @@ SELECT 1 OR count() FROM numbers(10);
 SELECT 0 AND count() FROM numbers(10);
 SELECT 1 OR arrayJoin([1, 2]);
 
+SELECT 'Test JOIN ON scalar subqueries remain planner-safe';
+SELECT *
+FROM values('l UInt8', 1) AS l
+INNER JOIN values('r UInt8', 1) AS r
+    ON 1 OR ((SELECT count() FROM system.one) > 0);
+
 SELECT 'Test EXISTS falls back when its runtime value is unknown';
 SELECT 0 AND exists(SELECT [1]);
 SELECT 1 OR exists(SELECT tuple(1));

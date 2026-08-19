@@ -1065,6 +1065,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         && parameters.empty()
         && function_node_ptr->getNullsAction() == NullsAction::EMPTY
         && !function_node_ptr->isWindowFunction()
+        /// JOIN planning unwraps root constant source expressions. Keep JOIN ON expressions on
+        /// the regular path so a preserved scalar-subquery source is never sent to the planner.
+        && !scope.resolving_join_on_expression
         && !lambda_expression_untyped
         && !UserDefinedSQLFunctionFactory::instance().tryGet(function_name)
         && !UserDefinedExecutableFunctionFactory::instance().tryGet(function_name, scope.context, parameters)) /// NOLINT(readability-static-accessed-through-instance)

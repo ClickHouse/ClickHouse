@@ -5432,7 +5432,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
     {
         expressions_visitor.visit(join_node_typed.getJoinExpression());
         auto join_expression = join_node_typed.getJoinExpression();
+        const bool previous_resolving_join_on_expression = scope.resolving_join_on_expression;
+        scope.resolving_join_on_expression = true;
         resolveExpressionNode(join_expression, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+        scope.resolving_join_on_expression = previous_resolving_join_on_expression;
         join_node_typed.getJoinExpression() = std::move(join_expression);
     }
     else if (join_node_typed.isUsingJoinExpression())
