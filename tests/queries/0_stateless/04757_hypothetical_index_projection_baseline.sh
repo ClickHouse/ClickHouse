@@ -43,8 +43,8 @@ do
     " 2>&1 | grep -oE "status: +not_applicable|reason: +.*" | awk '{$1=$1; print}'
 done <<'EOF'
 trivial count|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 1
-minmax_count projection|SELECT max(a) FROM t_hypo_proj_baseline SETTINGS optimize_use_implicit_projections = 1
-exact_count projection|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1
+minmax_count projection|SELECT max(a) FROM t_hypo_proj_baseline SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1
+exact_count projection|SELECT count() FROM t_hypo_proj_baseline SETTINGS optimize_trivial_count_query = 0, optimize_use_projections = 1, optimize_use_implicit_projections = 1
 EOF
 
 # A normal projection that selects no ranges may drop the read step or keep an empty one, which
