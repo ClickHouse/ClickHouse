@@ -56,6 +56,16 @@ static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
         || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>());
 }
 
+/// Backwards compatibility with the pre-unified Unity catalog, which accepted a table by
+/// `securable_kind` alone. Delta tables are documented to always carry `data_source_format`,
+/// so this likely never fires, but it keeps the shipped acceptance rule for records without the format.
+static bool hasCompatDeltaSecurableKind(const Poco::JSON::Object::Ptr & table_json)
+{
+    static const std::unordered_set<std::string> compat_delta_kinds = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
+    return hasValueAndItsNotNone("securable_kind", table_json)
+        && compat_delta_kinds.contains(table_json->get("securable_kind").extract<String>());
+}
+
 struct UnifiedUnityCatalogFullSchemaName
 {
     std::string catalog_name;
@@ -208,6 +218,9 @@ DataLakeTableFormat UnifiedUnityCatalog::detectTableFormat(const Poco::JSON::Obj
 {
     if (!hasValueAndItsNotNone("data_source_format", table_json))
     {
+        if (hasCompatDeltaSecurableKind(table_json))
+            return DataLakeTableFormat::DELTA;
+
         LOG_DEBUG(log, "Table JSON has no data_source_format");
         return DataLakeTableFormat::UNKNOWN;
     }
@@ -342,7 +355,7 @@ bool UnifiedUnityCatalog::tryGetDeltaTableMetadata(
                 full_table_name, object->get("data_source_format").extract<String>()));
         }
     }
-    else
+    else if (!hasCompatDeltaSecurableKind(object))
     {
         result.setTableIsNotReadable(fmt::format(
             "Cannot read table `{}` because it has no information about data_source_format",
