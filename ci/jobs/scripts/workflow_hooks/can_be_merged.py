@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.jobs.scripts.workflow_hooks.review_threads import (
