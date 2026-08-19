@@ -50,7 +50,6 @@ for _ in {1..300}; do
 done
 
 $CLICKHOUSE_CLIENT --receive_timeout 900 --query "OPTIMIZE TABLE t_optimize_final_free_slots FINAL" &
-optimize_pid=$!
 
 # Exactly one remaining worker can execute a target merge. The other target partitions are not
 # selected until capacity is released; this is what prevents them from retaining merge tags.
