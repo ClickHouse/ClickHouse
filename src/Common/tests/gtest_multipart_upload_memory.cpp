@@ -261,7 +261,14 @@ TEST(MultipartUploadMemory, StrictUploadPartSizeCapsTheCeilingAtReachableBuffers
     /// buffer being filled, not all 21 configured in-flight buffers.
     EXPECT_EQ(
         getMultipartUploadMemoryCeilingForWrittenBytes(memory, 1024ULL * 1024 * 1024),
-        3 * 512ULL * 1024 * 1024);
+        2 * 512ULL * 1024 * 1024);
+
+    /// The first full strict-size buffer can be detached while the second is only partially filled.
+    /// The partial second buffer is already included by the ceiling division, so do not add another
+    /// unreachable strict-size buffer.
+    EXPECT_EQ(
+        getMultipartUploadMemoryCeilingForWrittenBytes(memory, 600ULL * 1024 * 1024),
+        2 * 512ULL * 1024 * 1024);
 }
 
 TEST(MultipartUploadMemory, ADetachedBufferCoexistsWithTheBufferBeingFilled)

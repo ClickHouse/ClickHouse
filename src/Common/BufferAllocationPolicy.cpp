@@ -194,9 +194,6 @@ UInt64 getMultipartUploadMemoryCeilingForWrittenBytes(const MultipartUploadMemor
         UInt64 reachable_buffers = bytes_written / settings.strict_size;
         if (bytes_written % settings.strict_size)
             ++reachable_buffers;
-        if (__builtin_add_overflow(reachable_buffers, static_cast<UInt64>(1), &reachable_buffers))
-            return MultipartUploadMemory::UNLIMITED;
-
         const UInt64 live_buffers = std::min(memory.max_inflight_parts + 1, reachable_buffers);
         if (__builtin_mul_overflow(live_buffers, settings.strict_size, &largest_reachable_buffer))
             return MultipartUploadMemory::UNLIMITED;

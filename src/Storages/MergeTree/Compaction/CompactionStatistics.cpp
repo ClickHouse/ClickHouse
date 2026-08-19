@@ -8,6 +8,7 @@
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/ProjectionsDescription.h>
@@ -19,6 +20,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/BufferAllocationPolicy.h>
 #include <Common/escapeForFileName.h>
@@ -60,6 +62,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
+    extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
+    extern const MergeTreeSettingsString exclude_materialize_skip_indexes_on_merge;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_min_space_in_pool;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
@@ -137,6 +141,42 @@ UInt64 saturatingStreamsTimesBuffer(UInt64 streams, UInt64 buffer_size)
     if (__builtin_mul_overflow(streams, buffer_size, &result))
         return std::numeric_limits<UInt64>::max();
     return result;
+}
+
+UInt64 saturatingAdd(UInt64 lhs, UInt64 rhs)
+{
+    UInt64 result = 0;
+    if (__builtin_add_overflow(lhs, rhs, &result))
+        return std::numeric_limits<UInt64>::max();
+    return result;
+}
+
+/// `MergedBlockOutputStream` creates one writer per physical substream of every non-text skip index.
+/// Text indexes are written by `MergeTextIndexesTask` instead and do not share this writer lifetime.
+size_t countMaterializedSkipIndexStreams(
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    const ContextPtr & context)
+{
+    std::unordered_set<String> excluded_index_names;
+    if (settings[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        const auto excluded_indexes = settings[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
+        if (!excluded_indexes.empty())
+            excluded_index_names = parseIdentifiersOrStringLiteralsToSet(excluded_indexes, context->getSettingsRef());
+    }
+
+    size_t streams = 0;
+    for (const auto & index : metadata_snapshot->getSecondaryIndices())
+    {
+        if (index.type == "text" || excluded_index_names.contains(index.name))
+            continue;
+
+        const auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, settings);
+        if (!index_ptr->isInert())
+            streams += index_ptr->getSubstreams().size();
+    }
+    return streams;
 }
 
 /// Number of on-disk column streams for a set of columns: one per non-ephemeral serialization
@@ -1782,6 +1822,16 @@ UInt64 estimateNeededMemoryForMerge(
         }
     }
 
+    /// The data-column streams above are not the only writers held by a merge. `MergedBlockOutputStream`
+    /// also creates a `MergeTreeIndexWriterStream` for every non-text skip-index substream, and keeps it
+    /// open for the entire merge, including the vertical gathering stage. Their upload buffers grow only
+    /// with serialized index data and are covered reactively; reserve the compressor and file buffers they
+    /// allocate eagerly so a table with many skip indexes cannot bypass the admission gate altogether.
+    const size_t skip_index_streams = countMaterializedSkipIndexStreams(metadata_snapshot, settings, context);
+    output_memory = saturatingAdd(
+        output_memory,
+        saturatingStreamsTimesBuffer(skip_index_streams, eager_stream_buffers(base_max_compress_block_size)));
+
     /// Projections: the merge also reads and writes projection parts, and none of that IO flows through
     /// the base parts' readers and writers priced above. Mirror the decision made in
     /// MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild:
@@ -2153,8 +2203,20 @@ UInt64 estimateNeededMemoryForMerge(
                 const UInt64 read_back_reader_worst_case = saturatingStreamsTimesBuffer(
                     MergeProjectionPartsTask::max_parts_to_merge_in_one_level * projection_writer_streams,
                     projection_read_buffer_size);
-                projection_memory += std::min(projection_worst_case, projection_data_bound)
-                    + std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes));
+                /// `writeTempProjectionPart` materializes non-text skip indexes with the projection's
+                /// metadata and settings snapshot. Those writers live alongside the projection data writer,
+                /// so account for their eagerly allocated compressor and file buffers as well.
+                const size_t projection_skip_index_streams
+                    = countMaterializedSkipIndexStreams(projection.metadata, projection_settings, context);
+                const UInt64 projection_skip_index_eager_buffers = saturatingStreamsTimesBuffer(
+                    projection_skip_index_streams, eager_stream_buffers(projection_max_compress_block_size));
+                projection_memory = saturatingAdd(
+                    projection_memory,
+                    saturatingAdd(
+                        std::min(projection_worst_case, projection_data_bound),
+                        saturatingAdd(
+                            std::min(read_back_reader_worst_case, saturatingStreamsTimesBuffer(2, projection_uncompressed_bytes)),
+                            projection_skip_index_eager_buffers)));
             }
         }
     }
