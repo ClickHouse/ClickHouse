@@ -530,32 +530,6 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     return interpreter.getMutationActions();
 }
 
-/// Whether `column_name`, a MATERIALIZED column, reads an updated column directly or through other
-/// MATERIALIZED columns. `visited` also breaks a cycle, which well-formed defaults cannot contain.
-template <typename GetDependencies, typename CanRecalculate>
-static bool reachesUpdatedColumn(
-    const String & column_name,
-    const NameSet & updated_columns,
-    const GetDependencies & get_dependencies,
-    const CanRecalculate & can_recalculate,
-    NameSet visited = {})
-{
-    if (!visited.emplace(column_name).second)
-        return false;
-
-    for (const auto & dependency : get_dependencies(column_name))
-    {
-        if (updated_columns.contains(dependency))
-            return true;
-
-        if (can_recalculate(dependency)
-            && reachesUpdatedColumn(dependency, updated_columns, get_dependencies, can_recalculate, visited))
-            return true;
-    }
-
-    return false;
-}
-
 /// Extends the read set with the columns needed to recalculate the MATERIALIZED columns it contains.
 ///
 /// A MATERIALIZED column is stored, so a query selecting it does not ask for the columns its expression
@@ -626,6 +600,30 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
+    /// Whether an updated column is reachable from `column_name` directly or through other MATERIALIZED
+    /// columns. The entry inserted before recursing also breaks a cycle, which well-formed defaults
+    /// cannot contain; on an acyclic graph an entry is only ever read once its value is final, because a
+    /// column still being visited is reachable exclusively from its own subtree.
+    std::unordered_map<String, bool> reaches_updated;
+    auto reaches_updated_column = [&](const String & column_name, auto && self) -> bool
+    {
+        auto [it, inserted] = reaches_updated.emplace(column_name, false);
+        if (!inserted)
+            return it->second;
+
+        for (const auto & dependency : get_dependencies(column_name))
+        {
+            if (all_updated_columns.contains(dependency) || (can_recalculate(dependency) && self(dependency, self)))
+            {
+                /// Not through `it`: the recursion above may have rehashed the map.
+                reaches_updated[column_name] = true;
+                return true;
+            }
+        }
+
+        return false;
+    };
+
     std::deque<String> queue(read_columns_set.begin(), read_columns_set.end());
 
     while (!queue.empty())
@@ -642,7 +640,7 @@ void AlterConversions::addColumnsRequiredForMaterialized(
                 continue;
 
             bool needed = all_updated_columns.contains(dependency)
-                || (can_recalculate(dependency) && reachesUpdatedColumn(dependency, all_updated_columns, get_dependencies, can_recalculate));
+                || (can_recalculate(dependency) && reaches_updated_column(dependency, reaches_updated_column));
 
             if (needed && required_source_columns.insert(dependency).second)
                 queue.push_back(dependency);
