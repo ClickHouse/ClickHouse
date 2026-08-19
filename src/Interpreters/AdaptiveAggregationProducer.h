@@ -42,9 +42,22 @@ struct AdaptiveAggregationProducer
             GiveUp,
         };
 
-        Verdict decide(size_t added_rows, size_t keys, size_t freeze_threshold, bool convertible_to_two_level)
+        /// `table_bytes` is the local table's own footprint (its hash-table buffer plus its
+        /// arenas), evaluated between blocks like the baseline's conversion checks, so a
+        /// byte-triggered freeze lands on a block boundary (the mid-block freeze crossing
+        /// counts keys only). The query-wide tracked memory is deliberately not used: it sums
+        /// every thread's allocations, so it would freeze all the tables off each other's
+        /// growth.
+        Verdict decide(
+            size_t added_rows,
+            size_t keys,
+            size_t table_bytes,
+            size_t freeze_threshold,
+            size_t freeze_threshold_bytes,
+            bool convertible_to_two_level)
         {
-            if (keys >= freeze_threshold && convertible_to_two_level)
+            const bool bytes_reached = freeze_threshold_bytes && table_bytes >= freeze_threshold_bytes;
+            if ((keys >= freeze_threshold || bytes_reached) && convertible_to_two_level)
                 return Verdict::Freeze;
             rows_seen += added_rows;
             if (rows_seen >= give_up_row_multiple * freeze_threshold && keys < freeze_threshold)

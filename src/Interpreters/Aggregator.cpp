@@ -371,7 +371,8 @@ Aggregator::Params::Params(
     bool enable_parallel_single_level_merge_,
     bool enable_packed_string_keys_,
     bool enable_adaptive_aggregator_,
-    UInt64 adaptive_aggregator_freeze_threshold_)
+    UInt64 adaptive_aggregator_freeze_threshold_,
+    UInt64 adaptive_aggregator_freeze_threshold_bytes_)
     : keys(keys_)
     , keys_size(keys.size())
     , aggregates(aggregates_)
@@ -396,6 +397,7 @@ Aggregator::Params::Params(
     , stats_collecting_params(stats_collecting_params_)
     , enable_adaptive_aggregator(enable_adaptive_aggregator_)
     , adaptive_aggregator_freeze_threshold(adaptive_aggregator_freeze_threshold_)
+    , adaptive_aggregator_freeze_threshold_bytes(adaptive_aggregator_freeze_threshold_bytes_)
     , enable_producing_buckets_out_of_order_in_aggregation(enable_producing_buckets_out_of_order_in_aggregation_)
     , enable_parallel_single_level_merge(enable_parallel_single_level_merge_)
     , serialize_string_with_zero_byte(serialize_string_with_zero_byte_)
@@ -1907,8 +1909,15 @@ bool Aggregator::executeOnBlock(Columns columns,
             if (adaptive->isLearning())
             {
                 auto & learning = std::get<AdaptiveAggregationProducer::LearningState>(adaptive->phase);
+                const size_t local_table_bytes
+                    = params.adaptive_aggregator_freeze_threshold_bytes ? result.allocatedBytes() : 0;
                 switch (learning.decide(
-                    row_end - row_begin, result_size, params.adaptive_aggregator_freeze_threshold, result.isConvertibleToTwoLevel()))
+                    row_end - row_begin,
+                    result_size,
+                    local_table_bytes,
+                    params.adaptive_aggregator_freeze_threshold,
+                    params.adaptive_aggregator_freeze_threshold_bytes,
+                    result.isConvertibleToTwoLevel()))
                 {
                     case AdaptiveAggregationProducer::LearningState::Verdict::Freeze:
                         freezeAdaptive(result, *adaptive);
