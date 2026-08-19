@@ -207,6 +207,7 @@
                 "es/guides/use-cases/data-warehousing/onelake-catalog",
                 "es/guides/use-cases/data-warehousing/polaris-catalog",
                 "es/guides/use-cases/data-warehousing/rest-catalog",
+                "es/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "es/guides/use-cases/data-warehousing/unity-catalog",
                 "es/guides/use-cases/data-warehousing/biglake-catalog"
               ]
