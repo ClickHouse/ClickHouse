@@ -2211,7 +2211,13 @@ def _setup_catalog_commit_table(started_cluster, node, test_ref):
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
 
     table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
-    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+    # The commit failpoints are process-global, so no other commit may be in flight when an arm
+    # arms them: wait for each insert instead of letting it complete asynchronously.
+    write_settings = {
+        "allow_insert_into_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+        "async_insert": 0,
+    }
 
     node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'AAA', 1.0, 2.0, tuple('bot'));", settings=write_settings)
     node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'BBB', 1.0, 2.0, tuple('bot'));", settings=write_settings)
@@ -2327,3 +2333,79 @@ def test_catalog_commit_definite_rejection_keeps_error(started_cluster):
     assert after.snapshot_id == before.snapshot_id, (before.snapshot_id, after.snapshot_id)
     assert _s3_uri_exists(started_cluster.minio_client, after.manifest_list), after.manifest_list
     assert node.query(f"SELECT count() FROM {table_ref}").strip() == "2"
+
+
+def test_catalog_commit_unknown_keeps_files_on_delete(started_cluster):
+    # Same invariant on the mutation commit path: an unknown outcome must not delete the files of
+    # the snapshot the catalog now names.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_commit_unknown_delete_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    node.query(f"INSERT INTO {table_ref} VALUES ('123');", settings=write_settings)
+    node.query(f"INSERT INTO {table_ref} VALUES ('456');", settings=write_settings)
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(
+            f"ALTER TABLE {table_ref} DELETE WHERE x = '123';", settings=write_settings
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    snapshot = _current_snapshot(catalog, root_namespace, table_name)
+    assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
+        f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
+    )
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "456\n"
+
+
+def test_catalog_commit_unknown_keeps_files_on_optimize(started_cluster):
+    # Same invariant on the compaction commit path.
+    node = started_cluster.instances["node1"]
+    test_ref = f"test_commit_unknown_optimize_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1, "async_insert": 0}
+
+    catalog = load_catalog_impl(started_cluster)
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    # Created through ClickHouse so the table gets its own storage prefix: compaction resolves the
+    # parent snapshot through object storage, which a prefix shared with other tables would break.
+    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x String)")
+    for value in ("AAA", "BBB", "CCC"):
+        node.query(f"INSERT INTO {table_ref} VALUES ('{value}');", settings=write_settings)
+
+    optimize_settings = dict(
+        write_settings,
+        allow_experimental_iceberg_compaction=1,
+        iceberg_manifest_min_count_to_compact=2,
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"OPTIMIZE TABLE {table_ref} MANIFEST", settings=optimize_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_response_lost")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+
+    snapshot = _current_snapshot(catalog, root_namespace, table_name)
+    assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
+        f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
+    )
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
