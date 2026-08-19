@@ -460,6 +460,12 @@ void ColumnsDescription::add(ColumnDescription column, const String & after_colu
     invalidateGetCache();
 }
 
+void ColumnsDescription::addIfNotExists(ColumnDescription column)
+{
+    if (!has(column.name))
+        add(std::move(column));
+}
+
 void ColumnsDescription::remove(const String & column_name)
 {
     auto range = getNameRange(columns, column_name);
