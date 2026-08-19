@@ -18,7 +18,7 @@ ColumnPtr convertToSerialization(const ColumnPtr & column, const IDataType & typ
 
     /// The column is written with non-native LowCardinality serialization, which requires a
     /// ColumnLowCardinality in memory. Build it (the dictionary) from the full column.
-    auto full = recursiveRemoveSparse(column);
+    auto full = recursiveRemoveSparse(column->convertToFullColumnIfConst());
     if (full->lowCardinality())
         return full;
 

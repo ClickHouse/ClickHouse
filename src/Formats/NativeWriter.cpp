@@ -115,6 +115,14 @@ std::tuple<SerializationPtr, SerializationInfoPtr, ColumnPtr> NativeWriter::getS
             *result_column,
             SerializationInfoSettings::enableAllSupportedSerializations(
                 client_revision >= DBMS_MIN_REVISION_WITH_STRING_WITH_SIZE_STREAM_SERIALIZATION));
+        if (client_revision < DBMS_MIN_REVISION_WITH_AUTOMATIC_LOW_CARDINALITY_SERIALIZATION
+            && ISerialization::hasKind(info->getKindStack(), ISerialization::Kind::LOW_CARDINALITY))
+        {
+            return {
+                column.type->getDefaultSerialization(),
+                nullptr,
+                recursiveRemoveNonNativeLowCardinality(recursiveRemoveSparse(result_column))};
+        }
         return {column.type->getSerialization(*info), info, result_column};
     }
 
