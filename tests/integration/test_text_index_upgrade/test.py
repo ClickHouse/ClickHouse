@@ -346,10 +346,12 @@ def assert_single_active_part(node, table):
 
 
 def assert_index_used(node, table):
-    # A full scan would answer the count queries correctly too, so confirm the text
-    # index is actually engaged via the query plan.
+    # A full scan would answer the search queries correctly too, so confirm the text
+    # index is actually engaged via the query plan. The query must read a column: a
+    # bare `count()` is answered from the index cardinality by `ReadFromTextIndexCount`,
+    # whose plan has no `ReadFromMergeTree` step listing the used indexes.
     explain = node.query(
-        f"EXPLAIN indexes = 1 SELECT count() FROM {table} WHERE hasToken(s, 'unique42')"
+        f"EXPLAIN indexes = 1 SELECT k FROM {table} WHERE hasToken(s, 'unique42')"
     )
     assert "Name: idx" in explain, f"text index `idx` not used:\n{explain}"
 
