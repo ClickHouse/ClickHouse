@@ -1,6 +1,9 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ArrayJoin.h>
+
+#include <optional>
 
 namespace DB
 {
@@ -22,6 +25,10 @@ public:
     const Names & getColumns() const { return array_join.columns; }
     bool isLeft() const { return array_join.is_left; }
 
+    /// Attach an element-space filter (the fuse-filter pass sets this); the DAG references only joined columns
+    void setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column);
+    bool hasElementFilter() const { return element_filter.has_value(); }
+
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -37,6 +44,10 @@ private:
     bool is_unaligned = false;
     size_t max_block_size = DEFAULT_BLOCK_SIZE;
     bool enable_lazy_columns_replication = false;
+
+    std::optional<ActionsDAG> element_filter;
+    String element_filter_column_name;
+    bool remove_element_filter_column = false;
 };
 
 }

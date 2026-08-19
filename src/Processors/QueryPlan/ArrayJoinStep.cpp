@@ -6,10 +6,17 @@
 #include <Processors/Transforms/ArrayJoinTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/ArrayJoinAction.h>
+#include <Interpreters/ExpressionActions.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ProtocolDefines.h>
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int SUPPORT_IS_DISABLED;
+}
 
 namespace QueryPlanSerializationSetting
 {
@@ -48,9 +55,22 @@ void ArrayJoinStep::updateOutputHeader()
     output_header = std::make_shared<const Block>(ArrayJoinTransform::transformHeader(*input_headers.front(), array_join.columns));
 }
 
-void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ArrayJoinStep::setElementFilter(ActionsDAG filter_dag, String filter_column_name, bool remove_filter_column)
+{
+    element_filter = std::move(filter_dag);
+    element_filter_column_name = std::move(filter_column_name);
+    remove_element_filter_column = remove_filter_column;
+}
+
+void ArrayJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     auto array_join_actions = std::make_shared<ArrayJoinAction>(array_join.columns, array_join.is_left, is_unaligned, max_block_size, enable_lazy_columns_replication);
+    if (element_filter)
+    {
+        array_join_actions->element_filter = std::make_shared<ExpressionActions>(element_filter->clone(), settings.getActionsSettings());
+        array_join_actions->element_filter_column_name = element_filter_column_name;
+        array_join_actions->remove_element_filter_column = remove_element_filter_column;
+    }
     pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)
     {
         bool on_totals = stream_type == QueryPipelineBuilder::StreamType::Totals;
@@ -74,6 +94,19 @@ void ArrayJoinStep::describeActions(FormatSettings & settings) const
         settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
     }
     settings.out << '\n';
+
+    if (element_filter)
+    {
+        settings.out << prefix << "Element filter column: " << element_filter_column_name;
+        if (remove_element_filter_column)
+            settings.out << " (removed)";
+        settings.out << '\n';
+        if (!settings.compact)
+        {
+            auto expression = std::make_shared<ExpressionActions>(element_filter->clone());
+            expression->describeActions(settings.out, prefix);
+        }
+    }
 }
 
 void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -85,6 +118,9 @@ void ArrayJoinStep::describeActions(JSONBuilder::JSONMap & map) const
         columns_array->add(column);
 
     map.add("Columns", std::move(columns_array));
+
+    if (element_filter)
+        map.add("Element Filter Column", element_filter_column_name);
 }
 
 void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
@@ -94,6 +130,13 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
+    const bool serialize_filter = element_filter.has_value();
+    if (serialize_filter && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_FILTER)
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan: serializing an ArrayJoinStep with an element filter requires query "
+            "plan serialization version >= {}; all nodes must run the same version",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_FILTER);
+
     UInt8 flags = 0;
     if (array_join.is_left)
         flags |= 1;
@@ -104,17 +147,30 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     /// eager replication, which is the correct fallback for a performance-only flag.
     if (enable_lazy_columns_replication)
         flags |= 4;
+    if (serialize_filter)
+        flags |= 8;
+    if (serialize_filter && remove_element_filter_column)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(array_join.columns.size(), ctx.out);
     for (const auto & column : array_join.columns)
         writeStringBinary(column, ctx.out);
+
+    if (serialize_filter)
+    {
+        writeStringBinary(element_filter_column_name, ctx.out);
+        element_filter->serialize(ctx.out, ctx.registry);
+    }
 }
 
 QueryPlanStepPtr ArrayJoinStep::clone() const
 {
-    return std::make_unique<ArrayJoinStep>(*this);
+    auto cloned = std::make_unique<ArrayJoinStep>(input_headers.front(), array_join, is_unaligned, max_block_size, enable_lazy_columns_replication);
+    if (element_filter)
+        cloned->setElementFilter(element_filter->clone(), element_filter_column_name, remove_element_filter_column);
+    return cloned;
 }
 
 QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
@@ -125,6 +181,8 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     bool is_left = bool(flags & 1);
     bool is_unaligned = bool(flags & 2);
     bool enable_lazy_columns_replication = bool(flags & 4);
+    bool has_element_filter = bool(flags & 8);
+    bool remove_element_filter_column = bool(flags & 16);
 
     UInt64 num_columns = 0;
     readVarUInt(num_columns, ctx.in);
@@ -136,12 +194,22 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     for (auto & column : array_join.columns)
         readStringBinary(column, ctx.in);
 
-    return std::make_unique<ArrayJoinStep>(
+    auto step = std::make_unique<ArrayJoinStep>(
         ctx.input_headers.front(),
         std::move(array_join),
         is_unaligned,
         ctx.settings[QueryPlanSerializationSetting::max_block_size],
         enable_lazy_columns_replication);
+
+    if (has_element_filter)
+    {
+        String filter_column_name;
+        readStringBinary(filter_column_name, ctx.in);
+        ActionsDAG filter_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
+        step->setElementFilter(std::move(filter_dag), std::move(filter_column_name), remove_element_filter_column);
+    }
+
+    return step;
 }
 
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
