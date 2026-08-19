@@ -22,8 +22,8 @@
     <!-- Skewed layouts where the per-partition build would lose: the skew check must decline them, so
          these queries pin the absence of a regression. 90% of the rows in one partition with unique keys
          is the worst measured shape; 30% with heavy duplication sits just past the threshold. -->
-    <create_query>CREATE TABLE t_skew90_uniq_{partitions} (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
-    <create_query>CREATE TABLE t_skew30_dup_{partitions} (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 3, 0, 1 + sipHash64(a) % 15)</create_query>
+    <create_query>CREATE TABLE t_skew90_uniq (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 9, 0, 1 + sipHash64(a) % 15)</create_query>
+    <create_query>CREATE TABLE t_skew30_dup (a UInt64) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(sipHash64(a) % 10 &lt; 3, 0, 1 + sipHash64(a) % 15)</create_query>
 
     <!-- Adversarial inputs that pass the skew check, so the per-partition build still engages, but the
          preliminary deduplication removes little or nothing. The partition count is fixed: the abandon
@@ -55,11 +55,11 @@
     <fill_query>INSERT INTO test_unsorted_{partitions} SELECT number % 100000, number FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE test_unsorted_{partitions} FINAL</fill_query>
 
-    <fill_query>INSERT INTO t_skew90_uniq_{partitions} SELECT number FROM numbers_mt(10000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE t_skew90_uniq_{partitions} FINAL</fill_query>
+    <fill_query>INSERT INTO t_skew90_uniq SELECT number FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew90_uniq FINAL</fill_query>
 
-    <fill_query>INSERT INTO t_skew30_dup_{partitions} SELECT number % 100000 FROM numbers_mt(10000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE t_skew30_dup_{partitions} FINAL</fill_query>
+    <fill_query>INSERT INTO t_skew30_dup SELECT number % 100000 FROM numbers_mt(10000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE t_skew30_dup FINAL</fill_query>
 
     <fill_query>INSERT INTO t_all_unique SELECT number FROM numbers_mt(30000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_all_unique FINAL</fill_query>
@@ -90,9 +90,9 @@
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE (number, number + 1) IN (SELECT a, a + 1 FROM test_unsorted_{partitions}) FORMAT Null</query>
 
-    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew90_uniq_{partitions}) FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew90_uniq) FORMAT Null</query>
 
-    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew30_dup_{partitions}) FORMAT Null</query>
+    <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_skew30_dup) FORMAT Null</query>
 
     <query>SELECT count() FROM numbers_mt(1000000) WHERE number IN (SELECT a FROM t_all_unique) FORMAT Null</query>
 
@@ -106,8 +106,8 @@
 
     <drop_query>DROP TABLE test_{partitions}</drop_query>
     <drop_query>DROP TABLE test_unsorted_{partitions}</drop_query>
-    <drop_query>DROP TABLE t_skew90_uniq_{partitions}</drop_query>
-    <drop_query>DROP TABLE t_skew30_dup_{partitions}</drop_query>
+    <drop_query>DROP TABLE t_skew90_uniq</drop_query>
+    <drop_query>DROP TABLE t_skew30_dup</drop_query>
     <drop_query>DROP TABLE t_all_unique</drop_query>
     <drop_query>DROP TABLE t_all_unique_str</drop_query>
     <drop_query>DROP TABLE t_half_dup</drop_query>
