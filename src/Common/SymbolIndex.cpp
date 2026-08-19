@@ -187,7 +187,7 @@ public:
 
     void invalidate()
     {
-        source_index = std::numeric_limits<uint32_t>::max();
+        source_id = std::numeric_limits<uint32_t>::max();
         granule_index = std::numeric_limits<uint32_t>::max();
         entry_index = std::numeric_limits<uint32_t>::max();
         decoder.reset();
@@ -198,7 +198,7 @@ public:
     std::vector<char> granule_buffer;
     std::string name_buffer;
     std::optional<CompactSymbols::NameGranuleDecoder> decoder;
-    uint32_t source_index = std::numeric_limits<uint32_t>::max();
+    uint32_t source_id = std::numeric_limits<uint32_t>::max();
     uint32_t granule_index = std::numeric_limits<uint32_t>::max();
     uint32_t entry_index = std::numeric_limits<uint32_t>::max();
 };
@@ -235,7 +235,7 @@ CompactNameWorkspace & preparedCompactNameWorkspace(size_t maximum_granule_size)
 /// but will work if we cannot find or parse ELF files.
 void collectSymbolsFromProgramHeaders(
     DynamicLinkingProgramHeaderInfo * info,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    SymbolIndex::Data & data)
 {
     /* Iterate over all headers of the current shared lib
      * (first call is for the executable itself)
@@ -342,6 +342,7 @@ void collectSymbolsFromProgramHeaders(
             {
                 /* Get the pointer to the first entry of the symbol table */
                 const ElfSymbol * elf_sym = reinterpret_cast<const ElfSymbol *>(base_address);
+                uint32_t source_id = data.registerNameSource(SymbolIndex::NameSource::direct(strtab));
 
                 __msan_unpoison(elf_sym, sym_cnt * sizeof(*elf_sym));
 
@@ -362,11 +363,11 @@ void collectSymbolsFromProgramHeaders(
                         elf_sym[sym_index].value);
                     symbol.offset_end = reinterpret_cast<const void *>(
                         elf_sym[sym_index].value + elf_sym[sym_index].size);
-                    symbol.setName(sym_name);
+                    symbol.setNameReference(source_id, static_cast<uint32_t>(elf_sym[sym_index].name));
 
                     /// We are not interested in empty symbols.
                     if (elf_sym[sym_index].size)
-                        symbols.push_back(symbol);
+                        data.symbols.push_back(symbol);
                 }
 
                 break;
@@ -404,13 +405,14 @@ void collectSymbolsFromELFSymbolTable(
     const Elf & elf,
     const Elf::Section & symbol_table,
     const Elf::Section & string_table,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    SymbolIndex::Data & data)
 {
     /// Iterate symbol table.
     const ElfSymbol * symbol_table_entry = reinterpret_cast<const ElfSymbol *>(symbol_table.begin());
     const ElfSymbol * symbol_table_end = reinterpret_cast<const ElfSymbol *>(symbol_table.end());
 
     const char * strings = string_table.begin();
+    uint32_t source_id = data.registerNameSource(SymbolIndex::NameSource::direct(strings));
 
     for (; symbol_table_entry < symbol_table_end; ++symbol_table_entry)
     {
@@ -430,10 +432,10 @@ void collectSymbolsFromELFSymbolTable(
             symbol_table_entry->value);
         symbol.offset_end = reinterpret_cast<const void *>(
             symbol_table_entry->value + symbol_table_entry->size);
-        symbol.setName(symbol_name);
+        symbol.setNameReference(source_id, static_cast<uint32_t>(symbol_table_entry->name));
 
         if (symbol_table_entry->size)
-            symbols.push_back(symbol);
+            data.symbols.push_back(symbol);
     }
 }
 
@@ -442,7 +444,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
     const Elf & elf,
     SectionHeaderType section_header_type,
     const char * string_table_name,
-    std::vector<SymbolIndex::Symbol> & symbols)
+    SymbolIndex::Data & data)
 {
     std::optional<Elf::Section> symbol_table;
     std::optional<Elf::Section> string_table;
@@ -460,7 +462,7 @@ bool searchAndCollectSymbolsFromELFSymbolTable(
         return false;
     }
 
-    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, symbols);
+    collectSymbolsFromELFSymbolTable(elf, *symbol_table, *string_table, data);
     return true;
 }
 
@@ -475,11 +477,13 @@ bool searchAndCollectCompactSymbols(const Elf & elf, SymbolIndex::Data & data)
     {
         auto table = std::make_shared<CompactSymbolTable>(std::string_view(section->begin(), section->size()));
         auto addresses = table->reader.decodeAddresses();
-        if (data.compact_symbol_tables.size() >= uint64_t{1} << 31)
+        if (data.compact_symbol_tables.size() >= SymbolIndex::Symbol::invalid_source_id
+            || data.name_sources.size() >= SymbolIndex::Symbol::invalid_source_id)
             return true;
 
-        uint32_t source_index = static_cast<uint32_t>(data.compact_symbol_tables.size());
+        uint32_t table_index = static_cast<uint32_t>(data.compact_symbol_tables.size());
         data.compact_symbol_tables.push_back(table);
+        uint32_t source_id = data.registerNameSource(SymbolIndex::NameSource::compact(table_index));
         data.symbols.reserve(data.symbols.size() + addresses.size());
         for (const auto & address : addresses)
         {
@@ -489,7 +493,7 @@ bool searchAndCollectCompactSymbols(const Elf & elf, SymbolIndex::Data & data)
             SymbolIndex::Symbol symbol{};
             symbol.offset_begin = reinterpret_cast<const void *>(address.address);
             symbol.offset_end = reinterpret_cast<const void *>(address.address + address.size);
-            symbol.setCompactName(source_index, address.name_index);
+            symbol.setNameReference(source_id, address.name_index);
             data.symbols.push_back(symbol);
             data.has_compact_symbols = true;
         }
@@ -619,11 +623,11 @@ void collectSymbolsFromELF(
     data.objects.push_back(std::move(object));
 
     if (!searchAndCollectCompactSymbols(*data.objects.back().elf, data))
-        searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data.symbols);
+        searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::SYMTAB, ".strtab", data);
 
     /// Unneeded if they were parsed from "program headers" of loaded objects.
 #if defined USE_MUSL
-    searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data.symbols);
+    searchAndCollectSymbolsFromELFSymbolTable(*data.objects.back().elf, SectionHeaderType::DYNSYM, ".dynstr", data);
 #endif
 }
 
@@ -636,7 +640,7 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_p
 {
     SymbolIndex::Data & data = *reinterpret_cast<SymbolIndex::Data *>(data_ptr);
 
-    collectSymbolsFromProgramHeaders(info, data.symbols);
+    collectSymbolsFromProgramHeaders(info, data);
     collectSymbolsFromELF(info, data);
 
     /* Continue iterations */
@@ -650,9 +654,7 @@ int collectSymbols(DynamicLinkingProgramHeaderInfo * info, size_t, void * data_p
 /// without opening any files.
 void collectSymbolsFromMachOImage(
     uint32_t image_index,
-    std::vector<SymbolIndex::Symbol> & all_symbols,
-    std::vector<SymbolIndex::Object> & objects,
-    String & self_build_id)
+    SymbolIndex::Data & data)
 {
     const struct mach_header_64 * header
         = reinterpret_cast<const struct mach_header_64 *>(_dyld_get_image_header(image_index));
@@ -700,11 +702,11 @@ void collectSymbolsFromMachOImage(
         else if (cmd->cmd == LC_UUID)
         {
             /// Extract build ID (LC_UUID) for the main executable (image_index == 0)
-            if (image_index == 0 && self_build_id.empty())
+            if (image_index == 0 && data.self_build_id.empty())
             {
                 /// uuid_command layout: { uint32_t cmd, uint32_t cmdsize, uint8_t uuid[16] }
                 const uint8_t * uuid_bytes = cmd_ptr + 8;
-                self_build_id.assign(reinterpret_cast<const char *>(uuid_bytes), 16);
+                data.self_build_id.assign(reinterpret_cast<const char *>(uuid_bytes), 16);
             }
         }
 
@@ -723,6 +725,7 @@ void collectSymbolsFromMachOImage(
         = reinterpret_cast<const struct nlist_64 *>(linkedit_base + symtab_cmd->symoff);
     const char * str_table
         = reinterpret_cast<const char *>(linkedit_base + symtab_cmd->stroff);
+    uint32_t source_id = data.registerNameSource(SymbolIndex::NameSource::direct(str_table));
 
     std::vector<SymbolIndex::Symbol> local_symbols;
     local_symbols.reserve(symtab_cmd->nsyms / 4);
@@ -751,7 +754,12 @@ void collectSymbolsFromMachOImage(
 
         /// Mach-O prepends an underscore to C/C++ symbol names
         if (sym_name[0] == '_')
-            sym_name++;
+        {
+            ++str_index;
+            if (str_index >= symtab_cmd->strsize)
+                continue;
+            sym_name = str_table + str_index;
+        }
 
         if (sym_name[0] == '\0')
             continue;
@@ -762,7 +770,7 @@ void collectSymbolsFromMachOImage(
         /// relative offsets. findSymbol skips the address-to-offset conversion on macOS.
         symbol.offset_begin = reinterpret_cast<const void *>(sym.n_value + slide);
         symbol.offset_end = symbol.offset_begin; /// Size will be computed below
-        symbol.setName(sym_name);
+        symbol.setNameReference(source_id, str_index);
 
         local_symbols.push_back(symbol);
     }
@@ -787,7 +795,7 @@ void collectSymbolsFromMachOImage(
     if (!local_symbols.empty() && max_addr > min_addr)
         local_symbols.back().offset_end = reinterpret_cast<const void *>(max_addr);
 
-    all_symbols.insert(all_symbols.end(), local_symbols.begin(), local_symbols.end());
+    data.symbols.insert(data.symbols.end(), local_symbols.begin(), local_symbols.end());
 
     if (min_addr < max_addr)
     {
@@ -817,7 +825,7 @@ void collectSymbolsFromMachOImage(
             }
         }
 
-        objects.push_back(std::move(object));
+        data.objects.push_back(std::move(object));
     }
 }
 
@@ -866,7 +874,7 @@ void SymbolIndex::load()
 #elif defined(OS_DARWIN)
     uint32_t image_count = _dyld_image_count();
     for (uint32_t i = 0; i < image_count; ++i)
-        collectSymbolsFromMachOImage(i, data.symbols, data.objects, data.self_build_id);
+        collectSymbolsFromMachOImage(i, data);
 #endif
 
 #if defined(__ELF__)
@@ -883,6 +891,7 @@ void SymbolIndex::load()
         return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
     }), data.symbols.end());
 
+#if defined(__ELF__)
     if (data.has_compact_symbols)
     {
         if (data.symbols.size() > std::numeric_limits<uint32_t>::max())
@@ -894,17 +903,20 @@ void SymbolIndex::load()
         {
             const auto & lhs = data.symbols[lhs_index];
             const auto & rhs = data.symbols[rhs_index];
-            if (lhs.hasCompactName() != rhs.hasCompactName())
-                return !lhs.hasCompactName();
-            if (!lhs.hasCompactName())
+            bool lhs_has_compact_name = data.hasCompactName(lhs);
+            bool rhs_has_compact_name = data.hasCompactName(rhs);
+            if (lhs_has_compact_name != rhs_has_compact_name)
+                return !lhs_has_compact_name;
+            if (!lhs_has_compact_name)
                 return lhs_index < rhs_index;
-            if (lhs.compactSourceIndex() != rhs.compactSourceIndex())
-                return lhs.compactSourceIndex() < rhs.compactSourceIndex();
-            if (lhs.compactNameIndex() != rhs.compactNameIndex())
-                return lhs.compactNameIndex() < rhs.compactNameIndex();
+            if (lhs.nameSourceId() != rhs.nameSourceId())
+                return lhs.nameSourceId() < rhs.nameSourceId();
+            if (lhs.nameOffsetOrIndex() != rhs.nameOffsetOrIndex())
+                return lhs.nameOffsetOrIndex() < rhs.nameOffsetOrIndex();
             return lhs_index < rhs_index;
         });
     }
+#endif
 }
 
 const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
@@ -952,44 +964,53 @@ const char * SymbolIndex::getSymbolNameCString(const Symbol & symbol) const
 
 const char * SymbolIndex::getSymbolNameImpl(const Symbol & symbol, size_t * name_size) const
 {
-    if (!symbol.hasCompactName())
-    {
-        const char * direct_name = symbol.directName();
-        if (!direct_name)
-        {
-            if (name_size)
-                *name_size = 0;
-            return "";
-        }
-
-        if (name_size)
-            *name_size = std::strlen(direct_name);
-        return direct_name;
-    }
-
-#if defined(__ELF__)
-    uint32_t source_index = symbol.compactSourceIndex();
-    uint32_t name_index = symbol.compactNameIndex();
-    if (source_index >= data.compact_symbol_tables.size())
+    const NameSource * source = data.nameSource(symbol);
+    if (!source)
     {
         if (name_size)
             *name_size = 0;
         return "";
     }
 
+    if (source->kind == NameSource::Kind::Direct)
+    {
+        if (!source->direct_base)
+        {
+            if (name_size)
+                *name_size = 0;
+            return "";
+        }
+
+        const char * direct_name = source->direct_base + symbol.nameOffsetOrIndex();
+        if (name_size)
+            *name_size = std::strlen(direct_name);
+        return direct_name;
+    }
+
+#if defined(__ELF__)
+    if (source->kind != NameSource::Kind::Compact
+        || source->compact_table_index >= data.compact_symbol_tables.size())
+    {
+        if (name_size)
+            *name_size = 0;
+        return "";
+    }
+
+    uint32_t source_id = symbol.nameSourceId();
+    uint32_t name_index = symbol.nameOffsetOrIndex();
     uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
     uint32_t entry_index = name_index % CompactSymbols::names_per_granule;
     CompactNameWorkspace & workspace = preparedCompactNameWorkspace(maximum_name_granule_size);
-    if (source_index != workspace.source_index)
+    if (source_id != workspace.source_id)
     {
         workspace.invalidate();
-        workspace.source_index = source_index;
+        workspace.source_id = source_id;
     }
 
     try
     {
         std::string_view name = decodeCompactName(
-            data.compact_symbol_tables[source_index]->reader,
+            data.compact_symbol_tables[source->compact_table_index]->reader,
             granule_index,
             entry_index,
             workspace.decompression_context.get(),
@@ -1048,26 +1069,35 @@ bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view 
     size_t symbol_index = index.data.symbol_scan_order.empty() ? position : index.data.symbol_scan_order[position];
     ++position;
     symbol = &index.data.symbols[symbol_index];
-    if (!symbol->hasCompactName())
-    {
-        const char * direct_name = symbol->directName();
-        name = direct_name ? std::string_view(direct_name) : std::string_view("");
-        return true;
-    }
-
-#if defined(__ELF__)
-    uint32_t source_index = symbol->compactSourceIndex();
-    uint32_t name_index = symbol->compactNameIndex();
-    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
-    if (source_index >= index.data.compact_symbol_tables.size())
+    const NameSource * source = index.data.nameSource(*symbol);
+    if (!source)
     {
         name = std::string_view("");
         return true;
     }
 
-    if (source_index != cached_source_index)
+    if (source->kind == NameSource::Kind::Direct)
     {
-        cached_source_index = source_index;
+        name = source->direct_base
+            ? std::string_view(source->direct_base + symbol->nameOffsetOrIndex())
+            : std::string_view("");
+        return true;
+    }
+
+#if defined(__ELF__)
+    uint32_t source_id = symbol->nameSourceId();
+    uint32_t name_index = symbol->nameOffsetOrIndex();
+    uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
+    if (source->kind != NameSource::Kind::Compact
+        || source->compact_table_index >= index.data.compact_symbol_tables.size())
+    {
+        name = std::string_view("");
+        return true;
+    }
+
+    if (source_id != cached_source_id)
+    {
+        cached_source_id = source_id;
         cached_granule_index = std::numeric_limits<uint32_t>::max();
         cached_entry_index = std::numeric_limits<uint32_t>::max();
         decoder.reset();
@@ -1078,7 +1108,7 @@ bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view 
     try
     {
         name = decodeCompactName(
-            index.data.compact_symbol_tables[source_index]->reader,
+            index.data.compact_symbol_tables[source->compact_table_index]->reader,
             granule_index,
             entry_index,
             decompression_context.get(),

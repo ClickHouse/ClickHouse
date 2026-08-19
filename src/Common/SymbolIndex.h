@@ -20,7 +20,9 @@
 namespace DB
 {
 
+#if defined(__ELF__)
 class CompactSymbolTable;
+#endif
 
 #if defined(OS_DARWIN)
 /// Forward declaration to avoid pulling heavy MachO.h (and MMapReadBufferFromFile) into every includer.
@@ -45,21 +47,61 @@ public:
         const void * offset_begin{};
         const void * offset_end{};
 
-        void setName(const char * name) { name_reference = reinterpret_cast<uintptr_t>(name); }
-        const char * directName() const { return reinterpret_cast<const char *>(name_reference); }
+        static constexpr uint32_t invalid_source_id = std::numeric_limits<uint32_t>::max();
 
-        void setCompactName(uint32_t source_index, uint32_t name_index)
+        void setNameReference(uint32_t source_id_, uint32_t offset_or_index_)
         {
-            name_reference = compact_name_mask | (static_cast<uint64_t>(source_index) << 32) | name_index;
+            source_id = source_id_;
+            offset_or_index = offset_or_index_;
         }
 
-        bool hasCompactName() const { return name_reference & compact_name_mask; }
-        uint32_t compactSourceIndex() const { return static_cast<uint32_t>((name_reference >> 32) & 0x7fffffff); }
-        uint32_t compactNameIndex() const { return static_cast<uint32_t>(name_reference); }
+        uint32_t nameSourceId() const { return source_id; }
+        uint32_t nameOffsetOrIndex() const { return offset_or_index; }
 
     private:
-        static constexpr uint64_t compact_name_mask = uint64_t{1} << 63;
-        uint64_t name_reference{};
+        /// Names are resolved through `Data::name_sources`. Direct sources interpret
+        /// `offset_or_index` as a string-table offset; compact sources interpret it as a name index.
+        uint32_t source_id = invalid_source_id;
+        uint32_t offset_or_index{};
+    };
+
+    static_assert(sizeof(Symbol) == 24);
+
+    struct NameSource
+    {
+        enum class Kind : uint8_t
+        {
+            Direct,
+#if defined(__ELF__)
+            Compact,
+#endif
+        };
+
+        static NameSource direct(const char * base)
+        {
+            NameSource source;
+            source.direct_base = base;
+            return source;
+        }
+
+#if defined(__ELF__)
+        static NameSource compact(uint32_t table_index)
+        {
+            NameSource source;
+            source.kind = Kind::Compact;
+            source.compact_table_index = table_index;
+            return source;
+        }
+#endif
+
+        Kind kind = Kind::Direct;
+        union
+        {
+            const char * direct_base = nullptr;
+#if defined(__ELF__)
+            uint32_t compact_table_index;
+#endif
+        };
     };
 
     class SymbolIterator
@@ -82,7 +124,7 @@ public:
         const SymbolIndex & index;
         size_t position = 0;
 #if defined(__ELF__)
-        uint32_t cached_source_index = std::numeric_limits<uint32_t>::max();
+        uint32_t cached_source_id = std::numeric_limits<uint32_t>::max();
         uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
         uint32_t cached_entry_index = std::numeric_limits<uint32_t>::max();
         ZstdDCtxPtr decompression_context;
@@ -130,10 +172,38 @@ public:
 
     struct Data
     {
+        uint32_t registerNameSource(NameSource source)
+        {
+            if (name_sources.size() >= Symbol::invalid_source_id)
+                return Symbol::invalid_source_id;
+
+            uint32_t source_id = static_cast<uint32_t>(name_sources.size());
+            name_sources.push_back(source);
+            return source_id;
+        }
+
+        const NameSource * nameSource(const Symbol & symbol) const
+        {
+            if (symbol.nameSourceId() >= name_sources.size())
+                return nullptr;
+            return &name_sources[symbol.nameSourceId()];
+        }
+
+#if defined(__ELF__)
+        bool hasCompactName(const Symbol & symbol) const
+        {
+            const NameSource * source = nameSource(symbol);
+            return source && source->kind == NameSource::Kind::Compact;
+        }
+#endif
+
         std::vector<Symbol> symbols;
         std::vector<Object> objects;
+        std::vector<NameSource> name_sources;
+#if defined(__ELF__)
         std::vector<std::shared_ptr<const CompactSymbolTable>> compact_symbol_tables;
         bool has_compact_symbols = false;
+#endif
         std::vector<uint32_t> symbol_scan_order;
         /// BuildID from the Object corresponding to main executable (as opposed to dynamic libraries).
         String self_build_id;
