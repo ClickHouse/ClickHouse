@@ -3059,7 +3059,6 @@ void ClientBase::processParsedSingleQuery(
 #endif
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
 
-#if USE_CLIENT_AI
             const auto changes_setting = [&](std::string_view name)
             {
                 return std::any_of(changes.begin(), changes.end(), [&](const auto & change) { return change.name == name; })
@@ -3067,14 +3066,16 @@ void ClientBase::processParsedSingleQuery(
             };
 
             /// A profile is applied by the server and deliberately not reproduced in the client
-            /// context, so after it the client can no longer prove what `readonly` is, and must not
-            /// promise that the marker of its queries was accepted.
+            /// context, so after it the client can no longer tell which settings it changed: neither
+            /// the dialect the internal queries have to work around, nor `readonly` - so it must not
+            /// promise that the marker of the queries of the agent was accepted, either.
             if (changes_setting("profile"))
             {
+                dialect_may_be_changed_by_profile = true;
+#if USE_CLIENT_AI
                 ai_query_log_access_permanently_disabled = true;
-                ai_dialect_may_be_changed_by_profile = true;
-            }
 #endif
+            }
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -4252,7 +4253,7 @@ String ClientBase::runQueryForAI(const String & query, bool readonly, bool allow
     /// dialect itself. This is tracked from its successfully applied `SET`, rather than by
     /// comparing the final value: setting the dialect to `clickhouse` is a real change too.
     std::optional<Field> dialect_to_restore;
-    if (ai_dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
+    if (dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse)
     {
         /// Without the pin the server would parse ClickHouse SQL as another dialect, so the
         /// query is not sent at all: the model is told what stands in the way instead.
@@ -4532,7 +4533,7 @@ Block ClientBase::fetchInternalQueryResult(const String & query, const NameToNam
     /// to the ClickHouse dialect. The rest of the session settings are not sent: the query
     /// runs under the defaults of the connection, like before.
     const bool needs_clickhouse_dialect
-        = ai_dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
+        = dialect_may_be_changed_by_profile || client_context->getSettingsRef()[Setting::dialect] != Dialect::clickhouse;
     /// `readonly = 1` rejects every setting change, including the dialect pin used by both the
     /// agent and `help` / `man`. Fail before sending the internal query so users get guidance
     /// instead of a server setting exception.
