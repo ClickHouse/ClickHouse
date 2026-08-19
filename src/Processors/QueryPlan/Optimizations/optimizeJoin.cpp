@@ -143,9 +143,10 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
 
+    /// Child 0 always exists and is used as the NDV source by default. The block below replaces it with
+    /// the only non-const child of a deterministic function, or returns without propagating NDV.
     size_t source_child_index = 0;
 
-    /// For deterministic non-pass-through functions, find the only non-const child and use it as the NDV source.
     if (!isValuePassThroughFunction(node.function_base->getName()))
     {
         if (!node.function_base->isDeterministicInScopeOfQuery())
