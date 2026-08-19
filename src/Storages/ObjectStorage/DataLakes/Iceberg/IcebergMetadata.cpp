@@ -6,6 +6,7 @@
 
 #if USE_AVRO
 
+#include <algorithm>
 #include <cstddef>
 #include <limits>
 #include <memory>
@@ -833,11 +834,27 @@ void IcebergMetadata::createInitial(
 
     if (catalog)
     {
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+
+        /// The namespace default location must be the namespace base, not this table's directory:
+        /// a client creating another table in the same namespace without an explicit location would
+        /// otherwise be placed under this table's directory.
+        String namespace_location = location_path;
+        while (namespace_location.ends_with('/'))
+            namespace_location.pop_back();
+
+        String namespace_path = namespace_name;
+        std::replace(namespace_path.begin(), namespace_path.end(), '.', '/');
+        if (namespace_location.ends_with("/" + namespace_path + "/" + table_name))
+            namespace_location.resize(namespace_location.size() - table_name.size() - 1);
+        else
+            namespace_location.clear();
+
         /// Register the namespace before any files are written (but after all local
         /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
         /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
         /// a namespace over the plain directory those files would leave behind.
-        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+        catalog->createNamespaceIfNotExists(namespace_name, namespace_location);
     }
 
     try

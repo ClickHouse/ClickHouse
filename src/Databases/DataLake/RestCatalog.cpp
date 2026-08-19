@@ -1724,6 +1724,8 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
     request_body->set("namespace", namespaceToJSONArray(namespace_name));
+
+    if (!location.empty()) // the caller has no namespace base to offer
     {
         Poco::JSON::Object::Ptr properties = new Poco::JSON::Object;
         properties->set("location", location);
