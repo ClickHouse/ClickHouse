@@ -41,9 +41,20 @@ static const auto SCHEMAS_ENDPOINT = "schemas";
 static const auto TABLES_ENDPOINT = "tables";
 static const auto TEMPORARY_CREDENTIALS_ENDPOINT = "temporary-table-credentials";
 
-static const std::unordered_set<std::string> READABLE_DELTA_TABLES = {"TABLE_DELTA", "TABLE_DELTA_EXTERNAL"};
-static const std::unordered_set<std::string> READABLE_ICEBERG_TABLES = {"TABLE_ICEBERG", "TABLE_ICEBERG_EXTERNAL"};
-static const std::unordered_set<std::string> UNIFORM_TABLES = {"TABLE_DELTA_ICEBERG_MANAGED", "TABLE_DELTA_ICEBERG_EXTERNAL"};
+/// UniForm ("DELTA_UNIFORM_ICEBERG") is a Delta table that also publishes Iceberg metadata;
+/// read it as Delta because the Delta log is the source of truth.
+static const std::unordered_set<std::string> READABLE_DELTA_FORMATS = {"DELTA", "DELTA_UNIFORM_ICEBERG"};
+
+/// Other table types (views, materialized views, streaming tables, foreign tables, shallow clones)
+/// do not support direct reads of their storage.
+static const std::unordered_set<std::string> READABLE_TABLE_TYPES = {"MANAGED", "EXTERNAL"};
+
+/// An absent `table_type` does not reject the table; the format checks handle that case.
+static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
+{
+    return !hasValueAndItsNotNone("table_type", table_json)
+        || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>());
+}
 
 struct UnifiedUnityCatalogFullSchemaName
 {
@@ -195,37 +206,19 @@ std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::postJSONRequest(
 
 DataLakeTableFormat UnifiedUnityCatalog::detectTableFormat(const Poco::JSON::Object::Ptr & table_json) const
 {
-    bool has_securable_kind = hasValueAndItsNotNone("securable_kind", table_json);
-    bool has_data_source_format = hasValueAndItsNotNone("data_source_format", table_json);
-
-    if (has_securable_kind)
+    if (!hasValueAndItsNotNone("data_source_format", table_json))
     {
-        auto kind = table_json->get("securable_kind").extract<String>();
-
-        if (UNIFORM_TABLES.contains(kind))
-            return DataLakeTableFormat::ICEBERG;
-        if (READABLE_DELTA_TABLES.contains(kind))
-            return DataLakeTableFormat::DELTA;
-        if (READABLE_ICEBERG_TABLES.contains(kind))
-            return DataLakeTableFormat::ICEBERG;
+        LOG_DEBUG(log, "Table JSON has no data_source_format");
+        return DataLakeTableFormat::UNKNOWN;
     }
 
-    if (has_data_source_format)
-    {
-        auto format = table_json->get("data_source_format").extract<String>();
-        if (format == "DELTA")
-            return DataLakeTableFormat::DELTA;
-        if (format == "ICEBERG")
-            return DataLakeTableFormat::ICEBERG;
-    }
+    auto format = table_json->get("data_source_format").extract<String>();
+    if (READABLE_DELTA_FORMATS.contains(format))
+        return DataLakeTableFormat::DELTA;
+    if (format == "ICEBERG")
+        return DataLakeTableFormat::ICEBERG;
 
-    if (has_securable_kind)
-    {
-        LOG_DEBUG(log, "Unrecognized securable_kind: '{}', data_source_format: '{}'",
-            table_json->get("securable_kind").extract<String>(),
-            has_data_source_format ? table_json->get("data_source_format").extract<String>() : "N/A");
-    }
-
+    LOG_DEBUG(log, "Unrecognized data_source_format: '{}'", format);
     return DataLakeTableFormat::UNKNOWN;
 }
 
@@ -298,7 +291,17 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
     auto table_format = detectTableFormat(object);
     result.setTableFormat(table_format);
 
-    if (table_format == DataLakeTableFormat::ICEBERG)
+    if (!hasReadableTableType(object))
+    {
+        /// Fall through to the Delta arm: it fills the location and schema
+        /// best-effort, so the table stays listed with its columns.
+        result.setTableIsNotReadable(fmt::format(
+            "Cannot read table `{}` because it has table_type '{}'. "
+            "Readable table types are: [{}]",
+            full_table_name, object->get("table_type").extract<String>(),
+            fmt::join(READABLE_TABLE_TYPES, ", ")));
+    }
+    else if (table_format == DataLakeTableFormat::ICEBERG)
     {
         /// The Unity tables API describes the table but does not serve its Iceberg metadata;
         /// Databricks exposes that only through the Iceberg REST catalog endpoint.
@@ -330,29 +333,19 @@ bool UnifiedUnityCatalog::tryGetDeltaTableMetadata(
         }
     }
 
-    bool has_securable_kind = hasValueAndItsNotNone("securable_kind", object);
-    bool has_data_source_format = hasValueAndItsNotNone("data_source_format", object);
-
-    if (has_securable_kind && !READABLE_DELTA_TABLES.contains(object->get("securable_kind").extract<String>()))
+    if (hasValueAndItsNotNone("data_source_format", object))
     {
-        result.setTableIsNotReadable(fmt::format(
-            "Cannot read table `{}` because it has unsupported securable_kind: '{}'. "
-            "Readable Delta tables are: [{}]",
-            full_table_name, object->get("securable_kind").extract<String>(),
-            fmt::join(READABLE_DELTA_TABLES, ", ")));
+        if (!READABLE_DELTA_FORMATS.contains(object->get("data_source_format").extract<String>()))
+        {
+            result.setTableIsNotReadable(fmt::format(
+                "Cannot read table `{}` as Delta because it has data_source_format '{}'",
+                full_table_name, object->get("data_source_format").extract<String>()));
+        }
     }
-
-    if (has_data_source_format && object->get("data_source_format").extract<String>() != "DELTA")
+    else
     {
         result.setTableIsNotReadable(fmt::format(
-            "Cannot read table `{}` as Delta because it has data_source_format '{}'",
-            full_table_name, object->get("data_source_format").extract<String>()));
-    }
-
-    if (!has_data_source_format && !has_securable_kind)
-    {
-        result.setTableIsNotReadable(fmt::format(
-            "Cannot read table `{}` because it has no information about data_source_format or securable_kind",
+            "Cannot read table `{}` because it has no information about data_source_format",
             full_table_name));
     }
 
@@ -565,7 +558,8 @@ CatalogTables UnifiedUnityCatalog::getTablesForSchema(const std::string & schema
                     auto qualified_name = schema + "." + table_name;
                     tables.push_back(CatalogTable{
                         .name = qualified_name,
-                        .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN,
+                        .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN
+                            && hasReadableTableType(current_table_json),
                     });
 
                     if (limit && tables.size() >= limit)
