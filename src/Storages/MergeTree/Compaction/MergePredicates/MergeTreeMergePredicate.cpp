@@ -1,3 +1,5 @@
+#include <Interpreters/MergeTreeTransaction.h>
+#include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Storages/MergeTree/Compaction/MergePredicates/MergeTreeMergePredicate.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
@@ -19,7 +21,53 @@ static std::vector<MergeTreePartInfo> getPatchPartInfos(const StorageMergeTree &
     return patch_infos;
 }
 
-MergeTreeMergePredicate::MergeTreeMergePredicate(const StorageMergeTree & storage_, std::unique_lock<std::mutex> & merge_mutate_lock_)
+static MergeTreeDataPartsVector getPartsVisibleForMerge(const StorageMergeTree & storage, const MergeTreeTransactionPtr & tx)
+{
+    MergeTreeData::DataPartsKinds affordable_kinds{MergeTreeData::DataPartKind::Regular, MergeTreeData::DataPartKind::Patch};
+
+    if (!tx)
+        return storage.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds);
+
+    MergeTreeDataPartsVector active_parts;
+    MergeTreeDataPartsVector outdated_parts;
+
+    {
+        auto lock = storage.readLockParts();
+        active_parts = storage.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Active}, affordable_kinds, lock);
+        outdated_parts = storage.getDataPartsVectorForInternalUsage({MergeTreeData::DataPartState::Outdated}, affordable_kinds, lock);
+    }
+
+    ActiveDataPartSet active_parts_set{storage.format_version};
+    for (const auto & part : active_parts)
+        active_parts_set.add(part->name);
+
+    for (const auto & part : outdated_parts)
+    {
+        const auto current_version_info = part->version->getInfo();
+        if (current_version_info.creation_csn == Tx::RolledBackCSN || current_version_info.removal_csn != Tx::UnknownCSN)
+            continue;
+
+        active_parts_set.add(part->name);
+    }
+
+    const auto remove_predicate
+        = [&](const MergeTreeDataPartPtr & part) { return active_parts_set.getContainingPart(part->info) != part->name; };
+    std::erase_if(active_parts, remove_predicate);
+    std::erase_if(outdated_parts, remove_predicate);
+
+    MergeTreeDataPartsVector parts;
+    std::merge(
+        active_parts.begin(),
+        active_parts.end(),
+        outdated_parts.begin(),
+        outdated_parts.end(),
+        std::back_inserter(parts),
+        MergeTreeData::LessDataPart());
+    return parts;
+}
+
+MergeTreeMergePredicate::MergeTreeMergePredicate(
+    const StorageMergeTree & storage_, const MergeTreeTransactionPtr & tx_, std::unique_lock<std::mutex> & merge_mutate_lock_)
     : storage(storage_)
     , merge_mutate_lock(merge_mutate_lock_)
     , committing_blocks(storage.getCommittingBlocks())
@@ -28,27 +76,34 @@ MergeTreeMergePredicate::MergeTreeMergePredicate(const StorageMergeTree & storag
     auto patches_vector = getPatchPartInfos(storage);
 
     if (!patches_vector.empty())
-        data_versions_by_partition = getDataVersionsByPartition(storage.getDataPartsVectorForInternalUsage());
+        data_versions_by_partition = getDataVersionsByPartition(getPartsVisibleForMerge(storage, tx_));
 
     patches_by_partition = getPatchPartsByPartition(patches_vector, min_update_block.value_or(std::numeric_limits<Int64>::max()));
 }
 
-std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
+std::expected<void, PreformattedMessage>
+MergeTreeMergePredicate::canMergeParts(const PartProperties & left, const PartProperties & right) const
 {
     if (left.info.getPartitionId() != right.info.getPartitionId())
         return std::unexpected(PreformattedMessage::create("Parts {} and {} belong to different partitions", left.name, right.name));
 
     if (left.info.isPatch() != right.info.isPatch())
-        return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
+        return std::unexpected(
+            PreformattedMessage::create("One of parts ({}, {}) is patch part and another is regular part", left.name, right.name));
 
     if (left.is_in_volume_where_merges_avoid || right.is_in_volume_where_merges_avoid)
-        return std::unexpected(PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
+        return std::unexpected(
+            PreformattedMessage::create("One of parts ({}, {}) lies on volume where merges should be avoided", left.name, right.name));
 
     if (left.projection_names != right.projection_names)
     {
-        return std::unexpected(PreformattedMessage::create(
-            "Parts have different projection sets: {} in '{}' and {} in '{}'",
-            left.projection_names, left.name, right.projection_names, right.name));
+        return std::unexpected(
+            PreformattedMessage::create(
+                "Parts have different projection sets: {} in '{}' and {} in '{}'",
+                left.projection_names,
+                left.name,
+                right.projection_names,
+                right.name));
     }
 
     {
@@ -71,18 +126,26 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canMergeParts(
             data_versions_by_partition, original_partition_id, left.info.getDataVersion(), right.info.getDataVersion());
 
         if (spanned_version.has_value())
-            return std::unexpected(PreformattedMessage::create(
-                "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
-                left.name, right.name, *spanned_version, original_partition_id));
+            return std::unexpected(
+                PreformattedMessage::create(
+                    "Merge of patch parts {} and {} would span data version {} of a part in partition {}",
+                    left.name,
+                    right.name,
+                    *spanned_version,
+                    original_partition_id));
     }
 
     {
         uint32_t max_possible_level = storage.getMaxLevelInBetween(left, right);
 
         if (max_possible_level > std::max(left.info.level, right.info.level))
-            return std::unexpected(PreformattedMessage::create(
-                    "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active parts have",
-                    left.name, right.name, max_possible_level));
+            return std::unexpected(
+                PreformattedMessage::create(
+                    "There is an outdated part in a gap between two active parts ({}, {}) with merge level {} higher than these active "
+                    "parts have",
+                    left.name,
+                    right.name,
+                    max_possible_level));
     }
 
     return {};
@@ -97,9 +160,12 @@ std::expected<void, PreformattedMessage> MergeTreeMergePredicate::canUsePartInMe
 
     if (min_update_block && part->info.getDataVersion() >= *min_update_block)
     {
-        return std::unexpected(PreformattedMessage::create(
-            "Part {} has data version {}, but patch part with lower version {} is still being processed",
-            part->name, part->info.getDataVersion(), *min_update_block));
+        return std::unexpected(
+            PreformattedMessage::create(
+                "Part {} has data version {}, but patch part with lower version {} is still being processed",
+                part->name,
+                part->info.getDataVersion(),
+                *min_update_block));
     }
 
     return {};
