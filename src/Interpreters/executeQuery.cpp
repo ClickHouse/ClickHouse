@@ -270,6 +270,7 @@ namespace ServerSetting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int QUERY_CACHE_USED_WITH_NON_THROW_OVERFLOW_MODE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int INVALID_TRANSACTION;
@@ -1296,6 +1297,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
             /// Only stale cache state is silently recovered by re-planning. Anything else
             /// (access denial, logical error, cancellation, OOM, ...) must propagate so that
             /// incidents stay observable.
+            if (e.code() == ErrorCodes::ACCESS_DENIED)
+            {
+                /// A direct privilege revoke does not affect the cache key or dependency
+                /// fingerprint, so this entry cannot become usable again without a new grant.
+                /// Remove it before propagating the denial to release its per-user quota charge
+                /// and avoid retaining a permanently denied entry in the LRU.
+                query_plan_cache->remove(*key, cached_entry);
+                throw;
+            }
             if (e.code() != ErrorCodes::INCORRECT_DATA && e.code() != ErrorCodes::UNKNOWN_TABLE)
                 throw;
             ProfileEvents::increment(ProfileEvents::QueryPlanCacheStaleMisses);
@@ -1387,6 +1397,15 @@ static std::unique_ptr<IInterpreter> tryInterpretWithQueryPlanCache(
     /// over-collected without analysis ever reading it (e.g. a CTE name that shadows a real
     /// table); the plan does not depend on it, so it only widens invalidation.
     const auto analyzed_identities = planning_identities->get();
+    if (planning_identities->hasConflictingIdentities())
+    {
+        /// A repeated read of one table can race with an in-place metadata or row-policy
+        /// change. A single cached plan must not combine semantics fingerprints from two
+        /// different snapshots, so refuse to cache or execute that plan.
+        LOG_DEBUG(getLogger("QueryPlanCache"),
+            "Not caching plan: table semantics changed while repeated reads were being analyzed");
+        return nullptr;
+    }
     /// The AST collector additionally walks CTE bodies to cover sources that are folded during
     /// analysis. It must not turn a CTE reference itself into a dependency when a real table with
     /// the same name exists: only the analyzer can distinguish lexical CTE scope from a catalog

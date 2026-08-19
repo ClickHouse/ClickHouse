@@ -527,9 +527,13 @@ public:
         void add(const StorageID & storage_id, UInt64 semantics_fingerprint)
         {
             std::lock_guard lock(mutex);
-            identities.emplace(
-                std::pair{storage_id.getDatabaseName(), storage_id.table_name},
-                StorageIdentity{storage_id.uuid, semantics_fingerprint});
+            const auto key = std::pair{storage_id.getDatabaseName(), storage_id.table_name};
+            const StorageIdentity identity{storage_id.uuid, semantics_fingerprint};
+            auto [it, inserted] = identities.emplace(key, identity);
+            if (!inserted && (it->second.uuid != identity.uuid || it->second.semantics_fingerprint != identity.semantics_fingerprint))
+            {
+                has_conflicting_identities = true;
+            }
         }
 
         std::map<std::pair<String, String>, StorageIdentity> get() const
@@ -538,8 +542,15 @@ public:
             return identities;
         }
 
+        bool hasConflictingIdentities() const
+        {
+            std::lock_guard lock(mutex);
+            return has_conflicting_identities;
+        }
+
         mutable std::mutex mutex;
         std::map<std::pair<String, String>, StorageIdentity> identities TSA_GUARDED_BY(mutex);
+        bool has_conflicting_identities TSA_GUARDED_BY(mutex) = false;
     };
     using PlanCacheStorageIdentitiesPtr = std::shared_ptr<PlanCacheStorageIdentities>;
 

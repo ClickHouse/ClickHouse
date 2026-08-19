@@ -9,6 +9,8 @@
 #      has no plan leaf, so its exact columns are unknown and a hit must require table-level SELECT
 #      (a column-level "any column" recheck could pass while the baked plan still reads a revoked
 #      column).
+#   3. A denied hit is evicted. Otherwise its per-user quota charge can prevent a later permitted
+#      query from entering the cache after `SELECT` is revoked.
 # The plan cache is a single, server-wide cache inspected via SYSTEM DROP QUERY PLAN CACHE, and the
 # test creates a global user, so it runs in isolation (see 04489 for the full rationale of the tags).
 
@@ -22,10 +24,13 @@ SETTINGS="--allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 --
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS t_self;
     DROP TABLE IF EXISTS t_scalar;
+    DROP TABLE IF EXISTS t_evict;
     CREATE TABLE t_self (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE t_scalar (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+    CREATE TABLE t_evict (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
     INSERT INTO t_self VALUES (1, 1), (2, 2);
     INSERT INTO t_scalar VALUES (1, 100), (2, 200);
+    INSERT INTO t_evict VALUES (1, 10), (2, 20);
 
     DROP USER IF EXISTS $user;
     CREATE USER $user;
@@ -65,8 +70,38 @@ echo "-- after granting table-level SELECT the hit is allowed:"
 $CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_scalar TO $user"
 run_user "$SCALAR_QUERY"
 
+echo "-- 3. revoked access evicts the denied entry and releases its quota"
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_evict TO $user"
+EVICT_QUERY_1="SELECT a FROM ${CLICKHOUSE_DATABASE}.t_evict ORDER BY a"
+EVICT_QUERY_2="SELECT b FROM ${CLICKHOUSE_DATABASE}.t_evict ORDER BY b"
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
+run_user "$EVICT_QUERY_1" > /dev/null
+WEIGHT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.metrics WHERE metric = 'QueryPlanCacheBytes'")
+QUOTA=$(( WEIGHT + WEIGHT / 2 ))
+
+run_evict_query()
+{
+    # shellcheck disable=SC2086
+    $CLICKHOUSE_CLIENT --user="$user" --allow_experimental_query_plan_cache=1 --enable_query_plan_cache=1 \
+        --query_plan_cache_size_in_bytes_quota="$QUOTA" --query "$1" 2>&1
+}
+
+$CLICKHOUSE_CLIENT --query "SYSTEM DROP QUERY PLAN CACHE"
+echo "-- warm the first query:"
+run_evict_query "$EVICT_QUERY_1"
+$CLICKHOUSE_CLIENT --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.t_evict FROM $user"
+echo "-- denied hit after revoking SELECT:"
+run_evict_query "$EVICT_QUERY_1" | grep -Fo "ACCESS_DENIED" | uniq
+$CLICKHOUSE_CLIENT --query "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.t_evict TO $user"
+echo "-- the second query enters the released quota:"
+run_evict_query "$EVICT_QUERY_2"
+echo "-- the second query now hits:"
+run_evict_query "$EVICT_QUERY_2"
+
 $CLICKHOUSE_CLIENT --query "
     DROP USER IF EXISTS $user;
     DROP TABLE t_self;
     DROP TABLE t_scalar;
+    DROP TABLE t_evict;
 "

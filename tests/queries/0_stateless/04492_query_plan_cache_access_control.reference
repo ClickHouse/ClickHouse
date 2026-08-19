@@ -16,3 +16,15 @@ ACCESS_DENIED
 -- after granting table-level SELECT the hit is allowed:
 1	300
 2	300
+-- 3. revoked access evicts the denied entry and releases its quota
+-- warm the first query:
+1
+2
+-- denied hit after revoking SELECT:
+ACCESS_DENIED
+-- the second query enters the released quota:
+10
+20
+-- the second query now hits:
+10
+20
