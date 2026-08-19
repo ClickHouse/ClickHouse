@@ -13,14 +13,19 @@ SET parallel_view_processing = 0;
 
 DROP TABLE IF EXISTS mv_metrics_src;
 DROP TABLE IF EXISTS mv_metrics_dst;
+DROP TABLE IF EXISTS mv_metrics_chained_dst;
 DROP VIEW IF EXISTS mv_metrics_mv;
+DROP VIEW IF EXISTS mv_metrics_chained_mv;
 
 CREATE TABLE mv_metrics_src (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE mv_metrics_dst (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE mv_metrics_chained_dst (id UInt64, s String) ENGINE = MergeTree ORDER BY id;
 CREATE MATERIALIZED VIEW mv_metrics_mv TO mv_metrics_dst AS SELECT id, s FROM mv_metrics_src;
+CREATE MATERIALIZED VIEW mv_metrics_chained_mv TO mv_metrics_chained_dst AS SELECT id, s FROM mv_metrics_dst;
 
 INSERT INTO /* test 04498 direct */ mv_metrics_dst SELECT number, toString(number) FROM numbers(5);
 INSERT INTO /* test 04498 mv */ mv_metrics_src SELECT number, toString(number) FROM numbers(10);
+INSERT INTO /* test 04498 explicit mv */ mv_metrics_mv SELECT number, toString(number) FROM numbers(3);
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -31,6 +36,20 @@ SELECT
 FROM system.query_log
 WHERE current_database = currentDatabase()
   AND query LIKE 'INSERT INTO /* test 04498 direct */%'
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+ORDER BY event_time DESC
+LIMIT 1;
+
+-- An explicit INSERT into a materialized view writes directly to its immediate target, but
+-- materialized views depending on that target remain insert-triggered. Therefore the three
+-- immediate-target rows are Direct and the three downstream rows are MaterializedView.
+SELECT
+    ProfileEvents['DirectInsertedRows'],
+    ProfileEvents['MaterializedViewInsertedRows']
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND query LIKE 'INSERT INTO /* test 04498 explicit mv */%'
   AND type = 'QueryFinish'
   AND event_date >= yesterday()
 ORDER BY event_time DESC
@@ -72,6 +91,8 @@ WHERE current_database = currentDatabase()
 ORDER BY event_time DESC
 LIMIT 1;
 
+DROP VIEW mv_metrics_chained_mv;
 DROP VIEW mv_metrics_mv;
 DROP TABLE mv_metrics_src;
 DROP TABLE mv_metrics_dst;
+DROP TABLE mv_metrics_chained_dst;
