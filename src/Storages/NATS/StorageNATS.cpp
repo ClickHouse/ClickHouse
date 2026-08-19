@@ -121,14 +121,16 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
-    const bool has_user_credentials = !nats_credential_file.empty() || !nats_credentials.empty();
+    const bool has_table_authentication = !nats_username.empty() || !nats_password.empty() || !nats_token.empty()
+        || !nats_credential_file.empty() || !nats_credentials.empty();
 
     /// libnats sends all configured authentication methods in the `CONNECT` frame.
-    /// Do not combine user credentials with the server-global basic authentication fallback,
-    /// because inline credentials can be used with a query-supplied destination.
-    const String global_username = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.user", "");
-    const String global_password = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.password", "");
-    const String global_token = has_user_credentials ? "" : getContext()->getConfigRef().getString("nats.token", "");
+    /// Do not combine any table authentication method with the server-global fallback.
+    /// Inline credentials can be used with a query-supplied destination, and `libnats`
+    /// sends every configured authentication method in the `CONNECT` frame.
+    const String global_username = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.user", "");
+    const String global_password = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.password", "");
+    const String global_token = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.token", "");
 
     configuration
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
