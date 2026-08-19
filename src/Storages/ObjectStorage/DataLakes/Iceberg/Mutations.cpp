@@ -559,6 +559,14 @@ static bool writeMetadataFiles(
             }
         }
     }
+    catch (const Exception & e)
+    {
+        /// The staged files may already belong to the table's current snapshot, so deleting them
+        /// would destroy committed data. Leave them behind instead.
+        if (!Iceberg::isCommitStateUnknown(e))
+            cleanup();
+        throw;
+    }
     catch (...)
     {
         cleanup();

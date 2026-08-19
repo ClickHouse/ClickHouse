@@ -332,7 +332,8 @@ void S3TablesCatalog::sendRequest(
     const String & endpoint,
     Poco::JSON::Object::Ptr request_body,
     const String & method,
-    bool ignore_result) const
+    bool ignore_result,
+    const std::optional<DB::ReadSettings> & read_settings) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -362,7 +363,7 @@ void S3TablesCatalog::sendRequest(
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(read_settings.value_or(context->getReadSettings()))
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)

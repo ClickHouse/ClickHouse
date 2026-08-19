@@ -59,11 +59,14 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int FAULT_INJECTED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_reconcile_fail[];
 }
 
 namespace DB::Setting
@@ -678,6 +681,32 @@ void GlueCatalog::createTable(const String & namespace_name, const String & tabl
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not create metadata in glue catalog: {}", response.GetError().GetMessage());
 }
 
+std::optional<String> GlueCatalog::readRawMetadataLocation(const String & namespace_name, const String & table_name) const
+{
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_fail,
+    {
+        return std::nullopt;
+    });
+
+    Aws::Glue::Model::GetTableRequest request;
+    request.SetDatabaseName(namespace_name);
+    request.SetName(table_name);
+
+    auto outcome = glue_client->GetTable(request);
+    if (!outcome.IsSuccess())
+    {
+        LOG_DEBUG(log, "Could not read back {}.{} from glue catalog: {}", namespace_name, table_name, outcome.GetError().GetMessage());
+        return std::nullopt;
+    }
+
+    const auto & parameters = outcome.GetResult().GetTable().GetParameters();
+    auto it = parameters.find("metadata_location");
+    if (it == parameters.end())
+        return std::nullopt;
+
+    return String(it->second);
+}
+
 bool GlueCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     Aws::Glue::Model::UpdateTableRequest request;
@@ -709,8 +738,44 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
 
     auto response = glue_client->UpdateTable(request);
 
-    if (!response.IsSuccess())
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
+    bool failed = !response.IsSuccess();
+    String error_message = failed ? String(response.GetError().GetMessage()) : String();
+    String error_name = failed ? String(response.GetError().GetExceptionName()) : String();
+
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
+    {
+        failed = true;
+        error_message = "Injected lost response";
+        error_name = "InjectedFault";
+    });
+
+    if (failed)
+    {
+        /// The SDK retries UpdateTable, so an earlier attempt may have applied the update while a
+        /// later one failed: the error describes the last attempt, never the first. Read the
+        /// pointer back before looking at the error at all.
+        const auto committed_metadata_location = readRawMetadataLocation(namespace_name, table_name);
+
+        if (committed_metadata_location == new_metadata_path)
+        {
+            LOG_INFO(
+                log,
+                "Update of {}.{} to {} took effect despite a failed response ({}), continuing",
+                namespace_name, table_name, new_metadata_path, error_message);
+            return true;
+        }
+
+        /// UpdateTable carries no precondition, so a pointer that is not ours is equally consistent
+        /// with "we never committed" and "we committed and a third writer superseded us". Neither
+        /// can be distinguished, so the outcome is unknown and the staged files must be kept. The
+        /// original error is chained so the user still sees what glue said.
+        throw DB::Exception(
+            DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+            "Cannot tell whether {} was committed to {}.{}: glue catalog answered \"{}\" ({}) and the table's "
+            "metadata_location could not be confirmed to be it. Files staged for this commit are kept because deleting "
+            "them would destroy the snapshot if it did take effect",
+            new_metadata_path, namespace_name, table_name, error_message, error_name);
+    }
 
     return true;
 }

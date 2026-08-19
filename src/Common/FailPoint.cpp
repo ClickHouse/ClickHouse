@@ -228,6 +228,9 @@ static struct InitFiu
     REGULAR(slowdown_skip_index_read_result_build) \
     ONCE(iceberg_writes_cleanup) \
     REGULAR(iceberg_slow_manifest_read) \
+    ONCE(iceberg_catalog_commit_response_lost) \
+    REGULAR(iceberg_catalog_commit_reconcile_fail) \
+    REGULAR(iceberg_catalog_commit_transport_fail) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \

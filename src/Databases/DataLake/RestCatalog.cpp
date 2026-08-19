@@ -63,6 +63,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::Setting
@@ -73,6 +74,9 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_transport_fail[];
 }
 
 namespace ProfileEvents
@@ -1639,7 +1643,13 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+void RestCatalog::sendRequest(
+    const CatalogState & catalog_state,
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result,
+    const std::optional<DB::ReadSettings> & read_settings) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1654,9 +1664,21 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os)
+        out_stream_callback = [body_str, &endpoint](std::ostream & os)
         {
             os << body_str;
+
+            /// Runs inside the transport's retried region, after the request has been counted, so a
+            /// test can observe how many attempts the request policy allows.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_fail,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
+                    "Injected transport failure",
+                    "");
+            });
         };
     }
 
@@ -1666,7 +1688,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(read_settings.value_or(context->getReadSettings()))
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
@@ -1768,6 +1790,60 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 }
 
 
+std::optional<Int64> RestCatalog::readMainRefSnapshotId(const std::string & namespace_name, const std::string & table_name) const
+{
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_fail,
+    {
+        return std::nullopt;
+    });
+
+    const auto state_snapshot = state.get();
+    const std::string endpoint
+        = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+
+    try
+    {
+        auto buf = createReadBuffer(
+            *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
+        if (buf->eof())
+            return std::nullopt;
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+
+        Poco::JSON::Parser parser;
+        const auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
+        if (!object || !object->has("metadata"))
+            return std::nullopt;
+
+        const auto metadata_object = object->get("metadata").extract<Poco::JSON::Object::Ptr>();
+        if (!metadata_object)
+            return std::nullopt;
+
+        /// The `main` ref is what `updateMetadata` sets; `current-snapshot-id` is its equivalent
+        /// for catalogs that do not materialise `refs`.
+        if (metadata_object->has(DB::Iceberg::f_refs))
+        {
+            if (const auto refs = metadata_object->getObject(DB::Iceberg::f_refs); refs && refs->has(DB::Iceberg::f_main))
+            {
+                if (const auto main_ref = refs->getObject(DB::Iceberg::f_main);
+                    main_ref && main_ref->has(DB::Iceberg::f_metadata_snapshot_id))
+                    return main_ref->getValue<Int64>(DB::Iceberg::f_metadata_snapshot_id);
+            }
+        }
+
+        if (metadata_object->has(DB::Iceberg::f_current_snapshot_id) && !metadata_object->isNull(DB::Iceberg::f_current_snapshot_id))
+            return metadata_object->getValue<Int64>(DB::Iceberg::f_current_snapshot_id);
+
+        return std::nullopt;
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "Could not read back the current snapshot of {}.{}: {}", namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+        return std::nullopt;
+    }
+}
+
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
     const auto state_snapshot = state.get();
@@ -1823,16 +1899,79 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
+    /// The commit is not idempotent: a transport-level retry would re-POST it, and the second
+    /// attempt is rejected by our own `assert-ref-snapshot-id` requirement, which makes the
+    /// received status describe an unknown attempt. One attempt keeps the status meaningful.
+    DB::ReadSettings commit_read_settings = getContext()->getReadSettings();
+    commit_read_settings.http_settings.max_tries = 1;
+
+    const Int64 new_snapshot_id = new_snapshot->getValue<Int64>("snapshot-id");
+
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(
+            *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false, commit_read_settings);
+
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
+                "Injected lost response",
+                "");
+        });
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        const auto status = ex.getHTTPStatus();
+
+        /// The server evaluated our `assert-ref-snapshot-id` requirement and rejected it: another
+        /// writer took this version. The staged files are provably unreachable.
+        if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        {
+            LOG_TRACE(log, "Lost the commit race for {}.{}: {}", namespace_name, table_name, ex.what());
+            return false;
+        }
+
+        /// A status the transport never retries proves the request was rejected before it could
+        /// take effect. Keep the original error rather than obscuring an auth or request problem.
+        if (!DB::isRetriableHTTPError(status))
+            throw;
+
+        classifyAmbiguousCommit(namespace_name, table_name, new_snapshot_id, ex);
+    }
+    catch (const Poco::Exception & ex)
+    {
+        /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so a transport failure can
+        /// arrive as a plain Poco exception. Nothing may escape unclassified.
+        classifyAmbiguousCommit(
+            namespace_name, table_name, new_snapshot_id, DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", ex.displayText()));
     }
     return true;
+}
+
+void RestCatalog::classifyAmbiguousCommit(
+    const String & namespace_name, const String & table_name, Int64 new_snapshot_id, const Poco::Exception & original) const
+{
+    /// One logical read: the HTTP transport already retries it with backoff.
+    const auto committed_snapshot_id = readMainRefSnapshotId(namespace_name, table_name);
+
+    if (committed_snapshot_id == new_snapshot_id)
+    {
+        LOG_INFO(
+            log,
+            "Commit of snapshot {} to {}.{} took effect despite a failed response ({}), continuing",
+            new_snapshot_id, namespace_name, table_name, original.displayText());
+        return;
+    }
+
+    throw DB::Exception(
+        DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+        "Cannot tell whether snapshot {} was committed to {}.{}: the request failed with \"{}\" and the table's current "
+        "snapshot could not be confirmed to be it. Files staged for this commit are kept because deleting them would "
+        "destroy the snapshot if it did take effect",
+        new_snapshot_id, namespace_name, table_name, original.displayText());
 }
 
 bool RestCatalog::updateSchema(

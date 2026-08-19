@@ -76,6 +76,7 @@ extern const int BAD_ARGUMENTS;
 extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int LOGICAL_ERROR;
 extern const int UNSUPPORTED_METHOD;
+extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::DataLakeStorageSetting
@@ -1571,6 +1572,11 @@ void forEachAvroEntry(
     avro::GenericDatum datum(reader.readerSchema());
     while (reader.read(datum))
         callback(datum);
+}
+
+bool isCommitStateUnknown(const DB::Exception & e)
+{
+    return e.code() == DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 }
