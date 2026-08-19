@@ -482,6 +482,12 @@ void DatabaseOnDisk::renameTable(
     createDirectories();
     waitDatabaseStarted();
 
+    /// Do this before detaching the source table and moving its data. `createTable` checks the
+    /// limit too, but at that point a failed cross-database rename cannot be rolled back safely.
+    if (this != &to_database)
+        if (auto * target_db = dynamic_cast<DatabaseOnDisk *>(&to_database))
+            target_db->checkTablesLimit();
+
     auto table_data_relative_path = getTableDataPath(table_name);
     TableExclusiveLockHolder table_lock;
     String table_metadata_path;
@@ -962,7 +968,7 @@ void DatabaseOnDisk::checkTablesLimit() const
     if (limit == 0)
         return;
 
-    size_t current_tables;
+    size_t current_tables = 0;
     {
         std::lock_guard lock(mutex);
         current_tables = tables.size();

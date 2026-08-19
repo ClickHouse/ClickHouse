@@ -92,14 +92,14 @@ public:
 
     void modifySettingsMetadata(const SettingsChanges & settings_changes, ContextPtr query_context);
 
+    /// Throws `TOO_MANY_TABLES` if adding one more table would exceed the `max_tables` limit.
+    void checkTablesLimit() const;
+
     /// Supports `ALTER DATABASE ... MODIFY SETTING max_tables = ...` for Atomic and Ordinary
     /// databases. Other engines derived from this class reject the query.
     void applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context) override;
 
 protected:
-    /// Throws TOO_MANY_TABLES if adding one more table would exceed the `max_tables` limit.
-    void checkTablesLimit() const;
-
     static constexpr const char * create_suffix = ".tmp";
     static constexpr const char * drop_suffix = ".tmp_drop";
     static constexpr const char * detached_suffix = ".detached";

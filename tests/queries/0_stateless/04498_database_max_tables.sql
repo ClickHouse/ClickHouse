@@ -58,6 +58,31 @@ CREATE TABLE IF NOT EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.t1 (x UInt32) ENGI
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.moved (x UInt32) ENGINE = MergeTree ORDER BY x;
 RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.moved TO {CLICKHOUSE_DATABASE_1:Identifier}.moved; -- { serverError TOO_MANY_TABLES }
 SELECT count() FROM system.tables WHERE database = currentDatabase();
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE:String} AND name = 'moved';
+
+-- A full target must reject all cross-database rename paths before detaching the source table.
+SET allow_deprecated_database_ordinary = 1;
+DROP DATABASE IF EXISTS max_tables_ordinary_source_04498;
+CREATE DATABASE max_tables_ordinary_source_04498 ENGINE = Ordinary;
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Ordinary SETTINGS max_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.target (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE max_tables_ordinary_source_04498.ordinary_source (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME TABLE max_tables_ordinary_source_04498.ordinary_source TO {CLICKHOUSE_DATABASE_2:Identifier}.ordinary_source; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = 'max_tables_ordinary_source_04498' AND name = 'ordinary_source';
+CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source (x UInt32) ENGINE = MergeTree ORDER BY x;
+RENAME TABLE {CLICKHOUSE_DATABASE:Identifier}.atomic_source TO {CLICKHOUSE_DATABASE_2:Identifier}.atomic_source; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.tables WHERE database = {CLICKHOUSE_DATABASE:String} AND name = 'atomic_source';
+DROP DATABASE max_tables_ordinary_source_04498;
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
+
+-- A failed UNDROP must leave metadata in the dropped-table queue.
+CREATE DATABASE {CLICKHOUSE_DATABASE_2:Identifier} ENGINE = Atomic SETTINGS max_tables = 1;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source (x UInt32) ENGINE = MergeTree ORDER BY x;
+DROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source;
+CREATE TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_target (x UInt32) ENGINE = MergeTree ORDER BY x;
+UNDROP TABLE {CLICKHOUSE_DATABASE_2:Identifier}.undrop_source; -- { serverError TOO_MANY_TABLES }
+SELECT count() FROM system.dropped_tables WHERE database = {CLICKHOUSE_DATABASE_2:String} AND table = 'undrop_source';
+DROP DATABASE {CLICKHOUSE_DATABASE_2:Identifier};
 
 -- The setting survives detaching and re-attaching the database.
 USE {CLICKHOUSE_DATABASE:Identifier};

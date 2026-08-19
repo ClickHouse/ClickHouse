@@ -1466,7 +1466,11 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
 void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> throw_if_cancelled)
 {
-    auto db_disk = getDatabase(table_id.database_name)->getDisk();
+    auto database = getDatabase(table_id.database_name);
+    if (auto * database_on_disk = dynamic_cast<DatabaseOnDisk *>(database.get()))
+        database_on_disk->checkTablesLimit();
+
+    auto db_disk = database->getDisk();
 
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
