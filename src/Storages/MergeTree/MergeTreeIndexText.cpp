@@ -1907,12 +1907,10 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(
+    const MergeTreeDataPartChecksums & checksums, const IDataPartStorage & storage, const std::string & relative_path_prefix) const
 {
-    const auto & checksums = part_info.getChecksums();
-    const auto * storage = part_info.getDataPartStorage().get();
-
-    if (!indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
+    if (!indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", &storage))
         return {0, {}};
 
     MergeTreeIndexSubstreams substreams =
@@ -1923,7 +1921,7 @@ MergeTreeIndexFormat MergeTreeIndexText::getPhysicalFormat(const IMergeTreeDataP
     };
 
     /// V2: positions file exists on disk.
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", storage))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix + ".pos", ".idx", &storage))
     {
         substreams.push_back({MergeTreeIndexSubstream::Type::TextIndexPositions, ".pos", ".idx"});
         return {2, std::move(substreams)};

@@ -552,7 +552,10 @@ public:
 
     MergeTreeIndexSubstreams getSubstreams() const override;
     using IMergeTreeIndex::getPhysicalFormat;
-    MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPartInfoForReader & part_info, const std::string & relative_path_prefix) const override;
+    MergeTreeIndexFormat getPhysicalFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage & storage,
+        const std::string & relative_path_prefix) const override;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
