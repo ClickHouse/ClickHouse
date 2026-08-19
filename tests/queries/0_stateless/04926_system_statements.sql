@@ -50,3 +50,6 @@ WHERE related_statement NOT IN (SELECT name FROM system.statements);
 SELECT uniqExact(name) = count() FROM system.statements;
 SELECT countIf(parent_name = '') > 0, countIf(parent_name = 'SELECT') > 0, countIf(parent_name = 'ALTER') > 0, countIf(parent_name = 'CREATE') > 0
 FROM system.statements;
+
+-- The complete set of migrated statement documentation must stay registered.
+SELECT name FROM system.statements ORDER BY name;
