@@ -1,9 +1,11 @@
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsCommon.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NullableUtils.h>
@@ -38,6 +40,10 @@ static bool canExtractedSubcolumnsBeInsideNullable(const ColumnPtr & column)
     if (checkAndGetColumn<ColumnTuple>(column.get()))
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
 
+    /// Not the mirror of `Nullable(Array)` being representable: see the type overload below.
+    if (checkAndGetColumn<ColumnArray>(column.get()))
+        return false;
+
     return column->canBeInsideNullable();
 }
 
@@ -45,6 +51,14 @@ bool canExtractedSubcolumnsBeInsideNullable(const DataTypePtr & type)
 {
     if (isTuple(type))
         return isNullableTupleInExtractedSubcolumnsEnabledByGlobalSetting();
+
+    /// Deliberately not the same question as "can this sit inside `Nullable`". `Array` may appear
+    /// inside `Nullable(Array)`, but a bare `Array(T).null` is still not a valid extracted-subcolumn
+    /// path: the null map belongs to the `Nullable` wrapper, not to the array. Without this,
+    /// `getSubcolumn(42::Dynamic, 'Array(UInt64).null')` would succeed with an all-ones null map.
+    /// `Map` is excluded for the same reason.
+    if (isArray(type) || isMap(type))
+        return false;
 
     return type->canBeInsideNullable();
 }
@@ -177,6 +191,12 @@ void applyParentNullMapToExtractedSubcolumn(
 
 DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 {
+    /// Checked before `canExtractedSubcolumnsBeInsideNullable`, which deliberately answers `false` for
+    /// `Array` in order to keep bare `Array(T).null` an invalid subcolumn path. Here the array *is* the
+    /// value of an outer `Nullable(Array(...))`, so it must carry the parent null map.
+    if (isArray(prev))
+        return makeNullableAllowingArray(prev);
+
     /// Wrap into `Nullable(...)` when possible, or `LowCardinality(Nullable(T))` for a non-nullable
     /// `LowCardinality(T)` element (which cannot be wrapped in plain `Nullable`) so it can still
     /// represent the outer column's NULLs. Returns `prev` unchanged for types that can do neither.
@@ -185,6 +205,11 @@ DataTypePtr NullableSubcolumnCreator::create(const DataTypePtr & prev) const
 
 SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const
 {
+    /// See the comment in `create(const DataTypePtr &)` for why `Array` is handled before the
+    /// `canExtractedSubcolumnsBeInsideNullable` check rather than by it.
+    if (prev_type && isArray(prev_type))
+        return SerializationNullable::create(prev_serialization);
+
     if (prev_type && !canExtractedSubcolumnsBeInsideNullable(prev_type))
     {
         /// The extracted subcolumn cannot be wrapped into Nullable, but some types can represent NULL
@@ -212,6 +237,11 @@ SerializationPtr NullableSubcolumnCreator::create(const SerializationPtr & prev_
 
 ColumnPtr NullableSubcolumnCreator::create(const ColumnPtr & prev) const
 {
+    /// See the comment in `create(const DataTypePtr &)` for why `Array` is handled before the
+    /// `canExtractedSubcolumnsBeInsideNullable` check rather than by it.
+    if (checkAndGetColumn<ColumnArray>(prev.get()))
+        return ColumnNullable::create(prev, null_map);
+
     if (canExtractedSubcolumnsBeInsideNullable(prev))
         return ColumnNullable::create(prev, null_map);
 
