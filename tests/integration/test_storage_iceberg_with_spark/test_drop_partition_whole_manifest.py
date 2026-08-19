@@ -101,6 +101,51 @@ def test_drop_partition_whole_manifest_spark_round_trip(
 
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
+def test_drop_partition_after_position_delete(
+    started_cluster_iceberg_with_spark, storage_type
+):
+    cluster = started_cluster_iceberg_with_spark
+    instance = cluster.instances["node1"]
+    spark = cluster.spark_session
+    table_name = f"test_drop_partition_after_position_delete_{storage_type}_{get_uuid_str()}"
+
+    def spark_query(query):
+        execute_spark_query_general(spark, cluster, storage_type, table_name, query)
+
+    spark_query(
+        f"""
+        CREATE TABLE {table_name} (tag INT, value STRING)
+        USING iceberg
+        PARTITIONED BY (identity(tag))
+        OPTIONS('format-version'='2')
+        """
+    )
+    spark_query(f"INSERT INTO {table_name} VALUES (1, 'drop-a'), (1, 'drop-b')")
+    spark_query(f"INSERT INTO {table_name} VALUES (2, 'keep')")
+
+    create_iceberg_table(storage_type, instance, table_name, cluster)
+    instance.query(
+        f"ALTER TABLE {table_name} DELETE WHERE tag = 1 AND value = 'drop-a'",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag, value") == (
+        "1\tdrop-b\n2\tkeep\n"
+    )
+
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 1",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert instance.query(f"SELECT * FROM {table_name} ORDER BY tag, value") == (
+        "2\tkeep\n"
+    )
+
+    local_dir = update_spark_version_hint(cluster, storage_type, table_name)
+    spark_rows = spark.read.format("iceberg").load(local_dir).collect()
+    assert [(row["tag"], row["value"]) for row in spark_rows] == [(2, "keep")]
+
+
+@pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_drop_partition_shared_spark_manifest_is_rejected(
     started_cluster_iceberg_with_spark, storage_type
 ):
