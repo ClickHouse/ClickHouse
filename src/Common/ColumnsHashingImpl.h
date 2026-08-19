@@ -135,11 +135,16 @@ public:
 template <typename Value>
 class EmplaceResultImpl<void, Value>
 {
+    /// A set cell's value is the key itself.
+    using Key = std::decay_t<Value>;
+
     bool inserted;
+    Key key;
 
 public:
-    explicit EmplaceResultImpl(bool inserted_) : inserted(inserted_) {}
+    explicit EmplaceResultImpl(bool inserted_, Key key_ = {}) : inserted(inserted_), key(std::move(key_)) {}
     bool isInserted() const { return inserted; }
+    const Key & getKey() const { return key; }
 };
 
 /// FindResult optionally may contain pointer to value and offset in hashtable buffer.
@@ -493,7 +498,7 @@ protected:
         if constexpr (has_mapped)
             return EmplaceResult(it->getMapped(), *cached, inserted, std::move(key));
         else
-            return EmplaceResult(inserted);
+            return EmplaceResult(inserted, std::move(key));
     }
 
     template <typename Data, typename Key>
