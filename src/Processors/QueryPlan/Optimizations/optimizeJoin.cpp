@@ -92,7 +92,6 @@ static bool isValuePassThroughFunction(std::string_view function_name)
         || function_name == "CAST" || function_name == "toNullable";
 }
 
-/// Whether an expression is independent of input columns and deterministic within the query.
 static bool isConstantExpression(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> nodes;
