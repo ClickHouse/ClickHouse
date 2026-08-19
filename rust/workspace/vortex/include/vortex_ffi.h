@@ -79,7 +79,7 @@ enum class VortexFFIQueue : int32_t
     /// Decoding, filtering, Arrow export: tasks that use the CPU.
     Cpu = 0,
     /// Tasks that call the read callback.
-    Io = 1,
+    IO = 1,
 };
 
 /// Called when a task becomes runnable on the given queue of the runtime. It must not call back

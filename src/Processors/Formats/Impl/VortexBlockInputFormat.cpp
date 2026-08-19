@@ -616,7 +616,7 @@ ThreadPoolCallbackRunnerFast & VortexBlockInputFormat::runnerFor(VortexFFIQueue 
     chassert(parser_shared_resources);
     /// The reads go to the download pool when there is one, as in the Parquet reader; otherwise the
     /// two queues share the parsing pool (or run inline in the manual mode).
-    if (queue == VortexFFIQueue::Io && hasSeparateIORunner())
+    if (queue == VortexFFIQueue::IO && hasSeparateIORunner())
         return parser_shared_resources->io_runner;
     return parser_shared_resources->parsing_runner;
 }
@@ -638,7 +638,7 @@ size_t VortexBlockInputFormat::maxDrivers(VortexFFIQueue queue) const
         return 0;
     /// The share of this reader shrinks with the number of files read in parallel and grows back as
     /// they finish, so it is recomputed on every notification.
-    size_t threads = queue == VortexFFIQueue::Io ? parser_shared_resources->getIOThreadsPerReader()
+    size_t threads = queue == VortexFFIQueue::IO ? parser_shared_resources->getIOThreadsPerReader()
                                                  : parser_shared_resources->getParsingThreadsPerReader();
     return std::max<size_t>(threads, 1);
 }
@@ -693,7 +693,7 @@ void VortexBlockInputFormat::driveQueue(VortexFFIQueue queue, std::shared_ptr<Sh
 
     /// A driver of the CPU queue also runs the I/O queue when the two share a runner (see
     /// `driverQueue`), so that the reads of a file are not stalled by a reader without I/O drivers.
-    const bool drive_io = queue == VortexFFIQueue::Io || !hasSeparateIORunner();
+    const bool drive_io = queue == VortexFFIQueue::IO || !hasSeparateIORunner();
     const bool drive_cpu = queue == VortexFFIQueue::Cpu;
 
     /// Runs the tasks in batches, so that the counter is up to date often enough for another
@@ -706,7 +706,7 @@ void VortexBlockInputFormat::driveQueue(VortexFFIQueue queue, std::shared_ptr<Sh
             tasks = vortex_ffi_runtime_run(runtime, VortexFFIQueue::Cpu, /* max_tasks */ 16, &error);
         if (tasks >= 0 && drive_io)
         {
-            int64_t io_tasks = vortex_ffi_runtime_run(runtime, VortexFFIQueue::Io, /* max_tasks */ 16, &error);
+            int64_t io_tasks = vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, /* max_tasks */ 16, &error);
             tasks = io_tasks < 0 ? io_tasks : tasks + io_tasks;
         }
         if (tasks < 0)
@@ -725,7 +725,7 @@ void VortexBlockInputFormat::driveQueue(VortexFFIQueue queue, std::shared_ptr<Sh
     running_drivers[static_cast<size_t>(queue)].fetch_sub(1, std::memory_order_seq_cst);
 
     if ((drive_cpu && vortex_ffi_runtime_pending(runtime, VortexFFIQueue::Cpu) > 0)
-        || (drive_io && vortex_ffi_runtime_pending(runtime, VortexFFIQueue::Io) > 0))
+        || (drive_io && vortex_ffi_runtime_pending(runtime, VortexFFIQueue::IO) > 0))
         onNotify(queue);
 
     {
@@ -933,7 +933,7 @@ void VortexBlockInputFormat::prepareReader()
     runtime = vortex_ffi_runtime_new(this, parser_shared_resources ? vortexFFINotifyCallback : nullptr);
 
     const size_t cpu_threads = std::max<size_t>(maxDrivers(VortexFFIQueue::Cpu), 1);
-    const size_t io_threads = std::max<size_t>(maxDrivers(VortexFFIQueue::Io), 1);
+    const size_t io_threads = std::max<size_t>(maxDrivers(VortexFFIQueue::IO), 1);
 
     read_context = std::make_unique<VortexReadContext>();
     reader = openVortexReader(runtime, *in, format_settings, is_stopped, arrow_file, *read_context, file_schema, io_threads, is_remote_fs);
@@ -1163,7 +1163,7 @@ Chunk VortexBlockInputFormat::read()
             lock.unlock();
             char * error = nullptr;
             int64_t cpu_tasks = vortex_ffi_runtime_run(runtime, VortexFFIQueue::Cpu, /* max_tasks */ 8, &error);
-            int64_t io_tasks = cpu_tasks < 0 ? 0 : vortex_ffi_runtime_run(runtime, VortexFFIQueue::Io, /* max_tasks */ 8, &error);
+            int64_t io_tasks = cpu_tasks < 0 ? 0 : vortex_ffi_runtime_run(runtime, VortexFFIQueue::IO, /* max_tasks */ 8, &error);
             if (cpu_tasks < 0 || io_tasks < 0)
                 throwVortexError(error, read_context->getException());
             lock.lock();
@@ -1183,7 +1183,7 @@ Chunk VortexBlockInputFormat::read()
             continue;
 
         const bool idle = running_drivers[static_cast<size_t>(VortexFFIQueue::Cpu)].load(std::memory_order_relaxed) == 0
-            && running_drivers[static_cast<size_t>(VortexFFIQueue::Io)].load(std::memory_order_relaxed) == 0;
+            && running_drivers[static_cast<size_t>(VortexFFIQueue::IO)].load(std::memory_order_relaxed) == 0;
         if (!idle || scan_finished || background_exception)
         {
             idle_timeouts = 0;
@@ -1192,13 +1192,13 @@ Chunk VortexBlockInputFormat::read()
 
         lock.unlock();
         const bool has_tasks
-            = vortex_ffi_runtime_pending(runtime, VortexFFIQueue::Cpu) > 0 || vortex_ffi_runtime_pending(runtime, VortexFFIQueue::Io) > 0;
+            = vortex_ffi_runtime_pending(runtime, VortexFFIQueue::Cpu) > 0 || vortex_ffi_runtime_pending(runtime, VortexFFIQueue::IO) > 0;
         if (has_tasks)
         {
             /// Tasks are waiting and nothing is running them, which the protocol above should make
             /// impossible: schedule the drivers again rather than hang.
             onNotify(VortexFFIQueue::Cpu);
-            onNotify(VortexFFIQueue::Io);
+            onNotify(VortexFFIQueue::IO);
             idle_timeouts = 0;
         }
         else
