@@ -582,6 +582,7 @@ std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplica
     /// its inputs (`optimizeLazyFinal` copies them for the same reason).
     parallel_replicas_step->prefer_multiple_streams = prefer_multiple_streams;
     parallel_replicas_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
+    parallel_replicas_step->query_task_size_limit = query_task_size_limit;
     parallel_replicas_step->enable_vertical_final = enable_vertical_final;
     parallel_replicas_step->virtual_row_conversion = virtual_row_conversion;
     parallel_replicas_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;
@@ -4354,6 +4355,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->prefer_multiple_streams = prefer_multiple_streams;
     cloned_step->read_in_order_requested_by_plan_optimizer = read_in_order_requested_by_plan_optimizer;
+    cloned_step->query_task_size_limit = query_task_size_limit;
     cloned_step->enable_vertical_final = enable_vertical_final;
     cloned_step->virtual_row_conversion = virtual_row_conversion;
     cloned_step->output_each_partition_through_separate_port = output_each_partition_through_separate_port;

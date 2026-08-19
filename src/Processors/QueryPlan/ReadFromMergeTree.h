@@ -393,6 +393,9 @@ public:
     void setReadInOrderRequestedByPlanOptimizer() { read_in_order_requested_by_plan_optimizer = true; }
     bool isReadInOrderRequestedByPlanOptimizer() const { return read_in_order_requested_by_plan_optimizer; }
 
+    void setQueryTaskSizeLimit(UInt64 query_task_size_limit_) { query_task_size_limit = query_task_size_limit_; }
+    UInt64 getQueryTaskSizeLimit() const { return query_task_size_limit; }
+
     AnalysisResultPtr getAnalyzedResult() const { return analyzed_result_ptr; }
     void setAnalyzedResult(AnalysisResultPtr analyzed_result_ptr_) { analyzed_result_ptr = std::move(analyzed_result_ptr_); }
 

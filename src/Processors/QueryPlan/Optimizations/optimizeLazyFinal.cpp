@@ -248,6 +248,8 @@ static std::optional<QueryPlan> createNonIntersectingPlan(
     if (reading_step->isReadInOrderRequestedByPlanOptimizer())
         non_final_reading->setReadInOrderRequestedByPlanOptimizer();
 
+    non_final_reading->setQueryTaskSizeLimit(reading_step->getQueryTaskSizeLimit());
+
     /// The virtual-row conversion is another property installed by `optimizeReadInOrder` on the
     /// original read. Preserve it so that an inner `JOIN` read-in-order plan keeps the virtual rows
     /// used by the sorting step to select the next probe stream after filtering.
