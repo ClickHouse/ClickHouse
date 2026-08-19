@@ -6,8 +6,8 @@
 --      already-multi-relation subplan (e.g. `t1 JOIN (t2 JOIN t3)`);
 --   2. gating on fromLeft()/fromRight() dropped it for any filter on a relation whose id is >= 2,
 --      because those helpers test relation ids 0 and 1 specifically.
--- For each shape we print the result with optimization disabled (the reference order) and with
--- 'dpsub'; the two must be identical row-for-row.
+-- For each shape we print the result with the 'greedy' algorithm (the reference, which places the
+-- predicate correctly) and with 'dpsub'; the two must be identical row-for-row.
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -27,40 +27,43 @@ INSERT INTO t4 VALUES (0, 'Join_4_Value_0'), (1, 'Join_4_Value_1'), (5, 'Join_4_
 SET enable_analyzer = 1;
 
 -- The reported case: filter on the first relation, INNER then LEFT join.
-SELECT 'reported no opt:';
+SELECT 'reported greedy:';
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM t1 INNER JOIN t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0'
 LEFT JOIN t3 ON t2.id = t3.id ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_limit = 0;
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
+         query_plan_enable_optimizations = 1;
 
 SELECT 'reported dpsub:';
 SELECT t1.id, t1.value, t2.id, t2.value, t3.id, t3.value
 FROM t1 INNER JOIN t2 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0'
 LEFT JOIN t3 ON t2.id = t3.id ORDER BY ALL
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_enable_optimizations = 0;
+         query_plan_enable_optimizations = 1;
 
 -- Filter on a relation that is introduced last, against an already-joined subplan (relation id >= 2).
-SELECT 'filter deep relation no opt:';
+SELECT 'filter deep relation greedy:';
 SELECT t2.id, t2.value, t3.id, t3.value, t1.id, t1.value
 FROM t2 INNER JOIN t3 ON t2.id = t3.id
 INNER JOIN t1 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_limit = 0;
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
+         query_plan_enable_optimizations = 1;
 
 SELECT 'filter deep relation dpsub:';
 SELECT t2.id, t2.value, t3.id, t3.value, t1.id, t1.value
 FROM t2 INNER JOIN t3 ON t2.id = t3.id
 INNER JOIN t1 ON t1.id = t2.id AND t1.value = 'Join_1_Value_0' ORDER BY ALL
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_enable_optimizations = 0;
+         query_plan_enable_optimizations = 1;
 
 -- Four-way all-inner chain with the filter on the last relation (id = 3).
-SELECT 'four way filter last no opt:';
+SELECT 'four way filter last greedy:';
 SELECT t1.id, t2.id, t3.id, t4.id, t4.value
 FROM t1 INNER JOIN t2 ON t1.id = t2.id
 INNER JOIN t3 ON t2.id = t3.id
 INNER JOIN t4 ON t3.id = t4.id AND t4.value = 'Join_4_Value_0' ORDER BY ALL
-SETTINGS query_plan_optimize_join_order_limit = 0;
+SETTINGS query_plan_optimize_join_order_algorithm = 'greedy',
+         query_plan_enable_optimizations = 1;
 
 SELECT 'four way filter last dpsub:';
 SELECT t1.id, t2.id, t3.id, t4.id, t4.value
@@ -68,7 +71,7 @@ FROM t1 INNER JOIN t2 ON t1.id = t2.id
 INNER JOIN t3 ON t2.id = t3.id
 INNER JOIN t4 ON t3.id = t4.id AND t4.value = 'Join_4_Value_0' ORDER BY ALL
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub',
-         query_plan_enable_optimizations = 0;
+         query_plan_enable_optimizations = 1;
 
 DROP TABLE t1;
 DROP TABLE t2;
