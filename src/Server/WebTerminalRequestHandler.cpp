@@ -37,6 +37,11 @@ constexpr unsigned char resource_webterminal_html[] =
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
