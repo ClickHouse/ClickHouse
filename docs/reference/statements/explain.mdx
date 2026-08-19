@@ -845,7 +845,7 @@ The [`Join`](/reference/engines/table-engines/special/join) table engine follows
 
 **`CROSS`, `COMMA` and a constant `ON`.** Neither side, as described [above](#explain-analyze-join-algorithm-lines).
 
-**Block nested loop join.** The operator that takes an `ON` section determining no join key, unless one of the paths before it claims the condition (see [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow#allow_block_nested_loop_join)). It accepts every kind and strictness except `ASOF`, `PASTE` and `ANY FULL`:
+**Block nested loop join.** The operator that takes an `ON` section determining no join key, unless one of the paths before it claims the condition (see [`allow_block_nested_loop_join`](/reference/settings/session-settings/allow)). It accepts every kind and strictness except `ASOF`, `PASTE` and `ANY FULL`:
 
 | Join | `matched` left | `matched` right |
 |------|----------------|-----------------|
