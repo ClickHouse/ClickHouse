@@ -1,7 +1,6 @@
 -- Tags: no-parallel-replicas
--- Bloom filter skip index on an Array column must be used for `arrayJoin(col) IN (set)`
--- (and `GLOBAL IN`), the same way it is already used for `hasAny(col, set)`, and for
--- `arrayJoin(col) = const`, the same way it is already used for `has(col, const)`.
+-- `arrayJoin(col) IN (set)` and `arrayJoin(col) = const` must use the Array bloom filter index,
+-- like `hasAny(col, set)` and `has(col, const)` already do.
 -- Issues: https://github.com/ClickHouse/ClickHouse/issues/109516
 --         https://github.com/ClickHouse/ClickHouse/issues/109844
 
@@ -52,11 +51,8 @@ SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42';
 
 DROP TABLE t_arrayjoin_bf;
 
--- Default value in the set. The rewrite fires only for the inner `arrayJoin(col)` function in
--- WHERE, where empty arrays produce no rows, so `hasAny` semantics are exact even when the set
--- contains the element type's default. A granule of all-empty arrays yields no row (result 0),
--- while a granule that actually contains the default value as a real element is kept and its
--- rows are returned. Results must be identical with the skip index on and off.
+-- The default value in the set. An empty array produces no row for the inner `arrayJoin(col)`, so
+-- only a granule holding the default as a real element is kept. Results must match index on/off.
 DROP TABLE IF EXISTS t_arrayjoin_bf_default;
 
 CREATE TABLE t_arrayjoin_bf_default
@@ -76,12 +72,15 @@ INSERT INTO t_arrayjoin_bf_default SELECT number + 5000, [concat('tag_', toStrin
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('')) WHERE explain ILIKE '%Granules: 2/13%';
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 0;
--- Equality form with the default value: the analyzer rewrites `s = ''` into `empty(s)`, so the
--- derivation does not fire (it keys off `equals`) and no granule is skipped. This is the safe
--- fallback -> full scan, correct result. Results must be identical with the skip index on and off.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '') WHERE explain ILIKE '%Granules: 13/13%';
-SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0;
+-- With `optimize_empty_string_comparisons = 0` the `equals` derivation fires and prunes like the
+-- `IN ('')` case above. The runner randomizes that setting, and the rewrite to `empty(s)` it enables
+-- is analyzer-specific, so pin it here rather than asserting one of the two plans.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS optimize_empty_string_comparisons = 0) WHERE explain ILIKE '%Granules: 2/13%';
+-- Results are identical in both modes, with the skip index on and off.
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1, optimize_empty_string_comparisons = 1;
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0, optimize_empty_string_comparisons = 1;
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1, optimize_empty_string_comparisons = 0;
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0, optimize_empty_string_comparisons = 0;
 -- A non-default value that is a real element in one granule -> pruning fires (1/13), result correct.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1') WHERE explain ILIKE '%Granules: 1/13%';
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1' SETTINGS use_skip_indexes = 1;
@@ -89,11 +88,9 @@ SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1' SETTING
 
 DROP TABLE t_arrayjoin_bf_default;
 
--- LEFT ARRAY JOIN safety. A LEFT ARRAY JOIN expands an empty array into one row carrying the
--- element type's default value, so `col IN (default)` can match a row produced from an empty
--- array. That predicate lives above the ARRAY JOIN step and is never pushed into the skip index
--- (the rewrite only applies to the inner arrayJoin function in WHERE), so results are correct and
--- identical with the skip index on and off. The table has a whole granule of empty arrays.
+-- LEFT ARRAY JOIN expands an empty array into a default-valued row, so `col IN (default)` matches
+-- it. That predicate sits above the ARRAY JOIN step and never reaches the skip index. The table has
+-- a whole granule of empty arrays.
 DROP TABLE IF EXISTS t_arrayjoin_bf_left;
 
 CREATE TABLE t_arrayjoin_bf_left
@@ -110,5 +107,146 @@ INSERT INTO t_arrayjoin_bf_left SELECT number + 20000, [concat('tag_', toString(
 -- 20000 empty-array rows are each expanded to one default-value row -> 20000 matches, index or not.
 SELECT count() FROM t_arrayjoin_bf_left LEFT ARRAY JOIN tags WHERE tags IN ('') SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_left LEFT ARRAY JOIN tags WHERE tags IN ('') SETTINGS use_skip_indexes = 0;
+-- The skip index must be absent from the plan, not merely agree on the count.
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_left LEFT ARRAY JOIN tags WHERE tags IN ('')) WHERE explain ILIKE '%Name: idx_tags%';
 
 DROP TABLE t_arrayjoin_bf_left;
+
+-- Hash-domain gate: comparison coerces more widely than the conversion the derivations hash
+-- through, so they only fire where the two agree. Every case must match index on/off, and not raise.
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_str;
+
+CREATE TABLE t_arrayjoin_bf_domain_str
+(
+    id UInt64,
+    s Array(String),
+    INDEX idx_s s TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+-- Row 2 stores a trailing NUL, which compares equal to the unpadded FixedString constant.
+INSERT INTO t_arrayjoin_bf_domain_str VALUES (1, ['abc']), (2, ['abc\0']);
+
+-- String element vs FixedString constant: comparison strips the padding the conversion keeps.
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) = toFixedString('abc', 5) SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) = toFixedString('abc', 5) SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) IN (SELECT toFixedString('abc', 5)) SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) IN (SELECT toFixedString('abc', 5)) SETTINGS use_skip_indexes = 0);
+-- String element vs Enum constant: the field carries the number, the element stores the label.
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) = CAST('abc', 'Enum8(\'abc\' = 1)') SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_str WHERE arrayJoin(s) = CAST('abc', 'Enum8(\'abc\' = 1)') SETTINGS use_skip_indexes = 0);
+
+DROP TABLE t_arrayjoin_bf_domain_str;
+
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_fixed;
+
+CREATE TABLE t_arrayjoin_bf_domain_fixed
+(
+    id UInt64,
+    f Array(FixedString(3)),
+    INDEX idx_f f TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_arrayjoin_bf_domain_fixed VALUES (1, ['V0']);
+
+-- A wider FixedString set element: the narrowing conversion would throw TOO_LARGE_STRING_SIZE.
+SELECT count() FROM t_arrayjoin_bf_domain_fixed WHERE arrayJoin(f) IN (SELECT toFixedString('V0', 5)) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_fixed WHERE arrayJoin(f) IN (SELECT toFixedString('V0', 5)) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_arrayjoin_bf_domain_fixed;
+
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_num;
+
+CREATE TABLE t_arrayjoin_bf_domain_num
+(
+    id UInt64,
+    u Array(UInt8),
+    f Array(Float64),
+    INDEX idx_u u TYPE bloom_filter(0.0001) GRANULARITY 1,
+    INDEX idx_f f TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+-- Negative zero compares equal to positive zero but hashes differently.
+INSERT INTO t_arrayjoin_bf_domain_num VALUES (1, [5], [-0.0]), (2, [7], [1.25]);
+
+-- Numeric element vs unparsable String set: the conversion would throw CANNOT_PARSE_TEXT.
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) IN (SELECT 'not-a-number') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) IN (SELECT 'not-a-number') SETTINGS use_skip_indexes = 0;
+-- Float element: -0.0 must still be found by an equality against +0.0.
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = 0.0 SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = 0.0 SETTINGS use_skip_indexes = 0);
+-- Float element vs Decimal constant: the conversion would throw TYPE_MISMATCH.
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = toDecimal64(1.25, 2) SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = toDecimal64(1.25, 2) SETTINGS use_skip_indexes = 0;
+-- Integer widening stays admitted: a UInt8 element against a wider literal still prunes.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5 SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5 SETTINGS use_skip_indexes = 0);
+-- A value outside the element's range matches nothing, with or without the index.
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 100000 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 100000 SETTINGS use_skip_indexes = 0;
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = -5 SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = -5 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_arrayjoin_bf_domain_num;
+
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_ip;
+
+CREATE TABLE t_arrayjoin_bf_domain_ip
+(
+    id UInt64,
+    v Array(IPv4),
+    INDEX idx_v v TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_arrayjoin_bf_domain_ip VALUES (1, ['1.2.3.4']);
+
+-- IPv4 element vs the equivalent mapped IPv6 constant: the conversion would throw TYPE_MISMATCH.
+SELECT count() FROM t_arrayjoin_bf_domain_ip WHERE arrayJoin(v) = toIPv6('::ffff:1.2.3.4') SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_ip WHERE arrayJoin(v) = toIPv6('::ffff:1.2.3.4') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_arrayjoin_bf_domain_ip;
+
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_enum;
+
+CREATE TABLE t_arrayjoin_bf_domain_enum
+(
+    id UInt64,
+    e Array(Enum8('a' = 1)),
+    INDEX idx_e e TYPE bloom_filter(0.0001) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_arrayjoin_bf_domain_enum VALUES (1, ['a']);
+
+-- An unknown label with validation disabled: the conversion would throw UNKNOWN_ELEMENT_OF_ENUM.
+SELECT count() FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = 'missing' SETTINGS use_skip_indexes = 1, validate_enum_literals_in_operators = 0;
+SELECT count() FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = 'missing' SETTINGS use_skip_indexes = 0, validate_enum_literals_in_operators = 0;
+-- The matching label still prunes: an identical element and constant type is admitted.
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1)') SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1)') SETTINGS use_skip_indexes = 0);
+
+DROP TABLE t_arrayjoin_bf_domain_enum;
+
+DROP TABLE IF EXISTS t_arrayjoin_bf_domain_lc;
+
+CREATE TABLE t_arrayjoin_bf_domain_lc
+(
+    id UInt64,
+    tags Array(LowCardinality(String)),
+    INDEX idx_tags tags TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO t_arrayjoin_bf_domain_lc SELECT number, [concat('tag_', toString(number))] FROM numbers(100000);
+
+-- A LowCardinality wrapper is stripped before the comparison, so both derivations still prune.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_lc WHERE arrayJoin(tags) = 'tag_42') WHERE explain ILIKE '%Granules: 2/13%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_lc WHERE arrayJoin(tags) IN ('tag_42')) WHERE explain ILIKE '%Granules: 2/13%';
+SELECT count() FROM t_arrayjoin_bf_domain_lc WHERE arrayJoin(tags) = 'tag_42' SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_domain_lc WHERE arrayJoin(tags) = 'tag_42' SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_arrayjoin_bf_domain_lc;

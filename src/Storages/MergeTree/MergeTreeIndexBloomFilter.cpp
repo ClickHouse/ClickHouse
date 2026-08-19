@@ -5,6 +5,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
@@ -545,6 +546,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
+/// True when converting the constant to the element type yields the exact bytes the index holds, so
+/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
+static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+{
+    if (!value_type)
+        return false;
+
+    auto value = removeLowCardinalityAndNullable(value_type);
+    auto element = removeLowCardinalityAndNullable(nested_type);
+    WhichDataType which_value(value);
+    WhichDataType which_element(element);
+
+    if (which_value.isFloat() || which_element.isFloat())
+        return false;
+
+    const bool both_integers = (which_value.isInt() || which_value.isUInt())
+        && (which_element.isInt() || which_element.isUInt());
+
+    return both_integers || value->equals(*element);
+}
+
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
@@ -685,12 +707,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
-    /// Handle `arrayJoin(indexed_array_column) IN (set)` by mapping it to the same granule test as
-    /// `hasAny(indexed_array_column, set_elements)`. `arrayJoin` only multiplies rows, so a granule
-    /// can produce a row matching the IN predicate only if at least one array element in the granule
-    /// belongs to the set — exactly what the bloom filter already evaluates for `hasAny`.
-    /// Only plain `in`/`globalIn` are supported: for `notIn` a granule containing a set element can
-    /// still yield rows whose arrayJoined value is outside the set, so no granule can be skipped.
+    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
+    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
     if ((function_name == "in" || function_name == "globalIn") && column)
     {
         if (auto array_join_argument = key_node.getArrayJoinArgument())
@@ -700,7 +718,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             {
                 size_t position = header.getPositionByName(array_column_name);
                 const DataTypePtr & index_type = header.getByPosition(position).type;
-                if (const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get()))
+                const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+                if (array_type && bloomFilterHashDomainMatches(type, array_type->getNestedType()))
                 {
                     size_t row_size = column->size();
                     const auto & array_nested_type = array_type->getNestedType();
@@ -830,11 +849,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
-    /// Handle `arrayJoin(indexed_array_column) = const` by mapping it to the same granule test as
-    /// `has(indexed_array_column, const)`. `arrayJoin` only multiplies rows, so a granule can produce
-    /// a row matching the equality only if at least one array element in the granule equals the const,
-    /// which is exactly what the bloom filter evaluates for `has`. `notEquals` is not derivable: a
-    /// granule containing the const can still yield arrayJoined rows whose value differs from it.
+    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
+    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
     if (function_name == "equals")
     {
         if (auto array_join_argument = key_node.getArrayJoinArgument())
@@ -844,7 +860,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             {
                 size_t position = header.getPositionByName(array_column_name);
                 const DataTypePtr & index_type = header.getByPosition(position).type;
-                if (const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get()))
+                const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
