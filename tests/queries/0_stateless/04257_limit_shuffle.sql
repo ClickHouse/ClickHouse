@@ -35,13 +35,13 @@ SELECT * FROM limit_shuffle_nested_view SETTINGS enable_analyzer = 1, use_query_
 SELECT * FROM limit_shuffle_parameterized_view(n = 10) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM abs(n = 10) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM numbers(3) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
-SELECT * FROM merge(currentDatabase(), '^limit_shuffle_view$') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT * FROM merge({CLICKHOUSE_DATABASE:String}, '^limit_shuffle_view$') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM cluster('test_shard_localhost', currentDatabase(), 'limit_shuffle_view') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT * FROM cluster('test_shard_localhost', merge(currentDatabase(), '^limit_shuffle_view$')) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT * FROM cluster('test_shard_localhost', merge(currentDatabase(), '^limit_shuffle_plain_local$')) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
+SELECT * FROM cluster('test_shard_localhost', merge({CLICKHOUSE_DATABASE:String}, '^limit_shuffle_view$')) SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT * FROM cluster('test_shard_localhost', merge({CLICKHOUSE_DATABASE:String}, '^limit_shuffle_plain_local$')) SETTINGS enable_analyzer = 1, use_query_cache = 1 FORMAT Null;
 SELECT * FROM remote('127.0.0.1', currentDatabase(), 'limit_shuffle_view') SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM loop(limit_shuffle_view) LIMIT 1 SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
-SELECT * FROM loop(merge(currentDatabase(), '^limit_shuffle_view$')) LIMIT 1 SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
+SELECT * FROM loop(merge({CLICKHOUSE_DATABASE:String}, '^limit_shuffle_view$')) LIMIT 1 SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM limit_shuffle_merge_view SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM limit_shuffle_alias_view SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
 SELECT * FROM limit_shuffle_distributed_view SETTINGS enable_analyzer = 1, use_query_cache = 1; -- { serverError QUERY_CACHE_USED_WITH_NONDETERMINISTIC_FUNCTIONS }
