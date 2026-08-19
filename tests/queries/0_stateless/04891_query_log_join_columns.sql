@@ -8,6 +8,10 @@
 -- allowed by `join_algorithm` is made at run time and depends on the number of threads.
 
 SET log_queries = 1;
+-- The reported kind is the executed one, and the optimizer may execute a join with its sides swapped,
+-- which reverses LEFT and RIGHT. Disable that here so the kinds are the ones the queries are written
+-- with; the block that covers the swap turns it back on for its own queries.
+SET query_plan_join_swap_table = 0;
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
@@ -153,6 +157,69 @@ WHERE current_database = currentDatabase()
   AND event_date >= yesterday()
   AND log_comment LIKE '04891\_join\_count\_paste%'
 ORDER BY log_comment;
+
+SELECT 'every kind and strictness';
+-- One query per reachable pair of `JoinKind` and `JoinStrictness` (see `Core/Joins.h`), so that the two
+-- columns are covered systematically. The pairs above are covered again here on purpose: the grid is only
+-- useful if it is complete on its own. The `log_comment` is selected along with the columns because 22
+-- unnamed rows cannot be checked by eye.
+--
+-- Two values of the enums never reach the columns:
+--  * `COMMA` - a comma join is rewritten before the pipeline is built, into `CROSS` on its own and into
+--    `INNER` when the WHERE clause has a condition on both of its tables. Both cases are below.
+--  * `UNSPECIFIED` - every kind gets a strictness. The ones for which it is meaningless (CROSS, COMMA,
+--    PASTE) take `join_default_strictness`, which cannot be left empty for them either: with
+--    `join_default_strictness = ''` a CROSS JOIN still reports ALL and a PASTE JOIN is rejected.
+--
+-- ALL, the strictness a join without one takes from `join_default_strictness`.
+SELECT count() FROM t1 ALL INNER JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_01_all_inner';
+SELECT count() FROM t1 ALL LEFT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_02_all_left';
+SELECT count() FROM t1 ALL RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_03_all_right';
+SELECT count() FROM t1 ALL FULL JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_04_all_full';
+-- ANY.
+SELECT count() FROM t1 ANY INNER JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_05_any_inner';
+SELECT count() FROM t1 ANY LEFT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_06_any_left';
+SELECT count() FROM t1 ANY RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_07_any_right';
+-- RIGHT_ANY is the old meaning of ANY, selected by `any_join_distinct_right_table_keys`. Under that
+-- setting an ANY INNER JOIN becomes a SEMI LEFT JOIN instead.
+SELECT count() FROM t1 ANY LEFT JOIN t2 ON t1.a = t2.a
+FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_08_right_any_left', any_join_distinct_right_table_keys = 1;
+SELECT count() FROM t1 ANY RIGHT JOIN t2 ON t1.a = t2.a
+FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_09_right_any_right', any_join_distinct_right_table_keys = 1;
+SELECT count() FROM t1 ANY INNER JOIN t2 ON t1.a = t2.a
+FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_10_any_inner_rewritten_to_semi_left', any_join_distinct_right_table_keys = 1;
+-- SEMI and ANTI, which exist for LEFT and RIGHT only. Without a side they are LEFT.
+SELECT count() FROM t1 SEMI LEFT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_11_semi_left';
+SELECT count() FROM t1 SEMI RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_12_semi_right';
+SELECT count() FROM t1 SEMI JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_13_semi_without_side';
+SELECT count() FROM t1 ANTI LEFT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_14_anti_left';
+SELECT count() FROM t1 ANTI RIGHT JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_15_anti_right';
+SELECT count() FROM t1 ANTI JOIN t2 ON t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_16_anti_without_side';
+-- ASOF, which exists for INNER and LEFT only, on the tables that have a column to compare.
+SELECT count() FROM ta ASOF JOIN tb ON ta.a = tb.a AND ta.t >= tb.t FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_17_asof_inner';
+SELECT count() FROM ta ASOF LEFT JOIN tb ON ta.a = tb.a AND ta.t >= tb.t FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_18_asof_left';
+-- The kinds for which strictness is meaningless.
+SELECT count() FROM t1 CROSS JOIN t2 FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_19_cross';
+SELECT count() FROM t1, t2 FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_20_comma_reported_as_cross';
+SELECT count() FROM t1, t2 WHERE t1.a = t2.a FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_21_comma_reported_as_inner';
+SELECT count() FROM (SELECT number AS a FROM numbers(10)) p1 PASTE JOIN (SELECT number AS a FROM numbers(10)) p2
+FORMAT Null SETTINGS log_comment = '04891_join_count_matrix_22_paste';
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, used_number_of_joins, used_join_kinds, used_join_strictness
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND type = 'QueryFinish'
+  AND event_date >= yesterday()
+  AND log_comment LIKE '04891\_join\_count\_matrix\_%'
+ORDER BY log_comment;
+
+-- The pairs that cannot be expressed at all. Nothing is logged for them, the query does not run.
+SELECT count() FROM t1 ANY FULL JOIN t2 ON t1.a = t2.a; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM ta ASOF RIGHT JOIN tb ON ta.a = tb.a AND ta.t >= tb.t; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM ta ASOF FULL JOIN tb ON ta.a = tb.a AND ta.t >= tb.t; -- { serverError NOT_IMPLEMENTED }
+SELECT count() FROM t1 SEMI FULL JOIN t2 ON t1.a = t2.a; -- { clientError SYNTAX_ERROR }
+SELECT count() FROM t1 ANTI FULL JOIN t2 ON t1.a = t2.a; -- { clientError SYNTAX_ERROR }
 
 SELECT 'full sorting merge';
 -- It keeps everything in memory here.
