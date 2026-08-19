@@ -52,6 +52,14 @@ SELECT * FROM data_01515 WHERE d1 = 0 SETTINGS force_data_skipping_indices='`d1_
 SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS force_data_skipping_indices='`d1_idx`, d1_null_idx'; -- Ok.
 ```
 
+## force_distinct_partitions_independently {#force_distinct_partitions_independently}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."}]}]}/>
+
+Force independent `DISTINCT` evaluation per partition when it is applicable, but the cost heuristic decided not to use it. Only bypasses the cost heuristic of [allow_distinct_partitions_independently](/reference/settings/session-settings/allow#allow_distinct_partitions_independently); the remaining conditions still apply.
+
 ## force_grouping_standard_compatibility {#force_grouping_standard_compatibility}
 
 <SettingsInfoBlock type="Bool" default_value="1" />

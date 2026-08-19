@@ -23,7 +23,20 @@ const DB::Strings compressionMethods
     = {"auto", "none", "gz", "gzip", "deflate", "brotli", "br", "xz", "zst", "zstd", "lzma", "lz4", "bz2", "snappy"};
 
 const DB::Strings codecs
-    = {"LZ4", "LZ4HC", "ZSTD", "Delta", "DoubleDelta", "Gorilla", "T64", "FPC", "GCD", "ALP", "AES_128_GCM_SIV", "AES_256_GCM_SIV", "NONE"};
+    = {"LZ4",
+       "LZ4HC",
+       "ZSTD",
+       "ZXC",
+       "Delta",
+       "DoubleDelta",
+       "Gorilla",
+       "T64",
+       "FPC",
+       "GCD",
+       "ALP",
+       "AES_128_GCM_SIV",
+       "AES_256_GCM_SIV",
+       "NONE"};
 
 String escapeSQLString(const String & s, const char escape_char)
 {
@@ -354,6 +367,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
            {"paimonlocal", allow_paimonLocal},
            {"merge", allow_merge},
            {"distributed", allow_distributed},
+           {"remote", allow_remote},
            {"dictionary", allow_dictionary},
            {"generaterandom", allow_generaterandom},
            {"azureblobstorage", allow_AzureBlobStorage},
@@ -942,13 +956,19 @@ void FuzzConfig::loadServerConfigurations()
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
     /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
     ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
+    /// attach_to_group_failure, thread_group_switcher_post_attach_failure - Break the "a query thread has a thread
+    ///     group" invariant on whatever thread happens to hit them next. `ThreadGroupSwitcher` is `noexcept` and only
+    ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
+    ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
+    ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
-        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup')");
+        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
+        "'thread_group_switcher_post_attach_failure')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     /// Probe which function_implementation values the server supports. They depend on how the binary
     /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an

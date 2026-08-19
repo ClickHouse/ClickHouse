@@ -954,15 +954,7 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
-    {
-        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
-        if (path.size() > NAME_MAX)
-        {
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
-        }
-        return path;
-    }
+        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
 
     return paths.compact;
 }

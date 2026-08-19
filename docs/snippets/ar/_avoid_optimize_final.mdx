@@ -53,7 +53,7 @@ OPTIMIZE TABLE <table> FINAL;
   ### يتجاهل حدود الأمان
 </div>
 
-في الوضع العادي، يتجنب ClickHouse دمج الأجزاء التي يزيد حجمها على ~150 GB (يمكن ضبط ذلك عبر [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ar/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)). لكن `OPTIMIZE FINAL` **يتجاوز وسيلة الحماية هذه**، ما يعني:
+في الوضع العادي، يتجنب ClickHouse دمج الأجزاء التي يزيد حجمها على ~150 GB (يمكن ضبط ذلك عبر [max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)). لكن `OPTIMIZE FINAL` **يتجاوز وسيلة الحماية هذه**، ما يعني:
 
 * قد يحاول دمج **عدة أجزاء بحجم 150 GB** في جزء واحد هائل
 * قد يؤدي ذلك إلى **أوقات دمج طويلة**، و**ضغط على الذاكرة**، أو حتى **أخطاء نفاد الذاكرة**

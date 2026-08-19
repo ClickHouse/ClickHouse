@@ -16,5 +16,31 @@
                 <port>9000</port>
             </node>
         </test_cluster_no_internal_replication>
+
+        <!-- With internal replication every replica of the shard is concatenated into one
+             directory name, so 10 ordinary replicas already exceed the 255-byte NAME_MAX. -->
+        <test_cluster_internal_replication_long_path>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica><host>not_existing_replica_00</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_01</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_02</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_03</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_04</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_05</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_06</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_07</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_08</host><port>9000</port></replica>
+                <replica><host>not_existing_replica_09</host><port>9000</port></replica>
+            </shard>
+        </test_cluster_internal_replication_long_path>
+
+        <!-- One shard holding this server plus a remote destination whose name exceeds NAME_MAX. -->
+        <test_cluster_mixed_local_long_path>
+            <shard>
+                <replica><host>node</host><port>9000</port></replica>
+                <replica><host>cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</host><port>9000</port></replica>
+            </shard>
+        </test_cluster_mixed_local_long_path>
     </remote_servers>
 </clickhouse>
