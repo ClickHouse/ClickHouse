@@ -1,0 +1,22 @@
+--- rejected: cross-side arrayJoin in a mixed JOIN ON condition
+--- rejected: every strictness and every hash algorithm
+--- the supported rewrite: ARRAY JOIN in a subquery before the JOIN
+12	180
+--- kept: one-sided arrayJoin is hoisted out of the residual
+3	0
+3	0
+0	0
+3	0
+3	0
+--- kept: a mixed condition without arrayJoin still runs
+6	90
+6	90
+6	90
+--- kept: INNER pushes the condition down instead of building a residual
+0	0
+--- kept: merge and direct algorithms keep reporting NOT_IMPLEMENTED
+--- rejected: a merge algorithm listed alongside hash that cannot take the query
+--- rejected: the unnest alias resolves to arrayJoin and is refused too
+--- kept: without the analyzer the condition is refused during analysis
+--- kept: a plain Join engine table is unaffected
+3	30
