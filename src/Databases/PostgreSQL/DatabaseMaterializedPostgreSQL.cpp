@@ -212,8 +212,11 @@ void DatabaseMaterializedPostgreSQL::startSynchronization()
     }
 
     replication_handler->startup(/* delayed */false);
-    for (const auto & [_, storage] : new_materialized_tables)
-        storage->as<StorageMaterializedPostgreSQL>()->setDatabaseReplicationReady();
+    {
+        std::lock_guard tables_lock(tables_mutex);
+        for (const auto & [_, storage] : materialized_tables)
+            storage->as<StorageMaterializedPostgreSQL>()->setDatabaseReplicationReady();
+    }
     synchronization_started = true;
 }
 
