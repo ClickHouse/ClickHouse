@@ -880,6 +880,10 @@ void AggregatingStep::describeActions(FormatSettings & settings) const
         settings.out << '\n';
     }
     settings.out << prefix << "Skip merging: " << skip_merging << '\n';
+
+    if (params.bucket_top_k)
+        settings.out << prefix << "Bucket top-K: " << params.bucket_top_k << (params.bucket_top_k_ascending ? " ascending" : " descending")
+                     << '\n';
 }
 
 void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -887,6 +891,8 @@ void AggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
     params.explain(map);
     if (!sort_description_for_merging.empty())
         map.add("Order", dumpSortDescription(sort_description_for_merging));
+    if (params.bucket_top_k)
+        map.add("Bucket Top-K", params.bucket_top_k);
     map.add("Skip merging", skip_merging);
 }
 
