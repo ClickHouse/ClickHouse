@@ -733,6 +733,14 @@ void ColumnReplicated::takeExactDynamicStructureFrom(const IColumn & source)
         nested_column->takeExactDynamicStructureFrom(source);
 }
 
+void ColumnReplicated::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    if (const auto * rhs_replicated = typeid_cast<const ColumnReplicated *>(&source))
+        nested_column->takeDynamicStructureLimitsFrom(*rhs_replicated->nested_column);
+    else
+        nested_column->takeDynamicStructureLimitsFrom(source);
+}
+
 
 void ColumnReplicated::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {

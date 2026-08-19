@@ -472,6 +472,12 @@ void ColumnMap::takeExactDynamicStructureFrom(const IColumn & source)
     nested->takeExactDynamicStructureFrom(*source_map.getNestedColumnPtr());
 }
 
+void ColumnMap::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    const auto & source_map = assert_cast<const ColumnMap &>(source);
+    nested->takeDynamicStructureLimitsFrom(*source_map.getNestedColumnPtr());
+}
+
 ColumnMap::Statistics ColumnMap::calculateStatisticsForRange(size_t start, size_t end) const
 {
     const auto & offsets = getNestedColumn().getOffsets();

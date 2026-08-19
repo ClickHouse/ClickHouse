@@ -169,6 +169,7 @@ public:
 
     bool hasDynamicStructure() const override { return values->hasDynamicStructure(); }
     void takeExactDynamicStructureFrom(const IColumn & source) override;
+    void takeDynamicStructureLimitsFrom(const IColumn & source) override;
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns) override;
     void fixDynamicStructure() override { values->fixDynamicStructure(); }
     bool hasStatistics() const override { return values->hasStatistics(); }

@@ -1455,8 +1455,10 @@ void SerializationObject::updateMaxDynamicPathsLimitIfNeeded(IColumn & column, c
         return;
 
     auto & column_object = assert_cast<ColumnObject &>(column);
-    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPaths())
-        column_object.setMaxDynamicPaths(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
+    /// Lower the upper bound and not just max_dynamic_paths, otherwise aggregation of the parsed data
+    /// (squashing of parsed blocks, flushing of an asynchronous insert) raises the limit back.
+    if (*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing < column_object.getMaxDynamicPathsUpperBound())
+        column_object.setMaxDynamicPathsUpperBound(*format_settings.json.max_dynamic_subcolumns_in_json_type_parsing);
 }
 
 }

@@ -991,6 +991,13 @@ void ColumnTuple::takeExactDynamicStructureFrom(const IColumn & source)
         columns[i]->takeExactDynamicStructureFrom(*source_tuple.getColumnPtr(i));
 }
 
+void ColumnTuple::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    const auto & source_tuple = assert_cast<const ColumnTuple &>(source);
+    for (size_t i = 0; i != columns.size(); ++i)
+        columns[i]->takeDynamicStructureLimitsFrom(*source_tuple.getColumnPtr(i));
+}
+
 
 bool ColumnTuple::hasStatistics() const
 {

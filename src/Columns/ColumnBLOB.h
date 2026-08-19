@@ -202,6 +202,7 @@ public:
 
     bool hasDynamicStructure() const override { throwInapplicable(); }
     void takeExactDynamicStructureFrom(const IColumn &) override { throwInapplicable(); }
+    void takeDynamicStructureLimitsFrom(const IColumn &) override { throwInapplicable(); }
     void chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> &, std::optional<size_t>) override { throwInapplicable(); }
     void fixDynamicStructure() override { throwInapplicable(); }
 

@@ -1050,6 +1050,11 @@ void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
     nested_column->takeExactDynamicStructureFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
 }
 
+void ColumnNullable::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    nested_column->takeDynamicStructureLimitsFrom(assert_cast<const ColumnNullable &>(source).getNestedColumn());
+}
+
 bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
 {
     const auto & rhs_nested_column = assert_cast<const ColumnNullable &>(rhs).getNestedColumn();

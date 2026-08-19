@@ -1718,6 +1718,11 @@ void ColumnArray::takeExactDynamicStructureFrom(const IColumn & source)
     data->takeExactDynamicStructureFrom(assert_cast<const ColumnArray &>(source).getData());
 }
 
+void ColumnArray::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    data->takeDynamicStructureLimitsFrom(assert_cast<const ColumnArray &>(source).getData());
+}
+
 void ColumnArray::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     VectorWithMemoryTracking<ColumnPtr> nested_source_columns;

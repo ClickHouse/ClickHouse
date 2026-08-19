@@ -819,6 +819,13 @@ public:
     /// (e.g. taking structure from the first block during write, or during deserialization).
     virtual void takeExactDynamicStructureFrom(const IColumn & /*source*/) {}
 
+    /// Copies the limits of the dynamic structure from a single source column of the same type, the
+    /// limits only: unlike `takeExactDynamicStructureFrom` the destination is left free to grow up to
+    /// the copied limit. Used to carry a limit that belongs to a column instance rather than to the
+    /// type (a parsing limit on the number of dynamic subcolumns) over to the column that parsed data
+    /// is aggregated into. Must be called on an empty column.
+    virtual void takeDynamicStructureLimitsFrom(const IColumn & /*source*/) {}
+
     /// Determines the optimal dynamic structure for a merge by analyzing all source columns.
     /// May read source statistics to make structure decisions (e.g. which paths/variants to keep).
     /// Unlike `takeExactDynamicStructureFrom`, this method actively selects the best structure.

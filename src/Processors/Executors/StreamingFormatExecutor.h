@@ -54,10 +54,9 @@ public:
 private:
     void preallocateResultColumns(size_t num_bytes, const Chunk & chunk);
 
-    /// Reshapes result_columns/checkpoints from the header's columns to the first inserted
-    /// chunk's columns, so per-instance parse-time state (e.g. ColumnObject's dynamic paths
-    /// cap) survives the aggregation instead of being reset to the header's default.
-    void reshapeResultColumnsFromFirstChunk(const Chunk & chunk);
+    /// Parsing limits are stored on the parsed column instance and not on the type, so the result
+    /// columns built from the header have to inherit them from the data.
+    void takeDynamicStructureLimitsFromChunk(const Chunk & chunk);
 
     const Block header;
     const InputFormatPtr format;
@@ -72,7 +71,6 @@ private:
     size_t total_bytes;
     size_t total_chunks;
     bool try_preallocate = true;
-    bool result_columns_shaped_from_data = false;
 };
 
 }

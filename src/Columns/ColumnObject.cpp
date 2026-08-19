@@ -84,11 +84,13 @@ ColumnObject::ColumnObject(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
     MutableColumnPtr shared_data_,
     size_t max_dynamic_paths_,
+    size_t max_dynamic_paths_upper_bound_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
     const StatisticsPtr & statistics_)
     : shared_data(std::move(shared_data_))
     , max_dynamic_paths(max_dynamic_paths_)
+    , max_dynamic_paths_upper_bound(max_dynamic_paths_upper_bound_)
     , global_max_dynamic_paths(global_max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
     , statistics(statistics_)
@@ -114,7 +116,10 @@ ColumnObject::ColumnObject(
 
 ColumnObject::ColumnObject(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
-    : max_dynamic_paths(max_dynamic_paths_), global_max_dynamic_paths(max_dynamic_paths_), max_dynamic_types(max_dynamic_types_)
+    : max_dynamic_paths(max_dynamic_paths_)
+    , max_dynamic_paths_upper_bound(max_dynamic_paths_)
+    , global_max_dynamic_paths(max_dynamic_paths_)
+    , max_dynamic_types(max_dynamic_types_)
 {
     typed_paths.reserve(typed_paths_.size());
     sorted_typed_paths.reserve(typed_paths_.size());
@@ -141,6 +146,7 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     , dynamic_paths_ptrs(other.dynamic_paths_ptrs)
     , shared_data(other.shared_data)
     , max_dynamic_paths(other.max_dynamic_paths)
+    , max_dynamic_paths_upper_bound(other.max_dynamic_paths_upper_bound)
     , global_max_dynamic_paths(other.global_max_dynamic_paths)
     , max_dynamic_types(other.max_dynamic_types)
     , statistics(other.statistics)
@@ -162,6 +168,7 @@ ColumnObject::Ptr ColumnObject::create(
     const UnorderedMapWithMemoryTracking<String, ColumnPtr> & dynamic_paths_,
     const ColumnPtr & shared_data_,
     size_t max_dynamic_paths_,
+    size_t max_dynamic_paths_upper_bound_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
     const ColumnObject::StatisticsPtr & statistics_)
@@ -181,6 +188,7 @@ ColumnObject::Ptr ColumnObject::create(
         std::move(mutable_dynamic_paths),
         shared_data_->assumeMutable(),
         max_dynamic_paths_,
+        max_dynamic_paths_upper_bound_,
         global_max_dynamic_paths_,
         max_dynamic_types_,
         statistics_);
@@ -191,11 +199,12 @@ ColumnObject::MutablePtr ColumnObject::create(
     UnorderedMapWithMemoryTracking<String, MutableColumnPtr> dynamic_paths_,
     MutableColumnPtr shared_data_,
     size_t max_dynamic_paths_,
+    size_t max_dynamic_paths_upper_bound_,
     size_t global_max_dynamic_paths_,
     size_t max_dynamic_types_,
     const ColumnObject::StatisticsPtr & statistics_)
 {
-    return Base::create(std::move(typed_paths_), std::move(dynamic_paths_), std::move(shared_data_), max_dynamic_paths_, global_max_dynamic_paths_, max_dynamic_types_, statistics_);
+    return Base::create(std::move(typed_paths_), std::move(dynamic_paths_), std::move(shared_data_), max_dynamic_paths_, max_dynamic_paths_upper_bound_, global_max_dynamic_paths_, max_dynamic_types_, statistics_);
 }
 
 ColumnObject::MutablePtr ColumnObject::create(UnorderedMapWithMemoryTracking<String, MutableColumnPtr> typed_paths_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
@@ -232,6 +241,7 @@ MutableColumnPtr ColumnObject::cloneEmpty() const
         std::move(empty_dynamic_paths),
         shared_data->cloneEmpty(),
         max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
         global_max_dynamic_paths,
         max_dynamic_types,
         statistics);
@@ -254,6 +264,7 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
         std::move(resized_dynamic_paths),
         shared_data->cloneResized(size),
         max_dynamic_paths,
+        max_dynamic_paths_upper_bound,
         global_max_dynamic_paths,
         max_dynamic_types,
         statistics);
@@ -500,6 +511,23 @@ void ColumnObject::setMaxDynamicPaths(size_t max_dynamic_paths_)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific max_dynamic_paths parameter is allowed only for empty object column");
 
     max_dynamic_paths = max_dynamic_paths_;
+}
+
+void ColumnObject::setMaxDynamicPathsUpperBound(size_t max_dynamic_paths_upper_bound_)
+{
+    if (!empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Setting specific upper bound on max_dynamic_paths is allowed only for empty object column");
+
+    /// The bound can only be narrowed: widening it back is exactly what it exists to prevent.
+    if (max_dynamic_paths_upper_bound_ > max_dynamic_paths_upper_bound)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot raise the upper bound on max_dynamic_paths from {} to {}",
+            max_dynamic_paths_upper_bound,
+            max_dynamic_paths_upper_bound_);
+
+    max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound_;
+    max_dynamic_paths = std::min(max_dynamic_paths, max_dynamic_paths_upper_bound);
 }
 
 void ColumnObject::setDynamicPaths(const VectorWithMemoryTracking<String> & paths)
@@ -1348,7 +1376,7 @@ ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) co
         filtered_dynamic_paths[path] = column->filter(filt, result_size_hint);
 
     auto filtered_shared_data = shared_data->filter(filt, result_size_hint);
-    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(filtered_typed_paths, filtered_dynamic_paths, filtered_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 void ColumnObject::filter(const Filter & filt)
@@ -1386,7 +1414,7 @@ ColumnPtr ColumnObject::permute(const Permutation & perm, size_t limit) const
         permuted_dynamic_paths[path] = column->permute(perm, limit);
 
     auto permuted_shared_data = shared_data->permute(perm, limit);
-    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(permuted_typed_paths, permuted_dynamic_paths, permuted_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
@@ -1402,7 +1430,7 @@ ColumnPtr ColumnObject::index(const IColumn & indexes, size_t limit) const
         indexed_dynamic_paths[path] = column->index(indexes, limit);
 
     auto indexed_shared_data = shared_data->index(indexes, limit);
-    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(indexed_typed_paths, indexed_dynamic_paths, indexed_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
@@ -1418,7 +1446,7 @@ ColumnPtr ColumnObject::replicate(const Offsets & replicate_offsets) const
         replicated_dynamic_paths[path] = column->replicate(replicate_offsets);
 
     auto replicated_shared_data = shared_data->replicate(replicate_offsets);
-    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics);
+    return ColumnObject::create(replicated_typed_paths, replicated_dynamic_paths, replicated_shared_data, max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics);
 }
 
 VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_columns, const Selector & selector) const
@@ -1449,7 +1477,7 @@ VectorWithMemoryTracking<MutableColumnPtr> ColumnObject::scatter(size_t num_colu
     VectorWithMemoryTracking<MutableColumnPtr> result_columns;
     result_columns.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
-        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, global_max_dynamic_paths, max_dynamic_types, statistics));
+        result_columns.emplace_back(ColumnObject::create(std::move(scattered_typed_paths[i]), std::move(scattered_dynamic_paths[i]), std::move(scattered_shared_data_columns[i]), max_dynamic_paths, max_dynamic_paths_upper_bound, global_max_dynamic_paths, max_dynamic_types, statistics));
     return result_columns;
 }
 
@@ -1679,6 +1707,7 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
          my_compressed_dynamic_paths = std::move(compressed_dynamic_paths),
          my_compressed_shared_data = std::move(compressed_shared_data),
          my_max_dynamic_paths = max_dynamic_paths,
+         my_max_dynamic_paths_upper_bound = max_dynamic_paths_upper_bound,
          my_global_max_dynamic_paths = global_max_dynamic_paths,
          my_max_dynamic_types = max_dynamic_types,
          my_statistics = statistics]() mutable
@@ -1694,7 +1723,7 @@ ColumnPtr ColumnObject::compress(bool force_compression) const
             decompressed_dynamic_paths[path] = column->decompress();
 
         auto decompressed_shared_data = my_compressed_shared_data->decompress();
-        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
+        return ColumnObject::create(decompressed_typed_paths, decompressed_dynamic_paths, decompressed_shared_data, my_max_dynamic_paths, my_max_dynamic_paths_upper_bound, my_global_max_dynamic_paths, my_max_dynamic_types, my_statistics);
     };
 
     return ColumnCompressed::create(size(), byte_size, decompress);
@@ -1771,12 +1800,14 @@ void ColumnObject::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr>
     /// Add dynamic paths from this object column.
     add_dynamic_paths(*this);
 
-    /// It might happen that current max_dynamic_paths is less then global_max_dynamic_paths
+    /// It might happen that current max_dynamic_paths is less then its upper bound
     /// but the shared data is empty. For example if this block was deserialized from Native format.
-    /// In this case we should set max_dynamic_paths = global_max_dynamic_paths, so during squashing we
-    /// will insert new types to SharedVariant only when the global limit is reached.
+    /// In this case we should set max_dynamic_paths to the upper bound, so during squashing we
+    /// will insert new types to SharedVariant only when that limit is reached.
+    /// Raising the limit is only safe while nothing has been spilled yet: otherwise a path could be
+    /// promoted to a dynamic path while the earlier rows still keep it in shared data.
     if (getSharedDataPathsAndValues().first->empty())
-        max_dynamic_paths = global_max_dynamic_paths;
+        max_dynamic_paths = max_dynamic_paths_upper_bound;
 
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
@@ -1944,7 +1975,8 @@ void ColumnObject::chooseDynamicStructureForMerge(const VectorWithMemoryTracking
     dynamic_paths_ptrs.clear();
     sorted_dynamic_paths.clear();
     /// If max_dynamic_subcolumns is set, use it as max number of paths.
-    max_dynamic_paths = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, global_max_dynamic_paths) : global_max_dynamic_paths;
+    max_dynamic_paths
+        = max_dynamic_subcolumns ? std::min(*max_dynamic_subcolumns, max_dynamic_paths_upper_bound) : max_dynamic_paths_upper_bound;
 
     /// Check if the number of all dynamic paths exceeds the limit.
     if (path_to_total_number_of_non_null_values.size() > max_dynamic_paths)
@@ -2035,7 +2067,19 @@ void ColumnObject::takeExactDynamicStructureFrom(const IColumn & source)
 
     /// Set max_dynamic_paths to the number of dynamic paths.
     /// It's needed to avoid adding new unexpected dynamic paths during later inserts into this column.
+    /// max_dynamic_paths_upper_bound is deliberately left alone: lowering it to the same value would
+    /// make `prepareForSquashing` restore max_dynamic_paths to it and so undo this freeze.
     max_dynamic_paths = dynamic_paths.size();
+}
+
+void ColumnObject::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    const auto & source_object = assert_cast<const ColumnObject &>(source);
+    if (source_object.max_dynamic_paths_upper_bound < max_dynamic_paths_upper_bound)
+        setMaxDynamicPathsUpperBound(source_object.max_dynamic_paths_upper_bound);
+
+    for (auto & [path, column] : typed_paths)
+        column->takeDynamicStructureLimitsFrom(*source_object.typed_paths.at(path));
 }
 
 void ColumnObject::fixDynamicStructure()

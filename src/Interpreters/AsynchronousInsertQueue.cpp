@@ -1442,10 +1442,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
 {
     size_t total_rows = 0;
     auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
-    /// Built lazily from the first non-empty entry's columns, rather than from the header,
-    /// so per-instance parse-time state (e.g. ColumnObject's dynamic paths cap) survives the
-    /// aggregation instead of being silently widened back to the header's default.
-    MutableColumns result_columns;
+    auto result_columns = header.cloneEmptyColumns();
 
     for (const auto & entry : data->entries)
     {
@@ -1480,15 +1477,15 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         }
 
         auto columns = block_to_insert.getColumns();
-        if (result_columns.empty())
-        {
-            result_columns.reserve(columns.size());
-            for (const auto & column : columns)
-                result_columns.push_back(column->cloneEmpty());
-        }
-
         for (size_t i = 0, s = columns.size(); i < s; ++i)
+        {
+            /// Parsing limits are stored on the parsed column instance and not on the type, so the
+            /// result columns built from the header have to inherit them from the data.
+            if (result_columns[i]->empty())
+                result_columns[i]->takeDynamicStructureLimitsFrom(*columns[i]);
+
             result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        }
 
         total_rows += block_to_insert.rows();
 
@@ -1497,9 +1494,6 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
         add_to_async_insert_log(entry, /*exception=*/ "", block_to_insert.rows(), block_to_insert.bytes());
         entry->resetChunk();
     }
-
-    if (result_columns.empty())
-        result_columns = header.cloneEmptyColumns();
 
     LOG_DEBUG(logger, "Processed {} preprocessed rows for {} entries", total_rows, data->entries.size());
 

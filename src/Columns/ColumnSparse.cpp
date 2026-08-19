@@ -955,6 +955,11 @@ void ColumnSparse::takeExactDynamicStructureFrom(const IColumn & source)
     values->takeExactDynamicStructureFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
 }
 
+void ColumnSparse::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    values->takeDynamicStructureLimitsFrom(assert_cast<const ColumnSparse &>(source).getValuesColumn());
+}
+
 void ColumnSparse::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
 {
     VectorWithMemoryTracking<ColumnPtr> values_source_columns;

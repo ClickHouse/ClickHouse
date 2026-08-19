@@ -1964,6 +1964,14 @@ void ColumnVariant::takeExactDynamicStructureFrom(const IColumn & source)
         getVariantByGlobalDiscriminator(i).takeExactDynamicStructureFrom(source_variant.getVariantByGlobalDiscriminator(i));
 }
 
+void ColumnVariant::takeDynamicStructureLimitsFrom(const IColumn & source)
+{
+    const auto & source_variant = assert_cast<const ColumnVariant &>(source);
+    size_t num_variants = variants.size();
+    for (size_t i = 0; i != num_variants; ++i)
+        getVariantByGlobalDiscriminator(i).takeDynamicStructureLimitsFrom(source_variant.getVariantByGlobalDiscriminator(i));
+}
+
 
 void ColumnVariant::fixDynamicStructure()
 {
