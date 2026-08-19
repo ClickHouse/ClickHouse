@@ -3,7 +3,6 @@
 #include <IO/ICacheProvider.h>
 #include <IO/IntervalSet.h>
 #include <Common/PageCache.h>
-#include <Common/logger_useful.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <mutex>
@@ -87,7 +86,6 @@ private:
     /// `committed_mutex` - a background prefetch and the foreground read may fill and read this writer
     /// at the same time.
     mutable std::mutex committed_mutex;
-    LoggerPtr log = getLogger("PageCacheWriter");
 };
 
 /// `ICacheProvider` wrapping PageCache. PageCache is FILE-level (one logical
@@ -128,7 +126,6 @@ private:
     bool inject_eviction;
     bool bypass_if_missing;
     size_t file_size_in_bytes;
-    LoggerPtr log = getLogger("PageCacheProvider");
 };
 
 }

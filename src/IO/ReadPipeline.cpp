@@ -275,17 +275,17 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
 
     if (memory_cache && memory_cache->page_cache_settings.cache && !any_unknown_size)
     {
-        const auto & pcs = memory_cache->page_cache_settings;
+        const auto & page_cache_settings = memory_cache->page_cache_settings;
         PageCacheFile cache_file;
         cache_file.path = memory_cache->custom_cache_path.value_or(
             memory_cache->cache_path_prefix + source->objects.front().remote_path);
         cache_file.file_version = memory_cache->custom_file_version.value_or("");
         cache_chain.push_back(std::make_shared<PageCacheProvider>(
-            pcs.cache,
+            page_cache_settings.cache,
             std::move(cache_file),
-            pcs.block_size,
-            pcs.random_eviction_for_tests,
-            pcs.read_if_exists_otherwise_bypass,
+            page_cache_settings.block_size,
+            page_cache_settings.random_eviction_for_tests,
+            page_cache_settings.read_if_exists_otherwise_bypass,
             total_file_size));
     }
 

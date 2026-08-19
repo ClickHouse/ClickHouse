@@ -1,8 +1,14 @@
 #include <IO/PageCacheProvider.h>
 
-#include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
+#include <base/defines.h>
 #include <algorithm>
 #include <cstring>
+
+namespace ProfileEvents
+{
+    extern const Event PageCacheReadBytes;
+}
 
 namespace DB
 {
@@ -35,6 +41,7 @@ ChainedBuffers PageCacheReader::read(ByteRange sub)
 
     auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
     result.append(ChainedBufferNode{std::move(buf), lo - range_member.offset, hi - lo, lo});
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, hi - lo);
     return result;
 }
 
@@ -97,8 +104,6 @@ size_t PageCacheWriter::write(ChainedBuffers data, [[maybe_unused]] const Claim 
         std::lock_guard lock(committed_mutex);
         cell = std::move(got);
     }
-    if (loaded)
-        LOG_TRACE(log, "PageCacheWriter::write: populated block [{}, {})", range_member.offset, range_member.end());
     return loaded ? range_member.size : 0;
 }
 
@@ -135,6 +140,7 @@ ChainedBuffers PageCacheWriter::read(ByteRange sub)
 
     auto buf = std::make_shared<PageCacheChainedBuffer>(cell);
     result.append(ChainedBufferNode{std::move(buf), lo - range_member.offset, hi - lo, lo});
+    ProfileEvents::increment(ProfileEvents::PageCacheReadBytes, hi - lo);
     return result;
 }
 
@@ -164,6 +170,7 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
     const StoredObject & /*object*/, size_t /*object_file_offset*/, ByteRange range)
 {
     VectorWithMemoryTracking<ICacheProvider::CacheResolution> out;
+    chassert(block_size > 0);
     const size_t blk = block_size;
     const size_t file_size = file_size_in_bytes;
     if (range.offset >= file_size)
@@ -171,7 +178,9 @@ VectorWithMemoryTracking<ICacheProvider::CacheResolution> PageCacheProvider::res
 
     SipHash base_hash = file.baseHash();
     const size_t end_in_file = std::min(range.end(), file_size);
-    for (size_t pos = range.offset / blk * blk; pos < end_in_file; pos += std::min(blk, file_size - pos))
+    const size_t first_pos = range.offset / blk * blk;
+    out.reserve((end_in_file - first_pos + blk - 1) / blk);
+    for (size_t pos = first_pos; pos < end_in_file; pos += std::min(blk, file_size - pos))
     {
         const ByteRange block{pos, std::min(blk, file_size - pos)};
         CacheResolution r;
