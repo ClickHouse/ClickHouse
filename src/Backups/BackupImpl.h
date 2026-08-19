@@ -26,6 +26,11 @@ class IArchiveWriter;
 /// whether the base backup should be used for each entry.
 class BackupImpl : public IBackup
 {
+#if CLICKHOUSE_CLOUD
+    /// Reopens a destination this backup already owns; needs the write-open state below.
+    friend class BackupResumer;
+#endif
+
 public:
     struct ArchiveParams
     {
@@ -88,6 +93,9 @@ public:
     size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
+#if CLICKHOUSE_CLOUD
+    bool hasPublishedMetadata() const;
+#endif
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
@@ -103,6 +111,11 @@ private:
 
     /// Writes the file ".backup" containing backup's metadata.
     void writeBackupMetadata() TSA_REQUIRES(mutex);
+#if CLICKHOUSE_CLOUD
+    /// Both are reached only while continuing an interrupted backup.
+    bool publishedMetadataMatchesUUID() const TSA_REQUIRES(mutex);
+    void recalculateMetadataCounters() TSA_REQUIRES(mutex);
+#endif
     void readBackupMetadata() TSA_REQUIRES(mutex);
 
 #if CLICKHOUSE_CLOUD
@@ -127,7 +140,9 @@ private:
     /// Thus it will not be allowed to put any other backup to the same place (even if the BACKUP command is executed on a different node).
     void createLockFile();
     bool checkLockFile(bool throw_if_failed) const;
-    void removeLockFile();
+    /// Both return true only when the destination no longer holds this backup's lock file.
+    bool removeLockFile();
+    bool tryRemoveOwnLockFile() noexcept;
 
     /// Calculates and sets `compressed_size`.
     void setCompressedSize();
@@ -165,6 +180,11 @@ private:
     std::unordered_map<String, BackupFileInfo> lightweight_snapshot_file_infos TSA_GUARDED_BY(mutex);
 
     std::optional<UUID> uuid;
+#if CLICKHOUSE_CLOUD
+    /// Whether `.backup` is already in the destination: either the attempt being continued published
+    /// it, or this one did. Only a continued attempt can find it already there.
+    bool metadata_already_published TSA_GUARDED_BY(mutex) = false;
+#endif
     String backup_id; /// Set from params on write, from the manifest on read; empty for legacy backups without the field.
     time_t timestamp = 0;
     size_t num_files = 0;
@@ -184,6 +204,16 @@ private:
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;
+#if CLICKHOUSE_CLOUD
+    /// Set when this attempt continues an interrupted one; `BackupResumer` fills these in while it
+    /// reopens a destination this backup already owns.
+    bool resuming = false;
+    /// The timestamp the attempt being continued wrote into `.backup`. Empty otherwise.
+    String timestamp_text;
+    /// Throws unless this attempt still owns the progress record. Unset unless resuming.
+    std::function<void()> resume_check_owner;
+#endif
+    String lock_file_contents;
     std::atomic<bool> lock_file_before_first_file_checked = false;
 
     bool writing_finalized = false;
