@@ -66,9 +66,13 @@ export const McpGuideGrid = ({ variant = 'guides' }) => {
     );
   }
 
+  const displayedGuides = variant === 'agent-libraries'
+    ? guides.filter((guide) => guide.href.startsWith('/guides/oss/deployment-and-scaling/mcp-integration-guides/'))
+    : guides;
+
   return (
     <div className="my-8 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-      {guides.map((guide) => (
+      {displayedGuides.map((guide) => (
         <div key={guide.href} className="card not-prose contents">
           <a
             href={guide.href}

@@ -112,6 +112,9 @@ Codex CLI, the Codex IDE extension, and the ChatGPT desktop app share the MCP co
 
 <Tab title="ChatGPT" icon="/images/logo-codex.svg">
 
+The ChatGPT desktop app configures local MCP servers for its Codex host.
+This configuration is shared with Codex CLI and the Codex IDE extension.
+
 In the ChatGPT desktop app:
 
 1. Open **Settings**, then select **MCP servers**.
@@ -121,12 +124,12 @@ In the ChatGPT desktop app:
 5. Add `CLICKHOUSE_HOST`, `CLICKHOUSE_USER`, and `CLICKHOUSE_PASSWORD` with your connection details.
 6. Save the server and restart the app.
 
-Enter `/mcp` in the composer to inspect the connected server.
+After the app restarts, open Codex and enter `/mcp` in the composer to inspect the connected server.
 
 <Note>
-ChatGPT web cannot connect to a local `stdio` server.
-To use ClickHouse tools on the web, configure a plugin backed by a remote MCP server.
-See [Remote MCP server in ClickHouse Cloud](/products/cloud/features/ai-ml/remote-mcp).
+These steps configure a local `stdio` server for Codex in the ChatGPT desktop app.
+ChatGPT web instead uses remote MCP-backed tools supplied by plugins.
+To use ClickHouse tools in ChatGPT web, see [Remote MCP server in ClickHouse Cloud](/products/cloud/features/ai-ml/remote-mcp).
 </Note>
 </Tab>
 
