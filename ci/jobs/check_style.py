@@ -248,10 +248,10 @@ STAR_PROJECTION_RE = (
 # `concat(path, '/data.bin')` is still recognized; double quotes, backticks, pipes, and
 # semicolons still bound the match to one query.
 FETCHES_SERVER_PATH_RE = re.compile(
-    r"(?i)(?:[`\"]?\b(?:path|data_path|data_paths|metadata_path)\b[`\"]?[^\"`|;]{0,300}?"
-    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue)\b"
+    r"(?i)(?:[`\"]?\b(?:path|data_path|data_paths|metadata_path|cache_paths|local_path)\b[`\"]?[^\"`|;]{0,300}?"
+    r"\bfrom\s+system\.(parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue|remote_data_paths|filesystem_cache_settings)\b"
     rf"|{STAR_PROJECTION_RE}[^\"`|;]{{0,300}}?\bfrom\s+system\."
-    r"(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue)\b)"
+    r"(?:parts|detached_parts|projection_parts|tables|disks|databases|detached_tables|distribution_queue|remote_data_paths|filesystem_cache_settings)\b)"
 )
 # The server data root fetched as `SELECT value` or a star projection from
 # `system.server_settings` where `name = 'path'` or `name IN ('path')`. The `value` token (or `*`) is required
@@ -296,10 +296,10 @@ REDIRECT_TO_VAR_RE = re.compile(
 # fine, but any other substitution is suspicious once the file fetches a server path. This
 # includes helpers that conceal the system-table query from the redirection line.
 REDIRECT_TO_COMMAND_SUBSTITUTION_RE = re.compile(r"(?<!-)>(?:>|\|)?\s*\"?(?:\$\(|`)")
-# Exempt only a redirect whose complete target is the result of `mktemp`; a server path
-# plus a `mktemp`-generated basename is still a write into server-owned data.
+# Exempt only a redirect whose complete target is the default `mktemp` scratch path.
+# Arguments can select a server-owned directory, so they must be treated as suspicious.
 REDIRECT_TO_MKTEMP_RE = re.compile(
-    r"(?<!-)>(?:>|\|)?\s*\"?\$\(\s*mktemp\b[^)]*\)\"?\s*(?:$|[;|&])"
+    r"(?<!-)>(?:>|\|)?\s*\"?\$\(\s*mktemp\s*\)\"?\s*(?:$|[;|&])"
 )
 SHELL_COMMAND_STRING_RE = re.compile(
     r"(?:^|[!|&;(){)`]|\b(?:if|then|elif|else|do|while|until)\b)\s*"

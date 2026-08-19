@@ -345,3 +345,35 @@ def test_arrow_diagnostic_is_not_treated_as_redirection(tmp_path):
 def test_mktemp_scratch_redirect_is_not_flagged(tmp_path):
     # The only allowed command substitution in a redirect is a `mktemp` scratch path.
     assert not _run(tmp_path, FETCH_PART_PATH + 'echo x > "$(mktemp)"\n')
+
+
+def test_mktemp_in_server_path_is_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'echo broken > "$(mktemp --tmpdir="$path" tmp.XXXXXX)"\n',
+    )
+    assert _run(
+        tmp_path,
+        FETCH_PART_PATH + 'echo broken > "$(mktemp "$path/part.XXXXXX")"\n',
+    )
+
+
+def test_remote_data_paths_are_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'cache=$(${CLICKHOUSE_CLIENT} -q "SELECT cache_paths[1] FROM '
+        'system.remote_data_paths LIMIT 1")\nrm -f "$cache"\n',
+    )
+    assert _run(
+        tmp_path,
+        'local=$(${CLICKHOUSE_CLIENT} -q "SELECT local_path FROM '
+        'system.remote_data_paths LIMIT 1")\nrm -f "$local"\n',
+    )
+
+
+def test_filesystem_cache_settings_path_is_flagged(tmp_path):
+    assert _run(
+        tmp_path,
+        'cache_dir=$(${CLICKHOUSE_CLIENT} -q "SELECT path FROM '
+        'system.filesystem_cache_settings LIMIT 1")\nrm -f "$cache_dir/file"\n',
+    )
