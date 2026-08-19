@@ -2824,7 +2824,7 @@ SELECT * APPLY(max) FROM columns_transformers;
 ```
 )",
         .syntax = R"(
-SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+SELECT <expr> APPLY(<func>) FROM [db.]table_name
 )",
         .parent = "SELECT",
         .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
@@ -2845,7 +2845,7 @@ SELECT * EXCEPT (i) FROM columns_transformers;
 ```
 )",
         .syntax = R"(
-SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
 )",
         .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
@@ -2867,7 +2867,7 @@ SELECT * REPLACE(i + 1 AS i) FROM columns_transformers;
 ```
 )",
         .syntax = R"(
-SELECT <expr> REPLACE( <expr> AS col_name) FROM [db.]table_name
+SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
 )",
         .parent = "SELECT",
         .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
