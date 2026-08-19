@@ -87,16 +87,20 @@ void StorageFromMergeTreeProjection::read(
                 projection->name, parent_storage_id.getNameForLogs());
         }
 
-        /// reject virtuals the projection reorders (position-relative) or only exposes under a projection
-        /// name absent on the parent (`_parent_part_offset`); the prewhere read pulls the rest itself
+        /// read the policy's columns even if the query didn't ask for them; reject virtuals the projection
+        /// reorders (position-relative) or only exposes under a projection name absent on the parent
         static const NameSet not_row_preserving{
             "_part_offset", "_part_index", "_part_granule_offset", "_block_offset", "_block_number", "_parent_part_offset"};
         for (const auto & name : filter_info.actions.getRequiredColumnsNames())
+        {
             if (not_row_preserving.contains(name))
                 throw Exception(ErrorCodes::ACCESS_DENIED,
                     "Cannot read from projection `{}` of table {} because its row policy uses virtual column "
                     "`{}`, whose value the projection does not preserve, so it cannot be enforced",
                     projection->name, parent_storage_id.getNameForLogs(), name);
+            if (std::find(read_column_names.begin(), read_column_names.end(), name) == read_column_names.end())
+                read_column_names.push_back(name);
+        }
 
         /// apply the policy so it runs before any user PREWHERE (a post-read filter would let PREWHERE see
         /// hidden rows); 25.8 carries the row-level filter inside PrewhereInfo
