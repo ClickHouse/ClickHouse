@@ -9,9 +9,13 @@
 #include <string_view>
 #include <vector>
 #include <boost/noncopyable.hpp>
+#if defined(__ELF__)
 #include <Common/CompactSymbols.h>
+#endif
 #include <Common/Elf.h>
+#if defined(__ELF__)
 #include <IO/ZstdContext.h>
+#endif
 
 namespace DB
 {
@@ -61,10 +65,12 @@ public:
     class SymbolIterator
     {
     public:
-        SymbolIterator(SymbolIterator &&) noexcept = default;
-        SymbolIterator & operator=(SymbolIterator &&) = delete;
+        /// Views returned by `next` point into member buffers, so moving the iterator
+        /// could invalidate a previously returned view.
         SymbolIterator(const SymbolIterator &) = delete;
         SymbolIterator & operator=(const SymbolIterator &) = delete;
+        SymbolIterator(SymbolIterator &&) = delete;
+        SymbolIterator & operator=(SymbolIterator &&) = delete;
 
         /// `name` is NUL-terminated at `data()[size()]` and remains valid until the next call to `next`.
         bool next(const Symbol *& symbol, std::string_view & name);
@@ -75,6 +81,7 @@ public:
 
         const SymbolIndex & index;
         size_t position = 0;
+#if defined(__ELF__)
         uint32_t cached_source_index = std::numeric_limits<uint32_t>::max();
         uint32_t cached_granule_index = std::numeric_limits<uint32_t>::max();
         uint32_t cached_entry_index = std::numeric_limits<uint32_t>::max();
@@ -82,6 +89,7 @@ public:
         std::vector<char> granule_buffer;
         std::string name_buffer;
         std::optional<CompactSymbols::NameGranuleDecoder> decoder;
+#endif
     };
 
     struct Object
@@ -103,6 +111,10 @@ public:
     /// The returned view is NUL-terminated at `data()[size()]` and remains valid only until
     /// the next call to `getSymbolName` or an iterator method on the same thread. Copy it if needed longer.
     std::string_view getSymbolName(const Symbol & symbol) const;
+    /// The returned pointer is never null and remains valid only until the next call to
+    /// `getSymbolNameCString`, `getSymbolName`, or an iterator method on the same thread.
+    /// An empty string is returned on failure. Copy it if needed longer.
+    const char * getSymbolNameCString(const Symbol & symbol) const;
     /// Preallocates the compact-name workspace for the current thread.
     void warmUp() const;
     SymbolIterator iterateSymbols() const { return SymbolIterator(*this); }
@@ -121,6 +133,7 @@ public:
         std::vector<Symbol> symbols;
         std::vector<Object> objects;
         std::vector<std::shared_ptr<const CompactSymbolTable>> compact_symbol_tables;
+        bool has_compact_symbols = false;
         std::vector<uint32_t> symbol_scan_order;
         /// BuildID from the Object corresponding to main executable (as opposed to dynamic libraries).
         String self_build_id;
@@ -128,9 +141,12 @@ public:
 
 private:
     Data data;
+#if defined(__ELF__)
     size_t maximum_name_granule_size = 0;
+#endif
 
     void load();
+    const char * getSymbolNameImpl(const Symbol & symbol, size_t * name_size) const;
 };
 
 }

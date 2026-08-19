@@ -391,9 +391,8 @@ void StackTrace::forEachFrame(
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
         {
-            if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
-                /// The `getSymbolName` view is NUL-terminated by contract.
-                current_frame.symbol = demangle(symbol_name.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
         }
 
         for (const auto & frame : inline_frames)
@@ -454,9 +453,8 @@ void StackTrace::forEachFrame(
 
         if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
         {
-            if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
-                /// The `getSymbolName` view is NUL-terminated by contract.
-                current_frame.symbol = demangle(symbol_name.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
+                current_frame.symbol = demangle(symbol_name);
         }
 
         for (const auto & frame : inline_frames)

@@ -3,7 +3,10 @@
 #include <base/MemorySanitizer.h>
 #include <base/hex.h>
 #include <base/sort.h>
+#if defined(__ELF__)
 #include <Common/CompactSymbols.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#endif
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/SymbolIndex.h>
 
@@ -96,6 +99,7 @@ extern "C" int dl_iterate_phdr(int (*)(DynamicLinkingProgramHeaderInfo *, size_t
 namespace DB
 {
 
+#if defined(__ELF__)
 class CompactSymbolTable
 {
 public:
@@ -108,10 +112,12 @@ public:
     CompactSymbols::Reader reader;
     size_t maximum_name_granule_size;
 };
+#endif
 
 namespace
 {
 
+#if defined(__ELF__)
 ZstdDCtxPtr createDecompressionContext()
 {
     ZstdDCtxPtr context(ZSTD_createDCtx());
@@ -203,7 +209,14 @@ CompactNameWorkspace & compactNameWorkspace()
     return workspace;
 }
 
-#if defined(__ELF__)
+CompactNameWorkspace & preparedCompactNameWorkspace(size_t maximum_granule_size)
+{
+    /// Account the thread-lifetime workspace globally, not to the query that first needs symbolization.
+    MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+    CompactNameWorkspace & workspace = compactNameWorkspace();
+    workspace.prepare(maximum_granule_size);
+    return workspace;
+}
 
 /// Notes: "PHDR" is "Program Headers".
 /// To look at program headers, run:
@@ -478,6 +491,7 @@ bool searchAndCollectCompactSymbols(const Elf & elf, SymbolIndex::Data & data)
             symbol.offset_end = reinterpret_cast<const void *>(address.address + address.size);
             symbol.setCompactName(source_index, address.name_index);
             data.symbols.push_back(symbol);
+            data.has_compact_symbols = true;
         }
     }
     catch (const std::runtime_error &)
@@ -855,8 +869,10 @@ void SymbolIndex::load()
         collectSymbolsFromMachOImage(i, data.symbols, data.objects, data.self_build_id);
 #endif
 
+#if defined(__ELF__)
     for (const auto & table : data.compact_symbol_tables)
         maximum_name_granule_size = std::max(maximum_name_granule_size, table->maximum_name_granule_size);
+#endif
 
     ::sort(data.objects.begin(), data.objects.end(), [](const Object & a, const Object & b) { return a.address_begin < b.address_begin; });
     ::sort(data.symbols.begin(), data.symbols.end(), [](const Symbol & a, const Symbol & b) { return a.offset_begin < b.offset_begin; });
@@ -867,11 +883,7 @@ void SymbolIndex::load()
         return a.offset_begin == b.offset_begin && a.offset_end == b.offset_end;
     }), data.symbols.end());
 
-    bool has_compact_symbols = std::any_of(data.symbols.begin(), data.symbols.end(), [](const Symbol & symbol)
-    {
-        return symbol.hasCompactName();
-    });
-    if (has_compact_symbols)
+    if (data.has_compact_symbols)
     {
         if (data.symbols.size() > std::numeric_limits<uint32_t>::max())
             throw std::runtime_error("Too many symbols for SymbolIndex scan order");
@@ -928,21 +940,46 @@ const SymbolIndex::Symbol * SymbolIndex::findSymbol(const void * address) const
 
 std::string_view SymbolIndex::getSymbolName(const Symbol & symbol) const
 {
+    size_t name_size = 0;
+    const char * name = getSymbolNameImpl(symbol, &name_size);
+    return std::string_view(name, name_size);
+}
+
+const char * SymbolIndex::getSymbolNameCString(const Symbol & symbol) const
+{
+    return getSymbolNameImpl(symbol, nullptr);
+}
+
+const char * SymbolIndex::getSymbolNameImpl(const Symbol & symbol, size_t * name_size) const
+{
     if (!symbol.hasCompactName())
     {
         const char * direct_name = symbol.directName();
-        return direct_name ? std::string_view(direct_name) : std::string_view("");
+        if (!direct_name)
+        {
+            if (name_size)
+                *name_size = 0;
+            return "";
+        }
+
+        if (name_size)
+            *name_size = std::strlen(direct_name);
+        return direct_name;
     }
 
+#if defined(__ELF__)
     uint32_t source_index = symbol.compactSourceIndex();
     uint32_t name_index = symbol.compactNameIndex();
     if (source_index >= data.compact_symbol_tables.size())
-        return std::string_view("");
+    {
+        if (name_size)
+            *name_size = 0;
+        return "";
+    }
 
     uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
     uint32_t entry_index = name_index % CompactSymbols::names_per_granule;
-    CompactNameWorkspace & workspace = compactNameWorkspace();
-    workspace.prepare(maximum_name_granule_size);
+    CompactNameWorkspace & workspace = preparedCompactNameWorkspace(maximum_name_granule_size);
     if (source_index != workspace.source_index)
     {
         workspace.invalidate();
@@ -951,7 +988,7 @@ std::string_view SymbolIndex::getSymbolName(const Symbol & symbol) const
 
     try
     {
-        return decodeCompactName(
+        std::string_view name = decodeCompactName(
             data.compact_symbol_tables[source_index]->reader,
             granule_index,
             entry_index,
@@ -961,29 +998,45 @@ std::string_view SymbolIndex::getSymbolName(const Symbol & symbol) const
             workspace.name_buffer,
             workspace.granule_index,
             workspace.entry_index);
+        if (name_size)
+            *name_size = name.size();
+        return name.data();
     }
     catch (const std::runtime_error &)
     {
         workspace.invalidate();
-        return std::string_view("");
+        if (name_size)
+            *name_size = 0;
+        return "";
     }
+#else
+    if (name_size)
+        *name_size = 0;
+    return "";
+#endif
 }
 
 void SymbolIndex::warmUp() const
 {
+#if defined(__ELF__)
     if (maximum_name_granule_size != 0)
-        compactNameWorkspace().prepare(maximum_name_granule_size);
+        preparedCompactNameWorkspace(maximum_name_granule_size);
+#endif
 }
 
 SymbolIndex::SymbolIterator::SymbolIterator(const SymbolIndex & index_)
     : index(index_)
 {
+#if defined(__ELF__)
     if (index.maximum_name_granule_size != 0)
     {
+        /// Account iterator-owned symbolization workspace globally instead of charging the current query.
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
         decompression_context = createDecompressionContext();
         granule_buffer.resize(index.maximum_name_granule_size);
         name_buffer.reserve(index.maximum_name_granule_size);
     }
+#endif
 }
 
 bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view & name)
@@ -1002,6 +1055,7 @@ bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view 
         return true;
     }
 
+#if defined(__ELF__)
     uint32_t source_index = symbol->compactSourceIndex();
     uint32_t name_index = symbol->compactNameIndex();
     uint32_t granule_index = name_index / CompactSymbols::names_per_granule;
@@ -1042,6 +1096,9 @@ bool SymbolIndex::SymbolIterator::next(const Symbol *& symbol, std::string_view 
         name_buffer.clear();
         name = std::string_view("");
     }
+#else
+    name = std::string_view("");
+#endif
     return true;
 }
 

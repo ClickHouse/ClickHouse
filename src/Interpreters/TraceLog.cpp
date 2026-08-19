@@ -274,13 +274,16 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         {
             if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
             {
-                std::string_view symbol_name = symbol_index.getSymbolName(*symbol);
-                /// The `getSymbolName` view is NUL-terminated by contract.
-                DemangleResult demangled = !symbol_name.empty() ? tryDemangle(symbol_name.data()) : DemangleResult{}; /// NOLINT(bugprone-suspicious-stringview-data-usage)
-                if (!symbol_name.empty() && demangled)
+                const char * symbol_name = symbol_index.getSymbolNameCString(*symbol);
+                DemangleResult demangled = *symbol_name ? tryDemangle(symbol_name) : DemangleResult{};
+                if (*symbol_name && demangled)
                     column_symbols_inner.insertData(demangled.get(), strlen(demangled.get()));
-                else if (!symbol_name.empty())
-                    column_symbols_inner.insertData(symbol_name.data(), symbol_name.size());
+                else if (*symbol_name)
+                {
+                    /// The cached entry supplies its length without decoding the compact granule again.
+                    std::string_view symbol_name_view = symbol_index.getSymbolName(*symbol);
+                    column_symbols_inner.insertData(symbol_name_view.data(), symbol_name_view.size());
+                }
                 else
                     column_symbols_inner.insertDefault();
 

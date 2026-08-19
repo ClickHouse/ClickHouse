@@ -445,10 +445,9 @@ void InstrumentationManager::parseInstrumentationMap()
         const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(addr));
         if (symbol)
         {
-            if (std::string_view symbol_name = symbol_index.getSymbolName(*symbol); !symbol_name.empty())
+            if (const char * symbol_name = symbol_index.getSymbolNameCString(*symbol); *symbol_name)
             {
-                /// The `getSymbolName` view is NUL-terminated by contract.
-                const auto symbol_demangled = demangle(symbol_name.data()); /// NOLINT(bugprone-suspicious-stringview-data-usage)
+                const auto symbol_demangled = demangle(symbol_name);
                 functions_container.emplace(func_id, symbol_demangled);
             }
             else
