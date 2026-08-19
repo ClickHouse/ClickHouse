@@ -131,7 +131,8 @@ ProjectionsDescription ProjectionsDescription::clone() const
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name
+        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
 }
 
 namespace
@@ -329,11 +330,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
+            allow_private_preview,
             allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
@@ -380,6 +383,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// works correctly even in DatabaseReplicated mode (where query_kind == SECONDARY_QUERY).
     auto mut_context = Context::createCopy(query_context);
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
+    /// Projection required-columns must always expand ALIAS columns, regardless of session settings.
+    mut_context->setSetting("optimize_respect_aliases", true);
     mut_context->setQueryKindInitial();
 
     bool is_aggregate = false;
@@ -805,7 +810,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(
