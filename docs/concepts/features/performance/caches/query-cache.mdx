@@ -246,7 +246,7 @@ be marked accessible by other users (i.e. shared) by supplying setting
 ## Query cache on disk {#query-cache-on-disk}
 
 By default, the query cache keeps its entries in memory. Additionally, query results can be cached on disk, backed by a
-[filesystem cache](/reference/settings/server-settings/filesystem-caches). Compared to the in-memory query cache, the query cache on
+[filesystem cache](/concepts/features/configuration/server-config/storing-data#using-local-cache). Compared to the in-memory query cache, the query cache on
 disk provides more space, survives server restarts, and (when the filesystem cache is distributed) can be shared between servers.
 
 To use the query cache on disk, first configure a filesystem cache in the `filesystem_caches` section of the server configuration:
@@ -260,7 +260,7 @@ To use the query cache on disk, first configure a filesystem cache in the `files
 </filesystem_caches>
 ```
 
-then specify its name in setting [query_cache_on_disk_cache_name](/reference/settings/session-settings/query-cache#query_cache_on_disk_cache_name):
+then specify its name in setting `query_cache_on_disk_cache_name`:
 
 ```sql
 SELECT some_expensive_calculation(column_1, column_2)
@@ -269,11 +269,10 @@ SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results
 ```
 
 The query cache on disk works independently of the in-memory query cache and can separately be enabled for reads and/or writes using
-settings [enable_reads_from_query_cache_on_disk](/reference/settings/session-settings/enable#enable_reads_from_query_cache_on_disk) and
-[enable_writes_to_query_cache_on_disk](/reference/settings/session-settings/enable#enable_writes_to_query_cache_on_disk) (both `true`
+settings `enable_reads_from_query_cache_on_disk` and `enable_writes_to_query_cache_on_disk` (both `true`
 by default). If reads are enabled for both caches, the lookup is attempted first from memory and only on a miss from disk. If writes
 are enabled for both caches, the result is stored in both. Entries on disk are compressed with the codec specified by setting
-[query_cache_on_disk_codec](/reference/settings/session-settings/query-cache#query_cache_on_disk_codec) (`ZSTD(3)` by default). All
+`query_cache_on_disk_codec` (`ZSTD(3)` by default). All
 other query cache settings (e.g. `query_cache_ttl`, `query_cache_min_query_duration`, `query_cache_share_between_users`) apply to the
 query cache on disk in the same way as to the in-memory query cache.
 

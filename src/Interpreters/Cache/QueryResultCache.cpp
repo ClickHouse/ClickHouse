@@ -1055,8 +1055,8 @@ QueryResultCacheWriter QueryResultCache::createWriter(
     if (key.user_id.has_value())
         cache.setQuotaForUser(*key.user_id, max_query_result_cache_size_in_bytes_quota, max_query_result_cache_entries_quota);
 
-    size_t max_entry_size_in_bytes_copy;
-    size_t max_entry_size_in_rows_copy;
+    size_t max_entry_size_in_bytes_copy = 0;
+    size_t max_entry_size_in_rows_copy = 0;
     {
         /// Don't construct the writer under the mutex: the writer ctor may probe the on-disk cache (i.e. do disk IO).
         std::lock_guard lock(mutex);

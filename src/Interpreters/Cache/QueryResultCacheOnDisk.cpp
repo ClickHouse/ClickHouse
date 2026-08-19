@@ -314,7 +314,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
             {
                 LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because space reservation failed: {}, query: {}",
                     failure_reason, doubleQuoteString(key.query_string));
-                holder.reset();
+                holder = nullptr;
                 file_cache->removeKeyIfExists(cache_key, origin.user_id);
                 return;
             }
@@ -333,7 +333,7 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
     catch (...)
     {
         tryLogCurrentException(logger, "Failed to write a query result into the on-disk query result cache");
-        holder.reset();
+        holder = nullptr;
         file_cache->removeKeyIfExists(cache_key, origin.user_id);
     }
 }
@@ -359,7 +359,7 @@ QueryResultCacheReader QueryResultCacheOnDisk::createReader(const QueryResultCac
             auto in = createReadBufferFromSegments(*header_holder, FIXED_HEADER_SIZE);
             fixed_header = parseFixedHeader(*in);
         }
-        header_holder.reset();
+        header_holder = nullptr;
 
         if (!fixed_header)
         {
