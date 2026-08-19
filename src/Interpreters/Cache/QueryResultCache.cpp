@@ -638,11 +638,6 @@ QueryResultCacheWriter::QueryResultCacheWriter(
 
     if (!on_disk_cache)
         skip_disk_insert = true;
-    else if (on_disk_cache->containsFreshEntry(key))
-    {
-        skip_disk_insert = true; /// Same for the on-disk cache. The check is repeated in QueryResultCacheOnDisk::write.
-        LOG_TRACE(logger, "Skipped insert because the on-disk cache contains a non-stale query result for query {}", doubleQuoteString(key.query_string));
-    }
 
     if (skip_memory_insert && skip_disk_insert)
         skip_insert = true; /// don't even buffer the query result
@@ -801,6 +796,15 @@ void QueryResultCacheWriter::finalizeWrite()
 
     if (!skip_disk_insert)
     {
+        /// The on-disk cache serializes chunks in Native format, which requires the generic (full, non-const) column
+        /// representation. Materialize it before checking the limit, otherwise a small ColumnConst can expand to an
+        /// oversized serialized entry after the check.
+        for (auto & chunk : query_result->chunks)
+        {
+            removeSpecialColumnRepresentations(chunk);
+            convertToFullIfConst(chunk);
+        }
+
         /// The maximum entry size applies to both backends, so it must be checked before writing on disk. The in-memory backend
         /// checks it again further below, after the columnar compression which may bring an entry back under the limit.
         /// A limit of 0 means no limit here: `clickhouse-local` disables the in-memory query result cache that way (it calls
@@ -817,14 +821,6 @@ void QueryResultCacheWriter::finalizeWrite()
         }
         else
         {
-            /// The on-disk cache serializes the chunks in Native format, which requires the generic (full, non-const) column
-            /// representation. Note: this must happen before the columnar in-memory compression below.
-            for (auto & chunk : query_result->chunks)
-            {
-                removeSpecialColumnRepresentations(chunk);
-                convertToFullIfConst(chunk);
-            }
-
             on_disk_cache->write(key, *query_result); /// best-effort, logs instead of throwing
         }
     }

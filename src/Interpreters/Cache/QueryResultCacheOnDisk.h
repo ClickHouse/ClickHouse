@@ -42,9 +42,6 @@ public:
     /// was partially evicted, or is not accessible to the user in the key.
     QueryResultCacheReader createReader(const QueryResultCache::Key & key) const;
 
-    /// Returns true if the cache contains a non-stale entry for the key (a cheap probe which reads only the entry's fixed header).
-    bool containsFreshEntry(const QueryResultCache::Key & key) const;
-
     /// Store the query result. Best-effort: an entry which cannot be written (no space, a concurrent writer, a fresh entry already
     /// exists) is skipped and the reason is logged, no exception is thrown.
     void write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry) const;
@@ -66,7 +63,7 @@ private:
     enum class ProbeResult
     {
         None, /// no (readable) entry for the key
-        Fresh, /// a non-stale entry exists
+        Fresh, /// a non-stale, fully downloaded entry exists
         StaleOrUnreadable /// an entry exists but it is stale, corrupt or was written by an incompatible version
     };
 

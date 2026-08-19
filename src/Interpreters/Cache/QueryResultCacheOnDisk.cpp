@@ -211,6 +211,13 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
         auto header = parseFixedHeader(*in);
         if (!header || header->isStale())
             return ProbeResult::StaleOrUnreadable;
+
+        /// An entry can lose a segment after its header was read. Do not let such an entry prevent its replacement:
+        /// `tryCreateReader` would treat it as a miss once it requests all `total_size` bytes.
+        holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, header->total_size, user_id);
+        if (holder->empty())
+            return ProbeResult::StaleOrUnreadable;
+
         return ProbeResult::Fresh;
     }
     catch (...)
@@ -218,12 +225,6 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
         tryLogCurrentException(logger, "Failed to read an entry header from the on-disk query result cache");
         return ProbeResult::StaleOrUnreadable;
     }
-}
-
-bool QueryResultCacheOnDisk::containsFreshEntry(const QueryResultCache::Key & key) const
-{
-    /// Probe the key which `write` would use, i.e. an entry of another user does not count.
-    return probeExistingEntry(makeFileCacheKey(key, key.is_shared)) == ProbeResult::Fresh;
 }
 
 void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry) const
