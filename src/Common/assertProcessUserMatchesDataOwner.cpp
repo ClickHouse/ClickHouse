@@ -25,7 +25,7 @@ namespace
         if (buffer_size <= 0)
             buffer_size = 1024;
         std::string buffer;
-        buffer.reserve(buffer_size);
+        buffer.resize(buffer_size);
 
         struct passwd passwd_entry{};
         struct passwd * result = nullptr;
@@ -33,7 +33,7 @@ namespace
 
         /// Fall back to the numeric id when there is no name for it. Note that when the user databases
         /// are missing entirely (e.g. no /etc/passwd in a container built "from scratch"), glibc reports
-        /// it by a null result, while musl returns an error.
+        /// it by a null result, while musl may return an error.
         if (error)
         {
             if (error == ENOENT || error == ESRCH)
