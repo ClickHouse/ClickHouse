@@ -961,12 +961,12 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     return std::chrono::seconds{lock_timeout};
 }
 
-size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr)
+size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
 {
     if (!use_marks_file)
         return 1;
 
-    const auto lock_timeout = getLockTimeout(getContext());
+    const auto lock_timeout = getLockTimeout(local_context);
     loadMarks(lock_timeout);
 
     ReadLock lock{rwlock, lock_timeout};
