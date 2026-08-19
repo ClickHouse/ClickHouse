@@ -23,6 +23,11 @@ from ci.praktika.utils import Shell, Utils
 repo_dir = Utils.cwd()
 temp_path = f"{repo_dir}/ci/tmp"
 
+# Must equal helpers/cluster.py's RABBITMQ_RECREATE_TOKEN, which emits it. Copied
+# rather than imported so this script does not depend on the test helpers' imports;
+# test_cluster_waiters/test_rabbitmq_start_retry.py asserts the two stay equal.
+RABBITMQ_RECREATE_TOKEN = "RABBITMQ_RECREATE"
+
 
 MAX_FAILS_BEFORE_DROP = 5
 # Flaky-check best-effort scope cap: the maximum number of changed test modules a single
@@ -101,6 +106,80 @@ def _mark_infrastructure_errors(results: list) -> int:
     return count
 
 
+def clear_rabbitmq_recreation_scan_inputs() -> None:
+    """Delete everything `report_rabbitmq_recreations` scans, before the first batch.
+
+    The reporter scans every line and the log handlers append, so anything left in
+    `temp_path` by an earlier job counts as an event of this one. Best effort: a job
+    must never fail because a stale file could not be removed.
+    """
+    try:
+        stale_files = sorted(Path(temp_path).glob("pytest_*.log")) + sorted(
+            Path(temp_path).glob("rabbit-*.log")
+        )
+    except OSError as ex:
+        print(f"WARNING: cannot list {temp_path} before RabbitMQ retry scan: {ex}")
+        return
+    for stale in stale_files:
+        try:
+            os.remove(stale)
+        except OSError as ex:
+            print(f"WARNING: cannot remove {stale} before RabbitMQ retry scan: {ex}")
+
+
+def report_rabbitmq_recreations(result: Result) -> int:
+    """Publish RabbitMQ container recreations, and the broker logs the waiter preserved.
+
+    Must be called once per job, after every batch: the per-worker log handlers append
+    and a sequential batch reuses one log file across repeats, so scanning per batch
+    would report a multiple of the real count.
+    """
+    snapshots = []
+    count = 0
+    for log_file in sorted(Path(temp_path).glob("pytest_*.log")):
+        # Streamed: these are the full per-worker integration logs, tens of MB each.
+        # A file contributes only once read to the end, so a partial read is no count.
+        file_count = 0
+        file_snapshots = []
+        try:
+            with log_file.open(encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    if RABBITMQ_RECREATE_TOKEN not in line:
+                        continue
+                    file_count += 1
+                    # The field is a bare file name in `temp_path`: the whitespace-
+                    # delimited parse below cannot carry a directory, which may contain
+                    # spaces.
+                    match = re.search(r"snapshot=(\S+)", line)
+                    if not match or os.path.basename(match.group(1)) != match.group(1):
+                        continue
+                    snapshot = os.path.join(temp_path, match.group(1))
+                    if os.path.isfile(snapshot):
+                        file_snapshots.append(snapshot)
+        except OSError as ex:
+            print(f"WARNING: cannot read {log_file} for RabbitMQ retry scan: {ex}")
+            continue
+        count += file_count
+        snapshots.extend(file_snapshots)
+    if not count:
+        return 0
+    # Only `info` and `files` are touched; status and labels stay as the results left them.
+    # `complete_job` appends `Failures: N/M` only while `info` is empty and runs after
+    # this, so emit it here on exactly the runs that would otherwise have received it.
+    if not result.info:
+        fail_cnt = sum(1 for r in result.results if not r.is_ok())
+        result.set_info(f"Failures: {fail_cnt}/{len(result.results)}")
+    result.set_info(
+        f"RabbitMQ container recreation was attempted {count} time(s)"
+        " after failing to start"
+    )
+    for snapshot in snapshots:
+        if snapshot not in result.files:
+            result.files.append(snapshot)
+    print(f"NOTE: RabbitMQ container recreations observed: {count}")
+    return count
+
+
 def quote_tests(tests: List[str]) -> str:
     """Join test node IDs into a shell-safe, space-separated string.
 
@@ -149,6 +228,7 @@ _WITH_FLAG_TO_COMPOSE: dict[str, List[str]] = {
         "docker_compose_iceberg_hms_catalog.yml",
         "docker_compose_iceberg_lakekeeper_catalog.yml",
         "docker_compose_iceberg_nessie_catalog.yml",
+        "docker_compose_iceberg_seaweedfs_catalog.yml",
     ],
     "hms_catalog": ["docker_compose_iceberg_hms_catalog.yml"],
     "glue_catalog": ["docker_compose_glue_catalog.yml"],
@@ -738,7 +818,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                     break
             else:
                 raise FileNotFoundError(
-                    "Clickhouse binary not found in any of the paths: "
+                    "ClickHouse binary not found in any of the paths: "
                     + ", ".join(paths_to_check)
                     + ". You can also specify path to binary via --path argument"
                 )
@@ -746,7 +826,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             clickhouse_server_config_dir = args.path_1
     assert Path(
         clickhouse_server_config_dir
-    ), f"Clickhouse config dir does not exist [{clickhouse_server_config_dir}]"
+    ), f"ClickHouse config dir does not exist [{clickhouse_server_config_dir}]"
     print(f"Using ClickHouse binary at [{clickhouse_path}]")
 
     changed_test_modules = []
@@ -900,6 +980,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         and not is_flaky_check
         and not is_targeted_check
         and not is_bugfix_validation
+        and not is_llvm_coverage
         and not args.test
     ):
         changed_files = info.get_changed_files()
@@ -1001,7 +1082,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             f"NOTE: This is LLVM coverage run, setting LLVM_PROFILE_FILE to [{test_env['LLVM_PROFILE_FILE']}]"
         )
         # Auto-detect available LLVM profdata tool
-        for ver in ["21", "20", "18", "19", "17", "16", ""]:
+        for ver in ["22", "21", "20", "18", "19", "17", "16", ""]:
             cmd = f"llvm-profdata{'-' + ver if ver else ''}"
             if Shell.check(f"command -v {cmd}", verbose=False):
                 llvm_profdata_cmd = cmd
@@ -1067,6 +1148,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
             Utils.clear_dmesg()
         except Exception as ex:
             print(f"Failed to clear dmesg before integration tests: {ex}")
+
+    clear_rabbitmq_recreation_scan_inputs()
 
     if is_flaky_check or is_targeted_check:
         # Each xdist worker runs all modules independently with its own isolated Docker cluster.
@@ -1476,7 +1559,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     force_ok_exit = False
     if R:
         failures_cnt = len([r for r in R.results if not r.is_ok()])
-        if failures_cnt > 0 and failures_cnt < 4:
+        if failures_cnt > 0 and failures_cnt < 2:
             print(
                 f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
             )
@@ -1516,6 +1599,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
         force_ok_exit = True
         print("NOTE: LLVM coverage job - do not block pipeline - exit with 0")
+
+    report_rabbitmq_recreations(R)
 
     R.sort().complete_job(do_not_block_pipeline_on_failure=force_ok_exit)
 

@@ -24,10 +24,13 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [DROP SETTINGS variable [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
     [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [SET variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
 ```
 
 `ALTER USER` を使用するには、[ALTER USER](/ja/reference/statements/grant#access-management) 権限を持っている必要があります。
+
+`SET variable = value` は `MODIFY SETTING variable = value` の別名です。これは 1 つの設定だけをその場で変更し、ほかの設定はそのまま維持します。設定リスト全体を置き換え、さらにすべての継承元 (親) プロファイルも削除してしまう、裸の `SETTINGS` 句よりも、こちら (または `MODIFY SETTING`) を優先してください。
 
 <div id="grantees-clause">
   ## GRANTEES 句

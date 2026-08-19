@@ -2,22 +2,22 @@
 slug: /sql-reference/statements/create/dictionary/sources/yamlregexptree
 title: 'YAMLRegExpTree Dictionary ソース'
 sidebarTitle: 'YAMLRegExpTree'
-description: '正規表現ツリー辞書のソースとして YAML ファイルを設定します。'
+description: '正規表現ツリーDictionaryのソースとして YAML ファイルを設定します。'
 doc_type: 'reference'
 ---
 
-import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
 `YAMLRegExpTree` ソースは、ローカルファイルシステム上の YAML ファイルから正規表現ツリーを読み込みます。
-これは [`regexp_tree`](/ja/reference/statements/create/dictionary/layouts/regexp-tree) 辞書レイアウト専用に設計されており、
+これは [`regexp_tree`](/ja/reference/statements/create/dictionary/layouts/regexp-tree) Dictionaryレイアウト専用に設計されており、
 ユーザーエージェントのパースなど、パターンベースのルックアップ向けに、正規表現から属性への階層的なマッピングを提供します。
 
 <Note>
   `YAMLRegExpTree` ソースは ClickHouse Open Source でのみ利用できます。
-  ClickHouse Cloud では、代わりに辞書を CSV にエクスポートし、[ClickHouse table source](/ja/reference/statements/create/dictionary/sources/clickhouse) を使用して読み込んでください。
-  詳細は [Using regexp&#95;tree Dictionaries in ClickHouse Cloud](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) を参照してください。
+  ClickHouse Cloud では、代わりにDictionaryを CSV にエクスポートし、[ClickHouse table source](/ja/reference/statements/create/dictionary/sources/clickhouse) を使用して読み込んでください。
+  詳細は [Using regexp&#95;tree dictionaries in ClickHouse Cloud](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) を参照してください。
 </Note>
 
 <div id="configuration">

@@ -36,14 +36,43 @@
 #include <Common/BlobStorageLogWriter.h>
 
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SelfContained.h>
 #include <Common/SystemLogBase.h>
 #include <Common/ThreadPool.h>
+#include <Core/Field.h>
+#include <Interpreters/ClientInfo.h>
+#include <Interpreters/StorageID.h>
+#include <Poco/Net/SocketAddress.h>
 
 #include <Common/logger_useful.h>
 
 
 namespace DB
 {
+
+/// Heap-owning value types used inside log elements that are self-contained (own their data, no shared
+/// ownership) but cannot be reflected by boost::pfr. Trusted wholesale by the self-containment gate below.
+///
+/// Field (and Array/Map/Tuple, which are containers of Field) is a known limitation of the gate: its
+/// CustomType alternative is backed by a std::shared_ptr<const CustomTypeImpl>, so the type can carry
+/// shared ownership that the gate cannot see through and will still report as Ok. This is deliberate:
+/// the gate is a cheap compile-time tripwire, not a proof, and Field is pervasive in log elements. The
+/// elements that use these types (CrashLog, MetricLog, ZooKeeperConnectionLog) only ever store scalar
+/// and string values, never a CustomType; the runtime memory-tracking sanitizer covers what the gate
+/// cannot. Do not store a Field that may hold a CustomType in a log element.
+template <> struct SelfContainedLeaf<Field> : std::true_type {};
+template <> struct SelfContainedLeaf<Array> : std::true_type {};
+template <> struct SelfContainedLeaf<Map> : std::true_type {};
+template <> struct SelfContainedLeaf<Tuple> : std::true_type {};
+template <> struct SelfContainedLeaf<ProfileEvents::Counters::Snapshot> : std::true_type {};
+template <> struct SelfContainedLeaf<StorageID> : std::true_type {};
+template <> struct SelfContainedLeaf<Poco::Net::SocketAddress> : std::true_type {};
+template <> struct SelfContainedLeaf<OpenTelemetry::SpanAttribute> : std::true_type {};
+/// Manually audited: after its SocketAddress members became values, ClientInfo holds no shared/borrowed
+/// heap. It is not an aggregate (has a constructor), so it cannot be recursed - keep this audited if new
+/// members are added.
+template <> struct SelfContainedLeaf<ClientInfo> : std::true_type {};
 
 namespace ErrorCodes
 {
@@ -78,12 +107,9 @@ void SystemLogQueue<LogElement>::push(LogElement && element)
     recursive_push_call = true;
     SCOPE_EXIT({ recursive_push_call = false; });
 
-
-    /// Queue resize can allocate memory
-    /// - MemoryTrackerUntrackedAllocationsBlockerInThread here due to the allocation can hit the limit for MemoryAllocatedWithoutCheck, let's suppress it.
-    /// - MemoryTrackerBlockerInThread here because this allocation should not be take into account in the query scope (since it will be freed outside of it)
-    [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
-    MemoryTrackerBlockerInThread temporarily_disable_memory_tracker;
+    /// The element is built and this method is called from SystemLogBase::add() while a
+    /// MemoryTrackerBlockerInThread / MemoryTrackerUntrackedAllocationsBlockerInThread are held, so the
+    /// element and the queue growth below are already excluded from the query/user memory accounting.
 
     /// Should not log messages under mutex.
     bool buffer_size_rows_flush_threshold_exceeded = false;
@@ -329,13 +355,9 @@ void SystemLogBase<LogElement>::stopFlushThread()
     saving_thread->join();
 }
 
-template <typename LogElement>
-void SystemLogBase<LogElement>::add(LogElement element)
-{
-    queue->push(std::move(element));
-}
-
-#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) template class SystemLogBase<ELEMENT>;
+#define INSTANTIATE_SYSTEM_LOG_BASE(ELEMENT) \
+    ASSERT_SELF_CONTAINED_LOG_ELEMENT(ELEMENT); \
+    template class SystemLogBase<ELEMENT>;
 SYSTEM_LOG_ELEMENTS(INSTANTIATE_SYSTEM_LOG_BASE)
 #if CLICKHOUSE_CLOUD
     SYSTEM_LOG_ELEMENTS_CLOUD(INSTANTIATE_SYSTEM_LOG_BASE)

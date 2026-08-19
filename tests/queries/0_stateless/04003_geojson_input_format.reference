@@ -9,7 +9,8 @@ id	Nullable(String)
 geometry	Geometry					
 properties	Nullable(JSON)					
 1
-1
+MultiPoint
+0
 1
 1
 1

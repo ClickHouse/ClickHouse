@@ -27,7 +27,7 @@ workflow = Workflow.Config(
         *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,
         *JobConfigs.build_llvm_coverage_job,
-        *JobConfigs.release_build_jobs,
+        *JobConfigs.release_build_jobs_with_examples,
         *JobConfigs.sccache_warmup_build_jobs,
         *[
             job.set_run_after(
@@ -64,11 +64,14 @@ workflow = Workflow.Config(
     artifacts=[
         *ArtifactConfigs.unittests_binaries,
         *clickhouse_binaries_with_tags,
+        *ArtifactConfigs.clickhouse_darwin_plain_binaries,
         *ArtifactConfigs.clickhouse_debians,
         *ArtifactConfigs.clickhouse_rpms,
         *ArtifactConfigs.clickhouse_tgzs,
+        ArtifactConfigs.clickhouse_wasm,
         ArtifactConfigs.fuzzers,
         ArtifactConfigs.fuzzers_corpus,
+        ArtifactConfigs.clickhouse_examples,
         *ArtifactConfigs.llvm_profdata_file,
         ArtifactConfigs.llvm_coverage_info_file,
     ],

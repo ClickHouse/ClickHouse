@@ -7,11 +7,8 @@ doc_type: 'reference'
 keywords: ['NLP', 'Natural Language Processing']
 ---
 
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
-import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 {/* 
 The inner content of the tags below are replaced at doc framework build time with 
@@ -24,12 +21,15 @@ See: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogene
 
 Introduced in: v22.2.0
 
-Detects the character set of a non-UTF8-encoded input string.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Detects the character set of a non-UTF8-encoded input string.
 
 **Syntax**
 
@@ -61,15 +61,18 @@ WINDOWS-1252
 
 Introduced in: v22.2.0
 
-Detects the language of the UTF8-encoded input string.
-The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
-
-The longer the input, the more precise the language detection will be.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Detects the language of the UTF8-encoded input string.
+The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
+
+The longer the input, the more precise the language detection will be.
 
 **Syntax**
 
@@ -101,12 +104,15 @@ fr
 
 Introduced in: v22.2.0
 
-Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 
 **Syntax**
 
@@ -138,13 +144,16 @@ SELECT detectLanguageMixed('二兎を追う者は一兎をも得ず二兎を追�
 
 Introduced in: v22.2.0
 
-Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
-Prefer this version when your character set is UTF-16 or UTF-32.
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
+Prefer this version when your character set is UTF-16 or UTF-32.
 
 **Syntax**
 
@@ -176,18 +185,17 @@ de
 
 Introduced in: v22.2.0
 
-Determines the sentiment of the provided text data.
-
-<Info>
-**Limitation**
-
-This function is limited in its current form in that it makes use of the embedded emotional dictionary and only works for the Russian language.
-</Info>
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Determines the sentiment of the provided text data.
+
+The function makes use of an embedded emotional dictionary and only works for the Russian language at the moment.
 
 **Syntax**
 
@@ -222,14 +230,17 @@ SELECT
 
 Introduced in: v21.9.0
 
-Performs lemmatization on a given word.
-This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
-For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/reference/statements/create/dictionary/sources/local-file).
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
 
 <Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
 </Warning>
+
+Performs lemmatization on a given word.
+This function needs dictionaries to operate, which can be obtained from [github](https://github.com/vpodpecan/lemmagen3/tree/master/src/lemmagen3/models).
+For more details on loading a dictionary from a local file see page ["Defining Dictionaries"](/reference/statements/create/dictionary/sources/local-file).
 
 **Syntax**
 
@@ -330,6 +341,14 @@ bless
 
 Introduced in: v21.9.0
 
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+<Warning>
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+</Warning>
+
 Finds synonyms of a given word.
 
 There are two types of synonym extensions:
@@ -341,11 +360,6 @@ Words in this line must be separated with space or tab characters.
 
 With the `wordnet` extension type you need to provide a path to a directory with the WordNet thesaurus in it.
 The thesaurus must contain a WordNet sense index.
-
-<Warning>
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-</Warning>
 
 **Syntax**
 

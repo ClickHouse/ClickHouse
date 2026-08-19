@@ -24,6 +24,7 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/Net/SocketAddress.h>
 
+#include <algorithm>
 #include <map>
 #include <mutex>
 #include <chrono>
@@ -237,6 +238,17 @@ public:
 
     const KeeperFeatureFlags * getKeeperFeatureFlags() const override { return &keeper_feature_flags; }
 
+    /// Effective enforced max request size: min of client config and server limit, clamped to the int32 hard limit; never 0.
+    UInt64 getMaxRequestSize() const
+    {
+        UInt64 limit = Coordination::MAX_REQUEST_SIZE_HARD_LIMIT;
+        if (args.max_request_size != 0)
+            limit = std::min(limit, args.max_request_size);
+        if (keeper_max_request_size != 0)
+            limit = std::min(limit, keeper_max_request_size);
+        return limit;
+    }
+
     int64_t getLastZXIDSeen() const override { return last_zxid_seen.load(std::memory_order_relaxed); }
 
     Int64 getLastReceivedTimestamp() const override
@@ -379,6 +391,12 @@ private:
     std::optional<String> tryGetSystemZnode(const std::string & path, const std::string & description);
 
     void initFeatureFlags();
+    void initMaxRequestSize();
+
+    /// Whether a serialized request of this size fits getMaxRequestSize.
+    bool checkRequestSize(size_t request_size) const { return request_size <= getMaxRequestSize(); }
+    /// Rejection details shared by the throw in `pushRequest` and the log in `sendThread`.
+    String formatRequestSizeExceeded(size_t request_size, const ZooKeeperRequest & request) const;
 
     CurrentMetrics::Increment active_session_metric_increment{CurrentMetrics::ZooKeeperSession};
     std::shared_ptr<ZooKeeperLog> zk_log;
@@ -393,6 +411,8 @@ private:
     std::atomic<Int64> last_received_timestamp_us{0};
 
     DB::KeeperFeatureFlags keeper_feature_flags;
+    /// Server-advertised max request size in bytes, resolved at connect; 0 == unlimited/unset.
+    UInt64 keeper_max_request_size = 0;
 };
 
 }

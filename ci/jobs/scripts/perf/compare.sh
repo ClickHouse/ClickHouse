@@ -600,14 +600,21 @@ function get_profiles
     # smaller.
     local query_log_columns="type, event_time, query_id, query_duration_ms, memory_usage, read_rows, read_bytes, written_rows, written_bytes, result_rows, result_bytes, query, exception_code, exception, ProfileEvents, Settings"
 
+    # The only consumer of the trace_log dump is the 'stacks' table below, which
+    # reads exactly these four columns. The dropped ones include the per-frame
+    # 'symbols' and 'lines' arrays - by far the largest fields, and unused because
+    # symbols are resolved through *-addresses.tsv instead. A full dump reaches
+    # tens of GBs and can exhaust the runner disk.
+    local trace_log_columns="query_id, trace, trace_type, size"
+
     clickhouse-client --port $LEFT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
+    clickhouse-client --port $LEFT_SERVER_PORT --query "select $trace_log_columns from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
     clickhouse-client --port $LEFT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > left-async-metric-log.tsv ||: &
 
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select $query_log_columns from system.query_log where type in ('QueryFinish', 'ExceptionWhileProcessing') format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
+    clickhouse-client --port $RIGHT_SERVER_PORT --query "select $trace_log_columns from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
     clickhouse-client --port $RIGHT_SERVER_PORT --query "select * from system.asynchronous_metric_log format TSVWithNamesAndTypes" > right-async-metric-log.tsv ||: &
@@ -1655,19 +1662,6 @@ create view addresses_src as
 create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
-create table unstable_run_traces engine File(TSVWithNamesAndTypes,
-        'unstable-run-traces.$version.rep') as
-    select
-        test, query_index, query_id,
-        count() value,
-        joinGet(addresses_join_$version, 'name', arrayJoin(trace))
-            || '(' || toString(trace_type) || ')' metric
-    from trace_log
-    join unstable_query_runs using query_id
-    group by test, query_index, query_id, metric
-    order by count() desc
-    ;
-
 create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
     select
         -- first goes the key used to split the file with grep
@@ -1852,12 +1846,23 @@ unset IFS
 function upload_results
 {
     # Prepare info for the CI checks table.
-    rm -f ci-checks.tsv
+    # Write to a sibling temporary path and publish by rename below, so the final
+    # path is only ever absent or complete. This is the last thing the job does
+    # and its failure is swallowed by the `||:` on the call, so a torn file left
+    # at the final path would be imported as if complete whenever the cut lands
+    # on a line boundary. A same-directory rename allocates no data blocks.
+    # The rename is chained with `&&` on purpose: `||:` on the call suppresses
+    # errexit for this whole function, so a separate `mv` statement would run
+    # after a failed write and publish the torn file.
+    # The anchors below delimit the region ci/tests/test_perf_upload_results_atomic.py
+    # extracts and runs under bash, so that contract is tested rather than assumed.
+    # --- publish ci-checks.tsv atomically ---
+    rm -f ci-checks.tsv ci-checks.tsv.tmp
 
     clickhouse-local --query "
 create view queries as select * from file('report/queries.tsv', TSVWithNamesAndTypes);
 
-create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
+create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv.tmp')
     as select
         $PR_TO_TEST :: UInt32 AS pull_request_number,
         '$SHA_TO_TEST' :: LowCardinality(String) AS commit_sha,
@@ -1903,7 +1908,9 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
+    " $CHPC_REPORT_LOCAL_QUERY_SETTINGS -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
+        && mv ci-checks.tsv.tmp ci-checks.tsv
+    # --- end publish ci-checks.tsv ---
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
