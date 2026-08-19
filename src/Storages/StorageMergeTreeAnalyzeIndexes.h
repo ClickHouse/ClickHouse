@@ -40,11 +40,11 @@ private:
 
     StoragePtr source_table;
     StorageMetadataHandle source_metadata_snapshot;
-    MergeTreeData::DataPartsVector data_parts;
-    /// Parallel to data_parts when projection_name is set; data_parts then keeps the parent
-    /// parts (their names identify the projection parts in the result), and parents without
-    /// a usable projection part are dropped so that the initiator analyzes them itself.
-    MergeTreeData::DataPartsVector projection_parts;
+    /// The parts to analyze, with their full ranges. For a projection each entry holds the
+    /// projection part with its parent (whose name identifies the part in the result), and
+    /// parents without a usable projection part are dropped so that the initiator analyzes
+    /// them itself.
+    RangesInDataParts analysis_parts;
     String projection_name;
     MergeTreeSettingsPtr table_settings;
     ASTPtr predicate;
