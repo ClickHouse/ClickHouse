@@ -68,7 +68,7 @@ SELECT extract(engine_full, 'max_tables\\s*=\\s*(\\d+)') FROM system.databases W
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t8 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
 
 -- A materialized view's hidden inner table consumes a slot of its own.
-ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 8;
+ALTER DATABASE {CLICKHOUSE_DATABASE_1:Identifier} MODIFY SETTING max_tables = 7;
 CREATE MATERIALIZED VIEW {CLICKHOUSE_DATABASE_1:Identifier}.mv ENGINE = MergeTree ORDER BY x AS SELECT x FROM {CLICKHOUSE_DATABASE_1:Identifier}.t1;
 SELECT count() FROM system.tables WHERE database = currentDatabase();
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t9 (x UInt32) ENGINE = MergeTree ORDER BY x; -- { serverError TOO_MANY_TABLES }
