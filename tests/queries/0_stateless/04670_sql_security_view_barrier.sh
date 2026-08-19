@@ -30,6 +30,11 @@ CREATE VIEW $db.policy_view
 DEFINER = CURRENT_USER SQL SECURITY DEFINER
 AS SELECT owner, secret FROM $db.secrets;
 
+-- A session `additional_table_filters` predicate is applied in the view's output namespace.
+CREATE VIEW $db.additional_filter_view
+DEFINER = CURRENT_USER SQL SECURITY DEFINER
+AS SELECT owner, secret FROM $db.secrets;
+
 -- The same view without a security context switch, as the optimization baseline.
 CREATE VIEW $db.projecting_view_invoker
 SQL SECURITY INVOKER
@@ -45,6 +50,7 @@ GRANT SELECT ON $db.filtering_view TO $user;
 GRANT SELECT ON $db.filtering_view_none TO $user;
 GRANT SELECT ON $db.projecting_view TO $user;
 GRANT SELECT ON $db.policy_view TO $user;
+GRANT SELECT ON $db.additional_filter_view TO $user;
 GRANT SELECT ON $db.invoker_view TO $user;
 GRANT SELECT ON $db.secrets TO $user;
 GRANT CREATE TEMPORARY TABLE ON *.* TO $user;
@@ -68,6 +74,17 @@ for view in filtering_view filtering_view_none policy_view; do
             "SELECT * FROM $db.$view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')" 2>&1 |
             grep -c -F "LEAKED"
     done
+done
+
+echo "===== an additional filter on a view is a security boundary ====="
+# The filter is attached to the view, rather than its base table, so both analyzers must retain
+# the view as a separate subplan and keep the outer expression above the additional filter.
+for settings in "--enable_analyzer 1" "--enable_analyzer 0" "--enable_analyzer 1 --analyzer_inline_views 1"; do
+    # shellcheck disable=SC2086
+    ${CLICKHOUSE_CLIENT} $settings --user "$user" --query \
+        "SELECT * FROM $db.additional_filter_view WHERE throwIf(secret = 'HIDDEN', 'LEAKED')
+         SETTINGS additional_table_filters = {'additional_filter_view': 'owner = currentUser()'}" 2>&1 |
+        grep -c -F "LEAKED"
 done
 
 echo "===== nor through the value in a cast error message ====="

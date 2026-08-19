@@ -5747,6 +5747,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    const bool has_additional_filter = StorageView::hasAdditionalTableFilter(
+        storage_id, table_node->getOriginalAlias(), scope.context);
 
     /// A view whose inner query runs as somebody else must not be inlined: inlining puts the
     /// invoker's expressions into the same query as the view's own filtering, and the analyzer is
@@ -5759,7 +5761,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// there is nothing below it for a merged predicate to observe.
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
     if (StorageView::isSecurityBarrier(*storage_snapshot->metadata, scope.context)
-        && (has_row_policy || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context)))
+        && (has_row_policy || has_additional_filter
+            || StorageView::canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context)))
         return;
 
     /// Build the query tree from the view's inner query AST.

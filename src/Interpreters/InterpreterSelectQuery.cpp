@@ -863,6 +863,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             && (options.only_analyze
                 || !StorageView::isSecurityBarrier(*metadata_snapshot, context)
                 || ((!row_policy_filter || row_policy_filter->isAlwaysTrue())
+                    && !query_info.additional_filter_ast
                     && !StorageView::canHideRows(metadata_snapshot->getSelectQuery().inner_query, view_context)));
 
         if (view)
@@ -2028,7 +2029,12 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, std::optional<P
             };
 
             if (additional_filter_info)
+            {
                 add_filter_step(additional_filter_info, "Additional filter");
+                if (typeid_cast<const StorageView *>(storage.get())
+                    && StorageView::isSecurityBarrier(*metadata_snapshot, context))
+                    query_plan.getRootNode()->step->setSecurityBarrier();
+            }
 
             if (parallel_replicas_custom_filter_info)
                 add_filter_step(parallel_replicas_custom_filter_info, "Parallel replica custom key filter");

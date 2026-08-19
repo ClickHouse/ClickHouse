@@ -74,6 +74,11 @@ public:
     /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
     static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
 
+    /// Whether `additional_table_filters` has a predicate that applies to this view. Such a
+    /// predicate is evaluated in the view's output namespace and can hide rows just like a row
+    /// policy attached to the view.
+    static bool hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context);
+
     /// Whether the view's inner query can drop or collapse rows at all. `false` is returned only
     /// when the query provably preserves every row of a plainly readable source, so that a
     /// projection-only view keeps the fully optimizable path even when `isSecurityBarrier` holds;

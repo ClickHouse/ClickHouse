@@ -1832,6 +1832,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
                 std::vector<std::pair<FilterDAGInfo, DescriptionHolderPtr>> where_filters;
                 bool row_policy_filter_not_pushed = false;
+                const bool additional_filter_is_security_barrier = table_expression_query_info.additional_filter_ast
+                    && typeid_cast<const StorageView *>(storage.get())
+                    && StorageView::isSecurityBarrier(*storage_snapshot->metadata, query_context);
 
                 if (prewhere_actions && select_query_options.build_logical_plan)
                 {
@@ -2669,6 +2672,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             filter_info.column_name,
                             filter_info.do_remove_column);
                         description->setStepDescription(*filter_step);
+                        if (additional_filter_is_security_barrier)
+                            filter_step->setSecurityBarrier();
                         query_plan.addStep(std::move(filter_step));
                     }
                 }

@@ -62,6 +62,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
@@ -616,6 +617,21 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     return underlying;
 }
 
+bool StorageView::hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context)
+{
+    const auto & additional_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & table = additional_filter.safeGet<Tuple>().at(0).safeGet<String>();
+        if (table == alias
+            || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || table == storage_id.getFullNameNotQuoted())
+            return true;
+    }
+
+    return false;
+}
+
 void StorageView::readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -652,9 +668,10 @@ void StorageView::readImpl(
     auto row_policy_filter = context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    const bool has_additional_filter = query_info.additional_filter_ast != nullptr;
     auto view_context = getViewContext(context, storage_snapshot, this);
     const bool hides_rows = security_barrier
-        && (has_row_policy || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
+        && (has_row_policy || has_additional_filter || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
     const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
