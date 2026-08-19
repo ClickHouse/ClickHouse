@@ -83,6 +83,28 @@ TEST(TreeHashCompleteness, WithAliasFlagsAndParametrisedAliasAreSignificant)
     EXPECT_NE(plain->getTreeHash(/*ignore_aliases=*/ false), first_parameter->getTreeHash(/*ignore_aliases=*/ false));
 }
 
+TEST(TreeHashCompleteness, JSONRejectsConflictingAliases)
+{
+    String json = serializeASTToJSON(*parse("SELECT x AS y"));
+    const String key = R"("alias":"y",)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.insert(pos + key.size(), R"("parametrised_alias":{"type":"QueryParameter","name":"p","param_type":"Identifier"},)");
+
+    EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
+}
+
+TEST(TreeHashCompleteness, JSONRejectsImplicitNullsDirectionDifferentFromDirection)
+{
+    String json = serializeASTToJSON(*parse("SELECT x ORDER BY x ASC"));
+    const String key = R"("nulls_direction":1,)";
+    const auto pos = json.find(key);
+    ASSERT_NE(pos, String::npos);
+    json.replace(pos, key.size(), R"("nulls_direction":-1,)");
+
+    EXPECT_THROW(IAST::createFromJSON(json, /*max_depth=*/ 1000, /*max_elements=*/ 100000), Exception);
+}
+
 TEST(TreeHashCompleteness, StreamSettingsAreSignificant)
 {
     /// The cursor tree and the watermark column/idle timeout are not children.
