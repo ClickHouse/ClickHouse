@@ -24,8 +24,10 @@ SET SQL_query_log_maps_probe = 'probe_value';
 --     reads ReadType::InOrder, which uses no prefetch pool at all;
 --   * the plan's stream count must survive memory pressure - max_threads_min_free_memory_per_thread
 --     lowers max_threads, and at one stream ReadFromMergeTree bypasses both read pools.
--- max(k), count() and uniqExact(k) make a wrong sum(k) self-classifying: a corrupted value moves
--- max, and duplicated or omitted rows move count or uniqExact.
+-- The scan's own result is not asserted. It is corrupted by the open read-path bug
+-- https://github.com/ClickHouse/ClickHouse/issues/113762, and this test exists to cover the
+-- `system.query_log` Map columns, not the read path. `FORMAT Null` keeps the scan, and so the
+-- `query_log` row it produces, without pinning a value that bug can move.
 SELECT sum(k), max(k), count(), uniqExact(k) FROM t_query_log_maps
 SETTINGS log_comment = '04640_settings_probe',
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
@@ -38,12 +40,12 @@ SETTINGS log_comment = '04640_settings_probe',
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
          max_threads = 4,
-         max_threads_min_free_memory_per_thread = 0;
+         max_threads_min_free_memory_per_thread = 0
+FORMAT Null;
 
--- Control: the same scan and settings with the prefetched read pool off, so it reads through the
--- ordinary pool. If this line is right while the one above is wrong, the stored data is not
--- persistently corrupt; if both are wrong, the defect is in a layer both paths share. Its
--- log_comment differs so the query_log assertions below still select exactly the scan above.
+-- Control: the same scan with the prefetched read pool off, so it reads through the ordinary pool.
+-- Its result is not asserted either, for the same reason. Its log_comment differs so the query_log
+-- assertions below still select exactly the scan above.
 SELECT sum(k), max(k), count(), uniqExact(k) FROM t_query_log_maps
 SETTINGS log_comment = '04640_settings_probe_control',
          merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0,
@@ -56,7 +58,8 @@ SETTINGS log_comment = '04640_settings_probe_control',
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
          max_threads = 4,
-         max_threads_min_free_memory_per_thread = 0;
+         max_threads_min_free_memory_per_thread = 0
+FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
