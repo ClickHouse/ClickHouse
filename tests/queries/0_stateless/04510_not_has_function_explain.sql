@@ -118,14 +118,19 @@ DROP TABLE test_string_null_set;
 
 -- Dynamic and Variant carry a NULL through a discriminator instead of a null map, and a String
 -- target can hold neither. The empty-string key row is what makes the poisoning observable: a NULL
--- that decayed to '' would enter the set as a real element and prune that row away.
+-- that decayed to '' would enter the set as a real element and prune that row away. The two rows
+-- must stay in separate parts for that pruning to be visible, so merges are stopped.
 DROP TABLE IF EXISTS test_dynamic_null_set;
 CREATE TABLE test_dynamic_null_set (k String) ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 1;
 
+SYSTEM STOP MERGES test_dynamic_null_set;
+
 INSERT INTO test_dynamic_null_set VALUES ('');
 INSERT INTO test_dynamic_null_set VALUES ('a');
+
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'test_dynamic_null_set' AND active;
 
 SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST([NULL], 'Array(Dynamic)'), k);
 SELECT count() FROM test_dynamic_null_set WHERE notHas(CAST([NULL], 'Array(Dynamic)'), k) SETTINGS use_primary_key = 0;
@@ -195,6 +200,88 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_map_
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_map_null_set WHERE has([map('k', '3')], m)) WHERE explain LIKE '%Granules:%/%';
 
 DROP TABLE test_map_null_set;
+
+-- A Tuple key passes the Nullable-capability check that stops a bare Array or Map key, so the set
+-- index would otherwise reach a cast that refuses the Tuple's Array element. The index is declined
+-- instead, which keeps the answers correct for both a NULL-free and a NULL-carrying element.
+DROP TABLE IF EXISTS test_tuple_array_key;
+CREATE TABLE test_tuple_array_key (t Tuple(Array(String))) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_tuple_array_key VALUES ((['a'])), ((['b']));
+
+SELECT count() FROM test_tuple_array_key WHERE has([CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_key WHERE has([CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))')], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_tuple_array_key WHERE has([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_key WHERE has([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_tuple_array_key WHERE notHas([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_key WHERE notHas([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_tuple_array_key WHERE has([tuple(['a'])], t);
+
+DROP TABLE test_tuple_array_key;
+
+-- The same refusal is reached without any Nullable, by a set element whose numeric type merely
+-- differs from the key's. That path errored before this change as well.
+DROP TABLE IF EXISTS test_tuple_array_numeric_key;
+CREATE TABLE test_tuple_array_numeric_key (t Tuple(Array(UInt8))) ENGINE = MergeTree
+ORDER BY t
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_tuple_array_numeric_key VALUES (([1])), (([2]));
+
+SELECT count() FROM test_tuple_array_numeric_key WHERE has([CAST(tuple([1]), 'Tuple(Array(UInt64))')], t);
+SELECT count() FROM test_tuple_array_numeric_key WHERE has([CAST(tuple([1]), 'Tuple(Array(UInt64))')], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_tuple_array_numeric_key WHERE has([tuple([toUInt8(1)])], t);
+
+DROP TABLE test_tuple_array_numeric_key;
+
+-- A plain Tuple key keeps its set index: only a target the accurate cast refuses is declined.
+DROP TABLE IF EXISTS test_tuple_scalar_key;
+CREATE TABLE test_tuple_scalar_key (a String, b String) ENGINE = MergeTree
+ORDER BY (a, b)
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_tuple_scalar_key SELECT toString(number), toString(number) FROM numbers(16);
+
+SELECT count() FROM test_tuple_scalar_key WHERE (a, b) IN (('3', '3'));
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM test_tuple_scalar_key WHERE (a, b) IN (('3', '3'))) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_tuple_scalar_key WHERE (a, b) IN ((CAST('3', 'Nullable(String)'), '3'));
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT a FROM test_tuple_scalar_key WHERE (a, b) IN ((CAST('3', 'Nullable(String)'), '3'))) WHERE explain LIKE '%Granules:%/%';
+
+DROP TABLE test_tuple_scalar_key;
+
+-- The same target reaches the cast a second time when the key is an expression, because the set is
+-- first pushed through the key's deterministic transform. That path is declined too.
+DROP TABLE IF EXISTS test_tuple_array_expr_key;
+CREATE TABLE test_tuple_array_expr_key (t Tuple(Array(String))) ENGINE = MergeTree
+ORDER BY tupleElement(t, 1)
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_tuple_array_expr_key VALUES ((['a'])), ((['b']));
+
+SELECT count() FROM test_tuple_array_expr_key WHERE has([CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_expr_key WHERE has([CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))')], t) SETTINGS use_primary_key = 0;
+SELECT count() FROM test_tuple_array_expr_key WHERE has([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_expr_key WHERE notHas([CAST(tuple([NULL]), 'Tuple(Array(Nullable(String)))')], t);
+SELECT count() FROM test_tuple_array_expr_key WHERE has([CAST(['a'], 'Array(Nullable(String))')], tupleElement(t, 1));
+SELECT count() FROM test_tuple_array_expr_key WHERE has([tuple(['a'])], t);
+
+DROP TABLE test_tuple_array_expr_key;
+
+-- A scalar key reached through the same transform keeps its index, so declining the container target
+-- above does not cost pruning here.
+DROP TABLE IF EXISTS test_scalar_expr_key;
+CREATE TABLE test_scalar_expr_key (k String) ENGINE = MergeTree
+ORDER BY concat(k, 'x')
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_scalar_expr_key SELECT toString(number) FROM numbers(16);
+
+SELECT count() FROM test_scalar_expr_key WHERE has([CAST('3', 'Nullable(String)')], k);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_scalar_expr_key WHERE has([CAST('3', 'Nullable(String)')], k)) WHERE explain LIKE '%Granules:%/%';
+
+DROP TABLE test_scalar_expr_key;
 
 -- A key built from a monotonic function chain resolves the set against the chain's result type,
 -- which reaches the same rule.

@@ -32,24 +32,40 @@ namespace ErrorCodes
 /// us whether the conversion is accurate or not.
 /// This check walks Tuple elements recursively to also reject cases like
 /// Tuple(Array(UInt8)) where the unsupported type is nested inside a Tuple.
-static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+/// Returns the first unsupported nested type, or nullptr when the target is supported.
+static DataTypePtr findUnsupportedTypeForAccurateCastOrNull(const DataTypePtr & type)
 {
     if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
     {
         for (const auto & element : tuple_type->getElements())
-            validateNestedTypesForAccurateCastOrNull(element);
+        {
+            if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(element))
+                return unsupported;
+        }
+        return nullptr;
     }
-    else if (type->isNullable())
-    {
-        validateNestedTypesForAccurateCastOrNull(removeNullable(type));
-    }
-    else if (!type->canBeInsideNullable() && !canContainNull(*type))
-    {
+
+    if (type->isNullable())
+        return findUnsupportedTypeForAccurateCastOrNull(removeNullable(type));
+
+    if (!type->canBeInsideNullable() && !canContainNull(*type))
+        return type;
+
+    return nullptr;
+}
+
+bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
+{
+    return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
+}
+
+static void validateNestedTypesForAccurateCastOrNull(const DataTypePtr & type)
+{
+    if (auto unsupported = findUnsupportedTypeForAccurateCastOrNull(type))
         throw Exception(
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
             "Type {} is not supported for accurateCastOrNull because it cannot be inside Nullable",
-            type->getName());
-    }
+            unsupported->getName());
 }
 
 struct FunctionConvertSettings;

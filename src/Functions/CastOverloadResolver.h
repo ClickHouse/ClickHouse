@@ -30,4 +30,8 @@ struct CastDiagnostic
 
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context);
 
+/// Whether CastType::accurateOrNull accepts this target. It rejects a target whose nested type cannot
+/// be inside Nullable (Array, Map), so a caller that cannot let that exception escape must ask first.
+bool canBeAccurateCastOrNullTarget(const DataTypePtr & type);
+
 }

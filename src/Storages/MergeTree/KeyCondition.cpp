@@ -2160,7 +2160,10 @@ static bool applyDeterministicDagToColumn(
         /// transform DAG still receives the type it was built against.
         const DataTypePtr probe_type = removeLowCardinality(target_type);
 
-        if (!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in the cast below.
+        if ((!probe_type->isNullable() && !probe_type->canBeInsideNullable())
+            || !canBeAccurateCastOrNullTarget(probe_type))
         {
             /// We cannot apply castColumnAccurateOrNull() because it will throw exception
             return false;
@@ -2572,7 +2575,9 @@ static bool tryPrepareSetColumnsForIndex(
             continue;
         }
 
-        if (!key_column_type->canBeInsideNullable())
+        /// `canBeInsideNullable` answers for the outer type only, so a `Tuple` holding an `Array`
+        /// passes it and then throws in `castColumnAccurateOrNull` below.
+        if (!key_column_type->canBeInsideNullable() || !canBeAccurateCastOrNullTarget(key_column_type))
             return false;
 
         /// Marks the elements that are NULL in the set itself, e.g. the NULL in `notHas([1, NULL], x)`
