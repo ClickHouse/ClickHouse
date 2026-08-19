@@ -37,6 +37,7 @@ Test EXISTS falls back when its runtime value is unknown
 Test scalar cardinality and value-dependent arguments fall back to normal analysis
 1
 1
+Test late table filters in count subqueries fall back to normal analysis
 Test nested scalars in count subqueries fall back to normal analysis
 1
 1

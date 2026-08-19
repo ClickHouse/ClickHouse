@@ -20,6 +20,8 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
+#include <Access/EnabledRowPolicies.h>
+
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 
@@ -88,6 +90,7 @@ namespace Setting
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool allow_experimental_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
+    extern const SettingsMap additional_table_filters;
 }
 
 namespace
@@ -391,6 +394,34 @@ bool isViewBackedSource(const QueryTreeNodePtr & join_tree, const IdentifierReso
     return table->getStorage()->isView();
 }
 
+bool hasLateAttachedTableFilter(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+{
+    /// Additional filters are parsed only by the planner, after the speculative type-only
+    /// analysis. Any configured filter may affect the selected table, so fail closed.
+    if (!scope.context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+        return true;
+
+    QueryTreeNodePtr resolved_table = join_tree;
+    if (const auto * identifier = join_tree->as<IdentifierNode>())
+    {
+        auto resolve_result = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+            identifier->getIdentifier(), scope.context);
+        resolved_table = std::move(resolve_result.resolved_identifier);
+    }
+
+    const auto * table = resolved_table ? resolved_table->as<TableNode>() : nullptr;
+    if (!table || !table->getStorage())
+        return true;
+
+    const auto & storage_id = table->getStorage()->getStorageID();
+    if (!storage_id.hasDatabase())
+        return true;
+
+    const auto row_policy_filter = scope.context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+}
+
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(
     const QueryNode & query,
     const IdentifierResolveScope & scope)
@@ -402,6 +433,7 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
             && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
         || isViewBackedSource(join_tree, scope)
+        || hasLateAttachedTableFilter(join_tree, scope)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()
         || query.hasPrewhere()
