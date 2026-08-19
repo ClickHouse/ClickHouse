@@ -20,7 +20,7 @@
 -- FINAL, parts pruned locally across lanes
 1	5
 1	5
--- FINAL, empty shipped set, every part pruned locally
+-- FINAL, every part pruned locally, clean empty exit
 0	0
 0	0
 -- the FINAL read distributes	1
