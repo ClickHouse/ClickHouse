@@ -7,6 +7,8 @@ keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafa
 doc_type: 'guide'
 ---
 
+import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
 ClickHouse offers unmatched speed, scale, and cost-efficiency for observability. This guide provides two paths depending on your needs:
 
 ## ClickStack - the ClickHouse observability stack {#clickstack}
@@ -39,3 +41,9 @@ For users with **custom requirements** — such as highly specialized ingestion 
 | [Integrating OpenTelemetry](/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | Collecting and exporting logs and traces using OpenTelemetry with ClickHouse.                                                           |
 | [Using Visualization Tools](/guides/use-cases/observability/build-your-own/grafana)    | Learn how to use observability visualization tools for ClickHouse, including HyperDX and Grafana.                                       |
 | [Demo Application](/guides/use-cases/observability/build-your-own/demo-application)    | Explore the OpenTelemetry demo application forked to work with ClickHouse for logs and traces.                                           |
+
+## Prometheus metrics {#prometheus-metrics}
+
+<CloudNotSupportedBadge/>
+
+ClickHouse can store Prometheus metrics in a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table and evaluate PromQL queries. See [Prometheus protocols and PromQL](/concepts/features/interfaces/prometheus) for ingestion, query, and visualization configuration.

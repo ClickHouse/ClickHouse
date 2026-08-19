@@ -879,6 +879,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
+)", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
 The maximum uncompressed size of data in all patch parts in bytes.
@@ -2420,7 +2431,12 @@ struct MergeTreeSettingsImpl : public BaseSettings<MergeTreeSettingsTraits>
     void loadFromQuery(ASTStorage & storage_def, ContextPtr context, bool is_loading_from_existing_metadata, bool for_system_database);
 
     /// Check that the values are sane taking also query-level settings into account.
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(
+        size_t background_pool_tasks,
+        bool allow_experimental,
+        bool allow_private_preview,
+        bool allow_beta,
+        bool background_pool_auto_lowered) const;
 
     /// Subscript operators so that MergeTreeSetting::NAME can be used inside Impl methods.
     /// Delegate to `BaseSettings::operator[]` so the Impl->Data subobject offset is handled
@@ -2525,9 +2541,14 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
 #undef ADD_IF_ABSENT
 }
 
-void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettingsImpl::sanityCheck(
+    size_t background_pool_tasks,
+    bool allow_experimental,
+    bool allow_private_preview,
+    bool allow_beta,
+    bool background_pool_auto_lowered) const
 {
-    if (!allow_experimental || !allow_beta)
+    if (!allow_experimental || !allow_private_preview || !allow_beta)
     {
         for (const auto & setting : all())
         {
@@ -2540,6 +2561,14 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool allow
                 throw Exception(
                     ErrorCodes::READONLY,
                     "Cannot modify setting '{}'. Changes to EXPERIMENTAL settings are disabled in the server config "
+                    "('allow_feature_tier')",
+                    setting.getName());
+            }
+            if (!allow_private_preview && tier == PRIVATE_PREVIEW)
+            {
+                throw Exception(
+                    ErrorCodes::READONLY,
+                    "Cannot modify setting '{}'. Changes to PRIVATE PREVIEW settings are disabled in the server config "
                     "('allow_feature_tier')",
                     setting.getName());
             }
@@ -2958,9 +2987,14 @@ bool MergeTreeSettings::needSyncPart(size_t input_rows, size_t input_bytes) cons
         || ((*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge] && input_bytes >= (*this)[MergeTreeSetting::min_compressed_bytes_to_fsync_after_merge]));
 }
 
-void MergeTreeSettings::sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const
+void MergeTreeSettings::sanityCheck(
+    size_t background_pool_tasks,
+    bool allow_experimental,
+    bool allow_private_preview,
+    bool allow_beta,
+    bool background_pool_auto_lowered) const
 {
-    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_beta, background_pool_auto_lowered);
+    impl->sanityCheck(background_pool_tasks, allow_experimental, allow_private_preview, allow_beta, background_pool_auto_lowered);
 }
 
 void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const
