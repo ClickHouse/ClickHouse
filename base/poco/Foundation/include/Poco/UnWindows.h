@@ -45,14 +45,14 @@
 #endif
 
 
-// Microsoft Visual C++ includes copies of the Windows header files 
+// Microsoft Visual C++ includes copies of the Windows header files
 // that were current at the time Visual C++ was released.
-// The Windows header files use macros to indicate which versions 
-// of Windows support many programming elements. Therefore, you must 
-// define these macros to use new functionality introduced in each 
-// major operating system release. (Individual header files may use 
-// different macros; therefore, if compilation problems occur, check 
-// the header file that contains the definition for conditional 
+// The Windows header files use macros to indicate which versions
+// of Windows support many programming elements. Therefore, you must
+// define these macros to use new functionality introduced in each
+// major operating system release. (Individual header files may use
+// different macros; therefore, if compilation problems occur, check
+// the header file that contains the definition for conditional
 // definitions.) For more information, see SdkDdkVer.h.
 
 

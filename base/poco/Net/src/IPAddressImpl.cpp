@@ -35,8 +35,8 @@ namespace {
 template <typename T>
 unsigned maskBits(T val, unsigned size)
 	/// Returns the length of the mask (number of bits set in val).
-	/// The val should be either all zeros or two contiguous areas of 1s and 0s. 
-	/// The algorithm ignores invalid non-contiguous series of 1s and treats val 
+	/// The val should be either all zeros or two contiguous areas of 1s and 0s.
+	/// The algorithm ignores invalid non-contiguous series of 1s and treats val
 	/// as if all bits between MSb and last non-zero bit are set to 1.
 {
 	unsigned count = 0;
@@ -256,7 +256,7 @@ bool IPv4AddressImpl::isGlobalMC() const
 IPv4AddressImpl IPv4AddressImpl::parse(const std::string& addr)
 {
 	if (addr.empty()) return IPv4AddressImpl();
-#if defined(_WIN32) 
+#if defined(_WIN32)
 	struct in_addr ia;
 	ia.s_addr = inet_addr(addr.c_str());
 	if (ia.s_addr == INADDR_NONE && addr != "255.255.255.255")
@@ -285,7 +285,7 @@ IPv4AddressImpl IPv4AddressImpl::parse(const std::string& addr)
 void IPv4AddressImpl::mask(const IPAddressImpl* pMask, const IPAddressImpl* pSet)
 {
 	poco_assert (pMask->af() == AF_INET && pSet->af() == AF_INET);
-	
+
 	_addr.s_addr &= static_cast<const IPv4AddressImpl*>(pMask)->_addr.s_addr;
 	_addr.s_addr |= static_cast<const IPv4AddressImpl*>(pSet)->_addr.s_addr & ~static_cast<const IPv4AddressImpl*>(pMask)->_addr.s_addr;
 }
@@ -389,7 +389,7 @@ IPv6AddressImpl::IPv6AddressImpl(unsigned prefix):
 {
 	unsigned i = 0;
 #ifdef POCO_OS_FAMILY_WINDOWS
-	for (; prefix >= 16; ++i, prefix -= 16) 
+	for (; prefix >= 16; ++i, prefix -= 16)
 	{
 		_addr.s6_addr16[i] = 0xffff;
 	}
@@ -402,7 +402,7 @@ IPv6AddressImpl::IPv6AddressImpl(unsigned prefix):
 		_addr.s6_addr16[i++] = 0;
 	}
 #else
-	for (; prefix >= 32; ++i, prefix -= 32) 
+	for (; prefix >= 32; ++i, prefix -= 32)
 	{
 		_addr.s6_addr32[i] = 0xffffffff;
 	}
@@ -546,7 +546,7 @@ Poco::UInt32 IPv6AddressImpl::scope() const
 bool IPv6AddressImpl::isWildcard() const
 {
 	const UInt16* words = reinterpret_cast<const UInt16*>(&_addr);
-	return words[0] == 0 && words[1] == 0 && words[2] == 0 && words[3] == 0 && 
+	return words[0] == 0 && words[1] == 0 && words[2] == 0 && words[3] == 0 &&
 		words[4] == 0 && words[5] == 0 && words[6] == 0 && words[7] == 0;
 }
 
@@ -560,7 +560,7 @@ bool IPv6AddressImpl::isBroadcast() const
 bool IPv6AddressImpl::isLoopback() const
 {
 	const UInt16* words = reinterpret_cast<const UInt16*>(&_addr);
-	return words[0] == 0 && words[1] == 0 && words[2] == 0 && words[3] == 0 && 
+	return words[0] == 0 && words[1] == 0 && words[2] == 0 && words[3] == 0 &&
 		words[4] == 0 && words[5] == 0 && words[6] == 0 && ByteOrder::fromNetwork(words[7]) == 0x0001;
 }
 
@@ -725,9 +725,9 @@ IPv6AddressImpl IPv6AddressImpl::operator & (const IPv6AddressImpl& addr) const
 
 IPv6AddressImpl IPv6AddressImpl::operator | (const IPv6AddressImpl& addr) const
 {
-	if (_scope != addr._scope) 
+	if (_scope != addr._scope)
 		throw Poco::InvalidArgumentException("Scope ID of passed IPv6 address does not match with the source one.");
-    
+
 	IPv6AddressImpl result(*this);
 #ifdef POCO_OS_FAMILY_WINDOWS
 	result._addr.s6_addr16[0] |= addr._addr.s6_addr16[0];
@@ -752,7 +752,7 @@ IPv6AddressImpl IPv6AddressImpl::operator ^ (const IPv6AddressImpl& addr) const
 {
 	if (_scope != addr._scope)
 		throw Poco::InvalidArgumentException("Scope ID of passed IPv6 address does not match  with the source one.");
-    
+
 	IPv6AddressImpl result(*this);
 
 #ifdef POCO_OS_FAMILY_WINDOWS

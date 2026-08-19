@@ -30,13 +30,13 @@ class Foundation_API DirectoryIteratorImpl
 public:
 	DirectoryIteratorImpl(const std::string& path);
 	~DirectoryIteratorImpl();
-	
+
 	void duplicate();
 	void release();
-	
+
 	const std::string& get() const;
 	const std::string& next();
-	
+
 private:
 	HANDLE           _fh;
 	WIN32_FIND_DATAW _fd;

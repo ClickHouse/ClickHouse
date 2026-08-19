@@ -28,15 +28,15 @@ namespace Poco {
 class Foundation_API NamedEventImpl
 {
 protected:
-	NamedEventImpl(const std::string& name);	
+	NamedEventImpl(const std::string& name);
 	~NamedEventImpl();
 	void setImpl();
 	void waitImpl();
-	
+
 private:
 	std::string  _name;
 	std::wstring _uname;
-	HANDLE      _event;	
+	HANDLE      _event;
 };
 
 

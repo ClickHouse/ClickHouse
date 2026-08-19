@@ -44,7 +44,7 @@ DirectoryIteratorImpl::DirectoryIteratorImpl(const std::string& path): _fh(INVAL
 	else
 	{
 		UnicodeConverter::toUTF8(_fd.cFileName, _current);
-		if (_current == "." || _current == "..")	
+		if (_current == "." || _current == "..")
 			next();
 	}
 }

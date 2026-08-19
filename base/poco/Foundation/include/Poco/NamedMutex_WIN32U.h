@@ -33,7 +33,7 @@ protected:
 	void lockImpl();
 	bool tryLockImpl();
 	void unlockImpl();
-	
+
 private:
 	std::string  _name;
 	std::wstring _uname;

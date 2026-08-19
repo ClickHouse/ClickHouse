@@ -87,7 +87,7 @@ std::string EnvironmentImpl::osNameImpl()
 
 std::string EnvironmentImpl::osDisplayNameImpl()
 {
-	OSVERSIONINFOEX vi;	// OSVERSIONINFOEX is supported starting at Windows 2000 
+	OSVERSIONINFOEX vi;	// OSVERSIONINFOEX is supported starting at Windows 2000
 	vi.dwOSVersionInfoSize = sizeof(vi);
 	if (GetVersionEx((OSVERSIONINFO*) &vi) == 0) throw SystemException("Cannot get OS version information");
 	switch (vi.dwMajorVersion)
@@ -197,7 +197,7 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 	// Make an initial call to GetAdaptersInfo to get
 	// the necessary size into len
 	DWORD rc = GetAdaptersInfo(pAdapterInfo, &len);
-	if (rc == ERROR_BUFFER_OVERFLOW) 
+	if (rc == ERROR_BUFFER_OVERFLOW)
 	{
 		delete [] reinterpret_cast<char*>(pAdapterInfo);
 		pAdapterInfo = reinterpret_cast<IP_ADAPTER_INFO*>(new char[len]);
@@ -206,11 +206,11 @@ void EnvironmentImpl::nodeIdImpl(NodeId& id)
 	{
 		return;
 	}
-	if (GetAdaptersInfo(pAdapterInfo, &len) == NO_ERROR) 
+	if (GetAdaptersInfo(pAdapterInfo, &len) == NO_ERROR)
 	{
 		pAdapter = pAdapterInfo;
 		bool found = false;
-		while (pAdapter && !found) 
+		while (pAdapter && !found)
 		{
 			if (pAdapter->Type == MIB_IF_TYPE_ETHERNET && pAdapter->AddressLength == sizeof(id))
 			{

@@ -25,7 +25,7 @@ NamedMutexImpl::NamedMutexImpl(const std::string& name):
 {
 	UnicodeConverter::toUTF16(_name, _uname);
 	_mutex = CreateMutexW(NULL, 0, _uname.c_str());
-	if (!_mutex) 
+	if (!_mutex)
 		throw SystemException("cannot create named mutex", _name);
 }
 

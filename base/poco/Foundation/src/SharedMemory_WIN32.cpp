@@ -64,7 +64,7 @@ SharedMemoryImpl::SharedMemoryImpl(const std::string& name, std::size_t size, Sh
 			dwRetVal = GetLastError();
 			throw SystemException(format("Cannot open shared memory object %s [Error %d: %s]", _name, static_cast<int>(dwRetVal), Error::getMessage(dwRetVal)));
 		}
-#endif 
+#endif
 	}
 	map();
 }

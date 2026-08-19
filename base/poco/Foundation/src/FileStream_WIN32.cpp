@@ -55,7 +55,7 @@ void FileStreamBuf::open(const std::string& path, std::ios::openmode mode)
 	DWORD shareMode = FILE_SHARE_READ;
 	if (!(mode & std::ios::out))
 		shareMode |= FILE_SHARE_WRITE;
-		
+
 	DWORD creationDisp = OPEN_EXISTING;
 	if (mode & std::ios::trunc)
 		creationDisp = CREATE_ALWAYS;
@@ -63,7 +63,7 @@ void FileStreamBuf::open(const std::string& path, std::ios::openmode mode)
 		creationDisp = OPEN_ALWAYS;
 
 	DWORD flags = FILE_ATTRIBUTE_NORMAL;
-	
+
 #if defined (POCO_WIN32_UTF8)
 	std::wstring utf16Path;
 	FileImpl::convertPath(path, utf16Path);
@@ -74,7 +74,7 @@ void FileStreamBuf::open(const std::string& path, std::ios::openmode mode)
 
 	if (_handle == INVALID_HANDLE_VALUE)
 		File::handleLastError(_path);
-		
+
 	if ((mode & std::ios::ate) || (mode & std::ios::app))
 		seekoff(0, std::ios::end, mode);
 }
@@ -87,7 +87,7 @@ int FileStreamBuf::readFromDevice(char* buffer, std::streamsize length)
 
 	if (getMode() & std::ios::out)
 		sync();
-	
+
 	DWORD bytesRead(0);
 	BOOL rc = ReadFile(_handle, buffer, static_cast<DWORD>(length), &bytesRead, NULL);
 	if (rc == 0)
@@ -117,7 +117,7 @@ int FileStreamBuf::writeToDevice(const char* buffer, std::streamsize length)
 	BOOL rc = WriteFile(_handle, buffer, static_cast<DWORD>(length), &bytesWritten, NULL);
 	if (rc == 0)
 		File::handleLastError(_path);
-		
+
 	_pos += bytesWritten;
 
 	return static_cast<int>(bytesWritten);
@@ -149,7 +149,7 @@ std::streampos FileStreamBuf::seekoff(std::streamoff off, std::ios::seekdir dir,
 {
 	if (INVALID_HANDLE_VALUE == _handle || !(getMode() & mode))
 		return -1;
-	
+
 	if (getMode() & std::ios::out)
 		sync();
 
@@ -171,7 +171,7 @@ std::streampos FileStreamBuf::seekoff(std::streamoff off, std::ios::seekdir dir,
 	{
 		offset = FILE_END;
 	}
-	
+
 	LARGE_INTEGER li;
 	li.QuadPart = off;
 	if (SetFilePointerEx(_handle, li, &li, offset) == 0)

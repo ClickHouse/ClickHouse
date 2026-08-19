@@ -41,7 +41,7 @@ public:
 	Handle writeHandle() const;
 	void closeRead();
 	void closeWrite();
-	
+
 private:
 	HANDLE _readHandle;
 	HANDLE _writeHandle;

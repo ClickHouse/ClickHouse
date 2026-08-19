@@ -23,12 +23,12 @@
 
 namespace
 {
-	/// See <http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx> 
+	/// See <http://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx>
 	/// and <http://blogs.msdn.com/b/stevejs/archive/2005/12/19/505815.aspx> for
 	/// more information on the code below.
 
 	const DWORD MS_VC_EXCEPTION = 0x406D1388;
-	
+
 	#pragma pack(push,8)
 	typedef struct tagTHREADNAME_INFO
 	{
@@ -38,7 +38,7 @@ namespace
 		DWORD dwFlags;    // Reserved for future use, must be zero.
 	} THREADNAME_INFO;
 	#pragma pack(pop)
-	
+
 	void setThreadName(DWORD dwThreadID, const char* threadName)
 	{
         THREADNAME_INFO info;
@@ -46,7 +46,7 @@ namespace
         info.szName     = threadName;
         info.dwThreadID = dwThreadID;
         info.dwFlags    = 0;
-    
+
         __try
         {
             RaiseException(MS_VC_EXCEPTION, 0, sizeof(info)/sizeof(ULONG_PTR), (ULONG_PTR*)&info);

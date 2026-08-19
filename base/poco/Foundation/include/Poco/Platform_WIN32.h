@@ -131,10 +131,10 @@
 
 #if defined(_MSC_VER) && !defined(POCO_MSVC_SECURE_WARNINGS) && !defined(_CRT_SECURE_NO_DEPRECATE)
 	#define _CRT_SECURE_NO_DEPRECATE
-#endif 
+#endif
 
 
-// Verify that we're built with the multithreaded 
+// Verify that we're built with the multithreaded
 // versions of the runtime libraries
 #if defined(_MSC_VER) && !defined(_MT)
 	#error Must compile with /MD, /MDd, /MT or /MTd

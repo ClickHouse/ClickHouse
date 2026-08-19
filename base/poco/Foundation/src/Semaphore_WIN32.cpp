@@ -57,7 +57,7 @@ bool SemaphoreImpl::waitImpl(long milliseconds)
 	case WAIT_OBJECT_0:
 		return true;
 	default:
-		throw SystemException("wait for semaphore failed");		
+		throw SystemException("wait for semaphore failed");
 	}
 }
 

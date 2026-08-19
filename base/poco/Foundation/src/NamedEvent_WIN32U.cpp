@@ -29,7 +29,7 @@ NamedEventImpl::NamedEventImpl(const std::string& name):
 	_event = CreateEventW(NULL, 0, 0, _uname.c_str());
 	if (!_event)
 	{
-		DWORD dwRetVal = GetLastError(); 
+		DWORD dwRetVal = GetLastError();
 		throw SystemException(format("cannot create named event %s [Error %d: %s]", _name, (int)dwRetVal, Error::getMessage(dwRetVal)));
 	}
 }

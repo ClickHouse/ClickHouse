@@ -36,7 +36,7 @@ protected:
 	void writeLockImpl();
 	bool tryWriteLockImpl();
 	void unlockImpl();
-	
+
 private:
 	void addWriter();
 	void removeWriter();
