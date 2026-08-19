@@ -286,7 +286,7 @@ static std::string_view programNameFromArgv0(std::string_view argv0)
     if (argv0.size() > suffix.size())
     {
         const auto tail = argv0.substr(argv0.size() - suffix.size());
-        if (std::equal(tail.begin(), tail.end(), suffix.begin(), [](char a, char b) { return std::tolower(a) == b; }))
+        if (std::equal(tail.begin(), tail.end(), suffix.begin(), [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == b; }))
             argv0.remove_suffix(suffix.size());
     }
 #endif
@@ -294,7 +294,7 @@ static std::string_view programNameFromArgv0(std::string_view argv0)
     return argv0;
 }
 
-static bool isClickhouseApp(std::string_view app_suffix, std::vector<char *> & argv)
+static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & argv)
 {
     for (const auto & [alias, name] : clickhouse_short_names)
         if (app_suffix == name
@@ -450,7 +450,7 @@ int main(int argc_, char ** argv_)
 
     for (auto & application : clickhouse_applications)
     {
-        if (isClickhouseApp(application.first, argv))
+        if (isClickHouseApp(application.first, argv))
         {
             main_func = application.second;
             break;
