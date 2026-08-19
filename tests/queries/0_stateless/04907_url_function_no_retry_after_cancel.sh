@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
-# no-parallel: the test pauses the server-wide `storage_url_pause_before_retry_attempt` failpoint.
+# Tags: no-fasttest
+# A schema-inference read has no `StorageURLSource` cancellation token. Killing it while its HTTP
+# retry backoff is pending must still stop it promptly, without waiting for the full backoff.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -25,7 +26,9 @@ class Handler(BaseHTTPRequestHandler):
         counts['GET'] = counts.get('GET', 0) + 1
         self.send_error(503)
     def do_HEAD(self):
-        self.send_error(503)
+        self.send_response(200)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
     def log_message(self, *args):
         pass
 
@@ -35,7 +38,7 @@ with open('$PORT_FILE', 'w') as f:
 server.serve_forever()
 " &
 HTTP_PID=$!
-trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_retry_attempt" 2>/dev/null; kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
+trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
 for _ in {1..300}; do
     [[ -s "$PORT_FILE" ]] && break
@@ -43,37 +46,38 @@ for _ in {1..300}; do
 done
 HTTP_PORT=$(cat "$PORT_FILE")
 
-$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_retry_attempt"
-
-QUERY_ID="${CLICKHOUSE_DATABASE}_no_retry_after_cancel"
+QUERY_ID="${CLICKHOUSE_DATABASE}_schema_inference_cancel"
 $CLICKHOUSE_CLIENT \
-    --partial_result_on_first_cancel 1 \
     --parallel_replicas_for_cluster_engines 0 \
     --query_id "$QUERY_ID" \
-    --query "SELECT * FROM url('http://127.0.0.1:$HTTP_PORT/failed', 'CSV', 'x UInt64') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 1" \
+    --query "SELECT * FROM url('http://127.0.0.1:$HTTP_PORT/failed', 'CSV') SETTINGS http_max_tries = 2, http_retry_initial_backoff_ms = 5000" \
     >/dev/null 2>/dev/null &
 CLIENT_PID=$!
 
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_retry_attempt PAUSE"
-kill -SIGINT $CLIENT_PID
-
 for _ in {1..300}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
+    if [[ $(curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('GET', 0))") == 1 ]]; then
         break
     fi
     sleep 0.1
 done
 
-$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_retry_attempt"
+START_MS=$(date +%s%3N)
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC"
 wait $CLIENT_PID
 CLIENT_STATUS=$?
+ELAPSED_MS=$(( $(date +%s%3N) - START_MS ))
 GET_COUNT=$(curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('GET', 0))")
 
-if ((CLIENT_STATUS == 0)); then
-    echo "the cancelled query succeeded"
+if ((CLIENT_STATUS != 0)); then
+    echo "the cancelled schema-inference query failed"
 else
-    echo "FAIL: the query failed with the status $CLIENT_STATUS"
+    echo "FAIL: the cancelled schema-inference query succeeded"
+fi
+
+if ((ELAPSED_MS < 2000)); then
+    echo "the cancellation interrupted the retry backoff"
+else
+    echo "FAIL: the cancellation waited $ELAPSED_MS ms for the retry backoff"
 fi
 
 if ((GET_COUNT == 1)); then

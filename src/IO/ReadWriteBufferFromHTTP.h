@@ -194,7 +194,11 @@ private:
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+    void doWithRetries(
+        std::function<void()> && callable,
+        std::function<void()> on_retry = nullptr,
+        bool mute_logging = false,
+        bool stop_before_first_attempt_when_cancelled = true) const;
 
     /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
     bool waitBeforeRetry(size_t milliseconds) const;

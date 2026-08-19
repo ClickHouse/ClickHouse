@@ -346,7 +346,8 @@ ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callWithRedirects(
 
 void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
                                             std::function<void()> on_retry,
-                                            bool mute_logging) const
+                                            bool mute_logging,
+                                            bool stop_before_first_attempt_when_cancelled) const
 {
     [[maybe_unused]] auto milliseconds_to_wait = read_settings.http_settings.retry_initial_backoff_ms;
 
@@ -360,13 +361,16 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         String error_message;
 
         /// The callers cannot protect the interval after their last cancellation check and before
-        /// this attempt starts. Do not issue a request after cancellation in that interval.
+        /// this attempt starts. Do not issue a request after cancellation in that interval. A
+        /// caller which continues an already-open response can opt out: consuming its buffered
+        /// data does not issue a request, and it may reveal an error that must not be masked by a
+        /// soft cancellation.
         FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
         const bool soft_time_limit_reached = isQueryTimeLimitReached();
         if (soft_time_limit_reached && cancellation)
             cancellation->cancel(true);
 
-        if (soft_time_limit_reached || isReadCancelled())
+        if ((soft_time_limit_reached || isReadCancelled()) && (stop_before_first_attempt_when_cancelled || exception))
             throw ReadInterruptedException(exception);
 
         /// `waitBeforeRetry` also cannot protect the interval after it returns and before a retry
@@ -551,14 +555,23 @@ void ReadWriteBufferFromHTTP::rethrowIfReadInterrupted() const
 
 bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
 {
-    /// Without a cancellation there is nothing that could wake us up, so we can only sleep it out.
-    if (!cancellation)
+    if (cancellation)
+        return cancellation->waitForCancellation(std::chrono::milliseconds(milliseconds));
+
+    /// Bare HTTP readers have no owner cancellation token, but they can still be executing in a
+    /// query. Poll its status so `KILL QUERY` and a time limit do not wait out a long backoff.
+    constexpr size_t cancellation_check_interval_ms = 100;
+    while (milliseconds)
     {
-        sleepForMilliseconds(milliseconds);
-        return false;
+        const auto interval = std::min(milliseconds, cancellation_check_interval_ms);
+        sleepForMilliseconds(interval);
+        milliseconds -= interval;
+
+        if (isQueryTimeLimitReached())
+            return true;
     }
 
-    return cancellation->waitForCancellation(std::chrono::milliseconds(milliseconds));
+    return false;
 }
 
 
@@ -678,7 +691,9 @@ bool ReadWriteBufferFromHTTP::nextImpl()
         /*on_retry=*/ [&] ()
         {
             impl.reset();
-        });
+        },
+        false,
+        !impl);
 
     return next_result;
 }

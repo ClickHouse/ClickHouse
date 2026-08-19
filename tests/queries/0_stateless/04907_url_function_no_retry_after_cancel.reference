@@ -1,2 +1,3 @@
-the cancelled query succeeded
+the cancelled schema-inference query failed
+the cancellation interrupted the retry backoff
 no retry request was started after cancellation
