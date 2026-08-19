@@ -68,6 +68,12 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
+SELECT '-- the skip-index read distributes', countIf(explain LIKE '%GatherExchange%') > 0
+FROM (EXPLAIN distributed = 1 SELECT k, v FROM t_probe_skip WHERE s IN (SELECT k FROM t_keys WHERE k > 1000)
+SETTINGS make_distributed_plan = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0);
+
 SELECT '-- skip-index route, non-empty shipped set';
 SELECT count(), sum(v) FROM t_probe_skip WHERE s IN (SELECT k FROM t_keys WHERE k > 5);
 SELECT count(), sum(v) FROM t_probe_skip WHERE s IN (SELECT k FROM t_keys WHERE k > 5)
@@ -102,6 +108,12 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0;
 
+SELECT '-- the restored-part read distributes', countIf(explain LIKE '%GatherExchange%') > 0
+FROM (EXPLAIN distributed = 1 SELECT k, v FROM t_probe_offset WHERE k IN (SELECT k FROM t_keys WHERE k = 5)
+SETTINGS make_distributed_plan = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0);
+
 -- FINAL resolves the coordinator's marks per lane, in a separate site from the plain read. Several parts
 -- with disjoint primary-key ranges, spread over more lanes than there are buckets, make the local analysis
 -- prune parts from lanes other than the first while the lane resolution still has a part to read.
@@ -121,6 +133,13 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
     optimize_move_to_prewhere_if_final = 1;
+
+SELECT '-- the across-lanes FINAL read distributes', countIf(explain LIKE '%GatherExchange%') > 0
+FROM (EXPLAIN distributed = 1 SELECT k, v FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k = 5)
+SETTINGS make_distributed_plan = 1,
+    distributed_plan_max_rows_to_broadcast = 0, distributed_plan_default_reader_bucket_count = 3,
+    enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
+    optimize_move_to_prewhere_if_final = 1);
 
 -- Local analysis prunes every part, so the coordinator's whole part list is restored and resolved
 -- against it; no row matches the predicate, so zero rows is also what reading nothing would give.
