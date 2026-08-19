@@ -71,6 +71,10 @@ TEST(GCSProxy, DifferentResolversAreDifferentClients)
 {
     GCSObjectStorageSettings left;
     GCSObjectStorageSettings right;
+    /// Application Default Credentials are intentionally never treated as identical: their identity
+    /// comes from external mutable state. Use anonymous credentials to isolate proxy identity here.
+    left.no_sign_request = true;
+    right.no_sign_request = true;
     EXPECT_TRUE(left.describesSameClientAs(right));
 
     left.proxy_resolver = std::make_shared<ProxyListConfigurationResolver>(
