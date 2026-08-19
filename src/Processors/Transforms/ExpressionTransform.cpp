@@ -41,7 +41,7 @@ void ExpressionTransform::transform(Chunk & chunk)
 
     if (isCancelled())
     {
-        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), num_rows);
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
         return;
     }
 
@@ -52,7 +52,10 @@ void ExpressionTransform::transform(Chunk & chunk)
         expression->execute(block, num_rows, false, false, &getCancellationFlag());
         FailPointInjection::pauseFailPoint(FailPoints::expression_transform_pause);
         if (isCancelled())
+        {
             block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
+            num_rows = 0;
+        }
         chunk.setColumns(block.getColumns(), num_rows);
         updater->recordOutputChunk(chunk, block);
         return;
@@ -65,7 +68,10 @@ void ExpressionTransform::transform(Chunk & chunk)
     FailPointInjection::pauseFailPoint(FailPoints::expression_transform_pause);
 
     if (isCancelled())
+    {
         columns = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns()).getColumns();
+        num_rows = 0;
+    }
     chunk.setColumns(std::move(columns), num_rows);
 }
 
@@ -105,7 +111,7 @@ void ConvertingTransform::onConsume(Chunk chunk)
 
     if (isCancelled())
     {
-        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), num_rows);
+        chunk.setColumns(getOutputPort().getHeader().cloneEmptyColumns(), 0);
         cur_chunk = std::move(chunk);
         return;
     }
@@ -117,7 +123,10 @@ void ConvertingTransform::onConsume(Chunk chunk)
     FailPointInjection::pauseFailPoint(FailPoints::converting_transform_pause);
 
     if (isCancelled())
+    {
         block = getOutputPort().getHeader().cloneWithColumns(getOutputPort().getHeader().cloneEmptyColumns());
+        num_rows = 0;
+    }
     chunk.setColumns(block.getColumns(), num_rows);
     cur_chunk = std::move(chunk);
 }
