@@ -39,6 +39,8 @@ SELECT formatQuery('ATTACH MATERIALIZED VIEW mv');
 SELECT formatQuery('ATTACH VIEW v ON CLUSTER test_shard_localhost');
 
 DETACH VIEW v;
+ATTACH VIEW v ON CLUSTER test_shard_localhost; -- { serverError INCORRECT_QUERY }
+ATTACH MATERIALIZED VIEW v ON CLUSTER test_shard_localhost; -- { serverError INCORRECT_QUERY }
 ATTACH TABLE v;
 SELECT * FROM v;
 

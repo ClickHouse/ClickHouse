@@ -23,8 +23,11 @@ If a table was previously detached ([DETACH](/reference/statements/detach) query
 **Syntax**
 
 ```sql
-ATTACH TABLE|[MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+ATTACH [MATERIALIZED] VIEW [IF NOT EXISTS] [db.]name
 ```
+
+The shorthand takes the definition from stored metadata, which is read on the node that runs the query. The view spellings are therefore local only: use `ATTACH TABLE` to re-attach a detached view on a cluster or in a `Replicated` database.
 
 This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of some system tables, which are explicitly created on the server).
 

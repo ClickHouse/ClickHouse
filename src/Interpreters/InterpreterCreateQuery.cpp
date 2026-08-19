@@ -3471,6 +3471,24 @@ BlockIO InterpreterCreateQuery::execute()
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
     bool is_create_database = create.database && !create.table;
+
+    /// A short ATTACH carries no definition, so the grants it needs are known only after the stored
+    /// metadata is read on the node that executes it. Every distributed route enqueues before that
+    /// read, and the worker replaying the entry has no user, so it has full access. Keep the view
+    /// spellings local: `ATTACH TABLE` re-attaches a view and demands `CREATE TABLE` up front.
+    if (create.attach && !is_create_database && create.isView() && !create.storage && !create.columns_list)
+    {
+        auto attach_database = DatabaseCatalog::instance().tryGetDatabase(
+            create.database ? create.getDatabase() : getContext()->getCurrentDatabase());
+
+        if (!create.cluster.empty()
+            || (attach_database && attach_database->shouldReplicateQuery(getContext(), query_ptr)))
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "ATTACH VIEW {0} is not supported for ON CLUSTER queries and Replicated databases. "
+                "Use 'ATTACH TABLE {0};' instead.",
+                backQuoteIfNeed(create.getTable()));
+    }
+
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (create.attach_as_replicated.has_value())
