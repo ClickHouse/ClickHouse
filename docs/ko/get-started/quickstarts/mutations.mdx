@@ -124,7 +124,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 경량한 삭제에 관한 몇 가지 참고 사항입니다:
 
 * 이 기능은 `MergeTree` 테이블 엔진 계열에서만 사용할 수 있습니다.
-* 경량한 삭제는 기본적으로 동기식으로 동작하며, 모든 레플리카가 삭제를 처리할 때까지 대기합니다. 이 동작은 [`lightweight_deletes_sync` 설정](/ko/reference/settings/session-settings#lightweight_deletes_sync)으로 제어됩니다.
+* 경량한 삭제는 기본적으로 동기식으로 동작하며, 모든 레플리카가 삭제를 처리할 때까지 대기합니다. 이 동작은 [`lightweight_deletes_sync` 설정](/ko/reference/settings/session-settings/lightweight#lightweight_deletes_sync)으로 제어됩니다.
 
 <div className="mt-8">
   <BackToQuickstarts />

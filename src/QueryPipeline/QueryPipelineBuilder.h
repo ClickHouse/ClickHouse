@@ -163,6 +163,14 @@ public:
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 
+    /// Join two independent pipelines with a two-input joining transform created by the caller.
+    /// Each pipeline must have a single output stream (the transform may rely on its order).
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        ProcessorPtr joining,
+        Processors * collected_processors);
+
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
