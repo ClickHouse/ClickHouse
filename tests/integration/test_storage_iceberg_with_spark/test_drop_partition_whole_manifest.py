@@ -84,6 +84,21 @@ def test_drop_partition_whole_manifest_spark_round_trip(
         (3, "keep-b"),
     ]
 
+    # Verify that Spark accepts the header-only manifest list produced after
+    # `DROP PARTITION` removes the last remaining manifests.
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 2",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    instance.query(
+        f"ALTER TABLE {table_name} DROP PARTITION 3",
+        settings={"allow_insert_into_iceberg": 1},
+    )
+    assert instance.query(f"SELECT count() FROM {table_name}") == "0\n"
+
+    local_dir = update_spark_version_hint(cluster, storage_type, table_name)
+    assert spark.read.format("iceberg").load(local_dir).collect() == []
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_drop_partition_shared_spark_manifest_is_rejected(
