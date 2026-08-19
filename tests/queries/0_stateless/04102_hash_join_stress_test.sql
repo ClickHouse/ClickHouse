@@ -425,7 +425,7 @@ SELECT l.id, l.val, r.id, r.val FROM t_left_dup l ALL FULL JOIN t_right_dup r ON
 
 
 -- ============================================================
--- 14. Verify max_joined_block_rows truncation path (need_replication + early break)
+-- 14. Verify max_joined_block_size_rows truncation path (need_replication + early break)
 -- ============================================================
 
 SELECT '--- ALL LEFT JOIN: many duplicates with max_rows_in_join ---';
@@ -433,7 +433,7 @@ SELECT count() FROM (
     SELECT l.id, r.val
     FROM t_left_large l
     ALL LEFT JOIN t_right_large r ON l.id = r.id
-    SETTINGS max_joined_block_rows = 100
+    SETTINGS max_joined_block_size_rows = 100
 );
 
 
