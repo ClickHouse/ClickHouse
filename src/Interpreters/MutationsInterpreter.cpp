@@ -806,8 +806,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
                     /// Warn if the mutation also updates a non-ephemeral dependency
-                    /// of this MATERIALIZED column — the on-disk value will become stale.
-                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
+                    /// of this MATERIALIZED column — the on-disk value will become stale. Only when
+                    /// this interpreter writes the part: an on-fly read builds one per read task per
+                    /// part and writes nothing, so warning there is both untrue and per-read noise.
+                    if (settings.recalculate_dependencies_of_updated_columns
+                        && std::ranges::any_of(required_columns, [&](const auto & dep)
                         { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
                         LOG_WARNING(logger,
                             "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "
