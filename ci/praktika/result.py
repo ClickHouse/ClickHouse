@@ -192,8 +192,6 @@ class Result(MetaClasses.Serializable):
             files=files or [],
             links=links or [],
         )
-        for link in result.links:
-            result._record_link_size(link)
         if isinstance(labels, str):
             labels = [labels]
         for label in labels or []:
@@ -362,24 +360,10 @@ class Result(MetaClasses.Serializable):
         self._dump_if_persisted()
         return self
 
-    def set_link(self, link, size=None) -> "Result":
+    def set_link(self, link) -> "Result":
         self.links.append(link)
-        self._record_link_size(link, size)
         self._dump_if_persisted()
         return self
-
-    def _record_link_size(self, link, size=None):
-        """Remember the size in bytes of the object a link points to.
-
-        Stored in ``ext["link_sizes"]`` as a ``{link: bytes}`` map and rendered by
-        ``json.html`` next to the link, e.g. ``clickhouse-common-static.deb (1.2 GiB)``.
-        When ``size`` is not given it is taken from the uploads this process made,
-        so links to files uploaded by praktika get their size for free.
-        """
-        if size is None:
-            size = S3.get_uploaded_size(link)
-        if size is not None:
-            self.ext.setdefault("link_sizes", {})[link] = size
 
     def _add_job_summary_to_info(self):
         if not self.info:
@@ -635,6 +619,15 @@ class Result(MetaClasses.Serializable):
         result.results = failed_results
         return result
 
+    # ext keys dropped from a job's result when it is embedded as a sub-result of
+    # the workflow result. Only the heavy decimated host `metrics` timeline is
+    # dropped - it is not rendered at the workflow level and is only needed on the
+    # job's own report, which is uploaded separately with the full ext. Everything
+    # else (labels/hlabels badges, storage_usage link sizes, warnings/errors/notes,
+    # run_url) is lightweight and kept, so the workflow report and the embedded-node
+    # fallback path in json.html keep rendering the same content.
+    _WORKFLOW_SUB_RESULT_DROP_EXT_KEYS = ("metrics",)
+
     def update_sub_result(self, result: "Result", drop_nested_results=False):
         assert self.results, "BUG?"
         for i, result_ in enumerate(self.results):
@@ -647,6 +640,11 @@ class Result(MetaClasses.Serializable):
                     # self.results[i] = self._filter_out_ok_results(result)
                     self.results[i] = copy.deepcopy(result)
                     self.results[i].results = self._flat_failed_leaves(result, path=[self.name])
+                    self.results[i].ext = {
+                        k: v
+                        for k, v in (self.results[i].ext or {}).items()
+                        if k not in self._WORKFLOW_SUB_RESULT_DROP_EXT_KEYS
+                    }
                 else:
                     self.results[i] = result
         self._update_status()
@@ -1339,7 +1337,6 @@ class _ResultS3:
                     _uploaded_file_link[file] = file_link
 
                 result.links.append(file_link)
-                result._record_link_size(file_link)
             except Exception as e:
                 traceback.print_exc()
                 print(f"ERROR: Failed to upload file [{file}] for result [{result.name}]")
@@ -1455,6 +1452,71 @@ class _ResultS3:
 class ResultTranslator:
     GTEST_RESULT_FILE = Path("./ci/tmp/gtest.json").absolute()
     PYTEST_RESULT_FILE = Path("./ci/tmp/pytest.jsonl").absolute()
+
+    @staticmethod
+    def _render_chain(chain):
+        """Render a serialized pytest longrepr "chain": every exception, oldest first."""
+        out = ""
+        for pair in chain:
+            if not isinstance(pair, list):
+                continue
+            # a rendered traceback already ends with its own message, so the
+            # per-entry reprcrash would only repeat it
+            has_rt = len(pair) >= 1 and isinstance(pair[0], dict) and "reprentries" in pair[0]
+            if has_rt:
+                for re_entry in pair[0].get("reprentries", []):
+                    dd = re_entry.get("data", {})
+                    if not isinstance(dd, dict):
+                        continue
+                    # a frame with no source location serializes the key as
+                    # present-and-null, so a get() default never fires
+                    fileloc = dd.get("reprfileloc")
+                    if not isinstance(fileloc, dict):
+                        fileloc = {}
+                    fpath = fileloc.get("path")
+                    flineno = fileloc.get("lineno")
+                    fmsg = fileloc.get("message")
+                    header_parts = []
+                    if fpath is not None and flineno is not None:
+                        header_parts.append(f"File: {fpath}:{flineno}")
+                    if fmsg:
+                        header_parts.append(str(fmsg))
+                    if header_parts:
+                        if out:
+                            out += "\n"
+                        out += " - ".join(header_parts)
+                    if dd.get("lines"):
+                        if out:
+                            out += "\n"
+                        out += "\n".join(dd["lines"])
+            elif len(pair) >= 2 and isinstance(pair[1], dict):
+                crash = pair[1]
+                p = crash.get("path")
+                ln = crash.get("lineno")
+                msg = crash.get("message")
+                seg = []
+                if p is not None and ln is not None:
+                    seg.append(f"File: {p}:{ln}")
+                if msg:
+                    seg.append(str(msg))
+                if seg:
+                    if out:
+                        out += "\n"
+                    out += "\n".join(seg)
+            # pytest attaches the causal separator to the entry it follows
+            if len(pair) >= 3 and pair[2]:
+                if out:
+                    out += "\n"
+                out += str(pair[2])
+        return out
+
+    @staticmethod
+    def _chain_of(longrepr):
+        """The chain, only when it is authoritative: reprtraceback is just its last entry."""
+        if not isinstance(longrepr, dict):
+            return None
+        chain = longrepr.get("chain")
+        return chain if isinstance(chain, list) and len(chain) > 1 else None
 
     @classmethod
     def from_gtest(cls):
@@ -1653,7 +1715,10 @@ class ResultTranslator:
                                     # Best-effort: mirror traceback builder from TestReport for dict shape
                                     try:
                                         lr_txt = ""
-                                        crash = longrepr.get("reprcrash") if isinstance(longrepr, dict) else None
+                                        _chain = cls._chain_of(longrepr)
+                                        if _chain is not None:
+                                            lr_txt = cls._render_chain(_chain)
+                                        crash = longrepr.get("reprcrash") if _chain is None else None
                                         if isinstance(crash, dict):
                                             p = crash.get("path")
                                             ln = crash.get("lineno")
@@ -1665,12 +1730,16 @@ class ResultTranslator:
                                                 seg.append(str(msg))
                                             if seg:
                                                 lr_txt += "\n".join(seg)
-                                        rt = longrepr.get("reprtraceback") if isinstance(longrepr, dict) else None
+                                        rt = longrepr.get("reprtraceback") if _chain is None else None
                                         if isinstance(rt, dict) and "reprentries" in rt:
                                             composed = []
                                             for re_entry in rt.get("reprentries", []):
                                                 dd = re_entry.get("data", {})
-                                                fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                                # a frame with no source location serializes the key
+                                                # as present-and-null, so a get() default never fires
+                                                fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                                if not isinstance(fileloc, dict):
+                                                    fileloc = {}
                                                 fpath = fileloc.get("path")
                                                 flineno = fileloc.get("lineno")
                                                 fmsg = fileloc.get("message")
@@ -1742,15 +1811,21 @@ class ResultTranslator:
                                             parts.append(str(message))
                                         if parts:
                                             traceback_str += "\n".join(parts)
+                                # A chained failure carries every exception in "chain" (oldest
+                                # first), while "reprtraceback" is only its last entry, so the
+                                # chain is authoritative whenever it holds more than one.
+                                _use_chain = cls._chain_of(data) is not None
                                 # reprtraceback: collect lines
-                                if data and isinstance(data, dict) and "reprtraceback" in data:
+                                if not _use_chain and data and isinstance(data, dict) and "reprtraceback" in data:
                                     rt = data.get("reprtraceback", {})
                                     if isinstance(rt, dict) and "reprentries" in rt:
                                         composed = []
                                         for re_entry in rt.get("reprentries", []):
                                             dd = re_entry.get("data", {})
                                             # include per-frame file location for full stack context
-                                            fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
+                                            fileloc = dd.get("reprfileloc") if isinstance(dd, dict) else None
+                                            if not isinstance(fileloc, dict):
+                                                fileloc = {}
                                             fpath = fileloc.get("path")
                                             flineno = fileloc.get("lineno")
                                             fmsg = fileloc.get("message")
@@ -1767,50 +1842,15 @@ class ResultTranslator:
                                             if traceback_str:
                                                 traceback_str += "\n"
                                             traceback_str += "\n".join(composed)
-                                # chain: fallback/additional entries (only if no reprtraceback)
+                                # chain: every exception of a chained failure, oldest first;
+                                # also the fallback when there is no top-level reprtraceback
                                 elif data and isinstance(data, dict) and "chain" in data:
                                     try:
-                                        chain = data.get("chain", [])
-                                        for pair in chain:
-                                            # pair typically is [reprtraceback, reprcrash, context]
-                                            if not isinstance(pair, list):
-                                                continue
-                                            if len(pair) >= 1 and isinstance(pair[0], dict):
-                                                rt = pair[0]
-                                                if "reprentries" in rt:
-                                                    for re_entry in rt.get("reprentries", []):
-                                                        dd = re_entry.get("data", {})
-                                                        fileloc = dd.get("reprfileloc", {}) if isinstance(dd, dict) else {}
-                                                        fpath = fileloc.get("path")
-                                                        flineno = fileloc.get("lineno")
-                                                        fmsg = fileloc.get("message")
-                                                        header_parts = []
-                                                        if fpath is not None and flineno is not None:
-                                                            header_parts.append(f"File: {fpath}:{flineno}")
-                                                        if fmsg:
-                                                            header_parts.append(str(fmsg))
-                                                        if header_parts:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += " - ".join(header_parts)
-                                                        if isinstance(dd, dict) and "lines" in dd and dd["lines"]:
-                                                            if traceback_str:
-                                                                traceback_str += "\n"
-                                                            traceback_str += "\n".join(dd["lines"])
-                                            if len(pair) >= 2 and isinstance(pair[1], dict):
-                                                crash = pair[1]
-                                                p = crash.get("path")
-                                                ln = crash.get("lineno")
-                                                msg = crash.get("message")
-                                                seg = []
-                                                if p is not None and ln is not None:
-                                                    seg.append(f"File: {p}:{ln}")
-                                                if msg:
-                                                    seg.append(str(msg))
-                                                if seg:
-                                                    if traceback_str:
-                                                        traceback_str += "\n"
-                                                    traceback_str += "\n".join(seg)
+                                        rendered = cls._render_chain(data.get("chain") or [])
+                                        if rendered:
+                                            if traceback_str:
+                                                traceback_str += "\n"
+                                            traceback_str += rendered
                                     except Exception:
                                         # Be resilient to unexpected shapes
                                         pass
