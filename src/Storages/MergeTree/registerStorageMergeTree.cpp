@@ -1237,6 +1237,46 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table TTL is not allowed for MergeTree in old syntax");
     }
 
+    /// Sorting-key expressions are evaluated while writing a part and later while
+    /// merging parts. Most MergeTree virtual columns are only available to readers,
+    /// so accepting them here would make CREATE succeed and a later INSERT fail.
+    /// `_block_number` and `_block_offset` are the only materializable virtual
+    /// columns; their settings are merge-time invariants and must be enabled before
+    /// a regular MergeTree can use them in its sorting key.
+    if (!merging_params.is_queue && args.mode <= LoadingStrictnessLevel::CREATE)
+    {
+        for (const auto & column_name : metadata.sorting_key.expression->getRequiredColumns())
+        {
+            if (!metadata.isVirtualColumn(column_name))
+                continue;
+
+            if (column_name == BlockNumberColumn::name)
+            {
+                if ((*storage_settings)[MergeTreeSetting::enable_block_number_column])
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sorting key uses `_block_number`, but MergeTree setting `enable_block_number_column` is disabled");
+            }
+
+            if (column_name == BlockOffsetColumn::name)
+            {
+                if ((*storage_settings)[MergeTreeSetting::enable_block_offset_column])
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Sorting key uses `_block_offset`, but MergeTree setting `enable_block_offset_column` is disabled");
+            }
+
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Sorting key cannot use reader-only virtual column {}",
+                backQuote(column_name));
+        }
+    }
+
     DataTypes data_types = metadata.partition_key.data_types;
     if (args.mode <= LoadingStrictnessLevel::CREATE && !(*storage_settings)[MergeTreeSetting::allow_floating_point_partition_key])
     {
