@@ -296,9 +296,25 @@ struct NormalProjectionCandidate : public ProjectionCandidate
 };
 
 /// Emit `main_header`'s columns by name out of `proj_header`, narrowing away surplus pass-throughs.
-/// nullopt when the names already match in order, or when `proj_header` cannot supply a column.
+/// nullopt when the names already match in order, either header has duplicate names, or `proj_header` cannot supply a column.
 static std::optional<ActionsDAG> makeNarrowingDAG(const Block & proj_header, const Block & main_header)
 {
+    auto has_duplicate_names = [](const Block & header)
+    {
+        std::unordered_set<std::string_view> names;
+        for (const auto & column : header)
+        {
+            if (!names.emplace(column.name).second)
+                return true;
+        }
+        return false;
+    };
+
+    /// A name-only mapping cannot preserve the provenance of duplicated columns. Reject this
+    /// optimization rather than silently selecting the wrong occurrence.
+    if (has_duplicate_names(proj_header) || has_duplicate_names(main_header))
+        return {};
+
     ActionsDAG dag;
     std::unordered_map<std::string_view, std::list<const ActionsDAG::Node *>> inputs_by_name;
     for (const auto & col : proj_header.getColumnsWithTypeAndName())
