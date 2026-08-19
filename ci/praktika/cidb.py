@@ -192,9 +192,31 @@ ORDER BY day DESC
         return None
 
     @classmethod
+    def _job_test_context(cls, result: Result, published_ids) -> str:
+        """Names every failing child of `result` whose info reaches no other row."""
+        lines = [
+            f"{r.name}: {r.info}"
+            for r in result.results
+            if not r.is_ok()
+            and r.info
+            and id(r) not in published_ids
+            and r.info not in result.info
+        ]
+        if not lines:
+            return result.info
+        return "\n".join([result.info] + lines) if result.info else "\n".join(lines)
+
+    @classmethod
     def json_data_generator(cls, result: Result, result_name_for_cidb):
         """Generates JSON data records for the result and its test cases."""
         env = _Environment.get()
+
+        test_cases_result = cls._get_sub_result_with_test_cases(
+            result, result_name_for_cidb
+        )
+        published_ids = (
+            {id(r) for r in test_cases_result.results} if test_cases_result else set()
+        )
 
         # Create the base record
         base_record = cls.TableRecord(
@@ -219,13 +241,10 @@ ORDER BY day DESC
             test_name="",
             test_status="",
             test_duration_ms=None,
-            test_context_raw=result.info,
+            test_context_raw=cls._job_test_context(result, published_ids),
         )
         yield json.dumps(dataclasses.asdict(base_record))
 
-        test_cases_result = cls._get_sub_result_with_test_cases(
-            result, result_name_for_cidb
-        )
         if test_cases_result:
             for result_ in test_cases_result.results:
                 record = copy.copy(base_record)
