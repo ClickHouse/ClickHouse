@@ -194,3 +194,20 @@ TEST(ColumnsCache, RemovePartIsStickyAgainstInFlightReaders)
     const auto [new_table_generation, new_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
     EXPECT_TRUE(cache.set(key, makeEntry(100), new_table_generation, new_part_generation));
 }
+
+TEST(ColumnsCache, RemoveTableReclaimsPartGenerationTombstones)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    cache.removePart(table_uuid, "part_1");
+    EXPECT_EQ(cache.getInvalidationGenerations(table_uuid, "part_1").second, 1u);
+
+    /// Dropping a table invalidates in-flight readers through the table token,
+    /// so the per-part tombstone is no longer needed.
+    cache.removeTable(table_uuid);
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    EXPECT_EQ(table_generation, 1u);
+    EXPECT_EQ(part_generation, 0u);
+}

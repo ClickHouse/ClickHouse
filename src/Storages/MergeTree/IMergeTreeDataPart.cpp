@@ -1082,7 +1082,7 @@ void IMergeTreeDataPart::clearCaches()
         && !isProjectionPart()
         && storage.getStorageID().uuid != UUIDHelpers::Nil)
     {
-        if (auto columns_cache = storage.getContext()->getColumnsCache())
+        if (auto columns_cache = storage.getContext()->getColumnsCache(); columns_cache && columns_cache->maxSizeInBytes() != 0)
         {
             columns_cache->removePart(storage.getStorageID().uuid, name);
         }

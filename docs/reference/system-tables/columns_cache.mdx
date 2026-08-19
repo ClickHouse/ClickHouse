@@ -29,8 +29,8 @@ be dropped manually with [`SYSTEM DROP COLUMNS CACHE`](/reference/statements/sys
 
 ## Columns {#columns}
 
-- `database` ([String](/reference/data-types/string)) — Database name of the table the part belongs to. Empty if the table has been dropped but some of its entries are still in the cache.
-- `table` ([String](/reference/data-types/string)) — Table name. Empty if the table has been dropped.
+- `database` ([String](/reference/data-types/string)) — Database name of the table the part belongs to.
+- `table` ([String](/reference/data-types/string)) — Table name.
 - `table_uuid` ([UUID](/reference/data-types/uuid)) — UUID of the table. Stable across renames.
 - `part` ([String](/reference/data-types/string)) — Name of the data part.
 - `column` ([String](/reference/data-types/string)) — Name of the column.
