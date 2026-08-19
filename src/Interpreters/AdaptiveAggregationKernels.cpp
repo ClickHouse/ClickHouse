@@ -26,10 +26,6 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationStagedRecords;
     extern const Event AdaptiveAggregationStagedRecordsMerged;
     extern const Event AdaptiveAggregationStagedBytes;
-    extern const Event AdaptiveAggregationDrainedRecords;
-    extern const Event AdaptiveAggregationBucketsRetired;
-    extern const Event AdaptiveAggregationPressureSweeps;
-    extern const Event AdaptiveAggregationPressureDrainedRecords;
 }
 
 namespace DB
