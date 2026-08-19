@@ -328,6 +328,38 @@ std::unordered_set<const ActionsDAG::Node *> collectVolumeReducingFunctionsToKee
         if (!isSupportedArgumentType(node.function_base->getName(), argument->result_type))
             continue;
 
+        /// `trySplitFilter` also visits expressions which were never rewritten by
+        /// `tryPushDownVolumeReducingFunction`, for example after an outer filter is merged into
+        /// a subquery projection. Keep a function below a filter only when the dedicated rewrite
+        /// could have moved it there: the predicate must read its argument, the function must be
+        /// cheap on every input row, and the predicate must not already calculate the same scalar.
+        if (low_part_root)
+        {
+            if (!low_part_nodes.contains(argument)
+                || !isCheapToEvaluateBeforeFilter(*node.function_base, argument->result_type))
+                continue;
+
+            bool predicate_computes_function = false;
+            for (const auto * low_part_node : low_part_nodes)
+            {
+                if (low_part_node == &node
+                    || low_part_node->type != ActionsDAG::ActionType::FUNCTION
+                    || !low_part_node->function_base
+                    || low_part_node->children.size() != 1
+                    || low_part_node->function_base->getName() != node.function_base->getName())
+                    continue;
+
+                if (resolveAliases(low_part_node->children.front()) == argument)
+                {
+                    predicate_computes_function = true;
+                    break;
+                }
+            }
+
+            if (predicate_computes_function)
+                continue;
+        }
+
         if (surfaced.contains(argument))
             continue;
 

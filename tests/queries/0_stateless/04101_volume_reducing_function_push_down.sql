@@ -60,6 +60,24 @@ FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
     SELECT lengthUTF8(s) FROM volume_reducing_function_push_down WHERE id > 0
     SETTINGS query_plan_push_down_volume_reducing_functions = 1);
 
+-- `trySplitFilter` also sees the expression after this outer filter is merged with the subquery.
+-- The filter does not use `s`, so preserving `lengthUTF8(s)` below it would evaluate the
+-- byte-scanning function for rows the filter rejects. This must not be mistaken for a previously
+-- pushed function that needs to stay below the filter to prevent an optimizer cycle.
+SELECT 'plan: merged filter not reading the argument — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT x FROM (SELECT id, lengthUTF8(s) AS x FROM volume_reducing_function_push_down) WHERE id > 0
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1, optimize_functions_to_subcolumns = 0);
+
+-- The same rule applies when the predicate reads the wide argument: `lengthUTF8` scans every
+-- byte and is not profitable before a potentially selective filter.
+SELECT 'plan: merged filter with byte-scanning function — not pushed';
+SELECT countIf(explain LIKE '%[volume-reducing functions]%')
+FROM (EXPLAIN description = 1, actions = 0, compact = 0, pretty = 0
+    SELECT x FROM (SELECT s, lengthUTF8(s) AS x FROM volume_reducing_function_push_down) WHERE like(s, 'x%')
+    SETTINGS query_plan_push_down_volume_reducing_functions = 1);
+
 -- The filter already computes the same scalar. Since its predicate is not rewritten to consume
 -- the pushed result, moving the selected scalar below the filter would compute it twice for rows
 -- rejected by the predicate.
