@@ -131,8 +131,20 @@ namespace
 void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
 {
     auto & select = ast->as<ASTSelectQuery &>();
-    if (!select.with())
+    if (select.with())
+    {
+        /// A nested `Merge` has already injected the value that identifies the
+        /// outer child's name. Keep that value: adding a second, inner-table
+        /// alias makes the old interpreter reject the query with
+        /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
+        for (const auto & expression : select.with()->children)
+            if (expression->tryGetAlias() == column_name)
+                return;
+    }
+    else
+    {
         select.setExpression(ASTSelectQuery::Expression::WITH, make_intrusive<ASTExpressionList>());
+    }
 
     auto literal = make_intrusive<ASTLiteral>(value);
     literal->alias = column_name;
@@ -1028,6 +1040,15 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
+            }
+
+            /// Query-tree rewriting turns the Merge virtual columns into constants. Request a
+            /// physical column before constructing a plan as well, otherwise a delegating child
+            /// can receive `SELECT` with an empty projection after that rewriting.
+            if (real_column_names.empty())
+            {
+                real_column_names.push_back(ExpressionActions::getSmallestColumn(storage_metadata_snapshot->getColumns().getAllPhysical()).name);
+                is_smallest_column_requested = true;
             }
 
             SelectQueryInfo modified_query_info;
