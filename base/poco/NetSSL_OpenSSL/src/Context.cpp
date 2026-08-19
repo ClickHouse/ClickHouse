@@ -222,8 +222,12 @@ static int poco_ssl_probe_and_set_default_ca_location(SSL_CTX *ctx, Context::CAP
 
 	if (dir != nullptr)
 	{
+		/// The directory exists but contains no certificates (checked by poco_dir_contains_certs above):
+		/// register it anyway, as certificates may appear there later, but report that nothing was found,
+		/// so that the caller can fall back to the certificates embedded into the binary. Without
+		/// hash-named files the directory lookup cannot return anything at verification time anyway.
 		caPaths.caDefaultDir = dir;
-		return SSL_CTX_load_verify_locations(ctx, NULL, dir);
+		SSL_CTX_load_verify_locations(ctx, NULL, dir);
 	}
 
 	return 0;

@@ -80,3 +80,21 @@ def test_embedded_ca_certificates(started_cluster):
         )
         > 100
     )
+
+    # An existing but empty certificate directory must also engage the fallback:
+    # a directory without hash-named files can never yield a certificate at
+    # verification time, so it does not count as certificates being present.
+    node.exec_in_container(
+        ["bash", "-c", "mkdir -p /etc/ssl/certs"], privileged=True, user="root"
+    )
+    node.restart_clickhouse()
+
+    assert https_ping() == "Ok.\n"
+    assert (
+        int(
+            node.query(
+                "SELECT count() FROM system.certificates WHERE path = '(embedded)'"
+            ).strip()
+        )
+        > 100
+    )
