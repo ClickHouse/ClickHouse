@@ -98,6 +98,7 @@ TEST(TTLIndexClearMergeSelector, TestRowsConstraint)
         {
             .name = "all_0_0_0",
             .info = MergeTreePartInfo::fromPartName("all_0_0_0", MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .all_ttl_calculated_if_any = true,
             .size = 100,
             .rows = 1000,
             .next_index_clear_ttl = current_time,
@@ -124,6 +125,7 @@ TEST(TTLIndexClearMergeSelector, SkipsPartitionWithClearInProgress)
         return PartProperties{
             .name = name,
             .info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING),
+            .all_ttl_calculated_if_any = true,
             .size = 100,
             .rows = 100,
             .next_index_clear_ttl = current_time,
