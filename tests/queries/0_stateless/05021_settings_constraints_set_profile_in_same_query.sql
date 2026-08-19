@@ -1,3 +1,8 @@
+-- Tags: no-parallel
+-- A settings profile is server-global rather than per-database, and its name cannot be made unique
+-- per run: query parameters are not accepted in access-entity DDL. So this test is not safe against
+-- a concurrent copy of itself - which is how the flaky check runs it - and has to be sequential.
+
 -- A `SET` statement that changes `profile` installs a new constraint set halfway through itself.
 -- Everything assigned or reset after that change must be checked against the new constraints, so
 -- that one statement cannot do what the same two statements in sequence are not allowed to do.

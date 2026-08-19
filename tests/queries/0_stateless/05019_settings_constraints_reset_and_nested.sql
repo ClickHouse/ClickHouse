@@ -1,3 +1,8 @@
+-- Tags: no-parallel
+-- A settings profile is server-global rather than per-database, and its name cannot be made unique
+-- per run: query parameters are not accepted in access-entity DDL. So this test is not safe against
+-- a concurrent copy of itself - which is how the flaky check runs it - and has to be sequential.
+
 -- Settings constraints must be enforced on `SET name = DEFAULT` and on a `SETTINGS` clause
 -- nested inside a subquery or a CTE, not only on a top-level `SETTINGS` clause.
 

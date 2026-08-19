@@ -6,8 +6,11 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-USER="user_05020"
-PROFILE="profile_05020"
+# A user and a settings profile are server-global, not per-database, so their names carry the test
+# database to keep this test safe against a concurrent copy of itself - which is how the flaky check
+# runs it.
+USER="user_05020_${CLICKHOUSE_DATABASE}"
+PROFILE="profile_05020_${CLICKHOUSE_DATABASE}"
 TABLE="t_05020"
 
 ${CLICKHOUSE_CLIENT} --multiquery --query "
