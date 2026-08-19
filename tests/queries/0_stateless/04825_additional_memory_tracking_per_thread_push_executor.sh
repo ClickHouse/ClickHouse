@@ -23,30 +23,38 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CONFIG_FILE=$(mktemp -p "${CLICKHOUSE_TMP:-.}" 04825_config.XXXXXX.xml)
 trap 'rm -f "$CONFIG_FILE"' EXIT
 
-cat > "$CONFIG_FILE" <<'EOF'
+# `clickhouse-local` exposes the effective cgroup-aware default hard limit.
+# Derive every threshold below from it so the test is independent of the
+# machine's memory size.
+DEFAULT_MAX_SERVER_MEMORY_USAGE=$(${CLICKHOUSE_LOCAL} --query "SELECT getServerSetting('max_server_memory_usage')")
+FAILING_LIMIT=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 2))
+FAILING_RESERVATION=$DEFAULT_MAX_SERVER_MEMORY_USAGE
+SUCCESSFUL_RESERVATION=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 4))
+NESTED_RESERVATION=$((DEFAULT_MAX_SERVER_MEMORY_USAGE / 2))
+
+cat > "$CONFIG_FILE" <<EOF
 <clickhouse>
-    <max_server_memory_usage>1073741824</max_server_memory_usage>
-    <additional_memory_tracking_per_thread>2147483648</additional_memory_tracking_per_thread>
+    <max_server_memory_usage>${FAILING_LIMIT}</max_server_memory_usage>
+    <additional_memory_tracking_per_thread>${FAILING_RESERVATION}</additional_memory_tracking_per_thread>
 </clickhouse>
 EOF
 
-# The caller thread of the step-driven INSERT pipeline must acquire the 2 GiB
-# reservation while it executes `executeStep` and fail with MEMORY_LIMIT_EXCEEDED;
-# if `executeStep` carries no reservation, the INSERT succeeds and nothing is
-# printed.
+# The caller thread of the step-driven INSERT pipeline must acquire a
+# reservation larger than the hard limit while it executes `executeStep` and
+# fail with MEMORY_LIMIT_EXCEEDED; if `executeStep` carries no reservation, the
+# INSERT succeeds and nothing is printed.
 ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
     CREATE TABLE t (x UInt64) ENGINE = Memory;
     INSERT INTO t SETTINGS max_threads = 1, max_insert_threads = 1 VALUES (1);
 " < /dev/null 2>&1 | grep -oE 'MEMORY_LIMIT_EXCEEDED' | head -n1
 
-# Control: with a hard limit far above the reservation (and above any realistic
-# baseline memory usage of `clickhouse-local`), the same step-driven INSERT must
-# succeed — each `executeStep` job holds and then releases its reservation without
-# hanging or leaking.
-cat > "$CONFIG_FILE" <<'EOF'
+# Control: with the default hard limit and a one-quarter reservation, the same
+# step-driven INSERT must succeed — each `executeStep` job holds and then
+# releases its reservation without hanging or leaking.
+cat > "$CONFIG_FILE" <<EOF
 <clickhouse>
-    <max_server_memory_usage>107374182400</max_server_memory_usage>
-    <additional_memory_tracking_per_thread>2147483648</additional_memory_tracking_per_thread>
+    <max_server_memory_usage>${DEFAULT_MAX_SERVER_MEMORY_USAGE}</max_server_memory_usage>
+    <additional_memory_tracking_per_thread>${SUCCESSFUL_RESERVATION}</additional_memory_tracking_per_thread>
 </clickhouse>
 EOF
 
@@ -57,13 +65,15 @@ ${CLICKHOUSE_LOCAL} --config-file "$CONFIG_FILE" --query "
 " < /dev/null
 
 # A materialized CTE runs its inner `PushingPipelineExecutor` from an outer
-# pipeline worker. One 32 GiB reservation fits under this 64 GiB server limit,
+# pipeline worker. Derive the two thresholds from `clickhouse-local`'s effective
+# hard limit: one half fits under the full hard limit,
 # whereas two reservations on that physical worker do not. The nested executor
-# must therefore reuse the outer reservation.
-cat > "$CONFIG_FILE" <<'EOF'
+# must therefore reuse the outer reservation. This remains valid when a CI
+# runner has a small cgroup memory limit.
+cat > "$CONFIG_FILE" <<EOF
 <clickhouse>
-    <max_server_memory_usage>68719476736</max_server_memory_usage>
-    <additional_memory_tracking_per_thread>34359738368</additional_memory_tracking_per_thread>
+    <max_server_memory_usage>${DEFAULT_MAX_SERVER_MEMORY_USAGE}</max_server_memory_usage>
+    <additional_memory_tracking_per_thread>${NESTED_RESERVATION}</additional_memory_tracking_per_thread>
 </clickhouse>
 EOF
 
