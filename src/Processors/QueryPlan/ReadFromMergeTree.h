@@ -502,6 +502,14 @@ public:
         allow_query_condition_cache = replaced_step.allow_query_condition_cache;
     }
 
+    /// Keep read-time join runtime-filter pruning when a normal projection replaces this step.
+    /// These descriptors are registered after the step is constructed, so the projection reader
+    /// cannot receive them through its constructor.
+    void copyJoinRuntimeFiltersForIndexAnalysis(const ReadFromMergeTree & replaced_step)
+    {
+        join_runtime_filters_for_index_analysis = replaced_step.join_runtime_filters_for_index_analysis;
+    }
+
     std::unique_ptr<LazilyReadFromMergeTree> keepOnlyRequiredColumnsAndCreateLazyReadStep(const NameSet & required_outputs);
     void addStartingPartOffsetAndPartOffset(bool & added_part_starting_offset, bool & added_part_offset);
 
@@ -572,9 +580,8 @@ private:
 
     /// Used for granule pruning in JOINs (enable_join_runtime_filters_index_analysis).
     /// Populated post-construction by addJoinRuntimeFilterIndexAnalysisOnDataRead during query-plan
-    /// optimization. Not carried by clone()/serialize()/deserialize(), so the pruning is intentionally
-    /// skipped when the step is rebuilt for distributed or parallel-replicas reads (results stay correct,
-    /// only the optimization is lost); propagating it there is a follow-up.
+    /// optimization. Carried by clones and normal-projection rewrites, but intentionally not
+    /// serialized because runtime filters are local to the initiating query pipeline.
     std::vector<RuntimeFilterIndexAnalysisDescriptor> join_runtime_filters_for_index_analysis;
 
     /// Row policy / prewhere deferred to after FINAL, if needed

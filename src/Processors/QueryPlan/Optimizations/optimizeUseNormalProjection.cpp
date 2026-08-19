@@ -724,7 +724,10 @@ std::optional<String> optimizeUseNormalProjections(
         reading->getParallelReadingExtension());
 
     if (auto * projection_reading_merge_tree = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+    {
         projection_reading_merge_tree->setIndexAnalysisHadFilter(projection_index_analysis_had_filter);
+        projection_reading_merge_tree->copyJoinRuntimeFiltersForIndexAnalysis(*reading);
+    }
 
     /// `tryOptimizeTopK` runs in the first optimization pass, so this rewrite can replace a read that
     /// is already stamped for TopK filtering. Carry the stamp and the query condition cache gate over,
