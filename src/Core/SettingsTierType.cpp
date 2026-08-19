@@ -12,6 +12,7 @@ std::shared_ptr<DataTypeEnum8> getSettingsTierEnum()
             {"Production",      static_cast<Int8>(SettingsTierType::PRODUCTION)},
             {"Obsolete",        static_cast<Int8>(SettingsTierType::OBSOLETE)},
             {"Experimental",    static_cast<Int8>(SettingsTierType::EXPERIMENTAL)},
+            {"PrivatePreview",  static_cast<Int8>(SettingsTierType::PRIVATE_PREVIEW)},
             {"Beta",            static_cast<Int8>(SettingsTierType::BETA)}
         });
 }

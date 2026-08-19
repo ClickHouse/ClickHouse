@@ -174,7 +174,7 @@ Some operations may take longer than expected due to specific ClickHouse queries
 
 The current ClickHouse adapter for dbt has several limitations you should be aware of:
 
-- The plugin uses syntax that requires ClickHouse version 25.3 or newer. We don't test older versions of Clickhouse. We also don't currently test Replicated tables.
+- The plugin uses syntax that requires ClickHouse version 25.3 or newer. We don't test older versions of ClickHouse. We also don't currently test Replicated tables.
 - Different runs of the `dbt-adapter` may collide if they're run at the same time as internally they can use the same table names for the same operations. For more information, check the issue [#420](https://github.com/ClickHouse/dbt-clickhouse/issues/420).
 - The adapter currently materializes models as tables using an [INSERT INTO SELECT](/reference/statements/insert-into#inserting-the-results-of-select). This effectively means data duplication if the run is executed again. Very large datasets (PB) can result in extremely long run times, making some models unviable. To improve performance, use ClickHouse Materialized Views by implementing the view as `materialized: materialization_view`. Additionally, aim to minimize the number of rows returned by any query by utilizing `GROUP BY` where possible. Prefer models that summarize data over those that simply transform while maintaining row counts of the source.
 - To use Distributed tables to represent a model, you must create the underlying replicated tables on each node manually. The Distributed table can, in turn, be created on top of these. The adapter doesn't manage cluster creation.
