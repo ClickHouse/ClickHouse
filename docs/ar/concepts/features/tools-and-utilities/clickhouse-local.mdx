@@ -72,6 +72,13 @@ curl https://clickhouse.com/ | sh
   ```
 </Tip>
 
+ليس من الضروري أن تكون البيانات محلية: يمكن استخدام URL بدلًا من اسم الملف، ويحدّد مخطط URL محرك الجدول المطابق (`http://` و`https://` تُقرأ كما في دالة [url](/ar/reference/functions/table-functions/url)، و`s3://` كما في دالة [s3](/ar/reference/functions/table-functions/s3)، و`file://` كما في دالة [file](/ar/reference/functions/table-functions/file)):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -398,10 +405,14 @@ clickhouse-local \
 
 تضبط الخيارات `--listen_host` و`--tcp_port` و`--http_port` عنوان الربط والمنافذ. المنافذ الافتراضية هي `9000` لـ TCP و`8123` لـ HTTP.
 
+يستجيب مستمع HTTP لطلبات CORS التمهيدية بالترويسات المتساهلة نفسها الموجودة في إعداد `clickhouse-server` الافتراضي، لذا يمكن لتطبيق ويب الاستعلام منه عبر المتصفح مباشرةً، بما في ذلك واجهة الويب المفتوحة من عنوان URL بصيغة `file://`، الذي يكون مصدره `null`. لتقييد ذلك، عرّف قسم `http_options_response` خاصًا بك في ملف التهيئة يُمرَّر باستخدام `--config-file`؛ إذ يستبدل الإعدادات الافتراضية بالكامل.
+
 <Warning>
   **الأمان**
 
   بشكل افتراضي، يعمل `clickhouse-local` بإعداد المستخدمين المؤقتين، لذا فإن أي مستمع يفتحه يكون من دون مصادقة. اربطه بعنوان استرجاعي (`127.0.0.1` أو `::1`) ما لم تكن قد هيّأت المستخدمين والتحكم في الوصول صراحةً عبر توجيه الإعداد `users_config` إلى ملف `users.xml` مخصص (على سبيل المثال باستخدام `--config-file`). يؤدي الاستماع على عنوان غير استرجاعي من دون مصادقة إلى كشف بيانات المثيل المحلي لأي شخص يمكنه الوصول إلى المنفذ المحدد.
+
+  لاحظ أن العنوان الاسترجاعي يظل قابلًا للوصول من المتصفح: فبينما يكون مستمع HTTP مفتوحًا، يمكن لأي صفحة ويب تزورها الاستعلام من المثيل المحلي وقراءة النتائج بفضل ترويسات CORS الافتراضية.
 </Warning>
 
 <div id="related-content-1">

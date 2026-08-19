@@ -34,7 +34,7 @@ O BYOC oferece duas formas principais de coletar e visualizar métricas com o Pr
 | **Best Suited For**       | Monitoramento abrangente da infraestrutura e dos serviços                                             | Monitoramento e integração específicos do serviço                                        |
 | **How to Integrate**      | Configure a federação no Prometheus externo para fazer a ingestão das métricas do cluster             | Adicione os endpoints de métricas do ClickHouse diretamente à configuração do Prometheus |
 
-**Recomendação**: Para a maioria dos casos de uso, recomendamos a integração com a stack do Prometheus integrada, pois ela fornece métricas abrangentes de todos os componentes da sua implantação BYOC (serviços ClickHouse, cluster Kubernetes e serviços de suporte), em vez de apenas métricas do servidor ClickHouse. 
+**Recomendação**: Para a maioria dos casos de uso, recomendamos a integração com a stack do Prometheus integrada, pois ela fornece métricas abrangentes de todos os componentes da sua implantação BYOC (serviços ClickHouse, cluster Kubernetes e serviços de suporte), em vez de apenas métricas do servidor ClickHouse.
 
 <div id="builtin-prometheus-stack">
   ## A stack do Prometheus integrada do BYOC
@@ -47,24 +47,26 @@ O ClickHouse BYOC implanta uma stack completa de monitoramento com Prometheus no
 * nós da infraestrutura subjacente
 
 <div id="accessing-prometheus-stack">
-  ### Acessando a stack do Prometheus
+  ### Como acessar a stack do Prometheus
 </div>
 
-Para se conectar à stack integrada do Prometheus:
+Para se conectar à stack do Prometheus integrada:
 
-1. **Entre em contato com o suporte do ClickHouse** para habilitar o balanceador de carga privado no seu ambiente BYOC.
+1. **Habilite o balanceador de carga privado** da sua infraestrutura BYOC no console do ClickHouse Cloud (consulte [Balanceadores de carga](/pt-BR/products/bring-your-own-cloud/configuration/configurations#load-balancers)).
 2. **Solicite a URL do endpoint do Prometheus** ao suporte do ClickHouse.
-3. **Verifique a conectividade da rede privada** com o endpoint do Prometheus — normalmente por meio de VPC peering ou outra configuração de rede privada.
+3. **Verifique a conectividade de rede privada** com o endpoint do Prometheus — normalmente por meio de peering de VPC/VNet ou outra configuração de rede privada.
 
-Os formatos de endpoint variam de acordo com o tipo de conectividade:
+Os formatos de endpoint variam conforme o tipo de conectividade:
 
-| Conectividade     | Formato do endpoint                                                            |
-| ----------------- | ------------------------------------------------------------------------------ |
-| VPC / VPC peering | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
-| PrivateLink       | `https://prometheus.vpce.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`     |
+| Conectividade       | Formato do endpoint                                                            |
+| ------------------- | ------------------------------------------------------------------------------ |
+| Peering de VPC/VNet | `https://prometheus-internal.<subdomain>.<region>.<cloud>.clickhouse-byoc.com` |
+| Endpoint privado    | `https://prometheus.<label>.<subdomain>.<region>.<cloud>.clickhouse-byoc.com`  |
+
+`<cloud>` pode ser `aws`, `gcp` ou `azure`. Para endpoints privados, `<label>` é específico da nuvem: `vpce` na AWS, `p` no GCP e `privatelink` no Azure.
 
 <Note>
-  A URL da stack do Prometheus só pode ser acessada por conexões de rede privada e não requer autenticação. O acesso é restrito a redes que consigam alcançar sua VPC BYOC por meio de VPC peering ou outras opções de conectividade privada.
+  A URL da stack do Prometheus é acessível somente por conexões de rede privada e não requer autenticação. O acesso é restrito a redes que conseguem alcançar sua VPC/VNet BYOC por peering ou outras opções de conectividade privada.
 </Note>
 
 <div id="prometheus-stack-integration">
@@ -119,19 +121,19 @@ Os serviços ClickHouse expõem um endpoint de métricas compatível com o Prome
 O endpoint de métricas está disponível em `/metrics_all` no endpoint do seu serviço ClickHouse:
 
 ```bash
-curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443/metrics_all
+curl --user <username>:<password> https://<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443/metrics_all
 ```
 
 **Exemplo de resposta:**
 
 ```bash
-# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes A quantidade de bytes armazenados no disco `s3disk` no banco de dados do sistema
+# HELP ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes The amount of bytes stored on disk `s3disk` in system database
 # TYPE ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes gauge
 ClickHouse_CustomMetric_StorageSystemTablesS3DiskBytes{hostname="c-jet-ax-16-server-43d5baj-0"} 62660929
-# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts O número de partes desanexadas corrompidas
+# HELP ClickHouse_CustomMetric_NumberOfBrokenDetachedParts The number of broken detached parts
 # TYPE ClickHouse_CustomMetric_NumberOfBrokenDetachedParts gauge
 ClickHouse_CustomMetric_NumberOfBrokenDetachedParts{hostname="c-jet-ax-16-server-43d5baj-0"} 0
-# HELP ClickHouse_CustomMetric_TotalNumberOfErrors O número total de erros no servidor desde a última reinicialização
+# HELP ClickHouse_CustomMetric_TotalNumberOfErrors The total number of errors on server since the last restart
 # TYPE ClickHouse_CustomMetric_TotalNumberOfErrors gauge
 ClickHouse_CustomMetric_TotalNumberOfErrors{hostname="c-jet-ax-16-server-43d5baj-0"} 9
 ```
@@ -182,7 +184,7 @@ global:
 scrape_configs:
   - job_name: "clickhouse"
     static_configs:
-      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443"]
+      - targets: ["<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443"]
     scheme: https
     metrics_path: "/metrics_all"
     basic_auth:
@@ -193,7 +195,7 @@ scrape_configs:
 
 Substitua:
 
-* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.byoc.clickhouse-byoc.com:8443` pelo endpoint do seu serviço
+* `<service-subdomain>.<byoc-subdomain>.<region>.<provider>.clickhouse-byoc.com:8443` pelo endpoint do seu serviço
 * `<username>` e `<password>` pelas credenciais do seu usuário de coleta
 
 <div id="clickhouse-mixin">

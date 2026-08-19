@@ -10,6 +10,7 @@ SET use_skip_indexes = 1;
 -- The query condition cache remembers which granules failed WHERE from previous runs and would
 -- mask the actual index behavior, so disable it for this test.
 SET use_query_condition_cache = 0;
+SET query_plan_optimize_count_from_text_index = 0;
 
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_cost;
