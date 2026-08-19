@@ -322,6 +322,12 @@ def test_get_xdbc_type_info():
         assert rows[name]["data_type"] == 92
         assert rows[name]["sql_data_type"] == 9
         assert rows[name]["datetime_subcode"] == 2
+    for name in ("Time", "DateTime"):
+        assert rows[name]["minimum_scale"] == 0
+        assert rows[name]["maximum_scale"] == 0
+    for name in ("Time64", "DateTime64"):
+        assert rows[name]["minimum_scale"] == 0
+        assert rows[name]["maximum_scale"] == 9
     assert rows["Int32"]["sql_data_type"] == 4
     assert rows["Int32"]["datetime_subcode"] is None
 
