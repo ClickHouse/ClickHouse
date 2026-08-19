@@ -1,5 +1,9 @@
--- Tags: no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings, no-replicated-database
 -- ^ wide/compact split is asserted explicitly via min_bytes_for_wide_part.
+-- Tag no-replicated-database: one assertion combines RENAME and UPDATE in a single ALTER, which a
+-- Replicated database refuses (InterpreterAlterQuery groups an ALTER's commands into segments by
+-- kind and rejects any multi-segment ALTER, QUERY_IS_PROHIBITED). The combined form is the
+-- assertion here, so it cannot be split into two ALTERs.
 
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/103247
 -- A compound RENAME that reuses a freed column name (a "swap") between columns
