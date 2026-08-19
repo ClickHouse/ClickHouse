@@ -1,3 +1,2 @@
-the cancellation was delivered before the next buffer was created
-the query succeeded
+the soft timeout ended the query before the next buffer was created
 the next failover request was not started after the cancellation

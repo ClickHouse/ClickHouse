@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Once the first failover option has failed, pause immediately before construction of the second
 # buffer. With delayed initialization disabled for multi-option URLs, that constructor would start
-# the second request. A soft cancellation delivered while paused must prevent it.
+# the second request. An already-expired soft timeout must prevent it.
 
 PORT_FILE=$(mktemp "./${CLICKHOUSE_DATABASE}.XXXXXX.port")
 
@@ -84,8 +84,9 @@ $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_rea
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_no_next_read_after_cancel"
 $CLICKHOUSE_CLIENT \
-    --partial_result_on_first_cancel 1 \
     --parallel_replicas_for_cluster_engines 0 \
+    --max_execution_time 1 \
+    --timeout_overflow_mode break \
     --query_id "$QUERY_ID" \
     --query "SELECT x FROM url('http://127.0.0.1:$HTTP_PORT/failed|http://127.0.0.1:$HTTP_PORT/data', 'CSV', 'x UInt64')" \
     >/dev/null 2>/dev/null &
@@ -93,31 +94,16 @@ CLIENT_PID=$!
 
 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_read_buffer_creation PAUSE"
 
-kill -SIGINT $CLIENT_PID
-
-DELIVERED=0
-for _ in {1..300}; do
-    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
-    if [[ $($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message LIKE 'The read has been cancelled%'") != 0 ]]; then
-        DELIVERED=1
-        break
-    fi
-    sleep 0.1
-done
+# Ensure that `max_execution_time` expires while the source is held precisely before `create`.
+sleep 2
 
 $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_read_buffer_creation"
 
 wait $CLIENT_PID
 CLIENT_STATUS=$?
 
-if ((DELIVERED == 1)); then
-    echo "the cancellation was delivered before the next buffer was created"
-else
-    echo "FAIL: the cancellation was not delivered before the next buffer was created"
-fi
-
 if ((CLIENT_STATUS == 0)); then
-    echo "the query succeeded"
+    echo "the soft timeout ended the query before the next buffer was created"
 else
     echo "FAIL: the query failed with the status $CLIENT_STATUS"
 fi

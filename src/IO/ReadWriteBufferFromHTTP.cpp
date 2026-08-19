@@ -366,7 +366,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         /// data does not issue a request, and it may reveal an error that must not be masked by a
         /// soft cancellation.
         FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_request_attempt);
-        const bool soft_time_limit_reached = isQueryTimeLimitReached();
+        const bool soft_time_limit_reached = cancellation && isQueryTimeLimitReached();
         if (soft_time_limit_reached && cancellation)
             cancellation->cancel(true);
 
@@ -378,7 +378,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         if (attempt > 1)
         {
             FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_retry_attempt);
-            const bool retry_soft_time_limit_reached = isQueryTimeLimitReached();
+            const bool retry_soft_time_limit_reached = cancellation && isQueryTimeLimitReached();
             if (retry_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -453,7 +453,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
             /// cancellation error could mask the failure that tore the pipeline down. Marking the
             /// error lets that reader tell it from a failure the cancellation has nothing to do
             /// with, which it must not discard.
-            const bool final_attempt_soft_time_limit_reached = isQueryTimeLimitReached();
+            const bool final_attempt_soft_time_limit_reached = cancellation && isQueryTimeLimitReached();
             if (final_attempt_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -483,7 +483,7 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
 
             /// One exit for all the attempts: a killed or timed out query is reported as a cancellation
             /// instead of the network error we happen to have at hand, the same way as it is done for S3.
-            const bool retry_wait_soft_time_limit_reached = isQueryTimeLimitReached();
+            const bool retry_wait_soft_time_limit_reached = cancellation && isQueryTimeLimitReached();
             if (retry_wait_soft_time_limit_reached && cancellation)
                 cancellation->cancel(true);
 
@@ -559,7 +559,9 @@ bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
         return cancellation->waitForCancellation(std::chrono::milliseconds(milliseconds));
 
     /// Bare HTTP readers have no owner cancellation token, but they can still be executing in a
-    /// query. Poll its status so `KILL QUERY` and a time limit do not wait out a long backoff.
+    /// query. Check for hard query cancellation so `KILL QUERY` and a throwing time limit do not
+    /// wait out a long backoff. A soft timeout belongs to the reader's owner, which is the only
+    /// component that knows whether returning a partial result is safe.
     constexpr size_t cancellation_check_interval_ms = 100;
     while (milliseconds)
     {
@@ -567,8 +569,7 @@ bool ReadWriteBufferFromHTTP::waitBeforeRetry(size_t milliseconds) const
         sleepForMilliseconds(interval);
         milliseconds -= interval;
 
-        if (isQueryTimeLimitReached())
-            return true;
+        CurrentThread::checkIfNotCancelled();
     }
 
     return false;

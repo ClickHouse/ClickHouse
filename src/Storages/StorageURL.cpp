@@ -808,6 +808,12 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         /// Do not go on probing the failover options if the query has been killed meanwhile.
         CurrentThread::checkIfNotCancelled();
 
+        /// `checkTimeLimit` returns false for a soft timeout with the `break` overflow mode.
+        /// Latch it before the last guard preceding `BuilderRWBufferFromHTTP::create`: its
+        /// constructor can start the first request of a failover option immediately.
+        if (auto query_status = context_->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+            cancellation->cancel(true);
+
         /// The check above is a no-op for the cancellations which do not kill the query. So check the
         /// flag itself, in both of its kinds:
         ///
