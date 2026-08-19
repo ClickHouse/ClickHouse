@@ -145,7 +145,8 @@ static void checkOld(
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
     const std::string & additional_filter = "",
-    std::optional<size_t> limit = {})
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -163,7 +164,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context, limit);
+        literal_escaping_style, "test", "table", state.context, limit, allow_limit_push_down);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -196,7 +197,8 @@ static void checkNewAnalyzer(
     const std::string & expected,
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
     const std::string & additional_filter = "",
-    std::optional<size_t> limit = {})
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     ParserSelectQuery parser;
     ASTPtr ast = parseQuery(parser, query, 1000, 1000, 1000000);
@@ -221,7 +223,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context, limit);
+        literal_escaping_style, "test", "table", state.context, limit, allow_limit_push_down);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -235,15 +237,16 @@ static void check(
     const std::string & expected_new = "",
     LiteralEscapingStyle literal_escaping_style = LiteralEscapingStyle::Regular,
     const std::string & additional_filter = "",
-    std::optional<size_t> limit = {})
+    std::optional<size_t> limit = {},
+    bool allow_limit_push_down = true)
 {
     {
         SCOPED_TRACE("Old analyzer");
-        checkOld(state, table_num, query, expected, literal_escaping_style, additional_filter, limit);
+        checkOld(state, table_num, query, expected, literal_escaping_style, additional_filter, limit, allow_limit_push_down);
     }
     {
         SCOPED_TRACE("Analyzer");
-        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, additional_filter, limit);
+        checkNewAnalyzer(state, column_names, query, expected_new.empty() ? expected : expected_new, literal_escaping_style, additional_filter, limit, allow_limit_push_down);
     }
 }
 
@@ -636,6 +639,17 @@ TEST(TransformQueryForExternalDatabase, Limit)
         /*additional_filter=*/"",
         /*limit=*/10);
     state.context->setSetting("external_storage_push_down_limit", String("1"));
+
+    /// Generic ODBC/JDBC bridges only report identifier quoting. Until they also report
+    /// LIMIT syntax support, they must retain the historical local LIMIT evaluation.
+    check(state, 1, {"column"},
+        "SELECT column FROM table LIMIT 10",
+        R"(SELECT "column" FROM "test"."table")",
+        /*expected_new=*/"",
+        /*literal_escaping_style=*/LiteralEscapingStyle::Regular,
+        /*additional_filter=*/"",
+        /*limit=*/{},
+        /*allow_limit_push_down=*/false);
 }
 
 TEST(TransformQueryForExternalDatabase, UUIDColumn)

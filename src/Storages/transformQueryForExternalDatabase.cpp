@@ -869,9 +869,10 @@ String transformQueryForExternalDatabase(
     const String & database,
     const String & table,
     ContextPtr context,
-    std::optional<size_t> limit)
+    std::optional<size_t> limit,
+    bool allow_limit_push_down)
 {
-    const bool allow_limit_push_down = !hasLocalFilterAppliedBeforeLimit(query_info, context);
+    allow_limit_push_down = allow_limit_push_down && !hasLocalFilterAppliedBeforeLimit(query_info, context);
 
     if (!query_info.syntax_analyzer_result)
     {
