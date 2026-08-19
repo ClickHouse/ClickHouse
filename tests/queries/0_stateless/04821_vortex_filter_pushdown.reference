@@ -1,4 +1,6 @@
-Pushdown reduces scan bytes: ok
+Integer pushdown reduces scan bytes: ok
+String pushdown reduces scan bytes: ok
+Float pushdown reduces scan bytes: ok
 Point predicate:
 5	5
 5	5
