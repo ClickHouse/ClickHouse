@@ -3814,6 +3814,18 @@ Possible values:
 - 0 — Reject a `JOIN` with no join key.
 - 1 — Execute it as a block nested loop join.
 )", 0) \
+    DECLARE(Bool, allow_inequality_join_as_cross_join, false, R"(
+Execute an `OUTER JOIN` whose `ON` section determines no join key with the hash join, by adding a constant join key that makes every pair of rows a key match and leaving the whole condition to be evaluated on those pairs as a residual condition.
+
+This is what such a join was executed with before the [block nested loop join](/reference/statements/select/join#join-with-an-arbitrary-on-condition) existed: the hash join enumerates the pairs out of a single hash table entry, so it does the same amount of matching work while also building that entry and materializing the right side twice. It is kept for comparison and takes priority over the block nested loop join when enabled.
+
+Applies to `ALL LEFT`, `ALL RIGHT` and `ALL FULL JOIN` with `hash` in [`join_algorithm`](/reference/settings/session-settings/join#join_algorithm). Other kinds and strictnesses are unaffected: an `ALL INNER JOIN` still becomes a `CROSS JOIN` with a filter, and everything else still goes to the block nested loop join.
+
+Possible values:
+
+- 0 — Execute such a join as a block nested loop join, subject to [`allow_block_nested_loop_join`](#allow_block_nested_loop_join).
+- 1 — Execute it with the hash join over a constant join key.
+)", 0) \
     DECLARE(UInt64, cross_to_inner_join_rewrite, 1, R"(
 Use inner join instead of comma/cross join if there are joining expressions in the WHERE section. Values: 0 - no rewrite, 1 - apply if possible for comma/cross, 2 - force rewrite all comma joins, cross - if possible
 )", 0) \

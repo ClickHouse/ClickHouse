@@ -31,6 +31,7 @@ namespace Setting
 {
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsBool allow_block_nested_loop_join;
+    extern const SettingsBool allow_inequality_join_as_cross_join;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_rows_in_join;
     extern const SettingsUInt64 max_bytes_in_join;
@@ -83,6 +84,7 @@ namespace QueryPlanSerializationSetting
 {
     extern const QueryPlanSerializationSettingsJoinAlgorithm join_algorithm;
     extern const QueryPlanSerializationSettingsBool allow_block_nested_loop_join;
+    extern const QueryPlanSerializationSettingsBool allow_inequality_join_as_cross_join;
     extern const QueryPlanSerializationSettingsUInt64 max_block_size;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_in_join;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_join;
@@ -136,6 +138,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
 {
     join_algorithms = query_settings[Setting::join_algorithm];
     allow_block_nested_loop_join = query_settings[Setting::allow_block_nested_loop_join];
+    allow_inequality_join_as_cross_join = query_settings[Setting::allow_inequality_join_as_cross_join];
 
     max_block_size = query_settings[Setting::max_block_size];
 
@@ -196,6 +199,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
     allow_block_nested_loop_join = settings[QueryPlanSerializationSetting::allow_block_nested_loop_join];
+    allow_inequality_join_as_cross_join = settings[QueryPlanSerializationSetting::allow_inequality_join_as_cross_join];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
 
     max_rows_in_join = settings[QueryPlanSerializationSetting::max_rows_in_join];
@@ -252,6 +256,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::allow_block_nested_loop_join] = allow_block_nested_loop_join;
+    settings[QueryPlanSerializationSetting::allow_inequality_join_as_cross_join] = allow_inequality_join_as_cross_join;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
 
     settings[QueryPlanSerializationSetting::max_rows_in_join] = max_rows_in_join;

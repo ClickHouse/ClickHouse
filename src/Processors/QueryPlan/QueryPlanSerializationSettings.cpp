@@ -65,6 +65,7 @@ namespace DB
     \
     DECLARE(JoinAlgorithm, join_algorithm, "direct,parallel_hash,hash", "Specifies which JOIN algorithm is used.", 0) \
     DECLARE(Bool, allow_block_nested_loop_join, true, "Allow the block nested loop join to execute a JOIN whose ON section determines no join key, instead of rejecting it.", 0) \
+    DECLARE(Bool, allow_inequality_join_as_cross_join, false, "Execute an outer JOIN whose ON section determines no join key with the hash join over a constant join key.", 0) \
     \
     DECLARE(UInt64, max_rows_in_join, 0, "Maximum size of the hash table for JOIN (in number of rows).", 0) \
     DECLARE(UInt64, max_bytes_in_join, 0, "Maximum size of the hash table for JOIN (in number of bytes in memory).", 0) \
