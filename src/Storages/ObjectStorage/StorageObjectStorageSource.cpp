@@ -364,9 +364,10 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// An archive exposes `_path` and `_file` values for its entries, while this iterator usually
     /// sees only the outer archive object. A known, non-glob archive member is an exception: its
     /// virtual path is known before opening the archive, so filter it before probing a missing outer
-    /// archive. Other archive forms still need the regular filter step after `ArchiveIterator` has
-    /// created entry object infos.
-    const bool is_explicit_archive_member = is_archive && !reading_path.hasGlobs() && !configuration->isPathInArchiveWithGlobs();
+    /// archive. The outer archive path may still use a brace expansion because every expanded path
+    /// has the same known member. Other archive forms still need the regular filter step after
+    /// `ArchiveIterator` has created entry object infos.
+    const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs();
     const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
@@ -377,6 +378,7 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     {
         auto paths = expandSelectionGlob(reading_path.path);
         ExpressionActionsPtr deferred_filter_actions;
+        std::vector<String> archive_member_names;
 
         if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(path_filter_predicate, virtual_columns, local_context, hive_columns))
         {
@@ -385,10 +387,20 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
             for (const auto & path : paths)
                 filter_paths.push_back(fs::path(configuration->getNamespace()) / path);
 
+            if (is_explicit_archive_member)
+            {
+                for (auto & path : filter_paths)
+                    path += fmt::format("::{}", configuration->getPathInArchive());
+                archive_member_names.assign(paths.size(), configuration->getPathInArchive());
+            }
+
             if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
             {
                 auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
-                VirtualColumnUtils::filterByPathOrFile(paths, filter_paths, actions, virtual_columns, hive_columns, local_context);
+                VirtualColumnUtils::filterByPathOrFile(
+                    paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
             }
             else
             {
@@ -399,7 +411,8 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
         iterator = std::make_unique<KeysIterator>(
             paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
             query_settings.ignore_non_existent_file, skip_object_metadata, with_tags,
-            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context);
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{});
     }
     else if (reading_path.hasGlobs())
     {
