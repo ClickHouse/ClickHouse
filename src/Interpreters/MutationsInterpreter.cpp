@@ -768,6 +768,9 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// MATERIALIZED columns (e.g. m2 MATERIALIZED m1 MATERIALIZED src) so a change of a
     /// base column recalculates every MATERIALIZED column transitively derived from it.
     std::unordered_map<String, NameSet> materialized_column_dependencies;
+    /// MATERIALIZED columns whose expression reads an EPHEMERAL column. The analysis below skips
+    /// them because EPHEMERAL columns exist only during INSERT, so they cannot be recomputed.
+    NameSet materialized_with_ephemeral_dependency;
 
     /// The MATERIALIZED-chain analysis is needed for classical UPDATE, for materializing
     /// patch parts (APPLY PATCHES) and for CLEAR COLUMN, since all three can change a
@@ -813,6 +816,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                             "during this mutation — the on-disk value may become inconsistent. "
                             "To fix this, re-INSERT the affected rows.",
                             column.name);
+                    materialized_with_ephemeral_dependency.insert(column.name);
                     continue;
                 }
 
@@ -965,13 +969,21 @@ void MutationsInterpreter::prepare(bool dry_run)
         patch_affected_materialized = affected_materialized_closure(patch_updated_columns);
 
     /// MATERIALIZED columns rewritten by a CLEAR COLUMN. Must stay equal to the set the recompute
-    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. Taking the
-    /// closure rather than every MATERIALIZED column also leaves out those derived from an
-    /// EPHEMERAL column, which cannot be recomputed outside INSERT: the analysis above skips
-    /// them, so recomputing one fails to resolve the EPHEMERAL name and kills the mutation.
+    /// below writes, otherwise a rewritten column keeps stale dependent artifacts. Every
+    /// recomputable column belongs here, not just the closure of the cleared ones: a
+    /// metadata-only `MODIFY COLUMN ... MATERIALIZED` schedules no mutation, so the clear is what
+    /// refreshes its stored values. A column reading an EPHEMERAL one is not recomputable outside
+    /// INSERT and must be left out, or the recompute stage fails to resolve the EPHEMERAL name.
     NameSet clear_affected_materialized;
-    if (!clear_column_names.empty())
-        clear_affected_materialized = affected_materialized_closure(clear_column_names);
+    if (!clear_column_names.empty() && !affected_materialized_closure(clear_column_names).empty())
+    {
+        for (const auto & column : columns_desc)
+        {
+            if (column.default_desc.kind == ColumnDefaultKind::Materialized && column.default_desc.expression
+                && !materialized_with_ephemeral_dependency.contains(column.name))
+                clear_affected_materialized.insert(column.name);
+        }
+    }
 
     /// The union of every MATERIALIZED column recomputed by this mutation (from UPDATE, from
     /// materializing patch parts, and from CLEAR COLUMN). Used both to seed dependency analysis
