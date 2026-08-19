@@ -122,7 +122,9 @@ SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     enable_join_runtime_filters = 0, max_rows_to_group_by = 0,
     optimize_move_to_prewhere_if_final = 1;
 
-SELECT '-- FINAL, empty shipped set, every part pruned locally';
+-- With every part pruned there is nothing left to read, so the read finishes empty before the
+-- coordinator's part list is resolved: this arm covers that exit and asserts nothing about resolution.
+SELECT '-- FINAL, every part pruned locally, clean empty exit';
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000);
 SELECT count(), sum(v) FROM t_probe_final FINAL WHERE k IN (SELECT k FROM t_keys WHERE k > 1000)
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1,
