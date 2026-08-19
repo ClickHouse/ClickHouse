@@ -4173,6 +4173,12 @@ WasmModuleManager * Context::initWasmModuleManager()
     if (!shared->server_settings[ServerSetting::allow_experimental_webassembly_udf])
         return nullptr;
 
+#if !USE_WASMTIME
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "WebAssembly UDF support is disabled because ClickHouse was built without wasmtime");
+#endif
+
     String engine_name = shared->server_settings[ServerSetting::webassembly_udf_engine];
     LOG_DEBUG(shared->log, "Experimental WebAssembly UDF support is enabled, using engine: {}", engine_name);
 
