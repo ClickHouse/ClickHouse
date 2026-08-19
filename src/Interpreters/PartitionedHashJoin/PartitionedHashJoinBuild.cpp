@@ -607,6 +607,15 @@ void PartitionedHashJoin::runPostBuildPhase()
             entry.total_distinct += distinct;
         }
         getHashTablesStatistics<PartitionedHashJoinEntry>().update(entry, stats_collecting_params);
+
+        /// The plan-level consumers - the join-reordering cost model, `rhs_size_estimation` and the
+        /// runtime-filter sizing - all read `HashJoinEntry` and are algorithm-agnostic, so publish
+        /// that shape as well. `total_distinct` is the exact key count, which is what `ht_size`
+        /// means for a single-map build. `leaf_join` carries no stats params of its own, so nothing
+        /// else writes this key for this join.
+        if (entry.total_distinct)
+            getHashTablesStatistics<HashJoinEntry>().update(
+                {.ht_size = entry.total_distinct, .source_rows = leaf_join->data->rows_to_join}, stats_collecting_params);
     }
 
     finishBuildPhase(all_values_unique);

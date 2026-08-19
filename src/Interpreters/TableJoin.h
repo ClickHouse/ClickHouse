@@ -499,4 +499,13 @@ bool allowParallelHashJoin(
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct);
+
+/// Whether the join will be served by an implementation that publishes and consumes `HashJoinEntry`
+/// hash-table statistics. Both `parallel_hash` and `partitioned_hash` do, so both must get a cache
+/// key computed for them; see `calculateHashTableCacheKeys`.
+bool allowHashTableSizeStatistics(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    bool is_special_storage,
+    bool one_disjunct);
 }

@@ -145,6 +145,7 @@ static bool supportsRuntimeFilter(JoinAlgorithm join_algorithm)
     return
         join_algorithm == JoinAlgorithm::HASH ||
         join_algorithm == JoinAlgorithm::PARALLEL_HASH ||
+        join_algorithm == JoinAlgorithm::PARTITIONED_HASH ||
         join_algorithm == JoinAlgorithm::GRACE_HASH;
 }
 

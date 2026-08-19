@@ -25,9 +25,12 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 class NotJoinedPartitioned final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NotJoinedPartitioned(const PartitionedHashJoin & parent_, UInt64 max_block_size_)
+    NotJoinedPartitioned(const PartitionedHashJoin & parent_, UInt64 max_block_size_, size_t stream_idx_, size_t num_streams_)
         : parent(parent_)
         , max_block_size(max_block_size_)
+        , num_streams(num_streams_)
+        , current_leaf(stream_idx_)
+        , owns_nulls(stream_idx_ == 0)
     {
     }
 
@@ -62,8 +65,13 @@ public:
 private:
     const PartitionedHashJoin & parent;
     const UInt64 max_block_size;
+    /// This filler visits every `num_streams`-th leaf, starting at its own stream index.
+    const size_t num_streams;
 
-    size_t current_leaf = 0;
+    size_t current_leaf;
+    /// The rows that never entered a map are not partitioned by leaf, so one stream takes all of
+    /// them rather than every stream re-emitting them; as `NotJoinedHash` does.
+    const bool owns_nulls;
     std::any position; /// iterator into the current leaf's map, resumable across calls
     std::optional<HashJoin::NullmapList::const_iterator> nulls_position;
 
@@ -130,7 +138,7 @@ private:
 
             if (it == end)
             {
-                ++current_leaf;
+                current_leaf += num_streams;
                 position.reset();
             }
         }
@@ -145,6 +153,9 @@ private:
     /// `NotJoinedHash::fillNullsFromBlocks` does.
     void fillNullsFromBlocks(MutableColumns & columns_keys_and_right, size_t & rows_added)
     {
+        if (!owns_nulls)
+            return;
+
         const auto & nullmaps = parent.storedData().nullmaps;
         if (!nulls_position.has_value())
             nulls_position = nullmaps.begin();
@@ -180,11 +191,33 @@ private:
     }
 };
 
+bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
+{
+    return !delegate_mode && table_join->allowParallelNonJoinedRowsProcessing() && JoinCommon::hasNonJoinedBlocks(*table_join)
+        && !table_join->getOnlyClause().key_names_right.empty();
+}
+
 IBlocksStreamPtr
 PartitionedHashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
+    return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, /*stream_idx=*/0, /*num_streams=*/1);
+}
+
+IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
+    const Block & left_sample_block,
+    const Block & result_sample_block,
+    UInt64 max_block_size,
+    size_t stream_idx,
+    size_t num_streams) const
+{
     if (delegate_mode)
+    {
+        /// `supportParallelNonJoinedBlocksProcessing` keeps this path single-stream, so only the
+        /// first stream has anything to emit.
+        if (stream_idx != 0)
+            return {};
         return leaf_join->getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size);
+    }
 
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
@@ -208,7 +241,7 @@ PartitionedHashJoin::getNonJoinedBlocks(const Block & left_sample_block, const B
             leaf_join->required_right_keys.dumpNames(),
             leaf_join->sample_block_with_columns_to_add.dumpNames());
 
-    auto non_joined = std::make_unique<NotJoinedPartitioned>(*this, max_block_size);
+    auto non_joined = std::make_unique<NotJoinedPartitioned>(*this, max_block_size, stream_idx, num_streams);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
 }
 

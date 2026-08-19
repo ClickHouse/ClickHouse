@@ -114,6 +114,18 @@ public:
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    /// Leaves are independent, so the non-joined scan strides over them: stream `i` visits the
+    /// leaves where `leaf % num_streams == i`. The delegated path holds one `HashJoin`, which does
+    /// not stride, so it keeps the single-stream regime.
+    bool supportParallelNonJoinedBlocksProcessing() const override;
+
+    IBlocksStreamPtr getNonJoinedBlocks(
+        const Block & left_sample_block,
+        const Block & result_sample_block,
+        UInt64 max_block_size,
+        size_t stream_idx,
+        size_t num_streams) const override;
+
     bool isCloneSupported() const override;
 
     std::shared_ptr<IJoin>
