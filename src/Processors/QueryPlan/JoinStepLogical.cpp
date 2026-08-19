@@ -1531,14 +1531,18 @@ static QueryPlanNode buildPhysicalJoinImpl(
                 const bool hash_enabled = TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
                     && join_operator.strictness == JoinStrictness::All;
 
-                bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
-
-                /// How a keyless outer join was executed before the nested loop operator existed:
-                /// a constant key collapses the build side into a single hash table entry, which the
-                /// hash join walks per probe row while evaluating the condition as a residual one.
-                /// Kept behind a setting to compare the two, and takes priority over the operator.
+                /// How a keyless join was executed before the nested loop operator existed: a constant
+                /// key collapses the build side into a single hash table entry, which the hash join
+                /// walks per probe row. An outer join evaluates the condition there, as its residual
+                /// condition; an `INNER` join takes the whole cartesian product out of the hash join
+                /// and filters it above, the same way the cross join rewrite does. Kept behind a
+                /// setting to compare the paths, and claims the condition before the two below.
                 const bool can_use_constant_join_key = join_settings.allow_inequality_join_as_cross_join
-                    && hash_enabled && (isLeftOrRight(join_operator.kind) || isFull(join_operator.kind));
+                    && hash_enabled
+                    && (isInner(join_operator.kind) || isLeftOrRight(join_operator.kind) || isFull(join_operator.kind));
+
+                bool can_convert_to_cross = !can_use_constant_join_key
+                    && (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind)) && hash_enabled;
 
                 /// The last resort, which needs nothing to be determined about the keys: the whole
                 /// condition is evaluated on candidate pairs inside the nested loop operator.
@@ -1565,13 +1569,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
                 if (!is_disjunctive_condition)
                 {
-                    if (can_convert_to_cross)
-                    {
-                        join_operator.kind = JoinKind::Cross;
-                        join_operator.residual_filter.append_range(join_expression);
-                        join_expression.clear();
-                    }
-                    else if (can_use_constant_join_key)
+                    if (can_use_constant_join_key)
                     {
                         join_expression.push_back(makeConstantJoinKey(expression_actions));
                         if (!addJoinPredicatesToTableJoin(
@@ -1579,6 +1577,12 @@ static QueryPlanNode buildPhysicalJoinImpl(
                                 planning_context, join_operator.shared_runtime_filter_descriptors))
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to add a constant join key for {} JOIN ON expression {}",
                                 toString(join_operator.kind), formatJoinCondition(join_expression));
+                    }
+                    else if (can_convert_to_cross)
+                    {
+                        join_operator.kind = JoinKind::Cross;
+                        join_operator.residual_filter.append_range(join_expression);
+                        join_expression.clear();
                     }
                     else if (can_use_block_nested_loop)
                         use_block_nested_loop = true;

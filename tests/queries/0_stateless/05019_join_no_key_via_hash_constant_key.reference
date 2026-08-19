@@ -4,4 +4,7 @@ full	0	1	10313175421234337361
 left	0	1	5829218921861468927
 left	1	1	16656828948369968684
 right	0	1	2694041374033285502
-inner cross	1
+inner algorithm	1	0
+inner cross algorithm	0	1
+inner	6
+inner	6

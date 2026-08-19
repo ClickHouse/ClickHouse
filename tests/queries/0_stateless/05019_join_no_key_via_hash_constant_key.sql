@@ -51,11 +51,22 @@ SELECT kind, use_nulls, hash_join = block_nested_loop_join AS same, hash_join FR
 )
 ORDER BY kind, use_nulls;
 
--- What the constant key does not cover stays where it was: an `ALL INNER` join keeps its
--- cross-join-with-a-filter plan, and a strictness the hash join cannot execute keyless is still
--- rejected when the operator is disabled.
-SELECT 'inner cross', count() FROM (EXPLAIN SELECT count() FROM ck_l l INNER JOIN ck_r r ON l.x < r.y
-    SETTINGS allow_inequality_join_as_cross_join = 1, cross_to_inner_join_rewrite = 0) WHERE explain LIKE '%Type: cross%';
+-- An `ALL INNER` join goes to the hash join as well, with the condition filtered above it instead of
+-- evaluated inside, and answers the same as the cross join rewrite it replaces.
+-- The exact algorithm name depends on settings the test harness randomizes (`parallel_hash`, the
+-- spilling wrapper), so only the family it belongs to is asserted.
+SELECT 'inner algorithm', countIf(explain LIKE '%HashJoin%'), countIf(explain LIKE '%ConstantJoin%') FROM
+    (EXPLAIN actions = 1 SELECT count() FROM ck_l l INNER JOIN ck_r r ON l.x < r.y
+        SETTINGS allow_inequality_join_as_cross_join = 1)
+    WHERE explain LIKE '%Algorithm: %';
+SELECT 'inner cross algorithm', countIf(explain LIKE '%HashJoin%'), countIf(explain LIKE '%ConstantJoin%') FROM
+    (EXPLAIN actions = 1 SELECT count() FROM ck_l l INNER JOIN ck_r r ON l.x < r.y
+        SETTINGS allow_inequality_join_as_cross_join = 0)
+    WHERE explain LIKE '%Algorithm: %';
+SELECT 'inner', count() FROM ck_l l INNER JOIN ck_r r ON l.x < r.y SETTINGS allow_inequality_join_as_cross_join = 1;
+SELECT 'inner', count() FROM ck_l l INNER JOIN ck_r r ON l.x < r.y SETTINGS allow_inequality_join_as_cross_join = 0;
+
+-- A strictness the hash join cannot execute without a key is still rejected when the operator is off.
 SELECT count() FROM ck_l l LEFT ANY JOIN ck_r r ON l.x < r.y
     SETTINGS allow_inequality_join_as_cross_join = 1, allow_block_nested_loop_join = 0; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
