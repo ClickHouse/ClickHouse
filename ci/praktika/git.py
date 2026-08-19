@@ -108,38 +108,33 @@ class Git:
             "git -c http.https://github.com/.extraheader= push "
             f"{flags}{repo_url} {shlex.quote(refspec)}"
         )
-        # Run the first push verbosely: the command itself logs the repo, refspec
-        # and flags, and its output diagnoses a rejection better than a summary
-        # line. Raise on failure only when no retry follows — no rebase_retries,
-        # or a dry run (which reports a non-fast-forward but cannot heal it).
-        result = Shell.check(
-            push_cmd,
-            strict=strict and (dry_run or not rebase_retries),
-            verbose=verbose,
-            retries=retries,
-        )
-        if dry_run or result or not rebase_retries:
-            return result
-        branch = refspec.split(":", 1)[-1]
-        if branch.startswith("refs/heads/"):
-            branch = branch[len("refs/heads/") :]
-        for attempt in range(1, rebase_retries + 1):
-            print(
-                f"Push to {branch} rejected; re-syncing and retrying {attempt}/{rebase_retries}"
-            )
-            Shell.check(
-                f"{git_prefix} fetch --quiet origin {shlex.quote(branch)}",
-                strict=True,
-                verbose=verbose,
-            )
-            Shell.check(
-                f"{git_prefix} rebase FETCH_HEAD", strict=True, verbose=verbose
-            )
-            if Shell.check(push_cmd, strict=False, verbose=verbose, retries=retries):
-                return True
-        raise RuntimeError(
-            f"Failed to push {refspec} to {repo} after {rebase_retries} rebase attempts"
-        )
+        # Verbose first push logs the command and any rejection; strict is the single failure contract, checked once at the end, so the push never raises here.
+        result = Shell.check(push_cmd, strict=False, verbose=verbose, retries=retries)
+        if not result and rebase_retries and not dry_run:
+            # Non-fast-forward: rebase the local commits onto origin's new tip and retry (rebase_retries assumes origin tracks `repo`).
+            branch = refspec.split(":", 1)[-1]
+            if branch.startswith("refs/heads/"):
+                branch = branch[len("refs/heads/") :]
+            for attempt in range(1, rebase_retries + 1):
+                print(
+                    f"Push to {branch} rejected; re-syncing and retrying {attempt}/{rebase_retries}"
+                )
+                Shell.check(
+                    f"{git_prefix} fetch --quiet origin {shlex.quote(branch)}",
+                    strict=True,
+                    verbose=verbose,
+                )
+                Shell.check(
+                    f"{git_prefix} rebase FETCH_HEAD", strict=True, verbose=verbose
+                )
+                result = Shell.check(
+                    push_cmd, strict=False, verbose=verbose, retries=retries
+                )
+                if result:
+                    break
+        if strict and not result:
+            raise RuntimeError(f"Failed to push {refspec} to {repo}")
+        return result
 
     @staticmethod
     def push_tag(
