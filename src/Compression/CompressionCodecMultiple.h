@@ -31,6 +31,7 @@ protected:
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
     bool isEncryption() const override;
+    bool isLossyCompression() const override;
 
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 
