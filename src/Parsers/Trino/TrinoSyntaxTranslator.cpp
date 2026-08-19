@@ -91,6 +91,33 @@ public:
         else
             translateRange(0, tokens.size(), /*type_context=*/ false);
 
+        /// Settings that align query semantics with Trino: outer joins produce
+        /// NULLs (not type defaults), and set operations use the numeric
+        /// supertype (not Variant). Skipped when the query sets anything itself.
+        if (!tokens.empty()
+            && (tokenIsKeyword(tokens[0], "SELECT") || tokenIsKeyword(tokens[0], "WITH") || tokenIsKeyword(tokens[0], "VALUES")))
+        {
+            bool has_settings = false;
+            size_t depth = 0;
+            for (const auto & token : tokens)
+            {
+                if (token.type == TokenType::OpeningRoundBracket || token.type == TokenType::OpeningSquareBracket)
+                    ++depth;
+                else if (token.type == TokenType::ClosingRoundBracket || token.type == TokenType::ClosingSquareBracket)
+                {
+                    if (depth > 0)
+                        --depth;
+                }
+                else if (depth == 0 && tokenIsKeyword(token, "SETTINGS"))
+                    has_settings = true;
+            }
+            if (!has_settings)
+            {
+                changed = true;
+                out += "SETTINGS join_use_nulls = 1, use_variant_as_common_type = 0 ";
+            }
+        }
+
         if (!changed)
             return std::nullopt;
         return std::move(out);
@@ -518,6 +545,33 @@ private:
                 return;
         }
 
+        /// LIKE patterns: Trino has no default escape character, so a backslash in
+        /// the pattern is a literal character; ClickHouse treats it as the escape.
+        /// (Doubling happens twice: string-literal level and LIKE level.)
+        if ((tokenIsKeyword(token, "LIKE") || tokenIsKeyword(token, "ILIKE")) && isTypeAt(i + 1, TokenType::StringLiteral))
+        {
+            emitToken(token);
+            const Token & pattern = tokens[i + 1];
+            if (isKeywordAt(i + 2, "ESCAPE") || memchr(pattern.begin, '\\', pattern.size()) == nullptr)
+                emitToken(pattern);
+            else
+            {
+                String escaped;
+                escaped.reserve(pattern.size() + 16);
+                for (const char * c = pattern.begin; c < pattern.end; ++c)
+                {
+                    if (*c == '\\')
+                        escaped += R"(\\\\)";
+                    else
+                        escaped.push_back(*c);
+                }
+                changed = true;
+                emitText(escaped);
+            }
+            i += 2;
+            return;
+        }
+
         /// Typed literals: BIGINT '1' -> CAST('1' AS BIGINT), VARCHAR 'x' -> CAST('x' AS String), ...
         if (isTypeAt(i + 1, TokenType::StringLiteral))
         {
@@ -674,19 +728,27 @@ private:
         if (size_t dot = parts[1].find('.'); dot != String::npos)
             scale = std::min<size_t>(9, parts[1].size() - dot - 1);
 
+        /// Minute-precision literals (TIMESTAMP '2012-08-08 01:00') need the seconds.
+        bool added_seconds = false;
+        if (std::count(parts[1].begin(), parts[1].end(), ':') == 1)
+        {
+            parts[1] += ":00";
+            added_seconds = true;
+        }
+
         bool has_named_zone = parts.size() == 3 && isAlphaASCII(parts[2][0]);
         bool has_offset = parts.size() == 3 && !has_named_zone;
 
-        if (scale == 0 && !has_named_zone)
+        if (scale == 0 && !has_named_zone && !added_seconds)
             return false;
 
         changed = true;
         if (has_named_zone)
             out += "toDateTime64('" + parts[0] + " " + parts[1] + "', " + std::to_string(scale) + ", '" + parts[2] + "') ";
         else if (has_offset)
-            out += "parseDateTime64BestEffort('" + text + "', " + std::to_string(scale) + ") ";
+            out += "parseDateTime64BestEffort('" + parts[0] + " " + parts[1] + " " + parts[2] + "', " + std::to_string(scale) + ") ";
         else
-            out += "toDateTime64('" + text + "', " + std::to_string(scale) + ") ";
+            out += "toDateTime64('" + parts[0] + " " + parts[1] + "', " + std::to_string(scale) + ") ";
         i += 2;
         return true;
     }

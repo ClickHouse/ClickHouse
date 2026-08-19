@@ -211,6 +211,19 @@ void requireNotWindow(const ASTFunction & function)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Trino function {} is not supported as a window function", function.name);
 }
 
+/// Substitutes an identifier with an expression (used to apply the output
+/// lambda of `reduce` at translation time).
+void replaceIdentifier(ASTPtr & ast, const String & name, const ASTPtr & replacement)
+{
+    if (const auto * identifier = ast->as<ASTIdentifier>(); identifier && identifier->name() == name)
+    {
+        ast = replacement->clone();
+        return;
+    }
+    for (auto & child : ast->children)
+        replaceIdentifier(child, name, replacement);
+}
+
 /// Simple renames: the argument order and semantics match.
 /// Names that already resolve in ClickHouse with the same semantics (through
 /// case-insensitive aliases, e.g. `concat`, `coalesce`, `cardinality`, `abs`,
@@ -420,17 +433,21 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         {"reduce", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             requireArguments(function, arguments, 4, 4, "(array, initialState, inputFunction, outputFunction)");
-            /// reduce(arr, s0, in, out) -> out(arrayFold(in, arr, s0)); only an
-            /// identity outputFunction (s -> s) can be applied at parse time.
+            /// reduce(arr, s0, in, out) -> out applied to arrayFold(in, arr, s0);
+            /// the output lambda is inlined by substituting its parameter.
             std::vector<String> parameters;
             ASTPtr body;
-            const auto * body_identifier = tryGetLambda(arguments[3], parameters, body) ? body->as<ASTIdentifier>() : nullptr;
-            if (!body_identifier || parameters.size() != 1 || body_identifier->name() != parameters[0])
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Trino reduce is translated only with an identity output function (s -> s); "
-                    "apply the final transformation outside of reduce");
-            node = makeFunctionWithArguments("arrayFold", {arguments[2], arguments[0], arguments[1]});
+            if (!tryGetLambda(arguments[3], parameters, body) || parameters.size() != 1)
+                throwWrongArguments(function, "a one-argument output lambda");
+            ASTPtr fold = makeFunctionWithArguments("arrayFold", {arguments[2], arguments[0], arguments[1]});
+            if (const auto * body_identifier = body->as<ASTIdentifier>(); body_identifier && body_identifier->name() == parameters[0])
+            {
+                node = fold;
+                return;
+            }
+            ASTPtr result = body->clone();
+            replaceIdentifier(result, parameters[0], fold);
+            node = result;
         }},
         {"transform_keys", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
@@ -555,6 +572,16 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                 {makeFunctionWithArguments(
                     "floor", {makeFunctionWithArguments("multiply", {makeFunctionWithArguments("randCanonical", {}), span})})});
             node = low ? makeFunctionWithArguments("plus", {low, value}) : value;
+        }},
+        {"width_bucket", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// The array-of-bounds form; the 4-argument form works natively.
+            if (arguments.size() != 2)
+                return;
+            ASTPtr bound = make_intrusive<ASTIdentifier>(String("__trino_bound"));
+            ASTPtr in_bucket = makeFunctionWithArguments("greaterOrEquals", {arguments[0], bound});
+            node = makeFunctionWithArguments("arrayCount", {makeLambda({"__trino_bound"}, in_bucket), arguments[1]});
+            UNUSED(function);
         }},
         {"cosine_similarity", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
@@ -748,11 +775,23 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 2, 2, "(value, bits)");
             const auto * bits = arguments[1]->as<ASTLiteral>();
             UInt64 width = bits && bits->value.getType() == Field::Types::UInt64 ? bits->value.safeGet<UInt64>() : 0;
-            if (width != 8 && width != 16 && width != 32 && width != 64)
-                throwWrongArguments(function, "a constant bit width of 8, 16, 32 or 64");
+            if (width == 8 || width == 16 || width == 32 || width == 64)
+            {
+                node = makeFunctionWithArguments(
+                    "bitCount",
+                    {makeFunctionWithArguments("CAST", {arguments[0], make_intrusive<ASTLiteral>("Int" + std::to_string(width))})});
+                return;
+            }
+            if (width < 2 || width > 64)
+                throwWrongArguments(function, "a constant bit width between 2 and 64");
+            /// An arbitrary width counts the bits of the value truncated to the
+            /// low `width` bits of its two's complement representation.
             node = makeFunctionWithArguments(
                 "bitCount",
-                {makeFunctionWithArguments("CAST", {arguments[0], make_intrusive<ASTLiteral>("Int" + std::to_string(width))})});
+                {makeFunctionWithArguments(
+                    "bitAnd",
+                    {makeFunctionWithArguments("reinterpretAsUInt64", {makeFunctionWithArguments("toInt64", {arguments[0]})}),
+                     make_intrusive<ASTLiteral>(UInt64((1ULL << width) - 1))})});
         }},
 
         /// Binary.
@@ -886,6 +925,31 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             std::swap(arguments[0], arguments[1]);
         }},
 
+        /// Comparison. Trino greatest/least return NULL when any argument is NULL;
+        /// ClickHouse skips NULL arguments.
+        {"greatest", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            if (arguments.size() < 2)
+                return;
+            ASTs null_checks;
+            for (const auto & argument : arguments)
+                null_checks.push_back(makeFunctionWithArguments("isNull", {argument->clone()}));
+            ASTPtr any_null = null_checks.size() == 1 ? null_checks[0] : makeFunctionWithArguments("or", std::move(null_checks));
+            node = makeFunctionWithArguments(
+                "if", {any_null, make_intrusive<ASTLiteral>(Field{}), makeFunctionWithArguments(Poco::toLower(function.name), arguments)});
+        }},
+        {"least", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            if (arguments.size() < 2)
+                return;
+            ASTs null_checks;
+            for (const auto & argument : arguments)
+                null_checks.push_back(makeFunctionWithArguments("isNull", {argument->clone()}));
+            ASTPtr any_null = null_checks.size() == 1 ? null_checks[0] : makeFunctionWithArguments("or", std::move(null_checks));
+            node = makeFunctionWithArguments(
+                "if", {any_null, make_intrusive<ASTLiteral>(Field{}), makeFunctionWithArguments(Poco::toLower(function.name), arguments)});
+        }},
+
         /// Conditional.
         {"if", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
@@ -949,6 +1013,23 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             }
             else
                 function.name = "JSON_QUERY";
+        }},
+        {"json_array_get", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// Deprecated in Trino but still documented; 0-based, negative from the end.
+            requireArguments(function, arguments, 2, 2, "(json_array, index)");
+            unwrapJSONArgument(arguments);
+            const auto * index = arguments[1]->as<ASTLiteral>();
+            if (!index)
+                throwWrongArguments(function, "a constant index");
+            ASTPtr translated_index;
+            if (index->value.getType() == Field::Types::UInt64)
+                translated_index = make_intrusive<ASTLiteral>(index->value.safeGet<UInt64>() + 1);
+            else if (index->value.getType() == Field::Types::Int64 && index->value.safeGet<Int64>() < 0)
+                translated_index = make_intrusive<ASTLiteral>(index->value);
+            else
+                throwWrongArguments(function, "a constant index");
+            node = makeFunctionWithArguments("JSONExtractRaw", {arguments[0], translated_index});
         }},
         {"json_size", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
@@ -1196,7 +1277,33 @@ void visit(ASTPtr & node)
         visit(child);
 
     if (auto * function = node->as<ASTFunction>())
+    {
         applyToFunction(node, *function);
+
+        /// ANSI/Trino: sum/avg/min/max over an empty set (or an empty window
+        /// frame) return NULL, while ClickHouse returns the type default.
+        if (auto * final_function = node->as<ASTFunction>())
+        {
+            String lower = Poco::toLower(final_function->name);
+            bool value_aggregate = lower == "sum" || lower == "avg"
+                || ((lower == "min" || lower == "max") && final_function->arguments
+                    && final_function->arguments->children.size() == 1);
+            if (value_aggregate && !final_function->parameters)
+                final_function->name += "OrNull";
+
+            /// Trino count returns bigint; the ClickHouse UInt64 has no common
+            /// supertype with signed integers in set operations.
+            if (lower == "count" || lower == "countif" || lower == "countdistinct")
+            {
+                String alias = final_function->tryGetAlias();
+                if (!alias.empty())
+                    final_function->setAlias("");
+                node = makeFunctionWithArguments("toInt64", {node});
+                if (!alias.empty())
+                    node->setAlias(alias);
+            }
+        }
+    }
 }
 
 }
