@@ -16,12 +16,8 @@
 namespace DB
 {
 
-class INATSConsumer;
-using INATSConsumerPtr = std::shared_ptr<INATSConsumer>;
-
-class INATSProducer;
-using INATSProducerPtr = std::unique_ptr<INATSProducer>;
-
+class NATSConsumer;
+using NATSConsumerPtr = std::shared_ptr<NATSConsumer>;
 struct NATSSettings;
 
 class StorageNATS final : public IStorage, WithContext
@@ -38,8 +34,6 @@ public:
     ~StorageNATS() override;
 
     std::string getName() const override { return NATS::TABLE_ENGINE_NAME; }
-
-    bool isMessageQueue() const override { return true; }
 
     bool noPushingToViewsOnInserts() const override { return true; }
 
@@ -69,16 +63,13 @@ public:
     /// We want to control the number of rows in a chunk inserted into NATS
     bool prefersLargeBlocks() const override { return false; }
 
-    void pushConsumer(INATSConsumerPtr consumer);
-    INATSConsumerPtr popConsumer();
-    INATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
+    void pushConsumer(NATSConsumerPtr consumer);
+    NATSConsumerPtr popConsumer();
+    NATSConsumerPtr popConsumer(std::chrono::milliseconds timeout);
 
     const String & getFormatName() const { return format_name; }
 
 private:
-    String getStreamName() const;
-    String getConsumerName() const;
-
     ContextMutablePtr nats_context;
     std::unique_ptr<NATSSettings> nats_settings;
     std::vector<String> subjects;
@@ -99,7 +90,7 @@ private:
     std::atomic<size_t> num_created_consumers = 0;
     Poco::Semaphore semaphore;
     std::mutex consumers_mutex;
-    std::vector<INATSConsumerPtr> consumers; /// available NATS consumers
+    std::vector<NATSConsumerPtr> consumers; /// available NATS consumers
 
     /// maximum number of messages in NATS queue (x-max-length). Also used
     /// to setup size of inner consumer for received messages
@@ -119,8 +110,7 @@ private:
     mutable bool drop_table = false;
     bool throw_on_startup_failure;
 
-    INATSConsumerPtr createConsumer();
-    INATSProducerPtr createProducer(String subject);
+    NATSConsumerPtr createConsumer();
 
     bool isSubjectInSubscriptions(const std::string & subject);
 

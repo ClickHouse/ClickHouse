@@ -8,7 +8,7 @@
 
 SELECT 'Test (1)';
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM DROP QUERY CACHE;
 
 DROP DATABASE IF EXISTS db1;
 DROP DATABASE IF EXISTS db2;
@@ -23,15 +23,15 @@ INSERT INTO db1.tab values(1);
 INSERT INTO db2.tab values(2);
 
 USE db1;
-SELECT * FROM tab SETTINGS use_query_cache = 1;
+SELECT * FROM tab SETTINGS use_query_cache=1;
 
 USE db2;
-SELECT * FROM tab SETTINGS use_query_cache = 1;
+SELECT * FROM tab SETTINGS use_query_cache=1;
 
 DROP DATABASE db1;
 DROP DATABASE db2;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM DROP QUERY CACHE;
 
 
 SELECT 'Test (2)';
@@ -45,7 +45,7 @@ SELECT 1 SETTINGS use_query_cache = 1, max_block_size = 1 Format Null;
 -- 4x the same query but with different settings each. There should yield four entries in the query cache.
 SELECT count(query) FROM system.query_cache;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM DROP QUERY CACHE;
 
 -- test with mixed session-level/query-level settings
 SET use_query_cache = 1;
@@ -66,5 +66,5 @@ SET use_query_cache = default;
 -- 4x the same query but with different settings each. There should yield four entries in the query cache.
 SELECT count(query) FROM system.query_cache;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM DROP QUERY CACHE;
 

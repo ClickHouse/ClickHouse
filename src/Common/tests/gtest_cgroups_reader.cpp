@@ -160,7 +160,7 @@ TEST_P(CgroupsMemoryUsageObserverFixture, ReadMemoryUsageTest)
     ASSERT_EQ(
         reader->readMemoryUsage(),
         version == ICgroupsReader::CgroupsVersion::V1 ? /* rss from memory.stat */ 2232029184
-                                                                  : /* anon+sock+kernel from memory.stat */ 11967193184);
+                                                                  : /* anon+sock+kernel-slab_reclaimable from memory.stat */ 10506210680);
 }
 
 
@@ -176,5 +176,30 @@ INSTANTIATE_TEST_SUITE_P(
     CgroupsMemoryUsageObserverTests,
     CgroupsMemoryUsageObserverFixture,
     ::testing::Values(ICgroupsReader::CgroupsVersion::V1, ICgroupsReader::CgroupsVersion::V2));
+
+
+/// Test cgroupv2 memory.stat without kernel/slab_reclaimable (older kernels).
+/// Result should be just anon + sock.
+TEST(CgroupsV2NoKernel, ReadMemoryUsageTest)
+{
+    std::string tmp_dir = "./test_cgroups_v2_no_kernel";
+    fs::create_directories(tmp_dir);
+
+    auto stat_file = WriteBufferFromFile(tmp_dir + "/memory.stat");
+    std::string content = R"(anon 5000000000
+file 1000000000
+sock 1000
+inactive_anon 0
+active_anon 5000000000
+)";
+    stat_file.write(content.data(), content.size());
+    stat_file.finalize();
+    stat_file.sync();
+
+    auto reader = ICgroupsReader::createCgroupsReader(ICgroupsReader::CgroupsVersion::V2, tmp_dir);
+    ASSERT_EQ(reader->readMemoryUsage(), /* anon + sock */ 5000001000);
+
+    fs::remove_all(tmp_dir);
+}
 
 #endif

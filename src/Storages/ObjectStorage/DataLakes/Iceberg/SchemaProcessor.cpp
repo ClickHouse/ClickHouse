@@ -149,6 +149,12 @@ void IcebergSchemaProcessor::addIcebergTableSchema(Poco::JSON::Object::Ptr schem
     std::lock_guard lock(mutex);
 
     Int32 schema_id = schema_ptr->getValue<Int32>(f_schema_id);
+
+    /// Databricks UniForm writes a degenerate placeholder schema (e.g. {"schema-id":0,"fields":[]})
+    /// into manifest files, while the real schema with the same schema-id lives in metadata.json.
+    if (!schema_ptr->isArray(f_fields) || schema_ptr->getArray(f_fields)->size() == 0)
+        return;
+
     current_schema_id = schema_id;
     if (iceberg_table_schemas_by_ids.contains(schema_id))
     {
@@ -234,7 +240,7 @@ DataTypePtr IcebergSchemaProcessor::getSimpleType(const String & type_name)
     if (type_name == f_double)
         return std::make_shared<DataTypeFloat64>();
     if (type_name == f_date)
-        return std::make_shared<DataTypeDate32>();
+        return std::make_shared<DataTypeDate>();
     if (type_name == f_time)
         return std::make_shared<DataTypeInt64>();
     if (type_name == f_timestamp)
@@ -423,7 +429,7 @@ std::shared_ptr<ActionsDAG> IcebergSchemaProcessor::getSchemaTransformationDag(
                 }
                 else if (allowPrimitiveTypeConversion(old_type, new_type))
                 {
-                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name, nullptr);
+                    node = &dag->addCast(*old_node, getFieldType(field, f_type, required), name);
                 }
                 outputs.push_back(node);
             }

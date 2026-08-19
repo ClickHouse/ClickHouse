@@ -18,7 +18,7 @@ namespace ErrorCodes
 class SerializationSubObject final : public SimpleTextSerialization
 {
 public:
-    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,

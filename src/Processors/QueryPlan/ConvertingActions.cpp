@@ -5,14 +5,14 @@
 namespace DB
 {
 
-void addConvertingActions(QueryPlan & plan, const Block & header, const ContextPtr & context)
+void addConvertingActions(QueryPlan & plan, const Block & header, bool has_missing_objects)
 {
     if (blocksHaveEqualStructure(*plan.getCurrentHeader(), header))
         return;
 
-    auto mode = ActionsDAG::MatchColumnsMode::Name;
+    auto mode = has_missing_objects ? ActionsDAG::MatchColumnsMode::Position : ActionsDAG::MatchColumnsMode::Name;
 
-    auto get_converting_dag = [mode, context](const Block & block_, const Block & header_)
+    auto get_converting_dag = [mode](const Block & block_, const Block & header_)
     {
         /// Convert header structure to expected.
         /// Also we ignore constants from result and replace it with constants from header.
@@ -21,7 +21,6 @@ void addConvertingActions(QueryPlan & plan, const Block & header, const ContextP
             block_.getColumnsWithTypeAndName(),
             header_.getColumnsWithTypeAndName(),
             mode,
-            context,
             true);
     };
 

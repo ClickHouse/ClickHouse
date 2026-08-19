@@ -1,4 +1,3 @@
-#include <Common/Exception.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>

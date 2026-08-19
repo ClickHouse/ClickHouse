@@ -280,7 +280,7 @@ public:
     void allowKeepAliveIFFRequestIsFullyRead();
 
 private:
-    /// The semantic is changed dramaticly, hide this function to avoid wrong usage
+    /// The semantic is changed dramaticly, hide this function to avoid wrong ussage
     /// Even more, HTTPResponse::beginWrite is not a virtual
     using HTTPResponse::write;
     using HTTPResponse::beginWrite;

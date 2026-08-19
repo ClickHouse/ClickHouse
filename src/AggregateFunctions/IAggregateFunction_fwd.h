@@ -6,7 +6,7 @@
 namespace DB
 {
 using AggregateDataPtr = char *;
-using AggregateDataPtrs = std::vector<AggregateDataPtr>; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+using AggregateDataPtrs = std::vector<AggregateDataPtr>;
 using ConstAggregateDataPtr = const char *;
 
 class IAggregateFunction;

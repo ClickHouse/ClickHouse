@@ -3,7 +3,6 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Interpreters/sortBlock.h>
@@ -83,6 +82,8 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         is_consume_started = true;
     }
 
+    if (rows_before_aggregation)
+        rows_before_aggregation->add(rows);
     src_rows += rows;
     src_bytes += chunk.bytes();
 
@@ -185,12 +186,10 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
             if (cur_block_size >= max_block_size || cur_block_bytes + current_memory_usage >= max_block_bytes)
             {
                 if (group_by_key)
-                    group_by_chunk
-                        = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
+                    group_by_block
+                        = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
                 cur_block_bytes += current_memory_usage;
                 finalizeCurrentChunk(std::move(chunk), key_end);
-                if (rows_before_aggregation)
-                    rows_before_aggregation->add(key_end);
                 return;
             }
 
@@ -201,9 +200,6 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
 
         key_begin = key_end;
     }
-
-    if (rows_before_aggregation)
-        rows_before_aggregation->add(rows);
 
     cur_block_bytes += current_memory_usage;
     block_end_reached = false;
@@ -289,7 +285,7 @@ IProcessor::Status AggregatingInOrderTransform::prepare()
 
     chassert(!is_consume_finished);
     current_chunk = input.pull(true /* set_not_needed */);
-    removeSpecialColumnRepresentations(current_chunk);
+    convertToFullIfSparse(current_chunk);
     return Status::Ready;
 }
 
@@ -298,8 +294,8 @@ void AggregatingInOrderTransform::generate()
     if (cur_block_size && is_consume_finished)
     {
         if (group_by_key)
-            group_by_chunk
-                = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false).chunk;
+            group_by_block
+                = params->aggregator.prepareBlockAndFillSingleLevel</* return_single_block */ true>(variants, /* final= */ false);
         else
             params->aggregator.addSingleKeyToAggregateColumns(variants, res_aggregate_columns);
         variants.invalidate();
@@ -322,10 +318,8 @@ void AggregatingInOrderTransform::generate()
     {
         /// Sorting is required after aggregation, for proper merging, via
         /// FinishAggregatingInOrderTransform/MergingAggregatedBucketTransform
-        auto block = params->getHeader();
-        block.setColumns(group_by_chunk.detachColumns());
-        sortBlock(block, sort_description);
-        to_push_chunk = convertToChunk(block);
+        sortBlock(group_by_block, sort_description);
+        to_push_chunk = convertToChunk(group_by_block);
     }
 
     if (!to_push_chunk.getNumRows())

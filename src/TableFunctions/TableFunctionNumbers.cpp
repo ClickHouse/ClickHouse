@@ -45,11 +45,7 @@ private:
         const std::string & table_name,
         ColumnsDescription cached_columns,
         bool is_insert_query) const override;
-    const char * getStorageEngineName() const override
-    {
-        /// Technically it's SystemNumbers but it doesn't register itself
-        return "";
-    }
+    const char * getStorageEngineName() const override { return "SystemNumbers"; }
 
     UInt64 evaluateArgument(ContextPtr context, ASTPtr & argument) const;
 
@@ -122,8 +118,8 @@ UInt64 TableFunctionNumbers<multithreaded>::evaluateArgument(ContextPtr context,
 
 void registerTableFunctionNumbers(TableFunctionFactory & factory)
 {
-    factory.registerFunction<TableFunctionNumbers<true>>({}, {.allow_readonly = true});
-    factory.registerFunction<TableFunctionNumbers<false>>({}, {.allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<true>>({.documentation = {}, .allow_readonly = true});
+    factory.registerFunction<TableFunctionNumbers<false>>({.documentation = {}, .allow_readonly = true});
 }
 
 }

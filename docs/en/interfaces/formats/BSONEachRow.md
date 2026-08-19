@@ -6,7 +6,6 @@ keywords: ['BSONEachRow']
 output_format: true
 slug: /interfaces/formats/BSONEachRow
 title: 'BSONEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

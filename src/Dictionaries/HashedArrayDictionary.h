@@ -39,7 +39,7 @@ class HashedArrayDictionary final : public IDictionary
     friend class HashedDictionaryImpl::HashedDictionaryParallelLoader<dictionary_key_type, HashedArrayDictionary<dictionary_key_type, sharded>>;
 
 public:
-    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, std::string_view>;
+    using KeyType = std::conditional_t<dictionary_key_type == DictionaryKeyType::Simple, UInt64, StringRef>;
 
     HashedArrayDictionary(
         const StorageID & dict_id_,
@@ -65,14 +65,14 @@ public:
         size_t queries = query_count.load();
         if (!queries)
             return 0;
-        return std::min(1.0, static_cast<double>(found_count.load()) / static_cast<double>(queries));
+        return std::min(1.0, static_cast<double>(found_count.load()) / queries);
     }
 
     double getHitRate() const override { return 1.0; }
 
     size_t getElementCount() const override { return total_element_count; }
 
-    double getLoadFactor() const override { return static_cast<double>(total_element_count) / static_cast<double>(bucket_count) ; }
+    double getLoadFactor() const override { return static_cast<double>(total_element_count) / bucket_count; }
 
     std::shared_ptr<IExternalLoadable> clone() const override
     {
@@ -130,19 +130,22 @@ public:
     Pipe read(const Names & column_names, size_t max_block_size, size_t num_streams) const override;
 
 private:
+
     using KeyContainerType = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         HashMap<UInt64, size_t>,
-        HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
+        HashMapWithSavedHash<StringRef, size_t, DefaultHash<StringRef>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, std::vector<Value>, PaddedPODArray<Value>>;
 
     template <typename Value>
-    using AttributeContainerShardsType = VectorWithMemoryTracking<AttributeContainerType<Value>>;
+    using AttributeContainerShardsType = std::vector<AttributeContainerType<Value>>;
 
     struct Attribute final
     {
+        AttributeUnderlyingType type;
+
         std::variant<
             AttributeContainerShardsType<UInt8>,
             AttributeContainerShardsType<UInt16>,
@@ -166,21 +169,19 @@ private:
             AttributeContainerShardsType<UUID>,
             AttributeContainerShardsType<IPv4>,
             AttributeContainerShardsType<IPv6>,
-            AttributeContainerShardsType<std::string_view>,
+            AttributeContainerShardsType<StringRef>,
             AttributeContainerShardsType<Array>>
             containers;
 
         /// One container per shard
-        using RowsMask = VectorWithMemoryTracking<bool>;
-        std::optional<VectorWithMemoryTracking<RowsMask>> is_index_null;
-
-        AttributeUnderlyingType type;
+        using RowsMask = std::vector<bool>;
+        std::optional<std::vector<RowsMask>> is_index_null;
     };
 
     struct KeyAttribute final
     {
         /// One container per shard
-        VectorWithMemoryTracking<KeyContainerType> containers;
+        std::vector<KeyContainerType> containers;
     };
 
     void createAttributes();
@@ -204,11 +205,11 @@ private:
         return intHashCRC32(key) % configuration.shards;
     }
 
-    UInt64 getShard(std::string_view key) const
+    UInt64 getShard(StringRef key) const
     {
         if constexpr (!sharded)
             return 0;
-        return StringViewHash()(key) % configuration.shards;
+        return StringRefHash()(key) % configuration.shards;
     }
 
     template <typename KeysProvider>
@@ -263,20 +264,20 @@ private:
     const DictionarySourcePtr source_ptr;
     const HashedArrayDictionaryStorageConfiguration configuration;
 
-    VectorWithMemoryTracking<Attribute> attributes;
+    std::vector<Attribute> attributes;
 
     KeyAttribute key_attribute;
 
     size_t bytes_allocated = 0;
     size_t hierarchical_index_bytes_allocated = 0;
     std::atomic<size_t> total_element_count = 0;
-    VectorWithMemoryTracking<size_t> element_counts;
+    std::vector<size_t> element_counts;
     size_t bucket_count = 0;
     mutable std::atomic<size_t> query_count{0};
     mutable std::atomic<size_t> found_count{0};
 
     BlockPtr update_field_loaded_block;
-    VectorWithMemoryTracking<std::unique_ptr<Arena>> string_arenas;
+    std::vector<std::unique_ptr<Arena>> string_arenas;
     DictionaryHierarchicalParentToChildIndexPtr hierarchical_index;
 };
 

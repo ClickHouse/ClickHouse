@@ -3,7 +3,6 @@
 #include <signal.h>
 #include <errno.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB

@@ -6,7 +6,6 @@ keywords: ['Form']
 output_format: false
 slug: /interfaces/formats/Form
 title: 'Form'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

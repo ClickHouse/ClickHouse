@@ -20,7 +20,6 @@ public:
 
 protected:
     void nextImpl() override;
-    void preFinalize() override;
     void finalizeImpl() override;
     void cancelImpl() noexcept override;
 

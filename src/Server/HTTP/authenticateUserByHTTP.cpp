@@ -38,17 +38,8 @@ namespace
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
-    void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
+    void checkUserNameNotEmpty(const String & user_name, std::string_view method)
     {
-        auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
-        if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
-        {
-            LOG_TEST(getLogger("authenticateUserByHTTP"), "Checking memory limit for user: {}", user_name);
-            CurrentMemoryTracker::check();
-        }
-        else
-            LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
-
         if (user_name.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
     }
@@ -93,13 +84,13 @@ bool authenticateUserByHTTP(
 
     if (config_credentials)
     {
-        checkUserNameNotEmptyAndServerHasEnoughMemory(config_credentials->getUserName(), "config authentication", global_context);
+        checkUserNameNotEmpty(config_credentials->getUserName(), "config authentication");
     }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
         /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -128,7 +119,7 @@ bool authenticateUserByHTTP(
     }
     else if (has_auth_headers)
     {
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
+        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -155,7 +146,7 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
-            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
+            checkUserNameNotEmpty(user, "Authorization HTTP header");
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -174,7 +165,7 @@ bool authenticateUserByHTTP(
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
+        checkUserNameNotEmpty(user, "authentication via parameters");
     }
 
     if (has_config_credentials)
@@ -259,7 +250,7 @@ bool authenticateUserByHTTP(
     try
     {
         if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
-            session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
+            session.authenticate(*current_credentials, *forwarded_address);
         else
             session.authenticate(*current_credentials, request.clientAddress());
     }

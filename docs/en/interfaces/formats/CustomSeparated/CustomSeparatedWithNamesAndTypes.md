@@ -6,7 +6,6 @@ keywords: ['CustomSeparatedWithNamesAndTypes']
 output_format: true
 slug: /interfaces/formats/CustomSeparatedWithNamesAndTypes
 title: 'CustomSeparatedWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

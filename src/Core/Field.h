@@ -274,10 +274,6 @@ public:
             Null    = 0,
             UInt64  = 1,
             Int64   = 2,
-            /// Note: there's no Float32. In theory, all Float32 values are exactly representable in
-            /// Float64. But in C++ if you static_cast back and forth, the result may change.
-            /// In particular, NaN may change to a different NaN, e.g. by cvtsd2ss instruction on x86.
-            /// So when a Float32 needs to be passed-through exactly, don't use Field.
             Float64 = 3,
             UInt128 = 4,
             Int128  = 5,
@@ -414,8 +410,6 @@ public:
     std::string_view getTypeName() const;
 
     bool isNull() const { return which == Types::Null; }
-    bool isNaN() const { return which == Types::Float64 && std::isnan(get<Float64>()); }
-    bool isInf() const { return which == Types::Float64 && std::isinf(get<Float64>()); }
 
     bool isNegativeInfinity() const { return which == Types::Null && get<Null>().isNegativeInfinity(); }
     bool isPositiveInfinity() const { return which == Types::Null && get<Null>().isPositiveInfinity(); }
@@ -587,11 +581,24 @@ private:
         ptr->assign(std::move(str));
     }
 
-    void create(const Field & x)
+    /// Array/Tuple/Map/Object nest Fields inside Fields, so a straightforward
+    /// (recursive) copy/destroy overflows the native stack for a deeply nested value.
+    /// These containers are handled by explicit-worklist iterative helpers instead.
+    static bool isContainer(Types::Which w)
     {
-        dispatch([this] (auto & value) { createConcrete(value); }, x);
+        return w == Types::Array || w == Types::Tuple || w == Types::Map || w == Types::Object;
     }
 
+    void create(const Field & x)
+    {
+        if (isContainer(x.which))
+            createContainerIteratively(x);
+        else
+            dispatch([this] (auto & value) { createConcrete(value); }, x);
+    }
+
+    /// Moving a Field just steals the container buffer (no per-element recursion), so
+    /// the move paths only need the iterative teardown of the value being overwritten.
     void create(Field && x)
     {
         dispatch([this] (auto & value) { createConcrete(std::move(value)); }, x);
@@ -599,12 +606,26 @@ private:
 
     void assign(const Field & x)
     {
-        dispatch([this] (auto & value) { assignConcrete(value); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map copy-assignment would recurse per nesting level; rebuild instead.
+            destroy();
+            create(x);
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(value); }, x);
     }
 
     void assign(Field && x)
     {
-        dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
+        if (isContainer(x.which))
+        {
+            /// A vector/map move-assignment first destroys the old (possibly deep) value recursively.
+            destroy();
+            create(std::move(x));
+        }
+        else
+            dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
     template <typename CharT>
@@ -631,16 +652,10 @@ private:
                 destroy<String>();
                 break;
             case Types::Array:
-                destroy<Array>();
-                break;
             case Types::Tuple:
-                destroy<Tuple>();
-                break;
             case Types::Map:
-                destroy<Map>();
-                break;
             case Types::Object:
-                destroy<Object>();
+                destroyContainerIteratively(old_which);
                 break;
             case Types::AggregateFunctionState:
                 destroy<AggregateFunctionStateData>();
@@ -648,17 +663,25 @@ private:
             case Types::CustomType:
                 destroy<CustomType>();
                 break;
-            default: [[likely]]
+            default:
                  break;
         }
     }
 
     template <typename T>
-    NO_INLINE void destroy()
+    void destroy()
     {
         T * MAY_ALIAS ptr = reinterpret_cast<T*>(&storage);
         ptr->~T();
     }
+
+    /// Placement-construct an empty container of the given type into raw (or Null) storage.
+    void initEmptyContainer(Types::Which w);
+
+    /// Copy/destroy a (possibly deeply nested) Array/Tuple/Map/Object value using an explicit
+    /// worklist so the native stack depth stays bounded regardless of the nesting depth.
+    void createContainerIteratively(const Field & src);
+    void destroyContainerIteratively(Types::Which old_which) noexcept;
 };
 
 #undef DBMS_MIN_FIELD_SIZE
@@ -842,15 +865,7 @@ void writeFieldText(const Field & x, WriteBuffer & buf);
 void writeFieldBinary(const Field & x, WriteBuffer & buf);
 Field readFieldBinary(ReadBuffer & buf);
 
-String fieldToString(const Field & x);
-
-/// Check if a Field contains a NaN value.
-/// Float32 is stored as Float64 internally, so checking Float64 is sufficient.
-inline bool isNaNField(const Field & f)
-{
-    return f.isNaN();
-}
-
+String toString(const Field & x);
 }
 
 template <>
@@ -871,6 +886,6 @@ struct fmt::formatter<DB::Field>
     template <typename FormatContext>
     auto format(const DB::Field & x, FormatContext & ctx) const
     {
-        return fmt::format_to(ctx.out(), "{}", fieldToString(x));
+        return fmt::format_to(ctx.out(), "{}", toString(x));
     }
 };

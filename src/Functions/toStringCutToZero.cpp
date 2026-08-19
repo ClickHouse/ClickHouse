@@ -146,38 +146,7 @@ public:
 
 REGISTER_FUNCTION(ToStringCutToZero)
 {
-    /// toStringCutToZero documentation
-    FunctionDocumentation::Description description = R"(
-Accepts a [String](/sql-reference/data-types/string) or [FixedString](/sql-reference/data-types/fixedstring) argument and returns a String that contains a copy of the original string truncated at the first null byte.
-
-Null bytes (\\0) are considered as string terminators.
-This function is useful for processing C-style strings or binary data where null bytes mark the end of meaningful content.
-    )";
-    FunctionDocumentation::Syntax syntax = "toStringCutToZero(s)";
-    FunctionDocumentation::Arguments arguments = {
-        {"s", "String or FixedString to process.", {"String", "FixedString"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {"Returns a String containing the characters before the first null byte.", {"String"}};
-    FunctionDocumentation::Examples examples = {
-    {
-        "Usage example",
-        R"(
-SELECT
-    toStringCutToZero('hello'),
-    toStringCutToZero('hello\0world')
-        )",
-        R"(
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
-│ hello                      │ hello                             │
-└────────────────────────────┴───────────────────────────────────┘
-        )"
-    }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::TypeConversion;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-
-    factory.registerFunction<FunctionToStringCutToZero>(documentation);
+    factory.registerFunction<FunctionToStringCutToZero>();
 }
 
 }

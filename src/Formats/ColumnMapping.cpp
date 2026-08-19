@@ -1,5 +1,4 @@
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Formats/ColumnMapping.h>
 #include <Formats/FormatSettings.h>

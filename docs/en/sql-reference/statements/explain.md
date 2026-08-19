@@ -4,7 +4,6 @@ sidebar_label: 'EXPLAIN'
 sidebar_position: 39
 slug: /sql-reference/statements/explain
 title: 'EXPLAIN Statement'
-doc_type: 'reference'
 ---
 
 Shows the execution plan of a statement.
@@ -68,10 +67,6 @@ Union
 ### EXPLAIN AST {#explain-ast}
 
 Dump query AST. Supports all types of queries, not only `SELECT`.
-
-Settings:
-
-- `graph` – Prints AST as a graph described in the [DOT](https://en.wikipedia.org/wiki/DOT_(graph_description_language)) graph description language. Default: 0.
 
 Examples:
 
@@ -181,20 +176,12 @@ Dump query plan steps.
 
 Settings:
 
-- `optimize` — Controls whether query plan optimizations are applied before displaying the plan. Default: 1.
 - `header` — Prints output header for step. Default: 0.
 - `description` — Prints step description. Default: 1.
-- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables. Starting from ClickHouse >= v25.9, this statement only shows reasonable output when used with `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
+- `indexes` — Shows used indexes, the number of filtered parts and the number of filtered granules for every index applied. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `projections` — Shows all analyzed projections and their effect on part-level filtering based on projection primary key conditions. For each projection, this section includes statistics such as the number of parts, rows, marks, and ranges that were evaluated using the projection's primary key. It also shows how many data parts were skipped due to this filtering, without reading from the projection itself. Whether a projection was actually used for reading or only analyzed for filtering can be determined by the `description` field. Default: 0. Supported for [MergeTree](../../engines/table-engines/mergetree-family/mergetree.md) tables.
 - `actions` — Prints detailed information about step actions. Default: 0.
-- `sorting` — Prints the sort description for each plan step that produces sorted output. Default: 0.
-- `keep_logical_steps` — Keeps logical plan steps for joins instead of converting them to physical join implementations. Default: 0.
-- `json` — Prints query plan steps as a row in [JSON](/interfaces/formats/JSON) format. Default: 0. It is recommended to use [TabSeparatedRaw (TSVRaw)](/interfaces/formats/TabSeparatedRaw) format to avoid unnecessary escaping.
-- `input_headers` — Prints input headers for step. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `column_structure` — Prints also the structure of columns in headers on top of their name and type. Default: 0. Mostly useful only for developers to debug issues related to input-output header mismatch.
-- `distributed` — Shows query plans executed on remote nodes for distributed tables or parallel replicas. Default: 0.
-- `compact` — When enabled, hides expression steps and detailed action info (inputs, functions, aliases, and output positions) from the plan. Only has an effect when actions = 1. Default: 0.
-- `pretty` — Prints the plan tree using line-drawing characters (├──, └──, │) instead of indentation to visualize the hierarchy. Also formats join step properties inline. Default: 0.
+- `json` — Prints query plan steps as a row in [JSON](../../interfaces/formats.md#json) format. Default: 0. It is recommended to use [TSVRaw](../../interfaces/formats.md#tabseparatedraw) format to avoid unnecessary escaping.
 
 When `json=1` step names will contain an additional suffix with unique step identifier.
 
@@ -315,8 +302,8 @@ With `indexes` = 1, the `Indexes` key is added. It contains an array of used ind
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
 - `Description` — The index description (currently only used for `Skip` indexes).
-- `Parts` — The number of parts after/before the index is applied.
-- `Granules` — The number of granules after/before the index is applied.
+- `Parts` — The number of parts before/after the index is applied.
+- `Granules` — The number of granules before/after the index is applied.
 - `Ranges` — The number of granules ranges after the index is applied.
 
 Example:
@@ -328,37 +315,37 @@ Example:
     "Type": "MinMax",
     "Keys": ["y"],
     "Condition": "(y in [1, +inf))",
-    "Parts": 4/5,
-    "Granules": 11/12
+    "Parts": 5/4,
+    "Granules": 12/11
   },
   {
     "Type": "Partition",
     "Keys": ["y", "bitAnd(z, 3)"],
     "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
-    "Parts": 3/4,
-    "Granules": 10/11
+    "Parts": 4/3,
+    "Granules": 11/10
   },
   {
     "Type": "PrimaryKey",
     "Keys": ["x", "y"],
     "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
-    "Parts": 2/3,
-    "Granules": 6/10,
+    "Parts": 3/2,
+    "Granules": 10/6,
     "Search Algorithm": "generic exclusion search"
   },
   {
     "Type": "Skip",
     "Name": "t_minmax",
     "Description": "minmax GRANULARITY 2",
-    "Parts": 1/2,
-    "Granules": 2/6
+    "Parts": 2/1,
+    "Granules": 6/2
   },
   {
     "Type": "Skip",
     "Name": "t_set",
     "Description": "set GRANULARITY 2",
     "": 1/1,
-    "Granules": 1/2
+    "Granules": 2/1
   }
 ]
 ```
@@ -463,80 +450,6 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-With `compact = 1`, each `Expression` step is removed. Along with that, if `actions = 1` is set, then `Actions` and `Positions` lines are hidden, leaving only the step descriptions:
-
-```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
-```
-
-With `distributed` = 1, the output includes not only the local query plan but also the query plans that will be executed on remote nodes. This is useful for analyzing and debugging distributed queries.
-
-Example with distributed table:
-
-```sql
-EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
-```
-
-```sql
-Union
-  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
-    Filter ((WHERE + Change column names to column identifiers))
-      ReadFromSystemNumbers
-  Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromRemote (Read from remote replica)
-      Expression ((Project names + Projection))
-        Filter ((WHERE + Change column names to column identifiers))
-          ReadFromSystemNumbers
-```
-
-Example with parallel replicas:
-
-```sql
-SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
-
-EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
-```
-
-```sql
-Expression ((Project names + Projection))
-  MergingAggregated
-    Union
-      Aggregating
-        Expression ((Before GROUP BY + Change column names to column identifiers))
-          ReadFromMergeTree (default.test_table)
-      ReadFromRemoteParallelReplicas
-        BlocksMarshalling
-          Aggregating
-            Expression ((Before GROUP BY + Change column names to column identifiers))
-              ReadFromMergeTree (default.test_table)
-```
-
-In both examples, the query plan shows the complete execution flow including local and remote steps.
-
-With `pretty` = 1, the plan tree is displayed using line-drawing characters instead of indentation:
-
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
 ### EXPLAIN PIPELINE {#explain-pipeline}
 
 Settings:
@@ -570,7 +483,7 @@ ExpressionTransform
 ```
 ### EXPLAIN ESTIMATE {#explain-estimate}
 
-Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family.
+Shows the estimated number of rows, marks and parts to be read from the tables while processing the query. Works with tables in the [MergeTree](/engines/table-engines/mergetree-family/mergetree) family. 
 
 **Example**
 

@@ -140,14 +140,14 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, Co
     return ast;
 }
 
-ASTPtr DatabaseDictionary::getCreateDatabaseQueryImpl() const
+ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
 {
     String query;
     {
         WriteBufferFromString buffer(query);
-        buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
-        if (!comment.empty())
-            buffer << " COMMENT " << backQuote(comment);
+        buffer << "CREATE DATABASE " << backQuoteIfNeed(getDatabaseName()) << " ENGINE = Dictionary";
+        if (const auto comment_value = getDatabaseComment(); !comment_value.empty())
+            buffer << " COMMENT " << backQuote(comment_value);
     }
     const auto & settings = getContext()->getSettingsRef();
     ParserCreateQuery parser;

@@ -4,11 +4,10 @@ description: 'SummingMergeTree inherits from the MergeTree engine. Its key featu
 sidebar_label: 'SummingMergeTree'
 sidebar_position: 50
 slug: /engines/table-engines/mergetree-family/summingmergetree
-title: 'SummingMergeTree table engine'
-doc_type: 'reference'
+title: 'SummingMergeTree'
 ---
 
-# SummingMergeTree table engine
+# SummingMergeTree
 
 The engine inherits from [MergeTree](/engines/table-engines/mergetree-family/versionedcollapsingmergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](../../../engines/table-engines/mergetree-family/mergetree.md)) with one row which contains summed values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -187,7 +186,7 @@ ARRAY JOIN
 └──────┴─────────┴─────────────┴────────┘
 ```
 
-When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/sumMappedArrays.md) function for aggregation of `Map`.
+When requesting data, use the [sumMap(key, value)](../../../sql-reference/aggregate-functions/reference/summap.md) function for aggregation of `Map`.
 
 For nested data structure, you do not need to specify its columns in the tuple of columns for summation.
 

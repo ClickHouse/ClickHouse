@@ -3,15 +3,13 @@
 #include <Processors/IProcessor.h>
 #include <Processors/Executors/ExecutorTasks.h>
 #include <Common/EventCounter.h>
-#include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 
+#include <deque>
 #include <queue>
 #include <memory>
-
-#include <boost/container/devector.hpp>
 
 
 namespace DB
@@ -111,7 +109,7 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
+    using DequeWithMemoryTracker = std::deque<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
     using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.

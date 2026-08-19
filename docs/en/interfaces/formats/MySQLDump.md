@@ -6,7 +6,6 @@ keywords: ['MySQLDump']
 output_format: false
 slug: /interfaces/formats/MySQLDump
 title: 'MySQLDump'
-doc_type: 'reference'
 ---
 
 | Input | Output  | Alias |

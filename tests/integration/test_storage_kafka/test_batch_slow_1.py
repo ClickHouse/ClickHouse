@@ -71,16 +71,13 @@ def kafka_setup_teardown():
     [k.generate_old_create_table_query, k.generate_new_create_table_query],
 )
 def test_bad_reschedule(kafka_cluster, create_query_generator):
-    suffix = k.random_string(6)
-    kafka_table = f"kafka_{suffix}"
-
     topic_name = "test_bad_reschedule" + k.get_topic_postfix(create_query_generator)
 
     messages = [json.dumps({"key": j + 1, "value": j + 1}) for j in range(20000)]
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     create_query = create_query_generator(
-        kafka_table,
+        "kafka",
         "key UInt64, value UInt64",
         topic_list=topic_name,
         consumer_group=topic_name,
@@ -93,7 +90,7 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
         f"""
         {create_query};
 
-        CREATE MATERIALIZED VIEW test.{kafka_table}_destination ENGINE=MergeTree ORDER BY tuple() AS
+        CREATE MATERIALIZED VIEW test.destination ENGINE=MergeTree ORDER BY tuple() AS
         SELECT
             key,
             now() as consume_ts,
@@ -103,14 +100,22 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
             _offset,
             _partition,
             _timestamp
-        FROM test.{kafka_table};
+        FROM test.kafka;
     """
     )
 
-    instance.wait_for_log_line(f"{kafka_table}.*Committed offset 20000")
+    instance.wait_for_log_line("Committed offset 20000")
 
-    logging.debug("Timestamps: %s", instance.query(f"SELECT max(consume_ts), min(consume_ts) FROM test.{kafka_table}_destination"))
-    assert int(instance.query(f"SELECT max(consume_ts) - min(consume_ts) FROM test.{kafka_table}_destination")) < 8
+    logging.debug(f"Timestamps: {instance.query('SELECT max(consume_ts), min(consume_ts) FROM test.destination')}")
+
+    assert (
+        int(
+            instance.query(
+                "SELECT max(consume_ts) - min(consume_ts) FROM test.destination"
+            )
+        )
+        < 8
+    )
 
 
 @pytest.mark.parametrize(
@@ -121,9 +126,6 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
     ],
 )
 def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
-    suffix = k.random_string(6)
-    kafka_table = f"kafka_unavailable_{suffix}"
-
     number_of_messages = 20000
     topic_name = "test_kafka_unavailable" + k.get_topic_postfix(create_query_generator)
     messages = [
@@ -135,20 +137,25 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
 
         with kafka_cluster.pause_container("kafka1"):
             create_query = create_query_generator(
-                kafka_table,
+                "test_kafka_unavailable",
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
                 settings={"kafka_max_block_size": 1000},
             )
-            instance.query(create_query)
+            instance.query(
+                f"""
+                {create_query};
+            """
+            )
 
             # First read from the table in case we should, to make sure it doesn't crash when the broker is unavailable
             if do_direct_read:
-                instance.query(f"SELECT * FROM test.{kafka_table}")
+                instance.query("SELECT * FROM test.test_kafka_unavailable")
 
-            instance.query(f"""
-                CREATE MATERIALIZED VIEW test.{kafka_table}_destination ENGINE=MergeTree ORDER BY tuple() AS
+            instance.query(
+                """
+                CREATE MATERIALIZED VIEW test.destination_unavailable ENGINE=MergeTree ORDER BY tuple() AS
                 SELECT
                     key,
                     now() as consume_ts,
@@ -158,15 +165,16 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
                     _offset,
                     _partition,
                     _timestamp
-                FROM test.{kafka_table}
-            """)
-            instance.query(f"SELECT count() FROM test.{kafka_table}_destination")
+                FROM test.test_kafka_unavailable;
+                """
+            )
+            instance.query("SELECT count() FROM test.destination_unavailable")
 
             # enough to trigger issue
             time.sleep(30)
 
         result = instance.query_with_retry(
-            f"SELECT count() FROM test.{kafka_table}_destination",
+            "SELECT count() FROM test.destination_unavailable",
             sleep_time=1,
             check_callback=lambda res: int(res) == number_of_messages,
         )

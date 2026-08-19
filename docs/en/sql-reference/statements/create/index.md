@@ -4,7 +4,6 @@ sidebar_label: 'CREATE'
 sidebar_position: 34
 slug: /sql-reference/statements/create/
 title: 'CREATE Queries'
-doc_type: 'reference'
 ---
 
 # CREATE Queries

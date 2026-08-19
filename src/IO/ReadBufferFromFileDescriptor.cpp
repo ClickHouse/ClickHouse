@@ -4,7 +4,6 @@
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Throttler.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
@@ -93,7 +92,8 @@ size_t ReadBufferFromFileDescriptor::readImpl(char * to, size_t min_bytes, size_
 
         /// It reports real time spent including the time spent while thread was preempted doing nothing.
         /// And it is Ok for the purpose of this watch (it is used to lower the number of threads to read from tables).
-        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it.
+        /// Sometimes it is better to use taskstats::blkio_delay_total, but it is quite expensive to get it
+        /// (NetlinkMetricsProvider has about 500K RPS).
         watch.stop();
         ProfileEvents::increment(ProfileEvents::DiskReadElapsedMicroseconds, watch.elapsedMicroseconds());
 
@@ -229,7 +229,11 @@ off_t ReadBufferFromFileDescriptor::seek(off_t offset, int whence)
         if (offset_after_seek_pos > 0)
             ignore(offset_after_seek_pos);
 
-        return seek_pos;
+        /// Return the position we are actually at, not `seek_pos`. With O_DIRECT (`required_alignment > 1`)
+        /// `seek_pos` is `new_pos` rounded down to the alignment, and the difference has just been skipped
+        /// by `ignore` above, so the buffer is positioned at `new_pos`. Returning `seek_pos` would break
+        /// callers that take the returned value as the new position (see `ReadBufferFromEncryptedFile`).
+        return static_cast<off_t>(new_pos);
     }
     /// NOLINTEND(readability-else-after-return)
 }

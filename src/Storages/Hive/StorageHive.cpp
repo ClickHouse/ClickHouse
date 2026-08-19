@@ -19,7 +19,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
@@ -314,7 +313,7 @@ public:
             }
 
             reader.reset();
-            pipeline = nullptr;
+            pipeline.reset();
             read_buf.reset();
         }
     }
@@ -444,7 +443,7 @@ StorageHive::StorageHive(
     storage_metadata.setComment(comment_);
     storage_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_ast, storage_metadata.columns, getContext());
 
-    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, getContext()));
+    setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns));
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -532,7 +531,7 @@ void StorageHive::initMinMaxIndexExpression()
 ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
 {
     if (!node)
-        return make_intrusive<ASTExpressionList>();
+        return std::make_shared<ASTExpressionList>();
 
     const auto * expr_func = node->as<ASTFunction>();
     if (expr_func && expr_func->name == "tuple")
@@ -542,7 +541,7 @@ ASTPtr StorageHive::extractKeyExpressionList(const ASTPtr & node)
     }
 
     /// Primary key consists of one column.
-    auto res = make_intrusive<ASTExpressionList>();
+    auto res = std::make_shared<ASTExpressionList>();
     res->children.push_back(node);
     return res;
 }

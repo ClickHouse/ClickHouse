@@ -13,8 +13,7 @@ node1 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_move_partition_to_disk_on_cluster_jbod1:size=10M",
-           "/test_move_partition_to_disk_on_cluster_external:size=10M"],
+    tmpfs=["/jbod1:size=10M", "/external:size=10M"],
     macros={"shard": 0, "replica": 1},
 )
 
@@ -26,8 +25,7 @@ node2 = cluster.add_instance(
     ],
     with_zookeeper=True,
     stay_alive=True,
-    tmpfs=["/test_move_partition_to_disk_on_cluster_jbod1:size=10M",
-           "/test_move_partition_to_disk_on_cluster_external:size=10M"],
+    tmpfs=["/jbod1:size=10M", "/external:size=10M"],
     macros={"shard": 0, "replica": 2},
 )
 

@@ -4,12 +4,17 @@
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <algorithm>
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
 #include <Common/logger_useful.h>
+#include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeString.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>
@@ -49,7 +54,7 @@ namespace ErrorCodes
 namespace
 {
     /// Checks that a specified set of labels is sorted and has no duplications, and there is one label named "__name__".
-    void checkLabels(const google::protobuf::RepeatedPtrField<prometheus::Label> & labels)
+    void checkLabels(const ::google::protobuf::RepeatedPtrField<::prometheus::Label> & labels)
     {
         bool metric_name_found = false;
         for (size_t i = 0; i != static_cast<size_t>(labels.size()); ++i)
@@ -129,8 +134,7 @@ namespace
         auto convert_actions_dag = ActionsDAG::makeConvertingActions(
             pipe.getHeader().getColumnsWithTypeAndName(),
             header_with_id.getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Position,
-            context);
+            ActionsDAG::MatchColumnsMode::Position);
         auto actions = std::make_shared<ExpressionActions>(
             std::move(convert_actions_dag),
             ExpressionActionsSettings(context, CompileExpressions::yes));
@@ -529,12 +533,12 @@ namespace
                 LOG_INFO(log, "{}: Inserting {} rows to the {} table",
                          time_series_storage_id.getNameForLogs(), block.rows(), toString(table_kind));
 
-                auto insert_query = make_intrusive<ASTInsertQuery>();
+                auto insert_query = std::make_shared<ASTInsertQuery>();
                 insert_query->table_id = target_table_id;
 
-                auto columns_ast = make_intrusive<ASTExpressionList>();
+                auto columns_ast = std::make_shared<ASTExpressionList>();
                 for (const auto & name : block.getNames())
-                    columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+                    columns_ast->children.emplace_back(std::make_shared<ASTIdentifier>(name));
                 insert_query->columns = columns_ast;
 
                 ContextMutablePtr insert_context = Context::createCopy(context);

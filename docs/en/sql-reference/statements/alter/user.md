@@ -4,7 +4,6 @@ sidebar_label: 'USER'
 sidebar_position: 45
 slug: /sql-reference/statements/alter/user
 title: 'ALTER USER'
-doc_type: 'reference'
 ---
 
 Changes ClickHouse user accounts.

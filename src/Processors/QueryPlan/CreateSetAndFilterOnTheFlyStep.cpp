@@ -128,7 +128,7 @@ void CreateSetAndFilterOnTheFlyStep::transformPipeline(QueryPipelineBuilder & pi
         if (stream_type != QueryPipelineBuilder::StreamType::Main)
             return nullptr;
         auto res = std::make_shared<CreatingSetsOnTheFlyTransform>(header, column_names, num_streams, own_set);
-        res->setDescription(std::string(this->getStepDescription()));
+        res->setDescription(this->getStepDescription());
         return res;
     });
 
@@ -186,7 +186,7 @@ void CreateSetAndFilterOnTheFlyStep::describeActions(JSONBuilder::JSONMap & map)
 
 void CreateSetAndFilterOnTheFlyStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
     settings.out << prefix << getName();
 
     settings.out << '\n';

@@ -16,12 +16,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix, size_t additonal_indent) const
+void AggregateDescription::explain(WriteBuffer & out, size_t indent) const
 {
-    std::string prefix_with_indent = prefix;
-    prefix_with_indent.append(additonal_indent, ' ');
+    String prefix(indent, ' ');
 
-    out << prefix_with_indent << column_name << '\n';
+    out << prefix << column_name << '\n';
 
     auto dump_params = [&](const Array & arr)
     {
@@ -40,7 +39,7 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
     if (function)
     {
         /// Double whitespace is intentional.
-        out << prefix_with_indent << "  Function: " << function->getName();
+        out << prefix << "  Function: " << function->getName();
 
         const auto & params = function->getParameters();
         if (!params.empty())
@@ -65,16 +64,16 @@ void AggregateDescription::explain(WriteBuffer & out, const std::string & prefix
         out << ") → " << function->getResultType()->getName() << "\n";
     }
     else
-        out << prefix_with_indent << "  Function: nullptr\n";
+        out << prefix << "  Function: nullptr\n";
 
     if (!parameters.empty())
     {
-        out << prefix_with_indent << "  Parameters: ";
+        out << prefix << "  Parameters: ";
         dump_params(parameters);
         out << '\n';
     }
 
-    out << prefix_with_indent << "  Arguments: ";
+    out << prefix << "  Arguments: ";
 
     if (argument_names.empty())
         out << "none\n";
@@ -143,7 +142,7 @@ void serializeAggregateDescriptions(const AggregateDescriptions & aggregates, Wr
         if (argument_types.size() != num_args)
         {
             WriteBufferFromOwnString buf;
-            aggregate.explain(buf, "", 0);
+            aggregate.explain(buf, 0);
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Invalid number of for aggregate function. Expected {}, got {}. Description:\n{}",
                 argument_types.size(), num_args, buf.str());

@@ -3,7 +3,6 @@ description: 'Documentation for Functions for Working with Embedded Dictionaries
 sidebar_label: 'Embedded dictionary'
 slug: /sql-reference/functions/ym-dict-functions
 title: 'Functions for Working with Embedded Dictionaries'
-doc_type: 'reference'
 ---
 
 # Functions for Working with Embedded Dictionaries
@@ -14,7 +13,7 @@ In order for the functions below to work, the server config must specify the pat
 As such, the examples shown in this section will throw an exception in [ClickHouse Fiddle](https://fiddle.clickhouse.com/) and in quick release and production deployments by default, unless first configured.
 :::
 
-For information about creating reference lists, see the section ["Dictionaries"](../statements/create/dictionary/embedded).
+For information about creating reference lists, see the section ["Dictionaries"](../dictionaries#embedded-dictionaries).
 
 ## Multiple Geobases {#multiple-geobases}
 
@@ -376,7 +375,7 @@ Result:
 
 ### regionToPopulation {#regiontopopulation}
 
-Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../statements/create/dictionary/embedded). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
+Gets the population for a region. The population can be recorded in files with the geobase. See the section ["Dictionaries"](../dictionaries#embedded-dictionaries). If the population is not recorded for the region, it returns 0. In the geobase, the population might be recorded for child regions, but not for parent regions.
 
 **Syntax**
 

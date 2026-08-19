@@ -1,5 +1,5 @@
+#include <Common/Arena.h>
 #include <Common/Exception.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/RadixSort.h>
@@ -11,23 +11,17 @@
 #include <Core/DecimalFunctions.h>
 #include <Core/TypeId.h>
 
-#include <IO/Operators.h>
+#include <base/TypeName.h>
+#include <base/sort.h>
+
 #include <IO/WriteHelpers.h>
 
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnCompressed.h>
-#include <Columns/IColumnImpl.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
-
-
 #include <Processors/Transforms/ColumnGathererTransform.h>
-
-#include <base/TypeName.h>
-#include <base/sort.h>
-
-#include <algorithm>
 
 
 namespace DB
@@ -323,13 +317,6 @@ size_t ColumnDecimal<T>::estimateCardinalityInPermutedRange(const IColumn::Permu
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getValueNameImpl(WriteBufferFromOwnString & name_buf, size_t n, const IColumn::Options &options) const
-{
-    if (options.notFull(name_buf))
-        name_buf << FieldVisitorToString()(data[n], scale);
-}
-
-template <is_decimal T>
 ColumnPtr ColumnDecimal<T>::permute(const IColumn::Permutation & perm, size_t limit) const
 {
     return permuteImpl(*this, perm, limit);
@@ -461,66 +448,6 @@ ColumnPtr ColumnDecimal<T>::filter(const IColumn::Filter & filt, ssize_t result_
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::filter(const IColumn::Filter & filt)
-{
-    size_t size = data.size();
-    if (size != filt.size())
-        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
-
-    const UInt8 * filt_pos = filt.data();
-    const UInt8 * filt_end = filt_pos + size;
-    const T * data_pos = data.data();
-    T * res_data = data.data();
-    size_t res_size = 0;
-
-    /** A slightly more optimized version.
-    * Based on the assumption that often pieces of consecutive values
-    *  completely pass or do not pass the filter.
-    * Therefore, we will optimistically check the parts of `SIMD_BYTES` values.
-    */
-    static constexpr size_t SIMD_BYTES = 64;
-    const UInt8 * filt_end_aligned = filt_pos + size / SIMD_BYTES * SIMD_BYTES;
-
-    while (filt_pos < filt_end_aligned)
-    {
-        UInt64 mask = bytes64MaskToBits64Mask(filt_pos);
-
-        if (0xffffffffffffffff == mask)
-        {
-            memmove(res_data + res_size, data_pos, SIMD_BYTES * sizeof(T));
-            res_size += SIMD_BYTES;
-        }
-        else
-        {
-            while (mask)
-            {
-                size_t index = std::countr_zero(mask);
-                res_data[res_size++] = data_pos[index];
-            #ifdef __BMI__
-                mask = _blsr_u64(mask);
-            #else
-                mask = mask & (mask-1);
-            #endif
-            }
-        }
-
-        filt_pos += SIMD_BYTES;
-        data_pos += SIMD_BYTES;
-    }
-
-    while (filt_pos < filt_end)
-    {
-        if (*filt_pos)
-            res_data[res_size++] = *data_pos;
-
-        ++filt_pos;
-        ++data_pos;
-    }
-
-    data.resize_assume_reserved(res_size);
-}
-
-template <is_decimal T>
 void ColumnDecimal<T>::expand(const IColumn::Filter & mask, bool inverted)
 {
     expandDataByMask<T>(data, mask, inverted);
@@ -540,23 +467,20 @@ ColumnPtr ColumnDecimal<T>::replicate(const IColumn::Offsets & offsets) const
         throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of offsets doesn't match size of column.");
 
     auto res = this->create(0, scale);
-    if (size == 0 || offsets.back() == 0)
+    if (0 == size)
         return res;
 
     typename Self::Container & res_data = res->getData();
-    res_data.resize_exact(offsets.back());
-
-    const T * src = data.data();
-    T * dst = res_data.data();
+    res_data.reserve_exact(offsets.back());
 
     IColumn::Offset prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        size_t count = offsets[i] - prev_offset;
+        size_t size_to_replicate = offsets[i] - prev_offset;
         prev_offset = offsets[i];
 
-        std::fill_n(dst, count, src[i]);
-        dst += count;
+        for (size_t j = 0; j < size_to_replicate; ++j)
+            res_data.push_back(data[i]);
     }
 
     return res;
@@ -589,24 +513,24 @@ ColumnPtr ColumnDecimal<T>::compress(bool force_compression) const
 }
 
 template <is_decimal T>
-void ColumnDecimal<T>::getExtremes(Field & min, Field & max, size_t start, size_t end) const
+void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
-    if (start >= end)
+    if (data.empty())
     {
         min = NearestFieldType<T>(T(0), scale);
         max = NearestFieldType<T>(T(0), scale);
         return;
     }
 
-    T cur_min = data[start];
-    T cur_max = data[start];
+    T cur_min = data[0];
+    T cur_max = data[0];
 
-    for (size_t i = start + 1; i < end; ++i)
+    for (const T & x : data)
     {
-        if (data[i] < cur_min)
-            cur_min = data[i];
-        else if (data[i] > cur_max)
-            cur_max = data[i];
+        if (x < cur_min)
+            cur_min = x;
+        else if (x > cur_max)
+            cur_max = x;
     }
 
     min = NearestFieldType<T>(cur_min, scale);

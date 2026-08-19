@@ -45,7 +45,6 @@ public:
     explicit X509Certificate(const std::string & path);
 
     static X509Certificate::List fromFile(const std::string & path);
-    static X509Certificate::List fromBuffer(const std::string & buffer);
 
     uint64_t version() const;
     std::string serialNumber() const;

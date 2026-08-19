@@ -13,7 +13,6 @@
 #include <Storages/IStorage.h>
 
 #include <memory>
-#include <ranges>
 
 namespace DB
 {
@@ -202,8 +201,6 @@ public:
         auto column_node_source = column_node->getColumnSource();
         if (column_node_source->getNodeType() == QueryTreeNodeType::LAMBDA)
             return;
-        if (column_node_source->getNodeType() == QueryTreeNodeType::INTERPOLATE)
-            return;
 
         throw Exception(ErrorCodes::NOT_AN_AGGREGATE,
             "Column '{}' is not under aggregate function and not in GROUP BY keys. In query {}",
@@ -364,9 +361,6 @@ void validateAggregates(const QueryTreeNodePtr & query_node, AggregatesValidatio
 
         if (query_node_typed.hasInterpolate())
             validate_group_by_columns_visitor.visit(query_node_typed.getInterpolate());
-
-        if (query_node_typed.hasLimitBy())
-            validate_group_by_columns_visitor.visit(query_node_typed.getLimitByNode());
 
         validate_group_by_columns_visitor.visit(query_node_typed.getProjectionNode());
     }

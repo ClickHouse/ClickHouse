@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/FieldVisitorToString.h>
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -46,6 +47,15 @@ public:
 
             return false;
         }
+        bool tryGetLiteralText(String * res) const override
+        {
+            const auto * literal = argument->as<ASTLiteral>();
+            if (!literal)
+                return false;
+            if (res)
+                *res = applyVisitor(FieldVisitorToString(), literal->value);
+            return true;
+        }
     private:
         const IAST * argument = nullptr;
     };
@@ -91,7 +101,7 @@ public:
         if (!function->hasArguments())
             return;
 
-        switch (function_.getKind())
+        switch (function_.kind)
         {
             case ASTFunction::Kind::ORDINARY_FUNCTION: findOrdinaryFunctionSecretArguments(); break;
             case ASTFunction::Kind::WINDOW_FUNCTION: break;

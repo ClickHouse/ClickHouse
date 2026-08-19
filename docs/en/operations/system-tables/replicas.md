@@ -4,7 +4,6 @@ description: 'System table containing information about and status of replicated
 keywords: ['system table', 'replicas']
 slug: /operations/system-tables/replicas
 title: 'system.replicas'
-doc_type: 'reference'
 ---
 
 # system.replicas

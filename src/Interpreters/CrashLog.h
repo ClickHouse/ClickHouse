@@ -5,24 +5,10 @@
 #include <Core/NamesAndAliases.h>
 #include <Core/Field.h>
 #include <Storages/ColumnsDescription.h>
-#include <Common/FramePointers.h>
 
-
-class StackTrace;
 
 /// Call this function on crash.
-void collectCrashLog(
-    Int32 signal,
-    Int32 signal_code,
-    UInt64 thread_id,
-    const String & query_id,
-    const String & query,
-    const StackTrace & stack_trace,
-    std::optional<UInt64> fault_address,
-    const String & fault_access_type,
-    const String & signal_description,
-    const FramePointers & current_exception_trace,
-    size_t current_exception_trace_size);
+void collectCrashLog(Int32 signal, UInt64 thread_id, const String & query_id, const StackTrace & stack_trace);
 
 
 namespace DB
@@ -36,18 +22,10 @@ struct CrashLogElement
     time_t event_time{};
     UInt64 timestamp_ns{};
     Int32 signal{};
-    Int32 signal_code{};
     UInt64 thread_id{};
     String query_id;
-    String query;
     Array trace;
     Array trace_full;
-    std::optional<UInt64> fault_address;
-    String fault_access_type;
-    String signal_description;
-    Array current_exception_trace_full;
-    String git_hash;
-    String architecture;
 
     static std::string name() { return "CrashLog"; }
     static ColumnsDescription getColumnsDescription();
@@ -58,7 +36,7 @@ struct CrashLogElement
 class CrashLog : public SystemLog<CrashLogElement>
 {
     using SystemLog<CrashLogElement>::SystemLog;
-    friend void ::collectCrashLog(Int32, Int32, UInt64, const String &, const String &, const StackTrace &, std::optional<UInt64>, const String &, const String &, const FramePointers &, size_t);
+    friend void ::collectCrashLog(Int32, UInt64, const String &, const StackTrace &);
 
     static std::weak_ptr<CrashLog> crash_log;
 

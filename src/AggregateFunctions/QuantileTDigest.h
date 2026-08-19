@@ -119,6 +119,7 @@ class QuantileTDigest
         static constexpr size_t PART_SIZE_BITS = 8;
 
         using Transform = RadixSortFloatTransform<KeyBits>;
+        using Allocator = RadixSortAllocator;
 
         /// The function to get the key from an array element.
         static Key & extractKey(Element & elem) { return elem.mean; }
@@ -295,11 +296,28 @@ public:
             addCentroid(c);
     }
 
-    void serialize(WriteBuffer & buf)
+    void serialize(WriteBuffer & buf) const
     {
-        compress();
-        writeVarUInt(centroids.size(), buf);
-        buf.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(centroids[0]));
+        /// serialize() must not mutate the state: IAggregateFunction::serialize takes a
+        /// ConstAggregateDataPtr, and the same state can be shared between rows (e.g. a
+        /// replicated/const aggregate-state column used as a GROUP BY key) and serialized
+        /// concurrently by several pipeline threads. compress() sorts centroids in place,
+        /// so compressing the shared buffer directly is a data race (heap-buffer-overflow
+        /// in RadixSort). If already compacted, write as is; otherwise compress a local copy.
+        if (unmerged == 0 && centroids.size() <= params.max_centroids)
+        {
+            writeVarUInt(centroids.size(), buf);
+            buf.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(centroids[0]));
+            return;
+        }
+
+        QuantileTDigest tmp;
+        tmp.centroids.assign(centroids);
+        tmp.count = count;
+        tmp.unmerged = unmerged;
+        tmp.compress();
+        writeVarUInt(tmp.centroids.size(), buf);
+        buf.write(reinterpret_cast<const char *>(tmp.centroids.data()), tmp.centroids.size() * sizeof(tmp.centroids[0]));
     }
 
     void deserialize(ReadBuffer & buf)
@@ -441,12 +459,7 @@ public:
         if (centroids.empty())
         {
             for (size_t result_num = 0; result_num < size; ++result_num)
-            {
-                if constexpr (std::is_floating_point_v<ResultType>)
-                    result[result_num] = NAN;
-                else
-                    result[result_num] = 0;
-            }
+                result[result_num] = std::is_floating_point_v<ResultType> ? NAN : 0;
             return;
         }
 

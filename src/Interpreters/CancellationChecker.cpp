@@ -38,19 +38,10 @@ void CancellationChecker::cancelTask(CancellationChecker::QueryToTrack task)
 {
     if (task.query)
     {
-        try
-        {
-            if (task.overflow_mode == OverflowMode::THROW)
-                task.query->cancelQuery(CancelReason::TIMEOUT);
-            else
-                task.query->checkTimeLimit();
-        }
-        catch (...)
-        {
-            /// This function is called from BackgroundSchedulePool which does not allow exceptions.
-            /// The query might have been already cancelled by another mechanism, which is fine.
-            tryLogCurrentException("CancellationChecker");
-        }
+        if (task.overflow_mode == OverflowMode::THROW)
+            task.query->cancelQuery(CancelReason::TIMEOUT);
+        else
+            task.query->checkTimeLimit();
     }
 }
 

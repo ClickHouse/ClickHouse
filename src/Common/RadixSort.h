@@ -1,5 +1,7 @@
 #pragma once
 
+
+#include <string.h>
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 #include <malloc.h>
 #endif
@@ -14,9 +16,8 @@
 #include <base/bit_cast.h>
 #include <base/extended_types.h>
 #include <base/sort.h>
+#include <Core/Defines.h>
 
-#include <Common/AllocatorWithMemoryTracking.h>
-#include <Common/TargetSpecific.h>
 
 /** Radix sort, has the following functionality:
   *
@@ -33,6 +34,22 @@
   */
 
 
+/** Used as a template parameter. See below.
+  */
+struct RadixSortAllocator
+{
+    static void * allocate(size_t size)
+    {
+        return ::operator new(size);
+    }
+
+    static void deallocate(void * ptr, size_t size)
+    {
+        ::operator delete(ptr, size);
+    }
+};
+
+
 /** A transformation that transforms the bit representation of a key into an unsigned integer number,
   *  that the order relation over the keys will match the order relation over the obtained unsigned numbers.
   * For floats this conversion does the following:
@@ -47,7 +64,7 @@ struct RadixSortFloatTransform
 
     static KeyBits forward(KeyBits x)
     {
-        return static_cast<KeyBits>(x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1))));
+        return x ^ ((-(x >> (sizeof(KeyBits) * 8 - 1))) | (KeyBits(1) << (sizeof(KeyBits) * 8 - 1)));
     }
 
     static KeyBits backward(KeyBits x)
@@ -80,6 +97,11 @@ struct RadixSortFloatTraits
 
     /// Converting a key into KeyBits is such that the order relation over the key corresponds to the order relation over KeyBits.
     using Transform = RadixSortFloatTransform<KeyBits>;
+
+    /// An object with the functions allocate and deallocate.
+    /// Can be used, for example, to allocate memory for a temporary array on the stack.
+    /// To do this, the allocator itself is created on the stack.
+    using Allocator = RadixSortAllocator;
 
     /// The function to get the key from an array element.
     static Key & extractKey(Element & elem) { return elem; }
@@ -123,6 +145,7 @@ struct RadixSortUIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortIdentityTransform<KeyBits>;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -161,6 +184,7 @@ struct RadixSortIntTraits
     static constexpr size_t PART_SIZE_BITS = 8;
 
     using Transform = RadixSortSignedTransform<KeyBits>;
+    using Allocator = RadixSortAllocator;
 
     static Key & extractKey(Element & elem) { return elem; }
     static Result & extractResult(Element & elem) { return elem; }
@@ -201,8 +225,7 @@ private:
     static constexpr size_t PART_BITMASK = HISTOGRAM_SIZE - 1;
     static constexpr size_t KEY_BITS = sizeof(Key) * 8;
     static constexpr size_t NUM_PASSES = (KEY_BITS + (Traits::PART_SIZE_BITS - 1)) / Traits::PART_SIZE_BITS;
-    static constexpr size_t PREFETCH_DISTANCE = std::max(1UL, 64 / sizeof(Element) / 2);
-    static constexpr size_t UNROLL_DISTANCE = 512 / (8 * sizeof(Element));
+
 
     static KeyBits keyToBits(Key x) { return bit_cast<KeyBits>(x); }
     static Key bitsToKey(KeyBits x) { return bit_cast<Key>(x); }
@@ -253,10 +276,8 @@ private:
         }
     }
 
-    /// SOFTWARE_PREFETCH is used only on Intel CPUs, where software prefetching is beneficial
-    /// On AMD x86 CPUs and on ARM, it does not help or even slows down
-    /// See more measurements in https://github.com/ClickHouse/ClickHouse/pull/86378
-    template <bool DIRECT_WRITE_TO_DESTINATION, bool SOFTWARE_PREFETCH>
+
+    template <bool DIRECT_WRITE_TO_DESTINATION>
     static NO_INLINE void radixSortLSDInternal(Element * arr, size_t size, bool reverse, Result * destination)
     {
         /// If the array is smaller than 256, then it is better to use another algorithm.
@@ -266,10 +287,10 @@ private:
         /// For each of the NUM_PASSES bit ranges of the key, consider how many times each value of this bit range met.
         std::unique_ptr<CountType[]> histograms{new CountType[HISTOGRAM_SIZE * NUM_PASSES]{}};
 
-        AllocatorWithMemoryTracking<typename Traits::Element> allocator;
+        typename Traits::Allocator allocator;
 
         /// We will do several passes through the array. On each pass, the data is transferred to another array. Let's allocate this temporary array.
-        Element * swap_buffer = allocator.allocate(size);
+        Element * swap_buffer = reinterpret_cast<Element *>(allocator.allocate(size * sizeof(Element)));
 
         /// Transform the array and calculate the histogram.
         /// NOTE This is slightly suboptimal. Look at https://github.com/powturbo/TurboHist
@@ -279,11 +300,11 @@ private:
                 Traits::extractKey(arr[i]) = bitsToKey(Traits::Transform::forward(keyToBits(Traits::extractKey(arr[i]))));
 
             for (size_t pass = 0; pass < NUM_PASSES; ++pass)
-                ++histograms[pass * HISTOGRAM_SIZE + static_cast<size_t>(extractPart(pass, arr[i]))];
+                ++histograms[pass * HISTOGRAM_SIZE + extractPart(pass, arr[i])];
         }
 
         {
-            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions.
+            /// Replace the histograms with the accumulated sums: the value in position i is the sum of the previous positions minus one.
             CountType sums[NUM_PASSES] = {0};
 
             for (size_t i = 0; i < HISTOGRAM_SIZE; ++i)
@@ -291,7 +312,7 @@ private:
                 for (size_t pass = 0; pass < NUM_PASSES; ++pass)
                 {
                     CountType tmp = histograms[pass * HISTOGRAM_SIZE + i] + sums[pass];
-                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass];
+                    histograms[pass * HISTOGRAM_SIZE + i] = sums[pass] - 1;
                     sums[pass] = tmp;
                 }
             }
@@ -303,59 +324,17 @@ private:
             Element * writer = pass % 2 ? arr : swap_buffer;
             Element * reader = pass % 2 ? swap_buffer : arr;
 
-            size_t unrolled_end = (size / UNROLL_DISTANCE * UNROLL_DISTANCE);
-
-            size_t i = 0;
-            /// Unrolling allows for vectorized code, but prefetching disables it
-            if constexpr (!SOFTWARE_PREFETCH && UNROLL_DISTANCE >= 2)
+            for (size_t i = 0; i < size; ++i)
             {
-                for (; i < unrolled_end; i += UNROLL_DISTANCE)
-                {
-                    size_t positions[UNROLL_DISTANCE];
-
-                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                        positions[p] = static_cast<size_t>(extractPart(pass, reader[i + p]));
-
-                    for (size_t p = 0; p < UNROLL_DISTANCE; p++)
-                    {
-                        auto element = reader[i + p];
-
-                        /// Place the element on the next free position.
-                        auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + positions[p]]];
-                        ++histograms[pass * HISTOGRAM_SIZE + positions[p]];
-                        dest = element;
-
-                        /// On the last pass, we do the reverse transformation.
-                        if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                            Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
-                    }
-                }
-            }
-
-            for (; i < size; i++)
-            {
-                auto element = reader[i];
-                auto pos = static_cast<size_t>(extractPart(pass, element));
-
-                if constexpr (SOFTWARE_PREFETCH)
-                {
-                    /// Note that for prefetch to be effective, the distance must be large enough so that the memory access is ready
-                    /// when we actually need it. This depends on CPU and memory subsystem.
-                    if (i + PREFETCH_DISTANCE < size) [[likely]]
-                    {
-                        auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                        __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                    }
-                }
+                size_t pos = extractPart(pass, reader[i]);
 
                 /// Place the element on the next free position.
-                auto & dest = writer[histograms[pass * HISTOGRAM_SIZE + pos]];
-                ++histograms[pass * HISTOGRAM_SIZE + pos];
-                dest = element;
+                auto & dest = writer[++histograms[pass * HISTOGRAM_SIZE + pos]];
+                dest = reader[i];
 
                 /// On the last pass, we do the reverse transformation.
                 if (!Traits::Transform::transform_is_simple && pass == NUM_PASSES - 1)
-                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(element))));
+                    Traits::extractKey(dest) = bitsToKey(Traits::Transform::backward(keyToBits(Traits::extractKey(reader[i]))));
             }
         }
 
@@ -369,36 +348,16 @@ private:
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    auto element = reader[i];
-                    auto pos = static_cast<size_t>(extractPart(pass, element));
-                    if constexpr (SOFTWARE_PREFETCH)
-                    {
-                        if (i + PREFETCH_DISTANCE < size) [[likely]]
-                        {
-                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                            __builtin_prefetch(&writer[size - 1 - histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                        }
-                    }
-                    writer[size - 1 - (histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(element);
-                    ++histograms[pass * HISTOGRAM_SIZE + pos];
+                    size_t pos = extractPart(pass, reader[i]);
+                    writer[size - 1 - (++histograms[pass * HISTOGRAM_SIZE + pos])] = Traits::extractResult(reader[i]);
                 }
             }
             else
             {
                 for (size_t i = 0; i < size; ++i)
                 {
-                    auto element = reader[i];
-                    auto pos = static_cast<size_t>(extractPart(pass, element));
-                    if constexpr (SOFTWARE_PREFETCH)
-                    {
-                        if (i + PREFETCH_DISTANCE < size)
-                        {
-                            auto next_pos = static_cast<size_t>(extractPart(pass, reader[i + PREFETCH_DISTANCE]));
-                            __builtin_prefetch(&writer[histograms[pass * HISTOGRAM_SIZE + next_pos]], 1);
-                        }
-                    }
-                    writer[histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(element);
-                    ++histograms[pass * HISTOGRAM_SIZE + pos];
+                    size_t pos = extractPart(pass, reader[i]);
+                    writer[++histograms[pass * HISTOGRAM_SIZE + pos]] = Traits::extractResult(reader[i]);
                 }
             }
         }
@@ -413,7 +372,7 @@ private:
                 std::reverse(arr, arr + size);
         }
 
-        allocator.deallocate(swap_buffer, size);
+        allocator.deallocate(swap_buffer, size * sizeof(Element));
     }
 
 
@@ -591,14 +550,8 @@ private:
 
             return;
         }
-#if USE_MULTITARGET_CODE
-        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
-        {
-            radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, true>(arr, size, reverse, destination);
-            return;
-        }
-#endif
-        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION, false>(arr, size, reverse, destination);
+
+        radixSortLSDInternal<DIRECT_WRITE_TO_DESTINATION>(arr, size, reverse, destination);
     }
 
 public:
@@ -607,26 +560,12 @@ public:
       */
     static void executeLSD(Element * arr, size_t size)
     {
-#if USE_MULTITARGET_CODE
-        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
-        {
-            radixSortLSDInternal<false, true>(arr, size, false, nullptr);
-            return;
-        }
-#endif
-        radixSortLSDInternal<false, false>(arr, size, false, nullptr);
+        radixSortLSDInternal<false>(arr, size, false, nullptr);
     }
 
     static void executeLSD(Element * arr, size_t size, bool reverse)
     {
-#if USE_MULTITARGET_CODE
-        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
-        {
-            radixSortLSDInternal<false, true>(arr, size, reverse, nullptr);
-            return;
-        }
-#endif
-        radixSortLSDInternal<false, false>(arr, size, reverse, nullptr);
+        radixSortLSDInternal<false>(arr, size, reverse, nullptr);
     }
 
     /** This function will start to sort inplace (modify 'arr')
@@ -637,14 +576,7 @@ public:
       */
     static void executeLSD(Element * arr, size_t size, bool reverse, Result * destination)
     {
-#if USE_MULTITARGET_CODE
-        if (DB::isArchSupported(DB::TargetArch::GenuineIntel))
-        {
-            radixSortLSDInternal<true, true>(arr, size, reverse, destination);
-            return;
-        }
-#endif
-        radixSortLSDInternal<true, false>(arr, size, reverse, destination);
+        radixSortLSDInternal<true>(arr, size, reverse, destination);
     }
 
     /** Tries to fast sort elements for common sorting patterns (unstable).

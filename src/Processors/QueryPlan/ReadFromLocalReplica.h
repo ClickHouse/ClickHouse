@@ -2,7 +2,6 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/SelectQueryInfo.h>
 
 namespace DB
 {
@@ -17,8 +16,6 @@ public:
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
     QueryPlanPtr extractQueryPlan();
-
-    void addFilter(FilterDAGInfo filter);
 
 private:
     QueryPlanPtr query_plan;

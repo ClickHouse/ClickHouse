@@ -1,9 +1,8 @@
-#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterFactory.h>
+#include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
 
 #include <Access/AccessControl.h>
 #include <Access/Common/AccessRightsElement.h>
-#include <Access/MaskingPolicy.h>
 #include <Access/ViewDefinerDependencies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -68,8 +67,6 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     if (query.type == AccessEntityType::ROW_POLICY)
         do_drop(query.row_policy_names->toStrings(), query.storage_name);
-    else if (query.type == AccessEntityType::MASKING_POLICY)
-        do_drop(Strings{query.masking_policy_name->toString()}, query.storage_name);
     else
         do_drop(query.names, query.storage_name);
 
@@ -112,11 +109,6 @@ AccessRightsElements InterpreterDropAccessEntityQuery::getRequiredAccess() const
         case AccessEntityType::QUOTA:
         {
             res.emplace_back(AccessType::DROP_QUOTA);
-            return res;
-        }
-        case AccessEntityType::MASKING_POLICY:
-        {
-            res.emplace_back(AccessType::DROP_MASKING_POLICY);
             return res;
         }
         case AccessEntityType::MAX:

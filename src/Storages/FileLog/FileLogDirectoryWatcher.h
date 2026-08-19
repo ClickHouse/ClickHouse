@@ -2,16 +2,12 @@
 
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 
-#include <Common/Logger_fwd.h>
 
 #include <memory>
 #include <mutex>
-#include <unordered_map>
-#include <vector>
 
 namespace DB
 {
-class Exception;
 class StorageFileLog;
 
 class FileLogDirectoryWatcher

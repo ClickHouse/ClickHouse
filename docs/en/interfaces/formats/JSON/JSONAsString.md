@@ -6,7 +6,6 @@ keywords: ['JSONAsString']
 output_format: false
 slug: /interfaces/formats/JSONAsString
 title: 'JSONAsString'
-doc_type: 'reference'
 ---
 
 | Input | Output  | Alias |

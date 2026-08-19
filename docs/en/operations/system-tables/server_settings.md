@@ -4,7 +4,6 @@ description: 'System table containing formation about global settings for the se
 keywords: ['system table', 'server_settings']
 slug: /operations/system-tables/server_settings
 title: 'system.server_settings'
-doc_type: 'reference'
 ---
 
 import SystemTableCloud from '@site/docs/_snippets/_system_table_cloud.md';

@@ -4,7 +4,6 @@
 #include <Interpreters/AggregateDescription.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/ColumnsDescription.h>
-#include <Storages/MergeTree/ProjectionIndex/IProjectionIndex.h>
 #include <Common/PODArray_fwd.h>
 
 #include <memory>
@@ -20,10 +19,6 @@ struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 using IColumnPermutation = PaddedPODArray<size_t>;
-
-struct KeyDescription;
-
-class ASTProjectionSelectQuery;
 
 /// Description of projections for Storage
 struct ProjectionDescription
@@ -73,26 +68,15 @@ struct ProjectionDescription
 
     bool with_parent_part_offset = false;
 
-    ProjectionIndexPtr index;
-
-    std::optional<UInt64> index_granularity;
-    std::optional<UInt64> index_granularity_bytes;
-
     /// Parse projection from definition AST
     static ProjectionDescription
     getProjectionFromAST(const ASTPtr & definition_ast, const ColumnsDescription & columns, ContextPtr query_context);
-
-    static void fillProjectionDescriptionByQuery(
-        ProjectionDescription & result,
-        const ASTProjectionSelectQuery & query,
-        const ColumnsDescription & columns,
-        ContextPtr query_context);
 
     static ProjectionDescription getMinMaxCountProjection(
         const ColumnsDescription & columns,
         ASTPtr partition_columns,
         const Names & minmax_columns,
-        const KeyDescription & primary_key,
+        const ASTs & primary_key_asts,
         ContextPtr query_context);
 
     ProjectionDescription() = default;
@@ -105,8 +89,6 @@ struct ProjectionDescription
     ProjectionDescription & operator=(ProjectionDescription && other) = default;
 
     ProjectionDescription clone() const;
-
-    void loadSettings(const SettingsChanges & changes);
 
     bool operator==(const ProjectionDescription & other) const;
     bool operator!=(const ProjectionDescription & other) const { return !(*this == other); }
@@ -135,11 +117,6 @@ struct ProjectionDescription
      * @return The resulting block after executing the projection query.
      */
     Block calculate(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
-
-    /// Same as but ignores additional index-specific metadata or structures.
-    /// Only the query AST is used to compute the output block.
-    Block
-    calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
 };

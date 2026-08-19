@@ -222,7 +222,7 @@ void DDLLoadingDependencyVisitor::extractTableNameFromArgument(const ASTFunction
     }
     else
     {
-        /// Just return if the argument has unexpected type.
+        assert(false);
         return;
     }
 

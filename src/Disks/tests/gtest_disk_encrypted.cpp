@@ -1,7 +1,3 @@
-#include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
-#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
-#include <Disks/DiskObjectStorage/Replication/ObjectStorageRouter.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <gtest/gtest.h>
 
 #include <Common/tests/gtest_global_context.h>
@@ -13,9 +9,9 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 #include <Disks/IO/createReadBufferFromFileBase.h>
-#include <Disks/DiskObjectStorage/DiskObjectStorage.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/Local/LocalObjectStorage.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/Local/MetadataStorageFromDisk.h>
+#include <Disks/ObjectStorages/DiskObjectStorage.h>
+#include <Disks/ObjectStorages/Local/LocalObjectStorage.h>
+#include <Disks/ObjectStorages/MetadataStorageFromDisk.h>
 #include <Poco/TemporaryFile.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <boost/algorithm/string/join.hpp>
@@ -68,9 +64,9 @@ protected:
         return temp_dir->path() + "/";
     }
 
-    String getFileContents(const String & file_name)
+    String getFileContents(const String & file_name, std::optional<size_t> file_size = {})
     {
-        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {});
+        auto buf = encrypted_disk->readFile(file_name, /* settings= */ {}, /* read_hint= */ {}, file_size);
         String str;
         readStringUntilEOF(str, *buf);
         return str;
@@ -132,6 +128,10 @@ TEST_F(DiskEncryptedTest, WriteAndRead)
 
     /// Read the file.
     EXPECT_EQ(getFileContents("a.txt"), "Some text");
+    checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
+
+    /// Read the file with specified file size.
+    EXPECT_EQ(getFileContents("a.txt", 9), "Some text");
     checkBinaryRepresentation(getDirectory() + "a.txt", kHeaderSize + 9);
 
     /// Remove the file.
@@ -342,7 +342,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read the whole file in two portions.
-        auto buf = disk->readFile(filename, read_settings, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
 
         String str;
         readString(str, *buf, 5);
@@ -354,7 +354,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition).
-        auto buf = disk->readFile(filename, read_settings, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
 
         buf->setReadUntilPosition(10);
 
@@ -365,7 +365,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position forward.
-        auto buf = disk->readFile(filename, read_settings, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -390,7 +390,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward.
-        auto buf = disk->readFile(filename, read_settings, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -404,7 +404,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Read until specified position (setReadUntilPosition), then move that position backward and seek.
-        auto buf = disk->readFile("a.txt", read_settings, {});
+        auto buf = disk->readFile("a.txt", read_settings, {}, {});
         buf->setReadUntilPosition(10);
 
         String str;
@@ -419,7 +419,7 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
     {
         /// Seek and then read until a specified position.
-        auto buf = disk->readFile(filename, read_settings, {});
+        auto buf = disk->readFile(filename, read_settings, {}, {});
 
         String str;
         buf->seek(0, SEEK_SET);
@@ -451,18 +451,14 @@ void DiskEncryptedTest::testSeekAndReadUntilPosition(DiskPtr disk, const String 
 
 TEST_F(DiskEncryptedTest, LocalBlobs)
 {
-    ObjectStoragePtr object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings("test", fs::path{getDirectory()} / "local_blobs", false));
-    DiskPtr metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
-    MetadataStoragePtr metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/", object_storage->createKeyGenerator());
+    getContext().context->setServerSetting("storage_metadata_write_full_object_key", true);
 
-    std::unordered_map<Location, LocationInfo> cluster_registry = {{"main", {true, true, ""}}};
-    std::unordered_map<Location, ObjectStoragePtr> object_storage_registry = {{"main", object_storage}};
-
-    ClusterConfigurationPtr cluster = std::make_shared<ClusterConfiguration>(std::move(cluster_registry));
-    ObjectStorageRouterPtr object_storages = std::make_shared<ObjectStorageRouter>(std::move(object_storage_registry));
-
+    auto object_storage = std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(fs::path{getDirectory()} / "local_blobs", false));
+    auto metadata_disk = std::make_shared<DiskLocal>("metadata_disk", fs::path{getDirectory()} / "metadata");
+    auto metadata_storage = std::make_shared<MetadataStorageFromDisk>(metadata_disk, "/");
     Poco::AutoPtr<Poco::Util::XMLConfiguration> config(new Poco::Util::XMLConfiguration());
-    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", std::move(cluster), std::move(metadata_storage), std::move(object_storages), *config, "");
+
+    auto local_blobs = std::make_shared<DiskObjectStorage>("local_blobs", "/", metadata_storage, object_storage, *config, "");
 
     makeEncryptedDisk(FileEncryption::Algorithm::AES_128_CTR, "1234567890123456", local_blobs);
 

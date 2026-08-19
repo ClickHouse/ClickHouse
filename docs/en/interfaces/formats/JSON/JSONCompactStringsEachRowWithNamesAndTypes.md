@@ -3,7 +3,6 @@ description: 'Documentation for the JSONCompactStringsEachRowWithNamesAndTypes f
 keywords: ['JSONCompactStringsEachRowWithNamesAndTypes']
 slug: /interfaces/formats/JSONCompactStringsEachRowWithNamesAndTypes
 title: 'JSONCompactStringsEachRowWithNamesAndTypes'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias |

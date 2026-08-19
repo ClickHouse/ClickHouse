@@ -79,7 +79,6 @@ namespace KafkaSetting
     extern const KafkaSettingsMilliseconds kafka_poll_timeout_ms;
     extern const KafkaSettingsString kafka_replica_name;
     extern const KafkaSettingsString kafka_schema;
-    extern const KafkaSettingsUInt64 kafka_schema_registry_skip_bytes;
     extern const KafkaSettingsUInt64 kafka_skip_broken_messages;
     extern const KafkaSettingsBool kafka_thread_per_consumer;
     extern const KafkaSettingsString kafka_topic_list;
@@ -105,7 +104,7 @@ void registerStorageKafka(StorageFactory & factory)
 
         auto kafka_settings = std::make_unique<KafkaSettings>();
         String collection_name;
-        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext(), true, nullptr, &args.table_id))
+        if (auto named_collection = tryGetNamedCollectionWithOverrides(args.engine_args, args.getLocalContext()))
         {
             kafka_settings->loadFromNamedCollection(named_collection);
             collection_name = assert_cast<const ASTIdentifier *>(args.engine_args[0].get())->name();
@@ -191,7 +190,13 @@ void registerStorageKafka(StorageFactory & factory)
         auto num_consumers = (*kafka_settings)[KafkaSetting::kafka_num_consumers].value;
         auto max_consumers = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
+        /// The limit depends on the local CPU count, so a definition read back from metadata may have been
+        /// accepted on a bigger server. Validate only a freshly introduced one, so existing tables stay loadable.
+        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+
+        if (is_fresh_definition
+            && !args.getLocalContext()->getSettingsRef()[Setting::kafka_disable_num_consumers_limit] && num_consumers > max_consumers)
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -220,14 +225,6 @@ void registerStorageKafka(StorageFactory & factory)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "kafka_poll_max_batch_size can not be lower than 1");
         }
-
-        constexpr size_t MAX_SKIP_BYTES = 255;
-        if ((*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value > MAX_SKIP_BYTES)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                           "kafka_schema_registry_skip_bytes value {} must be between 0 and {}",
-                           (*kafka_settings)[KafkaSetting::kafka_schema_registry_skip_bytes].value, MAX_SKIP_BYTES);
-        }
         NamesAndTypesList supported_columns;
         for (const auto & column : args.columns)
         {
@@ -252,7 +249,8 @@ void registerStorageKafka(StorageFactory & factory)
             return std::make_shared<StorageKafka>(
                 args.table_id, args.getContext(), args.columns, args.comment, std::move(kafka_settings), collection_name);
 
-        if (!args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper] && !args.query.attach)
+        if (args.mode <= LoadingStrictnessLevel::CREATE
+            && !args.getLocalContext()->getSettingsRef()[Setting::allow_experimental_kafka_offsets_storage_in_keeper])
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Storing the Kafka offsets in Keeper is experimental. Set `allow_experimental_kafka_offsets_storage_in_keeper` setting "
@@ -260,11 +258,10 @@ void registerStorageKafka(StorageFactory & factory)
 
         if (!has_keeper_path || !has_replica_name)
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "To store committed offsets in Keeper both kafka_keeper_path and kafka_replica_name must be specified");
+        ErrorCodes::BAD_ARGUMENTS, "Either specify both zookeeper path and replica name or none of them");
 
-        const auto is_on_cluster = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-        const auto is_replicated_database = args.getLocalContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = args.getLocalContext()->isDDLOrOnClusterInternal()
             && DatabaseCatalog::instance().getDatabase(args.table_id.database_name)->getEngineName() == "Replicated";
 
         // UUID macro is only allowed:
@@ -538,9 +535,27 @@ SettingsChanges createSettingsAdjustments(KafkaSettings & kafka_settings, const 
     return result;
 }
 
-bool checkDependencies(const StorageID & table_id, const ContextPtr & context)
+bool checkDependencies(const StorageID & table_id, const ContextPtr& context)
 {
-    return !DatabaseCatalog::instance().getReadyDependentViews(table_id, context).empty();
+    // Check if all dependencies are attached
+    auto view_ids = DatabaseCatalog::instance().getDependentViews(table_id);
+    if (view_ids.empty())
+        return false;
+
+    // Check the dependencies are ready?
+    for (const auto & view_id : view_ids)
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        if (!view)
+            return false;
+
+        // If it materialized view, check it's target table
+        auto * materialized_view = dynamic_cast<StorageMaterializedView *>(view.get());
+        if (materialized_view && !materialized_view->tryGetTargetTable())
+            return false;
+    }
+
+    return true;
 }
 
 VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode)

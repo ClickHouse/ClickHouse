@@ -3,7 +3,6 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
-#include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <IO/Progress.h>
@@ -165,7 +164,6 @@ public:
         RefreshState state;
         std::chrono::system_clock::time_point next_refresh_time;
         CoordinationZnode znode;
-        String replica_name;
         bool refresh_running;
         ProgressValues progress;
         std::optional<String> unexpected_error; // refreshing is stopped because of unexpected error
@@ -254,7 +252,6 @@ private:
 
     /// Calls refreshTask() from background thread.
     BackgroundSchedulePoolTaskHolder refresh_task;
-    Coordination::WatchCallbackPtr refresh_task_watch_callback;
 
     CoordinationState coordination;
     ExecutionState execution;

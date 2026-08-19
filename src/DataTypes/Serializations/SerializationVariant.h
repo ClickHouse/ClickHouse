@@ -3,7 +3,6 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/Serializations/SerializationVariantElement.h>
 #include <DataTypes/Serializations/SerializationVariantElementNullMap.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
 {
@@ -73,7 +72,7 @@ public:
 
     using VariantSerializations = std::vector<SerializationPtr>;
 
-    explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
+    explicit SerializationVariant(const DataTypes & variant_types_, const String & variant_name_);
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -107,7 +106,7 @@ public:
         size_t limit,
         SerializeBinaryBulkSettings & settings,
         SerializeBinaryBulkStatePtr & state,
-        UnorderedMapWithMemoryTracking<String, size_t> & variants_statistics,
+        std::unordered_map<String, size_t> & variants_statistics,
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
@@ -123,8 +122,6 @@ public:
 
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
-
-    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
 
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
@@ -218,9 +215,9 @@ private:
         std::function<bool(IColumn & variant_columm, const SerializationPtr & nested, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
-    DataTypes variant_types;
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
+    DataTypes variant_types;
     std::vector<size_t> deserialize_text_order;
     /// Name of Variant data type for better exception messages.
     String variant_name;

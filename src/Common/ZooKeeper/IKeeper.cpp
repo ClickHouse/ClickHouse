@@ -36,18 +36,6 @@ SimpleFaultInjection::~SimpleFaultInjection() noexcept(false)
 
 using namespace DB;
 
-WatchCallbackPtrOrEventPtr IKeeper::createWatchFromRawCallback(const String & id, const WatchCallbackCreator & creator)
-{
-    std::lock_guard lock(watches_mutex);
-    auto it = watches_by_id.find(id);
-    if (it == watches_by_id.end())
-    {
-        WatchCallbackPtrOrEventPtr watch(std::make_shared<WatchCallback>(creator()));
-        watches_by_id.emplace(id, watch);
-        return watch;
-    }
-    return it->second;
-}
 
 static void addRootPath(String & path, const String & root_path)
 {
@@ -108,7 +96,6 @@ const char * errorMessage(Error code)
         case Error::ZNOTHING:                 return "(not error) no server responses to process";
         case Error::ZSESSIONMOVED:            return "Session moved to another server, so operation is ignored";
         case Error::ZNOTREADONLY:             return "State-changing request is passed to read-only server";
-        case Error::ZNOWATCHER:               return "No watcher was found";
     }
 }
 
@@ -133,6 +120,7 @@ bool isUserError(Error zk_return_code)
         || zk_return_code == Error::ZNODEEXISTS
         || zk_return_code == Error::ZNOTEMPTY;
 }
+
 
 void CreateRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }
 void RemoveRequest::addRootPath(const String & root_path) { Coordination::addRootPath(path, root_path); }

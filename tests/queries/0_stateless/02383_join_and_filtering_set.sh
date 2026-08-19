@@ -47,8 +47,6 @@ DESC=$(sed -n "$SED_EXPR" <<<  "$QUERY_RESULT")
 # - expected number of steps in pipeline
 function test() {
 
-echo "Test $1 $2 $3 $4"
-
 PARAM_VALUE=$1
 JOIN_KIND=${2:-}
 

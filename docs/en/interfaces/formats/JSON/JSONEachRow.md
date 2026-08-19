@@ -4,7 +4,6 @@ description: 'Documentation for the JSONEachRow format'
 keywords: ['JSONEachRow']
 slug: /interfaces/formats/JSONEachRow
 title: 'JSONEachRow'
-doc_type: 'reference'
 ---
 
 | Input | Output | Alias                 |

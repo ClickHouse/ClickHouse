@@ -11,9 +11,6 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 class ActionsDAG;
 
-class RuntimeDataflowStatisticsCacheUpdater;
-using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
-
 /** Executes a certain expression over the block.
   * The expression consists of column identifiers from the block, constants, common functions.
   * For example: hits * 2 + 3, url LIKE '%clickhouse%'
@@ -22,22 +19,17 @@ using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflow
 class ExpressionTransform final : public ISimpleTransform
 {
 public:
-    ExpressionTransform(
-        SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+    ExpressionTransform(SharedHeader header_, ExpressionActionsPtr expression_);
 
     String getName() const override { return "ExpressionTransform"; }
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:
-    void onCancel() noexcept override;
-
     void transform(Chunk & chunk) override;
 
 private:
     ExpressionActionsPtr expression;
-
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };
 
 class ConvertingTransform final : public ExceptionKeepingTransform

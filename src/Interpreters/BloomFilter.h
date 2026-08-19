@@ -36,12 +36,12 @@ public:
     BloomFilter(size_t size_, size_t hashes_, size_t seed_);
 
     void resize(size_t size_);
-    bool find(const char * data, size_t len) const;
+    bool find(const char * data, size_t len);
     void add(const char * data, size_t len);
     void clear();
 
     void addHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
-    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed) const;
+    bool findHashWithSeed(const UInt64 & hash, const UInt64 & hash_seed);
 
     /// Checks if this contains everything from another bloom filter.
     /// Bloom filters must have equal size and seed.
@@ -49,7 +49,6 @@ public:
 
     const Container & getFilter() const { return filter; }
     Container & getFilter() { return filter; }
-    size_t getFilterSizeBytes() const { return size; }
 
     /// For debug.
     UInt64 isEmpty() const;
@@ -79,5 +78,6 @@ public:
 using BloomFilterPtr = std::shared_ptr<BloomFilter>;
 
 bool operator== (const BloomFilter & a, const BloomFilter & b);
+
 
 }

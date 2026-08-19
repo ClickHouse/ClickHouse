@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/COW.h>
-#include <Storages/ColumnDefault.h>
 
 #include <memory>
 
@@ -18,8 +17,8 @@ class IColumn;
 using ColumnPtr = COW<IColumn>::Ptr;
 using Columns = std::vector<ColumnPtr>;
 
-struct StorageSnapshot;
-using StorageSnapshotPtr = std::shared_ptr<StorageSnapshot>;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 class ActionsDAG;
 
@@ -35,8 +34,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
     bool null_as_default = false);
 
 /// Tries to convert columns in block to required_columns
-void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
-    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context);
 
 void fillMissingColumns(
     Columns & res_columns,
@@ -44,6 +42,6 @@ void fillMissingColumns(
     const NamesAndTypesList & requested_columns,
     const NamesAndTypesList & available_columns,
     const NameSet & partially_read_columns,
-    StorageSnapshotPtr storage_snapshot);
+    StorageMetadataPtr metadata_snapshot);
 
 }

@@ -12,7 +12,6 @@ main_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 1},
 )
 dummy_node = cluster.add_instance(
@@ -21,7 +20,6 @@ dummy_node = cluster.add_instance(
     user_configs=["configs/settings2.xml"],
     with_zookeeper=True,
     stay_alive=True,
-    with_remote_database_disk=False,
     macros={"shard": 1, "replica": 2},
 )
 
@@ -39,6 +37,7 @@ def started_cluster():
 def create_some_tables(db):
     settings = {
         "distributed_ddl_task_timeout": 0,
+        "allow_experimental_object_type": 1,
         "allow_suspicious_codecs": 1,
     }
     main_node.query(f"CREATE TABLE {db}.t1 (n int) ENGINE=Memory", settings=settings)
@@ -62,7 +61,7 @@ def create_some_tables(db):
         settings=settings,
     )
     main_node.query(
-        f"CREATE TABLE {db}.rmt3 (n int, json JSON materialized '{{}}') ENGINE=ReplicatedMergeTree order by n",
+        f"CREATE TABLE {db}.rmt3 (n int, json Object('json') materialized '') ENGINE=ReplicatedMergeTree order by n",
         settings=settings,
     )
     dummy_node.query(
@@ -112,7 +111,7 @@ def test_recover_digest_mismatch(started_cluster):
 
     disk_cmd_prefix = f"/usr/bin/clickhouse disks -C /etc/clickhouse-server/config.xml --disk {db_disk_name} --save-logs --query "
     db_disk_path = dummy_node.query(
-        f"SELECT path FROM system.disks WHERE name='{db_disk_name}'"
+        "SELECT path FROM system.disks WHERE name='{db_disk_name}'"
     ).strip()
 
     print(f"db_data_path {db_data_path}")
@@ -128,7 +127,7 @@ def test_recover_digest_mismatch(started_cluster):
         f"""printf "%s" "{corrupted_mv1_metadata}" | {disk_cmd_prefix} 'write --path-to {db_data_path}mv1.sql'""",
         f"{disk_cmd_prefix} 'remove {db_data_path}d1.sql'",
         "rm -rf /var/lib/clickhouse/metadata/recover_digest_mismatch/",  # Will trigger "Directory already exists"
-        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' || true && rm -rf /var/lib/clickhouse/store"
+        f"{disk_cmd_prefix} 'remove -r {db_disk_path}store/' && rm -rf /var/lib/clickhouse/store",  # Remove both metadata and data
     ]
 
     for command in ways_to_corrupt_metadata:

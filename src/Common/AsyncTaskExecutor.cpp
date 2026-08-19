@@ -42,9 +42,6 @@ void AsyncTaskExecutor::resume()
 
 void AsyncTaskExecutor::resumeUnlocked()
 {
-    /// Clear stale use-after-scope poisoning on the fiber stack before switching to it.
-    /// See FiberStack::beforeResume() for details.
-    fiber_stack.beforeResume();
     fiber.resume();
 }
 

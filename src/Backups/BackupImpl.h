@@ -5,7 +5,6 @@
 #include <Backups/IBackup.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/BackupInfo.h>
-#include <Common/Logger_fwd.h>
 #include <map>
 #include <mutex>
 
@@ -33,7 +32,6 @@ public:
         String compression_method;
         int compression_level = 0;
         size_t max_volume_size = 0;
-        size_t adaptive_buffer_max_size = 8 * DBMS_DEFAULT_BUFFER_SIZE;
     };
 
     using SnapshotReaderCreator = std::function<std::shared_ptr<IBackupReader>(const String &, const String &)>;
@@ -55,7 +53,8 @@ public:
     BackupImpl(
         const BackupInfo & backup_info_,
         const ArchiveParams & archive_params_,
-        std::shared_ptr<IBackupReader> reader_);
+        std::shared_ptr<IBackupReader> reader_,
+        std::shared_ptr<IBackupWriter> lightweight_snapshot_writer_);
 
     ~BackupImpl() override;
 
@@ -82,13 +81,14 @@ public:
     SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const override;
     std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const override;
-    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
-    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const override;
+    size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
+    size_t copyFileToDisk(const SizeAndChecksum & size_and_checksum, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode, bool sync) const override;
     void writeFile(const BackupFileInfo & info, BackupEntryPtr entry) override;
     bool supportsWritingInMultipleThreads() const override { return !use_archive; }
     void finalizeWriting() override;
     bool setIsCorrupted() noexcept override;
     bool tryRemoveAllFiles() noexcept override;
+    bool tryRemoveAllFilesUnderDirectory(const String & directory) const noexcept override;
 
 private:
     void open();
@@ -107,6 +107,11 @@ private:
 
     String getObjectKey(const String & file_name) const;
     std::unique_ptr<ReadBufferFromFileBase> readFileByObjectKey(const BackupFileInfo & info) const;
+
+    /// Copies a lightweight-snapshot (object-key) entry to the destination through a live write buffer
+    /// and fsyncs it (the optimized object-key copy exposes no buffer to fsync). Reached only in the
+    /// cloud build, where object keys are present; defined unconditionally so it is type-checked everywhere.
+    size_t copyObjectKeyEntryToDiskSynced(const String & object_key, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const;
 
     /// Returns the base backup or null if there is no base backup.
     std::shared_ptr<const IBackup> getBaseBackupUnlocked() const TSA_REQUIRES(mutex);
@@ -138,12 +143,11 @@ private:
     std::shared_ptr<IBackupReader> reader;
     /// Only used for lightweight backup, we read data from original object storage so the endpoint may be different from the backup files.
     std::shared_ptr<IBackupReader> lightweight_snapshot_reader;
+    std::shared_ptr<IBackupWriter> lightweight_snapshot_writer;
     SnapshotReaderCreator lightweight_snapshot_reader_creator;
     String original_endpoint; /// endpoint of source disk, we need to write it to metafile to restore a snapshot.
     String original_namespace; /// namespace of source disk, we need to write it to metafile to restore a snapshot.
 
-    BackupDataFileNameGeneratorType data_file_name_generator = BackupDataFileNameGeneratorType::FirstFileName;
-    size_t data_file_name_prefix_length = 3;
     std::shared_ptr<IBackupCoordination> coordination;
 
     mutable std::mutex mutex;
@@ -169,6 +173,8 @@ private:
     mutable std::optional<BackupInfo> base_backup_info;
     mutable std::shared_ptr<const IBackup> base_backup;
     mutable std::optional<UUID> base_backup_uuid;
+    /// Whether metadata has a marker to copy `S3` credentials from this backup locator to the base backup locator.
+    bool base_backup_copy_s3_credentials_from_backup = false;
     std::shared_ptr<IArchiveReader> archive_reader;
     std::shared_ptr<IArchiveWriter> archive_writer;
     String lock_file_name;

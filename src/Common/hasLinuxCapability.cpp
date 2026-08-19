@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <base/types.h>
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 
 
 namespace DB

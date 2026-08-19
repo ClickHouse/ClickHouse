@@ -13,10 +13,10 @@ namespace ErrorCodes
 namespace ProfileEvents
 {
     extern const Event S3GetObject;
-    extern const Event S3GetObjectTagging;
+    extern const Event S3GetObjectAttributes;
     extern const Event S3HeadObject;
     extern const Event DiskS3GetObject;
-    extern const Event DiskS3GetObjectTagging;
+    extern const Event DiskS3GetObjectAttributes;
     extern const Event DiskS3HeadObject;
 }
 
@@ -27,10 +27,7 @@ namespace DB::S3
 namespace
 {
     Aws::S3::Model::HeadObjectOutcome headObject(
-        const S3::Client & client,
-        const String & bucket,
-        const String & key,
-        const String & version_id)
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id)
     {
         ProfileEvents::increment(ProfileEvents::S3HeadObject);
         if (client.isClientForDisk())
@@ -46,33 +43,10 @@ namespace
         return client.HeadObject(req);
     }
 
-    Aws::S3::Model::GetObjectTaggingOutcome getObjectTagging(
-        const S3::Client & client,
-        const String & bucket,
-        const String & key,
-        const String & version_id)
-    {
-        ProfileEvents::increment(ProfileEvents::S3GetObjectTagging);
-        if (client.isClientForDisk())
-            ProfileEvents::increment(ProfileEvents::DiskS3GetObjectTagging);
-
-        S3::GetObjectTaggingRequest req;
-        req.SetBucket(bucket);
-        req.SetKey(key);
-        if (!version_id.empty())
-            req.SetVersionId(version_id);
-
-        return client.GetObjectTagging(req);
-    }
-
     /// Performs a request to get the size and last modification time of an object.
     std::pair<std::optional<ObjectInfo>, Aws::S3::S3Error> tryGetObjectInfo(
-        const S3::Client & client,
-        const String & bucket,
-        const String & key,
-        const String & version_id,
-        bool with_metadata,
-        bool with_tags)
+        const S3::Client & client, const String & bucket, const String & key, const String & version_id,
+        bool with_metadata)
     {
         auto outcome = headObject(client, bucket, key, version_id);
         if (!outcome.IsSuccess())
@@ -87,12 +61,10 @@ namespace
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
 
-        if (with_tags && result.GetTagCount() > 0)
-            object_info.tags = getObjectTags(client, bucket, key, version_id);
-
         return {object_info, {}};
     }
 }
+
 
 bool isNotFoundError(Aws::S3::S3Errors error)
 {
@@ -100,56 +72,16 @@ bool isNotFoundError(Aws::S3::S3Errors error)
         || error == Aws::S3::S3Errors::NO_SUCH_BUCKET;
 }
 
-bool isAuthenticationError(Aws::S3::S3Errors error)
-{
-    return error == Aws::S3::S3Errors::ACCESS_DENIED
-        || error == Aws::S3::S3Errors::INVALID_ACCESS_KEY_ID
-        || error == Aws::S3::S3Errors::INVALID_SIGNATURE;
-}
-
-String getAuthenticationErrorHint(Aws::S3::S3Errors error)
-{
-    if (isAuthenticationError(error))
-        return " Please check your AWS credentials and permissions.";
-    return "";
-}
-
-ObjectAttributes getObjectTags(
-    const S3::Client & client,
-    const String & bucket,
-    const String & key,
-    const String & version_id)
-{
-    ObjectAttributes tags;
-    auto tag_outcome = getObjectTagging(client, bucket, key, version_id);
-    if (!tag_outcome.IsSuccess())
-    {
-        const auto & error = tag_outcome.GetError();
-        throw S3Exception(
-            error.GetErrorType(),
-            "Failed to get object tags: {}. HTTP response code: {}.{}",
-            error.GetMessage(),
-            static_cast<size_t>(error.GetResponseCode()),
-            getAuthenticationErrorHint(error.GetErrorType()));
-    }
-
-    for (const auto & tag : tag_outcome.GetResult().GetTagSet())
-        tags[tag.GetKey()] = tag.GetValue();
-
-    return tags;
-}
-
 ObjectInfo getObjectInfoIfExists(
     const S3::Client & client,
     const String & bucket,
     const String & key,
     const String & version_id,
-    bool with_metadata,
-    bool with_tags)
+    bool with_metadata)
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
         return *object_info;
 
@@ -158,10 +90,9 @@ ObjectInfo getObjectInfoIfExists(
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}.{}",
+        "Failed to get object info: {}. HTTP response code: {}",
         error.GetMessage(),
-        static_cast<size_t>(error.GetResponseCode()),
-        getAuthenticationErrorHint(error.GetErrorType()));
+        static_cast<size_t>(error.GetResponseCode()));
 }
 
 ObjectInfo getObjectInfo(
@@ -169,22 +100,19 @@ ObjectInfo getObjectInfo(
     const String & bucket,
     const String & key,
     const String & version_id,
-    bool with_metadata,
-    bool with_tags)
+    bool with_metadata)
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata, with_tags);
-
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, with_metadata);
     if (object_info)
         return *object_info;
 
     throw S3Exception(
         error.GetErrorType(),
-        "Failed to get object info: {}. HTTP response code: {}.{}",
+        "Failed to get object info: {}. HTTP response code: {}",
         error.GetMessage(),
-        static_cast<size_t>(error.GetResponseCode()),
-        getAuthenticationErrorHint(error.GetErrorType()));
+        static_cast<size_t>(error.GetResponseCode()));
 }
 
 size_t getObjectSize(
@@ -193,7 +121,7 @@ size_t getObjectSize(
     const String & key,
     const String & version_id)
 {
-    return getObjectInfo(client, bucket, key, version_id, /*with_metadata=*/ false, /*with_tags=*/ false).size;
+    return getObjectInfo(client, bucket, key, version_id, /*with_metadata=*/ false).size;
 }
 
 bool objectExists(
@@ -204,8 +132,7 @@ bool objectExists(
 {
     Expect404ResponseScope scope; // 404 is not an error
 
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {});
-
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
     if (object_info)
         return true;
 
@@ -213,9 +140,8 @@ bool objectExists(
         return false;
 
     throw S3Exception(error.GetErrorType(),
-        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}.{}",
-        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()),
-        error.GetErrorType(), getAuthenticationErrorHint(error.GetErrorType()));
+        "Failed to check existence of key {} in bucket {}: {}. HTTP response code: {}, error type: {}",
+        key, bucket, error.GetMessage(), static_cast<size_t>(error.GetResponseCode()), error.GetErrorType());
 }
 
 void checkObjectExists(
@@ -225,7 +151,7 @@ void checkObjectExists(
     const String & version_id,
     std::string_view description)
 {
-    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {}, {});
+    auto [object_info, error] = tryGetObjectInfo(client, bucket, key, version_id, {});
     if (object_info)
         return;
     throw S3Exception(error.GetErrorType(), "{}Object {} in bucket {} suddenly disappeared: {}",

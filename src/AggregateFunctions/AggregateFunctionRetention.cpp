@@ -10,6 +10,7 @@
 #include <base/range.h>
 
 #include <bitset>
+#include <unordered_set>
 
 
 namespace DB
@@ -101,7 +102,7 @@ public:
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
             {
-                data(place).add(static_cast<UInt8>(i));
+                data(place).add(i);
             }
         }
     }
@@ -161,7 +162,7 @@ AggregateFunctionPtr createAggregateFunctionRetention(const std::string & name, 
 
 void registerAggregateFunctionRetention(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("retention", {createAggregateFunctionRetention, {}});
+    factory.registerFunction("retention", createAggregateFunctionRetention);
 }
 
 }

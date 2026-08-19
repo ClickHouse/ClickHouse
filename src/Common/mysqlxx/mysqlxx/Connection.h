@@ -161,8 +161,6 @@ public:
     /// Get MySQL C API MYSQL object.
     MYSQL * getDriver();
 
-    uint64_t getDriverThreadID();
-
 private:
     std::unique_ptr<MYSQL> driver;
     bool is_initialized = false;

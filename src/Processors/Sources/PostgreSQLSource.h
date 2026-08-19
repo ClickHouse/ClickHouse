@@ -41,8 +41,6 @@ protected:
 
     Chunk generate() override;
 
-    void onCancel() noexcept override;
-
     void onStart();
 
 private:
@@ -52,8 +50,8 @@ private:
     bool auto_commit = true;
     ExternalResultDescription description;
 
-    std::atomic<bool> started{false};
-    std::atomic<bool> is_completed{false};
+    bool started = false;
+    bool is_completed = false;
 
     postgres::ConnectionHolderPtr connection_holder;
 

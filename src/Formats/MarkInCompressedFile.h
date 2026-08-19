@@ -5,7 +5,6 @@
 
 #include <base/types.h>
 #include <Common/PODArray.h>
-#include <Common/JemallocCacheAllocator.h>
 
 
 namespace DB
@@ -100,8 +99,8 @@ private:
     static constexpr size_t MARKS_PER_BLOCK = 256;
 
     size_t num_marks;
-    PODArray<BlockInfo, 4096, JemallocCacheAllocator> blocks;
-    PODArray<UInt64, 4096, JemallocCacheAllocator> packed;
+    PODArray<BlockInfo> blocks;
+    PODArray<UInt64> packed;
 
     // Mark idx -> {block info, bit offset in `packed`}.
     std::tuple<const BlockInfo *, size_t> lookUpMark(size_t idx) const;

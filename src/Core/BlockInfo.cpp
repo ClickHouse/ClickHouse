@@ -18,15 +18,12 @@ namespace ErrorCodes
 
 
 /// Write values in binary form. NOTE: You could use protobuf, but it would be overkill for this case.
-void BlockInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
+void BlockInfo::write(WriteBuffer & out) const
 {
 /// Set of pairs `FIELD_NUM`, value in binary form. Then 0.
-#define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
-    if (server_protocol_revision >= (MIN_PROTOCOL_REVISION)) \
-    { \
-        writeVarUInt(FIELD_NUM, out); \
-        writeBinary(NAME, out); \
-    }
+#define WRITE_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
+    writeVarUInt(FIELD_NUM, out); \
+    writeBinary(NAME, out);
 
     APPLY_FOR_BLOCK_INFO_FIELDS(WRITE_FIELD)
 
@@ -35,7 +32,7 @@ void BlockInfo::write(WriteBuffer & out, UInt64 server_protocol_revision) const
 }
 
 /// Read values in binary form.
-void BlockInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
+void BlockInfo::read(ReadBuffer & in)
 {
     UInt64 field_num = 0;
 
@@ -47,11 +44,10 @@ void BlockInfo::read(ReadBuffer & in, UInt64 client_protocol_revision)
 
         switch (field_num)
         {
-#define READ_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM, MIN_PROTOCOL_REVISION) \
-    case FIELD_NUM: \
-        if (client_protocol_revision >= (MIN_PROTOCOL_REVISION)) \
-            readBinary(NAME, in); \
-        break;
+        #define READ_FIELD(TYPE, NAME, DEFAULT, FIELD_NUM) \
+            case FIELD_NUM: \
+                readBinary(NAME, in); \
+                break;
 
             APPLY_FOR_BLOCK_INFO_FIELDS(READ_FIELD)
 

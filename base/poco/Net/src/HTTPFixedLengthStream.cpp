@@ -119,7 +119,6 @@ HTTPFixedLengthInputStream::HTTPFixedLengthInputStream(HTTPSession& session, HTT
 	HTTPFixedLengthIOS(session, length, std::ios::in),
 	std::istream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 
@@ -136,7 +135,6 @@ HTTPFixedLengthOutputStream::HTTPFixedLengthOutputStream(HTTPSession& session, H
 	HTTPFixedLengthIOS(session, length, std::ios::out),
 	std::ostream(&_buf)
 {
-	poco_ios_init(&_buf);
 }
 
 

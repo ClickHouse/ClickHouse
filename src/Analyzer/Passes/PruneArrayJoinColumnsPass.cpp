@@ -57,9 +57,6 @@ using ArrayJoinNodeSet = std::unordered_set<const IQueryTreeNode *>;
 /// Map: (ArrayJoinNode raw ptr, column name) → post-pruning column DataType.
 using UpdatedTypeMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, DataTypePtr>>;
 
-/// Map: (ArrayJoinNode raw ptr, column name, old 1-based index) → new 1-based index.
-using IndexRemapMap = std::unordered_map<const IQueryTreeNode *, std::unordered_map<std::string, std::unordered_map<UInt64, UInt64>>>;
-
 /// Visitor that marks which ARRAY JOIN expressions and nested subcolumns are used.
 class MarkUsedArrayJoinColumnsVisitor : public InDepthQueryTreeVisitorWithContext<MarkUsedArrayJoinColumnsVisitor>
 {
@@ -184,14 +181,11 @@ private:
     const ArrayJoinNodeSet & tracked_nodes;
 };
 
-/// Prune unused subcolumn arguments from a nested() function and build an index remap
-/// so that numeric tupleElement indices can be updated to reflect the new positions.
 void pruneNestedFunctionArguments(
     ColumnNode & column_node,
     FunctionNode & function_node,
     const ExpressionUsage & expr_usage,
-    const ContextPtr & context,
-    std::unordered_map<UInt64, UInt64> & index_remap)
+    const ContextPtr & context)
 {
     auto & nested_args = function_node.getArguments().getNodes();
     const auto & subcolumn_names = expr_usage.nested_subcolumn_names;
@@ -212,10 +206,6 @@ void pruneNestedFunctionArguments(
     /// Keep at least one subcolumn so the expression remains valid.
     if (indices_to_keep.empty())
         indices_to_keep.push_back(0);
-
-    /// Build old 1-based index → new 1-based index remap.
-    for (size_t new_idx = 0; new_idx < indices_to_keep.size(); ++new_idx)
-        index_remap[indices_to_keep[new_idx] + 1] = new_idx + 1;
 
     /// Build pruned names array and arguments.
     Array pruned_names_array;
@@ -244,8 +234,8 @@ void pruneNestedFunctionArguments(
     column_node.setColumnType(std::move(new_column_type));
 }
 
-/// Visitor that updates reference ColumnNode types, rewrites stale numeric tupleElement
-/// indices, and re-resolves tupleElement functions after nested() arguments have been pruned.
+/// Visitor that updates reference ColumnNode types and re-resolves tupleElement functions
+/// after nested() arguments have been pruned.
 class UpdateArrayJoinReferenceTypesVisitor : public InDepthQueryTreeVisitorWithContext<UpdateArrayJoinReferenceTypesVisitor>
 {
 public:
@@ -254,12 +244,10 @@ public:
     UpdateArrayJoinReferenceTypesVisitor(
         ContextPtr context_,
         const UpdatedTypeMap & updated_types_,
-        const ArrayJoinNodeSet & tracked_nodes_,
-        const IndexRemapMap & index_remap_)
+        const ArrayJoinNodeSet & tracked_nodes_)
         : Base(std::move(context_))
         , updated_types(updated_types_)
         , tracked_nodes(tracked_nodes_)
-        , index_remap(index_remap_)
     {
     }
 
@@ -269,7 +257,7 @@ public:
         if (!function_node || function_node->getFunctionName() != "tupleElement")
             return;
 
-        auto & arguments = function_node->getArguments().getNodes();
+        const auto & arguments = function_node->getArguments().getNodes();
         if (arguments.size() < 2)
             return;
 
@@ -290,30 +278,6 @@ public:
             return;
 
         const auto & new_type = type_it->second;
-
-        /// Rewrite numeric tupleElement index if pruning changed positions.
-        auto * constant_node = arguments[1]->as<ConstantNode>();
-        if (constant_node)
-        {
-            const auto & value = constant_node->getValue();
-            if (value.getType() == Field::Types::UInt64)
-            {
-                UInt64 old_index = value.safeGet<UInt64>();
-
-                auto remap_node_it = index_remap.find(source.get());
-                if (remap_node_it != index_remap.end())
-                {
-                    auto remap_col_it = remap_node_it->second.find(column_node->getColumnName());
-                    if (remap_col_it != remap_node_it->second.end())
-                    {
-                        auto remap_it = remap_col_it->second.find(old_index);
-                        if (remap_it != remap_col_it->second.end() && remap_it->second != old_index)
-                            arguments[1] = std::make_shared<ConstantNode>(remap_it->second);
-                    }
-                }
-            }
-        }
-
         if (column_node->getColumnType()->equals(*new_type))
             return;
 
@@ -326,7 +290,6 @@ public:
 private:
     const UpdatedTypeMap & updated_types;
     const ArrayJoinNodeSet & tracked_nodes;
-    const IndexRemapMap & index_remap;
 };
 
 }
@@ -393,7 +356,6 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
 
     /// Step 3: Prune.
     UpdatedTypeMap updated_types;
-    IndexRemapMap index_remap;
 
     for (auto & [node_ptr, expressions_usage] : usage_map)
     {
@@ -457,9 +419,7 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
             if (!function_node)
                 continue;
 
-            pruneNestedFunctionArguments(
-                *column_node, *function_node, expr_usage, context,
-                index_remap[node_ptr][column_node->getColumnName()]);
+            pruneNestedFunctionArguments(*column_node, *function_node, expr_usage, context);
         }
 
         /// Collect post-pruning types for step 3c.
@@ -473,8 +433,8 @@ void PruneArrayJoinColumnsPass::run(QueryTreeNodePtr & query_tree_node, ContextP
         }
     }
 
-    /// 3c: Update types of reference ColumnNodes, rewrite numeric indices, and re-resolve tupleElement functions.
-    UpdateArrayJoinReferenceTypesVisitor type_updater(context, updated_types, tracked_nodes, index_remap);
+    /// 3c: Update types of reference ColumnNodes and re-resolve tupleElement functions.
+    UpdateArrayJoinReferenceTypesVisitor type_updater(context, updated_types, tracked_nodes);
     type_updater.visit(query_tree_node);
 }
 
