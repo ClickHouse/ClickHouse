@@ -248,20 +248,45 @@ TEST(SLRUCache, MaxCountDoesNotStarveProbationary)
     size_t x = 5;
     auto load_func = [&] { return std::make_shared<size_t>(x); };
 
-    SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
-                               /*max_size_in_bytes=*/1'000'000'000,
-                               /*max_count=*/4,
-                               /*size_ratio*/0.5);
+    /// Large enough that the byte limbs never bind, so only the count limbs are exercised.
+    static constexpr size_t max_size_in_bytes = 1'000'000'000;
 
-    /// A second access promotes an entry into the protected queue.
-    for (int i = 0; i < 4; ++i)
+    for (double size_ratio : {0.0, 0.5, 1.0})
     {
-        slru_cache.getOrSet(i, load_func);
-        slru_cache.getOrSet(i, load_func);
+        for (size_t max_count = 1; max_count <= 8; max_count *= 2)
+        {
+            SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                                       max_size_in_bytes, max_count, size_ratio);
+
+            /// A second access promotes an entry into the protected queue.
+            for (size_t i = 0; i < max_count; ++i)
+            {
+                slru_cache.getOrSet(static_cast<int>(i), load_func);
+                slru_cache.getOrSet(static_cast<int>(i), load_func);
+            }
+
+            slru_cache.getOrSet(100, load_func);
+            EXPECT_NE(slru_cache.get(100), nullptr)
+                << "max_count = " << max_count << ", size_ratio = " << size_ratio;
+        }
     }
 
-    slru_cache.getOrSet(100, load_func);
-    ASSERT_NE(slru_cache.get(100), nullptr);
+    /// setMaxCount is the second entry point into the protected bound: on shrink it walks the
+    /// protected queue down to the new limit.
+    {
+        SimpleCacheBase slru_cache("SLRU", CurrentMetrics::end(), CurrentMetrics::end(),
+                                   max_size_in_bytes, /*max_count=*/8, /*size_ratio*/0.5);
+        for (size_t i = 0; i < 8; ++i)
+        {
+            slru_cache.getOrSet(static_cast<int>(i), load_func);
+            slru_cache.getOrSet(static_cast<int>(i), load_func);
+        }
+
+        slru_cache.setMaxCount(4);
+
+        slru_cache.getOrSet(100, load_func);
+        EXPECT_NE(slru_cache.get(100), nullptr) << "after setMaxCount(4)";
+    }
 }
 
 TEST(SLRUCache, noOnRemoveEntryCallback)
