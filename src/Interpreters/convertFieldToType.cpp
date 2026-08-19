@@ -25,6 +25,8 @@
 
 #include <Core/AccurateComparison.h>
 
+#include <Functions/DateTimeTransforms.h>
+
 #include <Common/typeid_cast.h>
 #include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
