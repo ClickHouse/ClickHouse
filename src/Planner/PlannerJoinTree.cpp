@@ -373,6 +373,12 @@ bool applyTrivialCountIfPossible(
     if (!count_func)
         return false;
 
+    /// `arrayJoin` in the argument multiplies rows above the source read, so the aggregate does not
+    /// observe `totalRows()` rows. Must precede `optimize_trivial_count`: storages that count in
+    /// read() act on that flag even when this function later declines.
+    if (hasFunctionNode(aggregates.front(), "arrayJoin"))
+        return false;
+
     /// Some storages can optimize trivial count in read() method instead of totalRows() because it still can
     /// require reading some data (but much faster than reading columns).
     /// Set a special flag in query info so the storage will see it and optimize count in read() method.
