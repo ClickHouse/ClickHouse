@@ -143,7 +143,7 @@ static void checkOld(
         query_info,
         query_info.syntax_analyzer_result->requiredSourceColumns(),
         state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context, {}, {}, local_only_columns);
+        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -199,7 +199,7 @@ static void checkNewAnalyzer(
 
     std::string transformed_query = transformQueryForExternalDatabase(
         query_info, column_names, state.getColumns(0), IdentifierQuotingStyle::DoubleQuotes,
-        literal_escaping_style, "test", "table", state.context, {}, {}, local_only_columns);
+        literal_escaping_style, "test", "table", StorageID("test", "table"), state.context, {}, {}, local_only_columns);
 
     EXPECT_EQ(transformed_query, expected) << query;
 }
@@ -482,7 +482,7 @@ TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyz
     query_info.query = ast;
 
     /// An outer filter that belongs only to a joined source is not a filter on the query-backed external source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
 
     ast = parseQuery(
         parser,
@@ -495,7 +495,7 @@ TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyz
     query_info.query = ast;
 
     /// Pruning a foreign predicate may leave a true literal, which is not a filter on the source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
 
     ast = parseQuery(
         parser,
@@ -508,7 +508,7 @@ TEST(TransformQueryForExternalDatabase, QueryBackedExternalSourceStrictOldAnalyz
     query_info.query = ast;
 
     /// A foreign-table `PREWHERE` must likewise not be treated as a filter on the query-backed source.
-    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context));
+    EXPECT_NO_THROW(rejectOuterFilterForQueryBackedExternalSourceIfStrict(query_info, state.getColumns(0), state.context, StorageID("test", "table")));
 
     state.context->setSetting("external_table_strict_query", false);
 }

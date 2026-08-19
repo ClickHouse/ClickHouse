@@ -203,7 +203,7 @@ public:
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-                query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context);
+                query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context, getStorageID());
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
@@ -223,6 +223,7 @@ public:
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
+                getStorageID(),
                 context,
                 transform_query_limit);
         }
@@ -834,7 +835,8 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
 
         /// The 3rd argument is either a table name, or a query passed to PostgreSQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotes, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)

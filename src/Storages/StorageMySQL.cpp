@@ -163,7 +163,7 @@ void StorageMySQL::readImpl(
         /// The user-provided query is passed to MySQL as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context_);
+            query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context_, getStorageID());
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::BackticksMySQL);
     }
     else
@@ -175,6 +175,7 @@ void StorageMySQL::readImpl(
             LiteralEscapingStyle::Regular,
             remote_database_name,
             remote_table_or_query.getTableName(),
+            getStorageID(),
             context_);
     LOG_TRACE(log, "Query: {}", query);
 
@@ -551,7 +552,8 @@ StorageMySQL::Configuration StorageMySQL::getConfiguration(ASTs engine_args, Con
 
         /// The 3rd argument is either a table name, or a query passed to MySQL as is - `(SELECT ...)` or `query('SELECT ...')`.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular);
+            engine_args[2], context_, IdentifierQuotingStyle::BackticksMySQL, LiteralEscapingStyle::Regular,
+            IdentifierQuotingRule::Always);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)

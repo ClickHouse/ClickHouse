@@ -294,7 +294,7 @@ Pipe StorageSQLite::read(
         /// The user-provided query is passed to SQLite as is; no outer predicate is pushed down into it, so
         /// reject any outer filter under external_table_strict_query.
         rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_);
+            query_info, storage_snapshot->metadata->getColumns().getAllPhysical(), context_, getStorageID());
         query = buildQueryForExternalDatabaseSubquery(remote_table_or_query.getQuery(), column_names, IdentifierQuotingStyle::DoubleQuotesStandard);
     }
     else
@@ -356,6 +356,7 @@ Pipe StorageSQLite::read(
             LiteralEscapingStyle::SQLite,
             "",
             remote_table_or_query.getTableName(),
+            getStorageID(),
             context_,
             {},
             unsupported_functions,

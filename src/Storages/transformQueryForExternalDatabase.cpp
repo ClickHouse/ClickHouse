@@ -644,10 +644,9 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressions(ASTPtr & node, con
 SourceColumnNames getSourceColumnNames(
     const ASTSelectQuery & select,
     const NamesAndTypesList & available_columns,
-    const String & database,
-    const String & table)
+    const StorageID & source_storage_id)
 {
-    NameSet source_table_names{table, database + "." + table};
+    NameSet source_table_names{source_storage_id.table_name, source_storage_id.getFullNameNotQuoted()};
     if (const auto & tables_ast = select.tables())
     {
         if (const auto * tables = tables_ast->as<ASTTablesInSelectQuery>())
@@ -695,14 +694,6 @@ RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & 
     return removeUnknownSubexpressions(node, known_names);
 }
 
-RemoveUnknownSubexpressionsResult removeUnknownSubexpressionsFromWhere(ASTPtr & node, const NamesAndTypesList & available_columns)
-{
-    SourceColumnNames known_names;
-    for (const auto & column : available_columns)
-        known_names.emplace(column.name, column.name);
-    return removeUnknownSubexpressionsFromWhere(node, known_names);
-}
-
 bool containsSourceColumn(const ASTPtr & node, const SourceColumnNames & source_columns)
 {
     if (!node)
@@ -733,6 +724,7 @@ String transformQueryForExternalDatabaseImpl(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
@@ -756,9 +748,12 @@ String transformQueryForExternalDatabaseImpl(
       * copy only compatible parts of it.
       */
 
-    ASTPtr original_where = clone_query->as<ASTSelectQuery &>().where();
     const auto & original_select = clone_query->as<ASTSelectQuery &>();
-    const auto source_columns = getSourceColumnNames(original_select, available_columns, database, table);
+    ASTPtr original_where = original_select.where();
+    if (const auto & original_prewhere = original_select.prewhere())
+        original_where = original_where ? makeASTOperator("and", original_where, original_prewhere) : original_prewhere;
+
+    const auto source_columns = getSourceColumnNames(original_select, available_columns, source_storage_id);
     const bool where_contains_source_column = containsSourceColumn(original_where, source_columns);
 
     /// First remove predicates belonging to other sources. Such predicates are evaluated by the
@@ -775,7 +770,7 @@ String transformQueryForExternalDatabaseImpl(
     for (const auto & column : available_columns)
         if (!local_only_columns.contains(column.name))
             pushdown_columns.push_back(column);
-    auto pushdown_source_columns = getSourceColumnNames(original_select, pushdown_columns, database, table);
+    auto pushdown_source_columns = getSourceColumnNames(original_select, pushdown_columns, source_storage_id);
     auto where_result = removeUnknownSubexpressionsFromWhere(original_where, pushdown_source_columns);
 
     if (strict && where_result.modified)
@@ -875,6 +870,7 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
     std::optional<size_t> limit,
     const NameSet & unsupported_functions,
@@ -903,6 +899,7 @@ String transformQueryForExternalDatabase(
             literal_escaping_style,
             database,
             table,
+            source_storage_id,
             context,
             limit,
             unsupported_functions,
@@ -918,6 +915,7 @@ String transformQueryForExternalDatabase(
         literal_escaping_style,
         database,
         table,
+        source_storage_id,
         context,
         limit,
         unsupported_functions,
@@ -927,7 +925,8 @@ String transformQueryForExternalDatabase(
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
     const SelectQueryInfo & query_info,
     const NamesAndTypesList & available_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const StorageID & source_storage_id)
 {
     if (!context->getSettingsRef()[Setting::external_table_strict_query])
         return;
@@ -956,7 +955,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         if (select.where())
         {
             auto & where = select.refWhere();
-            auto where_result = removeUnknownSubexpressionsFromWhere(where, available_columns);
+            auto where_result = removeUnknownSubexpressionsFromWhere(where, getSourceColumnNames(select, available_columns, source_storage_id));
             if (!where_result.keep)
                 where.reset();
         }
@@ -964,7 +963,7 @@ void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
         if (select.prewhere())
         {
             auto & prewhere = select.refPrewhere();
-            auto prewhere_result = removeUnknownSubexpressionsFromWhere(prewhere, available_columns);
+            auto prewhere_result = removeUnknownSubexpressionsFromWhere(prewhere, getSourceColumnNames(select, available_columns, source_storage_id));
             if (!prewhere_result.keep)
                 prewhere.reset();
         }

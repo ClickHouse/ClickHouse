@@ -2,6 +2,7 @@
 
 #include <base/types.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Storages/SelectQueryInfo.h>
@@ -48,6 +49,7 @@ String transformQueryForExternalDatabase(
     LiteralEscapingStyle literal_escaping_style,
     const String & database,
     const String & table,
+    const StorageID & source_storage_id,
     ContextPtr context,
     std::optional<size_t> limit = {},
     const NameSet & unsupported_functions = {},
@@ -63,7 +65,8 @@ String transformQueryForExternalDatabase(
 void rejectOuterFilterForQueryBackedExternalSourceIfStrict(
     const SelectQueryInfo & query_info,
     const NamesAndTypesList & available_columns,
-    const ContextPtr & context);
+    const ContextPtr & context,
+    const StorageID & source_storage_id);
 
 /** Recursively normalize `node` so that it re-serializes into SQL the external database can parse. Used for
   * user-provided `(SELECT ...)` subqueries that are formatted from the raw AST and therefore bypass the
