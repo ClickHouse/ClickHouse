@@ -180,8 +180,12 @@ void BinaryFormatReader<with_defaults>::skipField(size_t file_column)
             return;
     }
 
-    Field field;
-    read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in, format_settings);
+    /// A `Field` can use a representation intended for a value nested in another serialization. Read an
+    /// actual temporary column instead, so skipping consumes exactly the representation used by the row
+    /// input format.
+    const auto & data_type = read_data_types[file_column];
+    auto tmp_column = data_type->createColumn();
+    data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, *in, format_settings);
 }
 
 BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)

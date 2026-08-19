@@ -390,15 +390,15 @@ void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer
     AggregateFunctionStateData & s = field.safeGet<AggregateFunctionStateData>();
     s.name = type_name;
 
-    /// `BinaryRowInputFormat::skipField` uses this method to consume unknown columns of
-    /// `RowBinary(WithNamesAndTypes)` input, so it has to read exactly the same bytes as the column-based
-    /// `deserializeBinary` does, otherwise all following columns are misaligned. This also applies to
-    /// `aggregate_function_input_format = 'state'`: aggregate states are raw bytes without a length prefix,
-    /// so reading a `String` here would consume bytes from the following column.
-    /// Delegate to the column-based path to guarantee that: parsing the value with the argument type's
-    /// Field-based deserializer would diverge for types whose two paths read different representations
-    /// (e.g. `SerializationObject` reads a length-prefixed string into a column when
-    /// `input_format_binary_read_json_as_string` is enabled, but always the structured form into a `Field`).
+    /// This is the representation used when an `AggregateFunction` value is nested inside another value,
+    /// such as `argMax`. It is length-prefixed by `serializeBinary(Field, ...)`.
+    if (settings.aggregate_function_input_format == FormatSettings::AggregateFunctionInputFormat::State)
+    {
+        readBinary(s.data, istr);
+        return;
+    }
+
+    /// The value mode uses the argument type's binary representation.
     auto tmp_column = ColumnAggregateFunction::create(function, version);
     deserializeBinary(*tmp_column, istr, settings);
 
@@ -671,21 +671,14 @@ void SerializationAggregateFunction::deserializeTextJSON(IColumn & column, ReadB
     /// value/array as a JSON string holding its textual representation, e.g. `{"x": "[1,2,3]"}` in `array` mode.
     /// The native JSON form `{"x": [1,2,3]}` added by this change reads `[` directly, so a string-wrapped array would
     /// otherwise be rejected. Keep accepting the legacy string-wrapped form alongside the native one.
-    /// A string-wrapped value was parsed with the argument type's `deserializeTextCSV` before this change.
-    /// Keep that exact path: in particular, it preserves the released resolution of `Dynamic` and `Variant`
-    /// arguments. Native unquoted forms (`{"x": 42}`, `{"x": [1, 2]}`) are new and reach the JSON parser as
-    /// usual.
+    /// The string content uses the same whole-text path as other legacy text representations. In particular,
+    /// this keeps composite values intact instead of treating their commas as CSV delimiters. Native unquoted
+    /// forms (`{"x": 42}`, `{"x": [1, 2]}`) are new and reach the JSON parser as usual.
     skipWhitespaceIfAny(istr);
     if (!istr.eof() && *istr.position() == '"')
     {
         String s;
         readJSONString(s, istr, settings.json);
-
-        if (isSingleArgumentValueMode(function, settings))
-        {
-            deserializeFromSingleArgumentLegacyQuotedValue(column, s, settings, function);
-            return;
-        }
 
         ReadBufferFromString str_buf(s);
         deserializeWholeText(column, str_buf, settings);
