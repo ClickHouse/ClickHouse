@@ -318,6 +318,9 @@ CLICKHOUSE_DISKS_WRITE_RE = re.compile(
 # tests instead. The only acceptable additions are false positives - tests that only touch
 # their own scratch files - and they must say so in a comment.
 SERVER_DATA_MANIPULATION_EXCLUSIONS = {
+    # False positive: writes only a `clickhouse-local` configuration under
+    # `CLICKHOUSE_TMP`, then reads the resulting filesystem-cache setting.
+    "03525_filesystem_caches_clickhouse_local.sh",
     # Being converted to an integration test (test_packed_io) in
     # https://github.com/ClickHouse/ClickHouse/pull/114057; remove after it merges.
     "04630_merge_over_stale_packed_tmp_dir.sh",
