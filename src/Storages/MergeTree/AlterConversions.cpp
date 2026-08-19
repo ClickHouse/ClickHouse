@@ -588,8 +588,10 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
     };
 
-    /// Whether a dependency is a MATERIALIZED column the interpreter will actually recalculate, and so
-    /// may stand in the middle of a chain.
+    /// Whether a column can be recalculated outside INSERT at all: it is MATERIALIZED and its expression
+    /// reads no EPHEMERAL column. The second half mirrors `MutationsInterpreter::prepare`, which leaves
+    /// such a column alone because an EPHEMERAL column exists only during INSERT — so the test is on what
+    /// the expression reads, not on the column itself.
     auto can_recalculate = [&](const String & column_name)
     {
         if (!is_materialized(column_name))
@@ -599,30 +601,30 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
     };
 
-    /// Whether a column has to be read: it is updated itself, or it is a MATERIALIZED column that the
-    /// interpreter recalculates from an updated column further down the chain. Memoised, and the entry
-    /// inserted before recursing also breaks a cycle, which well-formed defaults cannot contain; on an
-    /// acyclic graph an entry is only ever read once its value is final, because a column still being
-    /// visited is reachable exclusively from its own subtree.
-    std::unordered_map<String, bool> needs_reading_of;
-    auto needs_reading = [&](const String & column_name, auto && self) -> bool
+    /// Whether the interpreter recalculates this column, so the read set owes its whole expression: the
+    /// column can be recalculated at all, and something it reads changes. A dependency changes when a
+    /// command writes it — which is what terminates the descent, since a written column is usually a
+    /// plain one — or when it is itself recalculated.
+    ///
+    /// Memoised, and the entry inserted before descending also breaks a cycle, which well-formed
+    /// defaults cannot contain; on an acyclic graph an entry is only ever read once its value is final,
+    /// because a column still being visited is reachable exclusively from its own subtree.
+    std::unordered_map<String, bool> is_recalculated_of;
+    auto is_recalculated = [&](const String & column_name, auto && self) -> bool
     {
-        if (all_updated_columns.contains(column_name))
-            return true;
-
         if (!can_recalculate(column_name))
             return false;
 
-        auto [it, inserted] = needs_reading_of.emplace(column_name, false);
+        auto [it, inserted] = is_recalculated_of.emplace(column_name, false);
         if (!inserted)
             return it->second;
 
         for (const auto & dependency : get_dependencies(column_name))
         {
-            if (self(dependency, self))
+            if (all_updated_columns.contains(dependency) || self(dependency, self))
             {
                 /// Not through `it`: the recursion above may have rehashed the map.
-                needs_reading_of[column_name] = true;
+                is_recalculated_of[column_name] = true;
                 return true;
             }
         }
@@ -637,15 +639,13 @@ void AlterConversions::addColumnsRequiredForMaterialized(
         auto column_name = std::move(columns_to_visit.front());
         columns_to_visit.pop();
 
-        /// Only a column the interpreter recalculates needs its dependencies in the read set, and it
-        /// needs all of them, because the stage that rewrites it evaluates its whole expression against
-        /// the block — including the parts that read a column no mutation touches. A column that keeps
-        /// its stored value needs nothing, and one that cannot be recalculated at all (a plain or virtual
-        /// column, or a MATERIALIZED column reading an EPHEMERAL one) is not rewritten either.
-        if (!can_recalculate(column_name) || !needs_reading(column_name, needs_reading))
+        /// A recalculated column needs all of its dependencies, because the stage that rewrites it
+        /// evaluates its whole expression against the block — including the parts that read a column no
+        /// mutation touches. A column that keeps its stored value needs nothing.
+        if (!is_recalculated(column_name, is_recalculated))
             continue;
 
-        /// `can_recalculate` held, so none of these is an EPHEMERAL column.
+        /// `is_recalculated` implies `can_recalculate`, so none of these is an EPHEMERAL column.
         for (const auto & dependency : get_dependencies(column_name))
         {
             if (read_columns_set.contains(dependency))
