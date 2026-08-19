@@ -17,6 +17,7 @@ namespace DB
 {
 
 class SchemaCache;
+struct ObjectMetadata;
 
 /// Whether a `Parquet` footer may be reused for an object-storage reader.
 /// Data-lake metadata pins listed files to an immutable generation, including on
