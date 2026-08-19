@@ -34,6 +34,10 @@ struct DynamicS3DiskCredentialInfo
     bool load_anonymously = false;
     /// The AST used `include`, so the resolved credentials' provenance cannot be trusted.
     bool has_include = false;
+    /// The disk backend type comes from `from_env` or `from_zk`, so its S3 credential check must run after
+    /// substitutions are resolved. This prevents the conservative pre-resolution S3 check from rejecting a
+    /// native GCS disk that has safe native credentials.
+    bool has_indirect_backend_type = false;
     /// The pre-resolution check exempted this disk from the restriction (e.g. a server-internal
     /// `system`-database disk, or a persisted `_server_credentials_allowed` marker), so the post-`include`
     /// re-check must not re-apply it.

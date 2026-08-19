@@ -30,6 +30,7 @@ def started_cluster():
                 "configs/dynamic_gcs_disk_include_source.xml",
             ],
             with_gcs=True,
+            env_variables={"NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs"},
         )
         cluster.start()
 
@@ -115,6 +116,25 @@ def test_mergetree_on_gcs_disk(started_cluster):
     assert node.query("SELECT sum(a) FROM gcs_mt").strip() == str(sum(range(2000)))
 
     node.query("DROP TABLE gcs_mt SYNC")
+
+
+def test_dynamic_gcs_disk_allows_indirect_backend_type_with_no_sign_request(started_cluster):
+    """An indirect backend that resolves to GCS must not take the S3 credentials-only path."""
+    node = started_cluster.instances["node"]
+    node.query("DROP TABLE IF EXISTS gcs_indirect_type SYNC")
+    node.query(
+        "CREATE TABLE gcs_indirect_type (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = disk("
+        "  name = 'gcs_indirect_type_disk',"
+        "  type = object_storage,"
+        "  object_storage_type = 'from_env NATIVE_GCS_DYNAMIC_DISK_TYPE',"
+        "  metadata_type = local,"
+        f"  endpoint = '{gcs_url('indirect-type/')}',"
+        "  no_sign_request = true"
+        ")",
+        settings={"dynamic_disk_allow_from_env": 1, "use_native_gcs": 1},
+    )
+    node.query("DROP TABLE gcs_indirect_type SYNC")
 
 
 def test_dynamic_gcs_disk_rejects_header_from_include_even_with_credential_opt_in(started_cluster):

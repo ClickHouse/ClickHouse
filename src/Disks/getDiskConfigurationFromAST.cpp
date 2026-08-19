@@ -325,8 +325,12 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
         : (has_explicit_credentials || has_no_sign_request || allowed_anonymous);
 
     /// Whether the disk relies on server-managed credentials (it would be refused under the restriction).
+    /// When an indirect backend type has explicit native GCS credentials, defer this check until substitutions
+    /// are resolved: treating it as S3 here rejects a safe native GCS disk and incorrectly persists the S3
+    /// credential opt-in. A resolved S3 backend is checked by `validateResolvedS3DiskCredentials` below.
     const bool relies_on_server_credentials
-        = maybe_s3_disk && (type_is_indirect || has_include || has_indirect_auth_field || !ast_has_explicit_credentials);
+        = maybe_s3_disk && (has_include || has_indirect_auth_field
+            || (!ast_has_explicit_credentials && !(type_is_indirect && has_explicit_gcs_credentials)));
     /// Native GCS uses Application Default Credentials when the dynamic disk does not supply an explicit
     /// credential. This can resolve the server identity just like the S3 credential-provider chain does.
     const bool gcs_relies_on_server_credentials
@@ -348,6 +352,7 @@ Poco::AutoPtr<Poco::XML::Document> getDiskConfigurationFromASTImpl(const ASTs & 
     if (info)
     {
         info->has_include = has_include;
+        info->has_indirect_backend_type = type_is_indirect;
         info->ast_has_explicit_key_pair = has_explicit_credentials;
         info->ast_has_no_sign_request = has_no_sign_request;
         info->ast_has_use_environment_credentials_off = allowed_anonymous;
@@ -522,10 +527,11 @@ void validateResolvedS3DiskCredentials(
     Poco::Util::AbstractConfiguration & config, ContextPtr context, bool is_loading_from_existing_metadata, const DynamicS3DiskCredentialInfo & info)
 {
     /// Re-check after `include` is resolved: an `include` can inject an S3 type and credentials past the
-    /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). Only an
-    /// `include`d disk needs this; the resolved auth mode is validated against the form the AST itself proved.
+    /// pre-resolution check (the disk is then built with `for_disk_s3 = true`, bypassing `getClient`). An
+    /// `include`d disk or one with an indirect backend type needs this; the resolved auth mode is validated
+    /// against the form the AST itself proved.
     /// `restriction_exempt` carries a pre-resolution exemption (e.g. a server-internal `system`-database disk).
-    if (!info.has_include || !context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
+    if ((!info.has_include && !info.has_indirect_backend_type) || !context->shouldRestrictUserQueryS3Credentials() || info.restriction_exempt)
         return;
 
     /// Check the disk root and every `locations.<name>` child: a multi-location `DiskObjectStorage` builds one
