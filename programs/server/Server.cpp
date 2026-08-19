@@ -3732,6 +3732,7 @@ try
                 }
             }
 
+            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3755,6 +3756,7 @@ try
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
+            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
@@ -3765,11 +3767,15 @@ try
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
+            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
+
+            if (!joined_background_queries)
+                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks)
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3779,7 +3785,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// No leak check: remaining connection handlers or refresh tasks still own memory
+                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
             }
