@@ -34,7 +34,7 @@
 1
 -- nowInBlock() is no longer rewritten
 1
--- randConstant() is no longer rewritten
+-- randConstant() is still rewritten
 1
 -- hostName() is no longer rewritten
 1

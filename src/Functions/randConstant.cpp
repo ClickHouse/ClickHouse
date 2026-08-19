@@ -62,9 +62,6 @@ public:
         return false;
     }
 
-    /// Each instance captures its own value, so two occurrences in one query disagree.
-    bool isDeterministicInScopeOfQuery() const override { return false; }
-
 private:
     UInt32 value;
     DataTypes argument_types;
@@ -79,9 +76,6 @@ public:
 
     bool isDeterministic() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
-
-    /// Each instance captures its own value, so two occurrences in one query disagree.
-    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
