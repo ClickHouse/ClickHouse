@@ -98,6 +98,17 @@ namespace
 
 using Float = Float32;
 
+/// Coordinates are squared and summed in Float32, so a finite but very large value can still overflow the
+/// accumulator to infinity. Every `score < best` comparison then goes false and the point silently takes
+/// whatever id the loop started with. Bounding `|x|` by `sqrt(FLT_MAX / (4 * dim))` keeps the sum of squares,
+/// the dot product and `cnorm - 2 * dot` all finite. At dim = 768 the bound is ~3.3e17, far above any real
+/// embedding, so this rejects only input the kernels could not have scored correctly anyway.
+Float coordinateLimit(size_t dim)
+{
+    return static_cast<Float>(
+        std::sqrt(static_cast<double>(std::numeric_limits<Float>::max()) / (4.0 * static_cast<double>(dim))));
+}
+
 DECLARE_MULTITARGET_CODE(
 
 /// For every point, `argmin_c (||c||^2 - 2 x.c)` - that is `argmin_c ||x - c||^2` with the constant `||x||^2`
@@ -770,11 +781,17 @@ struct HierarchicalKMeansData
         return (static_cast<UInt64>(rng()) * (static_cast<UInt64>(pcg32_fast::max()) + 1ULL) + static_cast<UInt64>(rng())) % limit;
     }
 
-    void addVector(const Float * v, UInt32 d, UInt64 cap)
+    static constexpr size_t no_slot = std::numeric_limits<size_t>::max();
+
+    /// Advance the reservoir for one incoming vector and return the row it should occupy, or `no_slot` when
+    /// Algorithm R discards it. Deciding before copying is what keeps `add` allocation-free: a discarded row
+    /// costs nothing, and a kept one is written straight into the reservoir rather than staged in a temporary.
+    ///
+    /// `dim == 0` is the "no rows yet" sentinel, so an empty input array would both make the state
+    /// indistinguishable from empty and turn `samples.size() / dim` into a division by zero. Arrays are
+    /// allowed to be empty, so this has to be rejected rather than assumed away.
+    size_t reserveSlot(UInt32 d, UInt64 cap)
     {
-        /// `dim == 0` is the "no rows yet" sentinel, so an empty input array would both make the state
-        /// indistinguishable from empty and turn `samples.size() / dim` below into a division by zero.
-        /// `Array(Float32)` permits empty arrays, so this has to be rejected rather than assumed away.
         if (d == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "hierarchicalKMeans: input vector must not be empty");
 
@@ -785,17 +802,35 @@ struct HierarchicalKMeansData
                 "hierarchicalKMeans: got a vector of size {} but expected {}", d, dim);
 
         ++seen;
-        UInt64 have = samples.size() / dim;
+        const UInt64 have = samples.size() / dim;
         if (have < cap)
         {
-            samples.insert(v, v + d);
+            samples.resize(samples.size() + d);
+            return static_cast<size_t>(have);
         }
-        else
-        {
-            UInt64 j = genRandom(seen); /// Algorithm R reservoir sampling
-            if (j < cap)
-                memcpy(&samples[j * dim], v, d * sizeof(Float));
-        }
+
+        const UInt64 j = genRandom(seen); /// Algorithm R reservoir sampling
+        return j < cap ? static_cast<size_t>(j) : no_slot;
+    }
+
+    void addVector(const Float * v, UInt32 d, UInt64 cap)
+    {
+        const size_t slot = reserveSlot(d, cap);
+        if (slot != no_slot)
+            memcpy(&samples[slot * dim], v, d * sizeof(Float));
+    }
+
+    /// Same, but pulling coordinates through `read`, so a Float64 or BFloat16 column converts directly into
+    /// the reservoir with no intermediate buffer.
+    template <typename Reader>
+    void addVectorFrom(Reader && read, UInt32 d, UInt64 cap)
+    {
+        const size_t slot = reserveSlot(d, cap);
+        if (slot == no_slot)
+            return;
+        Float * dst = &samples[slot * dim];
+        for (UInt32 j = 0; j < d; ++j)
+            dst[j] = read(j);
     }
 
     /// Merge two reservoirs into a uniform sample of their union. Every branch must decide RANDOMLY which
@@ -1027,8 +1062,7 @@ public:
         /// A zero vector has no direction, so cosine against it is undefined. Under `spherical = 1` every
         /// centroid is meant to be a unit direction, so reject rather than let a zero-norm point drag a
         /// cluster mean toward the origin.
-        /// Materialised as Float32 here, which doubles as the conversion for the non-Float32 widths.
-        VectorWithMemoryTracking<Float> row(length);
+        const Float limit = coordinateLimit(length);
         double norm2 = 0;
         for (size_t j = 0; j < length; ++j)
         {
@@ -1036,7 +1070,10 @@ public:
             if (!std::isfinite(x))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "hierarchicalKMeans: input vector must not contain non-finite values (NaN or Inf)");
-            row[j] = x;
+            if (std::abs(x) > limit)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "hierarchicalKMeans: coordinate {} exceeds the largest magnitude the Float32 training "
+                    "math can represent for dimension {} ({})", x, length, limit);
             norm2 += static_cast<double>(x) * static_cast<double>(x);
         }
         if (spherical && norm2 == 0)
@@ -1044,7 +1081,12 @@ public:
                 "hierarchicalKMeans: zero-norm vectors are not allowed with spherical = 1 "
                 "(cosine is undefined for a vector with no direction)");
 
-        data(place).addVector(row.data(), static_cast<UInt32>(length), sample_cap);
+        /// Float32 keeps its memcpy; the other widths convert straight into the reservoir slot.
+        if (nested_type == TypeIndex::Float32)
+            data(place).addVector(
+                &assert_cast<const ColumnFloat32 &>(nested_col).getData()[start], static_cast<UInt32>(length), sample_cap);
+        else
+            data(place).addVectorFrom(coord, static_cast<UInt32>(length), sample_cap);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
@@ -1098,6 +1140,7 @@ public:
 
         /// `add` enforces these on the way in, but a transported state bypasses `add` entirely, so both
         /// contracts have to be re-established before the payload can reach `kMeansLloyd`.
+        const Float limit = d.dim ? coordinateLimit(d.dim) : 0;
         for (UInt64 i = 0; i < have; ++i)
         {
             double norm2 = 0;
@@ -1107,6 +1150,11 @@ public:
                 if (!std::isfinite(x))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "hierarchicalKMeans: aggregate state contains non-finite values (NaN or Inf)");
+                if (std::abs(x) > limit)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "hierarchicalKMeans: aggregate state contains coordinate {}, above the largest "
+                        "magnitude the Float32 training math can represent for dimension {} ({})",
+                        x, d.dim, limit);
                 norm2 += static_cast<double>(x) * static_cast<double>(x);
             }
             if (spherical && norm2 == 0)

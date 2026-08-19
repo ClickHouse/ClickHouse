@@ -105,6 +105,12 @@ SELECT assignCentroid([toFloat32(inf)]::Array(Float32), [[0.0], [1.0]]::Array(Ar
 SELECT assignCentroid([-toFloat32(inf)]::Array(Float32), [[0.0], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
 SELECT assignCentroid([5.0]::Array(Float32), [[toFloat32(nan)], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
 SELECT assignCentroid([5.0]::Array(Float32), [[toFloat32(inf)], [1.0]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+-- Finite is not sufficient: the scoring math is Float32, so a coordinate whose square overflows would make
+-- every comparison false and silently return the fallback id. Bounded on both arguments instead.
+SELECT assignCentroid([2e19]::Array(Float32), [[0.0], [2e19]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+SELECT assignCentroid([1.0]::Array(Float32), [[0.0], [2e19]]::Array(Array(Float32))); -- { serverError INCORRECT_DATA }
+-- Well below the bound, so still accepted.
+SELECT assignCentroid([1e15]::Array(Float32), [[0.0], [1e15]]::Array(Array(Float32)));
 -- The centroid argument has to be constant, so the matrix is built once per block rather than per row.
 SELECT assignCentroid(v, materialize([[0.0, 0.0]]::Array(Array(Float32)))) FROM (SELECT [1.0, 2.0]::Array(Float32) AS v); -- { serverError ILLEGAL_COLUMN }
 

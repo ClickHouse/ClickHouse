@@ -73,6 +73,9 @@ SELECT hierarchicalKMeans(1)([]::Array(Float32)); -- { serverError BAD_ARGUMENTS
 SELECT hierarchicalKMeans(1)([toFloat32(nan)]::Array(Float32)); -- { serverError INCORRECT_DATA }
 SELECT hierarchicalKMeans(1)([toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
 SELECT hierarchicalKMeans(1)([-toFloat32(inf)]::Array(Float32)); -- { serverError INCORRECT_DATA }
+-- Finite is not sufficient: the training math is Float32, so a coordinate whose square overflows would
+-- collapse every assignment into one cluster.
+SELECT hierarchicalKMeans(1)([2e19]::Array(Float32)); -- { serverError INCORRECT_DATA }
 -- A state can be written by one query and read by another, so the same checks run on deserialization.
 -- The float in a real state is patched from 1.0 to NaN here, so the test does not depend on the exact
 -- byte layout of the state.

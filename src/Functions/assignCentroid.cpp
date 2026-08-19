@@ -170,6 +170,17 @@ void scoreTile(
 namespace
 {
 
+/// Coordinates are squared and summed in Float32, so a finite but very large value can still overflow the
+/// accumulator to infinity, making `score = cnorm - 2 * dot` a NaN. No `score < best` comparison is then
+/// true and the row silently takes the fallback id. Bounding `|x|` by `sqrt(FLT_MAX / (4 * dim))` keeps the
+/// sum of squares, the dot product and their difference finite. At dim = 768 that is ~3.3e17, far above any
+/// real embedding, so this rejects only input the kernel could not have scored correctly anyway.
+Float32 coordinateLimit(size_t dim)
+{
+    return static_cast<Float32>(
+        std::sqrt(static_cast<double>(std::numeric_limits<Float32>::max()) / (4.0 * static_cast<double>(dim))));
+}
+
 /// Column-major centroids + squared norms + the id to return per centroid.
 struct CentroidMatrix
 {
@@ -198,18 +209,22 @@ struct CentroidMatrix
         ct.assign(dim * k, 0.0f);
         cnorm.assign(k, 0.0f);
         ids.resize(k);
+        const Float32 limit = coordinateLimit(dim);
         for (size_t c = 0; c < k; ++c)
         {
             const Float32 * cen = rows + c * dim;
             double s = 0;
             for (size_t j = 0; j < dim; ++j)
             {
-                /// A non-finite centroid loses every comparison in the kernel (`score < bs` is false for NaN)
-                /// and is therefore silently unreachable, rather than an error. Free to check here: this loop
-                /// already reads every coordinate to build the norm.
+                /// A centroid the kernel cannot score is silently unreachable rather than an error, so both
+                /// checks belong here. Free: this loop already reads every coordinate to build the norm.
                 if (!std::isfinite(cen[j]))
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "assignCentroid: centroid {} must not contain non-finite values (NaN or Inf)", c);
+                if (std::abs(cen[j]) > limit)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "assignCentroid: centroid {} has coordinate {}, above the largest magnitude the "
+                        "Float32 scoring math can represent for dimension {} ({})", c, cen[j], dim, limit);
                 ct[j * k + c] = cen[j];
                 s += static_cast<double>(cen[j]) * static_cast<double>(cen[j]);
             }
@@ -245,10 +260,17 @@ struct CentroidMatrix
         /// A NaN probe never satisfies `score < bs`, so it would fall through to the `ids[0]` fallback and
         /// return a plausible-looking id instead of failing. Swept linearly - the check above has established
         /// that the rows are dense, so the payload is exactly `n * dim` floats.
+        const Float32 limit = coordinateLimit(dim);
         for (size_t i = 0; i < n * dim; ++i)
+        {
             if (!std::isfinite(vec_data[i]))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "assignCentroid: input vector must not contain non-finite values (NaN or Inf)");
+            if (std::abs(vec_data[i]) > limit)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "assignCentroid: input coordinate {} is above the largest magnitude the Float32 scoring "
+                    "math can represent for dimension {} ({})", vec_data[i], dim, limit);
+        }
 
         VectorWithMemoryTracking<Float32> best_score(n, std::numeric_limits<Float32>::max());
         for (size_t row = 0; row < n; ++row)
