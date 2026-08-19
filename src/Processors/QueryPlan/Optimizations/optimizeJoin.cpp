@@ -147,9 +147,8 @@ static ValueHop describeValueHop(const ActionsDAG::Node & node)
     size_t source_child_index = 0;
     if (!isValuePassThroughFunction(node.function_base->getName()))
     {
-        /// When exactly one argument is non-const, a function deterministic within the query maps
-        /// each value of that argument to a single result. Its output NDV therefore cannot exceed
-        /// the argument's NDV.
+        /// A deterministic function always returns the same output for the same inputs.
+        /// If exactly one argument is non-const, the output NDV cannot exceed that argument's NDV.
         if (!node.function_base->isDeterministicInScopeOfQuery())
             return {};
 
