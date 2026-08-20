@@ -31,14 +31,10 @@ public:
     ASTPtr parts_list;
     /// Compact manifests only (for Iceberg tables)
     bool manifest = false;
-    /// Use MERGE SMALLPARTS mode (merge smallest contiguous run of parts in partition)
-    bool merge_smallparts = false;
-    /// Maximum number of parts to merge in MERGE SMALLPARTS mode (0 = no limit)
-    UInt64 merge_smallparts_limit = 0;
     /** Get the text that identifies this element. */
     String getID(char delim) const override
     {
-        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "") + (manifest ? "_manifest" : "") + (merge_smallparts ? "_merge_smallparts" : "");
+        return "OptimizeQuery" + (delim + getDatabase()) + delim + getTable() + (final ? "_final" : "") + (deduplicate ? "_deduplicate" : "") + (cleanup ? "_cleanup" : "") + (dry_run ? "_dry_run" : "") + (manifest ? "_manifest" : "");
     }
 
     ASTPtr clone() const override
