@@ -3645,13 +3645,13 @@ This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join](/reference/engines/table-engines/special/join) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. It is a hard cap for every `join_algorithm`: when the limit
+intermediate result. It is a hard cap for every hash-based `join_algorithm`: when the limit
 is reached the query throws or breaks according to
 [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
 It never makes a join spill to disk — that decision belongs to
-[`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join)
+[`max_bytes_before_external_join`](#max_bytes_before_external_join)
 and
-[`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join).
+[`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
 
 Possible values:
 
@@ -3666,13 +3666,13 @@ This setting applies to [SELECT ... JOIN](/reference/statements/select/join)
 operations and the [Join table engine](/reference/engines/table-engines/special/join).
 
 If a query contains multiple joins, ClickHouse checks this setting for every
-intermediate result. It is a hard cap for every `join_algorithm`: when the limit
+intermediate result. It is a hard cap for every hash-based `join_algorithm`: when the limit
 is reached the query throws or breaks according to
 [`join_overflow_mode`](/reference/settings/session-settings/join#join_overflow_mode).
 It never makes a join spill to disk — that decision belongs to
-[`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join)
+[`max_bytes_before_external_join`](#max_bytes_before_external_join)
 and
-[`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join).
+[`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join).
 Because it is a cap rather than a trigger, setting it at or below an explicitly
 set `max_bytes_before_external_join` makes the query fail before the join can
 spill at all; ClickHouse logs a warning for that combination.
@@ -3744,7 +3744,7 @@ Possible values:
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
 
- This value means "force an external hash join": the join is external from the first block on, instead of starting in memory and converting once it outgrows the spill threshold the way `hash` and `parallel_hash` do. It requires a non-zero [`max_bytes_before_external_join`](/operations/settings/settings#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/operations/settings/settings#max_bytes_ratio_before_external_join), and throws otherwise.
+ This value means "force an external hash join": the join is external from the first block on, instead of starting in memory and converting once it outgrows the spill threshold the way `hash` and `parallel_hash` do. It requires a non-zero [`max_bytes_before_external_join`](#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](#max_bytes_ratio_before_external_join), and throws otherwise.
 
  The first phase of a grace join reads the right table and splits it into N buckets depending on the hash value of key columns (initially, N is `grace_hash_join_initial_buckets`). This is done in a way to ensure that each bucket can be processed independently. Rows from the first bucket are added to an in-memory hash table while the others are saved to disk. If the hash table grows beyond the spill threshold, the number of buckets is increased along with the assigned bucket for each row. Any rows which don't belong to the current bucket are flushed and reassigned.
 
