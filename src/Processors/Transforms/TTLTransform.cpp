@@ -65,9 +65,19 @@ TTLTransform::TTLTransform(
 {
     auto old_ttl_infos = data_part->ttl_infos;
 
+    /// Columns the rows-TTL expression is built from. A column TTL that resets one of them
+    /// invalidates the rows-TTL bounds written to this part (see below).
+    NameSet rows_ttl_source_columns;
+
     if (metadata_snapshot_->hasRowsTTL())
     {
         const auto & rows_ttl = metadata_snapshot_->getRowsTTL();
+
+        for (const auto & column : rows_ttl.expression_source_columns)
+            rows_ttl_source_columns.insert(column.name);
+        for (const auto & column : rows_ttl.where_expression_source_columns)
+            rows_ttl_source_columns.insert(column.name);
+
         auto algorithm = std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(rows_ttl, subqueries_for_sets, context), rows_ttl,
             old_ttl_infos.table_ttl, old_ttl_infos.table_ttl_expression, old_ttl_infos.table_ttl_timezone,
@@ -131,6 +141,18 @@ TTLTransform::TTLTransform(
             expired_column.name, ExpiredColumnData{expired_column.type, std::move(default_expression), std::move(default_column_name)});
     }
 
+    /// Columns whose TTL expired for the whole part are replaced with defaults before any algorithm
+    /// runs (see `consume`). Bounds the rows TTL recalculates here already account for that, but bounds
+    /// merely propagated from the source parts were computed from the original values.
+    if (!delete_algorithm || !delete_algorithm->isMinTTLExpired())
+    {
+        for (const auto & expired_column : expired_columns)
+        {
+            if (rows_ttl_source_columns.contains(expired_column.name))
+                rows_ttl_provenance_invalidated = true;
+        }
+    }
+
     if (metadata_snapshot_->hasAnyColumnTTL())
     {
         auto expired_columns_map = expired_columns.getNameToTypeMap();
@@ -139,7 +161,7 @@ TTLTransform::TTLTransform(
             if (!expired_columns_map.contains(name))
             {
                 auto [default_expression, default_column_name] = build_default_expr(name);
-                algorithms.emplace_back(std::make_unique<TTLColumnAlgorithm>(
+                auto algorithm = std::make_unique<TTLColumnAlgorithm>(
                     getExpressions(description, subqueries_for_sets, context),
                     description,
                     old_ttl_infos.columns_ttl[name],
@@ -148,7 +170,16 @@ TTLTransform::TTLTransform(
                     name,
                     default_expression,
                     default_column_name,
-                    isCompactPart(data_part)));
+                    isCompactPart(data_part));
+
+                /// A column TTL resets its column to the default value after `TTLDeleteAlgorithm` has
+                /// already collected the rows-TTL bounds from the original values. When it rewrites a
+                /// column the rows TTL is computed from, those bounds no longer describe the rows written
+                /// to the part, so a later metadata-only `MATERIALIZE TTL` must rescan instead of shifting.
+                if (rows_ttl_source_columns.contains(name) && algorithm->isMinTTLExpired())
+                    rows_ttl_provenance_invalidated = true;
+
+                algorithms.emplace_back(std::move(algorithm));
             }
         }
     }
@@ -234,9 +265,9 @@ void TTLTransform::finalize()
 
     if (rows_ttl_provenance_invalidated)
     {
-        /// Do not let a later metadata-only MATERIALIZE TTL shift bounds computed before rows were
-        /// removed by a sibling ROWS WHERE or GROUP BY TTL. The next materialization must rescan
-        /// the part instead.
+        /// Do not let a later metadata-only MATERIALIZE TTL shift bounds computed before the rows
+        /// they describe were removed by a sibling ROWS WHERE or GROUP BY TTL, or before a column TTL
+        /// reset a column the rows TTL reads. The next materialization must rescan the part instead.
         data_part->ttl_infos.table_ttl_expression.clear();
         data_part->ttl_infos.table_ttl_timezone.clear();
         data_part->ttl_infos.has_unknown_rows_ttl_provenance = true;
