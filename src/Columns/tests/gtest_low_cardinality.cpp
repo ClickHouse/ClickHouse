@@ -13,6 +13,8 @@
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <bit>
+#include <cmath>
 #include <vector>
 
 namespace DB::ErrorCodes
@@ -477,6 +479,35 @@ TEST(ColumnLowCardinality, EmptyDestinationDoesNotShareUnsharedMinimalSourceDict
     for (size_t i = 0; i < source_size; ++i)
         EXPECT_EQ((*destination)[i], (*source)[i]);
     EXPECT_EQ(source->getUInt(source_size), 999);
+}
+
+TEST(ColumnLowCardinality, TranslateSparseFloatingPointIndexesCanonicalizesSpecialValues)
+{
+    auto keys = ColumnFloat64::create(256);
+    auto & key_data = keys->getData();
+    key_data[0] = 0.0;
+    key_data[1] = -0.0;
+    key_data[2] = std::bit_cast<Float64>(UInt64{0x7ff8000000000001ULL});
+    key_data[3] = std::bit_cast<Float64>(UInt64{0x7ff8000000000002ULL});
+    for (size_t i = 4; i < key_data.size(); ++i)
+        key_data[i] = static_cast<Float64>(i);
+
+    auto nested_type = std::make_shared<DataTypeFloat64>();
+    MutableColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(*nested_type, std::move(keys));
+    auto indexes = ColumnUInt32::create();
+    indexes->getData().assign({200, 1, 2, 3});
+    auto source = ColumnLowCardinality::create(std::move(dictionary), std::move(indexes), /*is_shared=*/false);
+    auto destination = std::make_shared<DataTypeLowCardinality>(nested_type)->createColumn();
+
+    destination->insertRangeFrom(*source, 0, source->size());
+
+    const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+    EXPECT_FALSE(low_cardinality_destination.isSharedDictionary());
+    EXPECT_EQ(low_cardinality_destination.getDictionary().size(), 3);
+    EXPECT_EQ(destination->getFloat64(0), 200.0);
+    EXPECT_EQ(destination->getFloat64(1), 0.0);
+    EXPECT_TRUE(std::isnan(destination->getFloat64(2)));
+    EXPECT_TRUE(std::isnan(destination->getFloat64(3)));
 }
 
 TEST(ColumnLowCardinality, EmptyDestinationDoesNotShareNonMinimalSourceDictionary)

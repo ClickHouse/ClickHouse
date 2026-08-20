@@ -67,7 +67,7 @@ public:
     size_t uniqueInsertFrom(const IColumn & src, size_t n) override;
     MutableColumnPtr uniqueInsertRangeFrom(const IColumn & src, size_t start, size_t length) override;
     IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionary(
-        const IColumn & src_dictionary,
+        const IColumnUnique & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
         size_t length,
@@ -249,14 +249,14 @@ private:
 
     template <typename SourceIndexType, typename DestinationIndexType>
     IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionaryImpl(
-        const IColumn & src_dictionary,
+        const IColumnUnique & src_dictionary,
         const PaddedPODArray<SourceIndexType> & src_indexes,
         size_t start,
         size_t length);
 
     template <typename DestinationIndexType>
     IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionaryForDestinationType(
-        const IColumn & src_dictionary,
+        const IColumnUnique & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
         size_t length);
@@ -469,7 +469,7 @@ size_t ColumnUnique<ColumnType>::uniqueInsertFrom(const IColumn & src, size_t n)
 template <typename ColumnType>
 template <typename SourceIndexType, typename DestinationIndexType>
 IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryImpl(
-    const IColumn & src_dictionary,
+    const IColumnUnique & src_dictionary,
     const PaddedPODArray<SourceIndexType> & src_indexes,
     size_t start,
     size_t length)
@@ -478,15 +478,7 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
     auto & translated_indexes = translated_column->getData();
     translated_indexes.reserve(length);
 
-    const ColumnType * source_column = nullptr;
-    const NullMap * source_null_map = nullptr;
-    if (const auto * nullable_column = checkAndGetColumn<ColumnNullable>(&src_dictionary))
-    {
-        source_column = typeid_cast<const ColumnType *>(&nullable_column->getNestedColumn());
-        source_null_map = &nullable_column->getNullMapData();
-    }
-    else
-        source_column = typeid_cast<const ColumnType *>(&src_dictionary);
+    const auto * source_column = typeid_cast<const ColumnType *>(src_dictionary.getNestedNotNullableColumn().get());
 
     if (!source_column)
         throw Exception(
@@ -495,15 +487,24 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
             column_holder->getName(),
             src_dictionary.getName());
 
-    auto * destination_column = getRawColumnPtr();
+    const bool source_is_nullable = src_dictionary.nestedColumnIsNullable();
+    const size_t source_null_value_index = source_is_nullable ? src_dictionary.getNullValueIndex() : 0;
+    [[maybe_unused]] const size_t source_nested_default_value_index = src_dictionary.getNestedTypeDefaultValueIndex();
     SCOPE_EXIT(updateNullMask());
 
     auto insert_source_index = [&](size_t source_index) -> size_t
     {
-        if (source_null_map && (*source_null_map)[source_index])
+        if (source_is_nullable && source_index == source_null_value_index)
             return getNullValueIndex();
-        if (destination_column->compareAt(
-                getNestedTypeDefaultValueIndex(), source_index, *source_column, 1) == 0)
+
+        if constexpr (is_float_vector_v<ColumnType>)
+        {
+            /// Floating-point dictionaries can contain a non-canonical signed zero outside the structural default position.
+            if (getRawColumnPtr()->compareAt(
+                    getNestedTypeDefaultValueIndex(), source_index, *source_column, 1) == 0)
+                return getNestedTypeDefaultValueIndex();
+        }
+        else if (source_index == source_nested_default_value_index)
             return getNestedTypeDefaultValueIndex();
 
         auto ref = source_column->getDataAt(source_index);
@@ -541,7 +542,7 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
 template <typename ColumnType>
 template <typename DestinationIndexType>
 IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionaryForDestinationType(
-    const IColumn & src_dictionary,
+    const IColumnUnique & src_dictionary,
     const IColumn & src_indexes,
     size_t start,
     size_t length)
@@ -566,7 +567,7 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
 
 template <typename ColumnType>
 IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFromDictionary(
-    const IColumn & src_dictionary,
+    const IColumnUnique & src_dictionary,
     const IColumn & src_indexes,
     size_t start,
     size_t length,

@@ -57,7 +57,7 @@ public:
     /// Translates a range of dictionary indexes. Callers can pass distinct positions to insert each referenced key once.
     /// The returned indexes correspond one-to-one with src_indexes[start, start + length), and max_index is their maximum.
     virtual IndexesWithMaxIndex uniqueInsertRangeFromDictionary(
-        const IColumn & src_dictionary,
+        const IColumnUnique & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
         size_t length,

@@ -208,10 +208,10 @@ namespace
         const PaddedPODArray<SourceIndexType> & source_indexes,
         size_t start,
         size_t length,
-        size_t source_dictionary_size,
-        const IColumn & source_keys,
+        const IColumnUnique & source_dictionary,
         IColumnUnique & destination_dictionary)
     {
+        const size_t source_dictionary_size = source_dictionary.size();
         /// Every valid source index is dense-path eligible without scanning in this case.
         if (source_dictionary_size == 0 || source_dictionary_size - 1 <= length)
             return nullptr;
@@ -233,7 +233,7 @@ namespace
             throw Exception(ErrorCodes::LOGICAL_ERROR, "LowCardinality dictionary size overflow");
         const size_t destination_size_upper_bound = destination_dictionary_size + max_new_keys;
         auto translated_distinct_indexes = destination_dictionary.uniqueInsertRangeFromDictionary(
-            source_keys,
+            source_dictionary,
             *distinct_source_indexes,
             0,
             distinct_source_index_count,
@@ -250,22 +250,21 @@ namespace
         const IColumn & source_indexes,
         size_t start,
         size_t length,
-        size_t source_dictionary_size,
-        const IColumn & source_keys,
+        const IColumnUnique & source_dictionary,
         IColumnUnique & destination_dictionary)
     {
         if (const auto * indexes = getIndexesData<UInt8>(source_indexes))
             return translateSparseIndexesForSourceType(
-                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
         if (const auto * indexes = getIndexesData<UInt16>(source_indexes))
             return translateSparseIndexesForSourceType(
-                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
         if (const auto * indexes = getIndexesData<UInt32>(source_indexes))
             return translateSparseIndexesForSourceType(
-                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
         if (const auto * indexes = getIndexesData<UInt64>(source_indexes))
             return translateSparseIndexesForSourceType(
-                source_indexes, *indexes, start, length, source_dictionary_size, source_keys, destination_dictionary);
+                source_indexes, *indexes, start, length, source_dictionary, destination_dictionary);
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
@@ -389,8 +388,7 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
             low_cardinality_src->getIndexes(),
             start,
             length,
-            low_cardinality_src->getDictionary().size(),
-            source_keys,
+            low_cardinality_src->getDictionary(),
             getDictionary());
         if (translated_indexes)
         {
