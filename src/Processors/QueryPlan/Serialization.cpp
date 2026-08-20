@@ -141,7 +141,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
         QueryPlanSerializationSettings settings;
         node->step->serializeSettings(settings, flags.version);
 
-        settings.writeChangedBinary(out);
+        settings.writeChangedBinary(out, flags.version);
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
@@ -233,7 +233,7 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
 
         QueryPlanSerializationSettings settings;
-        settings.readBinary(in);
+        settings.readBinary(in, flags.version);
 
         SharedHeaders input_headers;
         input_headers.reserve(frame.children.size());

@@ -93,12 +93,22 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
+/// Version 10 changes how the plan settings of a step are written: as name, flags and a length-prefixed
+/// value, the format query settings have always used between client and server, instead of a name and a
+/// typed binary value. A reader can then step over a setting it does not know, so a setting introduced
+/// after this version needs a gate of its own only when the receiver ignoring it would change the
+/// result - that is what the `IMPORTANT` flag on a plan setting declares, and an unknown name carrying
+/// it is still rejected. Versions 5 and 7 exist because the format below this one had no way to skip.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 10;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version whose plan settings can be skipped by a reader that does not
+/// know their names. Below it every name in the stream must be known to the receiver, which is what the
+/// per-setting gates above exist for.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SKIPPABLE_SETTINGS = 10;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;

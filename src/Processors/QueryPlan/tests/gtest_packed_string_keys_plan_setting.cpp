@@ -45,10 +45,10 @@ Aggregator::Params makeParams(const Names & keys, bool enable_packed_string_keys
 }
 
 /// The name as it appears in the binary settings stream written by `writeChangedBinary`.
-bool wireCarriesSetting(const QueryPlanSerializationSettings & settings)
+bool wireCarriesSetting(const QueryPlanSerializationSettings & settings, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     WriteBufferFromOwnString out;
-    settings.writeChangedBinary(out);
+    settings.writeChangedBinary(out, version);
     return out.str().contains("enable_packed_string_keys_in_aggregation");
 }
 

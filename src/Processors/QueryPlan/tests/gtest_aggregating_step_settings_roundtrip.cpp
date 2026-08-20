@@ -33,11 +33,11 @@ bool roundTripSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 ve
     step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
-    written.writeChangedBinary(out);
+    written.writeChangedBinary(out, version);
 
     ReadBufferFromString in(out.str());
     QueryPlanSerializationSettings read;
-    read.readBinary(in);
+    read.readBinary(in, version);
 
     return read[QueryPlanSerializationSetting::serialize_string_in_memory_with_zero_byte];
 }
@@ -49,7 +49,7 @@ bool wireCarriesSerializeStringWithZeroByte(const IQueryPlanStep & step, UInt64 
     step.serializeSettings(written, version);
 
     WriteBufferFromOwnString out;
-    written.writeChangedBinary(out);
+    written.writeChangedBinary(out, version);
 
     return out.str().contains("serialize_string_in_memory_with_zero_byte");
 }
