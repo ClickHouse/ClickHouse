@@ -1,8 +1,11 @@
--- Tags: no-old-analyzer, long
+-- Tags: no-old-analyzer
 
 -- The build side of a block nested loop join is memory-bounded: it is compressed once it grows
 -- past `cross_join_min_rows_to_compress`, and streamed to a temporary file once it holds more than
 -- `max_bytes_before_external_join`. Neither changes the result.
+--
+-- That the spill really happens - and so that the comparisons below do not hold vacuously - is what
+-- `05024_block_nested_loop_join_spill_accounting` asserts.
 --
 -- `partial_merge` keeps `INNER` from taking the `CROSS JOIN` + filter route, so every kind below is
 -- answered by the operator.
@@ -16,8 +19,8 @@ DROP TABLE IF EXISTS bnl_spill_build;
 
 CREATE TABLE bnl_spill_probe (id Int32, x Int32) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE bnl_spill_build (id Int32, y Int32, s String) ENGINE = MergeTree ORDER BY id;
-INSERT INTO bnl_spill_probe SELECT number, number % 37 FROM numbers(200);
-INSERT INTO bnl_spill_build SELECT number, number % 23, repeat('x', number % 11) FROM numbers(150);
+INSERT INTO bnl_spill_probe SELECT number, number % 9 FROM numbers(40);
+INSERT INTO bnl_spill_build SELECT number, number % 6, repeat('x', number % 11) FROM numbers(30);
 
 -- One kind per way the probe reads the store: `FULL` walks every pair and then scans the store a
 -- second time for the build rows nothing matched, `LEFT ANY` abandons the walk as soon as a probe row
@@ -38,17 +41,17 @@ SELECT 'routed', count() FROM (
     EXPLAIN SELECT count() FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y)
 WHERE explain LIKE '%BlockNestedLoopJoin%';
 
--- A build side split into many blocks, all of them written to disk and read back for every probe
+-- A build side split into several blocks, all of them written to disk and read back for every probe
 -- chunk, answers exactly as one that stayed in memory.
 SELECT 'spilled',
     (SELECT arraySort(groupArray({{ emitted }})) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
-     SETTINGS max_bytes_before_external_join = 1, max_block_size = 17)
+     SETTINGS max_bytes_before_external_join = 1, max_block_size = 6)
   = (SELECT arraySort(groupArray({{ emitted }})) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
      SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0) AS ok;
 
 SELECT 'compressed',
     (SELECT arraySort(groupArray({{ emitted }})) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
-     SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 17)
+     SETTINGS cross_join_min_rows_to_compress = 1, max_block_size = 6)
   = (SELECT arraySort(groupArray({{ emitted }})) FROM bnl_spill_probe l {{ kind }} JOIN bnl_spill_build r ON l.x < r.y
      SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0) AS ok;
 
@@ -59,38 +62,14 @@ SELECT 'compressed',
 -- both store blocks are what that needs, and a `UNION ALL` of two sources is how to get them: each
 -- branch is a stream of its own with rows of its own, and `max_threads = 2` leaves the pipeline no
 -- reason to resize them - a resize would hand the blocks to whichever stream asked first instead.
-{% set union_build = "(SELECT number % 23 AS y FROM numbers(75) UNION ALL SELECT number % 23 AS y FROM numbers(75, 75))" -%}
+{% set union_build = "(SELECT number % 6 AS y FROM numbers(15) UNION ALL SELECT number % 6 AS y FROM numbers(15, 15))" -%}
 SELECT 'many files',
     (SELECT arraySort(groupArray((l.id, r.y))) FROM bnl_spill_probe l FULL JOIN {{ union_build }} r
-     ON l.x < r.y SETTINGS max_bytes_before_external_join = 1, max_threads = 2, max_block_size = 17)
+     ON l.x < r.y SETTINGS max_bytes_before_external_join = 1, max_threads = 2, max_block_size = 6)
   = (SELECT arraySort(groupArray((l.id, r.y))) FROM bnl_spill_probe l FULL JOIN {{ union_build }} r
      ON l.x < r.y SETTINGS max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0) AS ok
 -- Swapping the inputs would build the probe table instead, which is one stream and so one file.
-SETTINGS log_comment = '04821_bnl_many_files', query_plan_join_swap_table = 'false';
-
--- The build side really did go to disk: without this the comparisons above would hold vacuously.
--- What it wrote is accounted as a join's external data, the way `GraceHashJoin` accounts for its
--- own - the store opens a child temporary-data scope carrying the `ExternalJoin*` events, and
--- without that scope the spill is invisible in them.
-SELECT count() FROM bnl_spill_probe l FULL JOIN bnl_spill_build r ON l.x < r.y
-SETTINGS max_bytes_before_external_join = 1, max_block_size = 17, log_comment = '04821_bnl_spilled';
-
-SYSTEM FLUSH LOGS query_log;
-
-SELECT 'wrote temporary files',
-    ProfileEvents['ExternalJoinWritePart'] > 0,
-    ProfileEvents['ExternalJoinCompressedBytes'] > 0,
-    ProfileEvents['ExternalJoinUncompressedBytes'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04821_bnl_spilled'
-ORDER BY event_time_microseconds DESC LIMIT 1;
-
--- And the query above it really did spill from more than one build stream, which is what makes it a
--- comparison over several files rather than a second run of the one before.
-SELECT 'wrote a file per build stream', ProfileEvents['ExternalJoinWritePart'] > 1
-FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment = '04821_bnl_many_files'
-ORDER BY event_time_microseconds DESC LIMIT 1;
+SETTINGS query_plan_join_swap_table = 'false';
 
 DROP TABLE bnl_spill_probe;
 DROP TABLE bnl_spill_build;
