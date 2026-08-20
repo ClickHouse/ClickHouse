@@ -56,6 +56,7 @@ SELECT DISTINCT toTypeName(state) FROM single_value_or_null_legacy_state;
 
 SELECT id, singleValueOrNullMerge(state)
 FROM single_value_or_null_legacy_state
+GROUP BY id
 ORDER BY id;
 
 DROP TABLE single_value_or_null_legacy_state;
