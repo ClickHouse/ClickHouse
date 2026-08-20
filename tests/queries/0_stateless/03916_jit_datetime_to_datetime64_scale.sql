@@ -60,12 +60,19 @@ SELECT multiIf(
 
 SELECT '--- Time-family if is compiled, not interpreted ---';
 
-SELECT if(number % 2 = 0, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM numbers(2)
+-- The condition is a comparison of two stored columns: it is compilable but has no
+-- compilable child, and a node with no compilable children is never compiled on its own.
+-- So the outer if is the only node that can raise CompiledFunctionExecute in both queries.
+DROP TABLE IF EXISTS t_cond;
+CREATE TABLE t_cond (c1 UInt8, c2 UInt8, n1 UInt32, n2 UInt32) ENGINE = Memory;
+INSERT INTO t_cond VALUES (0, 0, 1, 2), (1, 0, 3, 4);
+
+SELECT if(c1 = c2, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM t_cond
     SETTINGS log_comment = '03916_time_shape' FORMAT Null;
 
 -- Control: compiles in any build that has the embedded compiler, so the comparison below
 -- pins that the Time shape is compiled wherever anything is, without a no-msan tag.
-SELECT if(number % 2 = 0, number + 1, number + 2) FROM numbers(2)
+SELECT if(c1 = c2, n1, n2) FROM t_cond
     SETTINGS log_comment = '03916_control_shape' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
@@ -77,3 +84,5 @@ SELECT
     = (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '03916_control_shape' AND type = 'QueryFinish'
         ORDER BY event_time_microseconds DESC LIMIT 1);
+
+DROP TABLE t_cond;
