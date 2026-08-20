@@ -457,6 +457,11 @@ inline std::string geoKindNameOfType(const IDataType & type)
     return {};
 }
 
+/// Helpers backing `hasDeferredGeometryKindRejection` below; kept out of `DB` so their generic
+/// names cannot collide with anything else declared at that scope.
+namespace GeoBboxDetail
+{
+
 /// Whether the geometry kind stored in `type` is only decided at execution time, and the predicate
 /// may well reject it there. A `Dynamic` column, or a `Variant` (`Geometry` is a `Variant` over the
 /// geometry kinds), carries no single declared kind an `ActionsDAG` node could be asked about: which
@@ -517,9 +522,11 @@ inline bool isDeferredGeometryKindType(const IDataType & type)
     return typeid_cast<const DataTypeVariant *>(&inner) || typeid_cast<const DataTypeDynamic *>(&inner);
 }
 
+}
+
 inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunctionBase & function, size_t arg_index)
 {
-    const IDataType & inner = unwrapGeoKindWrappers(type);
+    const IDataType & inner = GeoBboxDetail::unwrapGeoKindWrappers(type);
 
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(&inner))
     {
@@ -527,7 +534,7 @@ inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunc
         {
             const auto kind_name = geoKindNameOfType(*alternative);
             /// An unnamed alternative is an unknown kind, not an absent one: see the note above.
-            if (kind_name.empty() ? rejectsAnyGeometryKind(function, arg_index)
+            if (kind_name.empty() ? GeoBboxDetail::rejectsAnyGeometryKind(function, arg_index)
                                   : function.rejectsColumnGeometryKind(kind_name, arg_index))
                 return true;
         }
@@ -537,7 +544,7 @@ inline bool hasDeferredGeometryKindRejection(const IDataType & type, const IFunc
     if (typeid_cast<const DataTypeDynamic *>(&inner))
     {
         /// Every kind a predicate could possibly reject is reachable here.
-        return rejectsAnyGeometryKind(function, arg_index);
+        return GeoBboxDetail::rejectsAnyGeometryKind(function, arg_index);
     }
 
     return false;
@@ -731,8 +738,8 @@ NodeBboxStatus extractSpatialPredicateNodeBbox(
         /// per-row overload `ExecutableFunctionDynamicAdaptor`/`ExecutableFunctionVariantAdaptor`
         /// builds resolves that same tuple as a `Point` through `callOnGeometryDataType` and raises.
         /// Pruned away by a sibling conjunct, that exception never surfaces. Fail closed instead.
-        if (kind_name.empty() && child->result_type && isDeferredGeometryKindType(*child->result_type)
-            && rejectsAnyGeometryKind(*node.function_base, this_arg_index))
+        if (kind_name.empty() && child->result_type && GeoBboxDetail::isDeferredGeometryKindType(*child->result_type)
+            && GeoBboxDetail::rejectsAnyGeometryKind(*node.function_base, this_arg_index))
         {
             any_deferred_kind_rejection = true;
             continue;
