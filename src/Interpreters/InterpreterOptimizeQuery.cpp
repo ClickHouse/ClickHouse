@@ -136,28 +136,6 @@ BlockIO InterpreterOptimizeQuery::execute()
         return {};
     }
 
-    if (ast.merge_smallparts)
-    {
-        auto * merge_tree_data = dynamic_cast<MergeTreeData *>(table.get());
-        if (!merge_tree_data)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS is only supported for MergeTree family tables");
-
-        if (!ast.partition)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS requires a PARTITION clause");
-
-        if (ast.final)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS is incompatible with FINAL");
-
-        if (ast.deduplicate)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS is incompatible with DEDUPLICATE");
-
-        if (ast.cleanup)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS is incompatible with CLEANUP");
-
-        if (ast.manifest)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS is incompatible with MANIFEST");
-    }
-
     table->optimize(query_ptr, metadata_snapshot, ast.partition, ast.final, ast.deduplicate, column_names, ast.cleanup, getContext());
     return {};
 }

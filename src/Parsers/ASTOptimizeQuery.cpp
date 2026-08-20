@@ -61,13 +61,6 @@ void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings 
     if (manifest)
         ostr << " MANIFEST";
 
-    if (merge_smallparts)
-    {
-        ostr << " MERGE SMALLPARTS";
-        if (merge_smallparts_limit > 0)
-            ostr << " LIMIT " << merge_smallparts_limit;
-    }
-
     if (deduplicate_by_columns)
     {
         ostr << " BY ";
@@ -93,12 +86,6 @@ void ASTOptimizeQuery::writeJSON(WriteBuffer & out) const
         w.writeBool("manifest", true);
     if (dry_run)
         w.writeBool("dry_run", true);
-    if (merge_smallparts)
-    {
-        w.writeBool("merge_smallparts", true);
-        if (merge_smallparts_limit > 0)
-            w.writeUInt("merge_smallparts_limit", merge_smallparts_limit);
-    }
     w.writeChild("deduplicate_by_columns", deduplicate_by_columns);
     w.writeChild("parts_list", parts_list);
     writeOutputOptionsJSON(w);
@@ -130,11 +117,6 @@ void ASTOptimizeQuery::readJSON(const Poco::JSON::Object & json)
     cleanup = r.getBool("cleanup");
     manifest = r.getBool("manifest");
     dry_run = r.getBool("dry_run");
-    merge_smallparts = r.getBool("merge_smallparts");
-    if (merge_smallparts)
-    {
-        merge_smallparts_limit = r.getUInt("merge_smallparts_limit");
-    }
     /// `deduplicate_by_columns` is produced by the parser only behind `DEDUPLICATE BY ...`
     /// (`ParserOptimizeQuery` parses `BY` only when `deduplicate` is set) as a non-empty
     /// `ASTExpressionList` of column specifications (identifier, asterisk, or `COLUMNS` matcher —
