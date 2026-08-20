@@ -352,6 +352,8 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     if (empty())
         return;
 
+    resolve_client_hostname_on_demand = false;
+
     readBinary(initial_user, in);
     readBinary(initial_query_id, in);
 
@@ -384,8 +386,6 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
     {
         readBinary(os_user, in);
         readBinary(client_hostname, in);
-        /// The name describes the peer, not us, so it must not be re-resolved locally.
-        resolve_client_hostname_on_demand = false;
         readBinary(client_name, in);
         readVarUInt(client_version_major, in);
         readVarUInt(client_version_minor, in);
@@ -540,8 +540,6 @@ void ClientInfo::fillOSUserHostNameAndVersionInfo()
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
 
-    /// Do not resolve the hostname here: `getClientHostName` does it on demand, so a process that never
-    /// reports the name (e.g. `clickhouse local`) does not pay for a DNS lookup at startup.
     resolve_client_hostname_on_demand = true;
     client_hostname.clear();
 
