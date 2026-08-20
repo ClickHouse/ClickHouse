@@ -173,7 +173,7 @@ select * from (explain plan actions = 1 select * from tab order by (a + b) * c d
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), 2_UInt8) DESC
 -- select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(sin(a / b), -2)) where explain like '%sort description%';
-  Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), -2_Int8) ASC
+  Prefix sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC
   Result sort description: multiply(plus(__table1.a, __table1.b), __table1.c) DESC, intDiv(sin(divide(__table1.a, __table1.b)), -2_Int8) ASC
 -- select * from tab order by (a + b) * c desc, intDiv(intDiv(sin(a / b), -2), -3);
 select * from (explain plan actions = 1 select * from tab order by (a + b) * c desc, intDiv(intDiv(sin(a / b), -2), -3)) where explain like '%sort description%';
