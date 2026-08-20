@@ -116,11 +116,16 @@ def test_clickhouse_local_uses_configured_loopback_cluster(started_cluster):
 
     # The local tool does not listen on TCP port 9000. An explicitly configured loopback address
     # must therefore be a remote replica, rather than resolving its database in the local tool.
+    # The configuration of the server is used, because it is the one that declares both the
+    # cluster and `tcp_port`; a separate working directory keeps the tool away from the data
+    # directory of the running server.
     assert (
         node1.exec_in_container(
             [
-                "clickhouse-local",
+                "clickhouse",
+                "local",
                 "--config-file=/etc/clickhouse-server/config.xml",
+                "--path=/var/lib/clickhouse-local-cluster-test",
                 "--allow_experimental_database_cluster=1",
                 "--multiquery",
                 "--query=CREATE DATABASE proxy ENGINE = Cluster('loopback', 'local_src'); SELECT count() FROM proxy.t",
