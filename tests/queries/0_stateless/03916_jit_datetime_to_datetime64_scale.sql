@@ -5,6 +5,8 @@
 -- When JIT-compiling expressions that convert DateTime to DateTime64,
 -- the scale multiplier was not applied, causing the value to be
 -- reinterpreted instead of converted (e.g., seconds treated as milliseconds).
+-- The Time/Time64 sections at the end cover the same scale lift for the other
+-- date-time family that shares this code path.
 
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 
@@ -39,6 +41,10 @@ SELECT
 FROM t;
 
 DROP TABLE t;
+
+-- Time and Time64 are native types, and the if/multiIf compilability check only
+-- refuses to compile a mix of Date with DateTime. A Time/Time64 mix trips neither
+-- predicate, so it stays on the compiled path and reaches the same scale multiplier.
 
 SELECT '--- Time to Time64 via if ---';
 
