@@ -42,6 +42,12 @@ private:
 /// and their values decode as type defaults.
 using InvisibleRowsMask = NullMap;
 
+/// The value width of a type whose values are reinterpreted verbatim from raw Arrow binary bytes (IPv6,
+/// big integers), or 0 for every other type — including UUID, whose Arrow layout is a byte-swapped
+/// fixed_size_binary handled only by the fixed-width converters. The single source of truth for the
+/// types the raw-byte converters handle.
+size_t rawByteWidth(const WhichDataType & which);
+
 /// Reinterprets the raw bytes of a variable-width binary column (`ColumnString`) as an IPv6 or big
 /// integer, matching the Apache Arrow library reader's `readIPv6ColumnFromBinaryData` /
 /// `readColumnWithBigNumberFromBinaryData`. `null_map` (may be null) marks rows skipped in the width
@@ -168,6 +174,11 @@ private:
     /// `decodeField` consumes the node.
     size_t peekNodeRows() const;
 
+    /// Whether a declared row count is physically impossible for this message: any row of a field that
+    /// undergoes value decoding occupies at least one bit in some buffer, so a count above the body's
+    /// total bits is forged and must not drive an allocation (e.g. of an invisible-rows mask).
+    bool rowCountExceedsBodyBits(size_t rows) const { return rows > total_buffer_bytes * 8; }
+
     /// The invisible-rows mask for the child of a List/LargeList/Map field, sized to the child's declared
     /// row count. A child row is invisible when only invisible slots reference it, or when no slot
     /// references it at all.
@@ -236,10 +247,8 @@ private:
     const UnorderedMapWithMemoryTracking<String, DataTypePtr> * target_types = nullptr;
     /// The buffers to decode from: either views into the message body, or into `decompressed_body`.
     VectorWithMemoryTracking<Slice> buffer_slices;
-    /// Total bytes across `buffer_slices`. Serves as a validated upper bound for allocations sized by
-    /// untrusted FieldNode lengths: any row of a field that undergoes value decoding occupies at least
-    /// one bit in some buffer, so a declared row count above `total_buffer_bytes * 8` is forged and
-    /// must not drive an allocation.
+    /// Total bytes across `buffer_slices`; bounds allocations sized by untrusted FieldNode lengths
+    /// (see `rowCountExceedsBodyBits`).
     size_t total_buffer_bytes = 0;
     PODArray<char> decompressed_body;
     size_t node_index = 0;

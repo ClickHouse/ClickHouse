@@ -166,11 +166,6 @@ DataTypePtr mapEntriesHint(const DataTypePtr & hint)
     return nullptr;
 }
 
-namespace
-{
-
-/// The value width of a type stored in Arrow as raw variable binary bytes (IPv6, big integers), or 0
-/// for every other type. The single source of truth for which types `reinterpretStringLeaf` handles.
 size_t rawByteWidth(const WhichDataType & which)
 {
     if (which.isIPv6() || which.isInt128() || which.isUInt128())
@@ -179,6 +174,9 @@ size_t rawByteWidth(const WhichDataType & which)
         return 32;
     return 0;
 }
+
+namespace
+{
 
 /// The IPv6 / big-integer type a hint requests for a variable binary leaf, or null when it requests
 /// none of those. The conversion runs right after the leaf decodes (see the Utf8/Binary and view
@@ -344,7 +342,7 @@ std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleM
 {
     const size_t child_rows = peekNodeRows();
     const bool has_unreferenced_rows = static_cast<size_t>(base) > 0 || static_cast<size_t>(prev) < child_rows;
-    if ((!invisible_rows && !has_unreferenced_rows) || child_rows > total_buffer_bytes * 8)
+    if ((!invisible_rows && !has_unreferenced_rows) || rowCountExceedsBodyBits(child_rows))
         return std::nullopt;
 
     /// Start all-invisible and clear each visible slot's range: rows of invisible slots and rows no
@@ -895,13 +893,13 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// itself invisible. Sized to the child's declared row count (a mismatch with `expected_child`
             /// is rejected after the decode below); the excess rows of an over-long child are unreferenced,
             /// hence invisible. The declared count is untrusted and must not size the mask allocation past
-            /// the physical bound of the body (see `total_buffer_bytes`).
+            /// the physical bound of the body (see `rowCountExceedsBodyBits`).
             const std::optional<InvisibleRowsMask> child_invisible = [&]() -> std::optional<InvisibleRowsMask>
             {
                 if (!invisible_rows)
                     return std::nullopt;
                 const size_t child_rows = peekNodeRows();
-                if (child_rows > total_buffer_bytes * 8)
+                if (rowCountExceedsBodyBits(child_rows))
                     return std::nullopt;
                 InvisibleRowsMask mask;
                 mask.resize(child_rows);
@@ -1249,7 +1247,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         const std::optional<InvisibleRowsMask> child_invisible = [&]() -> std::optional<InvisibleRowsMask>
         {
             const size_t child_rows = peekNodeRows();
-            if (child_rows > total_buffer_bytes * 8)
+            if (rowCountExceedsBodyBits(child_rows))
                 return std::nullopt;
             InvisibleRowsMask mask;
             mask.resize_fill(child_rows, 1);

@@ -511,12 +511,8 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
         return out;
     }
 
-    size_t width = 0;
-    if (which.isIPv6() || which.isInt128() || which.isUInt128())
-        width = 16;
-    else if (which.isInt256() || which.isUInt256())
-        width = 32;
-    else
+    const size_t width = ArrowIPC::rawByteWidth(which);
+    if (width == 0)
         return nullptr;
 
     require(width);
@@ -660,19 +656,21 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+    /// A rewritten leaf keeps the source column's Nullable wrapper; the request's own wrappers are
+    /// restored by the later cast.
+    const auto with_source_nullability = [&](DataTypePtr type) -> DataTypePtr
+    {
+        return nullable ? std::make_shared<DataTypeNullable>(std::move(type)) : type;
+    };
 
     /// A `date32` under a Decimal hint was read as the raw day number (`date32_as_number` in the
     /// decoder), and no `Date32` -> Decimal cast exists; re-declare the (physically `Int32`) column as
     /// `Int32` so the ordinary Int -> Decimal cast finishes the conversion.
     if (WhichDataType(from_no_null).isDate32() && isDecimal(to_leaf))
-    {
-        const DataTypePtr int_type = std::make_shared<DataTypeInt32>();
-        return {col, nullable ? std::make_shared<DataTypeNullable>(int_type) : int_type};
-    }
+        return {col, with_source_nullability(std::make_shared<DataTypeInt32>())};
 
     const WhichDataType which(to_leaf);
-    const bool raw_target = which.isUUID() || which.isIPv6()
-        || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256();
+    const bool raw_target = which.isUUID() || ArrowIPC::rawByteWidth(which) != 0;
     if (!raw_target)
         return {col, from_type};
 
@@ -683,7 +681,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     {
         if (from_no_null->equals(*to_leaf))
             return {col, from_type};
-        return {col, nullable ? std::make_shared<DataTypeNullable>(to_leaf) : to_leaf};
+        return {col, with_source_nullability(to_leaf)};
     }
 
     /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
@@ -703,13 +701,9 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         return {col, from_type};
 
     ColumnPtr result = std::move(typed);
-    DataTypePtr result_type = to_leaf;
     if (nullable)
-    {
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
-        result_type = std::make_shared<DataTypeNullable>(to_leaf);
-    }
-    return {std::move(result), std::move(result_type)};
+    return {std::move(result), with_source_nullability(to_leaf)};
 }
 
 }
