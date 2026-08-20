@@ -6,5 +6,8 @@ refuses to start
 reports the unknown type
 not blamed on the address
 refuses to start
+--- no port
+starts anyway
+handler section not read
 --- valid
 metrics endpoint: 200

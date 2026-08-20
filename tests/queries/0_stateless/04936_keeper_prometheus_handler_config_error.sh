@@ -11,7 +11,21 @@ if ! "$CLICKHOUSE_BINARY" help 2>&1 | grep -qF 'clickhouse keeper [args]'; then
 fi
 
 TMP_DIR="$(mktemp -d "${CLICKHOUSE_TMP}/keeper_prometheus_handler_config_error.XXXXXX")"
-trap 'rm -rf "$TMP_DIR"' EXIT
+KEEPER_PID=""
+
+# The storage and log directories must outlive the process that is using them, so a keeper left
+# running is waited for before they are removed.
+function cleanup()
+{
+    if [ -n "$KEEPER_PID" ] && kill -0 "$KEEPER_PID" 2>/dev/null; then
+        kill "$KEEPER_PID" 2>/dev/null
+        wait "$KEEPER_PID" 2>/dev/null
+    fi
+
+    rm -rf "$TMP_DIR"
+}
+
+trap cleanup EXIT
 
 # Three distinct free ports are needed. `prometheus.port` has to be free for the listener to get as
 # far as parsing its handlers, since a port already in use reports a genuine bind failure instead.
@@ -29,9 +43,12 @@ function pick_ports()
     RAFT_PORT=$((PORT_BASE + 2))
 }
 
-# $1 = <handler> body, $2 = extra top-level config, $3 = config file
+# $1 = <handler> body, $2 = extra top-level config, $3 = config file, $4 = "no-port" to omit the port
 function write_config()
 {
+    local port_element="<port>${PROM_PORT}</port>"
+    [ "${4:-}" = no-port ] && port_element=""
+
     cat > "$3" <<EOF
 <clickhouse>
     <listen_host>127.0.0.1</listen_host>
@@ -43,7 +60,7 @@ function write_config()
         <console>0</console>
     </logger>
     <prometheus>
-        <port>${PROM_PORT}</port>
+        ${port_element}
         <handlers>
             <my_metrics>
                 <url>/metrics</url>
@@ -103,11 +120,35 @@ for listen_try in '' '<listen_try>1</listen_try>'; do
     [ "$RC" != 124 ] && echo 'refuses to start' || echo 'FAIL: started without the endpoint'
 done
 
+# Without `prometheus.port` there is no listener to configure, so a broken rule must not keep keeper
+# down. This is the lock on the port check that keeps the parse out of that path.
+echo '--- no port'
+for _ in $(seq 1 20); do
+    pick_ports
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+    write_config '<type>no_such_prometheus_type</type>' '' "${TMP_DIR}/keeper_config.xml" no-port
+    "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
+    KEEPER_PID=$!
+
+    READY=0
+    for _ in $(seq 1 600); do
+        grep -qF 'Ready for connections.' "${TMP_DIR}/keeper.log" 2>/dev/null && READY=1 && break
+        kill -0 "$KEEPER_PID" 2>/dev/null || break
+        sleep 0.1
+    done
+
+    [ "$READY" = 1 ] && break
+    grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
+    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+done
+
+[ "$READY" = 1 ] && echo 'starts anyway' || echo 'FAIL: kept down without a listener'
+grep -qF 'Unknown type no_such_prometheus_type' "${TMP_DIR}/keeper.err.log" 2>/dev/null \
+    && echo 'FAIL: the handler section was read' || echo 'handler section not read'
+kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
+
 # A valid section still serves metrics, so the hoist did not break the listener.
 echo '--- valid'
-KEEPER_PID=""
-trap 'if [ -n "$KEEPER_PID" ]; then kill "$KEEPER_PID" 2>/dev/null; fi; rm -rf "$TMP_DIR"' EXIT
-
 STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
@@ -128,8 +169,7 @@ for _ in $(seq 1 20); do
     [ "$STATUS" = 200 ] && break
     # Only a port collision is retried; anything else is reported as it is.
     grep -qE 'RAFT_ERROR|Address already in use' "${TMP_DIR}/keeper.err.log" 2>/dev/null || break
-    kill "$KEEPER_PID" 2>/dev/null
-    KEEPER_PID=""
+    kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 done
 
 echo "metrics endpoint: ${STATUS}"
