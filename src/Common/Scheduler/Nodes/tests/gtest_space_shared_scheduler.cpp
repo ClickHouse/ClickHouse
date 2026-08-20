@@ -497,8 +497,8 @@ TEST(SchedulerSpaceShared, RapidCreateDestroy)
 /// ordering mirrors `MemoryReservation`: AllocationQueue::mutex -> ManualAllocation::mutex.
 struct ManualAllocation : public ResourceAllocation
 {
-    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 oom_score_ = 0)
-        : ResourceAllocation(*queue_, name_, oom_score_)
+    ManualAllocation(AllocationQueue * queue_, const String & name_, ResourceCost initial_size, Int32 memory_eviction_score_ = 0)
+        : ResourceAllocation(*queue_, name_, memory_eviction_score_)
     {
         if (initial_size > 0)
             increase_enqueued = true;
@@ -652,11 +652,11 @@ TEST(SchedulerSpaceShared, NoKillWhileDecreaseIsPending)
 }
 
 
-/// `oom_score` controls eviction order under memory pressure: the reservation with the highest
-/// `oom_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
-/// `big` but has a higher `oom_score`, so it is evicted although the pre-`oom_score` policy (largest
+/// `memory_eviction_score` controls eviction order under memory pressure: the reservation with the highest
+/// `memory_eviction_score` is evicted first, even when it is not the largest. Here `small_hi` is smaller than
+/// `big` but has a higher `memory_eviction_score`, so it is evicted although the pre-`memory_eviction_score` policy (largest
 /// first) would have evicted `big`.
-TEST(SchedulerSpaceShared, OomScoreEvictsHighestScoreFirst)
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEvictsHighestFirst)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -664,9 +664,9 @@ TEST(SchedulerSpaceShared, OomScoreEvictsHighestScoreFirst)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    ManualAllocation big(queue, "big", 15000, /* oom_score = */ 0);
-    auto small_hi = std::make_unique<ManualAllocation>(queue, "small_hi", 5000, /* oom_score = */ 100);
-    ManualAllocation killer(queue, "killer", 10000, /* oom_score = */ 0);
+    ManualAllocation big(queue, "big", 15000, /* memory_eviction_score = */ 0);
+    auto small_hi = std::make_unique<ManualAllocation>(queue, "small_hi", 5000, /* memory_eviction_score = */ 100);
+    ManualAllocation killer(queue, "killer", 10000, /* memory_eviction_score = */ 0);
     // Total 30000 == limit; the increase below overflows and triggers the eviction decision.
 
     killer.increaseAsync(1000);
@@ -675,7 +675,7 @@ TEST(SchedulerSpaceShared, OomScoreEvictsHighestScoreFirst)
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (small_hi->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::yield();
-    ASSERT_EQ(small_hi->killCount(), 1u) << "The reservation with the higher oom_score must be evicted first";
+    ASSERT_EQ(small_hi->killCount(), 1u) << "The reservation with the higher memory_eviction_score must be evicted first";
     EXPECT_EQ(big.killCount(), 0u);
     EXPECT_EQ(killer.killCount(), 0u);
 
@@ -687,9 +687,9 @@ TEST(SchedulerSpaceShared, OomScoreEvictsHighestScoreFirst)
 }
 
 
-/// Regression guard: with a uniform `oom_score` (the default) the eviction order is unchanged - the
+/// Regression guard: with a uniform `memory_eviction_score` (the default) the eviction order is unchanged - the
 /// largest reservation is still evicted first.
-TEST(SchedulerSpaceShared, OomScoreEqualEvictsLargestFirst)
+TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
 {
     SpaceSharedTest t;
     SpaceSharedResourceHolder r(t);
@@ -697,16 +697,16 @@ TEST(SchedulerSpaceShared, OomScoreEqualEvictsLargestFirst)
     AllocationQueue * queue = r.addQueue("/queue");
     r.registerResource();
 
-    auto big = std::make_unique<ManualAllocation>(queue, "big", 15000, /* oom_score = */ 0);
-    ManualAllocation small(queue, "small", 5000, /* oom_score = */ 0);
-    ManualAllocation killer(queue, "killer", 10000, /* oom_score = */ 0);
+    auto big = std::make_unique<ManualAllocation>(queue, "big", 15000, /* memory_eviction_score = */ 0);
+    ManualAllocation small(queue, "small", 5000, /* memory_eviction_score = */ 0);
+    ManualAllocation killer(queue, "killer", 10000, /* memory_eviction_score = */ 0);
 
     killer.increaseAsync(1000);
 
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
     while (big->killCount() == 0 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::yield();
-    ASSERT_EQ(big->killCount(), 1u) << "With a uniform oom_score the largest reservation must be evicted first";
+    ASSERT_EQ(big->killCount(), 1u) << "With a uniform memory_eviction_score the largest reservation must be evicted first";
     EXPECT_EQ(small.killCount(), 0u);
     EXPECT_EQ(killer.killCount(), 0u);
 
