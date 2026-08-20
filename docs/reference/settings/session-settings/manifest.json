@@ -1124,6 +1124,7 @@
     "rewrite_count_distinct_if_with_count_distinct_implementation": "/reference/settings/session-settings/rewrite",
     "rewrite_in_to_join": "/reference/settings/session-settings/rewrite",
     "rows_before_aggregation": "/reference/settings/session-settings/other",
+    "run_query_in_background": "/reference/settings/session-settings/other",
     "s3_allow_multipart_copy": "/reference/settings/session-settings/s3-allow",
     "s3_allow_parallel_part_upload": "/reference/settings/session-settings/s3-allow",
     "s3_allow_server_credentials_in_user_queries": "/reference/settings/session-settings/s3-allow",
