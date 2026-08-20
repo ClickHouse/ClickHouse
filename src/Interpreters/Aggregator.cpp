@@ -1384,7 +1384,7 @@ void NO_INLINE Aggregator::executeImplBatchNoAggregates(
             return state.emplaceKey(method.data, row, *aggregates_pool);
     };
 
-    [[maybe_unused]] auto heap_push = [&](size_t row, const auto & emplace_result)
+    auto heap_push = [&]([[maybe_unused]] size_t row, [[maybe_unused]] const auto & emplace_result)
     {
         if constexpr (top_k)
         {
