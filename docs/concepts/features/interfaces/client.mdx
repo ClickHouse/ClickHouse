@@ -192,6 +192,8 @@ A custom prompt (see the `--prompt` option) does not have to contain the `{displ
 
 Entering `/dialect` on its own prints the current dialect.
 
+`clickhouse-local` also recognizes the command in noninteractive scripts, where the statements that follow it are parsed in the newly selected dialect. A rejected command (an unknown dialect, or one forbidden by a setting constraint) aborts the script, exactly like a rejected `SET dialect` statement.
+
 ### Query processing information {#processing-info}
 
 When processing a query, the client shows:

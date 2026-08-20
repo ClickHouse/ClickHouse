@@ -147,6 +147,52 @@ if {![regexp {(^|\n)/dialect(\r?\n|$)} $output]} {
 }
 file delete $insert_file
 
+# A comment-only prefix does not hide the following dialect command.
+set comment_file "$CLICKHOUSE_TMP/$basename.comment"
+set fp [open $comment_file w]
+puts $fp "-- a comment\n\n/dialect kusto\nprint 1"
+close $fp
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect=1 --queries-file=$comment_file"} output]} {
+    puts stderr "clickhouse-local failed after a comment-only prefix: $output"
+    exit 1
+}
+if {![regexp {(^|\n)1(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not handle /dialect after a comment: $output"
+    exit 1
+}
+file delete $comment_file
+
+# The command is still an escape hatch when a plain `SET dialect` earlier in the
+# script already switched the parser to a foreign dialect.
+set escape_file "$CLICKHOUSE_TMP/$basename.escape"
+set fp [open $escape_file w]
+puts $fp "SET dialect = 'kusto';\nprint 2\n/dialect clickhouse\nSELECT 3;"
+close $fp
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect=1 --queries-file=$escape_file"} output]} {
+    puts stderr "clickhouse-local failed to escape from a dialect set by SET: $output"
+    exit 1
+}
+if {![regexp {(^|\n)2(\r?\n|$)} $output] || ![regexp {(^|\n)3(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not escape from a dialect set by SET: $output"
+    exit 1
+}
+file delete $escape_file
+
+# A rejected command aborts the script, just like a rejected `SET dialect`.
+set rejected_file "$CLICKHOUSE_TMP/$basename.rejected"
+set fp [open $rejected_file w]
+puts $fp "SELECT 4;\n/dialect unknown_dialect\nSELECT 5;"
+close $fp
+if {![catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --queries-file=$rejected_file"} output]} {
+    puts stderr "clickhouse-local did not fail on a rejected dialect command: $output"
+    exit 1
+}
+if {[regexp {(^|\n)5(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local kept running after a rejected dialect command: $output"
+    exit 1
+}
+file delete $rejected_file
+
 # A newline-terminated noninteractive meta-command without a dialect command
 # must retain the regular `clickhouse-local` processing path.
 set clear_file "$CLICKHOUSE_TMP/$basename.clear"

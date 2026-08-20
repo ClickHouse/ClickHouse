@@ -3747,13 +3747,17 @@ bool ClientBase::processQueryText(const String & text)
             }
             catch (...)
             {
-                /// Ok: do not reinterpret a possible SQL/data line as a meta-command when the
-                /// preceding text cannot be parsed. Let the normal script path report the error.
-                return true;
+                /// Ok: the accumulated chunk is not parseable, so it is certainly not an unterminated
+                /// inline `INSERT` data block. This is also the case that makes the command an escape
+                /// hatch: after a `SET dialect = 'kusto'` earlier in the script the rest of the chunk
+                /// does not parse as ClickHouse SQL, and `/dialect` still has to switch back. The
+                /// surrounding SQL keeps its own error reporting in `executeMultiQuery`.
+                return false;
             }
 
+            /// An empty, blank or comment-only prefix is not inline data either.
             if (!parsed_query)
-                return true;
+                return false;
 
             const auto * insert = parsed_query->as<ASTInsertQuery>();
             if (!insert)
@@ -3948,6 +3952,11 @@ bool ClientBase::processQueryText(const String & text)
                 && dialect_name->back() == dialect_name->front())
                 dialect_name = dialect_name->substr(1, dialect_name->size() - 2);
 
+            /// A rejected command has to behave exactly like the equivalent `SET dialect = ...`:
+            /// an interactive user just retries at the next prompt, but a script must stop instead
+            /// of running the remaining statements under the old dialect.
+            const auto continue_after_rejection = [&] { return is_interactive || ignore_error; };
+
             try
             {
                 /// Execute the equivalent SQL through the normal query path. Besides validating the
@@ -3955,11 +3964,14 @@ bool ClientBase::processQueryText(const String & text)
                 /// bookkeeping persists the setting only after a successful exchange, so a rejected
                 /// command leaves the prompt and parser on the previous dialect.
                 if (!processTextAsSingleQuery("SET dialect = " + quoteString(*dialect_name)))
-                    return true;
-
+                    return continue_after_rejection();
             }
             catch (...)
             {
+                /// In a script the failure has to stay fatal, exactly like the equivalent
+                /// `SET dialect = ...`, so that the message and the exit code are the usual ones.
+                if (!continue_after_rejection())
+                    throw;
                 error_stream << getCurrentExceptionMessage(false) << std::endl;
             }
             return true;
