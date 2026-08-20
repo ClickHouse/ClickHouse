@@ -160,6 +160,8 @@ struct VirtualsForFileLikeStorage
     const String * iceberg_metadata_file_path { nullptr };
     std::optional<UInt64> last_updated_sequence_number = std::nullopt;
     std::optional<UInt64> first_row_id = std::nullopt;
+    ColumnPtr materialized_row_ids = {};
+    ColumnPtr materialized_last_updated_sequence_numbers = {};
 };
 
 void addRequestedFileLikeStorageVirtualsToChunk(

@@ -182,14 +182,7 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
         const auto first_row_id_value = getValueFromRowByName(row_index, c_data_file_first_row_id);
         if (!first_row_id_value.isNull())
         {
-            const auto raw_first_row_id = first_row_id_value.safeGet<Int64>();
-            if (raw_first_row_id < 0)
-                throw Exception(
-                    ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                    "Cannot read Iceberg table: manifest file '{}' has entry with negative first_row_id {}",
-                    manifest_file_path,
-                    raw_first_row_id);
-            first_row_id = static_cast<UInt64>(raw_first_row_id);
+            first_row_id = first_row_id_value.safeGet<Int64>();
         }
     }
 
