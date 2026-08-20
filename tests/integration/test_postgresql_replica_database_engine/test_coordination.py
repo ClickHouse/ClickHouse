@@ -1546,7 +1546,7 @@ def test_refused_drop_when_nested_table_drop_fails_recovers_database(started_clu
 
     # A failed nested-table drop before any table was removed must recover in attach mode. In
     # particular, it must not resnapshot into the existing nested table and revive this deletion.
-    instance.query("DELETE FROM postgres_database.test_table WHERE key = 0")
+    pg_query("DELETE FROM test_table WHERE key = 0")
     wait_for_database_count(99)
 
     try:
@@ -2090,7 +2090,7 @@ def test_plain_database_ddl_and_drop_in_startup_window(started_cluster):
     pg_query(
         f'CREATE TABLE "{schema_name}".test_table (key Integer PRIMARY KEY, value Integer)'
     )
-    instance.query(
+    pg_query(
         f'INSERT INTO "{schema_name}".test_table SELECT g, g FROM generate_series(0, 49) AS g'
     )
 

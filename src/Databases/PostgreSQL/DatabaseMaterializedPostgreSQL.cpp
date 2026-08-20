@@ -604,6 +604,11 @@ void DatabaseMaterializedPostgreSQL::attachTable(ContextPtr context_, const Stri
             tables_list_altered = true;
 
             auto storage = std::make_shared<StorageMaterializedPostgreSQL>(table, getContext(), remote_database_name, table_name);
+            /// This code path runs only with a live replication handler (checked above), so the startup
+            /// window is over for this wrapper too. Without this, a table added by `ATTACH TABLE` would stay
+            /// on the startup-window guard of `checkTableCanBeDetachedPermanently` forever, and the
+            /// supported `DETACH TABLE ... PERMANENTLY` round-trip would be impossible for it.
+            storage->setDatabaseReplicationReady();
             {
                 std::lock_guard tables_lock(tables_mutex);
                 materialized_tables[table_name] = storage;
@@ -962,6 +967,11 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
             "Use DETACH TABLE ... PERMANENTLY to remove the table from replication");
     }
 
+    /// Parks the drop of every table before it happens. It comes BEFORE the injected failure below, so a
+    /// test that holds the drop here can decide per table whether that failure fires: with the order
+    /// reversed, arming the failure while the drop is parked would come too late for the parked table.
+    FailPointInjection::pauseFailPoint(FailPoints::database_materialized_postgresql_pause_before_table_drop);
+
     /// Simulates the nested-table drop of a DROP DATABASE failing (e.g. Keeper disappearing while a nested
     /// ReplicatedReplacingMergeTree deletes its own Keeper metadata, or a filesystem error for a plain nested
     /// table) after `beforeDropDatabase` has already deactivated the startup task, to test recovery via
@@ -972,8 +982,6 @@ void DatabaseMaterializedPostgreSQL::dropTable(ContextPtr local_context, const S
             throw Exception(ErrorCodes::FAULT_INJECTED,
                 "Injected failure while dropping a nested table of a coordinated MaterializedPostgreSQL database");
         });
-
-    FailPointInjection::pauseFailPoint(FailPoints::database_materialized_postgresql_pause_before_table_drop);
 
     /// Modify context into nested_context and pass query to Atomic database.
     /// In coordinated mode drop the nested replicated table without the usual

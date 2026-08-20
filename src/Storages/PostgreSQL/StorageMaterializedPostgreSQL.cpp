@@ -324,6 +324,15 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetached() const
 
 void StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently() const
 {
+    /// A coordinated setup refuses the statement outright, and it does so before the startup-window check
+    /// below: the refusal does not depend on the state of this replica's startup, and reporting the
+    /// transient "retry later" error for a permanently unsupported statement would be misleading.
+    if (is_coordinated)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
+            "(materialized_postgresql_keeper_path is set). "
+            "Recreate the database with an updated materialized_postgresql_tables_list instead");
+
     if (is_materialized_postgresql_database && !database_replication_ready.load())
         throw Exception(ErrorCodes::POSTGRESQL_REPLICATION_INTERNAL_ERROR,
             "Cannot remove table from replication: the database has not finished starting replication yet. "
@@ -332,13 +341,6 @@ void StorageMaterializedPostgreSQL::checkTableCanBeDetachedPermanently() const
     /// `DETACH TABLE ... PERMANENTLY` is the supported per-table removal operation for a plain
     /// MaterializedPostgreSQL database. It must pass this pre-shutdown check and is handled by
     /// `DatabaseMaterializedPostgreSQL::detachTablePermanently` after `flushAndShutdown`.
-    if (!is_coordinated)
-        return;
-
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-        "DETACH TABLE PERMANENTLY is not supported for a coordinated MaterializedPostgreSQL setup "
-        "(materialized_postgresql_keeper_path is set). "
-        "Recreate the database with an updated materialized_postgresql_tables_list instead");
 }
 
 

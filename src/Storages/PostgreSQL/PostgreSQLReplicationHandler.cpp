@@ -2867,11 +2867,11 @@ void PostgreSQLReplicationHandler::removeCoordinationNodes(bool remove_metadata)
 }
 
 
-bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState()
+bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState(bool include_refused_drop_metadata)
 {
     /// Whether any coordination state of this setup survives in Keeper: the `snapshot_completed` marker, a
-    /// registered replica, or metadata held across a refused last-replica drop. Used to distinguish a live
-    /// shared publication (to adopt) from one
+    /// registered replica, or - when `include_refused_drop_metadata` is set - the metadata fences held
+    /// across a refused last-replica drop. Used to distinguish a live shared publication (to adopt) from one
     /// leaked by a failed final teardown (to drop). Keeper errors propagate: adopting or dropping a shared
     /// publication on an unverified guess must not happen (fail-close), the caller retries.
     auto component_guard = Coordination::setCurrentComponent("PostgreSQLReplicationHandler::hasSurvivingCoordinationState");
@@ -2880,7 +2880,7 @@ bool PostgreSQLReplicationHandler::hasSurvivingCoordinationState()
     if (zookeeper->exists(coordination_keeper_path + "/snapshot_completed"))
         return true;
 
-    if (zookeeper->exists(coordination_keeper_path + "/table_set"))
+    if (include_refused_drop_metadata && zookeeper->exists(coordination_keeper_path + "/table_set"))
         return true;
 
     Strings replicas;
@@ -3399,7 +3399,8 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     /// publication anymore: drop it and start fresh. Keeper errors propagate (fail-close) - the background
     /// startup task retries. On ATTACH the local nested tables mirror the publication's old table set, so
     /// it is kept and the slot-without-marker recovery redoes the snapshot as needed.
-    if (publication_exists_before_startup && coordination_enabled && !is_attach && !hasSurvivingCoordinationState())
+    if (publication_exists_before_startup && coordination_enabled && !is_attach
+        && !hasSurvivingCoordinationState(/* include_refused_drop_metadata */ true))
     {
         LOG_WARNING(log,
                     "Publication {} exists, but there is no coordination state under {} (no snapshot marker and no "
@@ -3586,10 +3587,15 @@ std::set<String> PostgreSQLReplicationHandler::fetchRequiredTables()
     /// persisted (stale) setting after a restart, so honoring the setting here would recreate the shared
     /// publication with a different table set - and `ensureCoordinatedTableSetCompatible` would refuse the
     /// startup against the already fenced set, wedging the replica instead of repairing the publication.
-    /// Only a setup with surviving coordination state is trusted, for the same reason the publication-leak
-    /// check above requires it: a leftover /table_set node of an incompletely dropped setup must not become
-    /// authoritative for a fresh CREATE. Keeper errors propagate (fail-close), the startup task retries.
-    if (coordination_enabled && !publication_exists_before_startup && result_tables.empty() && hasSurvivingCoordinationState())
+    /// Only an ESTABLISHED setup is trusted here - one with the snapshot marker or a registered replica -
+    /// for the same reason the publication-leak check above requires surviving state: a leftover /table_set
+    /// node of an incompletely dropped setup must not become authoritative for a fresh CREATE. The fence
+    /// node alone is explicitly not enough: every replica publishes it BEFORE it registers, so a replica
+    /// racing another one in that pre-publication window would silently adopt the peer's differing table
+    /// set instead of being refused by `ensureCoordinatedTableSetCompatible`. Keeper errors propagate
+    /// (fail-close), the startup task retries.
+    if (coordination_enabled && !publication_exists_before_startup && result_tables.empty()
+        && hasSurvivingCoordinationState(/* include_refused_drop_metadata */ false))
     {
         if (auto fenced_tables = readCoordinatedTableSetFromKeeper(); fenced_tables && !fenced_tables->empty())
         {

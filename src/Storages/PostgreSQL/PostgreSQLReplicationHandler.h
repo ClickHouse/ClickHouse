@@ -327,7 +327,12 @@ private:
     /// died mid-snapshot, and WAL replay from the slot would then permanently miss the rows it never
     /// copied. A new leader may resume from the slot's confirmed LSN only when this marker exists;
     /// otherwise it has to redo the snapshot from scratch.
-    bool hasSurvivingCoordinationState();
+    /// `include_refused_drop_metadata` also treats the naming and table-set fences that a refused
+    /// last-replica drop deliberately keeps as surviving state (the local nested tables of that replica are
+    /// still there, so the shared publication is still live). It must stay false where the question is
+    /// whether an ESTABLISHED setup exists: those fences alone are also what a replica publishes before it
+    /// registers, so trusting them there would make a concurrently fenced foreign table set authoritative.
+    bool hasSurvivingCoordinationState(bool include_refused_drop_metadata);
     bool isInitialSnapshotCompleted();
     void markInitialSnapshotCompleted(const String & lsn);
 
