@@ -173,7 +173,7 @@ ALTER TABLE table DROP INDEX text_idx;
   If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned.
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
-- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)).
+- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 

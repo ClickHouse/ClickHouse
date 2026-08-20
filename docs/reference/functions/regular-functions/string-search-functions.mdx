@@ -471,14 +471,14 @@ This inconsistency is tolerated to improve the usability of full-text search.
 **Syntax**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAllToken`
 
 **Arguments**
 
-- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array)
+- `input` — The input column. [`String`](/reference/data-types/string) or [`FixedString`](/reference/data-types/fixedstring) or [`Nullable(String)`](/reference/data-types/nullable) or [`Nullable(FixedString)`](/reference/data-types/nullable) or [`Array(String)`](/reference/data-types/array) or [`Array(FixedString)`](/reference/data-types/array) or [`Array(Nullable(String))`](/reference/data-types/array) or [`Array(Nullable(FixedString))`](/reference/data-types/array)
 - `needles` — Tokens to be searched. [`String`](/reference/data-types/string) or [`Array(String)`](/reference/data-types/array)
 - `tokenizer` — The tokenizer to use. Valid arguments are `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams`, and `array`. Optional, if not set explicitly, defaults to `splitByNonAlpha`. [`const String`](/reference/data-types/string)
 
@@ -699,7 +699,7 @@ This inconsistency is tolerated to improve the usability of full-text search.
 **Syntax**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAnyToken`
