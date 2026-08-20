@@ -368,6 +368,8 @@ void IcebergIterator::ensureDeletesReady()
         catch (...)
         {
             deletes_exception = std::current_exception();
+            /// Every `next` rethrows this exception, so the buffered entries are dead and the producer must stop.
+            blocking_queue.clearAndFinish();
         }
         deletes_ready = true;
     }
