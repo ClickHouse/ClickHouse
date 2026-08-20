@@ -11,6 +11,8 @@ CREATE TABLE ts_flags ENGINE = TimeSeries;
 INSERT INTO ts_flags (metric_name, tags, time_series, is_stale_marker) VALUES ('up', map('instance', 'h1'), [], [1]); -- { serverError INCORRECT_DATA }
 INSERT INTO ts_flags (metric_name, tags, time_series, is_stale_marker) VALUES ('up', map('instance', 'h1'), [(toDateTime64(100, 3), 1), (toDateTime64(101, 3), 2)], [0]); -- { serverError INCORRECT_DATA }
 
+-- On a table whose samples table has the column, a flag on any sample works; see
+-- 04903 and the integration tests for the legacy-table degradation rules.
 -- One flag per sample, and no flags at all, both work.
 INSERT INTO ts_flags (metric_name, tags, time_series, is_stale_marker) VALUES ('up', map('instance', 'h1'), [(toDateTime64(100, 3), 1)], [0]);
 INSERT INTO ts_flags (metric_name, tags, time_series) VALUES ('up', map('instance', 'h2'), [(toDateTime64(100, 3), 2)]);

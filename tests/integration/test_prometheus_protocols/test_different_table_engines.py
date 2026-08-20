@@ -518,13 +518,19 @@ def test_external_samples_table_without_is_stale_marker_keeps_working():
     )
 
     # A legacy 3-column samples table keeps working with the pre-column behavior: the write
-    # succeeds (a stale marker would be stored as its raw NaN payload) and a PromQL read treats
+    # succeeds (a stale marker is stored as its raw NaN payload) and a PromQL read treats
     # every stored row as an ordinary non-stale sample.
+    stale_marker = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
     protobuf = convert_time_series_to_protobuf(
-        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0})]
+        [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0, timestamp + 10: stale_marker})]
     )
     response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
     assert response.status_code == requests.codes.no_content
+
+    # The degraded marker is stored as a raw NaN sample.
+    assert (
+        node.query("SELECT count() FROM mysamples WHERE isNaN(value)").strip() == "1"
+    )
 
     result = node.query(f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp})")
     assert result.strip() == "1"

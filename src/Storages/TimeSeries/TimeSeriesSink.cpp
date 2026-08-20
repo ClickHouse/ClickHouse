@@ -5,6 +5,8 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
+
+#include <cmath>
 #include <Common/typeid_cast.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
@@ -640,21 +642,6 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the {} column, got {}",
             TimeSeriesColumnNames::IsStaleMarker, is_stale_marker_col.column->getName());
 
-    /// A samples table without the column has nowhere to persist an explicitly provided marker;
-    /// storing it as its raw NaN value would corrupt it into an ordinary sample, so fail instead.
-    if (!is_stale_marker_type)
-    {
-        const auto & marker_flags = ts_is_stale_markers->getData();
-        for (size_t i = 0; i != marker_flags.size(); ++i)
-        {
-            if (!marker_flags.isDefaultAt(i))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot store a non-zero {} flag: the \"samples\" table has no such column. "
-                    "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker storage",
-                    TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
-        }
-    }
-
     /// The flags are parallel to the samples; check every row here, before the samples block can be
     /// skipped for a chunk with no samples at all, where mismatched flags would vanish silently.
     {
@@ -668,6 +655,43 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
                     "Column `{}` has {} flags for a time series with {} samples, it must be empty or have one flag per sample",
                     TimeSeriesColumnNames::IsStaleMarker, num_markers, num_samples);
         }
+    }
+
+    /// A samples table without the column has nowhere to persist a marker flag. A flag on a NaN
+    /// sample (a RemoteWrite stale marker) degrades to the pre-column behavior - the NaN value is
+    /// stored as is - with the migration warning; a flag on a non-NaN sample would vanish without
+    /// a trace, so that fails instead.
+    if (!is_stale_marker_type)
+    {
+        const auto & marker_flags = ts_is_stale_markers->getData();
+        const auto & markers_offsets = ts_is_stale_markers->getOffsets();
+        const IColumn & sample_values = ts_tuples->getColumn(1);
+        bool dropped_marker_on_nan = false;
+        for (size_t row = 0; row != markers_offsets.size(); ++row)
+        {
+            size_t markers_start = (row == 0) ? 0 : markers_offsets[row - 1];
+            size_t num_markers = markers_offsets[row] - markers_start;
+            size_t samples_start = (row == 0) ? 0 : ts_offsets[row - 1];
+            for (size_t k = 0; k != num_markers; ++k)
+            {
+                if (marker_flags.isDefaultAt(markers_start + k))
+                    continue;
+                if (std::isnan(sample_values.getFloat64(samples_start + k)))
+                {
+                    dropped_marker_on_nan = true;
+                    continue;
+                }
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Cannot store a non-zero {} flag for a non-NaN sample: the \"samples\" table has no such column. "
+                    "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker storage",
+                    TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
+            }
+        }
+        if (dropped_marker_on_nan)
+            LOG_WARNING(log,
+                "Prometheus stale markers are stored as raw NaN samples: the \"samples\" table has no {} column. "
+                "Run ALTER TABLE <samples table> ADD COLUMN {} UInt8 to enable stale-marker handling",
+                TimeSeriesColumnNames::IsStaleMarker, TimeSeriesColumnNames::IsStaleMarker);
     }
 
     PaddedPODArray<UInt8> filter;
