@@ -2673,6 +2673,12 @@ static bool tryPrepareSetColumnsForIndex(
 /// to that Enum's name. Native integer Fields are the one cross-type case with compatible equality.
 static bool areTypesCompatibleForHasSetIndex(const DataTypePtr & set_element_type, const DataTypePtr & key_column_type)
 {
+    /// An empty array has element type `Nothing`, so the set is empty and the atom is false for every
+    /// key value regardless of the key type. Note that `[NULL]` has element type `Nullable(Nothing)`
+    /// and is not empty, so it does not take this shortcut.
+    if (WhichDataType(*set_element_type).isNothing())
+        return true;
+
     const auto set_type = removeNullable(recursiveRemoveLowCardinality(set_element_type));
     const auto key_type = removeNullable(recursiveRemoveLowCardinality(key_column_type));
 

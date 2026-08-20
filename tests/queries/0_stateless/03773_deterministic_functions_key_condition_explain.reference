@@ -149,10 +149,13 @@ Expression ((Project names + Projection))
             Parts: 2/2
             Granules: 2/2
           PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
+            Keys:
+              cityHash64(person_id)
+            Condition: (cityHash64(person_id) in 2-element set)
+            Parts: 1/2
+            Granules: 1/2
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -198,9 +201,12 @@ Expression ((Project names + Projection))
             Parts: 2/2
             Granules: 2/2
           PrimaryKey
-            Condition: true
+            Keys:
+              cityHash64(person_id)
+            Condition: (cityHash64(person_id) notIn 2-element set)
             Parts: 2/2
             Granules: 2/2
+            Search Algorithm: generic exclusion search
           Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
@@ -493,10 +499,13 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_dag_execution)
         Indexes:
           PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
+            Keys:
+              toUUID(p)
+            Condition: (toUUID(p) in 1-element set)
+            Parts: 1/2
+            Granules: 1/2
+            Search Algorithm: binary search
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 Expression ((Project names + Projection))
@@ -522,9 +531,12 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.test_dag_execution)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              toUUID(p)
+            Condition: (toUUID(p) notIn 1-element set)
             Parts: 2/2
             Granules: 2/2
+            Search Algorithm: generic exclusion search
           Ranges: 2
 SET enable_analyzer = 0;
 DROP TABLE IF EXISTS events;
@@ -675,10 +687,13 @@ Expression ((Projection + Before ORDER BY))
             Parts: 2/2
             Granules: 2/2
           PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
+            Keys:
+              cityHash64(person_id)
+            Condition: (cityHash64(person_id) in 2-element set)
+            Parts: 1/2
+            Granules: 1/2
+            Search Algorithm: generic exclusion search
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT count()
 FROM events e
@@ -724,9 +739,12 @@ Expression ((Projection + Before ORDER BY))
             Parts: 2/2
             Granules: 2/2
           PrimaryKey
-            Condition: true
+            Keys:
+              cityHash64(person_id)
+            Condition: (cityHash64(person_id) notIn 2-element set)
             Parts: 2/2
             Granules: 2/2
+            Search Algorithm: generic exclusion search
           Ranges: 2
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (
@@ -1019,10 +1037,13 @@ Expression ((Projection + Before ORDER BY))
         ReadFromMergeTree (default.test_dag_execution)
         Indexes:
           PrimaryKey
-            Condition: true
-            Parts: 2/2
-            Granules: 2/2
-          Ranges: 2
+            Keys:
+              toUUID(p)
+            Condition: (toUUID(p) in 1-element set)
+            Parts: 1/2
+            Granules: 1/2
+            Search Algorithm: binary search
+          Ranges: 1
 EXPLAIN indexes = 1
 SELECT count() FROM test_dag_execution WHERE p NOT IN ('017adbc0-98b5-0000-3f74-619a368fe65d');
 Expression ((Projection + Before ORDER BY))
@@ -1048,7 +1069,10 @@ Expression ((Projection + Before ORDER BY))
         ReadFromMergeTree (default.test_dag_execution)
         Indexes:
           PrimaryKey
-            Condition: true
+            Keys:
+              toUUID(p)
+            Condition: (toUUID(p) notIn 1-element set)
             Parts: 2/2
             Granules: 2/2
+            Search Algorithm: generic exclusion search
           Ranges: 2

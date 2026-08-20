@@ -67,8 +67,9 @@ SELECT count() FROM test_null_set WHERE x IN (SELECT arrayJoin(CAST([NULL], 'Arr
 SELECT count() FROM test_null_set WHERE x NOT IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))')));
 24
 DROP TABLE test_null_set;
--- A NULL set element must be preserved for a Nullable key. It matches the NULL key row, so the
--- negated form can skip that one-row granule.
+-- A bare `[NULL]` array has element type `Nullable(Nothing)`, which is not comparable with the key
+-- type, so no set atom is built and the primary key does not prune. The result must still be
+-- correct: `has([NULL], x)` matches only the NULL key row.
 DROP TABLE IF EXISTS test_nullable_null_set;
 CREATE TABLE test_nullable_null_set (x Nullable(UInt64)) ENGINE = MergeTree
 ORDER BY x
