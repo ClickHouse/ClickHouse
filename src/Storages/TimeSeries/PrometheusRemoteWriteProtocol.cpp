@@ -7,6 +7,8 @@
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/DataTypeArray.h>
@@ -20,9 +22,17 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
+#include <bit>
+
+
+namespace ProfileEvents
+{
+    extern const Event PrometheusRemoteWriteHistograms;
+}
 
 namespace DB
 {
@@ -31,6 +41,7 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -62,10 +73,194 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
 
+/// Sums the lengths of bucket spans, checking that each span is sane.
+size_t getTotalSpanLength(const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans, std::string_view what)
+{
+    size_t total = 0;
+    for (const auto & span : spans)
+        total += span.length();
+    if (total > 1000000)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Native histogram has too many {} buckets: {}", what, total);
+    return total;
+}
+
+/// Appends decoded bucket values (absolute counts) of one direction of a native histogram.
+/// Int histograms carry deltas which are decoded to absolutes here; float histograms carry absolutes.
+void appendHistogramBuckets(
+    const google::protobuf::RepeatedPtrField<prometheus::BucketSpan> & spans,
+    const google::protobuf::RepeatedField<Int64> & deltas,
+    const google::protobuf::RepeatedField<double> & counts,
+    bool is_float,
+    std::string_view what,
+    ColumnInt32 & out_span_offsets,
+    ColumnUInt32 & out_span_lengths,
+    ColumnArray::ColumnOffsets & out_spans_offsets,
+    ColumnFloat64 & out_values,
+    ColumnArray::ColumnOffsets & out_values_offsets)
+{
+    size_t total_span_length = getTotalSpanLength(spans, what);
+    size_t num_values = is_float ? counts.size() : deltas.size();
+    if (total_span_length != num_values)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Native histogram has {} {} bucket values but its spans cover {} buckets",
+            num_values, what, total_span_length);
+
+    for (const auto & span : spans)
+    {
+        out_span_offsets.insertValue(span.offset());
+        out_span_lengths.insertValue(span.length());
+    }
+    out_spans_offsets.insertValue(out_span_offsets.size());
+
+    if (is_float)
+    {
+        for (double count : counts)
+            out_values.insertValue(count);
+    }
+    else
+    {
+        Int64 running = 0;
+        for (Int64 delta : deltas)
+        {
+            running += delta;
+            if (running < 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has a negative {} bucket count after delta decoding: {}", what, running);
+            out_values.insertValue(static_cast<Float64>(running));
+        }
+    }
+    out_values_offsets.insertValue(out_values.size());
+}
+
+/// Returns true if `value` carries the Prometheus stale-marker NaN payload.
+bool isPrometheusStaleMarker(Float64 value)
+{
+    return std::bit_cast<UInt64>(value) == 0x7FF0000000000002ULL;
+}
+
+/// Builds the outer `histograms` column: an array of histogram tuples per time-series row.
+/// The tuple element order matches TimeSeriesHistogramsTupleIndex. Reusable for future
+/// remote-write 2.0 messages, which carry the same Histogram submessage.
+ColumnPtr makeHistogramsColumn(
+    const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
+    size_t num_trailing_default_rows,
+    const DataTypePtr & timestamp_type,
+    size_t & out_num_histograms)
+{
+    auto timestamps = timestamp_type->createColumn();
+    const UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_type).value_or(0);
+
+    auto flags = ColumnUInt8::create();
+    auto schemas = ColumnInt8::create();
+    auto zero_thresholds = ColumnFloat64::create();
+    auto counts = ColumnFloat64::create();
+    auto sums = ColumnFloat64::create();
+    auto zero_counts = ColumnFloat64::create();
+
+    auto make_spans_column = []
+    {
+        return std::tuple{ColumnInt32::create(), ColumnUInt32::create(), ColumnArray::ColumnOffsets::create()};
+    };
+    auto [positive_span_offsets, positive_span_lengths, positive_spans_offsets] = make_spans_column();
+    auto [negative_span_offsets, negative_span_lengths, negative_spans_offsets] = make_spans_column();
+    auto positive_values = ColumnFloat64::create();
+    auto positive_values_offsets = ColumnArray::ColumnOffsets::create();
+    auto negative_values = ColumnFloat64::create();
+    auto negative_values_offsets = ColumnArray::ColumnOffsets::create();
+    auto custom_values = ColumnFloat64::create();
+    auto custom_values_offsets = ColumnArray::ColumnOffsets::create();
+
+    auto histograms_offsets = ColumnArray::ColumnOffsets::create();
+
+    size_t num_histograms = 0;
+    for (const auto & element : time_series)
+    {
+        for (const auto & histogram : element.histograms())
+        {
+            bool is_float = (histogram.count_case() == prometheus::Histogram::kCountFloat)
+                || (histogram.zero_count_case() == prometheus::Histogram::kZeroCountFloat)
+                || !histogram.positive_counts().empty() || !histogram.negative_counts().empty();
+
+            insertTimestamp(histogram.timestamp(), timestamp_scale, *timestamps);
+
+            Float64 count = is_float ? histogram.count_float() : static_cast<Float64>(histogram.count_int());
+            Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
+            Float64 sum = histogram.sum();
+
+            UInt8 histogram_flags = 0;
+            if (is_float)
+                histogram_flags |= TimeSeriesHistogramFlags::IsFloat;
+            histogram_flags |= static_cast<UInt8>(histogram.reset_hint()) << TimeSeriesHistogramFlags::CounterResetHintShift;
+            if (histogram.reset_hint() == prometheus::Histogram::GAUGE)
+                histogram_flags |= TimeSeriesHistogramFlags::IsGauge;
+            if (isPrometheusStaleMarker(sum))
+                histogram_flags |= TimeSeriesHistogramFlags::StaleMarker;
+
+            flags->insertValue(histogram_flags);
+            schemas->insertValue(static_cast<Int8>(histogram.schema()));
+            zero_thresholds->insertValue(histogram.zero_threshold());
+            counts->insertValue(count);
+            sums->insertValue(sum);
+            zero_counts->insertValue(zero_count);
+
+            appendHistogramBuckets(
+                histogram.positive_spans(), histogram.positive_deltas(), histogram.positive_counts(), is_float, "positive",
+                *positive_span_offsets, *positive_span_lengths, *positive_spans_offsets,
+                *positive_values, *positive_values_offsets);
+            appendHistogramBuckets(
+                histogram.negative_spans(), histogram.negative_deltas(), histogram.negative_counts(), is_float, "negative",
+                *negative_span_offsets, *negative_span_lengths, *negative_spans_offsets,
+                *negative_values, *negative_values_offsets);
+
+            for (double custom_value : histogram.custom_values())
+                custom_values->insertValue(custom_value);
+            custom_values_offsets->insertValue(custom_values->size());
+
+            ++num_histograms;
+        }
+        histograms_offsets->insertValue(flags->size());
+    }
+
+    for (size_t i = 0; i != num_trailing_default_rows; ++i)
+        histograms_offsets->insertValue(flags->size());
+
+    auto make_spans_array = [](auto && span_offsets, auto && span_lengths, auto && spans_offsets) -> ColumnPtr
+    {
+        Columns span_tuple_columns;
+        span_tuple_columns.push_back(std::move(span_offsets));
+        span_tuple_columns.push_back(std::move(span_lengths));
+        return ColumnArray::create(ColumnTuple::create(std::move(span_tuple_columns)), std::move(spans_offsets));
+    };
+
+    Columns tuple_columns;
+    tuple_columns.resize(TimeSeriesHistogramsTupleIndex::Size);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::Timestamp] = std::move(timestamps);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::Flags] = std::move(flags);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::Schema] = std::move(schemas);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::ZeroThreshold] = std::move(zero_thresholds);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::Count] = std::move(counts);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::Sum] = std::move(sums);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::ZeroCount] = std::move(zero_counts);
+    tuple_columns[TimeSeriesHistogramsTupleIndex::PositiveSpans]
+        = make_spans_array(std::move(positive_span_offsets), std::move(positive_span_lengths), std::move(positive_spans_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::PositiveValues]
+        = ColumnArray::create(std::move(positive_values), std::move(positive_values_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::NegativeSpans]
+        = make_spans_array(std::move(negative_span_offsets), std::move(negative_span_lengths), std::move(negative_spans_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::NegativeValues]
+        = ColumnArray::create(std::move(negative_values), std::move(negative_values_offsets));
+    tuple_columns[TimeSeriesHistogramsTupleIndex::CustomValues]
+        = ColumnArray::create(std::move(custom_values), std::move(custom_values_offsets));
+
+    out_num_histograms = num_histograms;
+    return ColumnArray::create(ColumnTuple::create(std::move(tuple_columns)), std::move(histograms_offsets));
+}
+
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
-    const StorageInMemoryMetadata & metadata)
+    const StorageInMemoryMetadata & metadata,
+    bool with_histograms)
 {
     const size_t num_rows = time_series.size() + num_metadata_rows;
 
@@ -148,6 +343,16 @@ Block makeTimeSeriesBlock(
     block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
     block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
     block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
+
+    if (with_histograms)
+    {
+        size_t num_histograms = 0;
+        auto histograms_column = makeHistogramsColumn(time_series, num_metadata_rows, timestamp_type, num_histograms);
+        block.insert(ColumnWithTypeAndName{
+            std::move(histograms_column), metadata.columns.get(TimeSeriesColumnNames::Histograms).type, TimeSeriesColumnNames::Histograms});
+        ProfileEvents::increment(ProfileEvents::PrometheusRemoteWriteHistograms, num_histograms);
+    }
+
     return block;
 }
 
@@ -202,14 +407,15 @@ void appendBlock(Block & block, Block block_to_append)
 Block makeBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
-    const StorageInMemoryMetadata & metadata)
+    const StorageInMemoryMetadata & metadata,
+    bool with_histograms)
 {
     Block block;
     if (!time_series.empty())
     {
         appendBlock(
             block,
-            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata));
+            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, with_histograms));
     }
     if (!metrics_metadata.empty())
     {
@@ -278,7 +484,22 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
+
+    size_t num_histograms = 0;
+    for (const auto & element : time_series)
+        num_histograms += element.histograms_size();
+
+    /// Histogram samples can be stored only when the table was created with a "histograms" target;
+    /// otherwise they are dropped, loudly, with a pointer at the migration.
+    bool with_histograms = metadata->columns.has(TimeSeriesColumnNames::Histograms)
+        && time_series_storage->hasTarget(ViewTarget::Histograms);
+    if (num_histograms && !with_histograms)
+        LOG_WARNING(log,
+            "{}: Dropping {} native histogram samples: the table has no \"histograms\" target table. "
+            "Recreate the TimeSeries table with SETTINGS store_native_histograms = 1 to store them",
+            storage_id.getNameForLogs(), num_histograms);
+
+    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, with_histograms && num_histograms), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
