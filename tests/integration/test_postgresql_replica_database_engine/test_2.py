@@ -720,6 +720,44 @@ def test_failed_attach_with_failed_cleanup_keeps_table_attached(started_cluster)
     pg_manager.drop_materialized_db()
 
 
+def test_attached_table_can_be_detached_permanently(started_cluster):
+    # A table added by ATTACH TABLE gets a freshly built wrapper, which never went through
+    # `startSynchronization`. It must still be marked as belonging to a database whose replication has
+    # started, or the startup-window guard of `checkTableCanBeDetachedPermanently` refuses every later
+    # DETACH TABLE ... PERMANENTLY of it, and the supported attach/detach round trip is broken.
+    table_name = "postgresql_replica_0"
+    pg_manager.create_and_fill_postgres_tables(1, 100)
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[f"materialized_postgresql_tables_list = '{table_name}'"],
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    attached_table_name = "postgresql_replica_attach"
+    pg_manager.create_and_fill_postgres_table(attached_table_name)
+    instance.query(f"ATTACH TABLE test_database.{attached_table_name}")
+    check_tables_are_synchronized(instance, attached_table_name)
+
+    # Without a server restart in between: the wrapper published by the attach is the one being checked.
+    instance.query(f"DETACH TABLE test_database.{attached_table_name} PERMANENTLY")
+    assert (
+        attached_table_name
+        not in instance.query("SHOW TABLES FROM test_database").split()
+    )
+    assert attached_table_name not in instance.query(
+        "SHOW CREATE DATABASE test_database"
+    )
+
+    # The rest of the database keeps replicating.
+    instance.query(
+        f"INSERT INTO postgres_database.{table_name} SELECT number, number FROM numbers(100, 50)"
+    )
+    check_tables_are_synchronized(instance, table_name)
+
+    pg_manager.drop_materialized_db()
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
