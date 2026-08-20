@@ -208,10 +208,12 @@ ColumnsDescription StorageSystemJemallocBins::getColumnsDescription(bool per_are
     for (const auto & column : common)
         description.add(column);
 
+    /// `waste` is clamped: the counters may come from two stats snapshots, making the
+    /// difference transiently negative, and the cast to UInt64 would wrap it.
     description.setAliases({
         {"availregs", std::make_shared<DataTypeUInt64>(), "nregs * curslabs"},
         {"util", std::make_shared<DataTypeFloat64>(), "curregs / availregs"},
-        {"waste", std::make_shared<DataTypeUInt64>(), "curslabs * slab_size - curregs * size"},
+        {"waste", std::make_shared<DataTypeUInt64>(), "greatest(curslabs * slab_size - curregs * size, 0)"},
     });
 
     return description;
