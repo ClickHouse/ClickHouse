@@ -1064,6 +1064,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!allowed_inner && !allowed_left)
         return {};
 
+    /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
+    /// (cross-side non-equi) `ON` condition, so accepting one here would silently drop it.
+    if (table_join->getMixedJoinExpression())
+        return {};
+
     const auto & clauses = table_join->getClauses();
     bool only_one_key = clauses.size() == 1 &&
         clauses[0].key_names_left.size() == 1 &&
@@ -1135,6 +1140,11 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     {
         auto column_mapping_it = right_table_expression.column_mapping.find(right_table_expression_column.name);
         if (column_mapping_it == right_table_expression.column_mapping.end())
+            return {};
+
+        /// `getByKeys` cannot return a column absent from the storage sample block, and its result is
+        /// re-indexed against this header by position, so that column's slot would get another's data.
+        if (!storage_sample_block.has(column_mapping_it->second))
             return {};
 
         auto right_table_expression_column_with_storage_column_name = right_table_expression_column;
@@ -1445,8 +1455,20 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
+    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
+    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
+    /// which the setting parser rejects.
+    std::vector<String> enabled_algorithm_names;
+    enabled_algorithm_names.reserve(table_join->getEnabledJoinAlgorithms().size());
+    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
+        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
+                    "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+                    "with the given right table storage type",
+                    fmt::join(enabled_algorithm_names, ", "),
+                    toString(table_join->strictness()),
+                    toString(table_join->kind()));
 }
 
 }

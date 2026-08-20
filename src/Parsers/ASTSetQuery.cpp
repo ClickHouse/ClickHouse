@@ -103,7 +103,12 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
         /// The valueless form has to survive a format/parse round trip: written back as
         /// `name = true` it would be accepted for a setting of any type, which is exactly what the
         /// shorthand check exists to prevent. The value is Bool `true` and never secret.
-        if (change.shorthand)
+        ///
+        /// Only elide the value when it really is `true`. The AST JSON dialect can pair the
+        /// shorthand flag with any other value, and such a change is rejected by
+        /// `BaseSettings::checkShorthandChange` - but that happens after the query is logged, so the
+        /// formatter must not print a bare name for a change that carries something else.
+        if (change.shorthand && change.value == Field(true))
             continue;
 
         auto format_if_secret = [&]() -> bool

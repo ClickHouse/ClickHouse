@@ -451,7 +451,7 @@ Type inference on a Parquet file will invariably lead to a slightly different sc
 <Steps>
 <Step title="Insert the data" id="insert-the-data">
 
-Run the following query to read the same data in Parquet format, again using the url function to read the remote data:
+Run the following query to read the same data in Parquet format, again using the `url` function to read the remote data:
 
 ```sql
 DROP TABLE IF EXISTS hackernews;
@@ -461,26 +461,31 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS allow_nullable_key = 1 EMPTY AS
 SELECT *
-FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 
 INSERT INTO hackernews SELECT *
-FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet');
 ```
 
 <Info>
 **Null keys with Parquet**
 
-As a condition of the Parquet format, we have to accept that keys might be `NULL`,
-even though they aren't in the data.
+The inferred schema makes the columns `Nullable`, so `allow_nullable_key` is required even though this dataset contains
+no null IDs.
 </Info>
 
 Run the following command to view the inferred schema:
+
+```sql title="Query"
+DESCRIBE TABLE hackernews;
+```
 
 ```response title="Response"
 ┌─name────────┬─type───────────────────┬
 │ id          │ Nullable(Int64)        │
 │ deleted     │ Nullable(UInt8)        │
 │ type        │ Nullable(String)       │
+│ by          │ Nullable(String)       │
 │ time        │ Nullable(Int64)        │
 │ text        │ Nullable(String)       │
 │ dead        │ Nullable(UInt8)        │
@@ -495,10 +500,12 @@ Run the following command to view the inferred schema:
 └─────────────┴────────────────────────┴
 ```
 
-As before with the CSV file, you can specify the schema manually for greater control over the chosen types and insert the
-data directly from s3:
+The remaining steps use clearer column names such as `author` and `comment`, so continue with a manually specified schema.
+First drop the inferred table, then create the table and insert the data directly from the public S3 bucket:
 
 ```sql
+DROP TABLE IF EXISTS hackernews;
+
 CREATE TABLE hackernews
 (
     `id` UInt64,
@@ -523,6 +530,7 @@ ORDER BY (type, author);
 INSERT INTO hackernews
 SELECT * FROM s3(
         'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+        NOSIGN,
         'Parquet',
         'id UInt64,
          deleted UInt8,
@@ -541,104 +549,122 @@ SELECT * FROM s3(
          descendants UInt32');
 ```
 </Step>
-<Step title="Add a skipping-index to speed up queries" id="add-skipping-index">
+<Step title="Add a text index to speed up searches" id="add-skipping-index">
 
 To find out how many comments mention "ClickHouse", run the following query:
 
 ```sql title="Query"
 SELECT count(*)
 FROM hackernews
-WHERE hasToken(lower(comment), 'ClickHouse');
+WHERE hasAnyTokens(lower(comment), 'clickhouse');
 ```
 
 ```response title="Response" highlight={1}
-1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
 ┌─count()─┐
-│     516 │
+│    1145 │
 └─────────┘
+
+1 row in set. Elapsed: 3.251 sec. Processed 28.74 million rows, 9.60 GB (8.84 million rows/s., 2.95 GB/s.)
 ```
 
-Next, you'll create an inverted [index](/reference/engines/table-engines/mergetree-family/textindexes) on the "comment" column
-in order to speed this query up.
-Note that lowercase comments will be indexed to find terms independent of casing.
+Next, create a [text index](/reference/engines/table-engines/mergetree-family/textindexes) on the `comment` column
+to speed up this query. A text index uses an inverted index that maps tokens to the rows that contain them.
+The `splitByNonAlpha` tokenizer splits text on non-alphanumeric characters. The index and queries use `lower(comment)`
+with lowercase search terms so matching is case-insensitive. The query expression must match the indexed expression.
 
 Run the following commands to create the index:
 
 ```sql
-ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
-ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+ALTER TABLE hackernews
+    ADD INDEX comment_idx lower(comment)
+    TYPE text(tokenizer = splitByNonAlpha);
+
+ALTER TABLE hackernews
+    MATERIALIZE INDEX comment_idx
+    SETTINGS mutations_sync = 2;
 ```
 
-Materialization of the index takes a while (to check if the index was created, use the system table `system.data_skipping_indices`).
+Materialization builds the index for the existing data. The `mutations_sync` setting waits for the materialization to finish.
+You can check the index definition in the `system.data_skipping_indices` table.
 
-Run the query again once the index has been created:
+Run the same query again once the index has been materialized:
 
 ```sql title="Query"
 SELECT count(*)
 FROM hackernews
-WHERE hasToken(lower(comment), 'clickhouse');
+WHERE hasAnyTokens(lower(comment), 'clickhouse');
 ```
 
-Notice how the query now took only 0.248 seconds with the index, down from 0.843 seconds previously without it:
-
 ```response title="Response" highlight={1}
-1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
 ┌─count()─┐
 │    1145 │
 └─────────┘
+
+1 row in set. Elapsed: 0.019 sec. Processed 4.48 million rows, 4.48 MB (232.23 million rows/s., 232.23 MB/s.)
 ```
 
-The [`EXPLAIN`](/reference/statements/explain) clause can be used to understand why the addition of this index
-improved the query around 3.4x.
+The result remains the same because the index changes how ClickHouse finds matching rows, not which rows match. The indexed
+query processes substantially less data and completes much faster.
+Use [`EXPLAIN`](/reference/statements/explain) to confirm that ClickHouse plans to apply the index:
 
-```response text="Query"
+```sql title="Query"
 EXPLAIN indexes = 1
 SELECT count(*)
 FROM hackernews
-WHERE hasToken(lower(comment), 'clickhouse')
+WHERE hasAnyTokens(lower(comment), 'clickhouse');
 ```
 
 ```response title="Response"
-┌─explain─────────────────────────────────────────┐
-│ Expression ((Projection + Before ORDER BY))     │
-│   Aggregating                                   │
-│     Expression (Before GROUP BY)                │
-│       Filter (WHERE)                            │
-│         ReadFromMergeTree (default.hackernews)  │
-│         Indexes:                                │
-│           PrimaryKey                            │
-│             Condition: true                     │
-│             Parts: 4/4                          │
-│             Granules: 3528/3528                 │
-│           Skip                                  │
-│             Name: comment_idx                   │
-│             Description: inverted GRANULARITY 1 │
-│             Parts: 4/4                          │
-│             Granules: 554/3528                  │
-└─────────────────────────────────────────────────┘
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Filter
+   │  Filter column: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+   └──ReadFromMergeTree (default.hackernews)
+         Read type: Default
+         Parts: 4 | Granules: 547
+         Output: __text_index_comment_idx_hasAnyTokens_7b9491bd22343c822f64c95a9bda20f9
+         Indexes:
+           PrimaryKey
+             Condition: true
+             Parts: 4/4
+             Granules: 3527/3527
+           Skip
+             Name: comment_idx
+             Description: text GRANULARITY 100000000
+             Condition: (mode: Any; tokens: ["clickhouse"])
+             Parts: 4/4
+             Granules: 547/3527
+           Ranges: 437
 ```
 
-Notice how the index allowed skipping of a substantial number of granules
-to speed up the query.
+The `comment_idx` entry shows that ClickHouse plans to apply the text index. In this example, the plan selects 547 of 3527
+granules, substantially reducing the amount of data examined.
 
-It's also possible to now efficiently search for one, or all of multiple terms:
+You can also search for any or all of multiple tokens. These functions match complete tokens produced by the index tokenizer.
+Use `hasAnyTokens` when at least one token must match:
 
 ```sql title="Query"
 SELECT count(*)
 FROM hackernews
-WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+WHERE hasAnyTokens(lower(comment), 'oltp olap');
 ```
 
 ```response title="Response"
 ┌─count()─┐
-│    2177 │
+│    2020 │
 └─────────┘
 ```
+
+Use `hasAllTokens` when every token must match, in any order:
 
 ```sql title="Query"
 SELECT count(*)
 FROM hackernews
-WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+WHERE hasAllTokens(lower(comment), 'avx sve');
 ```
 
 ```response title="Response"

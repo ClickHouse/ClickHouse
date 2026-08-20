@@ -173,7 +173,7 @@ SELECT a, b, val FROM t1 INNER JOIN t2 ON t1.a = t2.key OR t1.b = t2.key AND t2.
 
 ## JOIN with inequality conditions for columns from different tables {#join-with-inequality-conditions-for-columns-from-different-tables}
 
-Clickhouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash` and `grace_hash` join algorithms. The inequality conditions are not supported with `join_use_nulls`.
+ClickHouse currently supports `ALL/ANY/SEMI/ANTI INNER/LEFT/RIGHT/FULL JOIN` with inequality conditions in addition to equality conditions. The inequality conditions are supported only for `hash`, `parallel_hash` and `grace_hash` join algorithms. A non equi condition that is evaluated during the join may not contain `arrayJoin`, because such a condition must preserve the number of rows; a condition that applies to one side only, and an equality key over `arrayJoin`, are extracted before the join and are unaffected; a non-disjunctive `ALL INNER JOIN` condition is also unaffected, because there the condition is applied after the join instead. Where the expansion depends on one side only, move it into an `ARRAY JOIN` in a subquery before the join; a condition whose `arrayJoin` argument reads columns from both sides has to be restructured.
 
 **Example**
 
@@ -484,7 +484,15 @@ If you need to restrict `JOIN` operation memory consumption use the following se
 - [max_bytes_in_join](/reference/settings/session-settings/max-bytes#max_bytes_in_join) — Limits size of the hash table.
 
 When any of these limits is reached, ClickHouse acts as the [join_overflow_mode](/reference/settings/session-settings/join#join_overflow_mode)
-setting instructs.
+setting instructs. These two are hard caps and never make a join spill to disk, so setting them at or
+below an explicit `max_bytes_before_external_join` prevents the join from spilling at all.
+
+To let a join keep running by spilling the right side to disk instead of failing, use:
+
+- [max_bytes_before_external_join](/reference/settings/session-settings/join#max_bytes_before_external_join) — Absolute spill threshold.
+- [max_bytes_ratio_before_external_join](/reference/settings/session-settings/join#max_bytes_ratio_before_external_join) — Spill threshold as a ratio of available memory.
+
+These are the single spill trigger for every hash-based algorithm, including `grace_hash`.
 
 ## Examples {#examples}
 

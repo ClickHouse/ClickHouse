@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
@@ -48,6 +49,23 @@ class GraceHashJoin final : public IJoin
 
     using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
+    struct GraceHashJoinStats
+    {
+        size_t right_rows = 0;
+        size_t unique_keys = 0;
+        size_t peak_in_memory_bytes = 0;
+        size_t num_rehashes = 0;
+        size_t num_buckets = 0;
+        size_t left_spilled_compressed_bytes = 0;
+        size_t right_spilled_compressed_bytes = 0;
+
+        UInt64 left_rows_total = 0;
+        MatchedRowsAccumulator matched_left;
+        MatchedRowsAccumulator matched_right;
+
+        void foldIn(const HashJoin & in_memory_join);
+    };
+
 public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
@@ -71,6 +89,7 @@ public:
 
     std::string getName() const override { return "GraceHashJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
+    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     void initialize(const Block & sample_block) override;
 
@@ -83,6 +102,7 @@ public:
 
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+    StepAnalysisReport getAnalysisReport() const override;
     bool alwaysReturnsEmptySet() const override;
 
     bool supportParallelJoin() const override { return true; }
@@ -133,6 +153,8 @@ private:
     size_t getNumBuckets() const;
     Buckets getCurrentBuckets() const;
 
+    GraceHashJoinStats collectStats() const;
+
     /// Structure block to store in the HashJoin according to sample_block.
     Block prepareRightBlock(const Block & block);
 
@@ -167,6 +189,8 @@ private:
     /// `max_rows_in_join` / `max_bytes_in_join` are checked as hard caps.
     std::atomic<size_t> total_right_rows = 0;
     std::atomic<size_t> total_right_bytes = 0;
+
+    GraceHashJoinStats stats;
 
     mutable std::mutex totals_mutex;
 };
