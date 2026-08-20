@@ -1,0 +1,3 @@
+<clickhouse>
+    <process_query_plan_packet>true</process_query_plan_packet>
+</clickhouse>
