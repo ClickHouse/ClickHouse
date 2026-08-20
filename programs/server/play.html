@@ -2911,7 +2911,9 @@ class QueryResultElement extends HTMLElement
                     display: none;
                     position: absolute;
                     top: var(--header-icon-top);
-                    left: 1.8rem;
+                    /* Right next to the pin: its own offset, plus the width of its icon, plus the gap
+                       the icons of the right-hand cluster keep between themselves. */
+                    left: calc(0.35rem + 0.85em + 0.3rem);
                     transform: translateY(-50%);
                     cursor: pointer;
                     line-height: 1;
@@ -3353,6 +3355,15 @@ class QueryResultElement extends HTMLElement
                 .filter-apply:hover
                 {
                     background: var(--border-color);
+                }
+
+                /* Nothing to apply: muted and inert, like an inactive icon, and placed after the hover
+                   rule so pointing at it promises nothing. */
+                .filter-apply:disabled
+                {
+                    cursor: default;
+                    color: var(--misc-text-color);
+                    background: var(--element-background-color);
                 }
 
                 /* Funnel icon on the selected cell, next to the copy icon, that offers the comparisons
@@ -3981,6 +3992,11 @@ class QueryResultElement extends HTMLElement
         /// string types: a `Date`, a `UUID` or an `Enum` also arrives as text, but `LIKE` rejects those
         /// types outright, so a cell menu offering `contains` there would only produce a failing query.
         this._column_is_string = {};
+        /// Whether a column holds one of a closed set of named values. Comparable against a string
+        /// literal (the name), like a string column, but only for equality: a substring or prefix match
+        /// over a fixed list of names is not something anyone means, so its cell menu offers only the
+        /// two comparisons that are.
+        this._column_is_enum = {};
         /// Whether a column can hold NULL. Needed to tell a real NULL from data on the page's own
         /// default format: `JSONCompactStrings…` renders a NULL as the same superscript glyph the page
         /// displays it with (the server's plain-text NULL representation) rather than as a JSON null,
@@ -4399,6 +4415,7 @@ class QueryResultElement extends HTMLElement
             this._column_is_number[elem.name] = !!unwrapped_type.match(/^(U?Int|Decimal|Float|BFloat)/);
             this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
             this._column_is_string[elem.name] = !!unwrapped_type.match(/^(String|FixedString)/);
+            this._column_is_enum[elem.name] = !!unwrapped_type.match(/^Enum/);
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
@@ -4973,10 +4990,12 @@ class QueryResultElement extends HTMLElement
         /// not fire them. Enter applies, Escape abandons the edit.
         input.addEventListener('keydown', (e) => {
             e.stopPropagation();
-            if (e.key === 'Enter') { this.setColumnFilter(name, input.value); }
+            if (e.key === 'Enter') { this._applyFilterInput(th, name); }
             else if (e.key === 'Escape') { this._closeFilterInput(); }
         });
         input.addEventListener('keyup', (e) => e.stopPropagation());
+        /// Keep the apply button's active state in step with what is in the box.
+        input.addEventListener('input', () => this._updateFilterApplyState(th, name));
         input.addEventListener('click', (e) => e.stopPropagation());
         input.addEventListener('mousedown', (e) => e.stopPropagation());
         const apply = document.createElement('button');
@@ -4988,7 +5007,7 @@ class QueryResultElement extends HTMLElement
         apply.setAttribute('aria-label', apply_label);
         apply.addEventListener('click', (e) => {
             e.stopPropagation();
-            this.setColumnFilter(name, input.value);
+            this._applyFilterInput(th, name);
         });
         /// Leave the focus in the input (see the toggle above): pressing this must apply the filter, not
         /// first close the input the filter is being read from.
@@ -5017,6 +5036,30 @@ class QueryResultElement extends HTMLElement
         /// Leave the input alone while it is open - the user may be part-way through editing it - and
         /// otherwise keep it showing the filter in effect, so reopening it edits instead of retypes.
         if (input && this._open_filter_column !== name) { input.value = suffix; }
+        this._updateFilterApplyState(th, name);
+    }
+
+    /// Whether the apply button has anything to do. An empty box on a column that carries no filter
+    /// would neither set one nor remove one, so the button is inactive there - which is the state it is
+    /// in the moment the input opens on an unfiltered column. An empty box on a column that IS filtered
+    /// keeps it active: emptying the box and applying is how a filter is removed from the input (the
+    /// cross beside the filter does the same once the input is closed).
+    _updateFilterApplyState(th, name)
+    {
+        const input = th.querySelector('.filter-input');
+        const apply = th.querySelector('.filter-apply');
+        if (!input || !apply) { return; }
+        apply.disabled = input.value.trim() === '' && !this._filters[name];
+    }
+
+    /// Apply what the input holds, from the button or from Enter - both refuse when the button is
+    /// inactive, so the key cannot do what the button will not.
+    _applyFilterInput(th, name)
+    {
+        const input = th.querySelector('.filter-input');
+        const apply = th.querySelector('.filter-apply');
+        if (!input || (apply && apply.disabled)) { return; }
+        this.setColumnFilter(name, input.value);
     }
 
     /// Repaint every column header's filter controls. Cheap (O(columns)) and idempotent.
@@ -5050,6 +5093,7 @@ class QueryResultElement extends HTMLElement
             input.focus();
             input.select();
         }
+        this._updateFilterApplyState(th, name);
     }
 
     _closeFilterInput()
@@ -5085,8 +5129,9 @@ class QueryResultElement extends HTMLElement
     ///
     /// Every value arrives as text (the page requests a `JSONStrings…` format), so a numeric column's
     /// literal is the text itself - a column the server typed as a number cannot spell anything that
-    /// is not a number - while a date's and a string's are quoted, and the substring/prefix/suffix
-    /// options become `LIKE` patterns with the value's own `%` and `_` escaped so they match literally.
+    /// is not a number - while a date's, an enum's and a string's are quoted, and the
+    /// substring/prefix/suffix options become `LIKE` patterns with the value's own `%` and `_` escaped
+    /// so they match literally.
     _cellFilterOptions(name, is_null, text)
     {
         /// A NULL is filterable whatever the column's type is, and only with the null predicates:
@@ -5106,6 +5151,13 @@ class QueryResultElement extends HTMLElement
         {
             const literal = quoteStringLiteral(text);
             return QueryResultElement._COMPARISON_OPERATORS.map(op => ({ label: op, suffix: op + ' ' + literal }));
+        }
+        /// An enum arrives as the NAME of its value, and compares against that name as a string
+        /// literal, so equality reads exactly as it looks on screen.
+        if (this._column_is_enum[name] && text.length <= QueryResultElement._MAX_CELL_FILTER_LENGTH)
+        {
+            const literal = quoteStringLiteral(text);
+            return [{ label: '=', suffix: '= ' + literal }, { label: '!=', suffix: '!= ' + literal }];
         }
         if (this._column_is_string[name] && text.length <= QueryResultElement._MAX_CELL_FILTER_LENGTH)
         {
