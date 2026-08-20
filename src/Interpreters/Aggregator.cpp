@@ -729,6 +729,37 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
         method_chosen = AggregatedDataVariants::Type::key_string;
 
+    /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
+    /// table that stores only keys (no dead `AggregateDataPtr` slot, e.g. 16 -> 8 bytes per cell for UInt64,
+    /// 32 -> 16 for keys128, 32 -> 24 for serialized). Covers single numbers (key32/key64), packed fixed keys
+    /// (keys32/keys64/keys128/keys256), serialized keys (serialized/prealloc_serialized and their nullable
+    /// forms) and nullable fixed-width keys (nullable_key32/64, nullable_keys128/256); single string/FixedString
+    /// and LowCardinality keys are not covered yet.
+    /// This is an internal data-structure choice only: results are identical to the regular path, so - like the
+    /// key8/key16/.../keys256 selection above - it is unconditional rather than gated by a setting.
+    if (params.aggregates_size == 0)
+    {
+        using Type = AggregatedDataVariants::Type;
+        switch (method_chosen)
+        {
+            case Type::key32:   method_chosen = Type::key32_void;   break;
+            case Type::key64:   method_chosen = Type::key64_void;   break;
+            case Type::keys32:  method_chosen = Type::keys32_void;  break;
+            case Type::keys64:  method_chosen = Type::keys64_void;  break;
+            case Type::keys128: method_chosen = Type::keys128_void; break;
+            case Type::keys256: method_chosen = Type::keys256_void; break;
+            case Type::serialized:                   method_chosen = Type::serialized_void;                   break;
+            case Type::nullable_serialized:          method_chosen = Type::nullable_serialized_void;          break;
+            case Type::prealloc_serialized:          method_chosen = Type::prealloc_serialized_void;          break;
+            case Type::nullable_prealloc_serialized: method_chosen = Type::nullable_prealloc_serialized_void; break;
+            case Type::nullable_key32:   method_chosen = Type::nullable_key32_void;   break;
+            case Type::nullable_key64:   method_chosen = Type::nullable_key64_void;   break;
+            case Type::nullable_keys128: method_chosen = Type::nullable_keys128_void; break;
+            case Type::nullable_keys256: method_chosen = Type::nullable_keys256_void; break;
+            default: break;
+        }
+    }
+
     /// See `Params::aggregation_in_order` and `method_chosen_for_in_order`: the `prealloc_serialized`
     /// method serializes the whole block's keys on state construction, which is pathological for the
     /// per-run in-order path, where a fresh state is constructed for every run of equal order-key
@@ -741,6 +772,10 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
             method_chosen_for_in_order = AggregatedDataVariants::Type::serialized;
         else if (method_chosen_for_in_order == AggregatedDataVariants::Type::nullable_prealloc_serialized)
             method_chosen_for_in_order = AggregatedDataVariants::Type::nullable_serialized;
+        else if (method_chosen_for_in_order == AggregatedDataVariants::Type::prealloc_serialized_void)
+            method_chosen_for_in_order = AggregatedDataVariants::Type::serialized_void;
+        else if (method_chosen_for_in_order == AggregatedDataVariants::Type::nullable_prealloc_serialized_void)
+            method_chosen_for_in_order = AggregatedDataVariants::Type::nullable_serialized_void;
     }
 
     /// TODO(ab): HashMethodSingleLowCardinalityColumn uses a hardcoded internal cache,
@@ -1167,7 +1202,83 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", result.sizeWithoutOverflowRow());
 }
 
+/// Register each key's presence, without building any aggregate state. This is the whole of the work for a
+/// set method, and it is also the fast path a map method takes when it happens to have no aggregates - there
+/// the cell's mapped value is set to a non-null dummy, so the existing "is this cell occupied" checks still
+/// see it as set.
 template <bool prefetch, typename Method, typename State>
+void NO_INLINE Aggregator::executeImplBatchNoAggregates(
+    Method & method, State & state, Arena * aggregates_pool, size_t row_begin, size_t row_end, bool all_keys_are_const) const
+{
+    using KeyHolder = decltype(state.getKeyHolder(0, std::declval<Arena &>()));
+
+    /// During processing of row #i we will prefetch HashTable cell for row #(i + prefetch_look_ahead).
+    PrefetchingHelper prefetching;
+    size_t prefetch_look_ahead = PrefetchingHelper::getInitialLookAheadValue();
+
+    /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
+    [[maybe_unused]] AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
+
+    auto emplace = [&](size_t row)
+    {
+        // For some methods we simply don't have a set counterpart, so a map method is used.
+        // Thus we have to set a `mapped` even though it will be unused.
+        if constexpr (State::has_mapped)
+            state.emplaceKey(method.data, row, *aggregates_pool).setMapped(place);
+        else
+            state.emplaceKey(method.data, row, *aggregates_pool);
+    };
+
+    if (all_keys_are_const)
+    {
+        emplace(0);
+        return;
+    }
+
+    /// For all rows.
+    for (size_t i = row_begin; i < row_end; ++i)
+    {
+        if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
+        {
+            if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
+                prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
+
+            if (i + prefetch_look_ahead < row_end)
+            {
+                auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
+                method.data.prefetch(std::move(key_holder));
+            }
+        }
+
+        emplace(i);
+    }
+}
+
+/// A set method has no aggregate states at all, so the batch never gets past registering the keys.
+template <bool prefetch, typename Method, typename State>
+requires SetAggregationState<State>
+void NO_INLINE Aggregator::executeImplBatch(
+    Method & method,
+    State & state,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction *,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    bool,
+    AggregateDataPtr) const
+{
+    chassert(params.aggregates_size == 0);
+
+    if (no_more_keys)
+        return;
+
+    executeImplBatchNoAggregates<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
+}
+
+template <bool prefetch, typename Method, typename State>
+requires MapAggregationState<State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
     State & state,
@@ -1192,32 +1303,7 @@ void NO_INLINE Aggregator::executeImplBatch(
         if (no_more_keys)
             return;
 
-        /// This pointer is unused, but the logic will compare it for nullptr to check if the cell is set.
-        AggregateDataPtr place = reinterpret_cast<AggregateDataPtr>(0x1);
-        if (all_keys_are_const)
-        {
-            state.emplaceKey(method.data, 0, *aggregates_pool).setMapped(place);
-        }
-        else
-        {
-            /// For all rows.
-            for (size_t i = row_begin; i < row_end; ++i)
-            {
-                if constexpr (prefetch && HasPrefetchMemberFunc<decltype(method.data), KeyHolder>)
-                {
-                    if (i == row_begin + PrefetchingHelper::iterationsToMeasure())
-                        prefetch_look_ahead = prefetching.calcPrefetchLookAhead();
-
-                    if (i + prefetch_look_ahead < row_end)
-                    {
-                        auto && key_holder = state.getKeyHolder(i + prefetch_look_ahead, *aggregates_pool);
-                        method.data.prefetch(std::move(key_holder));
-                    }
-                }
-
-                state.emplaceKey(method.data, i, *aggregates_pool).setMapped(place);
-            }
-        }
+        executeImplBatchNoAggregates<prefetch>(method, state, aggregates_pool, row_begin, row_end, all_keys_are_const);
         return;
     }
 
@@ -2119,7 +2205,18 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     return AggregatedChunk{std::move(chunk), bucket};
 }
 
+/// `bucket_top_k` ranks groups by a lone `count()`, which a set method cannot have - the plan only sets it
+/// for an aggregation whose sole output is that count. The call site tests it at run time, so this overload
+/// is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
+requires SetAggregationMethod<Method>
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *) const
+{
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
+}
+
+template <typename Method>
+requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const
 {
@@ -2559,6 +2656,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
     chassert(std::has_single_bit(num_partitions));
     const size_t partition_mask = num_partitions - 1;
 
+    /// Set methods (GROUP BY without aggregate functions) have no aggregate states, so merging a source
+    /// cell into the destination is just inserting its key - there is nothing to adopt, merge or destroy.
+    static constexpr bool is_void_mapped = std::is_void_v<typename Method::Mapped>;
+
     PaddedPODArray<AggregateDataPtr> dst_places;
     PaddedPODArray<AggregateDataPtr> src_places;
 
@@ -2581,16 +2682,25 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
         src_data = nullptr;
     };
 
-    auto merge_cell = [&](const auto & key, AggregateDataPtr & src_data, size_t hash_value)
+    auto merge_cell = [&](const auto & key, [[maybe_unused]] auto && src_data, size_t hash_value)
     {
-        /// A source state can be null if its creation once failed mid-way (see `destroyImpl`).
-        if (!src_data)
-            return;
-
         typename Method::Data::LookupResult it;
         bool inserted = false;
-        dst_method.data.emplace(key, it, inserted, hash_value);
-        adopt_or_collect(inserted, it->getMapped(), src_data);
+
+        if constexpr (is_void_mapped)
+        {
+            /// `src_data` is the cell's `VoidMapped` placeholder - the key union is the whole merge.
+            dst_method.data.emplace(key, it, inserted, hash_value);
+        }
+        else
+        {
+            /// A source state can be null if its creation once failed mid-way (see `destroyImpl`).
+            if (!src_data)
+                return;
+
+            dst_method.data.emplace(key, it, inserted, hash_value);
+            adopt_or_collect(inserted, it->getMapped(), src_data);
+        }
     };
 
     auto flush_merges = [&]
@@ -2618,6 +2728,10 @@ void NO_INLINE Aggregator::mergeSingleLevelPartitionImpl(
             {
                 dst_table.hasNullKeyData() = true;
                 dst_table.getNullKeyData() = src_table.getNullKeyData();
+            }
+            else if constexpr (is_void_mapped)
+            {
+                /// The null group carries no state: its presence in the destination is all there is.
             }
             else if (is_simple_count)
             {
@@ -2755,7 +2869,31 @@ void Aggregator::disableMinMaxOptimizationForFixedHashMaps(ManyAggregatedDataVar
 }
 
 
+/// A set method has no aggregate states: it never takes the inline-count path of the map version below,
+/// and has no compiled aggregate functions either, so converting its table to chunks only emits the keys.
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+Chunks
+Aggregator::convertToBlockImpl(Method & method, Table & data, Arena *, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const
+{
+    if (data.empty())
+    {
+        auto && out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, rows);
+        Chunks result;
+        result.emplace_back(finalizeChunk(params, std::move(out_cols), final));
+        return result;
+    }
+
+    Chunks res = convertToBlockImplKeysOnly(method, data, aggregates_pools, final, return_single_block);
+
+    /// In order to release memory early.
+    data.clearAndShrink();
+
+    return res;
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 Chunks
 Aggregator::convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final,size_t rows, bool return_single_block) const
 {
@@ -3054,6 +3192,75 @@ Chunk Aggregator::insertResultsIntoColumns(
         std::rethrow_exception(exception);
 
     return finalizeChunk(params,std::move(out_cols), /* final */ true);
+}
+
+/// Converting a set method's table to chunks is only a matter of emitting the keys. It has no aggregate
+/// states, so `final` changes nothing about the rows produced - it only selects the header that
+/// `prepareOutputBlockColumns` and `finalizeChunk` build - and one function covers both, where the map
+/// methods need `convertToBlockImplFinal` and `convertToBlockImplNotFinal` separately.
+template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+Chunks Aggregator::convertToBlockImplKeysOnly(
+    Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const
+{
+    /// +1 for nullKeyData, if `data` doesn't have it - not a problem, just some memory for one excessive row will be preallocated
+    const size_t max_block_size = (return_single_block ? data.size() : std::min(params.max_block_size, data.size())) + 1;
+
+    std::optional<OutputBlockColumns> out_cols;
+    std::optional<Sizes> shuffled_key_sizes;
+    size_t rows_in_current_block = 0;
+    Chunks chunks;
+
+    auto init_out_cols = [&]()
+    {
+        out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, aggregates_pools, final, max_block_size);
+
+        /// The NULL group lives outside the cells; it carries no state to insert alongside its key.
+        if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        {
+            if (data.hasNullKeyData())
+            {
+                out_cols->raw_key_columns[0]->insertDefault();
+                ++rows_in_current_block;
+                data.hasNullKeyData() = false;
+            }
+        }
+
+        shuffled_key_sizes = method.shuffleKeyColumns(out_cols->raw_key_columns, key_sizes);
+    };
+
+    // should be invoked at least once, because null data might be the only content of the `data`
+    init_out_cols();
+
+    data.forEachValue(
+        [&](const auto & key)
+        {
+            if (!out_cols.has_value())
+                init_out_cols();
+
+            const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
+            IColumn::SerializationSettings serialization_settings{
+                .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
+            method.insertKeyIntoColumns(key, out_cols->raw_key_columns, key_sizes_ref, &serialization_settings);
+
+            ++rows_in_current_block;
+            if (!return_single_block && rows_in_current_block >= max_block_size)
+            {
+                chunks.emplace_back(finalizeChunk(params, std::move(out_cols.value()), final));
+                out_cols.reset();
+                rows_in_current_block = 0;
+            }
+        });
+
+    if (return_single_block)
+    {
+        chunks.emplace_back(finalizeChunk(params, std::move(out_cols).value(), final));
+        return chunks;
+    }
+
+    if (out_cols.has_value())
+        chunks.emplace_back(finalizeChunk(params, std::move(out_cols.value()), final));
+    return chunks;
 }
 
 template <typename Method, typename Table>
@@ -3531,6 +3738,23 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 }
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataImpl(
+    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
+    const
+{
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    if (prefetch)
+        table_src.template mergeToViaEmplace<true>(table_dst);
+    else
+        table_src.template mergeToViaEmplace<false>(table_dst);
+    table_src.clearAndShrink();
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
     bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
@@ -3627,6 +3851,18 @@ void NO_INLINE Aggregator::mergeDataImpl(
 
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
+    Table & table_dst, AggregatedDataWithoutKey &, Table & table_src, Arena * arena) const
+{
+    /// What separates the two for a map method is where the states of the refused keys go: here into the
+    /// overflow row, in `mergeDataOnlyExistingKeysImpl` nowhere. A set method has no states, so the overflow
+    /// row would receive nothing and the two are the same operation.
+    mergeDataOnlyExistingKeysImpl<Method, Table>(table_dst, table_src, arena);
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
     Table & table_dst,
     AggregatedDataWithoutKey & overflows,
@@ -3672,6 +3908,22 @@ void NO_INLINE Aggregator::mergeDataNoMoreKeysImpl(
 }
 
 template <typename Method, typename Table>
+requires SetAggregationMethod<Method>
+void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(Table & table_dst, Table & table_src, Arena * arena) const
+{
+    /// The NULL group is carried over as the map version does: it lives outside the cells, so the "no more
+    /// keys" cutoff does not apply to it and dropping it would lose a group the query is meant to return.
+    if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
+        mergeDataNullKey<Method, Table>(table_dst, table_src, arena);
+
+    /// A set method has no aggregate states, so the keys already in dst stay and the keys only in src are
+    /// dropped - nothing to merge. The source is still consumed: releasing it here is what keeps the tables
+    /// of the threads not yet merged from being held until the whole merge finishes.
+    table_src.clearAndShrink();
+}
+
+template <typename Method, typename Table>
+requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataOnlyExistingKeysImpl(
     Table & table_dst,
     Table & table_src,
@@ -4028,7 +4280,35 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     return non_empty_data;
 }
 
+/// A set method has no aggregate states, so merging a partial block back into the table is only a matter
+/// of re-registering each key's presence - none of the state building of the map version applies.
 template <typename State, typename Table>
+requires SetAggregationState<State>
+void NO_INLINE Aggregator::mergeStreamsImplCase(
+    Arena * aggregates_pool,
+    State & state,
+    Table & data,
+    bool no_more_keys,
+    AggregateDataPtr,
+    size_t row_begin,
+    size_t row_end,
+    const AggregateColumnsConstData &,
+    std::atomic<bool> &,
+    Arena * arena_for_keys) const
+{
+    /// With `no_more_keys` the keys that are not already there are dropped, so there is nothing to insert.
+    if (no_more_keys)
+        return;
+
+    if (!arena_for_keys)
+        arena_for_keys = aggregates_pool;
+
+    for (size_t i = row_begin; i < row_end; ++i)
+        state.emplaceKey(data, i, *arena_for_keys); /// NOLINT(clang-analyzer-core.NonNullParamChecker)
+}
+
+template <typename State, typename Table>
+requires MapAggregationState<State>
 void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * aggregates_pool,
     State & state,
@@ -4042,6 +4322,7 @@ void NO_INLINE Aggregator::mergeStreamsImplCase(
     Arena * arena_for_keys) const
 {
     chassert(!is_simple_count);
+
     std::unique_ptr<AggregateDataPtr[]> places(new AggregateDataPtr[row_end]);
 
     if (!arena_for_keys)
@@ -4186,7 +4467,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
-            merge_count_variant(state);
+            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
+            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
+            /// its body reads the count out of a mapped slot that a set cell does not have.
+            if constexpr (MapAggregationMethod<Method>)
+                merge_count_variant(state);
         }
         else
         {
@@ -4210,7 +4495,11 @@ void NO_INLINE Aggregator::mergeStreamsImpl(
         typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
         if (is_simple_count)
         {
-            merge_count_variant(state);
+            /// A set method has no aggregates, so it never sets `is_simple_count` and never reaches this.
+            /// Guarding the call rather than the lambda keeps the lambda from being instantiated for one -
+            /// its body reads the count out of a mapped slot that a set cell does not have.
+            if constexpr (MapAggregationMethod<Method>)
+                merge_count_variant(state);
         }
         else
         {
@@ -4537,6 +4826,9 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
 
 #define APPLY_FOR_VARIANTS_THAT_MAY_USE_BETTER_HASH_FUNCTION(M) \
         M(key64)                          \
+        M(key64_void)                     \
+        M(keys128_void)                   \
+        M(keys256_void)                   \
         M(key_string)                     \
         M(key_fixed_string)               \
         M(keys128)                        \
@@ -4545,9 +4837,16 @@ Aggregator::AggregatedChunk Aggregator::mergeBlocks(
         M(nullable_serialized)            \
         M(prealloc_serialized)            \
         M(nullable_prealloc_serialized)   \
+        M(serialized_void)                     \
+        M(nullable_serialized_void)            \
+        M(prealloc_serialized_void)            \
+        M(nullable_prealloc_serialized_void)   \
         M(nullable_key64)                 \
         M(nullable_keys128)               \
         M(nullable_keys256)               \
+        M(nullable_key64_void)            \
+        M(nullable_keys128_void)          \
+        M(nullable_keys256_void)          \
 
 #define M(NAME) \
     if (merge_method == AggregatedDataVariants::Type::NAME) \
