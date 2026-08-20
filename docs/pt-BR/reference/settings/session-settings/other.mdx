@@ -16,6 +16,16 @@ import { CloudOnlyBadge } from "/snippets/pt-BR/components/CloudOnlyBadge/CloudO
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="adaptive_aggregator_freeze_threshold">
+  ## adaptive_aggregator_freeze_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16384" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "16384"},{"label": "Nova configuração para definir o número de chaves a partir do qual o agregador adaptativo (`enable_adaptive_aggregator`) congela a tabela hash local de uma thread."}]}]} />
+
+O número de chaves a partir do qual o agregador adaptativo congela a tabela hash local de uma thread (consulte `enable_adaptive_aggregator`). Valores menores mantêm as tabelas congeladas na cache, enquanto valores maiores permitem que absorvam mais chaves frequentes. O valor 0 congela as tabelas na primeira oportunidade, fazendo com que o algoritmo se comporte de forma semelhante ao agregador com sharding (`enable_sharding_aggregator`): cada chave é roteada pelo seu hash e agregada por um único proprietário, mas apenas na fase de merge, em vez de ser trocada entre threads durante a varredura.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -149,6 +159,16 @@ Valor padrão no Cloud: `1`.
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Valida checksums durante a leitura. Ela vem habilitada por padrão e deve estar sempre habilitada em produção. Não se espera nenhum benefício ao desabilitar essa configuração. Ela só deve ser usada para experimentos e benchmarks. A configuração se aplica apenas a tabelas da família MergeTree. Checksums são sempre validados para outros motores de tabela e ao receber dados pela rede.
+
+<div id="compression">
+  ## compressão
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para aplicar compressão genérica ao corpo da resposta."}]}]} />
+
+Aplica compressão genérica ao corpo da resposta, por exemplo, `compression=gz`. Observe que ela é independente de `Content-Encoding` (compressão HTTP) e do parâmetro legado `compress` (compressão nativa do ClickHouse). Especificar no caminho da URL uma extensão de arquivo compactado é equivalente.
+
+Esta é uma configuração da interface HTTP que define o formato da resposta: ela é processada antes da execução da consulta (os buffers de resposta são configurados previamente). Portanto, deve ser fornecida pelo parâmetro de URL HTTP, pela extensão de arquivo no caminho da URL ou por um perfil de usuário, e não por uma cláusula `SETTINGS` na consulta (na qual não tem efeito e é rejeitada).
 
 <div id="connection_pool_max_wait_ms">
   ## connection_pool_max_wait_ms
@@ -568,6 +588,22 @@ Estratégia de partição padrão para motores semelhantes a arquivos. Aplicada 
 
 Número máximo de prefetches. Zero significa sem limite. A configuração `filesystem_prefetches_max_memory_usage` é mais recomendada se você quiser limitar o número de prefetches
 
+<div id="filter">
+  ## filter
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para adicionar uma cláusula WHERE em torno de uma consulta."}]}]} />
+
+Adiciona uma cláusula `WHERE` à consulta, encapsulando-a em uma subconsulta. Vários filtros são combinados com AND. A interface HTTP permite vários parâmetros de URL `filter`, que são combinados com AND, na ordem em que aparecem, e com o valor dessa configuração.
+
+Essa é uma configuração de construção de consultas aplicada pelo engine à consulta convertida em uma tabela derivada. Portanto, ela é composta com a consulta existente e funciona em todos os protocolos: pode ser fornecida por meio de um parâmetro de URL HTTP, de uma cláusula `SETTINGS` na consulta ou de um perfil de usuário.
+
+Ela modifica consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
+
+<Danger>
+  `filter` **não** é um mecanismo de controle de acesso e não deve ser usado como substituto de [políticas de segurança em nível de linha](/pt-BR/concepts/features/security/access-rights#row-policy-management) ou da configuração `additional_table_filters`. Ele apenas adiciona uma cláusula `WHERE` à subconsulta que encapsula a consulta; portanto, os dados subjacentes ainda são lidos e processados antes da aplicação do filtro — uma consulta pode observar as linhas excluídas pelo filtro durante o processamento (por exemplo, com `throwIf` para vazar informações pelo caminho de erro). Use segurança em nível de linha ou `additional_table_filters` quando o objetivo for restringir quais linhas um usuário pode acessar.
+</Danger>
+
 <div id="final">
   ## final
 </div>
@@ -692,6 +728,14 @@ ORDER BY tuple()
 SETTINGS index_granularity = 8192 │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
+
+<div id="format">
+  ## format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para substituir o FORMAT da consulta, tanto na entrada quanto na saída."}]}]} />
+
+Substitui o `FORMAT` da consulta, tanto na entrada quanto na saída. Tem precedência sobre o formato especificado na consulta e na extensão do arquivo. As configurações mais específicas `input_format` e `output_format` têm precedência sobre esta configuração genérica `format` nas respectivas direções.
 
 <div id="framing_output_format">
   ## framing_output_format
@@ -877,6 +921,14 @@ Aplica-se apenas à profundidade de subconsulta = 0. Subconsultas e INSERT INTO 
 Se a construção no nível superior for UNION, &#39;ORDER BY rand()&#39; é injetado em todos os filhos de forma independente.
 Útil apenas para testes e desenvolvimento (a ausência de ORDER BY é uma fonte de resultados de consulta não determinísticos).
 
+<div id="input_format">
+  ## input_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para substituir o formato de entrada da consulta."}]}]} />
+
+Substitui o formato de entrada da consulta. Tem precedência sobre o formato especificado na consulta.
+
 <div id="interactive_delay">
   ## interactive_delay
 </div>
@@ -917,14 +969,20 @@ Liste todos os nomes dos elementos de literais Tuple grandes em seus nomes de co
   ## limit
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Define o número máximo de linhas a retornar no resultado da consulta. Ele ajusta o valor definido pela cláusula [LIMIT](/pt-BR/reference/statements/select/limit), de modo que o limite especificado na consulta não possa exceder o limite definido por esta configuração.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Tipo alterado de UInt64 para Float para oferecer suporte a valores negativos e fracionários, encaminhados ao suporte nativo do ClickHouse a `LIMIT` negativo\/fracionário."}]}]} />
 
-Possíveis valores:
+Define o número máximo de linhas a serem retornadas pelo resultado da consulta. Ajusta o valor definido pela cláusula [LIMIT](/pt-BR/reference/statements/select/limit). O valor é encaminhado a `LIMIT` e aceita tudo o que `LIMIT` aceita, incluindo valores negativos (contados a partir do fim do resultado) e frações em `(0, 1)` (interpretadas como uma proporção do resultado).
+
+Valores possíveis:
 
 * 0 — O número de linhas não é limitado.
-* Inteiro positivo.
+* Inteiro positivo — número exato de linhas.
+* Inteiro negativo — retorna as últimas N linhas.
+* Número real no intervalo aberto `(0, 1)` — retorna essa fração do resultado.
+
+Essa configuração afeta consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de escrita (`INSERT … SELECT`, `CREATE … AS SELECT`), ela só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
 
 <div id="load_marks_asynchronously">
   ## load_marks_asynchronously
@@ -1026,14 +1084,18 @@ Normaliza os nomes das funções para suas formas canônicas
   ## offset
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="Double" default_value="0" />
 
-Define o número de linhas a serem ignoradas antes de começar a retornar linhas da consulta. Ele ajusta o offset definido pela cláusula [OFFSET](/pt-BR/reference/statements/select/offset), para que esses dois valores sejam somados.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Tipo alterado de UInt64 para Float para oferecer suporte a valores negativos e fracionários, repassados ao suporte nativo do ClickHouse a `OFFSET` negativo\/fracionário."}]}]} />
+
+Define o número de linhas a ignorar antes de começar a retornar linhas da consulta. Ajusta o deslocamento definido pela cláusula [OFFSET](/pt-BR/reference/statements/select/offset). O valor é repassado para `OFFSET` e aceita tudo o que `OFFSET` aceita, incluindo valores negativos e frações em `(0, 1)`.
 
 Valores possíveis:
 
 * 0 — Nenhuma linha é ignorada.
 * Inteiro positivo.
+* Inteiro negativo.
+* Um número real no intervalo aberto `(0, 1)` — ignora essa fração do resultado.
 
 **Exemplo**
 
@@ -1061,6 +1123,42 @@ Resultado:
 │ 109 │
 └─────┘
 ```
+
+Esta configuração afeta consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), ela só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou de uma sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
+
+<div id="order">
+  ## order
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para adicionar uma cláusula ORDER BY em torno de uma consulta."}]}]} />
+
+Adiciona uma cláusula `ORDER BY` à consulta, encapsulando-a em uma subconsulta. Aceita uma lista arbitrária de expressões.
+
+Esta é uma configuração de construção de consultas aplicada pelo mecanismo à consulta analisada sintaticamente (encapsulando-a como uma tabela derivada). Portanto, ela se combina com a consulta existente e funciona em todos os protocolos: pode ser fornecida por meio de um parâmetro de URL HTTP, de uma cláusula `SETTINGS` na consulta ou de um perfil de usuário.
+
+Ela define a ordenação de consultas `SELECT` / `UNION` que produzem resultados. Para uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou de uma sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
+
+<div id="output_format">
+  ## output_format
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para substituir o formato de saída da consulta."}]}]} />
+
+Substitui o formato de saída da consulta. Tem precedência sobre o formato especificado na consulta, na extensão do arquivo ou por meio de `default_format`.
+
+<div id="page">
+  ## página
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para respostas HTTP paginadas, equivalente a offset = limit * (page - 1). Float para aceitar valores negativos ou fracionários (repassados ao SQL `LIMIT`\/`OFFSET`)."}]}]} />
+
+Define o número da página dos resultados paginados. Equivale a `offset = limit * (page - 1)`. Só pode ser especificado quando `limit` está definido e `offset` não está. As páginas são indexadas a partir de 1. Oferece o mesmo suporte a valores negativos ou fracionários que `limit` e `offset`.
+
+Esta é uma configuração de construção de consultas aplicada pelo mecanismo à consulta analisada sintaticamente (encapsulando-a como uma tabela derivada). Portanto, ela se combina à consulta existente e funciona em todos os protocolos: pode ser fornecida pelo parâmetro de URL HTTP, por uma cláusula `SETTINGS` na consulta ou por um perfil de usuário.
+
+Ela molda consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), ela só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
 
 <div id="paimon_target_snapshot_id">
   ## paimon_target_snapshot_id
@@ -1418,6 +1516,18 @@ Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#9
 
 Ativa o algoritmo de filtragem em lote para índices. A expectativa é que ele seja sempre superior, mas mantemos esta configuração por compatibilidade e controle.
 
+<div id="select">
+  ## select
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para encapsular uma consulta em `SELECT <expr_list> FROM (<query>)`."}]}]} />
+
+Encapsula a consulta como uma subconsulta com uma lista explícita de expressões `SELECT`. Quando não está vazia, a consulta que produz resultados é encapsulada como `SELECT <expr_list> FROM (<query>)`.
+
+Esta é uma configuração de construção de consultas aplicada pelo mecanismo à consulta convertida em sua representação interna (encapsulando-a como uma tabela derivada). Portanto, ela se combina à consulta existente e funciona em todos os protocolos: pode ser fornecida pelo parâmetro de URL HTTP, por uma cláusula `SETTINGS` na consulta ou por um perfil de usuário.
+
+Ela define a estrutura de consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), ela só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
+
 <div id="select_sequential_consistency">
   ## select_sequential_consistency
 </div>
@@ -1607,6 +1717,18 @@ Valores possíveis:
 
 * `basic` — Formato de bloco snappy do Hadoop. Compatível com arquivos lidos e gravados pelo Hadoop. Suporta leitura e gravação.
 * `framed` — Formato de framing do Snappy, o formato de streaming padrão definido pelo Google. Suporta leitura e gravação.
+
+<div id="sort">
+  ## sort
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nova configuração para adicionar uma cláusula ORDER BY simples em torno de uma consulta."}]}]} />
+
+Adiciona uma cláusula `ORDER BY` simples à consulta, encapsulando-a em uma subconsulta. Aceita uma lista separada por vírgulas de identificadores ou referências posicionais a colunas (inteiros positivos), com o prefixo opcional `+` (ASC) ou `-` (DESC). Exemplo: `sort=a,-b` ordena por `a` em ordem crescente e por `b` em ordem decrescente; `sort=1,-2` ordena pela primeira coluna em ordem crescente e pela segunda em ordem decrescente. Não pode ser combinado com `order`.
+
+Essa é uma configuração de construção de consultas aplicada pelo mecanismo à consulta convertida (encapsulando-a como uma tabela derivada). Portanto, ela é combinada com a consulta existente e funciona em todos os protocolos: pode ser fornecida pelo parâmetro de URL HTTP, por uma cláusula `SETTINGS` na consulta ou por um perfil de usuário.
+
+Ela se aplica a consultas `SELECT` / `UNION` que produzem resultados. Em uma consulta de gravação (`INSERT … SELECT`, `CREATE … AS SELECT`), só tem efeito quando o `SELECT` de origem a inclui em sua própria cláusula `SETTINGS`; um valor herdado de um perfil ou sessão, ou definido na própria instrução `INSERT` / `CREATE`, não é propagado para o `SELECT` de origem — a mesma regra de não propagação aplicável a qualquer outra configuração.
 
 <div id="sort_overflow_mode">
   ## sort_overflow_mode
