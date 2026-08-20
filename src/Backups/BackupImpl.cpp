@@ -249,34 +249,42 @@ void BackupImpl::open()
         lock_file_before_first_file_checked = false;
         writing_finalized = false;
 
-#if CLICKHOUSE_CLOUD
-        if (params.resume)
-            BackupResumer(*this, *params.resume).openDestination();
-        else
-#endif
+        /// `open` runs from the constructor, so a throw anywhere below leaves no backup behind for
+        /// anything else to clean up. The lock must not outlive the attempt that created it: it fences
+        /// the destination against every later one, which cannot match it either, because a retry picks
+        /// a fresh backup UUID. That covers opening the archive as much as taking the lock.
+        try
         {
-            LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
-            if (!uuid)
-                uuid = UUIDHelpers::generateV4();
-
-            /// Check that we can write a backup there and create the lock file to own this destination.
-            checkBackupDoesntExist();
-            if (!params.is_internal_backup)
-                createLockFile();
-            try
+#if CLICKHOUSE_CLOUD
+            if (params.resume)
+                BackupResumer(*this, *params.resume).openDestination();
+            else
+#endif
             {
+                LOG_INFO(log, "Writing backup: {}", backup_name_for_logging);
+                if (!uuid)
+                    uuid = UUIDHelpers::generateV4();
+
+                /// Check that we can write a backup there and create the lock file to own this destination.
+                checkBackupDoesntExist();
+                if (!params.is_internal_backup)
+                    createLockFile();
                 checkLockFile(true);
             }
-            catch (...)
-            {
-                if (!params.is_internal_backup)
-                    tryRemoveOwnLockFile();
-                throw;
-            }
+
+            if (use_archive)
+                openArchive();
+        }
+        catch (...)
+        {
+            if (!params.is_internal_backup)
+                tryRemoveOwnLockFile();
+            throw;
         }
     }
 
-    if (use_archive)
+    /// A write opens the archive inside the guard above, where a failure still removes the lock.
+    if (use_archive && open_mode != OpenMode::WRITE)
         openArchive();
 
     if (open_mode == OpenMode::READ || open_mode == OpenMode::UNLOCK)
