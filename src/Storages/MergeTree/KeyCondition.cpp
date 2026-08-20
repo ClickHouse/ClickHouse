@@ -2987,14 +2987,24 @@ public:
 /// element type must compare the same way as it sorts inside the tuple column, so `Nullable` and
 /// `LowCardinality` elements are excluded (a `NULL` inside a `Range` bound would be taken for an
 /// unbounded side).
+/// Whether the first element of the tuple can be analyzed through the monotonic-functions chain.
+/// The analysis maps `Range` bounds of the tuple to bounds of the element, which is only sound
+/// when the element type compares the same way as it sorts inside the tuple column; `Nullable`
+/// and `LowCardinality` elements are excluded (a `NULL` inside a `Range` bound would be taken
+/// for an unbounded side).
+static bool firstTupleElementIsAnalyzable(const DataTypeTuple & tuple_type)
+{
+    if (tuple_type.getElements().empty())
+        return false;
+
+    const auto & first_element_type = tuple_type.getElements()[0];
+    return !first_element_type->isNullable() && !first_element_type->lowCardinality() && first_element_type->isComparable();
+}
+
 static bool tupleElementTakesFirstElement(const ColumnWithTypeAndName & index_arg, const IDataType & key_type)
 {
     const auto * tuple_type = typeid_cast<const DataTypeTuple *>(&key_type);
-    if (!tuple_type || tuple_type->getElements().empty())
-        return false;
-
-    const auto & first_element_type = tuple_type->getElements()[0];
-    if (first_element_type->isNullable() || first_element_type->lowCardinality() || !first_element_type->isComparable())
+    if (!tuple_type || !firstTupleElementIsAnalyzable(*tuple_type))
         return false;
 
     /// Constants inside an `ActionsDAG` are often `ColumnConst` of size 0; `ColumnConst`
@@ -3030,6 +3040,56 @@ DataTypePtr getArgumentTypeOfMonotonicFunction(const IFunctionBase & func)
 }
 
 
+std::optional<KeyCondition::TupleElementSubcolumn> KeyCondition::tryParseTupleElementSubcolumnOfKey(
+    const String & name, const BuildInfo & info) const
+{
+    const auto & sample_block = info.key_expr->getSampleBlock();
+
+    /// An element name can itself contain a dot, so try every split position.
+    for (size_t pos = name.find('.'); pos != String::npos; pos = name.find('.', pos + 1))
+    {
+        String column_name = name.substr(0, pos);
+        String element_name = name.substr(pos + 1);
+        if (element_name.empty())
+            continue;
+
+        auto it = key_columns.find(column_name);
+        if (it == key_columns.end() || !sample_block.has(column_name))
+            continue;
+
+        DataTypePtr type = sample_block.getByName(column_name).type;
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get());
+        if (!tuple_type)
+            continue;
+
+        std::optional<size_t> element_position;
+        bool is_numeric = std::all_of(element_name.begin(), element_name.end(), [](char c) { return c >= '0' && c <= '9'; });
+        if (is_numeric && element_name.size() <= 5)
+        {
+            /// The positional form is 1-based, e.g. "coord.1".
+            UInt64 index = 0;
+            for (char c : element_name)
+                index = index * 10 + (c - '0');
+            if (index >= 1 && index <= tuple_type->getElements().size())
+                element_position = index - 1;
+        }
+        else if (tuple_type->hasExplicitNames())
+        {
+            const auto & names = tuple_type->getElementNames();
+            for (size_t i = 0; i < names.size(); ++i)
+                if (names[i] == element_name)
+                    element_position = i;
+        }
+
+        if (!element_position)
+            continue;
+
+        return TupleElementSubcolumn{column_name, it->second, type, *element_position};
+    }
+
+    return {};
+}
+
 bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     const RPNBuilderTreeNode & node,
     const BuildInfo & info,
@@ -3041,9 +3101,11 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
 {
     std::vector<RPNBuilderFunctionTreeNode> chain_not_tested_for_monotonicity;
     DataTypePtr key_column_type;
+    bool first_tuple_element_subcolumn = false;
 
     if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(
-        node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type, chain_not_tested_for_monotonicity))
+        node, info, out_key_column_num, out_argument_num_of_space_filling_curve, key_column_type,
+        chain_not_tested_for_monotonicity, first_tuple_element_subcolumn))
         return false;
 
     /// Build every chain function against a `LowCardinality`-stripped key type so the chain
@@ -3053,6 +3115,27 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctions(
     /// `Bad cast` when fed the stripped column. Reachable via statistics part pruning, whose
     /// key columns keep their raw `LowCardinality` type.
     key_column_type = recursiveRemoveLowCardinality(key_column_type);
+
+    if (first_tuple_element_subcolumn)
+    {
+        /// The innermost node is a subcolumn read of the first element of a tuple-typed key
+        /// column (e.g. `p.x`); no `tupleElement` node exists in the tree, so prepend the
+        /// equivalent `tupleElement(key, 1)` chain link here.
+        auto func_builder = FunctionFactory::instance().tryGet("tupleElement", node.getTreeContext().getQueryContext());
+        if (!func_builder)
+            return false;
+
+        auto index_type = std::make_shared<DataTypeUInt8>();
+        ColumnWithTypeAndName const_arg{index_type->createColumnConst(1, Field(static_cast<UInt64>(1))), index_type, ""};
+        ColumnsWithTypeAndName arguments{{nullptr, key_column_type, ""}, const_arg};
+        auto func = func_builder->build(arguments);
+        if (!func)
+            return false;
+
+        key_column_type = func->getResultType();
+        out_functions_chain.push_back(
+            std::make_shared<FunctionFirstTupleElementOfKey>(func, const_arg, FunctionWithOptionalConstArg::Kind::RIGHT_CONST));
+    }
 
     for (auto it = chain_not_tested_for_monotonicity.rbegin(); it != chain_not_tested_for_monotonicity.rend(); ++it)
     {
@@ -3127,7 +3210,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     size_t & out_key_column_num,
     std::optional<size_t> & out_argument_num_of_space_filling_curve,
     DataTypePtr & out_key_column_type,
-    std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain)
+    std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain,
+    bool & out_first_tuple_element_subcolumn)
 {
     /** By itself, the key column can be a functional expression. for example, `intHash32(UserID)`.
       * Therefore, use the full name of the expression for search.
@@ -3143,6 +3227,22 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         out_key_column_num = it->second;
         out_key_column_type = sample_block.getByName(name).type;
         return true;
+    }
+
+    /// A subcolumn read of a tuple-typed key column: the analyzer plans access to an element of
+    /// a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` function call.
+    /// The first element is analyzable through the monotonic-functions chain (tuples are ordered
+    /// lexicographically); the caller prepends the equivalent `tupleElement(key, 1)` chain link.
+    if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(name, info))
+    {
+        const auto * tuple_type = typeid_cast<const DataTypeTuple *>(subcolumn->tuple_type.get());
+        if (subcolumn->element_position == 0 && tuple_type && firstTupleElementIsAnalyzable(*tuple_type))
+        {
+            out_key_column_num = subcolumn->key_column_num;
+            out_key_column_type = subcolumn->tuple_type;
+            out_first_tuple_element_subcolumn = true;
+            return true;
+        }
     }
 
     /** The case of space-filling curves.
@@ -3201,7 +3301,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
-                    out_functions_chain);
+                    out_functions_chain,
+                    out_first_tuple_element_subcolumn);
             }
             else if (function_node.getArgumentAt(1).isConstant())
             {
@@ -3211,7 +3312,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                     out_key_column_num,
                     out_argument_num_of_space_filling_curve,
                     out_key_column_type,
-                    out_functions_chain);
+                    out_functions_chain,
+                    out_first_tuple_element_subcolumn);
             }
         }
         else
@@ -3222,7 +3324,8 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
                 out_key_column_num,
                 out_argument_num_of_space_filling_curve,
                 out_key_column_type,
-                out_functions_chain);
+                out_functions_chain,
+                out_first_tuple_element_subcolumn);
         }
 
         return result;
@@ -3778,18 +3881,26 @@ bool KeyCondition::resolvePointCoordinateArguments(
         Field index;
     };
 
-    auto parse_tuple_element = [](const RPNBuilderTreeNode & node) -> std::optional<TupleElementAccess>
+    auto parse_tuple_element = [&](const RPNBuilderTreeNode & node) -> std::optional<TupleElementAccess>
     {
-        if (!node.isFunction())
-            return {};
-        auto function_node = node.toFunctionNode();
-        if (function_node.getFunctionName() != "tupleElement" || function_node.getArgumentsSize() != 2)
-            return {};
-        Field index_value;
-        DataTypePtr index_type;
-        if (!function_node.getArgumentAt(1).tryGetConstant(index_value, index_type))
-            return {};
-        return TupleElementAccess{function_node.getArgumentAt(0).getColumnName(), index_value};
+        if (node.isFunction())
+        {
+            auto function_node = node.toFunctionNode();
+            if (function_node.getFunctionName() != "tupleElement" || function_node.getArgumentsSize() != 2)
+                return {};
+            Field index_value;
+            DataTypePtr index_type;
+            if (!function_node.getArgumentAt(1).tryGetConstant(index_value, index_type))
+                return {};
+            return TupleElementAccess{function_node.getArgumentAt(0).getColumnName(), index_value};
+        }
+
+        /// A subcolumn read of a tuple-typed key column: the analyzer plans access to an element
+        /// of a named tuple (`p.x`) as a subcolumn input instead of a `tupleElement` call.
+        if (auto subcolumn = tryParseTupleElementSubcolumnOfKey(node.getColumnName(), info))
+            return TupleElementAccess{subcolumn->column_name, Field(static_cast<UInt64>(subcolumn->element_position + 1))};
+
+        return {};
     };
 
     auto x_access = parse_tuple_element(x_argument);

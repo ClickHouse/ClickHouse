@@ -535,13 +535,32 @@ private:
         MonotonicFunctionsChain & out_functions_chain,
         bool assume_function_monotonicity = false);
 
+    /// `out_first_tuple_element_subcolumn` is set when the innermost node is a subcolumn read of
+    /// the first element of a tuple-typed key column (see `tryParseTupleElementSubcolumnOfKey`);
+    /// the caller must then prepend the equivalent `tupleElement(key, 1)` chain link, because no
+    /// function node exists in the tree for it.
     bool isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         const RPNBuilderTreeNode & node,
         const BuildInfo & info,
         size_t & out_key_column_num,
         std::optional<size_t> & out_argument_num_of_space_filling_curve,
         DataTypePtr & out_key_column_type,
-        std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain);
+        std::vector<RPNBuilderFunctionTreeNode> & out_functions_chain,
+        bool & out_first_tuple_element_subcolumn);
+
+    /// If `name` is a subcolumn read of a tuple-typed key column - "p.x" for a key column `p` of
+    /// type Tuple(x Float64, y Float64), or the positional form "p.1" - returns the key column
+    /// name and number, the tuple type, and the 0-based element position. The analyzer plans
+    /// access to an element of a named tuple as such a subcolumn input instead of a
+    /// `tupleElement` function call.
+    struct TupleElementSubcolumn
+    {
+        String column_name;
+        size_t key_column_num;
+        DataTypePtr tuple_type;
+        size_t element_position;
+    };
+    std::optional<TupleElementSubcolumn> tryParseTupleElementSubcolumnOfKey(const String & name, const BuildInfo & info) const;
 
     bool extractMonotonicFunctionsChainFromKey(
         ContextPtr context,

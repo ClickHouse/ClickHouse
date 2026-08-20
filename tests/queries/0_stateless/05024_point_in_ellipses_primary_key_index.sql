@@ -81,3 +81,19 @@ SELECT trimLeft(explain) AS explain FROM (
 ) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%';
 
 DROP TABLE points_tuple;
+
+-- The point as the two named elements of a tuple-typed key column
+DROP TABLE IF EXISTS named_points;
+CREATE TABLE named_points (p Tuple(x Float64, y Float64)) ENGINE = MergeTree ORDER BY p SETTINGS index_granularity = 1000;
+
+INSERT INTO named_points SELECT (number, number) FROM numbers(100000);
+
+SELECT count() FROM named_points WHERE pointInPolygon((p.x, p.y), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)]);
+SELECT count() FROM named_points WHERE pointInPolygon((p.x, p.y), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)]) SETTINGS force_primary_key = 1;
+
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM named_points WHERE pointInPolygon((p.x, p.y), [(0, 0), (0, 25000), (25000, 25000), (25000, 0)])
+) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%';
+
+DROP TABLE named_points;
