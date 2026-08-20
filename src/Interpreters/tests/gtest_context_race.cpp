@@ -1,4 +1,6 @@
 #include <Interpreters/Context.h>
+#include <Access/AccessControl.h>
+#include <Access/SettingsProfile.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -233,8 +235,8 @@ TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
 /// Context::getWriteSettings() and a concurrent settings write.
 ///
 /// The writers this test exercises (`Context::setSetting` -> `setSettingWithLock`) hold
-/// Context::mutex exclusively, while both getters read ~130 settings through the unsynchronized
-/// `getSettingsRef()` accessor. A background thread with no query context resolves free
+/// Context::mutex exclusively, while the two getters read 56 settings between them through the
+/// unsynchronized `getSettingsRef()` accessor. A background thread with no query context resolves free
 /// `DB::getReadSettings()` to the global context, so it reads the same block a settings write
 /// mutates. `local_filesystem_read_method` is a `SettingFieldString`, so the reader can also
 /// observe a torn `std::string`.
@@ -305,6 +307,78 @@ TEST(Context, GetReadSettingsRace)
 
     writer.join();
     for (auto & t : readers)
+        t.join();
+}
+
+/// Test for a data race on the Settings block between Context::setDefaultProfiles() and a
+/// concurrent settings write.
+///
+/// `setDefaultProfiles` re-applies `applySettingsQuirks`, `adjustSettingsForMakeDistributedPlan`
+/// and `doSettingsSanityCheckClamp` to `*settings` after `setCurrentProfile` has released
+/// Context::mutex. `setCurrentProfile` already ran all three under the lock, so in a resolved
+/// profile the trailing pass changes nothing and only *reads* the settings it inspects -- which is
+/// why the concurrent thread here is a writer holding the mutex, not another reader.
+///
+/// `setCurrentProfile` orders this thread after every earlier writer, so the race window is the
+/// interval between that release and `makeBackgroundContext` taking the mutex again. The writer
+/// threads target `max_read_buffer_size` and three siblings, all read by
+/// `doSettingsSanityCheckClamp`, and stay below its clamp ceilings so the values survive.
+///
+/// `makeBackgroundContext` asserts on the process-wide static `background_context_instance`, so
+/// `setDefaultProfiles` can succeed at most once per binary: this is the only test that calls it,
+/// and it must not be repeated within one process.
+///
+/// This test only carries signal on a ThreadSanitizer build. On every other build it passes either
+/// way.
+TEST(Context, SetDefaultProfilesRace)
+{
+    auto context = Context::createCopy(getContext().context);
+
+    /// The fixture's AccessControl has no storage, so `default` would not resolve and
+    /// `setCurrentProfile` would throw `Settings profile 'default' not found`. An empty element list
+    /// is enough: the profile only has to resolve.
+    auto & access_control = context->getAccessControl();
+    access_control.addMemoryStorage("test_memory", /*allow_backup_=*/false);
+    auto profile = std::make_shared<SettingsProfile>();
+    profile->setName("default");
+    access_control.insert(profile);
+
+    /// No <background_profile>: that takes the branch of makeBackgroundContext which reuses the
+    /// system profile and needs no second profile to exist.
+    std::istringstream config_stream{"<clickhouse><default_profile>default</default_profile></clickhouse>"};
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(config_stream);
+
+    constexpr size_t num_writer_threads = 4;
+    std::atomic<bool> stop{false};
+    std::atomic<size_t> writes{0};
+
+    std::vector<std::thread> writers;
+    for (size_t i = 0; i < num_writer_threads; ++i)
+    {
+        writers.emplace_back([&context, &stop, &writes]
+        {
+            size_t iteration = 0;
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                const UInt64 size = ++iteration % 2 ? 1048576 : 2097152;
+                context->setSetting("max_read_buffer_size", Field(size));
+                context->setSetting("max_read_buffer_size_local_fs", Field(size));
+                context->setSetting("max_read_buffer_size_remote_fs", Field(size));
+                context->setSetting("prefetch_buffer_size", Field(size));
+                writes.fetch_add(4, std::memory_order_relaxed);
+            }
+        });
+    }
+
+    /// Let the writers reach steady state, so a write to each of the four addresses is in
+    /// ThreadSanitizer's shadow history when the unsynchronized pass reads them.
+    while (writes.load(std::memory_order_relaxed) < 10000)
+        std::this_thread::yield();
+
+    context->setDefaultProfiles(*config);
+
+    stop.store(true, std::memory_order_relaxed);
+    for (auto & t : writers)
         t.join();
 }
 
