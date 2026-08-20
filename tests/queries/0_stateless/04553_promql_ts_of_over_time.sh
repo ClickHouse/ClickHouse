@@ -68,6 +68,41 @@ echo "-- ts_of_max_over_time(up[3m]): timestamp of the maximum-value sample (lat
 echo "-- host1 max 30 @1700000000, host2 max 25 @1699999880, host3 constant -> latest tie @1700000000."
 promql_client -q "ts_of_max_over_time(up[3m])" | sort
 
+echo "-- Float32 sample values: timestamps still come back as exact Float64 Unix seconds"
+echo "-- (1699999940 and 1699999880 are not representable in Float32 and would round to multiples of 128)."
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
+CREATE TABLE ts32_data (id UUID, timestamp DateTime64(3, 'UTC'), value Float32) ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts32_tags (
+    id UUID,
+    metric_name LowCardinality(String),
+    tags Map(LowCardinality(String), String),
+    min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),
+    max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))
+ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
+CREATE TABLE ts32_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ts32 ENGINE = TimeSeries DATA ts32_data TAGS ts32_tags METRICS ts32_metrics;
+
+INSERT INTO ts32_tags VALUES
+    ('00000000-0000-0000-0000-000000000011', 'up', {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
+INSERT INTO ts32_data VALUES
+    ('00000000-0000-0000-0000-000000000011', toDateTime64(1699999880, 3, 'UTC'), 10),
+    ('00000000-0000-0000-0000-000000000011', toDateTime64(1699999940, 3, 'UTC'), 5),
+    ('00000000-0000-0000-0000-000000000011', toDateTime64(1700000000, 3, 'UTC'), 20);
+"
+
+promql_client32()
+{
+    $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 --dialect promql --promql_table ts32 --promql_evaluation_time 1700000000 "$@"
+}
+
+promql_client32 -q "ts_of_first_over_time(up[3m])"
+promql_client32 -q "ts_of_min_over_time(up[3m])"
+
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts32"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts32_data"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts32_tags"
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts32_metrics"
+
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_data"
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "DROP TABLE ts_tags"

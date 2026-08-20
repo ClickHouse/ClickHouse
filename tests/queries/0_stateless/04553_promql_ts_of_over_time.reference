@@ -18,3 +18,7 @@
 [('instance','host1')]	2023-11-14 22:13:20.000	1700000000
 [('instance','host2')]	2023-11-14 22:13:20.000	1699999880
 [('instance','host3')]	2023-11-14 22:13:20.000	1700000000
+-- Float32 sample values: timestamps still come back as exact Float64 Unix seconds
+-- (1699999940 and 1699999880 are not representable in Float32 and would round to multiples of 128).
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1699999880
+[('instance','host1')]	2023-11-14 22:13:20.000	1699999940

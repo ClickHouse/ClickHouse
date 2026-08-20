@@ -55,6 +55,19 @@ struct TimeSeriesBucketsHashTableGrower : public HashTableGrower<4>
 template <typename Bucket>
 using TimeSeriesBucketsMap = HashMap<UInt64, Bucket, TrivialHash, TimeSeriesBucketsHashTableGrower>;
 
+/// Uses `Traits::ResultType` when defined; otherwise falls back to `Traits::ValueType`.
+template <typename Traits, typename = void>
+struct TimeSeriesTraitsResultType
+{
+    using Type = typename Traits::ValueType;
+};
+
+template <typename Traits>
+struct TimeSeriesTraitsResultType<Traits, std::void_t<typename Traits::ResultType>>
+{
+    using Type = typename Traits::ResultType;
+};
+
 /// Base class for time series aggregate functions that map values to a grid specified by start timestamp, end timestamp, step and window.
 /// It implements the common logic for handling input data as either scalar timestamps and values or vectors of timestamps and values of
 /// equal sizes and adding the data to the grid buckets. The actual aggregation logic within buckets is implemented in derived classes.
@@ -70,9 +83,11 @@ public:
     using TimestampType = typename Traits::TimestampType;
     using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
+    using ResultType = typename TimeSeriesTraitsResultType<Traits>::Type;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
-    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecValueType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ResultType>;
 
     using Bucket = typename Traits::Bucket;
 
@@ -150,7 +165,7 @@ public:
         else
         {
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
             add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
         }
     }
@@ -348,7 +363,7 @@ protected:
         data_to.resize(old_size + grid_size);
         nulls_to.resize(old_size + grid_size);
 
-        ValueType * values = data_to.data() + old_size;
+        ResultType * values = data_to.data() + old_size;
         UInt8 * nulls = nulls_to.data() + old_size;
 
         const auto & buckets = data(place)->buckets;
@@ -440,7 +455,7 @@ private:
 
     static DataTypePtr createResultType()
     {
-        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ValueType>>()));
+        return std::make_shared<DataTypeArray>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeNumber<ResultType>>()));
     }
 
     /// Upper bound on the number of grid points (the output array length) for a single grid.
@@ -923,7 +938,7 @@ private:
             const auto & timestamp_offsets = timestamp_column.getOffsets();
             const auto & value_offsets = value_column.getOffsets();
             const TimestampType * timestamp_data = typeid_cast<const ColVecType *>(timestamp_column.getDataPtr().get())->getData().data();
-            const ValueType * value_data = typeid_cast<const ColVecResultType *>(value_column.getDataPtr().get())->getData().data();
+            const ValueType * value_data = typeid_cast<const ColVecValueType *>(value_column.getDataPtr().get())->getData().data();
 
             if (flags_data)
             {
@@ -976,7 +991,7 @@ private:
         else
         {
             const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
-            const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
+            const auto & value_column = typeid_cast<const ColVecValueType &>(*columns[1]);
             const TimestampType * timestamp_data = timestamp_column.getData().data();
             const ValueType * value_data = value_column.getData().data();
 
@@ -1017,7 +1032,7 @@ private:
     }
 
     /// Stores the window's result value (or NULL when there is no result) at grid point `grid_index`.
-    void storeGridResult(size_t grid_index, const std::optional<ValueType> & result, ValueType * values, UInt8 * nulls) const
+    void storeGridResult(size_t grid_index, const std::optional<ResultType> & result, ResultType * values, UInt8 * nulls) const
     {
         if (result)
         {
@@ -1026,7 +1041,7 @@ private:
         }
         else
         {
-            values[grid_index] = ValueType{};
+            values[grid_index] = ResultType{};
             nulls[grid_index] = 1;
         }
     }
