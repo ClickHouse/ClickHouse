@@ -99,6 +99,17 @@ FROM
     FROM VALUES('value Float64, time Float64', (2, 100))
 );
 
+-- Finalized values encode the curve but not the original anchor timestamp, so a
+-- positive age budget cannot be applied to them without making the cutoff depend
+-- on value magnitude.
+SELECT exponentialTimeDecayedSum(decaying_value)
+FROM
+(
+    SELECT exponentialTimeDecayingFloat64(10)(1000, toFloat64(0)) AS decaying_value
+    UNION ALL
+    SELECT exponentialTimeDecayingFloat64(10)(2, toFloat64(100)) AS decaying_value
+); -- { serverError BAD_ARGUMENTS }
+
 SET exponential_time_decay_aggregate_function_calculation_budget = -1;
 SELECT exponentialTimeDecayedSum(10)(value, time)
 FROM VALUES('value Float64, time Float64', (1, 0)); -- { serverError BAD_ARGUMENTS }

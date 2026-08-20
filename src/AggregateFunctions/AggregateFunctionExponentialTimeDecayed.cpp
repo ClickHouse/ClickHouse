@@ -408,12 +408,23 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
                     name,
                     argument_types[0]->getName());
 
+            const Float64 max_decay_distance = getMaxDecayDistance(name, settings, decay_length);
+            const Float64 calculation_budget = settings
+                ? static_cast<Float64>((*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget])
+                : 0;
+            if (calculation_budget > 0)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Setting exponential_time_decay_aggregate_function_calculation_budget must be 0 when aggregate function {} "
+                    "consumes ExponentialTimeDecayingFloat64 because finalized values do not preserve their original anchor time",
+                    name);
+
             return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
                 name,
                 argument_types,
                 parameters,
                 decay_length,
-                getMaxDecayDistance(name, settings, decay_length),
+                max_decay_distance,
                 true);
         }
     }
