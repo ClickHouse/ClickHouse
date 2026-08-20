@@ -229,7 +229,7 @@ The official [ClickHouse Terraform provider](https://registry.terraform.io/provi
 - [`clickhouse_udf_attachment`](https://github.com/ClickHouse/terraform-provider-clickhouse/blob/main/docs/resources/udf_attachment.md) attaches a UDF version to a service. A service holds at most one version of a function at a time. You can pin a fixed version number, or reference `clickhouse_udf.<name>.version` to automatically roll services forward to the latest version.
 
 <Note>
-These resources are available in provider version 3.24.0 and later. They are in beta and their behavior may change in future provider versions. Terraform prints a `Beta Resource` warning for them at plan time.
+These resources are available in provider version 3.24.0 and later. They are in beta and their behavior may change in future provider versions.
 </Note>
 
 For example, to deploy the `isBusinessHours` UDF from the earlier example with Terraform:
