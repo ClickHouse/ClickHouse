@@ -750,6 +750,18 @@ partition and not on subset.
 Possible values:
 - true, false
 )", false) \
+    DECLARE(UInt64, min_partition_age_to_force_merge_seconds, 0, R"(
+Merge parts in a partition if every part in it is older than this value, i.e.
+the partition no longer receives inserts. Unlike
+`min_age_to_force_merge_seconds` with `min_age_to_force_merge_on_partition_only`,
+the partition does not have to fit into a single merge: each merge still
+respects `max_bytes_to_merge_at_max_space_in_pool`, and the heuristic that
+leaves small parts at the right of a merged range is disabled for such
+partitions. Works for Simple and StochasticSimple merge selectors.
+
+Possible values:
+- Positive integer.
+)", 0) \
     DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting

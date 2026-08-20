@@ -162,6 +162,10 @@ public:
           */
         size_t min_age_to_force_merge = 0;
 
+        /// If it's not 0, ranges in partitions whose youngest part is at least this old are always
+        /// considered for merging, and the right-tail heuristic below is skipped for them.
+        size_t min_partition_age_to_force_merge = 0;
+
         /** Heuristic:
           * From right side of range, remove all parts, that size is less than specified ratio of sum_size.
           */
