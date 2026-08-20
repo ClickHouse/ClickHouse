@@ -536,24 +536,30 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
 /// UUID / IPv6 / big-integer types the requested `to_type` asks for, descending through Nullable, Array,
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
 /// subsequent `castColumn`. Returns the (possibly rewritten) column and its new type.
+/// The walk follows the decoded (source) shape and resolves each level's requested type with the same
+/// hint helpers the decoder's recursion uses (`arrayElementHint`, `tupleElementHint`, `mapEntriesHint`,
+/// `stripHint`): the decoder converts binary leaves under those rules — by tuple element name, through
+/// `Nullable`/`LowCardinality` wrappers — so this rewrite must resolve targets identically, or a
+/// converted leaf (physically typed, still declared by its Arrow type) would reach `castColumn`
+/// unreconciled.
 /// `ancestor_nulls` (may be null) marks rows that are null at an enclosing Nullable level: the Arrow spec
 /// leaves the bytes of such rows undefined, so the leaf width sniff must not let them force the String
 /// fallback (and text-parsing of the whole column in the cast); their values decode as type defaults.
 /// Only row-aligned levels propagate it — an Array/Map child lives in a different row space.
 std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const ColumnPtr & col, const DataTypePtr & from_type, const DataTypePtr & to_type,
-    const NullMap * ancestor_nulls)
+    const NullMap * ancestor_nulls, bool case_insensitive)
 {
-    const DataTypePtr to_no_null = removeNullable(to_type);
     const DataTypePtr from_no_null = removeNullable(from_type);
+
+    const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());
+    const auto * from_tup = typeid_cast<const DataTypeTuple *>(from_no_null.get());
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from_no_null.get());
 
     /// Schema inference can wrap a composite in Nullable (e.g. `Nullable(Tuple(...))`). The composite
     /// recursion below matches on the unwrapped column, so peel a Nullable column wrapper here first and
     /// restore it afterwards (dropping it if the reinterpreted composite cannot itself be Nullable).
-    const bool composite_target = typeid_cast<const DataTypeArray *>(to_no_null.get())
-        || typeid_cast<const DataTypeTuple *>(to_no_null.get())
-        || typeid_cast<const DataTypeMap *>(to_no_null.get());
-    if (composite_target)
+    if (from_arr || from_tup || from_map)
     {
         if (const auto * col_nullable = typeid_cast<const ColumnNullable *>(col.get()))
         {
@@ -562,7 +568,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
             NullMap combined_storage;
             const NullMap * combined = ArrowIPC::unionNullMaps(col_nullable->getNullMapData(), ancestor_nulls, combined_storage);
             auto [new_nested, new_nested_type]
-                = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_no_null, combined);
+                = reinterpretRawBytes(col_nullable->getNestedColumnPtr(), from_no_null, to_type, combined, case_insensitive);
             /// A leaf the decoder already converted comes back with the same column but a new type, so
             /// change detection must look at both.
             if (new_nested.get() == col_nullable->getNestedColumnPtr().get() && new_nested_type.get() == from_no_null.get())
@@ -574,86 +580,101 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         }
     }
 
-    if (const auto * to_arr = typeid_cast<const DataTypeArray *>(to_no_null.get()))
+    if (from_arr)
     {
-        const auto * from_arr = typeid_cast<const DataTypeArray *>(from_no_null.get());
-        const auto * col_arr = typeid_cast<const ColumnArray *>(col.get());
-        if (!from_arr || !col_arr)
+        const DataTypePtr elem_target = ArrowIPC::arrayElementHint(to_type);
+        if (!elem_target)
             return {col, from_type};
+        const auto & col_arr = assert_cast<const ColumnArray &>(*col);
         auto [new_data, new_data_type] = reinterpretRawBytes(
-            col_arr->getDataPtr(), from_arr->getNestedType(), to_arr->getNestedType(), /*ancestor_nulls=*/nullptr);
-        if (new_data.get() == col_arr->getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
+            col_arr.getDataPtr(), from_arr->getNestedType(), elem_target, /*ancestor_nulls=*/nullptr, case_insensitive);
+        if (new_data.get() == col_arr.getDataPtr().get() && new_data_type.get() == from_arr->getNestedType().get())
             return {col, from_type};
         /// The immutable factory shares both children; `IColumn::mutate` here would deep-clone the
         /// (possibly unchanged and shared) element column just to rewrap it.
-        auto new_arr = ColumnArray::create(new_data, col_arr->getOffsetsPtr());
+        auto new_arr = ColumnArray::create(new_data, col_arr.getOffsetsPtr());
         return {std::move(new_arr), std::make_shared<DataTypeArray>(new_data_type)};
     }
 
-    if (const auto * to_tup = typeid_cast<const DataTypeTuple *>(to_no_null.get()))
+    if (from_tup)
     {
-        const auto * from_tup = typeid_cast<const DataTypeTuple *>(from_no_null.get());
-        const auto * col_tup = typeid_cast<const ColumnTuple *>(col.get());
-        if (!from_tup || !col_tup)
-            return {col, from_type};
-        const auto & to_elems = to_tup->getElements();
+        const auto & col_tup = assert_cast<const ColumnTuple &>(*col);
         const auto & from_elems = from_tup->getElements();
-        if (to_elems.size() != from_elems.size() || col_tup->tupleSize() != to_elems.size())
-            return {col, from_type};
-        Columns new_cols(to_elems.size());
-        DataTypes new_types(to_elems.size());
+        const auto & from_names = from_tup->getElementNames();
+        Columns new_cols(from_elems.size());
+        DataTypes new_types(from_elems.size());
         bool changed = false;
-        for (size_t i = 0; i < to_elems.size(); ++i)
+        for (size_t i = 0; i < from_elems.size(); ++i)
         {
-            auto [c, t] = reinterpretRawBytes(col_tup->getColumnPtr(i), from_elems[i], to_elems[i], ancestor_nulls);
-            if (c.get() != col_tup->getColumnPtr(i).get() || t.get() != from_elems[i].get())
-                changed = true;
-            new_cols[i] = std::move(c);
-            new_types[i] = std::move(t);
+            /// Resolve the element's target exactly as the decoder did when it decoded this element: by
+            /// name for a named target Tuple (so reordered or subset targets pair correctly), by position
+            /// for an unnamed one. An element the request does not mention stays as decoded.
+            const DataTypePtr elem_target = ArrowIPC::tupleElementHint(to_type, from_names[i], i, case_insensitive);
+            if (elem_target)
+            {
+                auto [c, t] = reinterpretRawBytes(col_tup.getColumnPtr(i), from_elems[i], elem_target, ancestor_nulls, case_insensitive);
+                changed |= c.get() != col_tup.getColumnPtr(i).get() || t.get() != from_elems[i].get();
+                new_cols[i] = std::move(c);
+                new_types[i] = std::move(t);
+            }
+            else
+            {
+                new_cols[i] = col_tup.getColumnPtr(i);
+                new_types[i] = from_elems[i];
+            }
         }
         if (!changed)
             return {col, from_type};
         DataTypePtr new_tuple_type = from_tup->hasExplicitNames()
-            ? std::make_shared<DataTypeTuple>(new_types, from_tup->getElementNames())
+            ? std::make_shared<DataTypeTuple>(new_types, from_names)
             : std::make_shared<DataTypeTuple>(new_types);
         return {ColumnTuple::create(new_cols), std::move(new_tuple_type)};
     }
 
-    if (const auto * to_map = typeid_cast<const DataTypeMap *>(to_no_null.get()))
+    if (from_map)
     {
-        const auto * from_map = typeid_cast<const DataTypeMap *>(from_no_null.get());
-        const auto * col_map = typeid_cast<const ColumnMap *>(col.get());
-        if (!from_map || !col_map)
+        const DataTypePtr entries_target = ArrowIPC::mapEntriesHint(to_type);
+        if (!entries_target)
             return {col, from_type};
+        const auto & col_map = assert_cast<const ColumnMap &>(*col);
         /// A Map is physically an Array(Tuple(key, value)); recurse into that shape so raw-byte keys/values
         /// convert, then rewrap.
         auto from_nested = std::make_shared<DataTypeArray>(
             std::make_shared<DataTypeTuple>(DataTypes{from_map->getKeyType(), from_map->getValueType()}));
-        auto to_nested = std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(DataTypes{to_map->getKeyType(), to_map->getValueType()}));
-        auto [new_nested, new_nested_type] = reinterpretRawBytes(col_map->getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls);
-        if (new_nested.get() == col_map->getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
+        auto to_nested = std::make_shared<DataTypeArray>(entries_target);
+        auto [new_nested, new_nested_type]
+            = reinterpretRawBytes(col_map.getNestedColumnPtr(), from_nested, to_nested, ancestor_nulls, case_insensitive);
+        if (new_nested.get() == col_map.getNestedColumnPtr().get() && new_nested_type.get() == from_nested.get())
             return {col, from_type};
         const auto & new_tuple = assert_cast<const DataTypeTuple &>(*assert_cast<const DataTypeArray &>(*new_nested_type).getNestedType());
         auto new_map_type = std::make_shared<DataTypeMap>(new_tuple.getElement(0), new_tuple.getElement(1));
         return {ColumnMap::create(new_nested), std::move(new_map_type)};
     }
 
-    const WhichDataType which(to_no_null);
-    const bool raw_target = which.isUUID() || which.isIPv6()
-        || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256();
-    if (!raw_target)
-        return {col, from_type};
+    /// Leaf. The target is the innermost requested type, `Nullable`/`LowCardinality`-transparent like
+    /// every decoder hint (`LowCardinality(IPv6)` requests the same raw bytes as `IPv6`; the later cast
+    /// restores the wrappers).
+    const DataTypePtr to_leaf = ArrowIPC::stripHint(to_type);
 
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
 
+    const WhichDataType which(to_leaf);
+    const bool raw_target = which.isUUID() || which.isIPv6()
+        || which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256();
+    if (!raw_target)
+        return {col, from_type};
+
     /// The decoder already converts a variable binary leaf whose type hint reaches it (mask-aware, so
     /// it also covers invisibility this phase cannot see: dropped struct null maps, masked list
     /// ranges); only the declared type needs reconciling then.
-    if (nested.getDataType() == to_no_null->getTypeId())
-        return {col, nullable ? std::make_shared<DataTypeNullable>(to_no_null) : to_no_null};
+    if (nested.getDataType() == to_leaf->getTypeId())
+    {
+        if (from_no_null->equals(*to_leaf))
+            return {col, from_type};
+        return {col, nullable ? std::make_shared<DataTypeNullable>(to_leaf) : to_leaf};
+    }
 
     /// The leaf's undefined rows are those null at its own level or at any enclosing level; both must be
     /// exempt from the width sniff and decode as defaults.
@@ -665,18 +686,18 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
     MutableColumnPtr typed;
     if (const auto * fixed = typeid_cast<const ColumnFixedString *>(&nested))
-        typed = reinterpretFixedStringLeaf(*fixed, to_no_null);
+        typed = reinterpretFixedStringLeaf(*fixed, to_leaf);
     else if (const auto * str = typeid_cast<const ColumnString *>(&nested))
-        typed = ArrowIPC::reinterpretStringLeaf(*str, null_map, to_no_null);
+        typed = ArrowIPC::reinterpretStringLeaf(*str, null_map, to_leaf);
     if (!typed)
         return {col, from_type};
 
     ColumnPtr result = std::move(typed);
-    DataTypePtr result_type = to_no_null;
+    DataTypePtr result_type = to_leaf;
     if (nullable)
     {
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
-        result_type = std::make_shared<DataTypeNullable>(to_no_null);
+        result_type = std::make_shared<DataTypeNullable>(to_leaf);
     }
     return {std::move(result), std::move(result_type)};
 }
@@ -685,7 +706,9 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
 void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type)
 {
-    auto [new_column, new_type] = reinterpretRawBytes(column.column, column.type, to_type, /*ancestor_nulls=*/nullptr);
+    auto [new_column, new_type] = reinterpretRawBytes(
+        column.column, column.type, to_type, /*ancestor_nulls=*/nullptr,
+        format_settings.arrow.case_insensitive_column_matching);
     column.column = std::move(new_column);
     column.type = std::move(new_type);
 }
@@ -815,6 +838,10 @@ Chunk ArrowIPCBlockInputFormat::buildChunk(ArrowIPC::RecordBatchDecoder::Decoded
                         const DataTypePtr & nested_table_type = collected.front().type;
                         if (case_insensitive)
                             nested_column.type = alignStructFieldNamesCaseInsensitive(nested_column.type, nested_table_type);
+                        /// The decoder may have converted raw-byte leaves under the flattened subcolumns'
+                        /// type hints; reconcile the declared types (and convert leaves the hints did not
+                        /// reach) before the cast, exactly as the non-nested path does.
+                        reinterpretRawByteColumns(nested_column, nested_table_type);
                         nested_column.column = castColumn(nested_column, nested_table_type);
                         nested_column.type = nested_table_type;
                     }

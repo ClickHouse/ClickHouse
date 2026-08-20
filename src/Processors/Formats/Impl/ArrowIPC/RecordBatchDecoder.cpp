@@ -122,57 +122,6 @@ void expandBitmapToBytes(const uint8_t * bits, size_t rows, UInt8 * out, bool in
     }
 }
 
-/// Strips the outer `Nullable`/`LowCardinality` wrappers off a requested-type hint so the underlying
-/// type (number, Array, Tuple, Map) can be inspected. Handles both `LowCardinality(Nullable(...))` and
-/// `Nullable(LowCardinality(...))`.
-DataTypePtr stripHint(const DataTypePtr & type)
-{
-    if (!type)
-        return nullptr;
-    return removeNullable(removeLowCardinality(removeNullable(type)));
-}
-
-/// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
-DataTypePtr arrayElementHint(const DataTypePtr & hint)
-{
-    if (const auto * array = typeid_cast<const DataTypeArray *>(stripHint(hint).get()))
-        return array->getNestedType();
-    return nullptr;
-}
-
-/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
-/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
-/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
-/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
-DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
-{
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
-    if (!tuple)
-        return nullptr;
-    if (tuple->hasExplicitNames())
-    {
-        const auto & names = tuple->getElementNames();
-        for (size_t i = 0; i < names.size(); ++i)
-        {
-            const bool match = case_insensitive ? boost::iequals(names[i], child_name) : names[i] == child_name;
-            if (match)
-                return tuple->getElements()[i];
-        }
-        return nullptr;
-    }
-    if (pos < tuple->getElements().size())
-        return tuple->getElements()[pos];
-    return nullptr;
-}
-
-/// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
-DataTypePtr mapEntriesHint(const DataTypePtr & hint)
-{
-    if (const auto * map = typeid_cast<const DataTypeMap *>(stripHint(hint).get()))
-        return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
-    return nullptr;
-}
-
 /// The value width of a type stored in Arrow as raw variable binary bytes (IPv6, big integers), or 0
 /// for every other type. The single source of truth for which types `reinterpretStringLeaf` handles.
 size_t rawByteWidth(const WhichDataType & which)
@@ -199,6 +148,48 @@ DataTypePtr rawByteTargetType(const DataTypePtr & hint)
         return stripped;
     return nullptr;
 }
+}
+
+DataTypePtr stripHint(const DataTypePtr & type)
+{
+    if (!type)
+        return nullptr;
+    return removeNullable(removeLowCardinality(removeNullable(type)));
+}
+
+DataTypePtr arrayElementHint(const DataTypePtr & hint)
+{
+    if (const auto * array = typeid_cast<const DataTypeArray *>(stripHint(hint).get()))
+        return array->getNestedType();
+    return nullptr;
+}
+
+DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive)
+{
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(stripHint(hint).get());
+    if (!tuple)
+        return nullptr;
+    if (tuple->hasExplicitNames())
+    {
+        const auto & names = tuple->getElementNames();
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            const bool match = case_insensitive ? boost::iequals(names[i], child_name) : names[i] == child_name;
+            if (match)
+                return tuple->getElements()[i];
+        }
+        return nullptr;
+    }
+    if (pos < tuple->getElements().size())
+        return tuple->getElements()[pos];
+    return nullptr;
+}
+
+DataTypePtr mapEntriesHint(const DataTypePtr & hint)
+{
+    if (const auto * map = typeid_cast<const DataTypeMap *>(stripHint(hint).get()))
+        return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
+    return nullptr;
 }
 
 void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)

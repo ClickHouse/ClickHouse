@@ -51,6 +51,28 @@ using InvisibleRowsMask = NullMap;
 /// then left as String for the subsequent cast (matching the library reader's text-parse fallback).
 MutableColumnPtr reinterpretStringLeaf(const ColumnString & str, const NullMap * null_map, const DataTypePtr & to_no_null);
 
+/// Navigation helpers for requested-type hints, shared between the decoder's hint recursion and the
+/// post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` — both must resolve the target of a
+/// nested field by the same rules, or a leaf the decoder converted comes back to a rewrite that
+/// cannot see it.
+
+/// Strips the outer `Nullable`/`LowCardinality` wrappers off a requested-type hint so the underlying
+/// type (number, Array, Tuple, Map) can be inspected. Handles both `LowCardinality(Nullable(...))` and
+/// `Nullable(LowCardinality(...))`.
+DataTypePtr stripHint(const DataTypePtr & type);
+
+/// The requested type hint for the element of an Array-like field, or null when the hint is not an Array.
+DataTypePtr arrayElementHint(const DataTypePtr & hint);
+
+/// The requested type hint for a struct child. For a named Tuple it is matched by element name — the same
+/// way the later named-tuple CAST maps the struct, including case-insensitively when requested — and there
+/// is no positional fallback (that could attach the hint to the wrong element). For an unnamed Tuple (the
+/// synthetic Map-entries hint) it is matched by position. Null when the hint is not a Tuple or has no match.
+DataTypePtr tupleElementHint(const DataTypePtr & hint, const String & child_name, size_t pos, bool case_insensitive);
+
+/// A synthetic Tuple(key, value) hint for a Map's entries struct, or null when the hint is not a Map.
+DataTypePtr mapEntriesHint(const DataTypePtr & hint);
+
 /// The union of a row-aligned null map with an optional second one: returns `own` unchanged when
 /// `other` is null, otherwise fills `storage` with the element-wise OR and returns it. The inputs are
 /// left untouched — `own` typically keeps serving as a column's real null map while the union only
