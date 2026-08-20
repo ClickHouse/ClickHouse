@@ -684,29 +684,36 @@ def test_postgresql_permanent_detach_marker_preserved_after_remote_drop(started_
     drop_postgres_table(cursor, "test_marker_persist")
 
     # Trigger schema refresh in ClickHouse by querying the database
-    # This calls removeOutdatedTables() which should preserve the permanent marker
     node1.query("SHOW TABLES FROM postgres_marker_test")
 
-    # Wait a bit for background cleaner_task to run (if it runs)
+    # Wait for background cleaner_task to run (removeOutdatedTables runs every 60 seconds)
+    # Poll for up to 65 seconds to ensure at least one execution cycle completes
     import time
-    time.sleep(2)
+    max_wait = 65
+    start_time = time.time()
+    marker_preserved = False
+
+    while time.time() - start_time < max_wait:
+        detached_count = node1.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+        ).strip()
+
+        is_perm = node1.query(
+            "SELECT is_permanently FROM system.detached_tables "
+            "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+        ).strip()
+
+        if detached_count == "1" and is_perm == "1":
+            marker_preserved = True
+            break
+
+        time.sleep(5)  # Check every 5 seconds
 
     # Verify the permanent marker is still preserved even though remote table is gone
-    detached_after_remote_drop = node1.query(
-        "SELECT count() FROM system.detached_tables "
-        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
-    ).strip()
-    assert detached_after_remote_drop == "1", (
+    assert marker_preserved, (
         f"Expected permanent marker preserved after remote drop, "
-        f"but table not in detached_tables (count={detached_after_remote_drop})"
-    )
-
-    is_perm_after_drop = node1.query(
-        "SELECT is_permanently FROM system.detached_tables "
-        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
-    ).strip()
-    assert is_perm_after_drop == "1", (
-        f"Expected is_permanently=1 preserved after remote drop, got {is_perm_after_drop}"
+        f"but condition not met within {max_wait}s (count={detached_count}, is_perm={is_perm})"
     )
 
     # Recreate table in PostgreSQL with same name
@@ -780,17 +787,28 @@ def test_postgresql_ordinary_detach_pruned_after_remote_drop(started_cluster):
     # Trigger schema refresh
     node1.query("SHOW TABLES FROM postgres_prune_test")
 
-    # Wait for background task
+    # Wait for background cleaner_task to run (removeOutdatedTables runs every 60 seconds)
+    # Poll for up to 65 seconds to ensure at least one execution cycle completes
     import time
-    time.sleep(2)
+    max_wait = 65
+    start_time = time.time()
+    entry_pruned = False
+
+    while time.time() - start_time < max_wait:
+        pruned_count = node1.query(
+            "SELECT count() FROM system.detached_tables "
+            "WHERE database = 'postgres_prune_test' AND table = 'test_prune'"
+        ).strip()
+
+        if pruned_count == "0":
+            entry_pruned = True
+            break
+
+        time.sleep(5)  # Check every 5 seconds
 
     # Verify the entry is PRUNED (not in detached_tables anymore)
-    pruned_count = node1.query(
-        "SELECT count() FROM system.detached_tables "
-        "WHERE database = 'postgres_prune_test' AND table = 'test_prune'"
-    ).strip()
-    assert pruned_count == "0", (
-        f"Expected ordinary detach entry pruned after remote drop, "
+    assert entry_pruned, (
+        f"Expected ordinary detach entry pruned after remote drop within {max_wait}s, "
         f"but still in detached_tables (count={pruned_count})"
     )
 
