@@ -122,6 +122,8 @@ Choose the path that matches what you want a retry to mean. Additionally, when y
 
 Asynchronous inserts ([`async_insert`](/reference/settings/session-settings/async-insert#async_insert), enabled by default since version 26.2) are deduplicated on retries in the same way as synchronous inserts. `deduplicate_insert` controls both, so no separate switch is needed.
 
+The two insert types also share one deduplication log and compute `block_id`s the same way. You can therefore switch a client between synchronous and asynchronous inserts without breaking deduplication, and a retry sent in one mode is still recognized as a duplicate of an attempt sent in the other. Moving a workload from synchronous to asynchronous inserts stays safe on a table that relies on deduplication.
+
 <Note>
 Before version 26.2, deduplication of asynchronous inserts was disabled by default and was controlled by `async_insert_deduplicate`. That setting is now read only when `deduplicate_insert` is `backward_compatible_choice`.
 </Note>
