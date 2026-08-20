@@ -4,8 +4,11 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/FullSortingMergeJoin.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/Transforms/JoiningTransform.h>
+#include <Processors/Transforms/MergeJoinTransform.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -13,6 +16,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -49,6 +53,9 @@ std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join,
     description.emplace_back("Type", kind);
     description.emplace_back("Strictness", strictness);
     description.emplace_back("Algorithm", join->getName());
+
+    if (const auto join_expression_value = table_join.getJoinExpressionValue())
+        description.emplace_back("Constant expression value", *join_expression_value ? "true" : "false");
 
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
@@ -140,16 +147,17 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
+    /// Sharding requires both pipelines to have the same number of streams, because the shards of the two
+    /// sides are paired positionally. Every step that can feed a sharded join keeps one output port per
+    /// shard, so the counts diverge only if the plan is inconsistent: for a `YShaped` join the regular
+    /// pipeline below is not a usable fallback, it accepts a single port per side and throws otherwise.
     bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
     if (!use_sharding)
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShaped(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
             joined_pipeline->resize(max_streams);
         }
         else
@@ -163,6 +171,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 min_block_size_rows,
                 min_block_size_bytes,
                 max_streams,
+                this,
                 keep_left_read_in_order,
                 &processors);
         }
@@ -172,7 +181,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
             joined_pipeline = QueryPipelineBuilder::joinPipelinesYShapedByShards(
-                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, &processors);
+                std::move(pipelines[0]), std::move(pipelines[1]), join, join_algorithm_header, max_block_size, this, &processors);
         }
         else
         {
@@ -182,6 +191,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 join,
                 join_algorithm_header,
                 max_block_size,
+                this,
                 &processors);
         }
     }
@@ -189,12 +199,19 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     if (!use_new_analyzer)
         return joined_pipeline;
 
+    const auto tail_stage = join->pipelineType() == JoinPipelineType::YShaped ? JoinStage::Default : JoinStage::Probe;
+    auto tag_tail = [this, tail_stage](ProcessorPtr processor)
+    {
+        processor->setQueryPlanStep(this, static_cast<size_t>(tail_stage));
+        return processor;
+    };
+
     auto column_permutation = getPermutationForBlock(joined_pipeline->getHeader(), lhs_header, rhs_header, required_output);
     if (!column_permutation.empty())
     {
-        joined_pipeline->addSimpleTransform([&column_permutation](const SharedHeader & header)
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
         {
-            return std::make_shared<ColumnPermuteTransform>(header, column_permutation);
+            return tag_tail(std::make_shared<ColumnPermuteTransform>(header, column_permutation));
         });
     }
 
@@ -202,7 +219,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
-            { return std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes); });
+            { return tag_tail(std::make_shared<SimpleSquashingChunksTransform>(header, min_block_size_rows, min_block_size_bytes)); });
     }
 
     const auto & pipeline_output_header = joined_pipeline->getHeader();
@@ -213,7 +230,48 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
             fmt::format("JoinStep: [{}] and [{}]", pipeline_output_header.dumpNames(), expected_output_header->dumpNames()));
     }
 
+    if (dataflow_cache_updater)
+    {
+        joined_pipeline->addSimpleTransform([&](const SharedHeader & header)
+        { return std::make_shared<RuntimeDataflowStatisticsCollector>(header, dataflow_cache_updater); });
+    }
+
     return joined_pipeline;
+}
+
+JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_processors) const
+{
+    JoinAnalysisCounters counters;
+    MatchedRowsAccumulator matched_left;
+    MatchedRowsAccumulator matched_right;
+    for (const auto * proc : step_processors)
+    {
+        const auto * merge_join = typeid_cast<const MergeJoinTransform *>(proc);
+        if (!merge_join)
+            continue;
+
+        const auto join_counters = merge_join->getJoinAnalysisCounters();
+        counters.left_rows += join_counters.left_rows;
+        counters.right_rows += join_counters.right_rows;
+        matched_left.add(join_counters.matched_left);
+        matched_right.add(join_counters.matched_right);
+    }
+    counters.matched_left = matched_left.get();
+    counters.matched_right = matched_right.get();
+
+    return counters;
+}
+
+StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
+{
+    /// Only EXPLAIN ANALYZE asks for a report, and it turns the analyze mode on for the whole query,
+    /// so every join it reaches must have been told to collect statistics
+    chassert(join->getTableJoin().collectAnalyzeStats(), "JoinStep analyzed without the analyze mode");
+
+    if (!typeid_cast<const FullSortingMergeJoin *>(join.get()))
+        return join->getAnalysisReport();
+
+    return buildMatchedRowsReport(collectMergeJoinCounters(step_processors));
 }
 
 bool JoinStep::allowPushDownToRight() const
@@ -230,6 +288,26 @@ void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
     }
     keep_left_read_in_order = true;
     join->keepLeftPipelineInOrder();
+}
+
+std::vector<size_t> JoinStep::getStepGroups() const
+{
+    return {
+        static_cast<size_t>(JoinStage::Default),
+        static_cast<size_t>(JoinStage::Build),
+        static_cast<size_t>(JoinStage::Probe)
+    };
+}
+
+String JoinStep::getStepGroupName(size_t group) const
+{
+    switch (static_cast<JoinStage>(group))
+    {
+        case JoinStage::Default: return {};
+        case JoinStage::Build: return "build";
+        case JoinStage::Probe: return "probe";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown JoinStage group {}", group);
 }
 
 void JoinStep::describePipeline(FormatSettings & settings) const
@@ -406,6 +484,13 @@ void FilledJoinStep::transformPipeline(QueryPipelineBuilder & pipeline, const Bu
 void FilledJoinStep::updateOutputHeader()
 {
     output_header = std::make_shared<const Block>(JoiningTransform::transformHeader(*input_headers.front(), join));
+}
+
+StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
+{
+    chassert(join->getTableJoin().collectAnalyzeStats(), "FilledJoinStep analyzed without the analyze mode");
+
+    return join->getAnalysisReport();
 }
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const

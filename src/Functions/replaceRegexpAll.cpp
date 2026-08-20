@@ -33,7 +33,7 @@ As an exception, if a regular expression worked on an empty substring, the repla
     FunctionDocumentation::Examples examples = {
     {
         "Replace all characters with doubled version",
-        R"(SELECT replaceRegexpAll('Hello123', '.', '\\\\0\\\\0') AS res)",
+        R"(SELECT replaceRegexpAll('Hello123', '.', '\\0\\0') AS res)",
         R"(
 ┌─res──────────────────┐
 │ HHeelllloo112233     │

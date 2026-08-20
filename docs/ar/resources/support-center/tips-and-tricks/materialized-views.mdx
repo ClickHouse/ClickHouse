@@ -1,0 +1,77 @@
+---
+slug: /tips-and-tricks/materialized-views
+sidebarTitle: 'العروض المادية'
+doc_type: 'guide'
+keywords: [
+  'clickhouse materialized views',
+  'تحسين العروض المادية',
+  'مشكلات تخزين العروض المادية',
+  'أفضل ممارسات العروض المادية',
+  'أنماط التجميع في قاعدة البيانات',
+  'الأنماط المضادة للعروض المادية',
+  'مشكلات تضخم التخزين',
+  'أداء العروض المادية',
+  'تحسين عروض قاعدة البيانات',
+  'استراتيجية التجميع',
+  'استكشاف أخطاء العروض المادية وإصلاحها',
+  'العبء الإضافي لتخزين العروض'
+]
+title: 'دروس - العروض المادية'
+description: 'أمثلة واقعية على العروض المادية، والمشكلات، والحلول'
+---
+
+*هذا الدليل جزء من مجموعة من الدروس المستفادة من لقاءات المجتمع. ولمزيد من الحلول والرؤى العملية، يمكنك [التصفح حسب مشكلة محددة](/ar/resources/support-center/tips-and-tricks/community-wisdom).*
+*هل تؤدي مشكلة Too Many Parts إلى إبطاء قاعدة بياناتك؟ اطّلع على دليل رؤى المجتمع [Too Many Parts](/ar/resources/support-center/tips-and-tricks/too-many-parts).*
+*تعرّف على المزيد حول [Materialized Views](/ar/concepts/features/materialized-views/index).*
+
+<div id="storage-antipattern">
+  ## النمط المضاد لتضخيم التخزين بمقدار 10x
+</div>
+
+**مشكلة حقيقية في بيئة الإنتاج:** *&quot;كان لدينا عرض مادي. كان حجم جدول السجلات الخام نحو 20 غيغابايت، لكن العرض المادي المبني على جدول السجلات هذا تضخّم إلى 190 غيغابايت، أي ما يقارب 10 أضعاف حجم الجدول الخام. حدث ذلك لأننا كنا ننشئ صفًا لكل سمة، ويمكن أن يحتوي كل سجل على 10 سمات.&quot;*
+
+**القاعدة:** إذا كان `GROUP BY` ينشئ صفوفًا أكثر مما يُلغي، فأنت تبني فهرسًا مكلفًا، لا عرضًا ماديًا.
+
+<div id="mv-health-validation">
+  ## التحقق من سلامة العرض المادي في بيئة الإنتاج
+</div>
+
+يساعدك هذا الاستعلام على توقّع ما إذا كان العرض المادي سيضغط بياناتك أو سيتسبب في تضخّمها قبل إنشائه. شغّله على الجدول والأعمدة الفعلية لديك لتجنّب سيناريو &quot;التضخّم إلى 190GB&quot;.
+
+**ما الذي يوضحه:**
+
+* **نسبة تجميع منخفضة** (&lt;10%) = عرض مادي جيد مع ضغط كبير
+* **نسبة تجميع مرتفعة** (&gt;70%) = عرض مادي سيئ مع خطر تضخّم التخزين
+* **مضاعِف التخزين** = مقدار كِبر/صِغر حجم العرض المادي لديك
+
+```sql
+-- Replace with your actual table and columns
+SELECT 
+    count() as total_rows,
+    uniq(your_group_by_columns) as unique_combinations,
+    round(uniq(your_group_by_columns) / count() * 100, 2) as aggregation_ratio
+FROM your_table
+WHERE your_filter_conditions;
+
+-- If aggregation_ratio > 70%, reconsider your MV design
+-- If aggregation_ratio < 10%, you'll get good compression
+```
+
+<div id="mv-problems">
+  ## عندما تصبح العروض المادية مشكلة
+</div>
+
+**علامات التحذير التي ينبغي مراقبتها:**
+
+* يزداد زمن استجابة الإدراج (فالاستعلامات التي كانت تستغرق 10ms أصبحت الآن تستغرق 100ms+)
+* ظهور أخطاء &quot;Too many parts&quot; بوتيرة أكبر
+* ارتفاع مفاجئ في CPU أثناء عمليات الإدراج
+* حدوث حالات انتهاء مهلة للإدراج لم تكن تظهر من قبل
+
+يمكنك مقارنة أداء الإدراج قبل إضافة MVs وبعدها باستخدام `system.query_log` لتتبّع اتجاهات مدة الاستعلامات.
+
+<div id="video-sources">
+  ## مصادر الفيديو
+</div>
+
+* [ClickHouse at CommonRoom - Kirill Sapchuk](https://www.youtube.com/watch?v=liTgGiTuhJE) - مصدر دراسة الحالة حول &quot;الحماس المفرط تجاه العروض المادية&quot; و&quot;التضخم من 20GB إلى 190GB&quot;

@@ -56,11 +56,24 @@ protected:
 
     void readPrefix(size_t column_idx, size_t from_mark, MergeTreeReaderStream & stream, ISerialization::SubstreamsDeserializeStatesCache * cache);
 
-    void readSubcolumnsPrefixes(size_t from_mark, size_t current_task_last_mark);
+    void readSubcolumnsPrefixes(size_t from_mark);
     void initSubcolumnsDeserializationOrder();
 
     void createColumnsForReading(Columns & res_columns) const;
     bool needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const;
+
+    /// Before dropping the substream/deserialize-state caches at the end of a granule, verify the
+    /// reference counts of the columns shared with the result columns; see `ColumnsOwnershipValidator`
+    /// and https://github.com/ClickHouse/ClickHouse/issues/105626. Shared by both compact readers
+    /// (single- and multi-buffer) so their granule loops stay instrumented identically. Every argument
+    /// except `res_columns` is optional (pass `nullptr` when a reader does not keep that cache alive at
+    /// the check point); the per-reader deserialize-state maps are always included. A no-op in release.
+    void validateColumnsOwnership(
+        const Columns & res_columns,
+        const std::unordered_map<String, ColumnPtr> * columns_cache,
+        const std::unordered_map<String, ColumnPtr> * columns_cache_for_subcolumns,
+        const ISerialization::SubstreamsCache * substreams_cache,
+        const std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> * deserialize_states_caches) const;
 
     const ColumnsSubstreams & columns_substreams;
 
@@ -107,7 +120,8 @@ private:
         const SerializationPtr & serialization,
         ISerialization::DeserializeBinaryBulkStatePtr & state,
         const InputStreamGetter & buffer_getter,
-        ISerialization::SubstreamsDeserializeStatesCache * cache);
+        ISerialization::SubstreamsDeserializeStatesCache * cache,
+        ISerialization::DeserializeBinaryBulkSettings::CheckStreamExistsCallback check_stream_exists_callback = {});
 
     NameAndTypePair getColumnConvertedToSubcolumnOfNested(const NameAndTypePair & column);
     void findPositionForMissedNested(size_t pos);

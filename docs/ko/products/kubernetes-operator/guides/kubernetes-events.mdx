@@ -1,0 +1,204 @@
+---
+position: 8
+slug: /clickhouse-operator/guides/kubernetes-events
+title: Kubernetes 이벤트
+keywords: ['kubernetes', 'events', '문제 해결', 'reconcile', 'system.warnings']
+description: 'operator가 관리하는 `ClickHouseCluster` 및 `KeeperCluster` 객체에서 리컨실리에이션 실패, 스케일링 진행 상황, 버전 검사, ClickHouse 서버 경고를 Kubernetes 이벤트로 보고하는 방식과, 이를 확인하는 방법, 그리고 각 이벤트 Reason의 의미를 설명합니다.'
+doc_type: 'guide'
+---
+
+operator는 관리 중인 `ClickHouseCluster` 및
+`KeeperCluster` 객체에 Kubernetes 이벤트를 기록합니다. 이러한 이벤트는 operator가
+리컨실리에이션 과정에서 수행한 작업을 보여줍니다. 즉, 리소스 변경이 어디에서 실패했는지,
+클러스터가 언제 준비 상태가 되었는지, 왜 스케일링이 차단되었는지 등을 추적할 수 있으며,
+사용자가 일반적으로 확인하는 로그에는 남지 않는 실패도 드러냅니다. 또한
+[메트릭](/ko/products/kubernetes-operator/guides/monitoring)을 보완하여,
+사람이 읽을 수 있는 이력을 사용자 지정 리소스에 직접 연결합니다.
+
+`clickhouse-controller`는 `ClickHouseCluster` 객체에 이벤트를 보고하고,
+`keeper-controller`는 `KeeperCluster` 객체에 이벤트를 보고합니다. 리소스
+수명 주기 실패 이벤트에는 해당 이벤트와 관련된 소유 객체도 함께 참조됩니다(예:
+StatefulSet, Service, ConfigMap, 시크릿, 파드 중단 예산,
+PersistentVolumeClaim 또는 version-probe Job). 그 외 이벤트는 클러스터
+자체만 참조합니다.
+
+<Note>
+  Kubernetes API server는 TTL이 지나면 이벤트를 만료시킵니다. 기본값은 1시간입니다
+  (`--event-ttl`). 따라서 이벤트는 최근 활동을 보여주는 단기적인 신호일 뿐이며,
+  지속적으로 보존되는 감사 추적용 기록은 아닙니다.
+</Note>
+
+<div id="viewing-events">
+  ## 이벤트 확인
+</div>
+
+가장 빠르게 확인하는 방법은 사용자 지정 리소스에 대해 `kubectl describe`를 실행하는 것이며, 그러면 하단에
+가장 최근의 이벤트가 표시됩니다:
+
+```bash
+NS=<your-namespace>
+
+kubectl -n $NS describe clickhousecluster <name>
+kubectl -n $NS describe keepercluster <name>
+```
+
+이벤트를 직접 나열하려면 — 예를 들어 실시간으로 확인하거나 실패한 항목만 필터링하려는 경우 —
+`events` 리소스에 쿼리를 실행한 다음 관련 객체 또는 유형으로 필터링합니다:
+
+```bash
+# All events for one cluster, newest last
+kubectl -n $NS get events \
+  --field-selector involvedObject.name=<name> \
+  --sort-by=.lastTimestamp
+
+# Only warnings across the namespace
+kubectl -n $NS get events --field-selector type=Warning
+
+# Follow events as they arrive
+kubectl -n $NS get events --watch
+```
+
+이벤트 소스에 보고 컨트롤러가 표시되므로,
+`ClickHouseCluster` 이벤트(`clickhouse-controller`)와 `KeeperCluster` 이벤트
+(`keeper-controller`)를 구분할 수 있습니다.
+
+<div id="event-reasons">
+  ## 이벤트 Reason 참고
+</div>
+
+연산자는 설명하는 내용에 따라 분류된 고정된 Reason 집합을 발생시킵니다. `Normal`
+이벤트는 예상된 진행 상황을 나타내고, `Warning` 이벤트는 실패 또는
+사용자가 조치해야 하는 상태를 나타냅니다.
+
+<div id="resource-lifecycle">
+  ### 리소스 수명 주기
+</div>
+
+리컨실리에이션 중 오퍼레이터가 자신이 관리하는 리소스를 적용하지 못하면 `ClickHouseCluster`와 `KeeperCluster` 모두에서 이 이벤트가 발생합니다.
+
+| 사유             | 유형      | 의미                                                                                         |
+| -------------- | ------- | ------------------------------------------------------------------------------------------ |
+| `FailedCreate` | Warning | 오퍼레이터가 자신이 관리하는 리소스(예: StatefulSet, Service, ConfigMap, 시크릿, 파드 중단 예산 또는 Job)를 생성하지 못했습니다. |
+| `FailedUpdate` | Warning | 오퍼레이터가 리소스를 업데이트하지 못했습니다.                                                                  |
+| `FailedDelete` | Warning | 오퍼레이터가 리컨실리에이션 또는 축소 중에 자신이 관리하는 리소스를 삭제하지 못했습니다.                                          |
+
+<div id="cluster-readiness">
+  ### 클러스터 준비 상태
+</div>
+
+클러스터가 준비 상태 경계를 넘을 때 두 Kind 모두에서 발생합니다.
+
+| 사유                | 유형      | 의미                                                                                                                                |
+| ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `ClusterReady`    | Normal  | 클러스터가 준비 상태가 되었습니다. 즉, 각 ClickHouse 세그먼트에 Ready 상태인 레플리카가 최소 1개 이상 있거나, Keeper 쿼럼에 리더와 충분한 수의 팔로워가 있습니다(또는 단일 독립형 레플리카가 실행 중입니다). |
+| `ClusterNotReady` | Warning | 클러스터가 준비 상태를 벗어났습니다. 즉, ClickHouse 세그먼트에 Ready 상태인 레플리카가 더 이상 없거나, Keeper 쿼럼이 리더를 잃었거나 팔로워가 너무 많이 사라졌습니다.                         |
+
+<div id="scaling">
+  ### 스케일링
+</div>
+
+오퍼레이터가 레플리카 수를 변경할 때 `KeeperCluster`에서 발생하는 이벤트입니다.
+
+| 사유                         | 유형      | 의미                                                             |
+| -------------------------- | ------- | -------------------------------------------------------------- |
+| `HorizontalScaleStarted`   | Normal  | 오퍼레이터가 레플리카 추가 또는 제거를 시작했습니다.                                  |
+| `HorizontalScaleCompleted` | Normal  | 스케일링 작업이 완료되었습니다.                                              |
+| `ReplicaCreated`           | Normal  | 오퍼레이터가 클러스터에 레플리카를 추가했습니다.                                     |
+| `ReplicaDeleted`           | Normal  | 오퍼레이터가 축소 중에 레플리카를 제거했습니다.                                     |
+| `HorizontalScaleBlocked`   | Warning | 현재 Keeper 상태가 아직 안전하게 스케일링할 수 있는 상태가 아니므로 오퍼레이터가 스케일링을 거부했습니다. |
+
+<Note>
+  `HorizontalScaleBlocked`는 Keeper 스케일링 요청이 아무 일도 일어나지 않는 것처럼
+  보일 때 확인해야 하는 이벤트입니다. 오퍼레이터는 split 위험을 피하기 위해
+  의도적으로 변경을 보류하고 기존 쿼럼을 유지합니다. 이벤트 메시지에는 변경을
+  막은 제약 조건이 명시됩니다.
+</Note>
+
+<div id="external-secret">
+  ### 외부 시크릿
+</div>
+
+클러스터가 오퍼레이터에서 사용할 수 없는 외부 시크릿을 참조할 때 `ClickHouseCluster`에 대해 이 이벤트가 발생합니다. 자세한 내용은
+[구성 가이드](/ko/products/kubernetes-operator/guides/configuration)의 External Secret 기능을 참조하십시오.
+
+| Reason                   | 유형      | 의미                                               |
+| ------------------------ | ------- | ------------------------------------------------ |
+| `ExternalSecretNotFound` | Warning | 참조된 시크릿이 클러스터의 네임스페이스에 존재하지 않습니다.                |
+| `ExternalSecretInvalid`  | Warning | 시크릿은 존재하지만 필수 키가 누락되어 있습니다(`Observe` 정책에서만 보고됨). |
+
+<div id="version-checks">
+  ### 버전 확인
+</div>
+
+`ClickHouseCluster` 및 `KeeperCluster`의 버전 확인에서 발생합니다.
+`VersionProbeFailed`는 ClickHouse 버전 프로브 Job에만 해당합니다.
+
+| Reason                    | 유형 | 의미                                                                                                                          |
+| ------------------------- | -- | --------------------------------------------------------------------------------------------------------------------------- |
+| `VersionProbeFailed`      | 경고 | 버전 프로브 Job이 실행 중인 ClickHouse 버전을 감지하지 못했습니다.                                                                                |
+| `VersionDiverge`          | 경고 | 레플리카에서 감지된 버전이 오퍼레이터가 cluster에 대해 감지한 버전과 다릅니다. 롤링 업데이트 중에는 억제됩니다.                                                          |
+| `VersionUpgradeAvailable` | 경고 | 구성된 upgrade channel에서 더 새로운 버전을 사용할 수 있거나, 실행 중인 버전이 해당 채널에 없거나, 지원이 종료된 상태입니다. 오퍼레이터는 자체적으로 업그레이드하지 않으며, 이 이벤트는 알림만 제공합니다. |
+
+<div id="clickhouse-warnings">
+  ### ClickHouse 서버 경고
+</div>
+
+| Reason              | Type    | Meaning                                                   |
+| ------------------- | ------- | --------------------------------------------------------- |
+| `ClickHouseWarning` | Warning | ClickHouse 서버 자체에서 보고되며 `system.warnings`에서 다시 게시된 경고입니다. |
+
+마지막 Reason은 성격이 다릅니다. 이는 오퍼레이터 자체의 동작을 설명하는 것이 아닙니다. 각
+준비된 레플리카에서 오퍼레이터는 주기적으로 서버의
+[`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) 테이블을 조회하고,
+각 행을 해당 행이 나온 레플리카 이름을 접두사로 붙여 클러스터의 `Warning` 이벤트로 다시 게시합니다.
+이렇게 하면 ClickHouse 자체의 구성 및 런타임 경고(더 이상 사용되지 않는 설정, 낮은 제한값, 안전하지 않은 옵션)를 각 레플리카에 대해
+`clickhouse-client` 세션을 열지 않고도 `kubectl`로 확인할 수 있는 이벤트로 바꿀 수 있습니다.
+
+```bash
+kubectl -n $NS get events \
+  --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
+```
+
+<div id="events-vs-metrics">
+  ## 이벤트, 메트릭 및 조건
+</div>
+
+연산자는 관측성을 위해 3가지 수단을 제공합니다. 각각 가장 적합한 용도에 맞게 사용하십시오:
+
+* **이벤트** (이 가이드) — 최근에 발생한 내용으로, 사람이 읽기 쉽고 객체에 연결되어 있습니다. &quot;이 클러스터에서 방금 무슨 일이 있었는지&quot;를 파악하고 `kubectl describe`로 대화형 문제 해결을 수행하는 데 가장 적합합니다. 시간이 지나면 만료됩니다.
+* 사용자 지정 리소스의 **`status.conditions`** — 현재 상태에 대한 지속적인 단일 진실 소스입니다
+  (준비 완료, 외부 시크릿 유효, 스케일 허용, 버전 동기화). 스크립트와 GitOps 헬스 게이트에 가장 적합합니다. 다음 명령으로 확인하십시오:
+  `kubectl get clickhousecluster <name> -o jsonpath='{.status.conditions}'`.
+* **[메트릭](/ko/products/kubernetes-operator/guides/monitoring)** — 지속적으로 유지되며
+  수치로 표현됩니다. 대시보드와 reconcile 오류율이 지속될 때 알림을 설정하는 데 가장 적합합니다.
+
+`Warning` 이벤트와 `False` 조건은 같은 문제를 서로 다른 두 관점에서 설명하는 경우가 많습니다. 이벤트는 발생 시점과 메시지를 포착하고, 조건은 해소될 때까지 해당 상태를 반영합니다.
+
+<div id="troubleshooting">
+  ## 이벤트로 문제 해결하기
+</div>
+
+몇 가지 일반적인 신호와 그 의미는 다음과 같습니다.
+
+* **`FailedCreate` / `FailedUpdate` 반복** — 연산자가
+  리소스를 적용하지 못하고 있습니다. 이벤트 메시지에는 API 오류(admission 거부, 할당량,
+  잘못된 spec)가 포함됩니다. 리컨실리에이션은 재시도되므로 일시적인 원인은 저절로 해소되지만,
+  지속되는 원인은 spec 또는 클러스터를 수정해야 합니다.
+* **이에 대응하는 `ClusterReady` 없이 `ClusterNotReady`가 발생** — 클러스터가
+  복구되지 못하고 있습니다. 이벤트 메시지에는 준비되지 않은 세그먼트나 quorum
+  문제가 명시되므로, 해당 파드를 확인하십시오.
+* **`HorizontalScaleBlocked`** — 의도한 수평 확장/축소가 안전을 위해
+  보류된 상태입니다. 강제로 진행하기 전에 정확한 제약 사항을 메시지에서 확인하십시오.
+* **`ExternalSecretNotFound` / `ExternalSecretInvalid`** — 시크릿 이름 또는
+  그 안의 키를 수정하십시오. 연산자가 이를 사용할 수 있게 되면 해당 `ExternalSecretValid` 조건이
+  `True`로 바뀝니다.
+* **`ClickHouseWarning`** — 문제는 연산자가 아니라 ClickHouse 내부에 있습니다.
+  메시지는 `system.warnings`의 행을 보듯이 해석하십시오.
+
+<div id="related-guides">
+  ## 관련 가이드
+</div>
+
+* [operator 모니터링](/ko/products/kubernetes-operator/guides/monitoring) — 메트릭과 상태 프로브로, 이벤트와 달리 지속적으로 확인할 수 있는 신호입니다.
+* [스케일링](/ko/products/kubernetes-operator/guides/scaling) — `HorizontalScaleBlocked`가 무엇을 보호하는지, 그리고 Keeper quorum이 스케일링을 어떻게 제한하는지 설명합니다.
+* [구성](/ko/products/kubernetes-operator/guides/configuration) — external-secret 이벤트의 기반이 되는 External Secret 기능입니다.

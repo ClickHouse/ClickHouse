@@ -1,0 +1,29 @@
+---
+description: '`timeSeriesData`는 테이블 엔진이 TimeSeries인 `db_name.time_series_table` 테이블이
+  사용하는 [데이터](/reference/engines/table-engines/integrations/time-series#samples-table) 테이블을 반환합니다.'
+sidebarTitle: 'timeSeriesData'
+slug: /sql-reference/table-functions/timeSeriesData
+title: 'timeSeriesData'
+doc_type: '참고'
+---
+
+`timeSeriesData(db_name.time_series_table)` - 테이블 엔진이 [TimeSeries](/ko/reference/engines/table-engines/integrations/time-series)인 `db_name.time_series_table` 테이블이
+사용하는 [데이터](/ko/reference/engines/table-engines/integrations/time-series#samples-table) 테이블을 반환합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA data_table
+```
+
+*data* 테이블이 내부 테이블인 경우에도 이 함수는 작동합니다:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries DATA INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+다음 쿼리는 서로 같습니다:
+
+```sql
+SELECT * FROM timeSeriesData(db_name.time_series_table);
+SELECT * FROM timeSeriesData('db_name.time_series_table');
+SELECT * FROM timeSeriesData('db_name', 'time_series_table');
+```

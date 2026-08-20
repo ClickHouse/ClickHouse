@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'ClickStack Open Source の使用を開始する'
+sidebarTitle: 'オープンソース'
+description: 'ClickStack Open Source をローカルで実行し、テストデータを送信してインジェストが正常に機能することを確認します'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', '使用開始', 'Docker デプロイメント', 'OpenTelemetry', 'ローカルデプロイメント']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack Open Source をローカルで実行し、その OpenTelemetry Collector 経由でテストイベントを送信して、イベントが ClickStack UI で利用可能であることを確認します。
+
+ClickStack Open Source では、ClickHouse backend、ClickStack UI、インジェストパイプラインを実行・管理します。オールインワンイメージには、これらのコンポーネントと MongoDB がローカルでの評価・テスト用に単一の Docker コンテナーへバンドルされています。
+
+<Tip>
+  Managed ClickStack も利用できます。詳細は [Managed ClickStack](/ja/clickstack/getting-started/managed) を参照してください。
+</Tip>
+
+以下の手順では、認証済みのオールインワンイメージを使用します。アカウントを作成せずにローカル UI を利用する場合は、代わりに [Docker を使用するローカルモードのウォークスルー](/ja/clickstack/deployment/local-mode-only) に従ってください。
+
+<div id="before-you-begin">
+  ## 始める前に
+</div>
+
+[Docker](https://docs.docker.com/get-docker/)をインストールし、以下のポートが使用可能であることを確認します。
+
+* ClickStack UI 用: `8080`
+* gRPC 経由の OTLP 用: `4317`
+* HTTP 経由の OTLP 用: `4318`
+* ClickHouse HTTP インターフェイス用: `8123`
+
+継続的なワークロードや本番ワークロードについては、[オープンソースでのデプロイメントオプション](/ja/clickstack/deployment/oss)および[本番環境への移行](/ja/clickstack/managing/production)を参照してください。
+
+<div id="set-up-clickstack-open-source">
+  ## オールインワンイメージで ClickStack Open Source をセットアップする
+</div>
+
+<Steps titleSize="h3">
+  <Step title="ClickStack を起動する" id="deploy-stack-with-docker">
+    オールインワンイメージを実行します。
+
+    ```shell
+    docker run \
+      --name clickstack \
+      -p 8123:8123 \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    コンテナーはフォアグラウンドで実行されます。この端末は開いたままにし、このガイドの以降のコマンドは別の端末で実行してください。
+
+    <Accordion title="データと設定を永続化する">
+      コンテナーを削除した後も ClickStack の設定、ClickHouse のデータ、ClickHouse のログを保持するには、代わりに次のコマンドを実行します。
+
+      ```shell
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+
+      `$(pwd)` は現在のディレクトリに展開されます。このコマンドにより、永続データはその場所の `.volumes` ディレクトリに保存されます。
+    </Accordion>
+  </Step>
+
+  <Step title="ClickStack を開く" id="navigate-to-hyperdx-ui">
+    ClickStack の起動後、[http://localhost:8080](http://localhost:8080) を開き、アカウントを作成します。
+
+    ClickStack はバンドルされた ClickHouse インスタンスに自動的に接続し、ログ、トレース、メトリクス、セッション用のデータソースを作成します。
+
+    #### インジェスト API key をコピーする
+
+    左側のメニューの **Get Started** セクションで **Add Data** を選択し、**Ingestion API Key** をコピーします。バンドルされた OpenTelemetry Collector に送信するテレメトリーには、このキーを `authorization` ヘッダーに含める必要があります。
+  </Step>
+
+  <Step title="テストデータを送信する" id="send-test-data">
+    別の端末で、インジェスト API key をエクスポートします。
+
+    ```shell
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+    ```
+
+    現在のタイムスタンプを含む OTLP ログを送信します。
+
+    ```shell
+    NOW_NANO="$(date +%s)000000000"
+
+    curl -i "http://localhost:4318/v1/logs" \
+      -H "Content-Type: application/json" \
+      -H "authorization: ${CLICKSTACK_API_KEY}" \
+      --data-binary @- <<EOF
+    {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [{
+            "key": "service.name",
+            "value": {"stringValue": "clickstack-docs-test"}
+          }]
+        },
+        "scopeLogs": [{
+          "scope": {"name": "clickstack-docs-test"},
+          "logRecords": [{
+            "timeUnixNano": "${NOW_NANO}",
+            "severityText": "INFO",
+            "body": {"stringValue": "ClickStack ingestion test"}
+          }]
+        }]
+      }]
+    }
+    EOF
+    ```
+
+    リクエストが成功すると、`HTTP/1.1 200 OK` が返されます。
+  </Step>
+
+  <Step title="インジェストを確認する" id="confirm-ingestion">
+    ClickStack で **Search** ビューを開き、`ClickStack ingestion test` を検索します。
+
+    検索結果には、サービス名が `clickstack-docs-test` のテストイベントが表示されます。
+
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="ClickStack ingestion test イベントを表示する ClickStack Open Source のログビュー" border />
+  </Step>
+</Steps>
+
+これで、ローカルの ClickStack インスタンス、動作するインジェストエンドポイント、ClickStack で確認できるテストイベントが用意されました。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+<div id="send-application-and-infrastructure-data">
+  ### アプリケーションとインフラストラクチャのデータを送信する
+</div>
+
+ClickStack に送信するデータに応じて、ガイドを選択してください。
+
+<CardGroup cols={2}>
+  <Card title="アプリケーションをインストルメントする" icon="code" href="/ja/clickstack/ingesting-data/sdks/index">
+    サポート対象の OpenTelemetry SDK を使用して、アプリケーションのトレースとログを送信します。
+  </Card>
+
+  <Card title="ホストログを収集する" icon="server" href="/ja/clickstack/integration-examples/host-logs">
+    エージェントの役割で実行される OpenTelemetry Collector からホストログを転送します。
+  </Card>
+
+  <Card title="Kubernetes を監視する" icon="cubes" href="/ja/clickstack/integration-examples/kubernetes">
+    Kubernetes クラスターからログ、メトリクス、トレースを収集します。
+  </Card>
+
+  <Card title="その他のインテグレーションを確認する" icon="plug" href="/ja/clickstack/integration-examples/index">
+    追加のアプリケーションやテレメトリーソース向けのガイドを確認します。
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### サンプルデータを探索する
+</div>
+
+サンプルデータセットを使用して、より充実したテレメトリーでClickStackを探索できます。
+
+<CardGroup cols={2}>
+  <Card title="サンプルログ、トレース、メトリクス" href="/ja/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    公開デモのデータを読み込み、issueを診断します。
+  </Card>
+
+  <Card title="ローカルログとメトリクス" href="/ja/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    macOSまたはLinuxでローカルファイルとシステムメトリクスを収集します。
+  </Card>
+</CardGroup>
+
+Dockerをインストールせずに事前に読み込まれたデータを探索するには、[ホスト型ClickStackデモ](/ja/clickstack/example-datasets/remote-demo-data)を使用します。
+
+<div id="generate-synthetic-data">
+  ### 合成データを生成する
+</div>
+
+既存のアプリケーションやデータセットがない場合でも、ジェネレーターを使用してインジェストをテストできます。
+
+<CardGroup cols={2}>
+  <Card title="otelgen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/otelgen">
+    合成 OTLP ログ、トレース、メトリクスを短時間に送信します。
+  </Card>
+
+  <Card title="telemetrygen でデータを生成する" icon="terminal" href="/ja/clickstack/example-datasets/telemetrygen">
+    複数のサービスにわたって、設定可能な OpenTelemetry シグナルを生成します。
+  </Card>
+</CardGroup>
+
+[ClickStack のすべてのサンプルデータとデモ](/ja/clickstack/example-datasets/index)を参照してください。
+
+<div id="prepare-for-production">
+  ### 本番運用の準備
+</div>
+
+ClickStack を継続的なワークロードで使用する前に、デプロイメントおよび本番運用に関するガイダンスを確認してください。
+
+<CardGroup cols={2}>
+  <Card title="本番環境への移行" icon="shield" href="/ja/clickstack/managing/production">
+    インジェスト用認証情報、セキュリティ、保持期間、運用に関するガイダンスを確認します。
+  </Card>
+
+  <Card title="デプロイメントモデルを選択する" icon="server" href="/ja/clickstack/deployment/oss">
+    環境に適したオープンソースのデプロイメントオプションを比較します。
+  </Card>
+</CardGroup>

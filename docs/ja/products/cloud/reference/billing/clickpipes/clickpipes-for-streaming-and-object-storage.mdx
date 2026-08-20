@@ -1,0 +1,101 @@
+---
+sidebarTitle: 'ストリーミングとオブジェクトストレージ'
+slug: /cloud/reference/billing/clickpipes/streaming-and-object-storage
+title: 'ストリーミングおよびオブジェクトストレージ向け ClickPipes'
+description: 'ストリーミングおよびオブジェクトストレージ用 ClickPipes の課金概要'
+doc_type: 'reference'
+keywords: ['課金', 'ClickPipes', 'ストリーミング料金', 'コスト', '料金']
+---
+
+import ClickPipesFAQ from '/snippets/ja/_clickpipes_faq.mdx';
+
+このセクションでは、ストリーミングおよびオブジェクトストレージ向け ClickPipes の料金体系の概要を説明します。
+
+<div id="what-does-the-clickpipes-pricing-structure-look-like">
+  ## ClickPipes の料金体系はどのようになっていますか？
+</div>
+
+料金は次の 2 つの要素で構成されます。
+
+* **Compute**: **1 ユニットあたり 1 時間ごと**の料金。
+  コンピュートは、ClickPipes のレプリカポッドが実際にデータを取り込んでいるかどうかにかかわらず、それらを稼働させるためのコストを表します。
+  これはすべての ClickPipes タイプに適用されます。
+* **取り込みデータ**: **1 GB あたり**の料金。
+  取り込みデータの料金は、すべてのストリーミング ClickPipes
+   (Kafka、Confluent、Amazon MSK、Amazon Kinesis、Redpanda、WarpStream、Azure Event Hubs) 
+  に適用され、レプリカポッド経由で転送されるデータが対象です。取り込みデータのサイズ (GB) は、ソースから受信したバイト数 (非圧縮または圧縮) に基づいて課金されます。
+
+<div id="what-are-clickpipes-replicas">
+  ## ClickPipes レプリカとは？
+</div>
+
+ClickPipes は、ClickHouse Cloud サービスとは独立して動作し、スケールする
+専用のインフラストラクチャを介して、リモートのデータソースからデータを取り込みます。
+そのため、専用のコンピュートレプリカを使用します。
+
+<div id="what-is-the-default-number-of-replicas-and-their-size">
+  ## デフォルトのレプリカ数とサイズは？
+</div>
+
+各 ClickPipe のデフォルト構成は、512 MiB の RAM と 0.125 vCPU (XS) を備えたレプリカ 1 つです。
+これは **0.0625** ClickHouse コンピュートユニット (1 ユニット = 8 GiB RAM、2 vCPU) に相当します。
+
+<div id="what-are-the-clickpipes-public-prices">
+  ## ClickPipes の公開料金はいくらですか？
+</div>
+
+* コンピュート: 1 ユニットあたり $0.20/時間 (デフォルトのレプリカサイズでは、レプリカあたり $0.0125/時間) 
+* 取り込みデータ: 1 GB あたり $0.04
+
+コンピュート料金は、ClickPipe のレプリカの**数**と**サイズ**によって決まります。デフォルトのレプリカサイズは垂直スケーリングで調整でき、各レプリカサイズの料金は次のとおりです。
+
+| レプリカサイズ                   | コンピュートユニット | RAM     | vCPU   | 時間あたりの料金 |
+| ------------------------- | ---------- | ------- | ------ | -------- |
+| Extra Small (XS) (デフォルト)  | 0.0625     | 512 MiB | 0.125. | $0.0125  |
+| Small (S)                 | 0.125      | 1 GiB   | 0.25   | $0.025   |
+| Medium (M)                | 0.25       | 2 GiB   | 0.5    | $0.05    |
+| Large (L)                 | 0.5        | 4 GiB   | 1.0    | $0.10    |
+| Extra Large (XL)          | 1.0        | 8 GiB   | 2.0    | $0.20    |
+
+<div id="how-does-it-look-in-an-illustrative-example">
+  ## 具体例で見るとどうなるでしょうか？
+</div>
+
+以下の例は、明記がない限り、M サイズの単一レプリカを前提としています。
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>24時間で100 GB</th>
+      <th>24時間で1 TB</th>
+      <th>24時間で10 TB</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Streaming ClickPipe</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 100) = $5.20</td>
+      <td>(0.25 x 0.20 x 24) + (0.04 x 1000) = $41.20</td>
+      <td>4 レプリカの場合: <br /> (0.25 x 0.20 x 24 x 4) + (0.04 x 10000) = $404.80</td>
+    </tr>
+
+    <tr>
+      <td>Object Storage ClickPipe $^*$</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+      <td>(0.25 x 0.20 x 24) = $1.20</td>
+    </tr>
+  </tbody>
+</table>
+
+$^1$ *ClickPipes のオーケストレーション用コンピュートのみを含み、
+実際のデータ転送は基盤となる ClickHouseサービス側で行われるものとしています*
+
+<div id="faq-streaming-and-object-storage">
+  ## ストリーミングおよびオブジェクトストレージ向け ClickPipes のよくある質問
+</div>
+
+<ClickPipesFAQ />

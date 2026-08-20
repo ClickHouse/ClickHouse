@@ -59,7 +59,11 @@ ABORTED_RUN_EXIT_CODES = frozenset(
     }
 )
 
-SUCCESS_FINISH_SIGNS = ["All tests have finished", "No tests were run"]
+NO_TESTS_SIGN = "No tests were run"
+NO_TESTS_FILTERED_OUT_SIGN = (
+    "No tests were run because every explicitly requested test was filtered out"
+)
+SUCCESS_FINISH_SIGNS = ["All tests have finished", NO_TESTS_SIGN]
 
 RETRIES_SIGN = "Some tests were restarted"
 
@@ -87,6 +91,7 @@ class FTResultsProcessor:
         hung: bool = False
         retries: bool = False
         success_finish: bool = False
+        no_tests_run: bool = False
         test_end: bool = True
 
     def __init__(self, wd):
@@ -102,6 +107,7 @@ class FTResultsProcessor:
         hung = False
         retries = False
         success_finish = False
+        no_tests_run = False
         test_results = []
         test_end = True
 
@@ -112,6 +118,8 @@ class FTResultsProcessor:
 
                 if any(s in line for s in SUCCESS_FINISH_SIGNS):
                     success_finish = True
+                if NO_TESTS_FILTERED_OUT_SIGN in line:
+                    no_tests_run = True
                 # Ignore hung check report, since it may be quite large.
                 # (and may break python parser which has limit of 128KiB for each row).
                 if HUNG_SIGN in line:
@@ -208,15 +216,35 @@ class FTResultsProcessor:
             test_results=test_results,
             hung=hung,
             success_finish=success_finish,
+            no_tests_run=no_tests_run,
             retries=retries,
         )
 
         return s
 
-    def run(self, task_name="Tests", runner_exit_code: Optional[int] = None):
+    def run(
+        self,
+        task_name="Tests",
+        runner_exit_code: Optional[int] = None,
+        is_bugfix_validation: bool = False,
+        allow_no_tests: bool = False,
+    ):
         state = Result.Status.OK
         s = self._process_test_output()
         test_results = s.test_results
+
+        if s.no_tests_run and allow_no_tests and not s.hung:
+            # The job was given an explicit list of tests (flaky, targeted or
+            # `selected tests` run), and `clickhouse-test` explicitly proved it
+            # filtered every one of them out - e.g. all are tagged `no-tsan` in a
+            # TSan job. A generic "No tests were run" banner is not sufficient:
+            # it is also printed after runner-level failures before the first test.
+            return Result.create_from(
+                name=task_name,
+                results=test_results,
+                status=Result.Status.SKIPPED,
+                info="No tests to run - every selected test is filtered out in this job flavor",
+            )
 
         if s.failed != 0 or s.unknown != 0:
             state = Result.Status.FAIL
@@ -239,8 +267,27 @@ class FTResultsProcessor:
                 for result in failed_results:
                     result.status = Result.Status.UNKNOWN
             elif len(failed_results) == 1:
-                # Single test failed - sequential run, this test is the culprit.
-                failed_results[0].status = Result.Status.ERROR
+                # Exactly one FAIL was captured before the server died. The
+                # runner may still have been parallel (`--jobs` is always
+                # passed), so this is best-effort attribution of the culprit,
+                # not proof of a single-test sequential run. Demote it to
+                # ERROR so a test that merely witnessed the server death is
+                # not reported as an ordinary test failure - except in bugfix
+                # validation, where the job runs only the PR's own changed
+                # tests: a server death while they run is the expected
+                # reproduction of the bug regardless of which of them got its
+                # FAIL printed first, so keep the FAIL for
+                # `invert_bugfix_validation_status` instead of tripping its
+                # fail-closed ERROR guard and reporting the run inconclusive
+                # (#105789). This matches the >1-failed path (UNKNOWN rows +
+                # flipped `Server died` row), which already validates the
+                # parallel-crash case. Accepted tradeoff:
+                # ABORTED_RUN_EXIT_CODES also covers host-caused kills (e.g.
+                # 128+SIGKILL from an OOM of the runner), so in bugfix
+                # validation such a death with a single failed test reads as
+                # a reproduction too.
+                if not is_bugfix_validation:
+                    failed_results[0].status = Result.Status.ERROR
             test_results.append(Result("Server died", Result.Status.FAIL, info="Server died"))
         elif runner_exit_code == MAX_FAILURES_EXIT_CODE:
             # The run stopped early because too many tests failed

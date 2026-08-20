@@ -1,0 +1,9 @@
+-- _partition_id --
+a/b	10
+a/b	10
+-- _partition_value --
+a	10
+a	10
+-- toYYYYMM(d) --
+2024-01-01	7	10
+2024-01-01	7	10

@@ -1,0 +1,48 @@
+---
+title: 'Cumplimiento de la IA'
+slug: /cloud/security/ai-compliance
+description: 'Resumen del cumplimiento de la IA en ClickHouse'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'Inteligencia artificial', 'Gobernanza de IA', 'Cumplimiento de la IA']
+---
+
+ClickHouse utiliza IA para ayudar a los clientes y ampliar la funcionalidad de la plataforma. Este documento describe dónde se usa la IA, las opciones para habilitarla o deshabilitarla y los enlaces a otra documentación donde se explica cómo usarla.
+
+<Info>
+  **Retención de datos y entrenamiento de la IA**
+
+  De forma predeterminada, ninguna de nuestras funcionalidades de IA retiene datos de los clientes ni utiliza datos de los clientes para entrenar modelos.
+</Info>
+
+<div id="ai-support">
+  ## Soporte de IA
+</div>
+
+La opción para habilitar el soporte de IA puede ser revisada y modificada por un usuario con permisos `organization:manage`. Está disponible en la página de configuración de la organización.
+
+ClickHouse ofrece funcionalidades de IA para que los clientes interactúen con un agente de chat y reciban ayuda con la configuración o la resolución de problemas. El agente utiliza información de nuestra documentación y de los sistemas de gestión de casos para ofrecer respuestas rápidas a las consultas de los clientes.
+
+<div id="sharing-data-for-product-improvement">
+  ## Compartir datos para mejorar el producto
+</div>
+
+La configuración para habilitar el intercambio de datos para mejorar el producto puede ser revisada y modificada por un usuario con permisos `organization:manage`. Está disponible en la página de configuración de la organización.
+
+Cuando la configuración de nivel de administrador para compartir datos con ClickHouse con fines de mejora del producto está activada en su organización, ClickHouse puede usar los datos generados o recopilados a través del uso que sus usuarios hagan de una funcionalidad de IA, incluidas las entradas, salidas, logs y metadatos (pero excluidos los resultados directos de las consultas a ClickHouse Cloud), para fines como la evaluación de modelos (precisión, rendimiento y pruebas de seguridad/cumplimiento), la mejora de la fiabilidad del servicio, la seguridad, la experiencia del usuario y la realización de análisis. No utilizaremos estos datos para entrenar, reentrenar ni ajustar modelos.
+
+<div id="clickhouse-assistant">
+  ## ClickHouse Assistant
+</div>
+
+La configuración para habilitar [ClickHouse Assistant](/es/products/cloud/features/ai-ml/ask-ai) puede ser revisada y modificada por un usuario con permisos `service:manage-generative-ai`. Está disponible en la página de configuración del servicio. Esta funcionalidad habilita dos capacidades diferenciadas:
+
+| Funcionalidad        | Descripción                                                                     | Datos utilizados                                                                           | Validación del usuario                                                                  |
+| :------------------- | :------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| SQL AI               | Escribe, analiza y recomienda mejoras para consultas                            | Metadatos del servicio, texto de la consulta e instrucciones del prompt                    | El resultado se muestra al usuario para su revisión antes de ejecutar la consulta       |
+| ClickHouse Assistant | Permite a los usuarios hacer preguntas en lenguaje natural y obtener respuestas | Metadatos y contenido del servicio, documentación de ClickHouse e instrucciones del prompt | El resultado se presenta para su revisión; los usuarios deben validarlo antes de usarlo |
+
+<div id="model-comtext-protocol">
+  ## Protocolo de contexto del modelo
+</div>
+
+[ClickHouse MCP](/es/products/cloud/features/ai-ml/remote-mcp) permite a los clientes crear con mayor facilidad sus propios agentes aprovechando los datos de sus servicios de ClickHouse. Esto requiere una configuración independiente y utiliza el modelo de IA que el cliente elija para procesar los datos. ClickHouse no administra ni tiene acceso a los modelos de IA del cliente.

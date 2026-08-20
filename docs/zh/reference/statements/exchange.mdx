@@ -1,0 +1,110 @@
+---
+description: 'EXCHANGE 语句文档'
+sidebarTitle: 'EXCHANGE'
+slug: /sql-reference/statements/exchange
+title: 'EXCHANGE 语句'
+doc_type: 'reference'
+---
+
+以原子方式交换两个表或字典的名称。
+此任务也可以通过使用临时名称的 [`RENAME`](/zh/reference/statements/rename) 查询来完成，但在这种情况下，该操作不具有原子性。
+
+<Note>
+  `EXCHANGE` 查询仅受 [`Atomic`](/zh/reference/engines/database-engines/atomic) 和 [`Shared`](/zh/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) 数据库引擎支持。
+</Note>
+
+**语法**
+
+```sql
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-tables">
+  ## EXCHANGE TABLES
+</div>
+
+互换两个表的名称。
+
+**语法**
+
+```sql
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-multiple-tables">
+  ### EXCHANGE 多个表
+</div>
+
+你可以在单个查询中用逗号分隔多个表对，一次交换多对表。
+
+<Note>
+  交换多个表对时，这些交换操作会**按顺序执行，而非原子执行**。如果操作过程中发生错误，某些表对可能已经交换，而其他表对则尚未交换。
+</Note>
+
+**示例**
+
+```sql title="Query"
+-- 创建表
+CREATE TABLE a (a UInt8) ENGINE=Memory;
+CREATE TABLE b (b UInt8) ENGINE=Memory;
+CREATE TABLE c (c UInt8) ENGINE=Memory;
+CREATE TABLE d (d UInt8) ENGINE=Memory;
+
+-- 在一个查询中交换两对表
+EXCHANGE TABLES a AND b, c AND d;
+
+SHOW TABLE a;
+SHOW TABLE b;
+SHOW TABLE c;
+SHOW TABLE d;
+```
+
+```sql title="Response"
+-- 现在表 'a' 具有 'b' 的结构，表 'b' 具有 'a' 的结构
+┌─statement──────────────┐
+│ CREATE TABLE default.a↴│
+│↳(                     ↴│
+│↳    `b` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.b↴│
+│↳(                     ↴│
+│↳    `a` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+
+-- 现在表 'c' 具有 'd' 的结构，表 'd' 具有 'c' 的结构
+┌─statement──────────────┐
+│ CREATE TABLE default.c↴│
+│↳(                     ↴│
+│↳    `d` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.d↴│
+│↳(                     ↴│
+│↳    `c` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+```
+
+<div id="exchange-dictionaries">
+  ## EXCHANGE 字典
+</div>
+
+交换两个字典的名称。
+
+**语法**
+
+```sql
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
+```
+
+**另请参阅**
+
+* [字典](/zh/reference/statements/create/dictionary)

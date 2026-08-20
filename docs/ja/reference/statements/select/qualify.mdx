@@ -1,0 +1,39 @@
+---
+description: 'QUALIFY 句のドキュメント'
+sidebarTitle: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
+title: 'QUALIFY 句'
+doc_type: 'reference'
+---
+
+ウィンドウ関数の結果をフィルタリングできます。[WHERE](/ja/reference/statements/select/where) 句に似ていますが、`WHERE` はウィンドウ関数の評価前に実行されるのに対し、`QUALIFY` はその後に実行される点が異なります。
+
+`SELECT` 句内のウィンドウ関数の結果は、そのエイリアスを使って `QUALIFY` 句から参照できます。あるいは、クエリ結果には返されない追加のウィンドウ関数の結果に対して `QUALIFY` 句でフィルタリングすることもできます。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+評価対象のウィンドウ関数がない場合、`QUALIFY` は使用できません。代わりに `WHERE` を使用してください。
+
+<div id="examples">
+  ## 例
+</div>
+
+例:
+
+```sql
+SELECT number, COUNT() OVER (PARTITION BY number % 3) AS partition_count
+FROM numbers(10)
+QUALIFY partition_count = 4
+ORDER BY number;
+```
+
+```text
+┌─number─┬─partition_count─┐
+│      0 │               4 │
+│      3 │               4 │
+│      6 │               4 │
+│      9 │               4 │
+└────────┴─────────────────┘
+```

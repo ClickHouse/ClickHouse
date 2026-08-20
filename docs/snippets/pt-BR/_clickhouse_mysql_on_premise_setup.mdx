@@ -1,0 +1,97 @@
+---
+title: Configuração on-premise do ClickHouse MySQL
+---
+
+Consulte [a documentação oficial](/pt-BR/concepts/features/interfaces/mysql)
+para saber como configurar um servidor ClickHouse com a interface MySQL habilitada.
+
+Além de adicionar uma entrada ao `config.xml` do servidor
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+também é *obrigatório* usar
+[criptografia de senha com Double SHA1](/pt-BR/concepts/features/configuration/settings/settings-users#user-namepassword)
+para o usuário que usará a interface MySQL.
+
+Como gerar, no shell, uma senha aleatória criptografada com Double SHA1:
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+A saída deve ser semelhante à seguinte:
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+A primeira linha é a senha gerada, e a segunda linha é o hash que pode ser usado para configurar o ClickHouse.
+
+Aqui está um exemplo de configuração para `mysql_user` que usa o hash gerado:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+Substitua a entrada `password_double_sha1_hex` pelo hash Double SHA1 gerado por você.
+
+Além disso, é recomendável usar `use_mysql_types_in_show_columns`
+para exibir os tipos nativos do MySQL em vez dos do ClickHouse nos resultados da consulta `SHOW [FULL] COLUMNS`,
+o que permite que ferramentas de BI inspecionem corretamente o esquema do banco de dados ao usar conectores MySQL.
+
+Por exemplo:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+ou atribuí-lo a outro profile em vez do profile padrão.
+
+Se você tiver o binário `mysql` disponível, poderá testar a conexão pela linha de comando.
+Usando o nome de usuário de exemplo (`mysql_user`) e a senha (`LZOQYnqQN4L/T6L0`) acima, o comando seria:
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+Por fim, configure o ClickHouse Server para escutar no(s) endereço(s) IP desejado(s). Por exemplo, em `config.xml`, descomente o trecho a seguir para escutar em todos os endereços:
+
+```bash
+<listen_host>::</listen_host> 
+```

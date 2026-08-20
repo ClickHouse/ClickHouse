@@ -1,0 +1,79 @@
+---
+description: 'ウェブターミナルに関するドキュメント。WebSocket 経由でブラウザ内の `clickhouse-client` セッションを提供します'
+sidebarTitle: 'ウェブターミナル'
+slug: /interfaces/web-terminal
+title: 'ウェブターミナル'
+doc_type: 'reference'
+---
+
+ウェブターミナルは、WebSocket 経由で対話型の `clickhouse-client` セッションを提供するブラウザ内インターフェイスです。任意の ClickHouse HTTP ポートの `/webterminal` パスで提供されます。
+
+ターミナルを開くには、任意の ClickHouse HTTP ポートの `/webterminal` (たとえば `http://localhost:8123/webterminal`) にアクセスします。
+
+<div id="enabling-the-feature">
+  ## 機能の有効化と無効化
+</div>
+
+`/webterminal` エンドポイントはデフォルトで有効になっており、`enable_webterminal` サーバー設定で制御されます。無効にするには、この設定を `false` に設定します。すると、`/webterminal` へのリクエストは HTTP ステータス `403 Forbidden` を返すようになります。
+
+```xml
+<clickhouse>
+    <enable_webterminal>false</enable_webterminal>
+</clickhouse>
+```
+
+<Note>
+  `enable_webterminal` は、従来の `allow_experimental_webterminal` 設定に置き換わるものです。`enable_webterminal` が設定されていない場合は、後方互換性のため、古い名前も引き続き使用できます。
+</Note>
+
+<div id="authentication">
+  ## 認証
+</div>
+
+ウェブターミナルは、HTTPプロトコルと同じ `Session` およびアクセス制御のチェックでユーザーを認証しますが、credentials は HTTP のアップグレードリクエスト経由ではなく、確立済みの WebSocket connection 上でインバンドにやり取りされます。WebSocket ハンドシェイクが完了すると、ブラウザーは最初のメッセージを JSON として送信します。
+
+```json
+{"type": "auth", "user": "<user>", "password": "<password>"}
+```
+
+これにより、認証情報を URL のクエリパラメータや、アップグレードリクエストに付与された `Authorization` ヘッダーに含めずに済みます。こうした場所に含めると、認証情報がブラウザの履歴、サーバーのアクセスログ、リバースプロキシのログに残るおそれがあります。アップグレードリクエストの URL パラメータ、HTTP Basic、および `X-ClickHouse-User`/`X-ClickHouse-Key` ヘッダーは、`/webterminal` では意図的に **参照されません**。
+
+無効な認証情報が指定されると、サーバーはコード `1008` で WebSocket を閉じ、ブラウザの UI は認証情報の再入力を求めます。
+
+<div id="session">
+  ## セッションの動作
+</div>
+
+認証が完了すると、サーバーは擬似端末に接続した `clickhouse-client` を実行し、その入出力を WebSocket 経由で中継します。このセッションでは、以下を含む `clickhouse-client` の完全な操作環境を利用できます。
+
+* シンタックスハイライト。
+* 自動補完。
+* 複数行クエリ。
+* コマンド履歴 (セッションの継続中はサーバー側に保存されます) 。
+
+端末の描画には [xterm.js](https://xtermjs.org/) を使用しています。すべてのアセットは ClickHouse バイナリ自体から配信され、サードパーティの CDN は読み込まれません。
+
+<div id="play-integration">
+  ## `/play` とのインテグレーション
+</div>
+
+[`/play`](/ja/concepts/features/interfaces/http) Web SQL UI には、ウェブターミナルがドッキング可能なパネルとして組み込まれています。表示は、サイドバーの端末アイコンで切り替えるか、クエリエディタが空の状態で `~` キーを押して切り替えます。`/play` ページは読み込み時に `/webterminal` が利用可能かどうかを判定し、エンドポイントが利用できない場合 (たとえば、`enable_webterminal` が `false` に設定されている場合) には端末コントロールを非表示にします。
+
+<div id="security">
+  ## セキュリティに関する考慮事項
+</div>
+
+ウェブターミナルは、ClickHouse の HTTP エンドポイントに対して認証できるすべてのユーザーに、対話型のシェルのようなセッションを提供するため、HTTP プロトコルに当てはまるのと同じ注意点がここにも当てはまります。
+
+* 信頼できない環境では、認証情報とセッショントラフィックを保護するため、常に `/webterminal` を HTTPS 経由で提供してください。
+* HTTP プロトコルへのアクセスを制限するのと同様に、ネットワークレベル (ファイアウォール、リバースプロキシ、または `listen_host` 設定) でアクセスを制限してください。
+* このエンドポイントは、クロスオリジン WebSocket ハイジャックを防ぐために、`Origin` ヘッダーを `Host` と照合して検証します。外部で TLS を終端する場合は、それに応じてリバースプロキシを設定してください。
+* TLS を終端するリバースプロキシの背後では、ブラウザが `https` を使用していても、ClickHouse への上流接続は平文の `http` になるため、厳密な same-origin チェックによって正当な接続が拒否されます。このようなデプロイメントでは、WebSocket セッションを開くことを許可する完全なオリジンのカンマ区切りリストとして `webterminal_allowed_origins` を設定してください。この設定が空でない場合、デフォルトの same-origin チェックの代わりに使用されます。例: `<webterminal_allowed_origins>https://example.com,https://app.example.com:8443</webterminal_allowed_origins>`。
+
+このハンドラーは、RFC 6455 に従って WebSocket プロトコル準拠も強制します。マスクされていないクライアントフレーム、予約済みオペコード、サイズ超過または断片化された制御フレーム、および予約済み RSV ビットは、protocol-error の close code で拒否されます。
+
+<div id="platform">
+  ## プラットフォーム対応状況
+</div>
+
+このハンドラーは、ClickHouse がサポートするすべてのプラットフォームでコンパイルされます。埋め込み `clickhouse-client` ランナーで使用される擬似端末レイヤーは、移植性のある POSIX プリミティブ (`posix_openpt`/`grantpt`/`unlockpt`) をベースに実装されており、Linux 固有のパスではスレッドセーフな `ptsname_r` を使用します。ClickHouse のスタートページおよび `/play` の `/webterminal` へのリンクは、エンドポイントを利用できない場合 (たとえば、`enable_webterminal` が `false` に設定されている場合) に自動的に非表示になります。
