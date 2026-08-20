@@ -309,6 +309,13 @@ COMPLIANCE_TEST_CASES = [
 
     # count_values
     ('count_values("value", demo_api_request_duration_seconds_bucket)', [], False),
+    ('count_values("value", demo_api_request_duration_seconds_bucket) without (instance)', [], False),
+    ('count_values("value", demo_api_request_duration_seconds_bucket) without (value)', [], False),
+    ('count_values("job", demo_api_request_duration_seconds_bucket) by (job)', [], False),
+    ('count_values("~value", demo_api_request_duration_seconds_bucket)', [], False),
+    ('count_values("", demo_api_request_duration_seconds_bucket)', [], True),
+    ('count_values("value", nonexistent_metric_name)', [], False),
+    ('count_values("value", vector(time()))', [], False),
 
     # absent
     ("absent(demo_memory_usage_bytes)", [], False),

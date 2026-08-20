@@ -1,7 +1,10 @@
+import json
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import tsv_close_to
+from helpers.test_tools import TSV, tsv_close_to
 import requests
 
 from .prometheus_test_utils import (
@@ -24,6 +27,10 @@ node = cluster.add_instance(
     with_prometheus_reader=True,
     with_prometheus_receiver=True,
 )
+
+PROMETHEUS_STALE_MARKER = struct.unpack(
+    "<d", struct.pack("<Q", 0x7FF0000000000002)
+)[0]
 
 
 # Sends data [ ({'label_name1': 'label_value1], ...}, {timestamp1: value1, ...} ), ... ]
@@ -172,6 +179,8 @@ def send_test_data():
             )
         ]
     )
+
+    send_data([({"__name__": "stale_marker"}, {110: PROMETHEUS_STALE_MARKER})])
 
     send_data(
         [
@@ -488,6 +497,44 @@ def do_query_test(
     assert (
         http_api_response_close_to(actual_result_from_http_api, result, eps=eps)
         == clickhouse_http_api_result_is_same_as_prometheus
+    ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
+
+
+def _result_with_series_sorted(response):
+    data = json.loads(response)
+    if data.get("resultType") in ("vector", "matrix"):
+        data["result"].sort(
+            key=lambda series: json.dumps(series.get("metric", {}), sort_keys=True)
+        )
+    return data
+
+
+# Evaluates a query whose Prometheus vector/matrix series order is nondeterministic.
+def do_unordered_query_test(query, timestamp, result, chresult):
+    expected_result = _result_with_series_sorted(result)
+    assert (
+        _result_with_series_sorted(execute_query_in_prometheus_reader(query, timestamp))
+        == expected_result
+    )
+    assert (
+        _result_with_series_sorted(
+            execute_query_in_prometheus_receiver(query, timestamp)
+        )
+        == expected_result
+    )
+
+    actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
+    actual_chresult_sorted = TSV(actual_chresult)
+    actual_chresult_sorted.lines.sort()
+    expected_chresult_sorted = TSV(chresult)
+    expected_chresult_sorted.lines.sort()
+    assert (
+        actual_chresult_sorted == expected_chresult_sorted
+    ), f"actual result: {actual_chresult}, expected: {chresult}"
+
+    actual_result_from_http_api = execute_query_in_clickhouse_http_api(query, timestamp)
+    assert (
+        _result_with_series_sorted(actual_result_from_http_api) == expected_result
     ), f"actual_result_from_http_api: {actual_result_from_http_api}, expected: {result}"
 
 
@@ -3882,6 +3929,166 @@ def test_aggregation_operators():
             ["[('size','s')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]"],
             ["[('size','xl')]", "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]"],
         ],
+    )
+
+    do_unordered_query_test(
+        "count_values(\"value\", foo)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"value": "16"}, "value": [130, "1"]}, {"metric": {"value": "40"}, "value": [130, "1"]}, {"metric": {"value": "80"}, "value": [130, "1"]}]}',
+        [
+            ["[('value','16')]", "1970-01-01 00:02:10.000", 1],
+            ["[('value','40')]", "1970-01-01 00:02:10.000", 1],
+            ["[('value','80')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", {__name__=~"foo|bar"})',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"value": "10"}, "value": [110, "1"]}, {"metric": {"value": "16"}, "value": [110, "1"]}, {"metric": {"value": "3"}, "value": [110, "1"]}, {"metric": {"value": "4"}, "value": [110, "1"]}, {"metric": {"value": "8"}, "value": [110, "2"]}, {"metric": {"value": "9"}, "value": [110, "1"]}]}',
+        [
+            ["[('value','10')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','3')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('value','8')]", "1970-01-01 00:01:50.000", 2],
+            ["[('value','9')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        'count_values("shape", {__name__=~"foo|bar"}) by (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "10"}, "value": [110, "1"]}, {"metric": {"shape": "16"}, "value": [110, "1"]}, {"metric": {"shape": "3"}, "value": [110, "1"]}, {"metric": {"shape": "4"}, "value": [110, "1"]}, {"metric": {"shape": "8"}, "value": [110, "2"]}, {"metric": {"shape": "9"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','10')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','3')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','8')]", "1970-01-01 00:01:50.000", 2],
+            ["[('shape','9')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", foo) by (shape)',
+        110,
+        '{"resultType": "vector", "result": [{"metric": {"shape": "circle", "value": "16"}, "value": [110, "1"]}, {"metric": {"shape": "square", "value": "4"}, "value": [110, "1"]}, {"metric": {"shape": "triangle", "value": "8"}, "value": [110, "1"]}]}',
+        [
+            ["[('shape','circle'),('value','16')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','square'),('value','4')]", "1970-01-01 00:01:50.000", 1],
+            ["[('shape','triangle'),('value','8')]", "1970-01-01 00:01:50.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        '(count_values("value", last_over_time(foo[1s])))[20:10]',
+        130,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "16"}, "values": [[130, "1"]]}, {"metric": {"value": "40"}, "values": [[130, "1"]]}, {"metric": {"value": "80"}, "values": [[120, "1"]]}]}',
+        [
+            ["[('value','16')]", "[('1970-01-01 00:02:10.000',1)]"],
+            ["[('value','40')]", "[('1970-01-01 00:02:10.000',1)]"],
+            ["[('value','80')]", "[('1970-01-01 00:02:00.000',1)]"],
+        ],
+    )
+
+    do_unordered_query_test(
+        "count_values(\"value\", foo) without (shape)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"size": "l", "value": "16"}, "value": [130, "1"]}, {"metric": {"size": "m", "value": "80"}, "value": [130, "1"]}, {"metric": {"size": "s", "value": "40"}, "value": [130, "1"]}]}',
+        [
+            ["[('size','l'),('value','16')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','m'),('value','80')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','s'),('value','40')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        "count_values(\"size\", foo) without (shape)",
+        130,
+        '{"resultType": "vector", "result": [{"metric": {"size": "16"}, "value": [130, "1"]}, {"metric": {"size": "40"}, "value": [130, "1"]}, {"metric": {"size": "80"}, "value": [130, "1"]}]}',
+        [
+            ["[('size','16')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','40')]", "1970-01-01 00:02:10.000", 1],
+            ["[('size','80')]", "1970-01-01 00:02:10.000", 1],
+        ],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(1.5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1.5"}, "value": [120, "1"]}]}',
+        [["[('value','1.5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(-0))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-0"}, "value": [120, "1"]}]}',
+        [["[('value','-0')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(+Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "+Inf"}, "value": [120, "1"]}]}',
+        [["[('value','+Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(-Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-Inf"}, "value": [120, "1"]}]}',
+        [["[('value','-Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(NaN))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "NaN"}, "value": [120, "1"]}]}',
+        [["[('value','NaN')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(0.0000001))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "0.0000001"}, "value": [120, "1"]}]}',
+        [["[('value','0.0000001')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", vector(1e21))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1000000000000000000000"}, "value": [120, "1"]}]}',
+        [["[('value','1000000000000000000000')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", stale_marker)',
+        110,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_unordered_query_test(
+        'count_values("value", nonexistent_metric)',
+        120,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    do_query_test(
+        'count_values("~value", vector(1))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"~value": "1"}, "value": [120, "1"]}]}',
+        [["[('~value','1')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test_expect_error(
+        'count_values("", vector(1))',
+        120,
+        "invalid label name",
+        "invalid label name",
     )
 
     do_query_test(
