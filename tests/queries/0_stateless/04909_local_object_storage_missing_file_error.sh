@@ -21,6 +21,9 @@ ${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('
 # Drop the single data file the manifest points at, keeping all metadata intact.
 rm -f "${TABLE_DIR}"/bucket-0/*.parquet
 
-${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('${TABLE_DIR}') FORMAT Null" 2>&1 | grep -c -F "FILE_DOESNT_EXIST"
+# The harness runs the client with `--send_logs_level=warning`, so the failure is
+# echoed both as a server log line and as the client's own error - match, don't count.
+${CLICKHOUSE_CLIENT} --enable_time_time64_type=1 -q "SELECT * FROM paimonLocal('${TABLE_DIR}') FORMAT Null" 2>&1 \
+    | grep -q -F "FILE_DOESNT_EXIST" && echo "GOT FILE_DOESNT_EXIST ERROR"
 
 rm -rf "${TABLE_DIR}"
