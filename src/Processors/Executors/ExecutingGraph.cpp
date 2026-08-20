@@ -297,11 +297,11 @@ String ExecutingGraph::dump() const
     {
         {
             WriteBufferFromOwnString buffer;
-            buffer << "(" << node.num_executed_jobs << " jobs";
+            buffer << "(" << node.num_executed_jobs.load() << " jobs";
 
 #ifndef NDEBUG
-            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
-            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
+            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns.load()) / 1e9 << " sec.";
+            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns.load()) / 1e9 << " sec.";
 #endif
 
             buffer << ")";
