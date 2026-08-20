@@ -32,6 +32,7 @@
 
 #include <Poco/String.h>
 
+#include <string_view>
 #include <unordered_set>
 
 namespace DB
@@ -185,8 +186,28 @@ bool isDeniedScalarFunction(const String & name)
 /// that the unconfirmed tool cannot reach resources beyond the local server.
 bool isAllowedNamedTable(const String & database, const String & table)
 {
-    /// `system.zookeeper` reaches Keeper, rather than reading metadata local to the server.
-    return database == "system" && table != "zookeeper";
+    /// The `system` tables whose read reaches beyond the local server. Most of them talk to
+    /// Keeper: `zookeeper` reads znodes, `zookeeper_info` opens sockets to every configured
+    /// Keeper host for the `mntr`/`isro` commands, `distributed_ddl_queue` and the queue-metadata
+    /// tables read the queue state stored in Keeper, `replicas` and `database_replicas` request
+    /// the replication state there, and even the connection/watch views can establish the
+    /// server's Keeper session lazily. The Iceberg tables read the table metadata from the
+    /// object storage.
+    static const std::unordered_set<std::string_view> external_system_tables
+    {
+        "zookeeper",
+        "zookeeper_connection",
+        "zookeeper_info",
+        "zookeeper_watches",
+        "distributed_ddl_queue",
+        "s3_queue_metadata",
+        "azure_queue_metadata",
+        "replicas",
+        "database_replicas",
+        "iceberg_history",
+        "iceberg_files",
+    };
+    return database == "system" && !external_system_tables.contains(table);
 }
 
 bool isAllowedNamedTable(const ASTTableIdentifier & table)
