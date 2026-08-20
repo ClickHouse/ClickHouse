@@ -1237,7 +1237,19 @@ void StorageWindowView::threadFuncFireProc()
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
         max_fired_watermark = next_fire_signal;
-        auto slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
+        UInt32 slide_interval = 0;
+        try
+        {
+            slide_interval = addTimeStrictly(0, slide_kind, slide_num_units, *time_zone);
+        }
+        catch (...)
+        {
+            /// A slide interval loaded from old metadata may not advance `DateTime32` at all, so
+            /// this view can never fire again. An exception escaping into the
+            /// `BackgroundSchedulePool` aborts the server, so log it and stop rescheduling.
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+            return;
+        }
         /// Convert DayNum into seconds when the slide interval is larger than Day
         if (slide_kind > IntervalKind::Kind::Day)
             slide_interval *= 86400;

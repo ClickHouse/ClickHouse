@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-replicated-database, no-shared-catalog
+# Tags: no-replicated-database, no-shared-catalog, no-parallel-replicas
 
 # A short `ATTACH` must retain the aligned firing schedule of a valid
-# processing-time `WINDOW VIEW`.
+# processing-time `WINDOW VIEW`: `next_fire_signal` has to stay a window upper bound
+# (a multiple of the five-second window here), never the raw attach timestamp.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -31,18 +32,35 @@ while [ $(( $(date +%s) % 5 )) -eq 0 ]; do
     sleep 0.1
 done
 
+ATTACH_TIME=$(date +%s)
 ${CLICKHOUSE_CLIENT_WV} -q "ATTACH TABLE ${VIEW}"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${SOURCE} VALUES (1)"
 
-for _ in {1..100}; do
-    count=$(${CLICKHOUSE_CLIENT_WV} -q "SELECT count() FROM ${VIEW}")
-    if [ "${count}" = "1" ]; then
+LOGGER="StorageWindowView(${CLICKHOUSE_DATABASE}.${VIEW})"
+QUERY="
+    SELECT count(), countIf(signal % 5 = 0)
+    FROM
+    (
+        SELECT toUInt32OrZero(extract(message, 'next fire signal: (\\d+)')) AS signal
+        FROM system.text_log
+        WHERE event_date >= yesterday()
+          AND event_time >= toDateTime(${ATTACH_TIME})
+          AND logger_name = '${LOGGER}'
+          AND message LIKE '%next fire signal%'
+    )"
+
+# Wait for the firing loop to report its schedule at least once after the attach.
+for _ in {1..60}; do
+    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS text_log"
+    result=$(${CLICKHOUSE_CLIENT} -q "${QUERY}")
+    total=$(echo "${result}" | cut -f1)
+    if [ "${total}" != "0" ]; then
         break
     fi
-    sleep 0.1
+    sleep 0.5
 done
 
-${CLICKHOUSE_CLIENT_WV} -q "SELECT count() FROM ${VIEW}"
+# Every reported fire signal must be a five-second window upper bound.
+echo "${result}" | awk '{ print ($1 > 0 && $1 == $2) ? "aligned" : "unaligned: " $0 }'
 
 ${CLICKHOUSE_CLIENT_WV} -q "DROP TABLE ${VIEW}"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${SOURCE}"
