@@ -56,53 +56,64 @@ struct ExponentialTimeDecayedState
     Float64 max_time = 0;
     bool empty() const { return weight == 0; }
 
-    void add(Float64 value, Float64 time, Float64 decay_length, Float64 max_decay_distance)
+    Float64 getCalculationIndexTime(Float64 magnitude, Float64 decay_length) const
     {
-        if (empty())
-        {
-            weighted_sum = value;
-            weight = 1;
-            max_time = time;
-            return;
-        }
+        if (magnitude == 0)
+            return -std::numeric_limits<Float64>::infinity();
 
-        if (time > max_time)
-        {
-            const Float64 distance = time - max_time;
-            if (distance > max_decay_distance)
-            {
-                weighted_sum = value;
-                weight = 1;
-            }
-            else
-            {
-                const Float64 decay = std::exp(-distance / decay_length);
-                weighted_sum = weighted_sum * decay + value;
-                weight = weight * decay + 1;
-            }
-            max_time = time;
-        }
-        else if (time < max_time)
-        {
-            const Float64 distance = max_time - time;
-            if (distance > max_decay_distance)
-                return;
+        return max_time + decay_length * std::log(magnitude);
+    }
 
-            const Float64 decay = std::exp(-distance / decay_length);
-            weighted_sum += value * decay;
-            weight += decay;
-        }
-        else
+    bool isCalculationNegligibleComparedTo(
+        const ExponentialTimeDecayedState & rhs,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind) const
+    {
+        const auto index_is_outside_budget = [max_decay_distance](Float64 lhs_index_time, Float64 rhs_index_time)
         {
-            weighted_sum += value;
-            weight += 1;
-        }
+            return rhs_index_time > lhs_index_time && rhs_index_time - lhs_index_time > max_decay_distance;
+        };
+
+        if (result_kind == ExponentialTimeDecayedResult::Count)
+            return index_is_outside_budget(
+                getCalculationIndexTime(weight, decay_length),
+                rhs.getCalculationIndexTime(rhs.weight, decay_length));
+
+        const bool sum_is_negligible = index_is_outside_budget(
+            getCalculationIndexTime(std::abs(weighted_sum), decay_length),
+            rhs.getCalculationIndexTime(std::abs(rhs.weighted_sum), decay_length));
+        if (result_kind == ExponentialTimeDecayedResult::Sum)
+            return sum_is_negligible;
+
+        const bool weight_is_negligible = index_is_outside_budget(
+            getCalculationIndexTime(weight, decay_length),
+            rhs.getCalculationIndexTime(rhs.weight, decay_length));
+
+        /// An average depends on both its numerator and denominator. Discard a
+        /// state only when neither can materially affect the dominant state.
+        return sum_is_negligible && weight_is_negligible;
+    }
+
+    void add(
+        Float64 value,
+        Float64 time,
+        Float64 decay_length,
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind)
+    {
+        ExponentialTimeDecayedState rhs;
+        rhs.weighted_sum = value;
+        rhs.weight = 1;
+        rhs.max_time = time;
+        merge(rhs, decay_length, max_decay_distance, result_kind);
     }
 
     void merge(
         const ExponentialTimeDecayedState & rhs,
         Float64 decay_length,
-        Float64 max_decay_distance)
+        Float64 max_decay_distance,
+        ExponentialTimeDecayedResult result_kind)
     {
         if (rhs.empty())
             return;
@@ -113,29 +124,32 @@ struct ExponentialTimeDecayedState
             return;
         }
 
+        /// Compare contributions by their calculation index timestamps. A distance
+        /// of B decay lengths bounds the smaller magnitude by exp(-B) relative to
+        /// the larger one, independently of their anchor times.
+        if (std::isfinite(max_decay_distance))
+        {
+            if (isCalculationNegligibleComparedTo(rhs, decay_length, max_decay_distance, result_kind))
+            {
+                *this = rhs;
+                return;
+            }
+            if (rhs.isCalculationNegligibleComparedTo(*this, decay_length, max_decay_distance, result_kind))
+                return;
+        }
+
         /// Re-anchor the older state at the shared greatest timestamp before adding them.
         if (rhs.max_time > max_time)
         {
             const Float64 distance = rhs.max_time - max_time;
-            if (distance > max_decay_distance)
-            {
-                weighted_sum = rhs.weighted_sum;
-                weight = rhs.weight;
-            }
-            else
-            {
-                const Float64 decay = std::exp(-distance / decay_length);
-                weighted_sum = weighted_sum * decay + rhs.weighted_sum;
-                weight = weight * decay + rhs.weight;
-            }
+            const Float64 decay = std::exp(-distance / decay_length);
+            weighted_sum = weighted_sum * decay + rhs.weighted_sum;
+            weight = weight * decay + rhs.weight;
             max_time = rhs.max_time;
         }
         else if (rhs.max_time < max_time)
         {
             const Float64 distance = max_time - rhs.max_time;
-            if (distance > max_decay_distance)
-                return;
-
             const Float64 decay = std::exp(-distance / decay_length);
             weighted_sum += rhs.weighted_sum * decay;
             weight += rhs.weight * decay;
@@ -247,12 +261,12 @@ public:
         if (!std::isfinite(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of aggregate function {} must be finite", getName());
 
-        this->data(place).add(value, time, decay_length, max_decay_distance);
+        this->data(place).add(value, time, decay_length, max_decay_distance, result_kind);
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
-        this->data(place).merge(this->data(rhs), decay_length, max_decay_distance);
+        this->data(place).merge(this->data(rhs), decay_length, max_decay_distance, result_kind);
     }
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t>) const override
@@ -408,23 +422,12 @@ AggregateFunctionPtr createAggregateFunctionExponentialTimeDecayedSum(
                     name,
                     argument_types[0]->getName());
 
-            const Float64 max_decay_distance = getMaxDecayDistance(name, settings, decay_length);
-            const Float64 calculation_budget = settings
-                ? static_cast<Float64>((*settings)[Setting::exponential_time_decay_aggregate_function_calculation_budget])
-                : 0;
-            if (calculation_budget > 0)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting exponential_time_decay_aggregate_function_calculation_budget must be 0 when aggregate function {} "
-                    "consumes ExponentialTimeDecayingFloat64 because finalized values do not preserve their original anchor time",
-                    name);
-
             return std::make_shared<AggregateFunctionExponentialTimeDecayed<ExponentialTimeDecayedResult::Sum>>(
                 name,
                 argument_types,
                 parameters,
                 decay_length,
-                max_decay_distance,
+                getMaxDecayDistance(name, settings, decay_length),
                 true);
         }
     }

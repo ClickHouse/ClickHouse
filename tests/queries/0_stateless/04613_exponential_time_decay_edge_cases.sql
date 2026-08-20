@@ -67,8 +67,8 @@ SELECT round(
     6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
--- A positive budget is measured in decay lengths. Contributions beyond it are
--- discarded before exp(), while contributions inside it are retained.
+-- A positive budget compares calculation index timestamps. The old but large
+-- contribution remains within five decay lengths of the dominant contribution.
 SET exponential_time_decay_aggregate_function_calculation_budget = 5;
 SELECT round(
     exponentialTimeDecayingValueAt(
@@ -77,12 +77,29 @@ SELECT round(
     6)
 FROM VALUES('value Float64, time Float64', (1000, 0), (2, 100));
 
+-- A contribution whose unit-magnitude timestamp is outside the budget is
+-- discarded before exp().
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(10)(value, time),
+        toFloat64(100)),
+    6)
+FROM VALUES('value Float64, time Float64', (1, 0), (2, 100));
+
 SELECT round(
     exponentialTimeDecayingValueAt(
         exponentialTimeDecayedSum(10)(value, time),
         toFloat64(100)),
     6)
 FROM VALUES('value Float64, time Float64', (100, 60), (2, 100));
+
+-- An average keeps a state when either its numerator or denominator is still
+-- significant; a large old value must not be dropped based on age alone.
+WITH
+    exponentialTimeDecayedAvg(10)(value, time) AS actual,
+    (1000000 * exp(-10) + 2) / (exp(-10) + 1) AS expected
+SELECT abs(actual - expected) <= 1e-12 * greatest(1., abs(expected))
+FROM VALUES('value Float64, time Float64', (1000000, 0), (2, 100));
 
 -- The same cutoff applies while merging independently built states.
 SELECT round(
@@ -99,16 +116,19 @@ FROM
     FROM VALUES('value Float64, time Float64', (2, 100))
 );
 
--- Finalized values encode the curve but not the original anchor timestamp, so a
--- positive age budget cannot be applied to them without making the cutoff depend
--- on value magnitude.
-SELECT exponentialTimeDecayedSum(decaying_value)
+-- Finalized values already store the unit-magnitude timestamp, so they use the
+-- same magnitude-aware cutoff without needing the original anchor timestamp.
+SELECT round(
+    exponentialTimeDecayingValueAt(
+        exponentialTimeDecayedSum(decaying_value),
+        toFloat64(100)),
+    6)
 FROM
 (
     SELECT exponentialTimeDecayingFloat64(10)(1000, toFloat64(0)) AS decaying_value
     UNION ALL
     SELECT exponentialTimeDecayingFloat64(10)(2, toFloat64(100)) AS decaying_value
-); -- { serverError BAD_ARGUMENTS }
+);
 
 SET exponential_time_decay_aggregate_function_calculation_budget = -1;
 SELECT exponentialTimeDecayedSum(10)(value, time)
