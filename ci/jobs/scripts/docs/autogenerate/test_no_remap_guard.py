@@ -2,13 +2,11 @@
 """Self-contained test for autogenerate_docs.py's --no-remap-legacy guard.
 
 --no-remap-legacy is a forward-looking mode: it is only correct once the
-generation source emits Mintlify-native paths. Today every generator family --
-the slug-map-discovered component families AND the settings/functions/aggregate
-families with hard-coded Docusaurus `dest` paths -- still produces Docusaurus
-destinations, so none can be written without --remap-legacy. The guard must
-therefore reject the whole mode up front (a full run, or an --only that matches
-any family) instead of dying mid-run with FileNotFoundError. See the review
-discussion on PR #110195.
+generation source emits Mintlify-native paths. The component families and the
+settings/functions/aggregate families still produce Docusaurus destinations,
+so the guard must reject them up front instead of dying mid-run with
+FileNotFoundError. Statement pages are Mintlify-native and remain available in
+this mode. See the review discussion on PR #110195.
 
 Runs without a ClickHouse binary or the clickhouse-docs repo: `migrate` is
 stubbed and generate() is monkeypatched so the positive (remap) case does not
@@ -48,6 +46,10 @@ def make_fake_docs(root):
             "        'status': 'matched',\n"
             "        'docusaurus_file': 'docs/engines/table-engines/mergetree-family/mergetree.md',\n"
             "        'mintlify_file': 'reference/engines/table-engines/mergetree-family/mergetree.mdx',\n"
+            "    }, {\n"
+            "        'status': 'matched',\n"
+            "        'docusaurus_file': 'docs/sql-reference/statements/select/from.md',\n"
+            "        'mintlify_file': 'reference/statements/select/from.mdx',\n"
             "    }]\n"
             "    return object(), rows\n")
     open(os.path.join(mig, "slug-map.csv"), "w", encoding="utf-8").close()
@@ -58,6 +60,11 @@ def make_fake_docs(root):
     os.makedirs(te)
     with open(os.path.join(te, "mergetree.mdx"), "w", encoding="utf-8") as f:
         f.write("# MergeTree\n" + marker)
+    # Statement family: also discovered via the stub file_map.
+    statement = os.path.join(root, "reference", "statements", "select")
+    os.makedirs(statement)
+    with open(os.path.join(statement, "from.mdx"), "w", encoding="utf-8") as f:
+        f.write("# FROM\n" + marker)
     # Aggregate family: discovered from the migrated tree.
     agg = os.path.join(root, "reference", "functions", "aggregate-functions")
     os.makedirs(agg)
@@ -88,8 +95,8 @@ def main():
         make_fake_docs(docs)
         sys.modules.pop("migrate", None)  # do not inherit a real `migrate`
 
-        # No-remap must fail fast for a full run and for every family, including
-        # the ones the earlier guard wrongly allowed (settings/functions/aggregate).
+        # No-remap must fail fast for a full run and for every legacy family,
+        # including the ones the earlier guard wrongly allowed.
         expect_blocked(mod, docs, None)
         for only in ["session-settings", "functions:", "aggregate", "table-engine"]:
             expect_blocked(mod, docs, only)
@@ -102,7 +109,13 @@ def main():
             rc = mod.main(["--docs-dir", docs])  # remap default, dry run
         assert rc == 0, f"remap dry run should return 0, got {rc}"
 
-    print("OK: --no-remap-legacy guard blocks every family; --remap-legacy is unaffected")
+        # Statement descriptions and destinations are already Mintlify-native.
+        with redirect_stdout(io.StringIO()):
+            rc = mod.main([
+                "--docs-dir", docs, "--no-remap-legacy", "--only", "statement:"])
+        assert rc == 0, f"native statement generation should return 0, got {rc}"
+
+    print("OK: --no-remap-legacy blocks legacy families and allows native statements")
     return 0
 
 
