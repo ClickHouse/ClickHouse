@@ -173,7 +173,7 @@ ALTER TABLE table DROP INDEX text_idx;
   If parameter `min_cutoff_length` is provided, only n-grams with length greater or equal than `min_cutoff_length` are returned.
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
-- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)).
+- `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -1398,6 +1398,38 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 This optimization supports only functions `like` and `ilike`.
+
+### Trivial count queries {#count-queries-perf}
+
+A query that only counts the rows matching a text-search predicate
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+is answered from the text index, without reading the matching rows.
+ClickHouse takes the count from the posting-list cardinalities in the index, skipping the virtual column that marks matching rows and the aggregation over it. A single token needs only its dictionary cardinality, so no posting list is read; multi-token predicates read the postings just to union (`hasAnyTokens`) or intersect (`hasAllTokens`) them. As a text index covers the whole part, the count is exact and stays fast even on very large parts.
+
+The optimization applies to a bare `count()` filtered by a single `hasToken`, `hasAnyTokens`, or `hasAllTokens` predicate (or an `Array`/`Map` equivalent). Predicates combined with `AND`/`OR`/`NOT`, an extra filter (e.g. `... AND id > 10`), a hint-mode predicate like `m['key'] = 'value'`, selecting anything besides the count, or phrase or `LIKE`/pattern search makes the query read rows instead. Parts without a materialized index are still counted correctly by reading their rows.
+
+To confirm the optimization is engaged, check for `ReadFromTextIndexCount` in the query plan:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+The optimization is controlled by [query_plan_optimize_count_from_text_index](/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index) (on by default). It builds on [direct read](#direct-read), so [query_plan_direct_read_from_text_index](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use_skip_indexes](/reference/settings/session-settings/use-skip-indexes#use_skip_indexes), and [optimize_trivial_count_query](/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query) must be enabled too (all on by default).
 
 ### Caching {#caching}
 
