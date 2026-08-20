@@ -9,8 +9,10 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <IO/ReadHelpers.h>
 #include <Disks/createVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -1151,6 +1153,45 @@ static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(c
     return {params_tuple, lambda_arg->arguments->children[1].get()};
 }
 
+/// "t.doc" / "t.1" for tupleElement(t, 'doc' | 1) chains, "m.keys"/"m.values" for mapKeys/mapValues(m),
+/// over a plain column base; nullopt when the base is not a plain (possibly nested) column reference.
+static std::optional<String> tryGetMemberQualifiedName(const IAST & node)
+{
+    if (const auto * identifier = node.as<ASTIdentifier>())
+        return identifier->name();
+
+    const auto * function = node.as<ASTFunction>();
+    if (!function || !function->arguments)
+        return std::nullopt;
+    const auto & args = function->arguments->children;
+
+    if (function->name == "tupleElement" && args.size() == 2)
+    {
+        const auto * literal = args[1]->as<ASTLiteral>();
+        if (!literal)
+            return std::nullopt;
+        String member;
+        if (literal->value.getType() == Field::Types::String)
+            member = literal->value.safeGet<String>();
+        else if (literal->value.getType() == Field::Types::UInt64)
+            member = toString(literal->value.safeGet<UInt64>());
+        else
+            return std::nullopt;
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + member;
+        return std::nullopt;
+    }
+
+    if ((function->name == "mapKeys" || function->name == "mapValues") && args.size() == 1)
+    {
+        if (auto base = tryGetMemberQualifiedName(*args[0]))
+            return *base + "." + (function->name == "mapKeys" ? "keys" : "values");
+        return std::nullopt;
+    }
+
+    return std::nullopt;
+}
+
 static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
 {
     if (const auto * identifier = node.as<ASTIdentifier>())
@@ -1177,6 +1218,18 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
 
                 for (const auto & name : newly_masked)
                     masked_names.erase(name);
+                return;
+            }
+        }
+        /// Member access reads one side of its source; qualify the candidate with that member so the
+        /// resolver descends into it instead of donating the source's sibling policies.
+        if (function->name == "tupleElement" || function->name == "mapKeys" || function->name == "mapValues")
+        {
+            if (auto qualified = tryGetMemberQualifiedName(node))
+            {
+                const String root = qualified->substr(0, qualified->find('.'));
+                if (!masked_names.contains(root) && !masked_names.contains(*qualified))
+                    names.insert(*qualified);
                 return;
             }
         }
@@ -1332,12 +1385,109 @@ static std::unordered_map<String, ProjectionOutputProvenance> getProjectionOutpu
                     target.insert(target.end(), pair_names.begin(), pair_names.end());
                 }
             }
+            else if (function->name == "arrayMap" && args.size() >= 2)
+            {
+                /// arrayMap((x, y) -> tuple(x, y), arr1, arr2) builds Array(Tuple(...)) element-wise:
+                /// reconstruct per-slot candidates by substituting each lambda parameter with its
+                /// bound array argument, so the whole-type merge cannot cross slots.
+                auto [lambda_params_tuple, lambda_body] = extractLambdaParamsAndBody(args);
+                const auto * body_tuple = lambda_body ? lambda_body->as<ASTFunction>() : nullptr;
+                if (lambda_params_tuple && body_tuple && body_tuple->name == "tuple" && body_tuple->arguments
+                    && body_tuple->arguments->children.size() >= 2)
+                {
+                    std::unordered_map<String, const IAST *> param_to_source;
+                    const auto & params = lambda_params_tuple->arguments->children;
+                    for (size_t i = 0; i != params.size(); ++i)
+                        if (const auto * param_identifier = params[i]->as<ASTIdentifier>())
+                            param_to_source.emplace(param_identifier->name(), args[1 + i].get());
+
+                    provenance.is_array_zip = true;
+                    for (const auto & slot : body_tuple->arguments->children)
+                    {
+                        IdentifierNameSet slot_names = collectValueCarryingIdentifierNames(*slot);
+                        std::vector<String> slot_candidates;
+                        for (const auto & name : slot_names)
+                        {
+                            auto source_it = param_to_source.find(name);
+                            if (source_it == param_to_source.end())
+                            {
+                                slot_candidates.push_back(name);
+                                continue;
+                            }
+                            IdentifierNameSet source_names = collectValueCarryingIdentifierNames(*source_it->second);
+                            slot_candidates.insert(slot_candidates.end(), source_names.begin(), source_names.end());
+                        }
+                        provenance.tuple_element_candidates.push_back(std::move(slot_candidates));
+                    }
+                }
+            }
         }
 
         if (!provenance.flat_candidates.empty() || !provenance.tuple_element_candidates.empty() || provenance.is_map)
             output_to_sources.emplace(child->getAliasOrColumnName(), std::move(provenance));
     }
     return output_to_sources;
+}
+
+/// Number of JSON nodes anywhere in the type, walking the same containers as containsJSONObjectType.
+static size_t countJSONObjectTypes(const IDataType & type)
+{
+    if (typeid_cast<const DataTypeObject *>(&type))
+        return 1;
+    if (const auto * array = typeid_cast<const DataTypeArray *>(&type))
+        return countJSONObjectTypes(*array->getNestedType());
+    if (const auto * nullable = typeid_cast<const DataTypeNullable *>(&type))
+        return countJSONObjectTypes(*nullable->getNestedType());
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type))
+    {
+        size_t count = 0;
+        for (const auto & element : tuple->getElements())
+            count += countJSONObjectTypes(*element);
+        return count;
+    }
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+        return countJSONObjectTypes(*map->getKeyType()) + countJSONObjectTypes(*map->getValueType());
+    return 0;
+}
+
+/// One member step of a qualified candidate: Tuple elements by name or 1-based number, Map sides by
+/// "keys"/"values"; Array/Nullable wrappers are looked through (member access maps over arrays).
+static DataTypePtr descendJSONPolicySourceIntoMember(DataTypePtr type, std::string_view member)
+{
+    while (true)
+    {
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(type.get()))
+            type = nullable->getNestedType();
+        else if (const auto * array = typeid_cast<const DataTypeArray *>(type.get()))
+            type = array->getNestedType();
+        else
+            break;
+    }
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        if (tuple->hasExplicitNames())
+        {
+            auto position = tuple->tryGetPositionByName(String(member));
+            if (position)
+                return tuple->getElements()[*position];
+        }
+        UInt64 index = 0;
+        if (tryParse(index, member.data(), member.size()) && index >= 1 && index <= tuple->getElements().size())
+            return tuple->getElements()[index - 1];
+        return nullptr;
+    }
+
+    if (const auto * map = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (member == "keys")
+            return map->getKeyType();
+        if (member == "values")
+            return map->getValueType();
+        return nullptr;
+    }
+
+    return nullptr;
 }
 
 /// Mirrors applyJSONSharedDataPathPoliciesForMutation (MutateTask.cpp) for a projection's own declared
@@ -1369,19 +1519,53 @@ static DataTypePtr resolveJSONSharedDataPathPolicyForCandidates(
         const auto & source_projection_parts = source_part->getProjectionParts();
         auto projection_part_it = source_projection_parts.find(projection.name);
 
+        const auto try_get_source_column = [&](String name) -> std::optional<NameAndTypePair>
+        {
+            if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(name))
+                name = (*alter_conversions)->getColumnOldName(name);
+            std::optional<NameAndTypePair> column;
+            if (projection_part_it != source_projection_parts.end())
+                column = projection_part_it->second->tryGetColumn(name);
+            if (!column)
+                column = source_part->tryGetColumn(name);
+            return column;
+        };
+
         for (const auto & candidate_name : candidate_names)
         {
-            String source_name = candidate_name;
-            if (alter_conversions && *alter_conversions && (*alter_conversions)->isColumnRenamed(source_name))
-                source_name = (*alter_conversions)->getColumnOldName(source_name);
+            DataTypePtr policy_source_type;
+            if (auto source_column = try_get_source_column(candidate_name))
+            {
+                policy_source_type = source_column->type;
+            }
+            else if (candidate_name.find('.') != String::npos)
+            {
+                /// A member-qualified candidate ("t.doc", "m.values"): find the longest prefix that is
+                /// a physical column and descend the remaining members through its type, so only the
+                /// member the projection actually read donates its policy.
+                for (size_t pos = candidate_name.rfind('.'); pos != String::npos;
+                     pos = (pos == 0 ? String::npos : candidate_name.rfind('.', pos - 1)))
+                {
+                    auto base = try_get_source_column(candidate_name.substr(0, pos));
+                    if (!base)
+                        continue;
+                    DataTypePtr current = base->type;
+                    size_t member_begin = pos + 1;
+                    while (current && member_begin <= candidate_name.size())
+                    {
+                        size_t member_end = candidate_name.find('.', member_begin);
+                        if (member_end == String::npos)
+                            member_end = candidate_name.size();
+                        current = descendJSONPolicySourceIntoMember(current, std::string_view(candidate_name).substr(member_begin, member_end - member_begin));
+                        member_begin = member_end + 1;
+                    }
+                    policy_source_type = current;
+                    break;
+                }
+            }
 
-            std::optional<NameAndTypePair> source_column;
-            if (projection_part_it != source_projection_parts.end())
-                source_column = projection_part_it->second->tryGetColumn(source_name);
-            if (!source_column)
-                source_column = source_part->tryGetColumn(source_name);
-            if (source_column)
-                type = mergeJSONSharedDataPathRules(type, source_column->type);
+            if (policy_source_type)
+                type = mergeJSONSharedDataPathRules(type, policy_source_type);
         }
     }
 
@@ -1455,7 +1639,9 @@ static void applyJSONSharedDataPathPoliciesForProjection(
         if (!handled_structurally)
         {
             Names candidate_names = {result_column.name};
-            if (provenance)
+            /// An output with several JSON nodes cannot be attributed from flat candidates without
+            /// crossing slots; keep only the self candidate (the prior part's own projection column).
+            if (provenance && countJSONObjectTypes(*result_column.type) <= 1)
                 for (const auto & name : provenance->flat_candidates)
                     if (name != result_column.name)
                         candidate_names.push_back(name);

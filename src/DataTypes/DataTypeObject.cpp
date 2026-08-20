@@ -1218,16 +1218,12 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         return std::make_shared<DataTypeTuple>(std::move(elements));
     }
 
-    /// Source-side mirror of the tuple case above, e.g. `tupleElement(t, 2)` over `t Tuple(UInt8,
-    /// JSON(...))`: same unambiguous-element rule, just with the wrapper on the source side.
-    if (const auto * source_tuple = typeid_cast<const DataTypeTuple *>(policy_source_type.get());
-        source_tuple && !typeid_cast<const DataTypeTuple *>(type.get()))
-    {
-        auto index = findUniqueJSONShapedElement(source_tuple->getElements());
-        if (!index)
-            return type;
-        return applyJSONSharedDataPathPolicyImpl(type, source_tuple->getElements()[*index], merge_rules);
-    }
+    /// A source-side Tuple is not unwrapped by shape: the projection may have read any element
+    /// (e.g. CAST(tupleElement(t, 1) AS JSON) over Tuple(String, JSON) reads the String), so the
+    /// member actually read must come qualified from the AST (see descendJSONPolicySourceIntoMember
+    /// in MergeTreeDataWriter.cpp) rather than be guessed from the lone JSON-shaped sibling.
+    if (typeid_cast<const DataTypeTuple *>(policy_source_type.get()) && !typeid_cast<const DataTypeTuple *>(type.get()))
+        return type;
 
     /// `map('k', j)`, `map(j, 1)`, or `map(j, j)`: DataTypeMap::isValidKeyType permits a JSON key
     /// (it only excludes Nullable), so the JSON value isn't necessarily in just one side -- apply
@@ -1243,24 +1239,10 @@ DataTypePtr applyJSONSharedDataPathPolicyImpl(const DataTypePtr & type, const Da
         return std::make_shared<DataTypeMap>(std::move(nested_key), std::move(nested_value));
     }
 
-    /// Source-side mirror of the map case above. Unlike the target side, `type` here is a single
-    /// bare value, so it can only have come from *one* side of the source Map -- but when both
-    /// sides are JSON-shaped (e.g. extracting from a historical Map(JSON(...), JSON(...))), the
-    /// types alone can't say which one the expression actually picked (mapKeys(m)[1] vs
-    /// mapValues(m)[1]/m[k]). Prefer whichever single side changes; if both do, conservatively
-    /// merge them instead of guessing, so provenance is never silently dropped for the side not
-    /// picked.
-    if (const auto * source_map = typeid_cast<const DataTypeMap *>(policy_source_type.get());
-        source_map && !typeid_cast<const DataTypeMap *>(type.get()))
-    {
-        auto from_key = applyJSONSharedDataPathPolicyImpl(type, source_map->getKeyType(), merge_rules);
-        auto from_value = applyJSONSharedDataPathPolicyImpl(type, source_map->getValueType(), merge_rules);
-        if (from_key == type)
-            return from_value;
-        if (from_value == type)
-            return from_key;
-        return applyJSONSharedDataPathPolicyImpl(from_key, from_value, /*merge_rules=*/true);
-    }
+    /// A source-side Map is not unwrapped by shape either: which side the expression read
+    /// (mapKeys vs mapValues/m[k]) must come qualified from the AST, same as the Tuple case above.
+    if (typeid_cast<const DataTypeMap *>(policy_source_type.get()) && !typeid_cast<const DataTypeMap *>(type.get()))
+        return type;
 
     if (const auto * object = typeid_cast<const DataTypeObject *>(type.get()))
     {
