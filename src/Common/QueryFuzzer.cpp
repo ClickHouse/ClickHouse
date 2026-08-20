@@ -1892,6 +1892,11 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     /// Fuzz dictionary attribute flags, default values, and expressions
     if (create.is_dictionary && create.dictionary_attributes_list)
     {
+        /// Attribute order defines the dictionary structure and how it lines up with the source
+        auto & attributes = create.dictionary_attributes_list->children;
+        if (attributes.size() > 1 && fuzz_rand() % 10 == 0)
+            std::shuffle(attributes.begin(), attributes.end(), fuzz_rand);
+
         for (auto & child : create.dictionary_attributes_list->children)
         {
             auto * attr = child->as<ASTDictionaryAttributeDeclaration>();
@@ -2085,6 +2090,11 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// No ENGINE clause falls back to the `default_table_engine` setting
         if (fuzz_rand() % 100 == 0)
             drop_storage_clause(create.storage->engine);
+
+        /// TTL rules are applied in the order they are declared, so permuting them changes
+        /// which rule wins for a row that several of them match
+        if (create.storage->ttl_table && create.storage->ttl_table->children.size() > 1 && fuzz_rand() % 50 == 0)
+            std::shuffle(create.storage->ttl_table->children.begin(), create.storage->ttl_table->children.end(), fuzz_rand);
 
         /// Add missing key clauses (the drops above only remove them); the fuzzer could otherwise
         /// never introduce them. Skipped for CREATE DATABASE, whose parser accepts no key clauses.
@@ -5810,6 +5820,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             union_members.push_back(union_members[fuzz_rand() % union_members.size()]->clone());
             with_union->list_of_modes.assign(union_members.size() - 1, with_union->union_mode);
         }
+        else if (union_members.size() > 1 && fuzz_rand() % 100 == 0)
+        {
+            /// Reorder the branches, leaving `list_of_modes` alone so each branch pairs with a
+            /// different mode. The sizes don't change, so the two stay in sync on their own.
+            std::shuffle(union_members.begin(), union_members.end(), fuzz_rand);
+        }
 
         fuzz(with_union->list_of_selects);
 
@@ -6356,13 +6372,16 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 auto & with_children = select->with()->children;
                 if (with_children.size() > 1 && fuzz_rand() % 50 == 0)
                     with_children.erase(with_children.begin() + fuzz_rand() % with_children.size());
+                /// A CTE may reference an earlier one, so permuting them makes forward references
+                if (with_children.size() > 1 && fuzz_rand() % 50 == 0)
+                    std::shuffle(with_children.begin(), with_children.end(), fuzz_rand);
             }
         }
         if (select->tables().get())
         {
             ASTPtr arr_join;
             ASTPtr new_join;
-            const int next_action = fuzz_rand() % 50;
+            const int next_action = fuzz_rand() % 30;
 
             /// Add a join or remove a table only when tables in FROM are already present
             if (next_action == 0 && !select->refTables()->children.empty() && (new_join = addJoinClause()))
@@ -6376,8 +6395,40 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// Don't remove first FROM table
                 children.erase(children.begin() + (fuzz_rand() % (children.size() - 1)) + 1);
             }
+            else if (next_action == 2 && select->refTables()->children.size() > 1)
+            {
+                auto & children = select->refTables()->children;
+
+                if (children.size() > 2 && fuzz_rand() % 2 == 0)
+                {
+                    /// Permute the chain: every element but the first owns its own JOIN or ARRAY JOIN
+                    /// clause and moves with it, while the first one has none and must stay in place.
+                    std::shuffle(children.begin() + 1, children.end(), fuzz_rand);
+                }
+                else
+                {
+                    /// Permute only the tables, leaving every join clause where it is. Unlike the
+                    /// branch above this reorders a two-table chain too, since the first element
+                    /// keeps having no clause. ARRAY JOIN elements carry no table to move.
+                    std::vector<ASTTablesInSelectQueryElement *> elements;
+                    ASTs tables;
+
+                    for (const auto & child : children)
+                    {
+                        auto * element = typeid_cast<ASTTablesInSelectQueryElement *>(child.get());
+                        if (element && element->table_expression)
+                        {
+                            elements.push_back(element);
+                            tables.push_back(element->table_expression);
+                        }
+                    }
+                    std::shuffle(tables.begin(), tables.end(), fuzz_rand);
+                    for (size_t i = 0; i < elements.size(); i++)
+                        elements[i]->replace(elements[i]->table_expression, tables[i]);
+                }
+            }
             /// Add array join
-            if (fuzz_rand() % 50 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
+            if (fuzz_rand() % 30 == 0 && !select->refTables()->children.empty() && (arr_join = addArrayJoinClause()))
             {
                 select->refTables()->children.emplace_back(arr_join);
             }
@@ -6702,6 +6753,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// Remove one window definition (exercises dangling window-name references)
                 window_children.erase(window_children.begin() + fuzz_rand() % window_children.size());
             }
+            else if (window_children.size() > 1 && fuzz_rand() % 50 == 0)
+            {
+                /// A window may extend an earlier one by name, so permuting the definitions
+                /// turns those into forward references
+                std::shuffle(window_children.begin(), window_children.end(), fuzz_rand);
+            }
         }
         /// Add a brand-new named window definition (the block above only ever drops/removes
         /// windows). Also synthesizes a WINDOW clause when none exists. The definition is
@@ -6753,6 +6810,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 auto & interpolate_children = select->interpolate()->children;
                 if (interpolate_children.size() > 1 && fuzz_rand() % 50 == 0)
                     interpolate_children.erase(interpolate_children.begin() + fuzz_rand() % interpolate_children.size());
+                /// An interpolate expression may read another interpolated column, so permuting
+                /// them changes which value each one sees
+                if (interpolate_children.size() > 1 && fuzz_rand() % 50 == 0)
+                    std::shuffle(interpolate_children.begin(), interpolate_children.end(), fuzz_rand);
             }
         }
 
@@ -7552,6 +7613,15 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             qualified_regexp_matcher->format_as_asterisk_like = false;
         fuzz(qualified_regexp_matcher->children);
     }
+    else if (auto * transformer_list = typeid_cast<ASTColumnsTransformerList *>(ast.get()))
+    {
+        /// Every matcher below keeps its transformers in `children`, so this one case covers
+        /// them all. `APPLY` transformers compose in order and an `EXCEPT` ahead of one changes
+        /// the columns it sees, so the permutation is not a no-op.
+        if (transformer_list->children.size() > 1 && fuzz_rand() % 10 == 0)
+            std::shuffle(transformer_list->children.begin(), transformer_list->children.end(), fuzz_rand);
+        fuzz(transformer_list->children);
+    }
     else if (auto * asterisk = typeid_cast<ASTAsterisk *>(ast.get()))
     {
         /// Occasionally attach `APPLY` / `EXCEPT` / `REPLACE` transformers to a bare `*` so an
@@ -7945,6 +8015,11 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                 /// GROUP_BY requires at least one key; seed with the TTL expression.
                 ttl_elem->group_by_key.push_back(ttl_elem->ttl()->clone());
             }
+            /// The key has to be a prefix of the sorting key, so permuting it reaches that check
+            if (ttl_elem->group_by_key.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(ttl_elem->group_by_key.begin(), ttl_elem->group_by_key.end(), fuzz_rand);
+            if (ttl_elem->group_by_assignments.size() > 1 && fuzz_rand() % 20 == 0)
+                std::shuffle(ttl_elem->group_by_assignments.begin(), ttl_elem->group_by_assignments.end(), fuzz_rand);
             fuzz(ttl_elem->group_by_key);
             fuzz(ttl_elem->group_by_assignments);
         }
