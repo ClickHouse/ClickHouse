@@ -36,7 +36,7 @@ doc_type: 'مرجع'
 
 يعمل النسخ المتماثل على مستوى كل جدول على حدة، وليس على مستوى الخادم بأكمله. ويمكن للخادم تخزين جداول متماثلة وأخرى غير متماثلة في الوقت نفسه.
 
-لا يعتمد النسخ المتماثل على sharding. لكل shard نسخ متماثل مستقل خاص به.
+لا يعتمد النسخ المتماثل على sharding. لكل شارد نسخ متماثل مستقل خاص به.
 
 تُنسخ البيانات المضغوطة الخاصة باستعلامات `INSERT` و `ALTER` (لمزيد من المعلومات، راجع توثيق [ALTER](/ar/reference/statements/alter/index)).
 
@@ -44,11 +44,11 @@ doc_type: 'مرجع'
 
 * ينشئ استعلام `CREATE TABLE` جدولًا جديدًا قابلاً للنسخ المتماثل على الخادم الذي يُشغَّل عليه الاستعلام. وإذا كان هذا الجدول موجودًا بالفعل على خوادم أخرى، فإنه يضيف نسخة متماثلة جديدة.
 * يحذف استعلام `DROP TABLE` النسخة المتماثلة الموجودة على الخادم الذي يُشغَّل عليه الاستعلام.
-* يعيد استعلام `RENAME` تسمية الجدول على إحدى النسخ المتماثلة. وبعبارة أخرى، يمكن أن تحمل الجداول المتماثلة أسماء مختلفة على نسخ متماثلة مختلفة.
+* يعيد استعلام `RENAME` تسمية الجدول على إحدى النسخ المتماثلة. وبعبارة أخرى، يمكن أن تحمل الجداول المكرّرة أسماء مختلفة على نسخ متماثلة مختلفة.
 
 يستخدم ClickHouse ‏[ClickHouse Keeper](/ar/guides/oss/deployment-and-scaling/keeper/index) لتخزين البيانات الوصفية الخاصة بالنسخ المتماثلة. ويمكن استخدام ZooKeeper بالإصدار 3.4.5 أو أحدث، لكن يُوصى باستخدام ClickHouse Keeper.
 
-لاستخدام النسخ المتماثل، اضبط المعلمات في قسم تهيئة الخادم [zookeeper](/ar/reference/settings/server-settings/settings#zookeeper).
+لاستخدام النسخ المتماثل، اضبط المعلمات في قسم تهيئة الخادم [zookeeper](/ar/reference/settings/server-settings/settings/zookeeper#zookeeper).
 
 <Note>
   لا تُهمل إعدادات الأمان. يدعم ClickHouse مخطط [ACL](https://zookeeper.apache.org/doc/current/zookeeperProgrammers.html#sc_ZooKeeperAccessControl) من نوع `digest` ضمن النظام الفرعي لأمان ZooKeeper.
@@ -114,21 +114,21 @@ CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_con
 
 إذا لم يكن ZooKeeper مُعدًّا في ملف الإعدادات، فلن تتمكن من إنشاء جداول ذات نسخ متماثلة، وستكون أي جداول موجودة ذات نسخ متماثلة للقراءة فقط.
 
-لا يُستخدم ZooKeeper في استعلامات `SELECT` لأن النسخ المتماثل لا يؤثر في أداء `SELECT`، وتعمل الاستعلامات بالسرعة نفسها كما في الجداول غير المكررة. عند الاستعلام عن الجداول المكررة الموزعة، يتحكم الإعدادان [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings#max_replica_delay_for_distributed_queries) و[fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings#fallback_to_stale_replicas_for_distributed_queries) في سلوك ClickHouse.
+لا يُستخدم ZooKeeper في استعلامات `SELECT` لأن النسخ المتماثل لا يؤثر في أداء `SELECT`، وتعمل الاستعلامات بالسرعة نفسها كما في الجداول غير المكررة. عند الاستعلام عن الجداول المكررة الموزعة، يتحكم الإعدادان [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) و[fallback&#95;to&#95;stale&#95;replicas&#95;for&#95;distributed&#95;queries](/ar/reference/settings/session-settings/other#fallback_to_stale_replicas_for_distributed_queries) في سلوك ClickHouse.
 
 لكل استعلام `INSERT`، تُضاف نحو عشرة إدخالات إلى ZooKeeper عبر عدة معاملات. (ولمزيد من الدقة، يحدث ذلك لكل كتلة بيانات مُدرجة؛ إذ يحتوي استعلام `INSERT` على كتلة واحدة، أو كتلة واحدة لكل `max_insert_block_size = 1048576` صفًا.) يؤدي ذلك إلى زيادة طفيفة في زمن الاستجابة لاستعلامات `INSERT` مقارنةً بالجداول غير المكررة. ولكن إذا اتبعت التوصيات وأدرجت البيانات على دفعات بما لا يزيد على عملية `INSERT` واحدة في الثانية، فلن يسبب ذلك أي مشكلات. ويمكن لعنقود ClickHouse كامل يستخدم للتنسيق مع عنقود ZooKeeper واحد أن يتعامل إجمالًا مع عدة مئات من عمليات `INSERT` في الثانية. وتبقى إنتاجية إدراج البيانات (عدد الصفوف في الثانية) بنفس الارتفاع كما في البيانات غير المكررة.
 
 بالنسبة إلى العناقيد الكبيرة جدًا، يمكنك استخدام عناقيد ZooKeeper مختلفة لأجزاء shards مختلفة. ومع ذلك، ووفقًا لتجربتنا، لم يثبت أن هذا ضروري في عناقيد production التي تضم نحو 300 خادم.
 
-النسخ المتماثل غير متزامن ومتعدد الأطراف. يمكن إرسال استعلامات `INSERT` (وكذلك `ALTER`) إلى أي خادم متاح. تُدرج البيانات على الخادم الذي يُنفَّذ عليه الاستعلام، ثم تُنسخ إلى الخوادم الأخرى. ونظرًا لأنه غير متزامن، تظهر البيانات المُدرجة حديثًا على النسخ المتماثلة الأخرى بعد قدر من زمن الاستجابة. وإذا لم يكن بعض النسخ المتماثلة متاحًا، فتُكتب البيانات عندما تصبح متاحة. وإذا كانت النسخة المتماثلة متاحة، فإن زمن الاستجابة يساوي الوقت اللازم لنقل كتلة البيانات المضغوطة عبر الشبكة. ويمكن ضبط عدد threads التي تنفذ المهام الخلفية للجداول المكررة باستخدام الإعداد [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_schedule_pool_size).
+النسخ المتماثل غير متزامن ومتعدد الأطراف. يمكن إرسال استعلامات `INSERT` (وكذلك `ALTER`) إلى أي خادم متاح. تُدرج البيانات على الخادم الذي يُنفَّذ عليه الاستعلام، ثم تُنسخ إلى الخوادم الأخرى. ونظرًا لأنه غير متزامن، تظهر البيانات المُدرجة حديثًا على النسخ المتماثلة الأخرى بعد قدر من زمن الاستجابة. وإذا لم يكن بعض النسخ المتماثلة متاحًا، فتُكتب البيانات عندما تصبح متاحة. وإذا كانت النسخة المتماثلة متاحة، فإن زمن الاستجابة يساوي الوقت اللازم لنقل كتلة البيانات المضغوطة عبر الشبكة. ويمكن ضبط عدد threads التي تنفذ المهام الخلفية للجداول المكررة باستخدام الإعداد [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size).
 
-يستخدم المحرك `ReplicatedMergeTree` thread pool منفصلًا لعمليات fetches المكررة. ويُحدَّد حجم هذا pool بواسطة الإعداد [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_fetches_pool_size)، والذي يمكن ضبطه مع إعادة تشغيل الخادم.
+يستخدم المحرك `ReplicatedMergeTree` thread pool منفصلًا لعمليات fetches المكررة. ويُحدَّد حجم هذا pool بواسطة الإعداد [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_fetches_pool_size)، والذي يمكن ضبطه مع إعادة تشغيل الخادم.
 
 بشكل افتراضي، ينتظر استعلام `INSERT` تأكيد كتابة البيانات من نسخة متماثلة واحدة فقط. وإذا كُتبت البيانات بنجاح على نسخة متماثلة واحدة فقط ثم توقّف الخادم الذي يحتوي على هذه النسخة عن الوجود، فستُفقد البيانات المخزنة. لتمكين الحصول على تأكيد لكتابة البيانات من عدة نسخ متماثلة، استخدم الخيار `insert_quorum`.
 
 تُكتب كل كتلة بيانات بصورة atomic. ويُقسَّم استعلام `INSERT` إلى كتل يصل حجمها إلى `max_insert_block_size = 1048576` صفًا. وبعبارة أخرى، إذا كان استعلام `INSERT` يحتوي على أقل من 1048576 صفًا، فإنه يُنفَّذ بصورة atomic.
 
-تُزال ازدواجية كتل البيانات. فعند كتابة كتلة البيانات نفسها عدة مرات (كتل بيانات بالحجم نفسه وتحتوي على الصفوف نفسها وبالترتيب نفسه)، لا تُكتب الكتلة إلا مرة واحدة فقط. والسبب في ذلك هو التعامل مع حالات تعطل الشبكة عندما لا يعرف تطبيق العميل ما إذا كانت البيانات قد كُتبت إلى قاعدة البيانات أم لا، لذا يمكن ببساطة تكرار استعلام `INSERT`. ولا يهم إلى أي نسخة متماثلة أُرسلت عمليات `INSERT` ذات البيانات المتطابقة. إن عمليات `INSERT` متسامحة مع التكرار. وتتحكم إعدادات الخادم [merge&#95;tree](/ar/reference/settings/server-settings/settings#merge_tree) في معلمات إزالة الازدواجية.
+تُزال ازدواجية كتل البيانات. فعند كتابة كتلة البيانات نفسها عدة مرات (كتل بيانات بالحجم نفسه وتحتوي على الصفوف نفسها وبالترتيب نفسه)، لا تُكتب الكتلة إلا مرة واحدة فقط. والسبب في ذلك هو التعامل مع حالات تعطل الشبكة عندما لا يعرف تطبيق العميل ما إذا كانت البيانات قد كُتبت إلى قاعدة البيانات أم لا، لذا يمكن ببساطة تكرار استعلام `INSERT`. ولا يهم إلى أي نسخة متماثلة أُرسلت عمليات `INSERT` ذات البيانات المتطابقة. إن عمليات `INSERT` متسامحة مع التكرار. وتتحكم إعدادات الخادم [merge&#95;tree](/ar/reference/settings/server-settings/settings/merge#merge_tree) في معلمات إزالة الازدواجية.
 
 أثناء النسخ المتماثل، لا يُنقل عبر الشبكة إلا البيانات المصدر المطلوب إدراجها. أما تحويل البيانات لاحقًا (merging) فيُنسَّق ويُنفَّذ على جميع النسخ المتماثلة بالطريقة نفسها. ويؤدي ذلك إلى تقليل استخدام الشبكة، ما يعني أن النسخ المتماثل يعمل جيدًا عندما تكون النسخ المتماثلة موجودة في datacenters مختلفة. (لاحظ أن تكرار البيانات في datacenters مختلفة هو الهدف الأساسي من النسخ المتماثل.)
 
@@ -187,7 +187,7 @@ SAMPLE BY intHash32(UserID);
   ```
 </details>
 
-كما يوضح المثال، يمكن أن تتضمن هذه المَعلَمات استبدالات ضمن `{}`. وتُؤخذ القيم المستبدلة من قسم [macros](/ar/reference/settings/server-settings/settings#macros) في ملف التكوين.
+كما يوضح المثال، يمكن أن تتضمن هذه المَعلَمات استبدالات ضمن `{}`. وتُؤخذ القيم المستبدلة من قسم [macros](/ar/reference/settings/server-settings/settings/other#macros) في ملف التكوين.
 
 مثال:
 
@@ -198,12 +198,12 @@ SAMPLE BY intHash32(UserID);
 </macros>
 ```
 
-يجب أن يكون مسار الجدول في ClickHouse Keeper فريدًا لكل جدول مكرّر. ويجب أن يكون للجداول الموجودة على shardات مختلفة مسارات مختلفة.
+يجب أن يكون مسار الجدول في ClickHouse Keeper فريدًا لكل جدول مكرّر. ويجب أن يكون للجداول الموجودة على شاردات مختلفة مسارات مختلفة.
 في هذه الحالة، يتكوّن المسار من الأجزاء التالية:
 
 `/clickhouse/tables/` هي البادئة المشتركة. نوصي باستخدام هذا المسار كما هو تمامًا.
 
-سيُوسَّع `{shard}` إلى معرّف الـ shard.
+سيُوسَّع `{shard}` إلى معرّف الـ شارد.
 
 `table_name` هو اسم العقدة الخاصة بالجدول في ClickHouse Keeper. ومن الأفضل أن يكون مطابقًا لاسم الجدول. ويُحدَّد صراحةً لأنه، بخلاف اسم الجدول، لا يتغيّر بعد تنفيذ استعلام `RENAME`.
 *تلميح*: يمكنك أيضًا إضافة اسم قاعدة البيانات قبل `table_name`. مثلًا `db_name.table_name`
@@ -211,7 +211,7 @@ SAMPLE BY intHash32(UserID);
 يمكن استخدام الاستبدالين المضمّنين `{database}` و`{table}`، إذ سيتوسّعان إلى اسم الجدول واسم قاعدة البيانات على التوالي (ما لم تكن وحدات الماكرو هذه معرّفة في قسم `macros`). لذلك يمكن تحديد مسار ZooKeeper بالشكل `'/clickhouse/tables/{shard}/{database}/{table}'`.
 انتبه عند إعادة تسمية الجداول عند استخدام هذين الاستبدالين المضمّنين. فلا يمكن تغيير المسار في ClickHouse Keeper، وعند إعادة تسمية الجدول ستتوسّع وحدات الماكرو إلى مسار مختلف، وسيشير الجدول إلى مسار غير موجود في ClickHouse Keeper، وسيدخل في وضع القراءة فقط.
 
-يحدّد اسم نسخة متماثلة النسخ المتماثلة المختلفة للجدول نفسه. يمكنك استخدام اسم الخادم لهذا الغرض، كما في المثال. ويكفي أن يكون الاسم فريدًا داخل كل shard.
+يحدّد اسم نسخة متماثلة النسخ المتماثلة المختلفة للجدول نفسه. يمكنك استخدام اسم الخادم لهذا الغرض، كما في المثال. ويكفي أن يكون الاسم فريدًا داخل كل شارد.
 
 يمكنك تعريف المعلمات صراحةً بدلًا من استخدام الاستبدالات. وقد يكون ذلك مناسبًا للاختبار ولإعداد المجموعات الصغيرة. ومع ذلك، لا يمكنك استخدام استعلامات DDL الموزعة (`ON CLUSTER`) في هذه الحالة.
 
@@ -242,7 +242,7 @@ CREATE TABLE table_name (
 ORDER BY x;
 ```
 
-شغّل استعلام `CREATE TABLE` على كل نسخة متماثلة. ينشئ هذا الاستعلام جدولًا متماثلًا جديدًا، أو يضيف نسخة متماثلة جديدة إلى جدول متماثل موجود.
+شغّل استعلام `CREATE TABLE` على كل نسخة متماثلة. ينشئ هذا الاستعلام جدولًا مكرّرًا جديدًا، أو يضيف نسخة متماثلة جديدة إلى جدول مكرّر موجود.
 
 إذا أضفت نسخة متماثلة جديدة بعد أن كان الجدول يحتوي بالفعل على بعض البيانات في النسخ المتماثلة الأخرى، فستُنسخ البيانات من تلك النسخ إلى النسخة الجديدة بعد تشغيل الاستعلام. وبعبارة أخرى، تُزامن النسخة المتماثلة الجديدة نفسها مع بقية النسخ.
 
@@ -348,8 +348,8 @@ SELECT zookeeper_path FROM system.replicas WHERE table = 'table_name';
 
 **انظر أيضًا**
 
-* [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_schedule_pool_size)
-* [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_fetches_pool_size)
-* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ar/reference/settings/merge-tree-settings#execute_merges_on_single_replica_time_threshold)
-* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
-* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+* [background&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background-schedule#background_schedule_pool_size)
+* [background&#95;fetches&#95;pool&#95;size](/ar/reference/settings/server-settings/settings/background#background_fetches_pool_size)
+* [execute&#95;merges&#95;on&#95;single&#95;replica&#95;time&#95;threshold](/ar/reference/settings/merge-tree-settings/other#execute_merges_on_single_replica_time_threshold)
+* [max&#95;replicated&#95;fetches&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_fetches_network_bandwidth)
+* [max&#95;replicated&#95;sends&#95;network&#95;bandwidth](/ar/reference/settings/merge-tree-settings/max-replicated#max_replicated_sends_network_bandwidth)

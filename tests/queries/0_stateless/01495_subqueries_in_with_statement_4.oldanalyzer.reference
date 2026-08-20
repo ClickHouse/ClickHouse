@@ -1,12 +1,2 @@
 0	0
-WITH
-    it AS
-    (
-        SELECT *
-        FROM numbers(1)
-    )
-SELECT
-    number,
-    number
-FROM
-it AS i
+WITH\n    it AS\n    (\n        SELECT *\n        FROM numbers(1)\n    )\nSELECT\n    number,\n    number\nFROM\nit AS i

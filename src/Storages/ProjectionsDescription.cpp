@@ -330,11 +330,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
         const auto & ac = query_context->getAccessControl();
         bool allow_experimental = ac.getAllowExperimentalTierSettings();
+        bool allow_private_preview = ac.getAllowPrivatePreviewTierSettings();
         bool allow_beta = ac.getAllowBetaTierSettings();
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
             allow_experimental,
+            allow_private_preview,
             allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }

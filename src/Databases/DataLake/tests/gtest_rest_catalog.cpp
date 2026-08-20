@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Databases/DataLake/RestCatalog.h>
 #include <IO/HTTPCommon.h>
 #include <Interpreters/Context.h>
@@ -578,6 +579,50 @@ TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
     DB::SettingsChanges empty_value;
     empty_value.emplace_back("onelake_bearer_token", "");
     expectThrowsCode([&] { catalog.applySettingsChanges(empty_value); }, DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, OneLakeRejectsMalformedBearerToken)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// A pre-obtained bearer token becomes the `Authorization: Bearer <token>` header, so it must
+    /// pass the same validation as a user-supplied `auth_header`: a token with an embedded newline
+    /// would smuggle a second header into the request. The constructor validates the synthetic
+    /// header up front and must reject such a token before any request is issued.
+    expectThrowsCode(
+        [&]
+        {
+            OneLakeCatalog catalog(
+                "warehouse",
+                "http://127.0.0.1:1",
+                /* onelake_tenant_id */ "tenant",
+                /* onelake_client_id */ "",
+                /* onelake_client_secret */ "",
+                /* bearer_token */ "token\r\nX-Injected: evil",
+                /* refresh_token */ "",
+                /* auth_scope */ "",
+                /* oauth_server_uri */ "",
+                /* oauth_server_use_request_body */ false,
+                context);
+        },
+        DB::ErrorCodes::BAD_ARGUMENTS);
+}
+
+TEST(RestCatalog, ValidateBearerTokenRejectsMalformedHeader)
+{
+    auto context = DB::Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    /// Every bearer-token catalog path (Unity, and Paimon via HTTPBasedCatalogUtils) runs this
+    /// shared check before the token becomes an `Authorization: Bearer <token>` header, matching
+    /// the explicit validation OneLake performs. A token with an embedded CR/LF would otherwise
+    /// smuggle a second header into the request.
+    expectThrowsCode([&] { validateBearerToken(context, "token\r\nX-Injected: evil"); }, DB::ErrorCodes::BAD_ARGUMENTS);
+
+    /// A well-formed token is accepted; an empty token sends no header and is a no-op.
+    EXPECT_NO_THROW(validateBearerToken(context, "good-token"));
+    EXPECT_NO_THROW(validateBearerToken(context, ""));
 }
 
 TEST(RestCatalog, OneLakeRefreshTokenTransparentRenewal)

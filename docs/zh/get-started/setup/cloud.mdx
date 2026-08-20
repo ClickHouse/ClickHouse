@@ -98,7 +98,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     ### ClickPipes
 
-    [ClickPipes](http://clickhouse.com/docs/integrations/clickpipes) 是一个托管集成平台，让您只需点击几下按钮，即可轻松从多种数据源摄取数据。ClickPipes 专为最苛刻的工作负载而设计，其强健且可扩展的架构可确保稳定的性能与可靠性。ClickPipes 既适用于长期流式摄取场景，也支持一次性数据加载任务。
+    [ClickPipes](/zh/integrations/clickpipes/home) 是一个托管集成平台，让您只需点击几下按钮，即可轻松从多种数据源摄取数据。ClickPipes 专为最苛刻的工作负载而设计，其强健且可扩展的架构可确保稳定的性能与可靠性。ClickPipes 既适用于长期流式摄取场景，也支持一次性数据加载任务。
 
     <Image img="/images/_snippets/select_data_source.webp" size="md" alt="选择数据源" border />
 
@@ -155,7 +155,8 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     ClickHouse 表的主键决定了数据写入磁盘时的排序方式。每 8,192 行或 10MB 的数据 (称为**索引粒度**) 会在主键索引文件中创建一条记录。这一粒度概念形成了一个**稀疏索引**，可轻松装入内存，而每个粒度则代表执行 `SELECT` 查询时所处理的最小列数据单元。
 
-    主键可以通过 `PRIMARY KEY` 参数来定义。如果定义表时未指定 `PRIMARY KEY`，则键默认为 `ORDER BY` 子句中指定的 Tuple。如果同时指定了 `PRIMARY KEY` 和 `ORDER BY`，则主键必须是排序键的子集。
+    主键可以通过 `PRIMARY KEY` 参数来定义。如果定义表时未指定 `PRIMARY KEY`，
+    则键默认为 `ORDER BY` 子句中指定的 Tuple。如果同时指定了 `PRIMARY KEY` 和 `ORDER BY`，则主键必须是排序键的子集。
 
     主键同时也是排序键，即由 `(user_id, timestamp)` 构成的 Tuple。因此，每个列文件中存储的数据将先按 `user_id` 排序，再按 `timestamp` 排序。
 
@@ -276,7 +277,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     ### 上传文件
 
-    初次使用数据库时，一个常见的操作是将本地文件中的数据导入数据库。我们在线提供了一些样本数据供您导入，这些数据代表点击流数据，包含用户 ID、访问的 URL 以及事件的时间戳。
+    初次使用数据库时，一个常见的操作是将本地文件中已有的数据导入数据库。我们在线提供了一些样本数据供您导入，这些数据代表点击流数据，包含用户 ID、访问的 URL 以及事件的时间戳。
 
     假设我们有一个名为 `data.csv` 的 CSV 文件，其内容如下：
 
@@ -319,7 +320,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 下一步？
 </div>
 
-* [教程](/get-started/quickstarts/tutorial)将指导你向表中插入 200 万行数据，并编写一些分析查询
+* [教程](/zh/get-started/quickstarts/tutorial)将指导你向表中插入 200 万行数据，并编写一些分析查询
 * 我们提供了一份[示例数据集](/zh/get-started/sample-datasets/index)列表，并附有如何插入这些数据集的说明
 * 查看我们关于 [ClickHouse 快速入门](https://clickhouse.com/company/events/getting-started-with-clickhouse/)的 12 分钟视频
 * 如果你的数据来自外部数据源，请查看我们的[集成指南合集](/zh/integrations/home)，了解如何连接消息队列、数据库、管道等

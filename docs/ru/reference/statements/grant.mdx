@@ -268,6 +268,7 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
   * `SHOW FILESYSTEM CACHES`
   * [`SOURCES`](#sources)
     * `AZURE`
+    * `BIGQUERY`
     * `FILE`
     * `HDFS`
     * `HIVE`
@@ -285,6 +286,9 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
     * `SQLITE`
     * `URL`
   * [`SYSTEM`](#system)
+    * `SYSTEM BACKGROUND`
+      * `SYSTEM STREAMING ENGINES`
+      * `SYSTEM VIEWS`
     * `SYSTEM CLEANUP`
     * `SYSTEM DROP CACHE`
       * `SYSTEM DROP COMPILED EXPRESSION CACHE`
@@ -344,7 +348,6 @@ GRANT SELECT(foo) ON db.table* TO john -- неверно
     * `SYSTEM TTL MERGES`
     * `SYSTEM UNFREEZE`
     * `SYSTEM UNLOAD PRIMARY KEY`
-    * `SYSTEM VIEWS`
     * `SYSTEM VIRTUAL PARTS UPDATE`
     * `SYSTEM WAIT LOADING PARTS`
   * [`TABLE ENGINE`](#table-engine)
@@ -643,6 +646,9 @@ GRANT CLUSTER ON *.* TO <username>
   * `SYSTEM REPLICATION QUEUES`. Уровень: `TABLE`. Псевдонимы: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
   * `SYSTEM SYNC REPLICA`. Уровень: `TABLE`. Псевдонимы: `SYNC REPLICA`
   * `SYSTEM RESTART REPLICA`. Уровень: `TABLE`. Псевдонимы: `RESTART REPLICA`
+  * `SYSTEM BACKGROUND`. Уровень: `GROUP`
+    * `SYSTEM STREAMING ENGINES`. Уровень: `TABLE`
+    * `SYSTEM VIEWS`. Уровень: `VIEW`. Псевдонимы: `SYSTEM REFRESH VIEW`, `SYSTEM START VIEWS`, `SYSTEM STOP VIEWS`, `SYSTEM START VIEW`, `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEWS`, `SYSTEM PAUSE VIEW`, `SYSTEM CANCEL VIEW`, `REFRESH VIEW`, `START VIEWS`, `STOP VIEWS`, `START VIEW`, `STOP VIEW`, `PAUSE VIEWS`, `PAUSE VIEW`, `CANCEL VIEW`
   * `SYSTEM FLUSH`. Уровень: `GROUP`
     * `SYSTEM FLUSH DISTRIBUTED`. Уровень: `TABLE`. Псевдонимы: `FLUSH DISTRIBUTED`
     * `SYSTEM FLUSH LOGS`. Уровень: `GLOBAL`. Псевдонимы: `FLUSH LOGS`
@@ -675,6 +681,7 @@ GRANT CLUSTER ON *.* TO <username>
 Возможные параметры:
 
 * `AZURE`
+* `BIGQUERY`
 * `FILE`
 * `HDFS`
 * `HIVE`
@@ -795,9 +802,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 </div>
 
 Позволяет пользователю просматривать секреты в запросах `SHOW` и `SELECT`, если включены и
-[`display_secrets_in_show_and_select` настройка сервера](/ru/reference/settings/server-settings/settings#display_secrets_in_show_and_select),
+[`display_secrets_in_show_and_select` настройка сервера](/ru/reference/settings/server-settings/settings/other#display_secrets_in_show_and_select),
 и
-[`format_display_secrets_in_show_and_select` настройка формата](/ru/reference/settings/formats#format_display_secrets_in_show_and_select).
+[`format_display_secrets_in_show_and_select` настройка формата](/ru/reference/settings/formats/format#format_display_secrets_in_show_and_select).
 
 <div id="named-collection-admin">
   ### NAMED COLLECTION ADMIN
@@ -825,7 +832,9 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
   ### ДВИЖОК ТАБЛИЦЫ
 </div>
 
-Разрешает использовать указанный движок таблицы при создании таблицы. Относится к [движкам таблиц](/ru/reference/engines/table-engines/index).
+<CloudNotSupportedBadge />
+
+Разрешает использовать указанный движок таблицы при создании таблицы. Относится к [движкам таблицы](/ru/reference/engines/table-engines/index).
 
 **Примеры**
 
@@ -833,12 +842,12 @@ GRANT CURRENT GRANTS(READ ON S3) TO alice
 * `GRANT TABLE ENGINE ON TinyLog TO john`
 
 <Note>
-  По умолчанию, из соображений обратной совместимости, при создании таблицы с конкретным движком таблицы привилегии игнорируются,
-  однако это поведение можно изменить, установив [`table_engines_require_grant` в `true`](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
-  в config.xml.
+  By default, for backward compatibility reasons, creating a table with a specific table engine ignores grants,
+  however you can change this behaviour by setting [`table_engines_require_grant` to true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+  in config.xml.
 </Note>
 
-Для некоторых движков таблиц с внешними источниками могут требоваться разрешения `READ`/`WRITE` на соответствующий источник. См. [Источники](#sources).
+Для некоторых движков таблицы с внешними источниками могут требоваться разрешения `READ`/`WRITE` на соответствующий источник. См. [Источники](#sources).
 
 Например, для движка таблицы AzureBlobStorage может потребоваться следующая привилегия.
 

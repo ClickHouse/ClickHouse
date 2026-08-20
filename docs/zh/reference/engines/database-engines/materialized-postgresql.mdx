@@ -258,6 +258,24 @@ ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_bloc
 
 此设置仅控制创建嵌套表时，类型推断所选择的列类型，因此必须在 `CREATE DATABASE` 时指定。之后无法通过 `ALTER DATABASE ... MODIFY SETTING` 修改它 (已创建的嵌套表会保留其固定的列类型，因此此类更改会被拒绝) ；如需更改，只能重新创建数据库。它不适用于 `MaterializedPostgreSQL` 表引擎，因为该引擎中的列类型是显式声明的。
 
+<div id="tls-ssl">
+  ## TLS/SSL
+</div>
+
+TLS/SSL 参数会传递给 `libpq`，可通过[命名集合](/zh/concepts/features/configuration/server-config/named-collections)提供，也可作为引擎的末尾键值参数提供：`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`；未设置时，使用 `libpq` 的默认值 `prefer`) ，以及证书和密钥 (可采用以下两种形式之一) 。`sslrootcert` (CA 证书) 、`sslcert` (客户端证书) 和 `sslkey` (客户端私钥) 为服务器本地文件的路径，仅可通过服务器配置文件中定义的命名集合提供。`sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 则接受相应文件的原始内容，可在 SQL 中指定，并会像密码一样在日志和 `SHOW` 查询中被掩码处理。
+
+以下示例连接到强制使用 TLS 的 PostgreSQL 服务器，并验证服务器证书：
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres-host:5432', 'postgres_database', 'postgres_user', 'postgres_password',
+                                sslmode = 'verify-full', sslrootcert_pem = '-----BEGIN CERTIFICATE-----
+...
+-----END CERTIFICATE-----');
+```
+
+TLS/SSL 参数属于 PostgreSQL 连接参数，创建数据库时即已确定；如需更改，请重新创建数据库。
+
 <div id="notes">
   ## 注意事项
 </div>

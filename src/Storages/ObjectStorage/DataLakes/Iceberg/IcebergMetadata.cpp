@@ -626,7 +626,7 @@ std::shared_ptr<NamesAndTypesList> IcebergMetadata::getInitialSchemaByPath(Conte
     /// if we need schema evolution or have equality deletes files, we need to read all the columns.
     return (iceberg_object_info->info.underlying_format_read_schema_id != iceberg_object_info->info.schema_id_relevant_to_iterator
             || (!iceberg_object_info->info.equality_deletes_objects.empty()))
-        ? persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
+        ? persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_object_info->info.underlying_format_read_schema_id)
         : nullptr;
 }
 
@@ -1302,7 +1302,7 @@ ObjectIterator IcebergMetadata::iterate(
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
 {
     auto [actual_data_snapshot, actual_table_state_snapshot] = getRelevantState(local_context);
-    return *persistent_components.schema_processor->getClickhouseTableSchemaById(actual_table_state_snapshot.schema_id);
+    return *persistent_components.schema_processor->getClickHouseTableSchemaById(actual_table_state_snapshot.schema_id);
 }
 
 std::optional<DataLakeTableStateSnapshot> IcebergMetadata::getTableStateSnapshot(ContextPtr local_context) const
@@ -1319,7 +1319,7 @@ std::unique_ptr<StorageInMemoryMetadata> IcebergMetadata::buildStorageMetadataFr
     const auto & iceberg_state = std::get<Iceberg::TableStateSnapshot>(state);
     auto result = std::make_unique<StorageInMemoryMetadata>();
     result->setColumns(
-        ColumnsDescription{*persistent_components.schema_processor->getClickhouseTableSchemaById(iceberg_state.schema_id)});
+        ColumnsDescription{*persistent_components.schema_processor->getClickHouseTableSchemaById(iceberg_state.schema_id)});
     result->setDataLakeTableState(state);
     result->sorting_key = getSortingKey(local_context, iceberg_state);
     return result;
@@ -1538,7 +1538,7 @@ KeyDescription IcebergMetadata::getSortingKey(ContextPtr local_context, TableSta
         persistent_components.table_uuid);
 
     auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickhouseTableSchemaById(current_schema_id), local_context);
+    auto result = getSortingKeyDescriptionFromMetadata(metadata_object, *persistent_components.schema_processor->getClickHouseTableSchemaById(current_schema_id), local_context);
     auto sort_order_id = metadata_object->getValue<Int64>(f_default_sort_order_id);
     result.sort_order_id = sort_order_id;
     return result;

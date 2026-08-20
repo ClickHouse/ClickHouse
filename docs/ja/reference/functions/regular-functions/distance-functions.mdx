@@ -98,23 +98,23 @@ SELECT L1Norm((1, 2))
 
 導入バージョン: v21.11.0
 
-指定されたベクトルの `L1` 空間 ([タクシー幾何学](https://en.wikipedia.org/wiki/Taxicab_geometry)) における単位ベクトルを計算します (タプルの各要素は座標です) 。
+指定されたベクトルの `L1` 空間 ([タクシー幾何学](https://en.wikipedia.org/wiki/Taxicab_geometry)) における単位ベクトルを計算します (タプルまたはArrayの各要素は座標です) 。
 
 **構文**
 
 ```sql
-L1Normalize(tuple)
+L1Normalize(vector)
 ```
 
 **別名**: `normalizeL1`
 
 **引数**
 
-* `tuple` — 数値から成るタプル。[`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値から成るタプルまたはArray。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` 入力の場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` 入力の場合は常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -230,7 +230,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
 * `reference` — 参照 (クエリ) ベクトル: `Float` 配列 (クエリ。`Float32` 精度で比較されます。`Float64` のクエリは `Float32` に変換されます)、または `quantizeBFloat16ToInt8` コードの [`Array(Int8)`](/ja/reference/data-types/array) で、オンザフライで逆量子化されます。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
-* `p` — 使用する、格納済み `QBit` コードの上位ビット数 (1 から 8) 。ビット数が少ないほど、より粗い埋め込み量子化器が再構築され、I/O は高速になりますが精度は低下します。8 ビットはフル精度の再構築です。`p` は格納済み `QBit` のみを切り詰めます。`Array(Int8)` の参照は常に完全な 8 ビット精度で再構築されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `p` — 使用する、格納済み `QBit` コードの上位ビット数 (1 から 8) 。ビット数が少ないほど、既存の Lloyd-Max プレフィックスインターバルのガウス条件付き平均セントロイドを使用して、より粗い埋め込み量子化器が再構築され、I/O は高速になりますが精度は低下します。8 ビットはフル精度の再構築です。`p` は格納済み `QBit` のみを切り詰めます。`Array(Int8)` の参照は常に完全な 8 ビット精度で再構築されます。[`UInt`](/ja/reference/data-types/int-uint)
 * `used_dims` — 任意。ストライド付き `QBit` に対して低次元 (Matryoshka) 検索を行うために読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (末尾の余分な要素は無視されます)。これらの次元をカバーする stride グループだけが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
 
 **戻り値**
@@ -291,23 +291,23 @@ SELECT L2Norm((1, 2))
 
 導入バージョン: v21.11.0
 
-ユークリッド空間において、指定したベクトルの単位ベクトル (タプルの各要素は座標) を計算します ([ユークリッド距離](https://en.wikipedia.org/wiki/Euclidean_distance)を使用) 。
+ユークリッド空間において、指定されたベクトル (タプル または Array の要素が座標) の単位ベクトルを計算します ([ユークリッド距離](https://en.wikipedia.org/wiki/Euclidean_distance)を使用) 。
 
 **構文**
 
 ```sql
-L2Normalize(tuple)
+L2Normalize(vector)
 ```
 
 **別名**: `normalizeL2`
 
 **引数**
 
-* `tuple` — 数値からなるタプル。 [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値の `Tuple` または Array。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` を入力した場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を、それ以外の場合は `Array(Float64)` を返します。`Tuple` を入力した場合は、常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -483,23 +483,23 @@ SELECT LinfNorm((1, -2))
 
 導入バージョン: v21.11.0
 
-与えられたベクトルの単位ベクトル (タプルの各要素が座標) を、`L_{inf}` 空間で計算します ([最大ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\)) を使用) 。
+与えられたベクトルの単位ベクトル (タプルまたは配列の各要素が座標) を、`L_{inf}` 空間で計算します ([最大ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#Maximum_norm_\(special_case_of:_infinity_norm,_uniform_norm,_or_supremum_norm\)) を使用) 。
 
 **構文**
 
 ```sql
-LinfNormalize(tuple)
+LinfNormalize(vector)
 ```
 
 **別名**: `normalizeLinf`
 
 **引数**
 
-* `tuple` — 数値のタプルです。 [`Tuple(T)`](/ja/reference/data-types/tuple)
+* `vector` — 数値のタプルまたは配列です。 [`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 
 **戻り値**
 
-単位ベクトルを返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` 入力の場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` 入力の場合は、常に `Tuple(Float64)` を返します。 [`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -535,7 +535,7 @@ LpDistance(vector1, vector2, p)
 
 * `vector1` — 1つ目のベクトル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
 * `vector2` — 2つ目のベクトル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
-* `p` — べき指数。設定可能な値: `[1; inf)` の実数。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `p` — 指数。設定可能な値: `[1; inf)` の実数。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -567,7 +567,7 @@ SELECT LpDistance((1, 2), (2, 3), 3)
 
 * p=1 のとき、L1Norm (マンハッタン距離) と同等です。
 * p=2 のとき、L2Norm (ユークリッド距離) と同等です。
-* p=∞ のとき、LinfNorm (最大ノルム) と同等です。
+* `p` の値は 1 以上の有限数である必要があります。最大ノルム (p→∞ の極限) には、代わりに `LinfNorm` を使用してください。
 
 **構文**
 
@@ -580,7 +580,7 @@ LpNorm(vector, p)
 **引数**
 
 * `vector` — 数値からなるベクトルまたはタプル。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
-* `p` — 指数。設定可能な値は `[1; inf)` の範囲の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `p` — 指数。設定可能な値は `[1; inf)` の範囲の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -606,24 +606,24 @@ SELECT LpNorm((1, -2), 2)
 
 導入バージョン: v21.11.0
 
-指定したベクトルの単位ベクトルを `Lp` 空間内で ([p-ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)を用いて) 計算します。タプルの各要素は座標を表します。
+[p-ノルム](https://en.wikipedia.org/wiki/Norm_\(mathematics\)#p-norm)を用いて、`Lp` 空間における指定したベクトルの単位ベクトルを計算します (タプルまたは配列の要素が座標に相当します) 。
 
 **構文**
 
 ```sql
-LpNormalize(tuple, p)
+LpNormalize(vector, p)
 ```
 
 **別名**: `normalizeLp`
 
 **引数**
 
-* `tuple` — 数値から成るタプル。[`Tuple(T)`](/ja/reference/data-types/tuple)
-* `p` — べき指数。設定可能な値は `[1; inf)` の範囲内の任意の数値です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
+* `vector` — 数値からなるタプルまたは配列。[`Tuple(T)`](/ja/reference/data-types/tuple) または [`Array(T)`](/ja/reference/data-types/array)
+* `p` — 指数。設定可能な値は、範囲 `[1; inf)` の実数です。[`UInt*`](/ja/reference/data-types/int-uint) または [`Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
-単位ベクトルを返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple)
+単位ベクトルを返します。`Array` を入力した場合、要素型の最小共通スーパータイプが `Float32` または `BFloat16` であれば `Array(Float32)` を返し、それ以外の場合は `Array(Float64)` を返します。`Tuple` を入力した場合は常に `Tuple(Float64)` を返します。[`Tuple(Float64)`](/ja/reference/data-types/tuple) または [`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Float64)`](/ja/reference/data-types/array)
 
 **例**
 
@@ -727,7 +727,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 導入バージョン: v26.7.0
 
-`quantizeBFloat16ToInt8` コードの `QBit(Int8)` (オンザフライで逆量子化) と参照ベクトルの間の近似的な [コサイン距離](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) を計算します。戻り値が小さいほど、ベクトル同士の類似度は高くなります。`Float` の参照 (クエリ) ベクトルは、復量子化されたコードの再構成精度である `Float32` 精度で直接比較されます。つまり、`Float64` クエリは `Float32` に丸められ、`BFloat16` クエリは正確に `Float32` へ拡張されます (非対称な距離計算) 。一方、`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` コードとして扱われ、対応する再構成レベルへ復量子化されます。なお、`p` によって切り詰められるのは保存済みの `QBit` コードだけです。`Array(Int8)` の参照は完全なクエリそのものであり、常に完全な 8 ビット精度で再構成されます。そのため、これは `p = 8` の場合にのみ対称な量子化同士の距離となります (`p < 8` の場合は、保存側だけがより粗い精度で読み出されます) 。また、これは量子化前の値が属していた空間と同じ空間に存在している必要があります (つまり、同じランダム回転とスケーリングを適用した後の空間) 。これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
+`quantizeBFloat16ToInt8` コードの `QBit(Int8)` (オンザフライで逆量子化) と参照ベクトルの間の近似的な [コサイン距離](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) を計算します。戻り値が小さいほど、ベクトル同士の類似度は高くなります。`Float` の参照 (クエリ) ベクトルは、逆量子化されたコードの再構成精度である `Float32` 精度で直接比較されます。つまり、`Float64` クエリは `Float32` に変換され、`BFloat16` クエリは正確に `Float32` へ拡張されます (非対称な距離計算) 。一方、`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` コードとして扱われ、対応する再構成レベルへ逆量子化されます。なお、`p` によって切り詰められるのは保存済みの `QBit` コードだけです。`Array(Int8)` の参照は完全なクエリそのものであり、常に完全な 8 ビット精度で再構成されます。そのため、これは `p = 8` の場合にのみ対称な量子化同士の距離となります (`p < 8` の場合は、保存側だけがより粗い精度で読み出されます) 。また、これは量子化前の値が属していた空間と同じ空間に存在している必要があります (つまり、同じランダム回転とスケーリングを適用した後の空間) 。これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
 
 **構文**
 
@@ -739,12 +739,12 @@ cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
 * `reference` — 参照 (クエリ) ベクトル: `Float` の配列 (クエリは `Float32` 精度で比較され、`Float64` のクエリは `Float32` に変換されます) 、またはオンザフライで逆量子化される `quantizeBFloat16ToInt8` コードの `Array(Int8)`。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
-* `p` — 各格納済み `QBit` コードで使用する上位ビット数 (1 ～ 8) 。ビット数が少ないほど、より粗い埋め込み量子化器が再構成されるため、精度は下がりますが I/O は高速になります。8 ビットはフル精度での再構成です。`p` で切り詰められるのは格納済み `QBit` のみで、`Array(Int8)` の参照は常に 8 ビットのフル精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
-* `used_dims` — 省略可。ストライド付き `QBit` に対する 低次元 (Matryoshka) 検索で読み取る先頭の次元数です。QBit の stride の倍数であり、その dimension を超えてはならず、参照ベクトルは少なくともこの数の要素を持っている必要があります (余分な末尾の要素は無視されます) 。これらの次元を含む stride グループ のみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+* `p` — 各格納済み `QBit` コードで使用する上位ビット数 (1 ～ 8) 。ビット数が少ないほど、既存の Lloyd-Max プレフィックスインターバルのガウス条件付き平均セントロイドを使用して、より粗い埋め込み量子化器が再構成されるため、精度は下がりますが I/O は高速になります。8 ビットはフル精度での再構成です。`p` で切り詰められるのは格納済み `QBit` のみで、`Array(Int8)` の参照は常に 8 ビットのフル精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 任意。ストライド付き `QBit` に対する 低次元 (Matryoshka) 検索で読み取る先頭の次元数です。QBit の stride の倍数であり、その次元 を超えてはならず、参照ベクトルは少なくともこの数の要素を持っている必要があります (余分な末尾の要素は無視されます) 。これらの次元を含む stride グループ のみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-近似 コサイン距離 (cosine similarity から 1 を引いた値) を返します。戻り値は常に `Float64` です。[`Float64`](/ja/reference/data-types/float)
+近似 コサイン距離 (コサイン類似度 から 1 を引いた値) を返します。戻り値は常に `Float64` です。[`Float64`](/ja/reference/data-types/float)
 
 **例**
 
@@ -805,7 +805,7 @@ SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
 
 導入バージョン: v26.7.0
 
-`quantizeBFloat16ToInt8` のコードを持つ `QBit(Int8)` と参照ベクトルの間の近似的な [内積](https://en.wikipedia.org/wiki/Dot_product) (インナー積) を計算します (`QBit(Int8)` は オンザフライで逆量子化されます) 。これは類似度の指標です。戻り値が大きいほど、ベクトルはより類似しています。`Float` の参照 (クエリ) ベクトルは、逆量子化されたコードの再構成精度である `Float32` 精度で直接比較されるため、`Float64` クエリは `Float32` に縮小され、`BFloat16` クエリは正確に `Float32` に拡張されます (非対称距離計算) 。`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` のコードとして扱われ、再構成レベルに逆量子化されます。`p` は保存された `QBit` コードのみを切り詰める点に注意してください。`Array(Int8)` の参照は完全なクエリであり、常に完全な 8 ビット精度で再構成されるため、これは `p = 8` の場合にのみ対称な量子化対量子化距離になります (`p < 8` の場合、より粗い精度で読み取られるのは保存側だけです) 。これは、量子化前の値が属していたのと同じ空間、すなわち同じランダム回転とスケーリングを適用した後の空間に属している必要があり、これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
+`quantizeBFloat16ToInt8` のコードを持つ `QBit(Int8)` と参照ベクトルの間の近似的な [内積](https://en.wikipedia.org/wiki/Dot_product) (インナー積) を計算します (`QBit(Int8)` は オンザフライで逆量子化されます) 。これは類似度の指標です。戻り値が大きいほど、ベクトルはより類似しています。`Float` の参照 (クエリ) ベクトルは、逆量子化されたコードの再構成精度である `Float32` 精度で直接比較されるため、`Float64` クエリは `Float32` に変換され、`BFloat16` クエリは正確に `Float32` に拡張されます (非対称距離計算) 。`Array(Int8)` の参照は、それ自体が `quantizeBFloat16ToInt8` のコードとして扱われ、再構成レベルに逆量子化されます。`p` は保存された `QBit` コードのみを切り詰める点に注意してください。`Array(Int8)` の参照は完全なクエリであり、常に完全な 8 ビット精度で再構成されるため、これは `p = 8` の場合にのみ対称な量子化対量子化距離になります (`p < 8` の場合、より粗い精度で読み取られるのは保存側だけです) 。これは、量子化前の値が属していたのと同じ空間、すなわち同じランダム回転とスケーリングを適用した後の空間に属している必要があり、これを保証するのは呼び出し側の責任です。コサイン距離はスケール不変ですが、内積と L2 距離はそうではありません。
 
 **構文**
 
@@ -816,9 +816,9 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 **引数**
 
 * `vectors` — `quantizeBFloat16ToInt8` コードのベクトル。[`QBit(Int8, UInt64[, UInt64])`](/ja/reference/data-types/qbit)
-* `reference` — 参照 (クエリ) ベクトル: `Float` 配列 (クエリは `Float32` 精度で比較され、`Float64` クエリは `Float32` に縮小されます) 、または `quantizeBFloat16ToInt8` コードの `Array(Int8)` で、オンザフライで逆量子化されます。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
-* `p` — 使用する、格納された各 `QBit` コードの上位ビット数 (1 から 8) 。ビット数を減らすと、より粗い埋め込み量子化器が再構成され、精度は低下しますが I/O は高速になります。8 ビットはフル精度の再構成です。`p` が切り詰めるのは格納された `QBit` のみであり、`Array(Int8)` の参照は常に完全な 8 ビット精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
-* `used_dims` — 省略可能。ストライド付き `QBit` に対する低次元 (Matryoshka) 検索のために、読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (末尾に余分な要素がある場合は無視されます) 。これらの次元をカバーする stride グループのみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
+* `reference` — 参照 (クエリ) ベクトル: `Float` 配列 (クエリは `Float32` 精度で比較され、`Float64` クエリは `Float32` に変換されます) 、または `quantizeBFloat16ToInt8` コードの `Array(Int8)` で、オンザフライで逆量子化されます。[`Array(Float32)`](/ja/reference/data-types/array) または [`Array(Int8)`](/ja/reference/data-types/array)
+* `p` — 使用する、格納された各 `QBit` コードの上位ビット数 (1 から 8) 。ビット数を減らすと、既存の Lloyd-Max プレフィックスインターバルのガウス条件付き平均セントロイドを使用して、より粗い埋め込み量子化器が再構成され、精度は低下しますが I/O は高速になります。8 ビットはフル精度の再構成です。`p` が切り詰めるのは格納された `QBit` のみであり、`Array(Int8)` の参照は常に完全な 8 ビット精度で再構成されます。[`UInt`](/ja/reference/data-types/int-uint)
+* `used_dims` — 任意。ストライド付き `QBit` に対する低次元 (Matryoshka) 検索のために、読み取る先頭の次元数です。QBit の stride の倍数であり、その次元数を超えてはなりません。また、参照ベクトルは少なくともこの数の要素を持っている必要があります (末尾に余分な要素がある場合は無視されます) 。これらの次元をカバーする stride グループのみが読み取られます。[`UInt`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 

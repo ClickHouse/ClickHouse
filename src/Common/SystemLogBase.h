@@ -129,6 +129,10 @@ struct SystemLogQueueSettings
 template <typename LogElement>
 class SystemLogQueue
 {
+    /// `queue` reallocates while `mutex` is held. libc++ relocates with std::move_if_noexcept, so an element
+    /// that can throw on move is deep-copied instead, and the critical section becomes O(queue size).
+    static_assert(std::is_nothrow_move_constructible_v<LogElement>);
+
 public:
     using Index = ISystemLog::Index;
 

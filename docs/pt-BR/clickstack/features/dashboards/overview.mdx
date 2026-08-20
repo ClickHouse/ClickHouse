@@ -1,7 +1,7 @@
 ---
 slug: /use-cases/observability/clickstack/dashboards
 title: 'Visualizações e dashboards com ClickStack'
-sidebarTitle: 'Dashboards'
+sidebarTitle: 'Visão geral'
 description: 'Visualizações e dashboards com ClickStack'
 doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'visualização', 'monitoramento', 'observabilidade']
@@ -58,10 +58,6 @@ Nos exemplos abaixo, usamos o dataset remoto disponível em [sql.clickhouse.com]
     Por exemplo, filtre pelo serviço `frontend` adicionando o filtro `ServiceName:"frontend"`. Adicione uma segunda série para a contagem de eventos ao longo do tempo com o alias `Count` clicando em `Add Series`.
 
     <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Visualização simples 2" size="lg" />
-
-    Para criar uma série semelhante a uma já existente, você pode duplicá-la em vez de começar do zero. Clique no ícone de cópia (`Duplicate series`) em uma linha de série para inserir uma cópia diretamente abaixo. A cópia mantém as configurações da série de origem, como a métrica, a coluna e o filtro. Depois, você altera apenas os campos que forem diferentes (por exemplo, a agregação) e dá à cópia seu próprio alias. A duplicação está disponível em todos os contextos em que há suporte para múltiplas séries. Ela fica oculta para tipos de visualização que permitem apenas uma série, como `Number`, `Pie` e `Heatmap`.
-
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="O ícone de cópia Duplicate series e sua dica de ferramenta em uma linha de série de gráfico" size="lg" />
 
     Para criar uma série semelhante a uma já existente, você pode duplicá-la em vez de começar do zero. Clique no ícone de cópia (`Duplicate series`) em uma linha de série para inserir uma cópia diretamente abaixo. A cópia mantém as configurações da série de origem, como a métrica, a coluna e o filtro. Depois, você altera apenas os campos que forem diferentes (por exemplo, a agregação) e dá à cópia seu próprio alias. A duplicação está disponível em todos os contextos em que há suporte para múltiplas séries. Ela fica oculta para tipos de visualização que permitem apenas uma série, como `Number`, `Pie` e `Heatmap`.
 
@@ -212,6 +208,14 @@ Com um tile Number selecionado, abra **Configurações de exibição** e defina 
 
 Os gráficos de fundo se aplicam a tiles Number do construtor de consultas. Tiles Number de Raw SQL retornam um único valor sem dimensão de tempo para agrupar em buckets, portanto a opção aparece, mas fica desabilitada para eles.
 
+Tiles de tabela podem aplicar listras às linhas com **Plano de fundo alternado das linhas**, que colore uma linha sim, outra não para facilitar a leitura de tabelas largas. Isso fica desativado por padrão.
+
+Com um tile de tabela selecionado, abra **Configurações de exibição** e ative **Plano de fundo alternado das linhas**. O listrado é puramente visual, portanto funciona tanto em tiles de tabela do construtor de consultas quanto em tiles de tabela de Raw SQL.
+
+<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Painel Configurações de exibição de um tile de tabela, com Plano de fundo alternado das linhas ativado" size="lg" />
+
+Tiles de tabela também mantêm um separador entre a linha de cabeçalho e os dados enquanto você rola, para que os cabeçalhos das colunas permaneçam distintos.
+
 <div id="dashboard-listing-search">
   ## Dashboard - listagem e busca
 </div>
@@ -306,7 +310,7 @@ Este dashboard usa abas para separar o monitoramento de **Selects**, **Inserts**
 <Info>
   **Acesso obrigatório às tabelas de sistema**
 
-  Este dashboard consulta as [tabelas de sistema](/pt-BR/reference/system-tables/index) do ClickHouse para expor as principais métricas. Os seguintes grants são necessários:
+  Este dashboard consulta as [tabelas de sistema](/pt-BR/reference/system-tables/overview) do ClickHouse para expor as principais métricas. Os seguintes grants são necessários:
 
   `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
 

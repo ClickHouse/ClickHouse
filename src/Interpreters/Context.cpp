@@ -106,6 +106,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -239,6 +240,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric IcebergSchedulePoolTask;
     extern const Metric IcebergSchedulePoolSize;
+    extern const Metric BackgroundQueryThreads;
+    extern const Metric BackgroundQueryThreadsActive;
+    extern const Metric BackgroundQueryThreadsScheduled;
     extern const Metric BackgroundStreamingSchedulePoolTask;
     extern const Metric BackgroundStreamingSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
@@ -292,6 +296,10 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -299,6 +307,7 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
+    extern const SettingsString default_format;
     extern const SettingsBool read_through_distributed_cache;
     extern const SettingsBool write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
@@ -417,6 +426,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
@@ -570,6 +580,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
+
+    mutable OnceFlag background_query_pool_initialized;
+    mutable std::unique_ptr<ThreadPool> background_query_pool;
 
     /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
     String default_profile_name;                                /// Default profile name used for default values.
@@ -791,10 +804,14 @@ struct ContextSharedPart : boost::noncopyable
     /// No lock required for application_type modified only during initialization
     Context::ApplicationType application_type = Context::ApplicationType::SERVER;
 
-    /// No lock required for config_reload_callback, start_servers_callback, stop_servers_callback modified only during initialization
-    Context::ConfigReloadCallback config_reload_callback;
+    std::mutex config_reload_callback_mutex;
+    Context::ConfigReloadCallback config_reload_callback TSA_GUARDED_BY(config_reload_callback_mutex);
+
+    /// No lock required for start_servers_callback, stop_servers_callback,
+    /// stop_introspection_servers_callback modified only during initialization
     Context::StartStopServersCallback start_servers_callback;
     Context::StartStopServersCallback stop_servers_callback;
+    Context::StopIntrospectionServersCallback stop_introspection_servers_callback;
 
     bool is_server_completely_started TSA_GUARDED_BY(mutex) = false;
 
@@ -960,6 +977,21 @@ struct ContextSharedPart : boost::noncopyable
         return ConfigurationPtr(&Poco::Util::Application::instance().config(), /* shared= */ true);
     }
 
+    void stopIntrospectionServers() const
+    {
+        if (!stop_introspection_servers_callback)
+            return;
+
+        try
+        {
+            stop_introspection_servers_callback();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to stop introspection servers");
+        }
+    }
+
     /** Perform a complex job of destroying objects in advance.
       */
     void shutdown() TSA_NO_THREAD_SAFETY_ANALYSIS
@@ -1034,10 +1066,19 @@ struct ContextSharedPart : boost::noncopyable
             SHUTDOWN(log, "system logs", TSA_SUPPRESS_WARNING_FOR_READ(system_logs), flushAndShutdown());
         });
 
+        stopIntrospectionServers();
+
         FileCacheFactory::instance().clear();
 
         NamedCollectionFactory::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
+
+        std::unique_ptr<ThreadPool> delete_background_query_pool;
+        {
+            std::lock_guard lock(mutex);
+            delete_background_query_pool = std::move(background_query_pool);
+        }
+        delete_background_query_pool.reset();
 
         delete_async_insert_queue.reset();
 
@@ -1339,6 +1380,7 @@ ContextData::ContextData(const ContextData &o) :
     is_distributed(o.is_distributed),
     default_format(o.default_format),
     insert_format(o.insert_format),
+    http_combined_filter(o.http_combined_filter),
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
     special_scalars(o.special_scalars),
@@ -3529,6 +3571,12 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
+void Context::setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles)
+{
+    std::lock_guard lock(mutex);
+    settings_constraints_and_current_profiles = std::move(constraints_and_profiles);
+}
+
 String Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
@@ -3566,6 +3614,7 @@ void Context::setCurrentDatabaseWithLock(const String & name, const std::lock_gu
 
     DatabaseCatalog::instance().assertDatabaseExists(name);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
 }
 
@@ -3582,7 +3631,22 @@ void Context::setCurrentDatabaseUnchecked(const String & name)
 
     std::lock_guard lock(mutex);
     current_database = name;
+    mirrorCurrentDatabaseIntoSetting(name);
     need_recalculate_access = true;
+}
+
+void Context::mirrorCurrentDatabaseIntoSetting(const String & name)
+{
+    /// Keep the `database` setting in sync with a current database chosen out-of-band (a protocol's
+    /// connect-time database, MySQL `COM_INIT_DB`, `USE`, the user's `DEFAULT DATABASE`, internal
+    /// DDL / recovery / job contexts, …). `executeQuery` applies a non-empty `database` setting as
+    /// the documented equivalent of `USE`; without the mirror, a stale value inherited from a
+    /// profile or an earlier `SET database = …` would win back just before analysis and silently
+    /// override the database this context explicitly selected. The global context is exempt: the
+    /// server-wide default database is not an explicitly chosen setting and must not be marked as
+    /// changed for every session that inherits the global settings.
+    if (!isGlobalContext())
+        settings->set("database", name);
 }
 
 void Context::setCurrentQueryId(const String & query_id)
@@ -3656,7 +3720,15 @@ void Context::setInsertionTable(StorageID db_and_table, std::optional<Names> col
 
 String Context::getDefaultFormat() const
 {
-    return default_format.empty() ? "TabSeparated" : default_format;
+    if (!default_format.empty())
+        return default_format;
+
+    const auto & settings_ref = getSettingsRef();
+    const String & default_format_setting = settings_ref[Setting::default_format];
+    if (!default_format_setting.empty())
+        return default_format_setting;
+
+    return "TabSeparated";
 }
 
 void Context::setDefaultFormat(const String & name)
@@ -3672,6 +3744,16 @@ String Context::getInsertFormat() const
 void Context::setInsertFormat(const String & name)
 {
     insert_format = name;
+}
+
+const String & Context::getHTTPCombinedFilter() const
+{
+    return http_combined_filter;
+}
+
+void Context::setHTTPCombinedFilter(const String & filter)
+{
+    http_combined_filter = filter;
 }
 
 MultiVersion<Macros>::Version Context::getMacros() const
@@ -4194,6 +4276,22 @@ BackupsWorker & Context::getBackupsWorker() const
     });
 
     return *shared->backups_worker;
+}
+
+ThreadPool & Context::getBackgroundQueryPool() const
+{
+    callOnce(shared->background_query_pool_initialized, [&] {
+        shared->background_query_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::BackgroundQueryThreads,
+            CurrentMetrics::BackgroundQueryThreadsActive,
+            CurrentMetrics::BackgroundQueryThreadsScheduled,
+            shared->server_settings[ServerSetting::max_thread_pool_size],
+            /*max_free_threads_=*/ 0,
+            /*queue_size_=*/ 0,
+            /*shutdown_on_exception_=*/ false);
+    });
+
+    return *shared->background_query_pool;
 }
 
 void Context::waitAllBackupsAndRestores() const
@@ -6421,13 +6519,8 @@ void Context::setS3QueueDisableStreaming(bool s3queue_disable_streaming) const
 bool Context::getMessageQueueDisableInsertion() const
 {
     SharedLockGuard lock(shared->mutex);
-    return shared->server_settings[ServerSetting::message_queue_disable_insertion];
-}
-
-void Context::setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const
-{
-    std::lock_guard lock(shared->mutex);
-    shared->server_settings.set("message_queue_disable_insertion", message_queue_disable_insertion);
+    return shared->server_settings[ServerSetting::message_queue_disable_insertion]
+        || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
@@ -7452,13 +7545,13 @@ double Context::getUptimeSeconds() const
 
 void Context::setConfigReloadCallback(ConfigReloadCallback && callback)
 {
-    /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
+    std::lock_guard lock(shared->config_reload_callback_mutex);
     shared->config_reload_callback = std::move(callback);
 }
 
 void Context::reloadConfig() const
 {
-    /// Use mutex if callback may be changed after startup.
+    std::lock_guard lock(shared->config_reload_callback_mutex);
     if (!shared->config_reload_callback)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't reload config because config_reload_callback is not set.");
 
@@ -7475,6 +7568,12 @@ void Context::setStopServersCallback(StartStopServersCallback && callback)
 {
     /// Is initialized at server startup, so lock isn't required. Otherwise use mutex.
     shared->stop_servers_callback = std::move(callback);
+}
+
+void Context::setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback)
+{
+    /// Is initialized at server startup, so lock isn't required.
+    shared->stop_introspection_servers_callback = std::move(callback);
 }
 
 void Context::startServers(const ServerType & server_type) const
@@ -7563,7 +7662,7 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 
     /// Don't check for constraints on first load. This makes the default profile consistent with other users, where
     /// the default value set in the config might be outside of the constraints range
-    /// It makes it possible to change the value of experimental settings with `allow_feature_tier` != 2
+    /// It makes it possible to change the value of experimental settings with a restrictive `allow_feature_tier`
     bool check_constraints = false;
     setCurrentProfile(shared->system_profile_name, check_constraints);
 
@@ -8671,6 +8770,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
     return *query_context->reverse_lookup_cache;
 }
 
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
+}
+
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)
 {
     runtime_filter_lookup = filter_lookup;
@@ -8721,7 +8838,7 @@ const ServerSettings & Context::getServerSettings() const
 ServerSettings Context::getServerSettingsCopy() const
 {
     /// Synchronize with the runtime writers of `shared->server_settings`
-    /// (e.g. `setS3QueueDisableStreaming`, `setMessageQueueDisableInsertion`), which write under `shared->mutex`.
+    /// (e.g. `setS3QueueDisableStreaming`), which write under `shared->mutex`.
     SharedLockGuard lock(shared->mutex);
     return shared->server_settings;
 }

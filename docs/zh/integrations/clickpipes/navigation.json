@@ -4,6 +4,7 @@
       "group": "ClickPipes for Object Storage",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "zh/integrations/clickpipes/home",
         {
           "group": "亚马逊 S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "zh/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "zh/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes for Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "zh/integrations/clickpipes/postgres/index",
         "zh/integrations/clickpipes/postgres/deduplication",
         "zh/integrations/clickpipes/postgres/ordering-keys",
         "zh/integrations/clickpipes/postgres/toast",
@@ -76,20 +77,19 @@
             "zh/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "zh/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes for Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "zh/integrations/clickpipes/kafka/index",
         "zh/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "zh/integrations/clickpipes/kafka/schema-registries",
         "zh/integrations/clickpipes/kafka/reference",
         "zh/integrations/clickpipes/kafka/best-practices",
         "zh/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "zh/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes for Kinesis",
@@ -97,8 +97,7 @@
       "pages": [
         "zh/integrations/clickpipes/kinesis/overview",
         "zh/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "zh/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes for GCP Pub/Sub",
@@ -106,13 +105,13 @@
       "pages": [
         "zh/integrations/clickpipes/pubsub/overview",
         "zh/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "zh/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes for MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "zh/integrations/clickpipes/mysql/index",
         "zh/integrations/clickpipes/mysql/faq",
         "zh/integrations/clickpipes/mysql/datatypes",
         "zh/integrations/clickpipes/mysql/parallel-initial-load",
@@ -142,13 +141,13 @@
             "zh/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "zh/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes for MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "zh/integrations/clickpipes/mongodb/index",
         "zh/integrations/clickpipes/mongodb/datatypes",
         "zh/integrations/clickpipes/mongodb/quickstart",
         "zh/integrations/clickpipes/mongodb/lifecycle",
@@ -173,8 +172,7 @@
             "zh/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "zh/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes for BigQuery",
@@ -193,10 +191,20 @@
       ]
     },
     {
+      "group": "网络",
+      "icon": "network-wired",
+      "pages": [
+        "zh/integrations/clickpipes/networking/index",
+        "zh/integrations/clickpipes/networking/static-ips",
+        "zh/integrations/clickpipes/networking/aws-privatelink",
+        "zh/integrations/clickpipes/networking/gcp-psc",
+        "zh/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "其他",
       "icon": "ellipsis",
       "pages": [
-        "zh/integrations/clickpipes/aws-privatelink",
         "zh/integrations/clickpipes/dynamodb",
         "zh/integrations/clickpipes/monitoring"
       ]

@@ -13,7 +13,7 @@ doc_type: 'reference'
 [agx](https://github.com/agnosticeng/agx) is a desktop application built with Tauri and SvelteKit that provides a modern interface for exploring and querying data using ClickHouse's embedded database engine (chdb).
 
 - Leverage ch-db when running the native application.
-- Can connect to a Clickhouse instance when running the web instance.
+- Can connect to a ClickHouse instance when running the web instance.
 - Monaco editor so you'll feel at home.
 - Multiple and evolving data visualizations.
 
@@ -65,6 +65,22 @@ Features:
 - Deploys as a single self-contained binary, via Docker, or from source.
 
 [CHOps Source Code](https://github.com/Quantrail-Data/CH-Ops).
+
+</Accordion>
+
+<Accordion title="LibreDB Studio">
+
+[LibreDB Studio](https://github.com/libredb/libredb-studio) is a self-hosted, MIT-licensed database IDE that runs in the browser and deploys next to the database: a container, a Helm chart, an OLM operator, or an npm package embedded in another product. The ClickHouse provider talks to the documented HTTP interface on `8123`/`8443` and carries no driver dependency.
+
+Features:
+
+- SQL editor built on Monaco with schema-aware autocomplete, multi-tab execution, and `EXPLAIN` rendered as a plan tree.
+- Schema explorer with virtualized result grids, filtering, and CSV/JSON export.
+- Monitoring drawn from the `system` tables: server overview and part sizes from `system.metrics`, `system.parts` and `system.disks`, finished statements from `system.query_log`, in-flight statements from `system.processes`, with a kill control.
+- ClickHouse in the same interface as PostgreSQL, MySQL, Oracle, SQL Server, SQLite, MongoDB, Redis, Couchbase and Apache Druid, so an analytical store and the OLTP database feeding it are one browser tab.
+- OIDC single sign-on, role-based access, and a query audit trail, all in the MIT build.
+
+[LibreDB Studio ClickHouse provider reference](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
 
 </Accordion>
 
@@ -481,6 +497,25 @@ Features:
 </Accordion>
 
 ## Commercial {#commercial}
+
+<Accordion title="ProbeDeck">
+
+[ProbeDeck](https://probedeck.app) is an iOS and iPadOS client for monitoring and querying ClickHouse.
+
+Features:
+
+- ProbeDeck shows running queries, replicas, parts, merges, mutations, disks, and server metrics.
+- You can stop queries with `KILL QUERY` and mutations with `KILL MUTATION`.
+- You can browse schemas and data or run SQL in the editor.
+- ProbeDeck connects over HTTP(S) through the device network or an SSH tunnel.
+- ProbeDeck stores credentials in the iOS Keychain and supports a read-only mode for each connection.
+- The app includes an offline demo with bundled data.
+
+Free users can monitor a server and run read-only SQL. They can save one connection. ProbeDeck Pro adds kill controls, writes, DDL, and unlimited saved connections.
+
+See [Connect ProbeDeck to ClickHouse](/integrations/connectors/sql-clients/probedeck) for connection instructions.
+
+</Accordion>
 
 <Accordion title="DataGrip">
 

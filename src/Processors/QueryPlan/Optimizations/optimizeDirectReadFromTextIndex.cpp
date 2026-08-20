@@ -1,6 +1,7 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnConst.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -163,6 +164,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
 void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
 {
+    auto component_guard = Coordination::setCurrentComponent("optimizeDirectReadFromTextIndex");
+
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
         return;

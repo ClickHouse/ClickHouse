@@ -22,7 +22,7 @@ ClickHouse [es rápido](/es/get-started/about/why-clickhouse-is-so-fast) no solo
 
 Esto hace que las escrituras de datos sean ligeras y [muy eficientes](/es/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other).
 
-Para controlar el número de partes por tabla e implementar el punto ② anterior, ClickHouse fusiona continuamente ([por partición](/es/concepts/core-concepts/partitions#per-partition-merges)) las partes más pequeñas en otras más grandes en segundo plano hasta que alcanzan un tamaño comprimido aproximado de [~150 GB](/es/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool).
+Para controlar el número de partes por tabla e implementar el punto ② anterior, ClickHouse fusiona continuamente ([por partición](/es/concepts/core-concepts/partitions#per-partition-merges)) las partes más pequeñas en otras más grandes en segundo plano hasta que alcanzan un tamaño comprimido aproximado de [~150 GB](/es/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool).
 
 El siguiente diagrama ilustra este proceso de fusión en segundo plano:
 
@@ -30,7 +30,7 @@ El siguiente diagrama ilustra este proceso de fusión en segundo plano:
 
 <br />
 
-El `merge level` de una parte aumenta en uno con cada fusión adicional. Un nivel de `0` significa que la parte es nueva y aún no se ha fusionado. Las partes que se fusionaron en otras más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, por último, se eliminan tras un tiempo [configurable](/es/reference/settings/merge-tree-settings#old_parts_lifetime) (8 minutos de forma predeterminada). Con el tiempo, esto crea un **árbol** de partes fusionadas. De ahí el nombre de la tabla [merge tree](/es/reference/engines/table-engines/mergetree-family/index).
+El `nivel de fusión` de una parte aumenta en uno con cada fusión adicional. Un nivel de `0` significa que la parte es nueva y aún no se ha fusionado. Las partes que se fusionaron en otras más grandes se marcan como [inactivas](/es/reference/system-tables/parts) y, por último, se eliminan tras un tiempo [configurable](/es/reference/settings/merge-tree-settings/other#old_parts_lifetime) (8 minutos de forma predeterminada). Con el tiempo, esto crea un **árbol** de partes fusionadas. De ahí el nombre de la tabla [merge tree](/es/reference/engines/table-engines/mergetree-family/index).
 
 <div id="monitoring-merges">
   ## Monitorización de las fusiones
@@ -85,7 +85,7 @@ La grabación del dashboard anterior muestra todo el proceso, desde las insercio
   ## Fusiones concurrentes
 </div>
 
-Un servidor ClickHouse utiliza varios [hilos de fusión](/es/reference/settings/server-settings/settings#background_pool_size) en segundo plano para ejecutar fusiones concurrentes de partes:
+Un servidor ClickHouse utiliza varios [hilos de fusión](/es/reference/settings/server-settings/settings/background#background_pool_size) en segundo plano para ejecutar fusiones concurrentes de partes:
 
 <Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSIONES DE PARTES" />
 
@@ -127,7 +127,7 @@ La fusión de partes se realiza en varios pasos:
 
 **③ Indexación**: Se genera un nuevo [índice primario disperso](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) para los archivos de columnas fusionados.
 
-**④ Compresión y almacenamiento**: Los nuevos archivos de columnas y el índice se [comprimen](/es/reference/statements/create/table#column_compression_codec) y se guardan en un nuevo [directorio](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa la parte de datos fusionada.
+**④ Compresión y almacenamiento**: Los nuevos archivos de columnas y el índice se [comprimen](/es/reference/statements/create/table/codec) y se guardan en un nuevo [directorio](/es/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa la parte de datos fusionada.
 
 Los [metadatos adicionales de las partes de datos](/es/concepts/core-concepts/parts), como índices secundarios de omisión de datos, estadísticas de columnas, sumas de comprobación e índices min-max, también se recrean a partir de los archivos de columnas fusionados. Omitimos estos detalles por simplicidad.
 

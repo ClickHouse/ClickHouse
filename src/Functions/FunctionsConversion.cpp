@@ -3205,14 +3205,20 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 }
 
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+{
+    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+}
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    CastType cast_type)
 {
     DataTypes data_types(arguments.size());
 
@@ -3258,7 +3264,7 @@ FunctionBasePtr createFunctionBaseCast(
     }
 
     return std::make_unique<detail::FunctionCast>(
-        context, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type, date_time_overflow_behavior);
+        *settings, name, std::move(monotonicity), data_types, return_type, diagnostic, cast_type);
 }
 
 

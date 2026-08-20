@@ -7,32 +7,34 @@
       "expanded": true,
       "group": "시작하기",
       "pages": [
+        "ko/clickstack/overview",
         {
           "expanded": true,
           "group": "빠른 시작",
           "pages": [
+            "ko/clickstack/getting-started/index",
             "ko/clickstack/getting-started/managed",
             "ko/clickstack/getting-started/oss"
-          ],
-          "root": "ko/clickstack/getting-started/index"
+          ]
         },
         {
           "group": "샘플 데이터셋",
           "pages": [
+            "ko/clickstack/example-datasets/index",
             "ko/clickstack/example-datasets/sample-data",
             "ko/clickstack/example-datasets/kubernetes",
             "ko/clickstack/example-datasets/local-data",
             "ko/clickstack/example-datasets/remote-demo-data",
             "ko/clickstack/example-datasets/session-replay",
             "ko/clickstack/example-datasets/chrome-extension",
-            "ko/clickstack/example-datasets/otelgen"
-          ],
-          "root": "ko/clickstack/example-datasets/index"
+            "ko/clickstack/example-datasets/otelgen",
+            "ko/clickstack/example-datasets/telemetrygen",
+            "ko/clickstack/example-datasets/instrument-application"
+          ]
         },
         "ko/clickstack/architecture",
         "ko/clickstack/faq"
-      ],
-      "root": "ko/clickstack/overview"
+      ]
     },
     {
       "group": "기능",
@@ -40,9 +42,11 @@
         {
           "group": "배포",
           "pages": [
+            "ko/clickstack/deployment/overview",
             {
               "group": "오픈 소스",
               "pages": [
+                "ko/clickstack/deployment/oss",
                 "ko/clickstack/deployment/all-in-one",
                 {
                   "group": "Helm",
@@ -50,22 +54,22 @@
                     {
                       "group": "v2.x",
                       "pages": [
+                        "ko/clickstack/deployment/helm",
                         "ko/clickstack/deployment/helm-configuration",
                         "ko/clickstack/deployment/helm-deployment-options",
                         "ko/clickstack/deployment/helm-cloud",
                         "ko/clickstack/deployment/helm-additional-manifests",
                         "ko/clickstack/deployment/helm-upgrade"
-                      ],
-                      "root": "ko/clickstack/deployment/helm"
+                      ]
                     },
                     {
-                      "group": "v1.x (지원 중단 예정)",
+                      "group": "v1.x (사용 중단 예정)",
                       "pages": [
+                        "ko/clickstack/deployment/helm-v1",
                         "ko/clickstack/deployment/helm-configuration-v1",
                         "ko/clickstack/deployment/helm-deployment-options-v1",
                         "ko/clickstack/deployment/helm-cloud-v1"
-                      ],
-                      "root": "ko/clickstack/deployment/helm-v1"
+                      ]
                     }
                   ]
                 },
@@ -73,22 +77,20 @@
                 "ko/clickstack/deployment/hyperdx-only",
                 "ko/clickstack/deployment/local-mode-only",
                 "ko/clickstack/deployment/clickhouse-embedded"
-              ],
-              "root": "ko/clickstack/deployment/oss"
+              ]
             },
             "ko/clickstack/deployment/managed"
-          ],
-          "root": "ko/clickstack/deployment/overview"
+          ]
         },
         "ko/clickstack/features/search",
         {
           "group": "대시보드",
           "pages": [
+            "ko/clickstack/features/dashboards/overview",
             "ko/clickstack/features/dashboards/dashboard-templates",
             "ko/clickstack/features/dashboards/sql-visualizations",
             "ko/clickstack/features/dashboards/row-click-drilldowns"
-          ],
-          "root": "ko/clickstack/features/dashboards/overview"
+          ]
         },
         "ko/clickstack/notebooks",
         "ko/clickstack/text-to-chart",
@@ -98,14 +100,21 @@
         "ko/clickstack/service-maps",
         "ko/clickstack/features/session-replay",
         "ko/clickstack/mcp",
+        "ko/clickstack/url-parameters",
         {
           "group": "데모 데이",
           "pages": [
+            "ko/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
+                "ko/clickstack/demo-days/2026/2026-07-31",
+                "ko/clickstack/demo-days/2026/2026-07-24",
+                "ko/clickstack/demo-days/2026/2026-07-17",
                 "ko/clickstack/demo-days/2026/2026-07-10",
                 "ko/clickstack/demo-days/2026/2026-07-02",
+                "ko/clickstack/demo-days/2026/2026-06-26",
+                "ko/clickstack/demo-days/2026/2026-06-18",
                 "ko/clickstack/demo-days/2026/2026-06-12",
                 "ko/clickstack/demo-days/2026/2026-06-05",
                 "ko/clickstack/demo-days/2026/2026-05-29",
@@ -117,8 +126,7 @@
                 "ko/clickstack/demo-days/2026/2026-04-03"
               ]
             }
-          ],
-          "root": "ko/clickstack/demo-days/index"
+          ]
         }
       ]
     },
@@ -126,6 +134,7 @@
       "expanded": true,
       "group": "ClickStack 관리",
       "pages": [
+        "ko/clickstack/managing/overview",
         "ko/clickstack/managing/admin",
         "ko/clickstack/managing/config",
         "ko/clickstack/managing/estimating-resources",
@@ -134,8 +143,7 @@
         "ko/clickstack/managing/production",
         "ko/clickstack/managing/rbac",
         "ko/clickstack/managing/ttl"
-      ],
-      "root": "ko/clickstack/managing/overview"
+      ]
     },
     {
       "group": "가이드",
@@ -143,6 +151,7 @@
         {
           "group": "데이터 수집",
           "pages": [
+            "ko/clickstack/ingesting-data/index",
             "ko/clickstack/ingesting-data/overview",
             "ko/clickstack/ingesting-data/opentelemetry",
             "ko/clickstack/ingesting-data/vector",
@@ -153,6 +162,7 @@
             {
               "group": "통합",
               "pages": [
+                "ko/clickstack/integration-examples/index",
                 "ko/clickstack/integration-examples/nginx-logs",
                 "ko/clickstack/integration-examples/nginx-traces",
                 "ko/clickstack/integration-examples/redis-logs",
@@ -178,12 +188,12 @@
                 "ko/clickstack/integration-examples/cloudflare",
                 "ko/clickstack/integration-examples/kafka-logs",
                 "ko/clickstack/integration-examples/mongodb-logs"
-              ],
-              "root": "ko/clickstack/integration-examples/index"
+              ]
             },
             {
               "group": "언어별 SDKs",
               "pages": [
+                "ko/clickstack/ingesting-data/sdks/index",
                 "ko/clickstack/ingesting-data/sdks/browser",
                 "ko/clickstack/ingesting-data/sdks/nodejs",
                 "ko/clickstack/ingesting-data/sdks/python",
@@ -196,19 +206,19 @@
                 "ko/clickstack/ingesting-data/sdks/nextjs",
                 "ko/clickstack/ingesting-data/sdks/react-native",
                 "ko/clickstack/ingesting-data/sdks/aws-lambda"
-              ],
-              "root": "ko/clickstack/ingesting-data/sdks/index"
+              ]
             }
-          ],
-          "root": "ko/clickstack/ingesting-data/index"
+          ]
         },
         {
           "expanded": true,
           "group": "마이그레이션 가이드",
           "pages": [
+            "ko/clickstack/migration/index",
             {
               "group": "Elastic에서 마이그레이션",
               "pages": [
+                "ko/clickstack/migration/elastic/index",
                 "ko/clickstack/migration/elastic/intro",
                 "ko/clickstack/migration/elastic/concepts",
                 "ko/clickstack/migration/elastic/types",
@@ -216,12 +226,10 @@
                 "ko/clickstack/migration/elastic/migrating-data",
                 "ko/clickstack/migration/elastic/migrating-agents",
                 "ko/clickstack/migration/elastic/migrating-sdks"
-              ],
-              "root": "ko/clickstack/migration/elastic/index"
+              ]
             },
             "ko/clickstack/migration/datadog/index"
-          ],
-          "root": "ko/clickstack/migration/index"
+          ]
         }
       ]
     },
@@ -229,10 +237,11 @@
       "expanded": true,
       "group": "통합 파트너",
       "pages": [
+        "ko/clickstack/integration-partners/index",
         "ko/clickstack/integration-partners/bindplane",
+        "ko/clickstack/integration-partners/bitdrift",
         "ko/clickstack/integration-partners/odigos"
-      ],
-      "root": "ko/clickstack/integration-partners/index"
+      ]
     },
     {
       "expanded": true,

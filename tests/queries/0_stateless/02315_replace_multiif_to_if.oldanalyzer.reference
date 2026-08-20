@@ -1,4 +1,2 @@
-SELECT if(equals(number, 0), NULL, toNullable(number))
-FROM numbers(10000)
-SELECT if(equals(number, 0), NULL, toNullable(number))
-FROM numbers(10000)
+SELECT if(equals(number, 0), NULL, toNullable(number))\nFROM numbers(10000)
+SELECT if(equals(number, 0), NULL, toNullable(number))\nFROM numbers(10000)

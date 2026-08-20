@@ -283,9 +283,9 @@ spec:
 
 マージはキー単位で行われます。置き換えられるのは設定した値のみで、生成されたキーのうち
 省略したもの (証明書のパス、CA の設定) は保持されます。使用可能なオプションについては
-[`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings#openssl)
+[`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings/other#openssl)
 を、`extraConfig` がどのようにマージされるかについては
-[設定 → 埋め込みの追加設定](/ja/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+[Configuration → 埋め込みの追加設定](/ja/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
 を参照してください。
 
 <div id="troubleshoot">
@@ -318,7 +318,7 @@ kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
   ## 関連項目
 </div>
 
-* [設定 → TLS/SSL 設定](/ja/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — フィールドのリファレンス
-* [設定 → `additionalPorts`](/ja/products/kubernetes-operator/guides/configuration#additional-ports) — 予約済みポート
+* [Configuration → TLS/SSL 設定](/ja/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — フィールドのリファレンス
+* [Configuration → `additionalPorts`](/ja/products/kubernetes-operator/guides/configuration#additional-ports) — 予約済みポート
 * [API リファレンス → ClusterTLSSpec](/ja/products/kubernetes-operator/reference/api-reference#clustertlsspec)
-* [`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings#openssl) — `extraConfig` で上書き可能な TLS オプション
+* [`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings/other#openssl) — `extraConfig` で上書き可能な TLS オプション

@@ -4,7 +4,7 @@
     {
       "group": "Visão geral",
       "pages": [
-        "pt-BR/products/bring-your-own-cloud/overview/overview",
+        "pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "pt-BR/products/bring-your-own-cloud/overview/architecture"
       ]
     },
@@ -19,7 +19,6 @@
     {
       "group": "Onboarding",
       "pages": [
-        "pt-BR/products/bring-your-own-cloud/onboarding/aws",
         "pt-BR/products/bring-your-own-cloud/onboarding/standard",
         {
           "group": "Personalização",
@@ -29,15 +28,15 @@
           ]
         },
         {
-          "group": "Rede",
+          "group": "Network",
           "pages": [
+            "pt-BR/products/bring-your-own-cloud/onboarding/network",
             "pt-BR/products/bring-your-own-cloud/onboarding/network-aws",
-            "pt-BR/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "pt-BR/products/bring-your-own-cloud/onboarding/network"
+            "pt-BR/products/bring-your-own-cloud/onboarding/network-gcp",
+            "pt-BR/products/bring-your-own-cloud/onboarding/network-azure"
+          ]
         },
-        "pt-BR/products/bring-your-own-cloud/onboarding/new-region",
-        "pt-BR/products/bring-your-own-cloud/onboarding/azure-private-preview"
+        "pt-BR/products/bring-your-own-cloud/onboarding/new-region"
       ]
     },
     {
@@ -50,8 +49,8 @@
         "pt-BR/products/bring-your-own-cloud/reference/billable-aws-services",
         "pt-BR/products/bring-your-own-cloud/reference/cost-model-aws",
         "pt-BR/products/bring-your-own-cloud/reference/aws-service-limits",
-        "pt-BR/products/bring-your-own-cloud/reference/faq",
-        "pt-BR/products/bring-your-own-cloud/reference/faq-aws"
+        "pt-BR/products/bring-your-own-cloud/reference/security-shared-responsibility",
+        "pt-BR/products/bring-your-own-cloud/reference/faq"
       ]
     }
   ]

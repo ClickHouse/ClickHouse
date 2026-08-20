@@ -1,0 +1,162 @@
+---
+sidebarTitle: 'SeaweedFS'
+slug: /integrations/seaweedfs
+description: '将兼容 S3 的 SeaweedFS 对象存储与 ClickHouse 配合使用'
+title: '使用 SeaweedFS'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+keywords: ['s3', 'seaweedfs', '对象存储', '数据加载', '兼容存储']
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse 的 `s3` 表函数和 `S3` 磁盘类型兼容 [SeaweedFS](https://github.com/seaweedfs/seaweedfs)。SeaweedFS 是一款带有兼容 S3 网关的开源分布式对象存储。SeaweedFS 原生支持路径样式请求，因此自托管存储无需通配符 DNS 即可运行。SeaweedFS 还支持 Iceberg 表：其表存储桶将表数据存储为 Parquet 文件，内置的 Iceberg REST catalog 提供表元数据。有关如何通过同一端点查询这些表，请参阅 [SeaweedFS catalog 指南](/zh/guides/use-cases/data-warehousing/seaweedfs-catalog)。
+
+请使用 [SeaweedFS 4.42](https://github.com/seaweedfs/seaweedfs/releases/tag/4.42) 或更高版本。较早版本中，如果对象的写入在其父文件夹因为空而被删除时提交，该对象可能会被删除；这会在写入成功后立即表现为 `Object ... suddenly disappeared`。
+
+<div id="running-seaweedfs-locally">
+  ## 在本地运行 SeaweedFS
+</div>
+
+如需进行本地测试，请创建一个包含 S3 凭据的 `s3config.json` 文件：
+
+```json
+{
+  "identities": [
+    {
+      "name": "analyst",
+      "credentials": [
+        {
+          "accessKey": "your_access_key_id",
+          "secretKey": "your_secret_access_key"
+        }
+      ],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}
+```
+
+然后在单个容器中启动整个 SeaweedFS 技术栈；`-bucket` 标志会在启动时创建存储桶：
+
+```bash
+docker run -d --name seaweedfs -p 8333:8333 \
+  -v "$(pwd)/s3config.json:/etc/seaweedfs/s3config.json" \
+  chrislusf/seaweedfs:latest \
+  mini -dir=/data -s3.config=/etc/seaweedfs/s3config.json -bucket=clickhouse
+```
+
+S3 端点监听 8333 端口；请等待其响应后再继续：
+
+```bash
+until curl -s -o /dev/null http://localhost:8333; do sleep 1; done
+```
+
+可随时使用 `echo "s3.bucket.create -name mybucket" | docker exec -i seaweedfs weed shell` 创建更多存储桶。
+
+默认情况下，写入操作一旦交给操作系统便会被确认。若要在确认写入前将每次写入 fsync 到磁盘，请为存储桶启用 fsync：
+
+```bash
+echo "fs.configure -locationPrefix=/buckets/clickhouse/ -fsync -apply" | \
+  docker exec -i seaweedfs weed shell
+```
+
+<div id="s3-backed-mergetree">
+  ## 以 S3 为后端的 MergeTree
+</div>
+
+只需进行少量修改，即可兼容以 S3 为后端的 MergeTree 配置：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>http://seaweedfs:8333/clickhouse/tables/</endpoint>
+                <access_key_id>your_access_key_id</access_key_id>
+                <secret_access_key>your_secret_access_key</secret_access_key>
+                <region></region>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <s3_cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </s3_cache>
+        </disks>
+        <policies>
+            <s3_main>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_main>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  该端点包含存储桶名称 (`clickhouse`) 以及表数据的路径前缀 (`tables/`) 。SeaweedFS 不需要区域，因此该标签可留空。请将 `seaweedfs` 替换为运行 S3 网关的主机。
+</Tip>
+
+随后，表将通过存储策略把数据存储在 SeaweedFS 中：
+
+```sql
+CREATE TABLE trips (id UInt64, rider String, fare Float64)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS storage_policy = 's3_main';
+```
+
+若要在本地缓存常用数据，请改用 `SETTINGS disk = 's3_cache'` 创建表——上文定义的缓存磁盘以 S3 磁盘为底层存储。
+
+<div id="the-s3-table-function">
+  ## s3 表函数
+</div>
+
+`s3` 表函数通过同一端点读取和写入对象：
+
+```sql
+INSERT INTO FUNCTION s3(
+    'http://seaweedfs:8333/clickhouse/sample/trips.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+)
+SELECT number AS id, concat('rider_', toString(number % 10)) AS rider, number * 1.5 AS fare
+FROM numbers(1000);
+
+SELECT count()
+FROM s3(
+    'http://seaweedfs:8333/clickhouse/sample/*.parquet',
+    'your_access_key_id',
+    'your_secret_access_key',
+    'Parquet'
+);
+```
+
+Glob 模式可用于读取多个对象。
+
+<div id="backup-and-restore">
+  ## 备份与恢复
+</div>
+
+`BACKUP` 和 `RESTORE` 支持将 SeaweedFS 端点用作 S3 目标端：
+
+```sql
+BACKUP TABLE trips
+TO S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+
+--- DROP TABLE trips;
+
+RESTORE TABLE trips
+FROM S3('http://seaweedfs:8333/clickhouse/backups/trips1', 'your_access_key_id', 'your_secret_access_key');
+```

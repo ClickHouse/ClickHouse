@@ -7,10 +7,13 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/es/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { VersionBadge } from "/snippets/es/components/VersionBadge/VersionBadge.jsx";
+import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <CloudOnlyBadge />
 
-ClickHouse puede autenticar usuarios mediante JSON Web Tokens (JWT). A diferencia de otros autenticadores externos, como [LDAP](/es/concepts/features/security/external-authenticators/ldap) o [Kerberos](/es/concepts/features/security/external-authenticators/kerberos), la autenticación con JWT no verifica la identidad de usuarios preexistentes. En su lugar, crea dinámicamente **usuarios efímeros** a partir de los claims incluidos en cada token. Estos usuarios existen solo en memoria, reciben permisos de acceso derivados de los claims del token y se eliminan automáticamente cuando el token expira.
+ClickHouse puede autenticar usuarios mediante JSON Web Tokens (JWT). A diferencia de otros autenticadores externos, como [LDAP](/es/concepts/features/security/external-authenticators/ldap) o [Kerberos](/es/concepts/features/security/external-authenticators/kerberos), la autenticación con JWT no verifica la identidad de usuarios preexistentes. En su lugar, crea dinámicamente **usuarios efímeros** a partir de los claims incluidos en cada token. Estos usuarios existen solo en memoria, reciben derechos de acceso derivados de los claims del token y se eliminan automáticamente cuando el token caduca.
 
 Esto hace que la autenticación con JWT sea fundamentalmente distinta de los métodos basados en contraseñas o certificados: no existe ninguna sentencia `CREATE USER ... IDENTIFIED WITH jwt`, e intentar hacerlo genera una excepción. Los usuarios JWT se gestionan por completo a través del ciclo de vida del token.
 
@@ -251,6 +254,29 @@ Cada servicio de ClickHouse Cloud incluye un autenticador JWT predefinido que us
 El autenticador integrado tiene como límite de permisos el rol `default_role` y el usuario `default`. Esto significa que los permisos efectivos de cualquier usuario JWT quedan limitados a la intersección de los grants de esas dos entidades, por lo que un token nunca puede elevar privilegios más allá de lo que `default_role` y `default` tienen permitido hacer.
 
 No necesitas configurar nada para usar este autenticador. Se aprovisiona automáticamente cuando se crea el servicio.
+
+<div id="enabling-jwt-authentication-for-your-service">
+  ## Habilitar la autenticación con JWT para su servicio
+</div>
+
+<BetaBadge />
+
+<VersionBadge minVersion="26.4" />
+
+<EnterprisePlanFeatureBadge feature="Autenticación con JWT con un proveedor de identidad personalizado" support="true" />
+
+Además del autenticador integrado, puede configurar su servicio de ClickHouse Cloud para que acepte JWT emitidos por su propio proveedor de identidad (por ejemplo, Microsoft Entra u Okta). Esta función beta está disponible en el plan Enterprise para servicios que ejecutan ClickHouse versión 26.4 o posterior. Para habilitarla, abra un [ticket de soporte](https://clickhouse.com/support/program) con los siguientes datos de configuración:
+
+| Parámetro       | Descripción                                                                                                                                                                                                                                                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID del servicio | El UUID del servicio de ClickHouse Cloud en el que desea habilitar la autenticación con JWT. Puede encontrarlo en la URL de la consola de Cloud al abrir el servicio.                                                                                                                                                                                                           |
+| Emisor          | El valor de la claim `iss` de los tokens emitidos por su proveedor de identidad, normalmente la URL del proveedor (por ejemplo, `https://your-tenant.okta.com`). ClickHouse rechaza los tokens cuyo emisor no coincida con este valor.                                                                                                                                      |
+| Audiencia       | El valor de la claim `aud` que su proveedor de identidad incluye en los tokens destinados a este servicio. ClickHouse rechaza los tokens emitidos para una audiencia diferente.                                                                                                                                                                                             |
+| URL de JWKS     | El endpoint HTTPS donde su proveedor de identidad publica su JSON Web Key Set (por ejemplo, `https://idp.example.com/.well-known/jwks.json`). ClickHouse obtiene las claves públicas de este endpoint para verificar las firmas de los tokens. La verificación de JWKS solo funciona con claves RSA (`RS256`), como se describe en [Claims obligatorias](#required-claims). |
+| Claim de roles  | El nombre de la claim del token que contiene los roles de ClickHouse del usuario efímero (el valor predeterminado es `clickhouse:roles`). La claim debe contener un array JSON de nombres de roles, por ejemplo, `["analyst", "reader"]`.                                                                                                                                   |
+| Claim de grants | El nombre de la claim del token que contiene fragmentos de SQL `GRANT` para el usuario efímero (el valor predeterminado es `clickhouse:grants`). La claim debe contener un array JSON de fragmentos de grants, por ejemplo, `["SELECT ON analytics.*", "INSERT ON analytics.events"]`.                                                                                      |
+
+Los roles indicados en la claim de roles ya deben existir en el servicio (créelos con `CREATE ROLE`). El límite de permisos establece el máximo de derechos de acceso efectivos que pueden otorgar tanto las claims de roles como las de grants, como se describe en [Derechos de acceso](#access-rights).
 
 <div id="interserver-communication">
   ## Comunicación entre servidores

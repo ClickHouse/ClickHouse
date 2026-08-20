@@ -961,11 +961,14 @@ void FuzzConfig::loadServerConfigurations()
     ///     logs the injected failure, so the thread continues with no group and the next `executeQuery` on it fails
     ///     with the `No thread group attached to the thread` logical error. They are meant for the in-process unit
     ///     test `gtest_thread_group_switcher`, which enables them around a single controlled switch.
+    /// pauseable, pauseable_once - Block the next thread to reach them until a NOTIFY or DISABLE names that same
+    ///     failpoint, with no timeout. Each statement below picks its name at random, so a resume rarely follows.
     loadServerSettings<String>(
         this->failpoints,
         "failpoints",
         "SELECT \"name\" FROM \"system\".\"fail_points\""
-        " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
+        " WHERE \"type\" NOT IN ('pauseable', 'pauseable_once')"
+        " AND \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
         "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup', 'attach_to_group_failure', "
         "'thread_group_switcher_post_attach_failure')");

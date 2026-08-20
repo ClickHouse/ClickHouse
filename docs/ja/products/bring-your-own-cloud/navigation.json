@@ -4,7 +4,7 @@
     {
       "group": "概要",
       "pages": [
-        "ja/products/bring-your-own-cloud/overview/overview",
+        "ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview",
         "ja/products/bring-your-own-cloud/overview/architecture"
       ]
     },
@@ -19,7 +19,6 @@
     {
       "group": "オンボーディング",
       "pages": [
-        "ja/products/bring-your-own-cloud/onboarding/aws",
         "ja/products/bring-your-own-cloud/onboarding/standard",
         {
           "group": "カスタマイズ",
@@ -31,13 +30,13 @@
         {
           "group": "ネットワーク",
           "pages": [
+            "ja/products/bring-your-own-cloud/onboarding/network",
             "ja/products/bring-your-own-cloud/onboarding/network-aws",
-            "ja/products/bring-your-own-cloud/onboarding/network-gcp"
-          ],
-          "root": "ja/products/bring-your-own-cloud/onboarding/network"
+            "ja/products/bring-your-own-cloud/onboarding/network-gcp",
+            "ja/products/bring-your-own-cloud/onboarding/network-azure"
+          ]
         },
-        "ja/products/bring-your-own-cloud/onboarding/new-region",
-        "ja/products/bring-your-own-cloud/onboarding/azure-private-preview"
+        "ja/products/bring-your-own-cloud/onboarding/new-region"
       ]
     },
     {
@@ -50,8 +49,8 @@
         "ja/products/bring-your-own-cloud/reference/billable-aws-services",
         "ja/products/bring-your-own-cloud/reference/cost-model-aws",
         "ja/products/bring-your-own-cloud/reference/aws-service-limits",
-        "ja/products/bring-your-own-cloud/reference/faq",
-        "ja/products/bring-your-own-cloud/reference/faq-aws"
+        "ja/products/bring-your-own-cloud/reference/security-shared-responsibility",
+        "ja/products/bring-your-own-cloud/reference/faq"
       ]
     }
   ]

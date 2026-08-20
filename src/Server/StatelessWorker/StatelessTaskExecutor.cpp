@@ -72,6 +72,7 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
     /// Force make_distributed_plan off: the worker runs an already-split local fragment.
     query_context->applySettingsChanges(task_description.settings_changes);
     query_context->setSetting("make_distributed_plan", false);
+    query_context->setSetting("enable_cascades_optimizer", false);
 
     auto [object_storage, object_storage_path] = getObjectStorageForTemporaryFiles(unique_temp_file_path, query_context);
 
@@ -115,7 +116,10 @@ StatelessTaskExecutor::Result StatelessTaskExecutor::startTask(const String & un
             auto process_list_entry = query_context->getProcessList().insert(task_description.task.task_id, query_plan_hash, &ast_stub, query_context, start_watch.getStart(), false);
             query_context->setProcessListElement(process_list_entry->getQueryStatus());
 
-            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context, is_task_cancelled, update_progress);
+            /// A dispatched task is by definition not the initiator's in-process execution, so its
+            /// exchanges use the streaming/persisted transports rather than in-memory queues.
+            doExecuteTask(task_description, object_storage, object_storage_path, distributed_query_id, query_context,
+                /*execute_locally=*/false, is_task_cancelled, update_progress);
             task_promise->set_value("");
         }
         catch (std::exception & e)

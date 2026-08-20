@@ -19,6 +19,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -52,7 +53,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -827,45 +827,25 @@ protected:
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
                     /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
-                    /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
-                    /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
-                    /// and abort the whole scan. A null ast makes the block below emit defaults.
-                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
-                    auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+                    /// table, or one dropped concurrently with the scan): it re-enters
+                    /// DatabaseDataLake::getCreateTableQueryImpl, which can throw again and abort
+                    /// the whole scan. Such a row renders as empty strings.
+                    const RenderedCreateQueryFields fields{
+                        .create_table_query = columns_mask[src_index] != 0,
+                        .engine_full = columns_mask[src_index + 1] != 0,
+                        .as_select = columns_mask[src_index + 2] != 0};
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
-                    {
-                        ast_create->uuid = UUIDHelpers::Nil;
-                        if (ast_create->targets)
-                            ast_create->targets->resetInnerUUIDs();
-                    }
+                    auto rendered = table ? database->getRenderedCreateTableQuery(table_name, context, fields)
+                                          : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                        res_columns[res_index++]->insert(rendered->create_table_query);
 
                     if (columns_mask[src_index++])
-                    {
-                        String engine_full;
-
-                        if (ast_create && ast_create->storage)
-                        {
-                            engine_full = format({context, *ast_create->storage});
-
-                            static const char * const extra_head = " ENGINE = ";
-                            if (startsWith(engine_full, extra_head))
-                                engine_full = engine_full.substr(strlen(extra_head));
-                        }
-
-                        res_columns[res_index++]->insert(engine_full);
-                    }
+                        res_columns[res_index++]->insert(rendered->engine_full);
 
                     if (columns_mask[src_index++])
-                    {
-                        String as_select;
-                        if (ast_create && ast_create->select)
-                            as_select = format({context, *ast_create->select});
-                        res_columns[res_index++]->insert(as_select);
-                    }
+                        res_columns[res_index++]->insert(rendered->as_select);
                 }
                 else
                     src_index += 3;

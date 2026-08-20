@@ -394,21 +394,17 @@ namespace
                 /// exist in samples.
                 add_column_if_missing(TimeSeriesColumnNames::ID, dataTypeToAST(resolved_types.id_type));
 
-                /// Auto-created "timestamp" and "value" columns get time-series codecs: under generic LZ4
+                /// Auto-created "timestamp" and "value" columns get compression codecs: under generic LZ4
                 /// near-monotonic millisecond timestamps barely compress and dominate the table size
                 /// (>90% of on-disk bytes on a scrape-like corpus). All types accepted by the validation
-                /// above are compatible: DoubleDelta takes DateTime64/DateTime/UInt32, Gorilla takes
-                /// Float64/Float32. Explicitly declared columns keep whatever the user wrote.
-                auto make_codec = [](const char * codec_name)
-                {
-                    return makeASTFunction("CODEC",
-                        make_intrusive<ASTIdentifier>(codec_name),
-                        makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1})));
-                };
+                /// above are compatible with DoubleDelta (DateTime64/DateTime/UInt32). The "value" column
+                /// gets plain ZSTD(3): specialized floating-point codecs such as Gorilla proved unreliable
+                /// in practice. Explicitly declared columns keep whatever the user wrote.
                 if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(make_codec("DoubleDelta"));
+                    timestamp_decl->setCodec(makeASTFunction(
+                        "CODEC", make_intrusive<ASTIdentifier>("DoubleDelta"), makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{1}))));
                 if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(make_codec("Gorilla"));
+                    value_decl->setCodec(makeASTFunction("CODEC", makeASTFunction("ZSTD", make_intrusive<ASTLiteral>(UInt64{3}))));
 
                 break;
             }

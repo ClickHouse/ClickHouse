@@ -1452,8 +1452,20 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
             return join;
     }
 
+    /// Print the names the way they are spelled in the `join_algorithm` setting, so that they can be
+    /// pasted straight back into it. `toString(JoinAlgorithm)` returns the uppercase enum spelling,
+    /// which the setting parser rejects.
+    std::vector<String> enabled_algorithm_names;
+    enabled_algorithm_names.reserve(table_join->getEnabledJoinAlgorithms().size());
+    for (auto algorithm : table_join->getEnabledJoinAlgorithms())
+        enabled_algorithm_names.emplace_back(SettingFieldJoinAlgorithmTraits::toString(algorithm));
+
     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Can't execute any of specified algorithms for specified strictness/kind and right storage type");
+                    "None of the algorithms enabled by the 'join_algorithm' setting [{}] can execute this {} {} JOIN "
+                    "with the given right table storage type",
+                    fmt::join(enabled_algorithm_names, ", "),
+                    toString(table_join->strictness()),
+                    toString(table_join->kind()));
 }
 
 }

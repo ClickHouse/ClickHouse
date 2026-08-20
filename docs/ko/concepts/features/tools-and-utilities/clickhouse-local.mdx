@@ -72,6 +72,13 @@ ClickHouse는 파일 이름 확장자를 보고 해당 파일이 탭으로 구�
   ```
 </Tip>
 
+데이터가 로컬에 있을 필요는 없습니다. 파일 이름 대신 URL을 사용할 수 있으며, URL 스킴에 따라 해당 테이블 엔진이 선택됩니다(`http://` 및 `https://`는 [url](/ko/reference/functions/table-functions/url) 함수처럼, `s3://`는 [s3](/ko/reference/functions/table-functions/s3) 함수처럼, `file://`는 [file](/ko/reference/functions/table-functions/file) 함수처럼 읽습니다):
+
+```bash
+./clickhouse local -q "SELECT * FROM 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv' LIMIT 3"
+./clickhouse local -q "SELECT count() FROM 's3://clickhouse-public-datasets/hits_compatible/athena_partitioned/hits_1.parquet'"
+```
+
 ```response
 marketplace    Nullable(String)
 customer_id    Nullable(Int64)
@@ -398,10 +405,14 @@ clickhouse-local \
 
 `--listen_host`, `--tcp_port`, `--http_port` 옵션은 바인드 주소와 포트를 설정합니다. 기본 포트는 TCP의 경우 `9000`, HTTP의 경우 `8123`입니다.
 
+HTTP 리스너는 기본 `clickhouse-server` 구성과 동일한 허용적인 헤더로 CORS 사전 요청에 응답하므로, 웹 애플리케이션은 별도 설정 없이 브라우저에서 이를 쿼리할 수 있습니다. 여기에는 origin이 `null`인 `file://` URL에서 열린 웹 UI도 포함됩니다. 이를 제한하려면 `--config-file`로 전달하는 설정 파일에 자체 `http_options_response` 섹션을 정의하십시오. 이 섹션은 기본값을 완전히 대체합니다.
+
 <Warning>
   **보안**
 
   기본적으로 `clickhouse-local`은 임시 사용자 설정으로 실행되므로, 열리는 모든 리스너는 인증 없이 열립니다. `users_config` 설정이 사용자 지정 `users.xml`을 가리키도록 지정하여(예: `--config-file` 사용) 사용자와 액세스 제어(access control)를 명시적으로 구성한 경우가 아니라면 루프백 주소(`127.0.0.1` 또는 `::1`)에 바인딩하십시오. 인증 없이 비루프백 주소에서 수신하면, 선택한 포트에 접근할 수 있는 누구에게나 로컬 인스턴스의 데이터가 노출됩니다.
+
+  루프백 주소도 브라우저에서 접근할 수 있다는 점에 유의하십시오. HTTP 리스너가 열려 있는 동안에는 방문하는 모든 웹 페이지가 로컬 인스턴스를 쿼리할 수 있으며, 기본 CORS 헤더 덕분에 결과를 읽을 수 있습니다.
 </Warning>
 
 <div id="related-content-1">

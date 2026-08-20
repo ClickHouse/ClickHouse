@@ -79,7 +79,7 @@ Estimation:
 메모리상의 경험적 스캔을 건너뛰고 대신 [컬럼 통계(column statistics)](/ko/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)를 기준으로 추정하려면, 먼저 관련 컬럼에 이를 정의하고(기본적으로 비활성화됨) 구체화 mutation이 완료될 때까지 기다린 다음, 경험적 경로를 비활성화하십시오:
 
 ```sql
-ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;

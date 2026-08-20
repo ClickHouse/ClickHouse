@@ -35,6 +35,7 @@
 #include <Processors/Transforms/DeduplicationTokenTransforms.h>
 #include <Processors/Transforms/PlanSquashingTransform.h>
 #include <Processors/Transforms/ApplySquashingTransform.h>
+#include <Processors/Transforms/ShrinkColumnsTransform.h>
 #include <Processors/ResizeProcessor.h>
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -85,6 +86,8 @@ namespace Setting
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 preferred_block_size_bytes;
     extern const SettingsUInt64 min_insert_block_size_bytes;
+    extern const SettingsFloat shrink_over_allocated_columns_min_waste_ratio;
+    extern const SettingsUInt64 shrink_over_allocated_columns_min_waste_bytes;
     extern const SettingsString insert_deduplication_token;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -942,6 +945,14 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         processors->emplace_back(std::move(processor));
     };
 
+    /// Shrink over-allocated columns produced by parsing (e.g. String columns grown power-of-two) to
+    /// fit, right after the source where the chunk is uniquely owned, to reduce peak memory usage.
+    if (static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]) > 1.0)
+        add_head_transform(std::make_shared<ShrinkColumnsTransform>(
+            insert_header,
+            static_cast<double>(settings[Setting::shrink_over_allocated_columns_min_waste_ratio]),
+            settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
+
     {
         auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());
         counting->setProcessListElement(context->getProcessListElement());
@@ -1096,13 +1107,18 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    /// Actually the query doesn't change, we just serialize it to string
+    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
+    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
+    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
+    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
+    auto query_to_send = query.clone();
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
     String query_str;
     {
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
             /*one_line=*/true, /*identifier_quoting_rule=*/IdentifierQuotingRule::Always);
-        query.IAST::format(buf, ast_format_settings);
+        query_to_send->IAST::format(buf, ast_format_settings);
         query_str = buf.str();
     }
 
@@ -1110,6 +1126,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     ContextMutablePtr query_context = Context::createCopy(local_context);
     query_context->increaseDistributedDepth();
     query_context->setSetting("skip_unavailable_shards", true);
+    /// Same contract as the other remote paths: the inter-server settings packet must not carry the
+    /// initiator-only settings either.
+    {
+        Settings stripped_settings = query_context->getSettingsRef();
+        ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        query_context->setSettings(stripped_settings);
+    }
 
     src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
 
@@ -1200,15 +1223,15 @@ BlockIO InterpreterInsertQuery::execute()
         && query.table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE
         && query.table_id.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
     {
-        /// Allow inserts into external table engines (object storage, message queues, external databases)
-        /// as they don't create merge tasks on the server replica
-        bool is_external_storage =
-            table->isObjectStorage() ||     /// S3, Azure, GCS, HDFS, etc.
-            table->isDataLake() ||           /// Iceberg, DeltaLake, Hudi
-            table->isMessageQueue() ||       /// Kafka, RabbitMQ, NATS
-            table->isExternalDatabase();     /// MySQL, PostgreSQL, MongoDB, Hive, YTsaurus
+        /// Allow inserts that write out to external storage (object storage, message queues,
+        /// external databases): they create no merge tasks on this replica.
+        /// Background streaming pushes (`no_destination`) skip the external table and feed attached
+        /// materialized views instead, producing `MergeTree` parts, so they are not exempt.
+        bool writes_out_to_external_storage = !no_destination
+            && (table->isObjectStorage() || table->isDataLake()
+                || table->isMessageQueue() || table->isExternalDatabase());
 
-        if (!is_external_storage)
+        if (!writes_out_to_external_storage)
             throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Insert queries are prohibited");
     }
 

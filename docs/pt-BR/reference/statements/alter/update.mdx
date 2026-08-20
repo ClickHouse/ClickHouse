@@ -20,15 +20,58 @@ A `filter_expr` deve ser do tipo `UInt8`. Esta consulta atualiza os valores das 
 
 Uma única consulta pode conter vários comandos separados por vírgulas.
 
-A sincronia do processamento da consulta é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync). Por padrão, ela é assíncrona.
+A sincronia do processamento da consulta é definida pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync). Por padrão, ela é assíncrona.
 
 **Veja também**
 
 * [Mutações](/pt-BR/reference/statements/alter/index#mutations)
 * [Sincronia das consultas ALTER](/pt-BR/reference/statements/alter/index#synchronicity-of-alter-queries)
-* Configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync)
+* Configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings/mutations#mutations_sync)
 * [`UPDATE` leve](/pt-BR/reference/statements/update) - Alternativa de atualização leve usando partes de patch
 * [`APPLY PATCHES`](/pt-BR/reference/statements/alter/apply-patches) - Aplicar manualmente patches de atualizações leves
+
+<div id="materialized-columns">
+  ## Colunas materializadas
+</div>
+
+Uma coluna [`MATERIALIZED`](/pt-BR/reference/statements/create/table#materialized) cuja expressão lê uma
+coluna atualizada é recalculada pela mutação, garantindo que seu valor armazenado permaneça consistente com os novos dados.
+
+<div id="columns-calculated-from-ephemeral-columns">
+  ### Colunas calculadas a partir de colunas EPHEMERAL
+</div>
+
+Uma coluna [`EPHEMERAL`](/pt-BR/reference/statements/create/table#ephemeral) existe apenas durante um
+`INSERT` e nunca é armazenada. Portanto, uma coluna `MATERIALIZED` calculada a partir dela não pode ser recalculada por uma
+mutação. Essa coluna mantém o valor calculado no momento do `INSERT`, que posteriormente deixa de corresponder à sua
+expressão:
+
+```sql
+CREATE TABLE test
+(
+    x Int32,
+    e Int32 EPHEMERAL 0,
+    m Int32 MATERIALIZED x + e
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test (x, e) VALUES (1, 7);
+
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+
+SELECT x, m FROM test;
+```
+
+```text
+┌─x─┬─m─┐
+│ 2 │ 8 │
+└───┴───┘
+```
+
+`m` é `8`, o valor calculado durante o `INSERT`, e não `2 + 7`: o valor de `e` não está disponível
+fora do `INSERT` que o forneceu. A mutação registra um aviso no log do servidor ao ignorar uma
+coluna por esse motivo. Para atualizar essa coluna, execute novamente o `INSERT` nas linhas afetadas.
 
 <div id="related-content">
   ## Conteúdo relacionado

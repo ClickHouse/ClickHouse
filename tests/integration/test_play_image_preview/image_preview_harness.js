@@ -295,6 +295,9 @@ function makeElement(tag) {
         renderError() {},
         clearError() {},
         clearSelection() {},
+        resetViewToggles() {},
+        setViewState() {},
+        finalizeFailedTable() {},
         flushFragment() {},
         async renderChart() {},
         redrawChart() {},
@@ -981,6 +984,77 @@ async function main() {
         const s = ownedState(run);
         check('tab-removal', 'removing a background tab does not dismiss the active preview',
             s && s.display === 'block' && s.owner === 'set', s);
+    }
+
+    /// Contract 6: the page must use the production JS fallback tokenizer when the embedded WASM
+    /// lexer is unavailable. `makeContext` deliberately makes the lexer fetch fail, so this drives
+    /// `tokenizeOrNull` -> `tokenizeWithFallback` instead of merely exercising the C++ port of the
+    /// token walk. These cases must not mistake identifiers or string contents for query clauses.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const quoted = await detectFramingSetting("SELECT 'framing_output_format = None'");
+            const column = await detectFramingSetting("SELECT settings x, framing_output_format = 'None' FROM t");
+            const identifier = await detectExplicitFormatClause('WITH 1 AS format SELECT format JSONCompactColumns SETTINGS max_threads = 1');
+            const clause = await detectExplicitFormatClause('SELECT 1 FORMAT JSONCompactColumns');
+            const inputSetting = await detectFramingSetting("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
+            const inputPayload = await detectExplicitFormatClause("INSERT INTO FUNCTION null('line String') SELECT * FROM input('line String') FORMAT LineAsString\\nFORMAT JSONCompactColumns");
+            const ambiguousPostFormatSettings = await detectFramingSetting("INSERT INTO FUNCTION null('line String') FORMAT LineAsString SETTINGS framing_output_format = 'None'\\nline");
+            const parallelWithWrite = await queryIsReadOnly('SELECT 1 PARALLEL WITH INSERT INTO t SELECT 1');
+            return JSON.stringify({ quoted, column, identifier, clause, inputSetting, inputPayload, ambiguousPostFormatSettings, parallelWithWrite });
+        })()`));
+        check('fallback-tokenizer', 'a setting name inside a string does not select user framing',
+            !res.quoted.user_framing && !res.quoted.user_disables_framing, res);
+        check('fallback-tokenizer', 'a column named settings does not open a SETTINGS clause',
+            !res.column.user_framing && !res.column.user_disables_framing, res);
+        check('fallback-tokenizer', 'identifier uses of format do not become a FORMAT clause',
+            res.identifier === null, res);
+        check('fallback-tokenizer', 'a real FORMAT clause is still detected without WASM',
+            res.clause && res.clause.name === 'JSONCompactColumns', res);
+        check('fallback-tokenizer', '`input` post-FORMAT SETTINGS remains inline data by default',
+            !res.inputSetting.user_framing && !res.inputSetting.user_disables_framing, res);
+        check('fallback-tokenizer', '`input` inline data is not treated as an output FORMAT clause',
+            res.inputPayload === null, res);
+        check('fallback-tokenizer', 'ambiguous post-FORMAT SETTINGS fails closed without WASM',
+            res.ambiguousPostFormatSettings.has_ambiguous_post_format_settings, res);
+        check('fallback-tokenizer', '`PARALLEL WITH` is a retry and Run all barrier without WASM',
+            !res.parallelWithWrite, res);
+    }
+
+    /// Contract 7: `Run all` must not dispatch a later write after a prior statement reports an
+    /// in-band framed failure. Drive the real `postMulti` grouping loop; the transport boundary is
+    /// replaced only with the already-decoded result returned by `postImpl`, as a stream harness
+    /// cannot make a browser `Response` from this minimal DOM fake.
+    {
+        const page = await bootPage(js);
+        const res = JSON.parse(await page.run(`(async () => {
+            const tab = makeTab('Run all', 'SELECT fail; INSERT later');
+            tab.reqNum = 1;
+            tab.panel = document.createElement('div');
+            tab.resultEl = document.createElement('div');
+            tab.resultEl.clear = () => {};
+            tab.panel.appendChild(tab.resultEl);
+            tabs.push(tab);
+            activeTabId = tab.id;
+            const calls = [];
+            const savedPostImpl = postImpl;
+            postImpl = async (_tab, _req, query) => {
+                calls.push(query);
+                return { format: '', reply: '', response_ok: false, is_error: true,
+                    is_table: false, is_raw: false, is_chart: false, is_image: false,
+                    is_base64: false, is_truncated: false, framing_kind: '' };
+            };
+            await postMulti(tab, 1, [
+                { query: 'SELECT fail', is_select: true, queryStart: 0 },
+                { query: 'INSERT later', is_select: false, queryStart: 13 },
+            ], {}, tab.query, { url: 'http://example.test', user: '', password: '' }, true, '');
+            postImpl = savedPostImpl;
+            return JSON.stringify({ calls, failed: tab.failed, phase: tab.progressPhase });
+        })()`));
+        check('run-all-framed-failure', 'a failed first statement prevents a later write from being sent',
+            res.calls.length === 1 && res.calls[0] === 'SELECT fail', res);
+        check('run-all-framed-failure', 'the tab retains the failed state',
+            res.failed && res.phase === 'error', res);
     }
 
     if (failures === 0) {

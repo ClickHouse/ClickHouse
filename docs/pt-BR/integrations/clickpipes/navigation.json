@@ -4,6 +4,7 @@
       "group": "ClickPipes para armazenamento de objetos",
       "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
       "pages": [
+        "pt-BR/integrations/clickpipes/home",
         {
           "group": "Amazon S3",
           "icon": "/images/integrations/logos/amazon_s3_logo.svg",
@@ -30,13 +31,13 @@
             "pt-BR/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
           ]
         }
-      ],
-      "root": "pt-BR/integrations/clickpipes/home"
+      ]
     },
     {
       "group": "ClickPipes para Postgres",
       "icon": "/images/integrations/logos/postgresql.svg",
       "pages": [
+        "pt-BR/integrations/clickpipes/postgres/index",
         "pt-BR/integrations/clickpipes/postgres/deduplication",
         "pt-BR/integrations/clickpipes/postgres/ordering-keys",
         "pt-BR/integrations/clickpipes/postgres/toast",
@@ -76,20 +77,19 @@
             "pt-BR/integrations/clickpipes/postgres/source/planetscale"
           ]
         }
-      ],
-      "root": "pt-BR/integrations/clickpipes/postgres/index"
+      ]
     },
     {
       "group": "ClickPipes para Kafka",
       "icon": "/images/integrations/logos/kafka.svg",
       "pages": [
+        "pt-BR/integrations/clickpipes/kafka/index",
         "pt-BR/integrations/clickpipes/kafka/create-kafka-clickpipe",
         "pt-BR/integrations/clickpipes/kafka/schema-registries",
         "pt-BR/integrations/clickpipes/kafka/reference",
         "pt-BR/integrations/clickpipes/kafka/best-practices",
         "pt-BR/integrations/clickpipes/kafka/faq"
-      ],
-      "root": "pt-BR/integrations/clickpipes/kafka/index"
+      ]
     },
     {
       "group": "ClickPipes para Kinesis",
@@ -97,8 +97,7 @@
       "pages": [
         "pt-BR/integrations/clickpipes/kinesis/overview",
         "pt-BR/integrations/clickpipes/kinesis/auth"
-      ],
-      "root": "pt-BR/integrations/clickpipes/kinesis/index"
+      ]
     },
     {
       "group": "ClickPipes para GCP Pub/Sub",
@@ -106,13 +105,13 @@
       "pages": [
         "pt-BR/integrations/clickpipes/pubsub/overview",
         "pt-BR/integrations/clickpipes/pubsub/auth"
-      ],
-      "root": "pt-BR/integrations/clickpipes/pubsub/index"
+      ]
     },
     {
       "group": "ClickPipes para MySQL",
       "icon": "/images/integrations/logos/mysql.svg",
       "pages": [
+        "pt-BR/integrations/clickpipes/mysql/index",
         "pt-BR/integrations/clickpipes/mysql/faq",
         "pt-BR/integrations/clickpipes/mysql/datatypes",
         "pt-BR/integrations/clickpipes/mysql/parallel-initial-load",
@@ -142,13 +141,13 @@
             "pt-BR/integrations/clickpipes/mysql/source/generic-maria"
           ]
         }
-      ],
-      "root": "pt-BR/integrations/clickpipes/mysql/index"
+      ]
     },
     {
       "group": "ClickPipes para MongoDB",
       "icon": "/images/integrations/logos/mongodb.svg",
       "pages": [
+        "pt-BR/integrations/clickpipes/mongodb/index",
         "pt-BR/integrations/clickpipes/mongodb/datatypes",
         "pt-BR/integrations/clickpipes/mongodb/quickstart",
         "pt-BR/integrations/clickpipes/mongodb/lifecycle",
@@ -173,8 +172,7 @@
             "pt-BR/integrations/clickpipes/mongodb/source/documentdb"
           ]
         }
-      ],
-      "root": "pt-BR/integrations/clickpipes/mongodb/index"
+      ]
     },
     {
       "group": "ClickPipes para BigQuery",
@@ -193,10 +191,20 @@
       ]
     },
     {
+      "group": "Rede",
+      "icon": "network-wired",
+      "pages": [
+        "pt-BR/integrations/clickpipes/networking/index",
+        "pt-BR/integrations/clickpipes/networking/static-ips",
+        "pt-BR/integrations/clickpipes/networking/aws-privatelink",
+        "pt-BR/integrations/clickpipes/networking/gcp-psc",
+        "pt-BR/integrations/clickpipes/networking/azure-privatelink"
+      ]
+    },
+    {
       "group": "Outros",
       "icon": "ellipsis",
       "pages": [
-        "pt-BR/integrations/clickpipes/aws-privatelink",
         "pt-BR/integrations/clickpipes/dynamodb",
         "pt-BR/integrations/clickpipes/monitoring"
       ]

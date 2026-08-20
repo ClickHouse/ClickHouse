@@ -56,12 +56,12 @@ ClickHouse 还会自行监控硬件资源的状态，例如：
 这些数据会被收集到 `system.asynchronous_metric_log` 表中。
 
 <div id="clickhouse-server-metrics">
-  ## ClickHouse server 指标
+  ## ClickHouse 服务器指标
 </div>
 
 ClickHouse server 内置了用于监控自身状态的能力。
 
-要跟踪服务器事件，请使用服务器日志。请参阅配置文件中的 [logger](/zh/reference/settings/server-settings/settings#logger) 部分。
+要跟踪服务器事件，请使用服务器日志。请参阅配置文件中的 [logger](/zh/reference/settings/server-settings/settings/other#logger) 部分。
 
 ClickHouse 收集：
 
@@ -70,10 +70,10 @@ ClickHouse 收集：
 
 你可以在 [system.metrics](/zh/reference/system-tables/metrics)、[system.events](/zh/reference/system-tables/events) 和 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表中找到这些指标。
 
-你可以将 ClickHouse 配置为将指标导出到 [Graphite](https://github.com/graphite-project)。请参阅 ClickHouse server 配置文件中的 [Graphite 部分](/zh/reference/settings/server-settings/settings#graphite)。在配置指标导出之前，你应按照其官方[指南](https://graphite.readthedocs.io/en/latest/install.html)先完成 Graphite 的设置。
+你可以将 ClickHouse 配置为将指标导出到 [Graphite](https://github.com/graphite-project)。请参阅 ClickHouse server 配置文件中的 [Graphite 部分](/zh/reference/settings/server-settings/settings/graphite#graphite)。在配置指标导出之前，你应按照其官方[指南](https://graphite.readthedocs.io/en/latest/install.html)先完成 Graphite 的设置。
 
-你可以将 ClickHouse 配置为将指标导出到 [Prometheus](https://prometheus.io)。请参阅 ClickHouse server 配置文件中的 [Prometheus 部分](/zh/reference/settings/server-settings/settings#prometheus)。在配置指标导出之前，你应按照其官方[指南](https://prometheus.io/docs/prometheus/latest/installation/)先完成 Prometheus 的设置。
+你可以将 ClickHouse 配置为将指标导出到 [Prometheus](https://prometheus.io)。请参阅 ClickHouse server 配置文件中的 [Prometheus 部分](/zh/reference/settings/server-settings/settings/other#prometheus)。在配置指标导出之前，你应按照其官方[指南](https://prometheus.io/docs/prometheus/latest/installation/)先完成 Prometheus 的设置。
 
 此外，你还可以通过 HTTP API 监控服务器可用性。向 `/ping` 发送 `HTTP GET` 请求。如果服务器可用，它会返回 `200 OK`。
 
-要监控集群配置中的服务器，你应设置 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/zh/reference/settings/session-settings#max_replica_delay_for_distributed_queries) 参数，并使用 HTTP 资源 `/replicas_status`。当副本可用且未落后于其他副本时，对 `/replicas_status` 的请求会返回 `200 OK`。如果副本存在延迟，则会返回 `503 HTTP_SERVICE_UNAVAILABLE`，并附带有关延迟差距的信息。
+要监控集群配置中的服务器，你应设置 [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/zh/reference/settings/session-settings/max#max_replica_delay_for_distributed_queries) 参数，并使用 HTTP 资源 `/replicas_status`。当副本可用且未落后于其他副本时，对 `/replicas_status` 的请求会返回 `200 OK`。如果副本存在延迟，则会返回 `503 HTTP_SERVICE_UNAVAILABLE`，并附带有关延迟差距的信息。

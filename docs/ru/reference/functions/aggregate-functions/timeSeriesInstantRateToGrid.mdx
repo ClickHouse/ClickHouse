@@ -16,7 +16,7 @@ doc_type: 'reference'
 Агрегатная функция, которая принимает данные временных рядов в виде пар временных меток и значений и вычисляет на их основе [PromQL-подобный irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) на регулярной временной сетке, задаваемой начальной временной меткой, конечной временной меткой и шагом. Для каждой точки сетки значения для вычисления `irate` берутся в пределах указанного временного окна.
 
 <Warning>
-  Эта функция экспериментальная; чтобы включить её, установите `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Эта функция экспериментальная; чтобы включить её, установите `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Синтаксис**
@@ -27,10 +27,10 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 
 **Параметры**
 
-* `start_timestamp` — Задает начало сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `end_timestamp` — Задает конец сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `grid_step` — Задает шаг сетки в секундах. [`UInt32`](/ru/reference/data-types/int-uint)
-* `staleness` — Задает максимально допустимую давность учитываемых измерений в секундах. Окно давности представляет собой полуоткрытый интервал: открытый слева и закрытый справа. [`UInt32`](/ru/reference/data-types/int-uint)
+* `start_timestamp` — Задает начало сетки. При использовании `DateTime64` в качестве аргумента временной метки также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `end_timestamp` — Задает конец сетки. При использовании `DateTime64` в качестве аргумента временной метки также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `grid_step` — Задает шаг сетки в секундах. При использовании `DateTime64` в качестве аргумента временной метки также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `staleness` — Задает максимально допустимую давность учитываемых измерений в секундах. Окно давности представляет собой полуоткрытый интервал: открытый слева и закрытый справа. При использовании `DateTime64` в качестве аргумента временной метки также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
 
 **Аргументы**
 

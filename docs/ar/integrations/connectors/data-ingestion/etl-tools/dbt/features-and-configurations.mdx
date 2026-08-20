@@ -38,6 +38,7 @@ your_profile_name:
       secure: [False] # Use TLS (native protocol) or HTTPS (http protocol)
       client_cert: [null] # Path to a TLS client certificate in .pem format
       client_cert_key: [null] # Path to the private key for the TLS client certificate
+      server_host_name: [null] # Override the TLS SNI and hostname verification target. Useful when connecting via a DNS alias (e.g. an internal CNAME or AWS PrivateLink endpoint) where the TLS certificate is issued for a different hostname than the one used in `host`.
       retries: [1] # Number of times to retry a "retriable" database exception (such as a 503 'Service Unavailable' error)
       compression: [<empty string>] # Use gzip compression if truthy (http), or compression type for a native connection
       connect_timeout: [10] # Timeout in seconds to establish a connection to ClickHouse
@@ -49,7 +50,7 @@ your_profile_name:
       local_db_prefix: [<empty string>] # Database prefix of local tables on shards for distributed materializations. If empty, it uses the same database as the distributed table.
       allow_automatic_deduplication: [False] # Enable ClickHouse automatic deduplication for Replicated tables
       tcp_keepalive: [False] # Native client only, specify TCP keepalive configuration. Specify custom keepalive settings as [idle_time_sec, interval_sec, probes].
-      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection.
+      reuse_connections: [True] # Re-use the same connection across models. Set to `False` to close the connection at the end of each model — useful on multi-replica ClickHouse Cloud services where the load balancer routes by TCP connection. Note: disabling connection reuse adds a new TCP/TLS handshake per model, which increases total `dbt run` wall time (typically ~200-500 ms per model). Combine with `threads > 1` for the best balance between distribution and throughput.
       custom_settings: [{}] # A dictionary/mapping of custom ClickHouse settings for the connection - default is empty.
       database_engine: '' # Database engine to use when creating new ClickHouse schemas (databases).  If not set (the default), new databases will use the default ClickHouse database engine (usually Atomic).
       threads: [1] # Number of threads to use when running queries. Before setting it to a number higher than 1, make sure to read the [read-after-write consistency](#read-after-write-consistency) section.
@@ -134,8 +135,8 @@ seeds:
 
 يعتمد dbt على نموذج اتساق القراءة بعد الإدراج. وهذا لا يتوافق مع عناقيد ClickHouse التي تضم أكثر من نسخة متماثلة إذا لم تتمكن من ضمان توجيه جميع العمليات إلى النسخة المتماثلة نفسها. قد لا تواجه مشكلات في استخدامك اليومي لـ dbt، لكن توجد بعض الاستراتيجيات التي يمكنك اتباعها، بحسب عنقودك، لضمان ذلك:
 
-* إذا كنت تستخدم عنقود ClickHouse Cloud، فما عليك سوى تعيين `select_sequential_consistency: 1` في خاصية `custom_settings` ضمن ملف التعريف الخاص بك. يمكنك العثور على مزيد من المعلومات حول هذا الإعداد [هنا](/ar/reference/settings/session-settings#select_sequential_consistency).
-* إذا كنت تستخدم عنقودًا ذاتي الاستضافة، فتأكد من إرسال جميع طلبات dbt إلى النسخة المتماثلة نفسها في ClickHouse. وإذا كان لديك موازن تحميل أمامه، فحاول استخدام آلية `replica aware routing`/`sticky sessions` حتى تتمكن دائمًا من الوصول إلى النسخة المتماثلة نفسها. ولا يُنصح بإضافة الإعداد `select_sequential_consistency = 1` في العناقيد خارج ClickHouse Cloud [غير موصى بها](/ar/reference/settings/session-settings#select_sequential_consistency).
+* إذا كنت تستخدم عنقود ClickHouse Cloud، فما عليك سوى تعيين `select_sequential_consistency: 1` في خاصية `custom_settings` ضمن ملف التعريف الخاص بك. يمكنك العثور على مزيد من المعلومات حول هذا الإعداد [هنا](/ar/reference/settings/session-settings/other#select_sequential_consistency).
+* إذا كنت تستخدم عنقودًا ذاتي الاستضافة، فتأكد من إرسال جميع طلبات dbt إلى النسخة المتماثلة نفسها في ClickHouse. وإذا كان لديك موازن تحميل أمامه، فحاول استخدام آلية `replica aware routing`/`sticky sessions` حتى تتمكن دائمًا من الوصول إلى النسخة المتماثلة نفسها. ولا يُنصح بإضافة الإعداد `select_sequential_consistency = 1` في العناقيد خارج ClickHouse Cloud [غير موصى بها](/ar/reference/settings/session-settings/other#select_sequential_consistency).
 
 <div id="additional-clickhouse-macros">
   ## وحدات الماكرو الإضافية لـ ClickHouse
@@ -180,7 +181,7 @@ seeds:
 | structure                         | بنية الأعمدة للبيانات في الحاوية، على شكل قائمة من أزواج الاسم/نوع البيانات، مثل `['id UInt32', 'date DateTime', 'value String']` وإذا لم يتم توفيرها، فسيستنتج ClickHouse البنية تلقائيًا. |
 | aws&#95;access&#95;key&#95;id     | معرّف مفتاح الوصول إلى S3.                                                                                                                                                                  |
 | aws&#95;secret&#95;access&#95;key | المفتاح السري لـ S3.                                                                                                                                                                        |
-| role&#95;arn                      | معرّف ARN لدور IAM باسم ClickhouseAccess لاستخدامه في الوصول الآمن إلى كائنات S3. راجع هذه [الوثائق](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمزيد من المعلومات.    |
+| role&#95;arn                      | معرّف ARN لدور IAM الذي تم إنشاؤه للوصول الآمن إلى S3. راجع هذه [الوثائق](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمزيد من المعلومات.                               |
 | compression                       | طريقة الضغط المستخدمة مع كائنات S3. وإذا لم يتم توفيرها، فسيحاول ClickHouse تحديد الضغط استنادًا إلى اسم الملف.                                                                             |
 
 راجع

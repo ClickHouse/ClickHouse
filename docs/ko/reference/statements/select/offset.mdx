@@ -9,10 +9,10 @@ doc_type: 'reference'
 `OFFSET` 및 `FETCH`를 사용하면 데이터를 나누어 가져올 수 있습니다. 단일 쿼리로 가져올 행 블록을 지정합니다.
 
 ```sql
--- SQL 표준 스타일:
+-- SQL Standard style:
 [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 
--- MySQL/PostgreSQL 스타일:
+-- MySQL/PostgreSQL style:
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
@@ -52,7 +52,7 @@ SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
 </Note>
 
 <Note>
-  실제 오프셋은 [offset](/ko/reference/settings/session-settings#offset) 설정의 영향을 받을 수도 있습니다.
+  실제 오프셋은 [offset](/ko/reference/settings/session-settings/other#offset) 설정의 영향을 받을 수도 있습니다.
 </Note>
 
 <div id="examples">
