@@ -127,26 +127,35 @@ std::optional<SSHAgent::Identity> findIdentityInSSHAgent(const std::vector<Strin
     return {};
 }
 
-/// Finds the key to authenticate with when `--ssh-key-file` was specified without a file name:
-/// the same key that `ssh` would use for this host, either from the ssh-agent, or from a file in `~/.ssh`.
-SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
+/// Finds the key to authenticate with: the one that `ssh` would use for this host,
+/// either from the ssh-agent, or from a file in `~/.ssh`, unless the file name is given explicitly.
+SSHKey getSSHKey(const String & host, const String & user, UInt16 port, const String & filename, const std::optional<String> & passphrase)
 {
-    std::vector<String> identity_files = getSSHIdentityFiles(host);
-    std::optional<String> configured_agent_socket_path = getSSHAgentSocketPath(host);
-    String agent_socket_path = configured_agent_socket_path.value_or(SSHAgent::getSocketPath());
+    SSHClientConfiguration configuration = getSSHClientConfiguration(host, user, port);
+    String agent_socket_path = configuration.agent_socket_path.value_or(SSHAgent::getSocketPath());
+
+    if (!filename.empty())
+    {
+        /// If the key is also held by the ssh-agent, use the agent: this way the passphrase is not needed.
+        if (!passphrase.has_value())
+            if (auto identity = findIdentityInSSHAgent({filename}, agent_socket_path))
+                return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
+
+        return loadPrivateKey(filename, passphrase);
+    }
 
     /// A key held by the ssh-agent is preferred: it does not need a passphrase.
     /// But if the passphrase is specified, the user obviously wants the key file to be used.
     if (!passphrase.has_value())
     {
-        if (auto identity = findIdentityInSSHAgent(identity_files, agent_socket_path))
+        if (auto identity = findIdentityInSSHAgent(configuration.identity_files, agent_socket_path))
         {
             fmt::print(stderr, "Using the SSH key '{}' from the ssh-agent.\n", identity->comment);
             return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
         }
     }
 
-    for (const String & identity_file : identity_files)
+    for (const String & identity_file : configuration.identity_files)
     {
         if (!fs::is_regular_file(identity_file))
             continue;
@@ -156,7 +165,8 @@ SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
     }
 
     /// There are no identity files, but the agent may still hold a key that the server knows about.
-    if (!passphrase.has_value() && SSHAgent::isAvailable(agent_socket_path))
+    /// `IdentitiesOnly yes` forbids exactly this: only the configured identities may be used.
+    if (!passphrase.has_value() && !configuration.identities_only && SSHAgent::isAvailable(agent_socket_path))
     {
         std::vector<SSHAgent::Identity> identities;
         try
@@ -178,24 +188,7 @@ SSHKey findSSHKey(const String & host, const std::optional<String> & passphrase)
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
         "No SSH key found: none of these files exists: {}. "
         "Specify the key file with --ssh-key-file <path>, or add a key to the ssh-agent",
-        fmt::join(identity_files, ", "));
-}
-
-SSHKey getSSHKey(const String & host, const String & filename, const std::optional<String> & passphrase)
-{
-    if (filename.empty())
-        return findSSHKey(host, passphrase);
-
-    /// If the key is also held by the ssh-agent, use the agent: this way the passphrase is not needed.
-    if (!passphrase.has_value())
-    {
-        std::optional<String> configured_agent_socket_path = getSSHAgentSocketPath(host);
-        String agent_socket_path = configured_agent_socket_path.value_or(SSHAgent::getSocketPath());
-        if (auto identity = findIdentityInSSHAgent({filename}, agent_socket_path))
-            return SSHKeyFactory::makeKeyFromSSHAgent(identity->key_blob, agent_socket_path);
-    }
-
-    return loadPrivateKey(filename, passphrase);
+        fmt::join(configuration.identity_files, ", "));
 }
 
 #endif
@@ -252,7 +245,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         if (config.has("ssh-key-passphrase"))
             passphrase = config.getString("ssh-key-passphrase");
 
-        ssh_private_key = getSSHKey(host, filename, passphrase);
+        ssh_private_key = getSSHKey(host, user, port, filename, passphrase);
 #else
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "SSH is disabled, because ClickHouse is built without libssh");
 #endif

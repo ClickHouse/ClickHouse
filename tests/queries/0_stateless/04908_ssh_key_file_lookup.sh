@@ -26,15 +26,23 @@ ${CLICKHOUSE_CLIENT} --query "
     GRANT ALL ON ${CLICKHOUSE_DATABASE}.* TO ${USER_NAME};
 "
 
-# The client reports the key it has chosen to stderr; the temporary paths in the report are not stable.
+# The client reports the key it has chosen to stderr; the temporary paths and the user name are not stable.
 function run_client()
 {
     HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file \
-        --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed "s|${SSH_HOME}|\$HOME|g"
+        --query "SELECT currentUser() = '${USER_NAME}'" 2>&1 | sed -e "s|${SSH_HOME}|\$HOME|g" -e "s|${USER_NAME}|\$USER|g"
 }
 
 echo '--- The default identity file in ~/.ssh'
 run_client
+
+echo '--- An IdentityFile with the %r token, the name of the user of the connection'
+cp "${SSH_HOME}/.ssh/id_ed25519" "${SSH_HOME}/.ssh/id_${USER_NAME}"
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentityFile ~/.ssh/id_%r
+EOF
+run_client
+rm "${SSH_HOME}/.ssh/config" "${SSH_HOME}/.ssh/id_${USER_NAME}"
 
 echo '--- A dead ssh-agent socket does not prevent an explicit key file from being used'
 SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" HOME="${SSH_HOME}" ${CLICKHOUSE_CLIENT} --user "${USER_NAME}" --ssh-key-file "${SSH_HOME}/.ssh/id_ed25519" \
@@ -64,7 +72,6 @@ EOF
 CLICKHOUSE_TEST_AGENT_SOCKET="${AGENT_SOCKET}" SSH_AUTH_SOCK="${SSH_HOME}/missing-agent.sock" run_client
 rm "${SSH_HOME}/.ssh/config"
 
-echo '--- The rsa key in the ssh-agent, with nothing in ~/.ssh'
 ssh-add -qD 2>/dev/null
 ssh-add -q "${SSH_HOME}/.ssh/id_rsa" 2>/dev/null
 cat > "${SSH_HOME}/.ssh/config" <<'EOF'
@@ -77,6 +84,15 @@ echo '--- A matching IdentityAgent none disables an available ssh-agent'
 run_client
 rm "${SSH_HOME}/.ssh/config"
 rm "${SSH_HOME}/.ssh/id_ed25519.pub" "${SSH_HOME}/.ssh/id_rsa" "${SSH_HOME}/.ssh/id_rsa.pub"
+
+echo '--- The rsa key in the ssh-agent, with nothing in ~/.ssh'
 run_client
+
+echo '--- IdentitiesOnly yes forbids a key that only the ssh-agent has'
+cat > "${SSH_HOME}/.ssh/config" <<'EOF'
+IdentitiesOnly yes
+EOF
+run_client | grep -o 'No SSH key found'
+rm "${SSH_HOME}/.ssh/config"
 
 ${CLICKHOUSE_CLIENT} --query "DROP USER ${USER_NAME}"

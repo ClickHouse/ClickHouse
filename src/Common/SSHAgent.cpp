@@ -123,11 +123,8 @@ void receiveAll(Poco::Net::StreamSocket & socket, char * data, size_t size)
 }
 
 /// Sends one message to the agent and returns its response.
-String talkToAgent(std::string_view request, const String & socket_path)
+String talkToAgentImpl(std::string_view request, const String & socket_path)
 {
-    if (socket_path.empty())
-        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "There is no ssh-agent socket configured");
-
     Poco::Net::StreamSocket socket(Poco::Net::SocketAddress(Poco::Net::SocketAddress::UNIX_LOCAL, socket_path));
 
     /// Every message is prefixed with its length.
@@ -145,6 +142,28 @@ String talkToAgent(std::string_view request, const String & socket_path)
     String response(length, '\0');
     receiveAll(socket, response.data(), response.size());
     return response;
+}
+
+/// Every way in which the agent can turn out to be unusable - a socket that is not there, a name that is
+/// too long for a Unix socket, a connection that breaks - is reported as one error code, because the caller
+/// only has to decide whether to look for the key elsewhere.
+String talkToAgent(std::string_view request, const String & socket_path)
+{
+    if (socket_path.empty())
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "There is no ssh-agent socket configured");
+
+    try
+    {
+        return talkToAgentImpl(request, socket_path);
+    }
+    catch (const Exception &)
+    {
+        throw;
+    }
+    catch (const Poco::Exception & e)
+    {
+        throw Exception(ErrorCodes::SSH_AGENT_ERROR, "Cannot talk to the ssh-agent at {}: {}", socket_path, e.displayText());
+    }
 }
 
 /// The type of the key, such as `ssh-ed25519`, is the first field of its wire format.

@@ -3,11 +3,16 @@
 # if USE_SSH
 #    include <Common/Crypto/OpenSSLInitializer.h>
 #    include <Common/SSHAgent.h>
+#    include <Poco/DigestEngine.h>
+#    include <Poco/SHA1Engine.h>
 #    include <base/scope_guard.h>
 
 #    include <cstdlib>
 #    include <cctype>
+#    include <climits>
 #    include <cstring>
+#    include <memory>
+#    include <string>
 #    include <pwd.h>
 #    include <unistd.h>
 
@@ -79,15 +84,61 @@ String getHomeDirectory()
     return entry.pw_dir;
 }
 
-/// Substitutes the home directory and the host name in the name of an identity file.
-/// The other placeholders that `ssh` supports are left as is: a file with such a name simply will not be found.
-String expandIdentityFileName(std::string_view pattern, const String & home_directory, const String & host)
+/// The host name of this machine, the way `ssh` reports it in `%l`.
+String getLocalHostName()
 {
+    char buffer[HOST_NAME_MAX + 1] = {};
+    if (gethostname(buffer, sizeof(buffer) - 1) != 0)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot determine the host name of this machine");
+    return buffer;
+}
+
+String getLocalUserName()
+{
+    passwd entry{};
+    passwd * result = nullptr;
+    char buffer[16384];
+    if (getpwuid_r(getuid(), &entry, buffer, sizeof(buffer), &result) != 0 || result == nullptr)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot determine the name of the current user");
+
+    return entry.pw_name;
+}
+
+/// The values that `ssh` substitutes for the `%`-tokens of `IdentityFile` and `IdentityAgent`.
+struct ExpansionTokens
+{
+    String home_directory;   /// `%d`
+    String local_host;       /// `%l`
+    String short_local_host; /// `%L`
+    String host;             /// `%h`, the host to connect to, after the `Hostname` substitution
+    String original_host;    /// `%n`
+    String port;             /// `%p`
+    String remote_user;      /// `%r`
+    String local_user;       /// `%u`
+    String uid;              /// `%i`
+};
+
+/// `%C` is a hash of the connection, computed exactly the way `ssh` computes it.
+String getConnectionHash(const ExpansionTokens & tokens)
+{
+    Poco::SHA1Engine engine;
+    engine.update(tokens.local_host);
+    engine.update(tokens.host);
+    engine.update(tokens.port);
+    engine.update(tokens.remote_user);
+    /// `ssh` also hashes the jump host here, but we never have one, and an empty string contributes nothing.
+    return Poco::DigestEngine::digestToHex(engine.digest());
+}
+
+/// Substitutes the home directory and the `%`-tokens in the value of `IdentityFile` or `IdentityAgent`.
+String expandTokens(std::string_view pattern, const ExpansionTokens & tokens)
+{
+    const std::string_view original_pattern = pattern;
     String result;
 
     if (pattern.starts_with("~/"))
     {
-        result += home_directory;
+        result += tokens.home_directory;
         pattern.remove_prefix(1);
     }
 
@@ -102,10 +153,21 @@ String expandIdentityFileName(std::string_view pattern, const String & home_dire
         ++i;
         switch (pattern[i])
         {
-            case 'd': result += home_directory; break;
-            case 'h': result += host; break;
             case '%': result += '%'; break;
-            default: result += '%'; result += pattern[i]; break;
+            case 'C': result += getConnectionHash(tokens); break;
+            case 'd': result += tokens.home_directory; break;
+            case 'h': result += tokens.host; break;
+            case 'i': result += tokens.uid; break;
+            case 'L': result += tokens.short_local_host; break;
+            case 'l': result += tokens.local_host; break;
+            case 'n': result += tokens.original_host; break;
+            case 'p': result += tokens.port; break;
+            case 'r': result += tokens.remote_user; break;
+            case 'u': result += tokens.local_user; break;
+            default:
+                /// `%j`, the jump host, is the only token of `ssh` that is left: we never connect through one.
+                throw Exception(ErrorCodes::LIBSSH_ERROR,
+                    "The token %{} of the SSH configuration value '{}' is not supported", pattern[i], original_pattern);
         }
     }
 
@@ -152,6 +214,29 @@ std::optional<String> expandSSHConfigEnvironmentVariables(std::string_view value
         result += variable_value;
     }
     return result;
+}
+
+/// The socket of the ssh-agent configured by `IdentityAgent`, if the configuration specifies one.
+std::optional<String> getAgentSocketPath(ssh_session session, const ExpansionTokens & tokens)
+{
+    char * configured_socket_path = nullptr;
+    if (ssh_options_get(session, SSH_OPTIONS_IDENTITY_AGENT, &configured_socket_path) != SSH_OK)
+        return std::nullopt;
+    std::unique_ptr<char, SSHStringDeleter> configured_socket_path_ptr(configured_socket_path);
+
+    String socket_path = configured_socket_path_ptr.get();
+    if (socket_path == "none")
+        return String{};
+    if (socket_path == "SSH_AUTH_SOCK")
+    {
+        const char * environment_socket_path = std::getenv("SSH_AUTH_SOCK"); // NOLINT(concurrency-mt-unsafe)
+        return environment_socket_path ? String(environment_socket_path) : String{};
+    }
+
+    auto expanded_socket_path = expandSSHConfigEnvironmentVariables(socket_path);
+    if (!expanded_socket_path)
+        return std::nullopt;
+    return expandTokens(*expanded_socket_path, tokens);
 }
 
 /// Passed to libssh, which calls it only if the private key turns out to be encrypted.
@@ -327,7 +412,7 @@ SSHKey::~SSHKey()
         ssh_key_free(key);
 }
 
-std::vector<String> getSSHIdentityFiles(const String & host)
+SSHClientConfiguration getSSHClientConfiguration(const String & host, const String & user, UInt16 port)
 {
     /// libssh already knows how to read `~/.ssh/config`, we only have to ask it for the result.
     ssh_session session = ssh_new();
@@ -335,9 +420,12 @@ std::vector<String> getSSHIdentityFiles(const String & host)
         throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot create an SSH session");
     SCOPE_EXIT({ ssh_free(session); });
 
-    /// The host is needed to select the matching `Host` and `Match` sections of the config.
-    if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the host of an SSH session: {}", ssh_get_error(session));
+    /// The host, the user and the port are needed to select the matching `Host` and `Match` sections of the config.
+    unsigned int port_number = port;
+    if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK
+        || ssh_options_set(session, SSH_OPTIONS_USER, user.c_str()) != SSH_OK
+        || ssh_options_set(session, SSH_OPTIONS_PORT, &port_number) != SSH_OK)
+        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the parameters of an SSH session: {}", ssh_get_error(session));
 
     /// The names of the config files are passed explicitly, because libssh takes the home directory
     /// from the passwd database, while the rest of the client honors the `HOME` environment variable.
@@ -346,54 +434,46 @@ std::vector<String> getSSHIdentityFiles(const String & host)
         if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
             throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot parse the SSH configuration file {}: {}", config_file, ssh_get_error(session));
 
+    ExpansionTokens tokens;
+    tokens.home_directory = home_directory;
+    tokens.local_host = getLocalHostName();
+    tokens.short_local_host = tokens.local_host.substr(0, tokens.local_host.find('.'));
+    tokens.host = host;
+    tokens.original_host = host;
+    tokens.port = std::to_string(port);
+    tokens.remote_user = user;
+    tokens.local_user = getLocalUserName();
+    tokens.uid = std::to_string(getuid());
+
+    /// `%h` is the host after the `Hostname` substitution of the config, while `%n` is the one we were given.
+    char * configured_host = nullptr;
+    if (ssh_options_get(session, SSH_OPTIONS_HOST, &configured_host) == SSH_OK)
+    {
+        std::unique_ptr<char, SSHStringDeleter> configured_host_ptr(configured_host);
+        tokens.host = configured_host_ptr.get();
+    }
+
+    SSHClientConfiguration result;
+
     /// The identities from the config come first, the built-in default ones (`~/.ssh/id_ed25519` and so on) last.
-    /// They are not expanded, because expanding them in libssh would also resolve the home directory from the passwd database.
-    std::vector<String> result;
+    /// They are not expanded by libssh, because that would also resolve the home directory from the passwd database.
     char * pattern = nullptr;
     while (ssh_options_get(session, SSH_OPTIONS_NEXT_IDENTITY, &pattern) == SSH_OK)
     {
         std::unique_ptr<char, SSHStringDeleter> pattern_ptr(pattern);
-        result.push_back(expandIdentityFileName(pattern_ptr.get(), home_directory, host));
+        result.identity_files.push_back(expandTokens(pattern_ptr.get(), tokens));
+    }
+
+    result.agent_socket_path = getAgentSocketPath(session, tokens);
+
+    char * identities_only = nullptr;
+    if (ssh_options_get(session, SSH_OPTIONS_IDENTITIES_ONLY, &identities_only) == SSH_OK)
+    {
+        std::unique_ptr<char, SSHStringDeleter> identities_only_ptr(identities_only);
+        result.identities_only = identities_only_ptr.get() == std::string_view("yes");
     }
 
     return result;
-}
-
-std::optional<String> getSSHAgentSocketPath(const String & host)
-{
-    /// Parse `IdentityAgent` with the same libssh configuration parser as `IdentityFile`.
-    /// This keeps matching `Host` and `Match` sections, `Include`, and keyword syntax consistent.
-    ssh_session session = ssh_new();
-    if (session == nullptr)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot create an SSH session");
-    SCOPE_EXIT({ ssh_free(session); });
-
-    if (ssh_options_set(session, SSH_OPTIONS_HOST, host.c_str()) != SSH_OK)
-        throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot set the host of an SSH session: {}", ssh_get_error(session));
-
-    String home_directory = getHomeDirectory();
-    for (const String & config_file : {home_directory + "/.ssh/config", String(GLOBAL_SSH_CONFIG_FILE)})
-        if (ssh_options_parse_config(session, config_file.c_str()) != SSH_OK)
-            throw Exception(ErrorCodes::LIBSSH_ERROR, "Cannot parse the SSH configuration file {}: {}", config_file, ssh_get_error(session));
-
-    char * configured_socket_path = nullptr;
-    if (ssh_options_get(session, SSH_OPTIONS_IDENTITY_AGENT, &configured_socket_path) != SSH_OK)
-        return std::nullopt;
-    std::unique_ptr<char, SSHStringDeleter> configured_socket_path_ptr(configured_socket_path);
-
-    String socket_path = configured_socket_path_ptr.get();
-    if (socket_path == "none")
-        return String{};
-    if (socket_path == "SSH_AUTH_SOCK")
-    {
-        const char * environment_socket_path = std::getenv("SSH_AUTH_SOCK"); // NOLINT(concurrency-mt-unsafe)
-        return environment_socket_path ? String(environment_socket_path) : String{};
-    }
-
-    auto expanded_socket_path = expandSSHConfigEnvironmentVariables(socket_path);
-    if (!expanded_socket_path)
-        return std::nullopt;
-    return expandIdentityFileName(*expanded_socket_path, home_directory, host);
 }
 
 }

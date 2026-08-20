@@ -75,16 +75,27 @@ public:
     static SSHKey makeKeyFromSSHAgent(String key_blob, String agent_socket_path);
 };
 
-/// The private key files that `ssh` would try when connecting to `host`:
-/// the identity files configured for that host in `~/.ssh/config` (and in the system-wide config),
-/// followed by the default identity files, such as `~/.ssh/id_ed25519`.
-/// The files do not necessarily exist.
-std::vector<String> getSSHIdentityFiles(const String & host);
+/// The parts of the `ssh` client configuration that decide which key to authenticate with.
+struct SSHClientConfiguration
+{
+    /// The private key files that `ssh` would try: the identity files configured for the host
+    /// in `~/.ssh/config` (and in the system-wide config), followed by the default identity files,
+    /// such as `~/.ssh/id_ed25519`. The files do not necessarily exist.
+    std::vector<String> identity_files;
 
-/// The socket configured by `IdentityAgent` for `host`. `nullopt` means that the
-/// configuration did not specify an agent and the `SSH_AUTH_SOCK` environment variable is used.
-/// An empty string means that `IdentityAgent none` disables use of the agent.
-std::optional<String> getSSHAgentSocketPath(const String & host);
+    /// The socket configured by `IdentityAgent`. `nullopt` means that the configuration did not
+    /// specify an agent and the `SSH_AUTH_SOCK` environment variable is used.
+    /// An empty string means that `IdentityAgent none` disables use of the agent.
+    std::optional<String> agent_socket_path;
+
+    /// `IdentitiesOnly yes`: only the keys of `identity_files` may be used,
+    /// even if the ssh-agent offers more of them.
+    bool identities_only = false;
+};
+
+/// Reads `~/.ssh/config` and the system-wide configuration for a connection to `user`@`host`:`port`,
+/// the same way `ssh` reads them.
+SSHClientConfiguration getSSHClientConfiguration(const String & host, const String & user, UInt16 port);
 
 }
 

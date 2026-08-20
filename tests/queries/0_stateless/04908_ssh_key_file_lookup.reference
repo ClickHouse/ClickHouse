@@ -1,6 +1,9 @@
 --- The default identity file in ~/.ssh
 Using the SSH key from $HOME/.ssh/id_ed25519.
 1
+--- An IdentityFile with the %r token, the name of the user of the connection
+Using the SSH key from $HOME/.ssh/id_$USER.
+1
 --- A dead ssh-agent socket does not prevent an explicit key file from being used
 1
 --- An unset IdentityAgent environment variable does not prevent an explicit key file from being used
@@ -17,3 +20,5 @@ Using the SSH key from $HOME/.ssh/id_rsa.
 --- The rsa key in the ssh-agent, with nothing in ~/.ssh
 Using the SSH key 'the rsa key' from the ssh-agent.
 1
+--- IdentitiesOnly yes forbids a key that only the ssh-agent has
+No SSH key found
