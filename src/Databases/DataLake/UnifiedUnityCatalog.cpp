@@ -56,6 +56,19 @@ static bool hasReadableTableType(const Poco::JSON::Object::Ptr & table_json)
         || READABLE_TABLE_TYPES.contains(table_json->get("table_type").extract<String>());
 }
 
+/// Databricks reports managed Iceberg tables with `data_source_format` == `DELTA`,
+/// so only `securable_kind` tells them apart from plain Delta tables.
+static const std::unordered_set<std::string> ICEBERG_SECURABLE_KINDS = {
+    "TABLE_DELTA_ICEBERG_MANAGED",
+    "TABLE_DELTA_ICEBERG_EXTERNAL",
+};
+
+static bool hasIcebergSecurableKind(const Poco::JSON::Object::Ptr & table_json)
+{
+    return hasValueAndItsNotNone("securable_kind", table_json)
+        && ICEBERG_SECURABLE_KINDS.contains(table_json->get("securable_kind").extract<String>());
+}
+
 /// Backwards compatibility with the pre-unified Unity catalog, which accepted a table by
 /// `securable_kind` alone. Delta tables are documented to always carry `data_source_format`,
 /// so this likely never fires, but it keeps the shipped acceptance rule for records without the format.
@@ -216,6 +229,10 @@ std::pair<Poco::Dynamic::Var, std::string> UnifiedUnityCatalog::postJSONRequest(
 
 DataLakeTableFormat UnifiedUnityCatalog::detectTableFormat(const Poco::JSON::Object::Ptr & table_json) const
 {
+    /// Checked before the format, because managed Iceberg tables report `data_source_format` == `DELTA`.
+    if (hasIcebergSecurableKind(table_json))
+        return DataLakeTableFormat::ICEBERG;
+
     if (!hasValueAndItsNotNone("data_source_format", table_json))
     {
         if (hasCompatDeltaSecurableKind(table_json))
@@ -319,8 +336,10 @@ bool UnifiedUnityCatalog::tryGetTableMetadata(
         /// The Unity tables API describes the table but does not serve its Iceberg metadata;
         /// Databricks exposes that only through the Iceberg REST catalog endpoint.
         /// See https://docs.databricks.com/aws/en/external-access/iceberg
-        auto rest_catalog = getIcebergRestCatalog();
-        return rest_catalog->tryGetTableMetadata(schema_name, table_name, result);
+        return requestWithTokenRefresh(/* enable_refresh = */ use_oauth, [&](bool force_refresh)
+        {
+            return getIcebergRestCatalog(force_refresh)->tryGetTableMetadata(schema_name, table_name, result);
+        });
     }
 
     return tryGetDeltaTableMetadata(full_table_name, object, result);
@@ -513,15 +532,16 @@ ICatalog::CredentialsRefreshCallback UnifiedUnityCatalog::getCredentialsConfigur
     };
 }
 
-std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog() const
+std::shared_ptr<RestCatalog> UnifiedUnityCatalog::getIcebergRestCatalog(bool force_refresh) const
 {
     std::lock_guard lock(token_mutex);
-    if (iceberg_rest_catalog)
+    if (iceberg_rest_catalog && !force_refresh)
         return iceberg_rest_catalog;
 
     std::string iceberg_rest_url = std::filesystem::path(base_url_str) / "iceberg-rest";
 
-    ensureBearerToken();
+    /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
+    ensureBearerToken(force_refresh);
     std::string rest_auth_header = "Authorization: Bearer " + access_token->token;
 
     /// The RestCatalog authenticates via the ready-made auth header, which puts it in header mode.

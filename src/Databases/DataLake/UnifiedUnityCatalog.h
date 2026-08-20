@@ -120,7 +120,8 @@ private:
     std::shared_ptr<IStorageCredentials> parseS3Credentials(const Poco::JSON::Object::Ptr & response) const;
     std::shared_ptr<IStorageCredentials> parseAzureCredentials(const Poco::JSON::Object::Ptr & response) const;
 
-    std::shared_ptr<RestCatalog> getIcebergRestCatalog() const;
+    /// `force_refresh` rebuilds the catalog around a freshly minted token.
+    std::shared_ptr<RestCatalog> getIcebergRestCatalog(bool force_refresh = false) const;
 };
 
 }
