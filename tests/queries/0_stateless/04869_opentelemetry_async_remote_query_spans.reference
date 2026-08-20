@@ -6,9 +6,6 @@ sampled trace joins remote query: OK	sampled sendQuery CLIENT span: OK
 sendQuery CLIENT span: OK	task span: OK
 remote query parents under CLIENT span: OK
 sampled trace joins remote query: OK	sampled sendQuery CLIENT span: OK
-=== use_hedged_requests=1 ===
-hedged ConnectionEstablisherAsync span: OK
-hedged PacketReceiver span: OK
 === cancellation ===
 task span emitted on cancellation: OK
 server is alive: OK

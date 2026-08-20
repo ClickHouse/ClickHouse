@@ -142,31 +142,8 @@ for async_send in 0 1; do
     "
 done
 
-# ConnectionEstablisherAsync and PacketReceiver are constructed at different points of the
-# query lifecycle than RemoteQueryExecutorReadContext (preallocated by
-# HedgedConnectionsFactory / created on the hedged read path), so their context capture is
-# asserted separately. Both fibers run even for pooled connections, so no fresh connection
-# needs to be forced.
-echo "=== use_hedged_requests=1 ==="
-
-trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(reverse(reinterpretAsString(generateUUIDv4()))))")
-
-${CLICKHOUSE_CLIENT} \
-    --opentelemetry-traceparent "00-$trace_id-0000000000000073-01" \
-    --use_hedged_requests=1 \
-    --async_socket_for_remote=1 \
-    --query "select * from remote('127.0.0.2', system, one) format Null"
-
-poll_spans "
-    with UUIDNumToString(toFixedString(unhex('$trace_id'), 16)) as t
-    select
-        countIf(operation_name = 'ConnectionEstablisherAsync' and parent_span_id != 0),
-        countIf(operation_name = 'PacketReceiver' and parent_span_id != 0)
-    from system.opentelemetry_span_log
-    where finish_date >= yesterday() and trace_id = t" "1 1" \
-|| exit 1
-echo "hedged ConnectionEstablisherAsync span: OK"
-echo "hedged PacketReceiver span: OK"
+# ConnectionEstablisherAsync and PacketReceiver (hedged requests) are Linux-only and are
+# covered separately by 04926_opentelemetry_hedged_remote_query_spans.
 
 # Cancellation: destroying the fiber while it is suspended unwinds its stack outside of
 # resume(); the tracing holder destructor must still resolve the fiber-local context and
