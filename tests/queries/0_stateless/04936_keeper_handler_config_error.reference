@@ -24,3 +24,7 @@ starts anyway
 handler section not read
 --- control valid
 control endpoint: 200
+--- control secure
+reports the unknown type
+not blamed on the address
+refuses to start

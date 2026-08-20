@@ -94,7 +94,7 @@ for listen_try in '' '<listen_try>1</listen_try>'; do
     # fail for an unrelated reason, so a port collision is retried rather than asserted on.
     for _ in $(seq 1 20); do
         pick_ports
-        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
         write_config '<type>no_such_prometheus_type</type>' "$listen_try" "${TMP_DIR}/keeper_config.xml"
 
         OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"
@@ -125,7 +125,7 @@ done
 echo '--- no port'
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
     write_config '<type>no_such_prometheus_type</type>' '' "${TMP_DIR}/keeper_config.xml" no-port
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
     KEEPER_PID=$!
@@ -152,7 +152,7 @@ echo '--- valid'
 STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
     write_config '<type>expose_metrics</type><metrics>true</metrics><events>true</events>' \
         '' "${TMP_DIR}/keeper_config.xml"
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
@@ -173,14 +173,17 @@ for _ in $(seq 1 20); do
 done
 
 echo "metrics endpoint: ${STATUS}"
+kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
 # The HTTP control endpoints read a different section through a different factory, so they need
 # their own cases. `prometheus.port` is left out here to keep this listener the only reader.
-# $1 = <handler> body, $2 = extra top-level config, $3 = "no-port" to omit the port
+# $1 = <handler> body, $2 = extra top-level config, $3 = "no-port" to omit the port,
+# "secure" to configure the separately built HTTPS listener instead
 function write_control_config()
 {
     local port_element="<port>${PROM_PORT}</port>"
     [ "${3:-}" = no-port ] && port_element=""
+    [ "${3:-}" = secure ] && port_element="<secure_port>${PROM_PORT}</secure_port>"
 
     cat > "${TMP_DIR}/keeper_config.xml" <<EOF
 <clickhouse>
@@ -224,7 +227,7 @@ for listen_try in '' '<listen_try>1</listen_try>'; do
 
     for _ in $(seq 1 20); do
         pick_ports
-        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+        rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
         write_control_config '<type>no_such_control_type</type>' "$listen_try"
 
         OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"
@@ -250,7 +253,7 @@ done
 echo '--- control no port'
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
     write_control_config '<type>no_such_control_type</type>' '' no-port
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
     KEEPER_PID=$!
@@ -277,7 +280,7 @@ echo '--- control valid'
 STATUS=000
 for _ in $(seq 1 20); do
     pick_ports
-    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log"
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
     write_control_config '<type>ready</type>' ''
     "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" >/dev/null 2>&1 &
     KEEPER_PID=$!
@@ -297,3 +300,28 @@ for _ in $(seq 1 20); do
 done
 
 echo "control endpoint: ${STATUS}"
+
+# The HTTPS control listener is built by its own guarded copy of the construction, so moving
+# only that one back inside the callback has to be caught here. No TLS material is configured:
+# the handler section is read before any socket work, which is what this asserts.
+echo '--- control secure'
+for _ in $(seq 1 20); do
+    pick_ports
+    rm -rf "${TMP_DIR}/coordination" "${TMP_DIR}/keeper.err.log" "${TMP_DIR}/keeper.log"
+    write_control_config '<type>no_such_control_type</type>' '' secure
+
+    OUT="$(timeout 60 "$CLICKHOUSE_BINARY" keeper --config="${TMP_DIR}/keeper_config.xml" 2>&1)"
+    RC=$?
+
+    ALL="${OUT}$(cat "${TMP_DIR}/keeper.err.log" 2>/dev/null)"
+    echo "$ALL" | grep -qE 'RAFT_ERROR|Address already in use' || break
+done
+
+echo "$ALL" | grep -qF "Unknown handler type 'no_such_control_type'" \
+    && echo 'reports the unknown type' || echo 'FAIL: the unknown type is not reported'
+
+echo "$ALL" | grep -qE 'NETWORK_ERROR|consider to' && echo 'FAIL: still blamed on the address' \
+    || echo 'not blamed on the address'
+
+[ "$RC" != 124 ] && echo 'refuses to start' || echo 'FAIL: started without the endpoint'
+
