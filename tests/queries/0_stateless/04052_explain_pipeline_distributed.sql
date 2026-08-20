@@ -37,6 +37,15 @@ INSERT INTO test_distributed_pipeline SELECT number, number * 2, number * 3 FROM
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_local_plan=1;
 
+-- `EXPLAIN PIPELINE distributed=1` describes the pipeline of the replicas by forwarding an
+-- `EXPLAIN PIPELINE` query to them, so it needs the query to be sent as text. Pin
+-- `parallel_replicas_plan_based=0`: the plan-based implementation sends a serialized query plan
+-- instead and cannot describe the pipeline of the replicas, exactly like `serialize_query_plan=1`
+-- above.
+SET parallel_replicas_plan_based=0;
+
 explain pipeline distributed=1 SELECT * FROM test_distributed_pipeline ORDER BY c;
+
+explain pipeline distributed=1 SELECT * FROM test_distributed_pipeline ORDER BY c SETTINGS parallel_replicas_plan_based=1; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE test_distributed_pipeline;
