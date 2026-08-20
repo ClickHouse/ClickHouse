@@ -650,10 +650,11 @@ def test_the_job_reads_the_state_it_is_looking_at(
 @pytest.mark.parametrize(
     "marker,inputs_expected",
     [
-        # These have this run's own coverage slice to report on.
+        # The only outcome whose slice is this run's own and holds records.
         (_MARKER_REPORT, True),
-        (_MARKER_EMPTY, True),
-        # These do not, so a file present here is an earlier run's.
+        # This run's slice, but with no records in it at all.
+        (_MARKER_EMPTY, False),
+        # No slice of this run's, so a file present here is an earlier run's.
         (_MARKER_NO_CPP, False),
         (_MARKER_NO_DATA, False),
     ],
@@ -1084,8 +1085,8 @@ def test_dispatch_snippets_are_the_real_production_blocks():
     [
         # The only outcome with numbers: report, analysis and comment all happen.
         (_MARKER_REPORT, True, True, True),
-        # Has this run's own slice, so the analysis runs, but nothing to report.
-        (_MARKER_EMPTY, False, True, False),
+        # This run's slice holds no records, so there is nothing to analyse.
+        (_MARKER_EMPTY, False, False, False),
         # No slice of this run's own, so the analysis must not read a stale one.
         (_MARKER_NO_CPP, False, False, False),
         (_MARKER_NO_DATA, False, False, False),
@@ -1120,3 +1121,20 @@ def test_a_failed_script_reports_the_analysis_as_not_ok(tmp_path):
     )
     assert analysis_ran is False
     assert status != Result.Status.OK
+
+
+def test_a_record_less_slice_is_reported_as_empty_not_as_nothing_coverable(tmp_path):
+    # `current_coverage_empty` is reached only when the baseline slice does have
+    # records, so the changed files are known to be coverable. Running the
+    # analyser over the record-less current slice would report the opposite:
+    # `0/0 (nothing coverable)` at OK, contradicting the outcome alongside it.
+    analysis_ran, status = _analysis_dispatch(
+        _MARKER_EMPTY, tmp_path, _FILES_PRESENT[_MARKER_EMPTY]
+    )
+    assert analysis_ran is False
+    assert status == Result.Status.OK
+    reasons_dir = tmp_path / "reasons"
+    reasons_dir.mkdir()
+    text = _reported_reasons(script_ok=True, marker=_MARKER_EMPTY, tmp_path=reasons_dir)
+    assert "nothing coverable" not in text, text
+    assert "empty" in text.lower(), text

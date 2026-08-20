@@ -400,12 +400,11 @@ if __name__ == "__main__":
 
         # Generate report for changed blocks only
         _print_log = f"{TEMP_DIR}{Utils.normalize_string('Print Uncovered Code')}.log"
-        # These are the outcomes that have this run's own coverage slice to report
-        # on. In the others the file is absent, or belongs to an earlier run in the
-        # same directory and its numbers would be reported as this run's.
+        # print_uncovered_code.py needs this run's own non-empty coverage slice,
+        # which only the report outcome has. Elsewhere the file is absent, holds no
+        # records, or is an earlier run's in the same directory.
         _diff_inputs_exist = (
-            _diff_outcome
-            in (DiffOutcome.REPORT_GENERATED, DiffOutcome.CURRENT_COVERAGE_EMPTY)
+            _diff_outcome == DiffOutcome.REPORT_GENERATED
             and Path(TEMP_DIR + "changes.diff").exists()
             and Path(TEMP_DIR + "current.changed.info").exists()
         )
