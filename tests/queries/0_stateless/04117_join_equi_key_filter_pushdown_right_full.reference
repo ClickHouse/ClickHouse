@@ -40,5 +40,11 @@ RIGHT JOIN USING, cross-type: unmatched right row preserved
 1000000000
 RIGHT JOIN ON, predicate on the wider side: no narrowing substitution
 1
+RIGHT JOIN USING, cross-type, join_use_nulls: left MergeTree still prunes granules
+1
 RIGHT JOIN USING, cross-type, join_use_nulls: result
+1
+FULL JOIN USING, cross-type: neither MergeTree prunes granules
+1
+FULL JOIN USING, cross-type, join_use_nulls: neither MergeTree prunes granules
 1

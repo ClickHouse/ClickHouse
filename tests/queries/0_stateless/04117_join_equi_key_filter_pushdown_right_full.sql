@@ -1,3 +1,8 @@
+-- Tags: no-parallel-replicas
+-- no-parallel-replicas: the granule assertions describe the local `MergeTree` read, which parallel
+-- replicas replace, and the `RIGHT JOIN` shapes below hit the unrelated logical error of
+-- https://github.com/ClickHouse/ClickHouse/issues/113292 there.
+
 -- Equi-key `WHERE` predicates must reach the left `MergeTree` input of a `RIGHT JOIN` as an index
 -- condition, including when the two `USING` keys differ in type.
 --
@@ -146,9 +151,42 @@ SELECT count() FROM (
 
 SET join_use_nulls = 1;
 
+-- A `RIGHT JOIN` takes its `USING` key from the right input, which `join_use_nulls` does not widen, so
+-- the output type is still the plain supertype and the substitution stays exact: the left input keeps
+-- pruning. The `EXPLAIN` assertion pins that, because the result alone would also hold if the pushdown
+-- silently stopped happening.
+SELECT 'RIGHT JOIN USING, cross-type, join_use_nulls: left MergeTree still prunes granules';
+SELECT count() > 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::UInt32 AS k) AS r USING (k) WHERE k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+
 SELECT 'RIGHT JOIN USING, cross-type, join_use_nulls: result';
 SELECT k FROM mt_i32 AS l RIGHT JOIN (SELECT 1::UInt32 AS k) AS r USING (k) WHERE k = 1 ORDER BY k;
 
 SET join_use_nulls = 0;
 
+-- The safety boundary itself: a `FULL JOIN` turns a dropped row into a defaulted unmatched one, so
+-- neither side may be filtered, whatever the substitution would allow. Asserted on the plan, not only
+-- on the rows, so that a later change re-enabling a side is caught even when the value survives it.
+DROP TABLE IF EXISTS mt_u32;
+CREATE TABLE mt_u32 (k UInt32) ENGINE = MergeTree ORDER BY k
+    SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
+INSERT INTO mt_u32 SELECT number FROM numbers(1000000);
+
+SELECT 'FULL JOIN USING, cross-type: neither MergeTree prunes granules';
+SELECT count() = 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt_i32 AS l FULL JOIN mt_u32 AS r USING (k) WHERE k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+
+SET join_use_nulls = 1;
+SELECT 'FULL JOIN USING, cross-type, join_use_nulls: neither MergeTree prunes granules';
+SELECT count() = 0 FROM (
+    EXPLAIN PLAN indexes = 1
+    SELECT k FROM mt_i32 AS l FULL JOIN mt_u32 AS r USING (k) WHERE k = 1
+) WHERE explain LIKE '%Granules: 1/%';
+SET join_use_nulls = 0;
+
+DROP TABLE mt_u32;
 DROP TABLE mt_i32;
