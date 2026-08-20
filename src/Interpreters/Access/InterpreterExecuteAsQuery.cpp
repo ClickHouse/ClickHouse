@@ -35,8 +35,11 @@ namespace
         /// CREATE HANDLER time and bound from the request - fails with UNKNOWN_QUERY_PARAMETER.
         new_context->setQueryParameters(context->getQueryParameters());
 
+        /// An empty current database cannot be copied over: `setCurrentDatabase` rejects an empty name,
+        /// and it cannot happen for a query anyway - the server refuses to start with an empty
+        /// `default_database`, so every session context has a database to inherit.
         const auto & database = context->getCurrentDatabase();
-        if (database != new_context->getCurrentDatabase())
+        if (!database.empty() && database != new_context->getCurrentDatabase())
             new_context->setCurrentDatabase(database);
 
         new_context->setInsertionTable(context->getInsertionTable(), context->getInsertionTableColumnNames(), context->getInsertionTableColumnsDescription());
@@ -99,7 +102,8 @@ namespace
         context->clampToSettingsConstraints(changed_settings, SettingSource::QUERY);
         context->applySettingsChanges(changed_settings);
 
-        if (database != context->getCurrentDatabase())
+        /// See the note about an empty current database in `impersonateQueryContext`.
+        if (!database.empty() && database != context->getCurrentDatabase())
             context->setCurrentDatabase(database);
     }
 }
