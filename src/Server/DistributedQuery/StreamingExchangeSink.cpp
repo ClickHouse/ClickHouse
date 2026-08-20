@@ -57,6 +57,36 @@ void StreamingExchangeSink::extractSocket()
 
     /// Prepare initial in-memory buffer for serializing chunks
     out = std::make_shared<WriteBufferFromOwnString>();
+
+    /// Register the socket so the sink hears an inbound `NoMoreDataNeeded` while it waits.
+    updateSocketWaitEvents();
+}
+
+void StreamingExchangeSink::updateSocketWaitEvents()
+{
+    uint32_t desired_events = EPOLLIN | EPOLLRDHUP | EPOLLERR;
+    if (hasUnsentBytes())
+        desired_events |= EPOLLOUT;
+
+    if (desired_events == registered_socket_events)
+        return;
+
+    /// `Epoll` has no modify operation; re-add the socket with the new event mask.
+    if (registered_socket_events != 0)
+    {
+        wait_events_epoll.remove(socket->sockfd());
+        registered_socket_events = 0;
+    }
+    wait_events_epoll.add(socket->sockfd(), desired_events);
+    registered_socket_events = desired_events;
+}
+
+void StreamingExchangeSink::onUpdatePorts()
+{
+    /// Called by the executor on every port update while the sink is not idle, possibly from
+    /// another thread. An extra wake is harmless: `work` drains it and `prepare` re-checks
+    /// everything.
+    port_update_wakeup.notify();
 }
 
 /// Send data to socket until the buffer is empty or until socket would block.
@@ -190,13 +220,12 @@ ISink::Status StreamingExchangeSink::prepare()
     input.setNeeded();
     if (!input.hasData())
     {
-        /// There is no input right now, but some data waits in the buffers. Send it even if
-        /// there is less than `FLUSH_BUFFER_TO_SOCKET_THRESHOLD` of it; otherwise it would
-        /// sit here until the next chunk arrives, and that can take a long time.
-        const size_t unsent = current_send_buffer.size() - current_send_position_in_buffer;
-        if (unsent > 0 || out->count() > 0)
-            return Status::Async;
-        return Status::NeedData;
+        /// Wait on the socket, not only on the input port: an inbound `NoMoreDataNeeded`
+        /// must wake the sink even if this stage never produces another chunk. Pending bytes
+        /// go out on the same wait even below `FLUSH_BUFFER_TO_SOCKET_THRESHOLD`; without
+        /// that they would sit here until the next chunk arrives, and that can take a long
+        /// time. `onUpdatePorts` wakes the sink when input arrives.
+        return Status::Async;
     }
 
     current_chunk = input.pull(true);
@@ -212,6 +241,9 @@ void StreamingExchangeSink::work()
         extractSocket();
         return;
     }
+
+    /// Drain the wakeup pipe; otherwise it would stay readable and wake the sink again at once.
+    port_update_wakeup.drain();
 
     /// React to EPOLLIN / EPOLLRDHUP wakeups (see scheduleForEvent).
     tryReceiveControlPacket();
@@ -246,7 +278,10 @@ void StreamingExchangeSink::work()
         return;
     }
 
-    if (!was_on_finish_called)
+    /// Without the `final_chunk_added` check, a wake with an empty input and empty buffers
+    /// (for example the port-update wakeup) would call `onFinish` while the stream is still
+    /// open.
+    if (final_chunk_added && !was_on_finish_called)
     {
         was_on_finish_called = true;
         onFinish();
@@ -268,12 +303,11 @@ std::tuple<int, uint32_t, int64_t> StreamingExchangeSink::scheduleForEvent()
 
     if (socket)
     {
+        updateSocketWaitEvents();
         LOG_TEST(log, "Schedule exchange stream sink {}, socket is ready, fd: {}", stream_name, socket->sockfd());
-        /// EPOLLIN | EPOLLRDHUP wake us on peer-initiated NoMoreDataNeeded / half-close.
-        return {
-            socket->sockfd(),
-            EPOLLOUT | EPOLLIN | EPOLLRDHUP | EPOLLERR,
-            -1};
+        /// `wait_events_epoll` becomes readable on socket events (inbound `NoMoreDataNeeded`,
+        /// peer close, writability while there are unsent bytes) and on the port-update wakeup.
+        return {wait_events_epoll.getFileDescriptor(), EPOLLIN | EPOLLERR, WAIT_TIMEOUT_MS};
     }
 
     int fd = future_connection->getEventFd();
