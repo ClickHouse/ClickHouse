@@ -70,6 +70,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_rejected[];
     extern const char iceberg_catalog_commit_update_throw[];
+    extern const char iceberg_catalog_commit_update_throw_post_dispatch[];
 }
 
 namespace DB::Setting
@@ -781,6 +782,11 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
             });
 
             response = glue_client->UpdateTable(request);
+
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_update_throw_post_dispatch,
+            {
+                throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected post-update throw");
+            });
         }
         catch (...)
         {

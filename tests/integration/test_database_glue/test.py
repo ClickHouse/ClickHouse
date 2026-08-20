@@ -2107,3 +2107,27 @@ def test_glue_commit_update_throw_keeps_files(started_cluster):
     assert after == before, (before, after)
     assert _s3_uri_exists(started_cluster.minio_client, after), after
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def test_glue_commit_update_throw_applied_keeps_committed_pointer(started_cluster):
+    # The throw happens after UpdateTable applied, which is why an exception from the call cannot be
+    # read as a rejection: reconciled through the read-back, the update is confirmed and the INSERT
+    # succeeds with its files intact. Treating the throw as proof of failure would delete them.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_update_applied_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+
+    try:
+        # Only the throw: the read-back must be allowed to answer, which is what resolves it.
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_update_throw_post_dispatch")
+        node.query(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_update_throw_post_dispatch")
+
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after, "glue lost the table's metadata_location"
+    assert after != before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n789\n"

@@ -82,6 +82,8 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_transport_fail[];
     extern const char iceberg_catalog_commit_transport_net_fail[];
     extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_rejected_dispatched[];
+    extern const char iceberg_catalog_commit_conflict[];
     extern const char iceberg_catalog_commit_predispatch_fail[];
     extern const char iceberg_catalog_commit_std_throw[];
 }
@@ -1674,6 +1676,28 @@ void RestCatalog::sendRequest(
     {
         out_stream_callback = [body_str, endpoint](std::ostream & os)
         {
+            /// Before the body is written but after the request is counted: the attempt is
+            /// dispatched, so it cannot have taken effect.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected_dispatched,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                    "Injected dispatched rejection",
+                    "");
+            });
+
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_conflict,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT,
+                    "Injected conflict",
+                    "");
+            });
+
             os << body_str;
 
             /// Inside the transport's retried region, after the request is counted, so the number
