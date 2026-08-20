@@ -203,7 +203,7 @@ public:
             /// only the required columns. Predicate and LIMIT pushdown are not applied in this case, so
             /// reject any outer filter under external_table_strict_query.
             rejectOuterFilterForQueryBackedExternalSourceIfStrict(
-                query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context, getStorageID());
+                query_info, storage_snapshot->metadata->getColumns().getOrdinary(), context, storage_snapshot->storage.getStorageID());
             query = buildQueryForExternalDatabaseSubquery(
                 remote_table_or_query.getQuery(), required_source_columns, IdentifierQuotingStyle::DoubleQuotes);
         }
@@ -223,7 +223,7 @@ public:
                 LiteralEscapingStyle::PostgreSQL,
                 remote_table_schema,
                 remote_table_or_query.getTableName(),
-                getStorageID(),
+                storage_snapshot->storage.getStorageID(),
                 context,
                 transform_query_limit);
         }
