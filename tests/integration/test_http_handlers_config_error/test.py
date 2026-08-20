@@ -26,6 +26,9 @@ BAD_PROMETHEUS_CONFIG_IN_CONTAINER = (
 BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/bad_prometheus_no_port.xml"
 )
+GOOD_PROMETHEUS_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/good_prometheus.xml"
+)
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -351,6 +354,49 @@ def test_prometheus_handler_config_is_not_read_without_a_prometheus_port(start_c
     finally:
         node.exec_in_container(
             ["bash", "-c", f"rm -f {BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER}"],
+            user="root",
+        )
+        node.restart_clickhouse()
+
+
+def test_prometheus_handler_config_error_on_reload_is_reported_to_the_client(
+    start_cluster,
+):
+    # A reload re-enters the Prometheus factory before `createServer` can early-return on the
+    # already-running listener, so a broken `<prometheus.handlers>` must reach the
+    # `SYSTEM RELOAD CONFIG` caller. It used to be accepted silently, leaving the running listener
+    # on the superseded configuration with nothing reported anywhere.
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "configs/good_prometheus.xml"
+        ),
+        GOOD_PROMETHEUS_CONFIG_IN_CONTAINER,
+    )
+    node.start_clickhouse()
+    try:
+        assert node.query("SELECT 1").strip() == "1"
+
+        # Same file, so this replaces the valid section rather than adding a second one.
+        node.copy_file_to_container(
+            os.path.join(
+                os.path.dirname(os.path.realpath(__file__)),
+                "configs/bad_prometheus.xml",
+            ),
+            GOOD_PROMETHEUS_CONFIG_IN_CONTAINER,
+        )
+        error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+
+        # Asserted on the error returned to the caller, so unrelated log contents cannot satisfy it.
+        assert "Unknown type no_such_prometheus_type" in error
+        assert "Listen" not in error
+        assert "NETWORK_ERROR" not in error
+
+        # The reload failing must not take the server with it.
+        assert node.query("SELECT 1").strip() == "1"
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {GOOD_PROMETHEUS_CONFIG_IN_CONTAINER}"],
             user="root",
         )
         node.restart_clickhouse()
