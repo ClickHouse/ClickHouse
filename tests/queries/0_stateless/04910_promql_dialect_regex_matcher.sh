@@ -52,6 +52,6 @@ echo "-- a real SET statement still works under the dialect"
 promql_client -q 'SET max_threads = 1' && echo OK
 
 echo "-- a malformed SET still gets the ordinary SQL lexical error"
-promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "Unrecognized token" | head -n 1
+promql_client -q 'SET max_threads = ~1' 2>&1 | grep -o "Unrecognized token"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"
