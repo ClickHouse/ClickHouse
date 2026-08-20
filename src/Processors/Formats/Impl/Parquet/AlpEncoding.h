@@ -7,31 +7,25 @@
 #include <utility>
 #include <vector>
 
-/// Encoder and decoder for the Parquet ALP (Adaptive Lossless floating-Point) encoding,
-/// as specified in parquet-format `Encodings.md#ALP`.
-///
-/// The scaling arithmetic (encode/decode/constants) is shared with the storage codec via
-/// `DB::ALPFloatUtils` (see Compression/ALPCommon.h). This file adds only the Parquet wire
-/// serialization, which is specific to the Parquet format and shared between the writer
-/// (Parquet/Write.cpp) and the reader (Parquet/Decoding.cpp) so both agree on the byte layout.
 namespace DB::Parquet::ALP
 {
 
-/// Per-physical-type properties of the on-wire ALP format.
-template <typename T> struct WireTraits;
+template <typename T>
+struct WireTraits;
 
-template <> struct WireTraits<Float64>
+template <>
+struct WireTraits<Float64>
 {
-    using StorageInt = Int64;                    /// DOUBLE stores a 64-bit frame-of-reference and up to 64-bit deltas.
-    static constexpr UInt8 max_exponent_excl = 19;   /// scaling up to 10^18
-    static constexpr UInt8 exception_bytes = 8;
+    using StorageInt = Int64;
+    static constexpr UInt8 max_exponent_excl = 19 static constexpr UInt8 exception_bytes = 8;
     static constexpr bool is_float = false;
 };
 
-template <> struct WireTraits<Float32>
+template <>
+struct WireTraits<Float32>
 {
-    using StorageInt = Int32;                    /// FLOAT stores a 32-bit frame-of-reference and up to 32-bit deltas.
-    static constexpr UInt8 max_exponent_excl = 10;   /// scaling up to 10^9
+    using StorageInt = Int32;
+    static constexpr UInt8 max_exponent_excl = 10;
     static constexpr UInt8 exception_bytes = 4;
     static constexpr bool is_float = true;
 };
@@ -41,20 +35,16 @@ struct Codec
 {
     using StorageInt = typename WireTraits<T>::StorageInt;
 
-    static constexpr UInt8 default_log_vector_size = 10; /// 1024 values per vector
+    static constexpr UInt8 default_log_vector_size = 10;
 
-    /// Encode one value with the given exponent/factor. Returns false if the value must be stored
-    /// as an exception (does not round-trip, or does not fit the storage integer width).
     static bool encodeValue(T value, UInt8 exponent, UInt8 factor, StorageInt & encoded_out)
     {
         const Int64 encoded = ALPFloatUtils::encodeValue(value, exponent, factor);
 
-        /// The Parquet FLOAT format can only store Int32; the reused encoder always produces Int64.
         if constexpr (WireTraits<T>::is_float)
             if (encoded < std::numeric_limits<Int32>::min() || encoded > std::numeric_limits<Int32>::max())
                 return false;
 
-        /// Normative round-trip check (also rejects NaN, ±Inf and -0.0 via inequality).
         if (ALPFloatUtils::decodeValue<T>(encoded, exponent, factor) != value)
             return false;
 
@@ -69,7 +59,6 @@ struct Codec
 
     static UInt8 bitWidth(UInt64 range) { return range == 0 ? 0 : static_cast<UInt8>(std::bit_width(range)); }
 
-    /// Rough size estimate (in bits) of a vector under a given (exponent, factor), sampled for speed.
     static UInt64 estimateCost(const T * values, size_t count, UInt8 exponent, UInt8 factor)
     {
         StorageInt min_v = std::numeric_limits<StorageInt>::max();
@@ -96,11 +85,10 @@ struct Codec
 
         const UInt64 range = static_cast<UInt64>(max_v) - static_cast<UInt64>(min_v);
         const UInt64 sampled = good + exceptions;
-        const UInt64 exception_bits = WireTraits<T>::exception_bytes * 8 + 16; /// value + 16-bit position
+        const UInt64 exception_bits = WireTraits<T>::exception_bytes * 8 + 16;
         return static_cast<UInt64>(bitWidth(range)) * count + (exceptions * count / sampled) * exception_bits;
     }
 
-    /// Pick the (exponent, factor) pair that minimises the estimated encoded size of a vector.
     static std::pair<UInt8, UInt8> chooseParams(const T * values, size_t count)
     {
         UInt8 best_exponent = 0;
@@ -122,7 +110,6 @@ struct Codec
         return {best_exponent, best_factor};
     }
 
-    /// --- little-endian append helpers ---
     static void appendLE(std::vector<UInt8> & out, UInt8 value) { out.push_back(value); }
     static void appendLE(std::vector<UInt8> & out, UInt16 value)
     {
@@ -142,8 +129,6 @@ struct Codec
             out.push_back(static_cast<UInt8>((bits >> (8 * i)) & 0xFF));
     }
 
-    /// Bit-pack values LSB-first, the same order as the Parquet RLE/Bit-Packing hybrid.
-    /// A 128-bit accumulator is required because bit_width can reach 64 for DOUBLE.
     static void bitPack(const std::vector<UInt64> & deltas, UInt8 bit_width, std::vector<UInt8> & out)
     {
         if (bit_width == 0)
@@ -165,12 +150,10 @@ struct Codec
             }
         }
         if (bits_in_buffer > 0)
-            out.push_back(static_cast<UInt8>(buffer & 0xFF)); /// final partial byte, high bits zero-padded
+            out.push_back(static_cast<UInt8>(buffer & 0xFF));
     }
 
-    /// Encode one vector (<= 1024 values). If forced_* are set, use them instead of searching.
-    static void encodeVector(
-        const T * values, size_t count, std::vector<UInt8> & out, int forced_exponent = -1, int forced_factor = -1)
+    static void encodeVector(const T * values, size_t count, std::vector<UInt8> & out, int forced_exponent = -1, int forced_factor = -1)
     {
         UInt8 exponent;
         UInt8 factor;
@@ -208,10 +191,9 @@ struct Codec
             {
                 exception_positions.push_back(static_cast<UInt16>(i));
                 exception_values.push_back(values[i]);
-                encoded[i] = 0; /// overwritten below
+                encoded[i] = 0;
             }
         }
-        /// Exceptions take the first good encoded value so they don't widen the frame-of-reference range.
         for (UInt16 position : exception_positions)
             encoded[position] = placeholder;
 
@@ -235,17 +217,14 @@ struct Codec
         for (size_t i = 0; i < count; ++i)
             deltas[i] = static_cast<UInt64>(encoded[i]) - static_cast<UInt64>(min_encoded);
 
-        /// AlpInfo: exponent, factor, exception count.
         appendLE(out, exponent);
         appendLE(out, factor);
         appendLE(out, static_cast<UInt16>(exception_positions.size()));
-        /// ForInfo: frame-of-reference, then bit width.
         if constexpr (std::is_same_v<T, Float64>)
             appendLE(out, min_encoded);
         else
             appendLE(out, static_cast<Int32>(min_encoded));
         appendLE(out, bit_width);
-        /// Packed deltas, then exception positions, then exception values (raw IEEE bits).
         bitPack(deltas, bit_width, out);
         for (UInt16 position : exception_positions)
             appendLE(out, position);
@@ -257,15 +236,17 @@ struct Codec
         }
     }
 
-    /// Encode a full page: 7-byte header, per-vector offset array, then the vectors.
     static void encodePage(
-        const T * values, size_t count, std::vector<UInt8> & page,
-        UInt8 log_vector_size = default_log_vector_size, int forced_exponent = -1, int forced_factor = -1)
+        const T * values,
+        size_t count,
+        std::vector<UInt8> & page,
+        UInt8 log_vector_size = default_log_vector_size,
+        int forced_exponent = -1,
+        int forced_factor = -1)
     {
         const size_t vector_size = static_cast<size_t>(1) << log_vector_size;
         const size_t num_vectors = (count + vector_size - 1) / vector_size;
 
-        /// Header: compression_mode=0 (ALP), integer_encoding=0 (FOR+bitpack), log_vector_size, num_elements.
         appendLE(page, static_cast<UInt8>(0));
         appendLE(page, static_cast<UInt8>(0));
         appendLE(page, log_vector_size);
@@ -273,7 +254,7 @@ struct Codec
 
         std::vector<UInt8> body;
         std::vector<UInt32> offsets;
-        UInt32 offset = static_cast<UInt32>(num_vectors * 4); /// first vector starts after the offset array
+        UInt32 offset = static_cast<UInt32>(num_vectors * 4);
 
         for (size_t v = 0; v < num_vectors; ++v)
         {
@@ -291,7 +272,6 @@ struct Codec
         page.insert(page.end(), body.begin(), body.end());
     }
 
-    /// Decode a full page produced by encodePage(). `data` points at the 7-byte header.
     static void decodePage(const UInt8 * data, std::vector<T> & out)
     {
         auto readLE32 = [](const UInt8 * p) -> UInt32
@@ -337,7 +317,6 @@ struct Codec
                 cursor += 5;
             }
 
-            /// Unpack the bit-packed deltas (LSB-first) and undo the frame-of-reference.
             std::vector<StorageInt> encoded(vector_count);
             const UInt64 mask = bit_width == 64 ? ~0ULL : (bit_width == 0 ? 0ULL : ((1ULL << bit_width) - 1));
             unsigned __int128 buffer = 0;

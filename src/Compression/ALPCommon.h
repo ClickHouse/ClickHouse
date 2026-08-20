@@ -4,10 +4,11 @@
 #include <cmath>
 #include <cstdint>
 #include <type_traits>
-#include <base/types.h>
 #include <base/defines.h>
+#include <base/types.h>
 
-namespace DB {
+namespace DB
+{
 
 template <typename T>
 concept FLOAT = std::is_same_v<T, Float32> || std::is_same_v<T, Float64>;
