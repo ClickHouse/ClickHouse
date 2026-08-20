@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/DataProperties.h>
+#include <Processors/QueryPlan/QueryPlan.h>
 
 #include <Core/Block_fwd.h>
 #include <Core/Joins.h>
@@ -42,5 +43,9 @@ DataPropertySet deriveDataPropertiesForJoin(
 /// Derive properties local to one step without modifying the caller's values.
 DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<const DataPropertySet> child_properties);
 
+/// Derive properties through one-shot iterative DAG discovery and evaluation.
+/// Results are released after their last ordinary or common-subplan consumer; the
+/// traversal neither mutates the plan nor persists derived data in it.
+DataPropertySet deriveDataPropertiesForPlanDAG(const QueryPlan::Node & root);
 }
 }

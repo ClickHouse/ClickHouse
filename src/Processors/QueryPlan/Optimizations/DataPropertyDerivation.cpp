@@ -4,6 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -16,6 +18,7 @@
 #include <Storages/StorageInMemoryMetadata.h>
 
 #include <algorithm>
+#include <unordered_map>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -206,6 +209,181 @@ void appendPreservedSide(
     }
 }
 
+const QueryPlan::Node * getCommonSubplanProducer(const CommonSubplanReferenceStep & reference)
+{
+    const auto * referenced_root = reference.getSubplanReferenceRoot();
+    if (!referenced_root || !typeid_cast<const CommonSubplanStep *>(referenced_root->step.get()) || referenced_root->children.size() != 1)
+        return nullptr;
+    return referenced_root->children.front();
+}
+
+size_t dataPropertyDependencyCount(const QueryPlan::Node & node)
+{
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return getCommonSubplanProducer(*reference) ? 1 : 0;
+    return node.children.size();
+}
+
+const QueryPlan::Node * dataPropertyDependencyAt(const QueryPlan::Node & node, size_t index)
+{
+    if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node.step.get()))
+        return index == 0 ? getCommonSubplanProducer(*reference) : nullptr;
+    return node.children[index];
+}
+
+enum class VisitColor : UInt8
+{
+    White,
+    Gray,
+    Black,
+};
+
+struct DataPropertyNodeMetadata
+{
+    VisitColor color = VisitColor::White;
+    size_t remaining_consumers = 0;
+};
+
+struct DataPropertyDiscoveryFrame
+{
+    const QueryPlan::Node * node;
+    size_t next_dependency = 0;
+};
+
+DataPropertySet remapCommonSubplanProperties(const CommonSubplanReferenceStep & reference, const DataPropertySet & source_properties)
+{
+    const auto * referenced_root = reference.getSubplanReferenceRoot();
+    if (!referenced_root || !referenced_root->step->getOutputHeader() || !reference.getOutputHeader())
+        return {};
+
+    const auto & source_header = *referenced_root->step->getOutputHeader();
+    const auto & output_header = *reference.getOutputHeader();
+    const auto & columns_to_use = reference.getColumnsToUse();
+    if (columns_to_use.size() != output_header.columns())
+        return {};
+
+    std::vector<std::optional<PlanColumnRef>> source_to_output(source_header.columns());
+    for (size_t output_position = 0; output_position < output_header.columns(); ++output_position)
+    {
+        const auto & identifier = columns_to_use[output_position];
+        const auto & output_column = output_header.getByPosition(output_position);
+        if (output_column.name != identifier || !source_header.has(identifier))
+            return {};
+
+        const size_t source_position = source_header.getPositionByName(identifier);
+        const auto & source_column = source_header.getByPosition(source_position);
+        if (!output_column.type->equals(*source_column.type))
+            return {};
+
+        if (!source_to_output[source_position])
+            source_to_output[source_position] = PlanColumnRef{output_position, output_column.name};
+    }
+
+    DataPropertySet result = deriveDataPropertiesForStorageRead(output_header, nullptr);
+    for (const auto & unique_key : source_properties.uniqueKeys())
+        if (auto mapped = mapColumnSet(unique_key.columns, source_header, source_to_output))
+            result.addUniqueKey(
+                {.columns = std::move(*mapped), .provenance = unique_key.provenance, .equality_mode = unique_key.equality_mode});
+
+    for (const auto & dependency : source_properties.functionalDependencies())
+    {
+        auto determinant = mapColumnSet(dependency.determinant, source_header, source_to_output);
+        auto dependents = mapColumnSet(dependency.dependents, source_header, source_to_output);
+        if (determinant && dependents)
+            result.addFunctionalDependency({std::move(*determinant), std::move(*dependents), dependency.kind, dependency.provenance});
+    }
+
+    for (const auto & non_null : source_properties.nonNullColumns())
+    {
+        if (non_null.position < source_header.columns() && source_header.getByPosition(non_null.position).name == non_null.name
+            && source_to_output[non_null.position])
+            result.addNonNullColumn(*source_to_output[non_null.position]);
+    }
+
+    return result;
+}
+
+}
+
+namespace
+{
+DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties);
+}
+
+DataPropertySet deriveDataPropertiesForPlanDAG(const QueryPlan::Node & root)
+{
+    std::unordered_map<const QueryPlan::Node *, DataPropertyNodeMetadata> metadata;
+    std::vector<const QueryPlan::Node *> postorder;
+    std::vector<DataPropertyDiscoveryFrame> stack{{&root}};
+    metadata[&root].color = VisitColor::Gray;
+
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        const size_t dependency_count = dataPropertyDependencyCount(*frame.node);
+        if (frame.next_dependency < dependency_count)
+        {
+            const auto * dependency = dataPropertyDependencyAt(*frame.node, frame.next_dependency++);
+            auto & dependency_metadata = metadata[dependency];
+            ++dependency_metadata.remaining_consumers;
+
+            if (dependency_metadata.color == VisitColor::Gray)
+                return {};
+            if (dependency_metadata.color == VisitColor::White)
+            {
+                dependency_metadata.color = VisitColor::Gray;
+                stack.push_back({dependency});
+            }
+            continue;
+        }
+
+        metadata.at(frame.node).color = VisitColor::Black;
+        postorder.push_back(frame.node);
+        stack.pop_back();
+    }
+
+    std::unordered_map<const QueryPlan::Node *, DataPropertySet> live_results;
+    auto consume_dependency = [&](const QueryPlan::Node * dependency, DataPropertySet * destination)
+    {
+        auto & remaining_consumers = metadata.at(dependency).remaining_consumers;
+        auto result_it = live_results.find(dependency);
+        if (destination)
+        {
+            if (remaining_consumers == 1)
+                *destination = std::move(result_it->second);
+            else
+                *destination = result_it->second;
+        }
+        --remaining_consumers;
+        if (remaining_consumers == 0)
+            live_results.erase(result_it);
+    };
+
+    for (const auto * node : postorder)
+    {
+        DataPropertySet result;
+        if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+        {
+            if (const auto * producer = getCommonSubplanProducer(*reference))
+            {
+                result = remapCommonSubplanProperties(*reference, live_results.at(producer));
+                consume_dependency(producer, nullptr);
+            }
+        }
+        else
+        {
+            std::vector<DataPropertySet> child_properties(node->children.size());
+            for (size_t index = 0; index < node->children.size(); ++index)
+                consume_dependency(node->children[index], &child_properties[index]);
+            result = deriveDataPropertiesForStep(*node->step, child_properties);
+        }
+        live_results.emplace(node, std::move(result));
+    }
+
+    DataPropertySet result = std::move(live_results.at(&root));
+    return result;
+}
+
 DataPropertySet deriveDataPropertiesForStorageRead(const Block & output_header, const StorageInMemoryMetadata * metadata)
 {
     DataPropertySet properties;
@@ -274,7 +452,7 @@ DataPropertySet deriveDataPropertiesForJoin(
     return result;
 }
 
-namespace detail
+namespace
 {
 
 DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::span<DataPropertySet> child_properties)
@@ -365,7 +543,6 @@ DataPropertySet deriveDataPropertiesForStep(const IQueryPlanStep & step, std::sp
 }
 
 }
-}
 
 DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<const DataPropertySet> child_properties)
 {
@@ -375,6 +552,6 @@ DataPropertySet deriveDataProperties(const IQueryPlanStep & step, std::span<cons
     /// Copy so per-step derivation may move from its inputs; child counts are tiny,
     /// so a plain vector beats maintaining a small-size special case in two places.
     std::vector<DataPropertySet> owned_child_properties(child_properties.begin(), child_properties.end());
-    return detail::deriveDataPropertiesForStep(step, owned_child_properties);
+    return deriveDataPropertiesForStep(step, owned_child_properties);
 }
 }
