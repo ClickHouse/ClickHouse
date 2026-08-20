@@ -2966,9 +2966,9 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// Already validated above, so this won't throw. Sets the root thresholds; every monitor
-            /// classifies against the root, so running queries pick up the new ladder at once.
-            memoryPressureMonitor().setThresholds(
+            /// Already validated above, so this won't throw. Sets the shared thresholds; every monitor
+            /// classifies against them, so running queries pick up the new ladder at once.
+            setMemoryPressureThresholds(
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
                 new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);

@@ -511,6 +511,51 @@ TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
     EXPECT_EQ(firstWindow(99), 128u * 1024);        /// Critical: window / 64, floored at 128 KiB
 }
 
+TEST_F(ReaderExecutorTest, BlockShrinksUnderMemoryPressure)
+{
+    /// The block shrinks too, not only the window: the source path chunks into nodes of the
+    /// pressure-adjusted block. Under Elevated the window is `window/4` but each node is `block/2`,
+    /// so the node size proves the block adapts independently of the window.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    constexpr size_t base_block = 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Read one window and return {total bytes, largest node bytes}. See `WindowShrinksUnderMemoryPressure`
+    /// for how the pressure level is driven through the group memory tracker.
+    auto windowNodes = [&](UInt64 pct) -> std::pair<size_t, size_t>
+    {
+        TestThreadGroup tg;
+        MemoryTracker & mt = tg.thread_group->memory_tracker;
+        constexpr Int64 limit = Int64(8) << 30;
+        mt.setHardLimit(limit);
+        const Int64 amount = limit * static_cast<Int64>(pct) / 100;
+        mt.adjustWithUntrackedMemory(amount);
+
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window, .block_size = base_block});
+        ChainedBuffers w = ex.readNextWindow();
+        size_t total = 0;
+        size_t max_node = 0;
+        while (!w.atEnd())
+        {
+            auto span = w.peek();
+            max_node = std::max(max_node, span.size);
+            total += span.size;
+            w.advance(span.size);
+        }
+        mt.adjustWithUntrackedMemory(-amount);
+        return {total, max_node};
+    };
+
+    const auto [normal_total, normal_node] = windowNodes(50);   /// Normal
+    EXPECT_EQ(normal_total, base_window);
+    EXPECT_EQ(normal_node, base_block);          /// nodes of the full block
+
+    const auto [elevated_total, elevated_node] = windowNodes(80);   /// Elevated
+    EXPECT_EQ(elevated_total, base_window / 4);   /// window / 4
+    EXPECT_EQ(elevated_node, base_block / 2);     /// block / 2, smaller than the window
+}
+
 TEST_F(ReaderExecutorTest, SeekThenRead)
 {
     StoredObjects objects{makeFile("a.bin", 1024)};

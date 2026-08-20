@@ -3478,13 +3478,13 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
-            /// Report the global monitor's live thresholds, not the values captured at startup.
+            /// Report the live thresholds, not the values captured at startup.
             {"reader_executor_memory_pressure_elevated_level_pct",
-             {std::to_string(memoryPressureMonitor().getThresholds().elevated_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(getMemoryPressureThresholds().elevated_pct), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_high_level_pct",
-             {std::to_string(memoryPressureMonitor().getThresholds().high_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(getMemoryPressureThresholds().high_pct), ChangeableWithoutRestart::Yes}},
             {"reader_executor_memory_pressure_critical_level_pct",
-             {std::to_string(memoryPressureMonitor().getThresholds().critical_pct), ChangeableWithoutRestart::Yes}},
+             {std::to_string(getMemoryPressureThresholds().critical_pct), ChangeableWithoutRestart::Yes}},
 
             /// Named collections metadata storage is initialized once, so use its effective startup type.
             {"named_collections_storage_type",

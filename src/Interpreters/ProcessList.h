@@ -357,6 +357,9 @@ struct ProcessListForUser
     {
         /// TODO: should we drop user_temp_data_on_disk here?
         user_memory_tracker.reset();
+        /// Called when the user's last query leaves, so clear the sticky level too - the next query
+        /// must not inherit the previous one's cooldown.
+        user_memory_pressure_monitor.reset();
 
         /// NOTE: we should not reset user_throttler here because TokenBucket throttling MUST account periods of inactivity for correct work
     }

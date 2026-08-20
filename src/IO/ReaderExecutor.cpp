@@ -309,7 +309,7 @@ size_t ReaderExecutor::readOneShot(const StoredObject & object, size_t object_of
     return readIntoBlock(*buffer, dst, want);
 }
 
-ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base)
+ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, size_t block_bytes)
 {
     ChainedBuffers chain;
     size_t got_total = 0;
@@ -317,7 +317,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     {
         while (got_total < limit)
         {
-            const size_t chunk = std::min(block_size, limit - got_total);
+            const size_t chunk = std::min(block_bytes, limit - got_total);
             auto block = std::make_shared<OwnedChainedBuffer>(chunk);
             const size_t n = read_chunk(block->data(), chunk);
             if (n > 0)
@@ -342,7 +342,7 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
         stats.add(Stats::LongConnectionHits);
         if (object_offset > long_conn->current_position)
         {
-            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_size);
+            const size_t skipped = long_conn->skipForward(object_offset - long_conn->current_position, block_bytes);
             stats.add(Stats::BytesFromSource, skipped);
             stats.add(Stats::LongConnectionBytes, skipped);
         }
@@ -379,14 +379,14 @@ ChainedBuffers ReaderExecutor::readObjectSlice(const StoredObject & object, size
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
+ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want, size_t block_bytes)
 {
     ChainedBuffers chain;
     size_t file_pos = file_offset;
     for (const auto & object_range : offset_map.map(ByteRange{file_offset, want}))
     {
         ChainedBuffers piece = readObjectSlice(
-            object_range.object, object_range.object_offset, object_range.size, file_pos);
+            object_range.object, object_range.object_offset, object_range.size, file_pos, block_bytes);
         const size_t got = piece.range().size;
         chain.append(std::move(piece));
         file_pos += got;
@@ -466,7 +466,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
         size_t miss_end = window_offset + max_serve;
         for (const auto & miss_tier : miss_tiers)
             miss_end = std::min(miss_end, miss_tier.range.end());
-        return readSource(window_offset, miss_end - window_offset);
+        return readSource(window_offset, miss_end - window_offset, serve_block);
     }
 
     /// Fetch the writer ranges in one source read (across the objects they span) and populate each.
@@ -485,7 +485,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     fetch_hi = std::min<size_t>(fetch_hi, offset_map.totalSize());
     fetch_hi = std::min(fetch_hi, next_resident);  /// do not re-read a block a slower tier already has
 
-    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo);
+    ChainedBuffers fetched = readSource(fetch_lo, fetch_hi - fetch_lo, serve_block);
     const size_t fetched_end = fetched.empty() ? fetch_lo : fetched.range().end();
 
     for (auto & miss_tier : miss_tiers)
@@ -675,7 +675,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     }
 
     ChainedBuffers chain = cache_chain.empty()
-        ? readSource(position_physical, max_serve)
+        ? readSource(position_physical, max_serve, sizes.block_bytes)
         : readThroughCaches(position_physical, max_serve, sizes.block_bytes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;

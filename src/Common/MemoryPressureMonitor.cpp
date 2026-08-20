@@ -24,6 +24,13 @@ constexpr uint32_t packThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 c
          | static_cast<uint32_t>(critical_pct);
 }
 
+/// The shared server-wide ladder, packed as bytes `(elevated << 16) | (high << 8) | critical`.
+std::atomic<uint32_t> & thresholdsSingleton()
+{
+    static std::atomic<uint32_t> packed{packThresholds(75, 90, 95)};
+    return packed;
+}
+
 uint64_t steadyNowNs()
 {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -70,54 +77,31 @@ MemoryPressureLevel PressureCooldown::apply(MemoryPressureLevel raw_level, uint6
     return static_cast<MemoryPressureLevel>(level);
 }
 
-MemoryPressureMonitor::MemoryPressureMonitor()
-    : scope(&total_memory_tracker)
-    , parent(nullptr)
-    , thresholds_packed(packThresholds(75, 90, 95))
-    , cooldown(PressureCooldown::COOLDOWN_NS)
+void PressureCooldown::reset()
 {
+    std::lock_guard lk(mutex);
+    level = 0;
+    last_at_or_above_ns = 0;
 }
 
-MemoryPressureMonitor::MemoryPressureMonitor(MemoryTracker & scope_, MemoryPressureMonitor & parent_)
-    : scope(&scope_)
-    , parent(&parent_)
-    , thresholds_packed(packThresholds(75, 90, 95))   /// unused: a scoped monitor reads the root's
-    , cooldown(PressureCooldown::QUERY_COOLDOWN_NS)
-{
-}
-
-void MemoryPressureMonitor::setParent(MemoryPressureMonitor & new_parent)
-{
-    parent.store(&new_parent, std::memory_order_relaxed);
-}
-
-void MemoryPressureMonitor::setThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
+void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
 {
     validateMemoryPressureThresholds(elevated_pct, high_pct, critical_pct);
-    thresholds_packed.store(packThresholds(elevated_pct, high_pct, critical_pct), std::memory_order_relaxed);
+    thresholdsSingleton().store(packThresholds(elevated_pct, high_pct, critical_pct), std::memory_order_relaxed);
 }
 
-MemoryPressureThresholds MemoryPressureMonitor::getThresholds() const
+MemoryPressureThresholds getMemoryPressureThresholds()
 {
-    /// Thresholds live at the root, so every monitor classifies against the live server-wide ladder
-    /// and a reload reaches long-lived scoped monitors (e.g. the per-user one) at once.
-    if (auto * p = parent.load(std::memory_order_relaxed))
-        return p->getThresholds();
-    const uint32_t packed = thresholds_packed.load(std::memory_order_relaxed);
+    const uint32_t packed = thresholdsSingleton().load(std::memory_order_relaxed);
     return {(packed >> 16) & 0xFFu, (packed >> 8) & 0xFFu, packed & 0xFFu};
 }
 
-double MemoryPressureMonitor::samplePressure() const
+MemoryPressureLevel classifyMemoryPressure(double pressure)
 {
-    return scope->getPressure();
-}
-
-MemoryPressureLevel MemoryPressureMonitor::classify(double pressure) const
-{
-    const MemoryPressureThresholds th = getThresholds();
-    const double elevated = static_cast<double>(th.elevated_pct) / 100.0;
-    const double high = static_cast<double>(th.high_pct) / 100.0;
-    const double critical = static_cast<double>(th.critical_pct) / 100.0;
+    const uint32_t packed = thresholdsSingleton().load(std::memory_order_relaxed);
+    const double elevated = static_cast<double>((packed >> 16) & 0xFFu) / 100.0;
+    const double high = static_cast<double>((packed >> 8) & 0xFFu) / 100.0;
+    const double critical = static_cast<double>(packed & 0xFFu) / 100.0;
 
     if (pressure >= critical)
         return MemoryPressureLevel::Critical;
@@ -128,9 +112,38 @@ MemoryPressureLevel MemoryPressureMonitor::classify(double pressure) const
     return MemoryPressureLevel::Normal;
 }
 
+MemoryPressureMonitor::MemoryPressureMonitor()
+    : scope(&total_memory_tracker)
+    , parent(nullptr)
+    , cooldown(PressureCooldown::COOLDOWN_NS)
+{
+}
+
+MemoryPressureMonitor::MemoryPressureMonitor(MemoryTracker & scope_, MemoryPressureMonitor & parent_)
+    : scope(&scope_)
+    , parent(&parent_)
+    , cooldown(PressureCooldown::QUERY_COOLDOWN_NS)
+{
+}
+
+void MemoryPressureMonitor::setParent(MemoryPressureMonitor & new_parent)
+{
+    parent.store(&new_parent, std::memory_order_relaxed);
+}
+
+void MemoryPressureMonitor::reset()
+{
+    cooldown.reset();
+}
+
+double MemoryPressureMonitor::samplePressure() const
+{
+    return scope->getPressure();
+}
+
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
-    const MemoryPressureLevel own = cooldown.apply(classify(samplePressure()), steadyNowNs());
+    const MemoryPressureLevel own = cooldown.apply(classifyMemoryPressure(samplePressure()), steadyNowNs());
 
     /// Escalate up the chain: a monitor never reads below any level above it.
     if (auto * p = parent.load(std::memory_order_relaxed))

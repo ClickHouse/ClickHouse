@@ -32,6 +32,14 @@ struct MemoryPressureThresholds
 /// Each threshold must be in [0, 100] with `elevated <= high <= critical`, else throws `BAD_ARGUMENTS`.
 void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
 
+/// The thresholds are server-wide: one shared ladder every monitor classifies against. `set` validates
+/// and publishes atomically (config reload); `get` reads the live values (observability).
+void setMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
+MemoryPressureThresholds getMemoryPressureThresholds();
+
+/// Classify a pressure ratio against the shared thresholds. No cooldown, lock-free.
+MemoryPressureLevel classifyMemoryPressure(double pressure);
+
 /// Sticky cooldown over an already-classified level: snap up immediately, step down one level per
 /// `cooldown_ns` of sustained lower pressure. One instance per monitor holds its own timestamp.
 class PressureCooldown
@@ -46,6 +54,9 @@ public:
 
     MemoryPressureLevel apply(MemoryPressureLevel raw, uint64_t now_ns);
 
+    /// Clear the sticky level and timestamp.
+    void reset();
+
 private:
     const uint64_t cooldown_ns;
     mutable std::mutex mutex;
@@ -57,34 +68,32 @@ private:
 /// through the parent chain: a monitor escalates against its parent (`max`), so a level never reads
 /// below any level above it. The chain mirrors the tracker hierarchy - the global monitor watches
 /// `total_memory_tracker`, a per-user monitor watches the user tracker with the global as parent, and
-/// a per-query monitor watches the query tracker with the user monitor as parent. Thresholds live at
-/// the root: `getThresholds` walks up, so a reload of the global monitor reaches every monitor at once.
+/// a per-query monitor watches the query tracker with the user monitor as parent. Classification uses
+/// the shared server-wide thresholds (`getMemoryPressureThresholds`).
 class MemoryPressureMonitor
 {
 public:
-    /// Global (root) monitor: watches `total_memory_tracker`, holds the thresholds, server cooldown.
+    /// Global (root) monitor: watches `total_memory_tracker`, server cooldown.
     MemoryPressureMonitor();
-    /// Scoped monitor: watches `scope`, classifies against the root's thresholds, query cooldown,
-    /// escalated against `parent`.
+    /// Scoped monitor: watches `scope`, query cooldown, escalated against `parent`.
     MemoryPressureMonitor(MemoryTracker & scope, MemoryPressureMonitor & parent);
 
     /// Advances the cooldown, so non-const.
     MemoryPressureLevel currentLevel();
 
-    void setThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct);
-    MemoryPressureThresholds getThresholds() const;
-
     /// Repoint the escalation parent - e.g. a query monitor onto its user monitor once the query joins
     /// the user (until then it escalates straight against the global monitor).
     void setParent(MemoryPressureMonitor & new_parent);
 
+    /// Clear the sticky cooldown, e.g. when a shared scope (the per-user monitor) goes idle, so the
+    /// next query does not inherit the previous one's level.
+    void reset();
+
 private:
     double samplePressure() const;
-    MemoryPressureLevel classify(double pressure) const;
 
     MemoryTracker * scope;                          /// the tracker this monitor samples
     std::atomic<MemoryPressureMonitor *> parent;    /// null = root (global)
-    std::atomic<uint32_t> thresholds_packed;
     PressureCooldown cooldown;
 };
 

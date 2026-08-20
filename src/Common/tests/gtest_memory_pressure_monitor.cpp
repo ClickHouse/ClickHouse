@@ -11,6 +11,14 @@ namespace
 
 constexpr uint64_t SECOND = 1'000'000'000ULL;
 
+/// Save and restore the shared thresholds so a test that changes them does not leak into others.
+struct ScopedThresholds
+{
+    MemoryPressureThresholds prior;
+    ScopedThresholds(UInt64 e, UInt64 h, UInt64 c) : prior(getMemoryPressureThresholds()) { setMemoryPressureThresholds(e, h, c); }
+    ~ScopedThresholds() { setMemoryPressureThresholds(prior.elevated_pct, prior.high_pct, prior.critical_pct); }
+};
+
 }
 
 TEST(MemoryPressureMonitor, ValidateRejectsInvalidThresholds)
@@ -34,37 +42,29 @@ TEST(MemoryPressureMonitor, ValidateRejectsInvalidThresholds)
 
 TEST(MemoryPressureMonitor, ThresholdsRoundTrip)
 {
-    MemoryPressureMonitor monitor;   /// global monitor, default 75 / 90 / 95
-    const auto def = monitor.getThresholds();
-    EXPECT_EQ(def.elevated_pct, 75u);
-    EXPECT_EQ(def.high_pct, 90u);
-    EXPECT_EQ(def.critical_pct, 95u);
+    ScopedThresholds guard(50, 70, 90);   /// saves the prior ladder, restores on scope exit
 
-    monitor.setThresholds(50, 70, 90);
-    const auto got = monitor.getThresholds();
+    const auto got = getMemoryPressureThresholds();
     EXPECT_EQ(got.elevated_pct, 50u);
     EXPECT_EQ(got.high_pct, 70u);
     EXPECT_EQ(got.critical_pct, 90u);
 
-    EXPECT_THROW(monitor.setThresholds(90, 75, 95), DB::Exception);
+    EXPECT_THROW(setMemoryPressureThresholds(90, 75, 95), DB::Exception);
 }
 
-/// A scoped monitor classifies against the ROOT's thresholds, read live: a later change to the root
-/// reaches it at once (this is what lets a reload update the long-lived per-user monitor).
-TEST(MemoryPressureMonitor, ScopedReadsRootThresholdsLive)
+/// The thresholds are shared and read live: `classifyMemoryPressure` (and thus every monitor) reflects
+/// a change at once. This is what lets a reload update the long-lived per-user monitor.
+TEST(MemoryPressureMonitor, ClassifyReflectsSharedThresholdsLive)
 {
-    MemoryPressureMonitor root;
-    root.setThresholds(50, 70, 90);
+    ScopedThresholds guard(50, 70, 90);
 
-    MemoryTracker tracker(nullptr, VariableContext::Process, false);
-    MemoryPressureMonitor scoped(tracker, root);
-    EXPECT_EQ(scoped.getThresholds().elevated_pct, 50u);
-    EXPECT_EQ(scoped.getThresholds().high_pct, 70u);
-    EXPECT_EQ(scoped.getThresholds().critical_pct, 90u);
+    EXPECT_EQ(classifyMemoryPressure(0.40), MemoryPressureLevel::Normal);
+    EXPECT_EQ(classifyMemoryPressure(0.55), MemoryPressureLevel::Elevated);
+    EXPECT_EQ(classifyMemoryPressure(0.75), MemoryPressureLevel::High);
+    EXPECT_EQ(classifyMemoryPressure(0.95), MemoryPressureLevel::Critical);
 
-    root.setThresholds(10, 20, 30);
-    EXPECT_EQ(scoped.getThresholds().elevated_pct, 10u);   /// live - read from the root, not cached
-    EXPECT_EQ(scoped.getThresholds().critical_pct, 30u);
+    setMemoryPressureThresholds(80, 90, 95);
+    EXPECT_EQ(classifyMemoryPressure(0.55), MemoryPressureLevel::Normal);   /// live change
 }
 
 /// A scoped monitor classifies its tracker's pressure against its own thresholds. Snap-up is

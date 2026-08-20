@@ -182,10 +182,10 @@ private:
     bool shouldOpenLongConnection() const;
     bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
     size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
-    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base);
+    ChainedBuffers readObjectSlice(const StoredObject & object, size_t object_offset, size_t want, size_t file_base, size_t block_bytes);
     /// The single source-read entry point; spans object boundaries via `OffsetMap::map`. A
     /// known-size short read is truncation and throws.
-    ChainedBuffers readSource(size_t file_offset, size_t want);
+    ChainedBuffers readSource(size_t file_offset, size_t want, size_t block_bytes);
     /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
     /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
