@@ -6,6 +6,7 @@
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/TableLockHolder.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 namespace DB
@@ -101,9 +102,13 @@ private:
     size_t max_threads = 0;
     size_t max_insert_threads = 0;
 
-    QueryPipeline buildInsertSelectPipeline(ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform);
+    /// `destination_lock` is moved into the async insert queue transform when that route is taken, so the
+    /// transform can drop it as soon as the queue has the block; the caller is left with an empty holder.
+    QueryPipeline buildInsertSelectPipeline(
+        ASTInsertQuery & query, StoragePtr table, bool add_async_insert_queue_transform, TableLockHolder & destination_lock);
     QueryPipeline addInsertToSelectPipeline(
-        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform);
+        ASTInsertQuery & query, StoragePtr table, QueryPipelineBuilder & pipeline_builder, bool add_async_insert_queue_transform,
+        TableLockHolder * destination_lock);
     QueryPipeline buildInsertPipeline(ASTInsertQuery & query, StoragePtr table);
 
     std::optional<QueryPipeline> buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table);
