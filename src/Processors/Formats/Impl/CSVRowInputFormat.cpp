@@ -16,7 +16,6 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeTuple.h>
 
 
 namespace DB
@@ -378,27 +377,15 @@ bool CSVFormatReader::readField(
         /// problematic, because they are never quoted but still contain
         /// commas, which might be also used as delimiters. However,
         /// they do not contain empty unquoted fields, so this check
-        /// works for tuples as well.
-        ///
-        /// Exception: `Nullable(Tuple())` with zero elements serializes to
-        /// an empty field in CSV, so an empty value is its only valid
-        /// representation. Let it fall through to normal deserialization
-        /// instead of inserting NULL as the default.
+        /// works for tuples as well (a Nullable(Tuple) is written as a
+        /// single quoted field, so an empty field means the default).
         ///
         /// Exception: with `input_format_csv_missing_nullable_as_empty_string`, a missing value of
         /// `Nullable(String)` (including its low-cardinality form `LowCardinality(Nullable(String))`)
-        /// should be read as an empty string instead of NULL, so it must also fall through to
-        /// normal deserialization.
-        bool keep_empty_value = false;
-        if (type->isNullable())
-        {
-            if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get()))
-                keep_empty_value = tuple_type->getElements().empty();
-        }
-
-        if (!keep_empty_value && format_settings.csv.missing_nullable_as_empty_string
-            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type)))
-            keep_empty_value = true;
+        /// should be read as an empty string instead of NULL, so it must fall through to normal
+        /// deserialization.
+        bool keep_empty_value = format_settings.csv.missing_nullable_as_empty_string
+            && isNullableOrLowCardinalityNullable(type) && isString(removeLowCardinalityAndNullable(type));
 
         if (!keep_empty_value)
         {
