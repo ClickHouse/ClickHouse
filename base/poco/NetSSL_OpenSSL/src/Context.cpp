@@ -250,7 +250,19 @@ static int poco_load_embedded_certificates(SSL_CTX * ctx, Context::CAPaths & caP
 		int ok = X509_STORE_add_cert(store, cert);
 		X509_free(cert);
 		if (ok != 1)
-			break;
+		{
+			/// The store is not necessarily empty here: a custom `caConfig` may have been loaded before,
+			/// and it can overlap with the embedded bundle. A certificate that is already known is not an
+			/// error, and the rest of the bundle still has to be loaded.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+			int reason = ERR_GET_REASON(ERR_peek_last_error());
+#pragma clang diagnostic pop
+			if (reason != X509_R_CERT_ALREADY_IN_HASH_TABLE)
+				break;
+
+			ERR_clear_error();
+		}
 		++added;
 	}
 	BIO_free(bio);
