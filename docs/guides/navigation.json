@@ -111,28 +111,6 @@
             "guides/oss/deployment-and-scaling/cluster-discovery",
             {
               "expanded": false,
-              "group": "MCP integration guides",
-              "pages": [
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/index",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/agno",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/chainlit",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/claude-agent-sdk",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/copilotkit",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/crewai",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/dspy",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/langchain",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/llamaindex",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/mcp-agent",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/microsoft-agent-framework",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/openai-agents",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/pydantic-ai",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/slackbot",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/streamlit",
-                "guides/oss/deployment-and-scaling/mcp-integration-guides/upsonic"
-              ]
-            },
-            {
-              "expanded": false,
               "group": "Keeper",
               "pages": [
                 "guides/oss/deployment-and-scaling/keeper/index",
@@ -259,7 +237,28 @@
                 "guides/use-cases/ai-ml/MCP/anythingllm",
                 "guides/use-cases/ai-ml/MCP/open-webui",
                 "guides/use-cases/ai-ml/MCP/ollama",
-                "guides/use-cases/ai-ml/MCP/janai"
+                "guides/use-cases/ai-ml/MCP/janai",
+                {
+                  "group": "AI agent libraries",
+                  "pages": [
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
+                  ]
+                }
               ]
             }
           ]

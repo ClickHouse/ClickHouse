@@ -1,73 +1,5 @@
 [
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/agno",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/chainlit",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/claude-agent-sdk",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/copilotkit",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/crewai",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/dspy",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/langchain",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/llamaindex",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/mcp-agent",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/microsoft-agent-framework",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/openai-agents",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/pydantic-ai",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/slackbot",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/streamlit",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit"
-  },
-  {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/upsonic",
-    "source": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
-  },
-  {
     "destination": "/products/cloud/features/backups/overview",
     "source": "/products/cloud/features/backups/faq"
   },
@@ -41432,67 +41364,67 @@
     "source": "/use-cases/AI/MCP"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries",
     "source": "/use-cases/AI/MCP/ai-agent-libraries"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/dspy",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/DSPy"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/agno",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/agno"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/chainlit",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/chainlit"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/claude-agent-sdk",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/claude-agent-sdk"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/copilotkit",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/copilotkit"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/crewai",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/crewai"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/langchain",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/langchain"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/llamaindex",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/llamaindex"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/mcp-agent",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/mcp-agent"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/microsoft-agent-framework",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/microsoft-agent-framework"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/openai-agents",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/openai-agents"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/pydantic-ai",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/pydantic-ai"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/slackbot",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/slackbot"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/streamlit",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/streamlit-agent"
   },
   {
-    "destination": "/guides/oss/deployment-and-scaling/mcp-integration-guides/upsonic",
+    "destination": "/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
     "source": "/use-cases/AI/MCP/ai-agent-libraries/upsonic"
   },
   {
