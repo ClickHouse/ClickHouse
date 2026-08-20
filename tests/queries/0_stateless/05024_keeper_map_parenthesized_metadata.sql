@@ -29,9 +29,18 @@ FROM system.zookeeper
 WHERE path = '/test_keeper_map/' || currentDatabase() || '/05024_keeper_map_parenthesized_metadata'
     AND name = 'metadata';
 
-CREATE TABLE 05024_keeper_map_parenthesized_metadata_second (key UInt64, value String)
+CREATE TABLE 05024_keeper_map_parenthesized_metadata_second
+(
+    key UInt64 COMMENT 'comment added later',
+    value String
+)
 ENGINE = KeeperMap('/' || currentDatabase() || '/05024_keeper_map_parenthesized_metadata')
 PRIMARY KEY key;
+
+SELECT endsWith(value, 'primary key: key\n') AND position(value, 'comment added later') = 0
+FROM system.zookeeper
+WHERE path = '/test_keeper_map/' || currentDatabase() || '/05024_keeper_map_parenthesized_metadata'
+    AND name = 'metadata';
 
 INSERT INTO 05024_keeper_map_parenthesized_metadata VALUES (1, 'value');
 SELECT * FROM 05024_keeper_map_parenthesized_metadata_second;
@@ -41,7 +50,7 @@ ENGINE = KeeperMap('/' || currentDatabase() || '/05024_keeper_map_parenthesized_
 PRIMARY KEY value; -- { serverError BAD_ARGUMENTS }
 
 INSERT INTO system.zookeeper (path, name, value)
-SELECT path, name, replaceOne(value, 'primary key: (key)\n', 'primary key: (key\n')
+SELECT path, name, replaceOne(value, 'primary key: key\n', 'primary key: (key\n')
 FROM system.zookeeper
 WHERE path = '/test_keeper_map/' || currentDatabase() || '/05024_keeper_map_parenthesized_metadata'
     AND name = 'metadata';

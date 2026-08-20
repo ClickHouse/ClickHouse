@@ -160,7 +160,7 @@ std::optional<std::string> tryCanonicalPrimaryKey(const std::string & primary_ke
         return std::nullopt;
 
     const auto formatted = ast->formatWithSecretsOneLine();
-    const auto canonical = ast->formatIgnoringRedundantParentheses();
+    auto canonical = ast->formatIgnoringRedundantParentheses();
 
     if (expression != formatted && expression != canonical)
         return std::nullopt;
@@ -506,11 +506,25 @@ StorageKeeperMap::StorageKeeperMap(
                 auto client = getClient();
                 std::shared_ptr<zkutil::EphemeralNodeHolder> metadata_drop_lock;
                 std::string stored_metadata_string;
-                auto exists = client->tryGet(zk_metadata_path, stored_metadata_string);
+                Coordination::Stat stored_metadata_stat;
+                auto exists = client->tryGet(zk_metadata_path, stored_metadata_string, &stored_metadata_stat);
 
                 if (exists)
                 {
-                    isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
+                    auto normalized_metadata_string = getNormalizedMetadataStringIfCompatible(
+                        stored_metadata_string, metadata_string, /*throw_on_error=*/ true);
+
+                    if (*normalized_metadata_string != stored_metadata_string)
+                    {
+                        auto code = client->trySet(zk_metadata_path, *normalized_metadata_string, stored_metadata_stat.version);
+                        if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)
+                            return;
+
+                        if (code != Coordination::Error::ZOK)
+                            throw zkutil::KeeperException::fromPath(code, zk_metadata_path);
+
+                        LOG_INFO(log, "Normalized primary key metadata at path {}", zk_metadata_path);
+                    }
 
                     auto code = client->tryCreate(zk_table_path, "", zkutil::CreateMode::Persistent);
 
@@ -709,13 +723,13 @@ VirtualColumnsDescription StorageKeeperMap::createVirtuals()
     return desc;
 }
 
-bool StorageKeeperMap::isMetadataStringEqual(
+std::optional<std::string> StorageKeeperMap::getNormalizedMetadataStringIfCompatible(
     const std::string & zk_metadata_string,
     const std::string & local_metadata_string,
     bool throw_on_error) const
 {
     if (zk_metadata_string == local_metadata_string)
-        return true;
+        return zk_metadata_string;
 
     const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
     const std::string_view primary_key_header = "\nprimary key: ";
@@ -743,16 +757,21 @@ bool StorageKeeperMap::isMetadataStringEqual(
     auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
     auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    bool pk_equal = zk_pk == local_pk;
-    if (!pk_equal)
+    if (zk_pk == local_pk)
+    {
+        if (columns_equal)
+            return zk_metadata_string;
+    }
+    else if (columns_equal)
     {
         const auto canonical_zk_pk = tryCanonicalPrimaryKey(zk_pk);
         const auto canonical_local_pk = tryCanonicalPrimaryKey(local_pk);
-        pk_equal = canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk;
+        if (canonical_zk_pk && canonical_local_pk && *canonical_zk_pk == *canonical_local_pk)
+        {
+            return zk_metadata_string.substr(0, zk_pk_pos + primary_key_header.size())
+                + *canonical_zk_pk + '\n';
+        }
     }
-
-    if (columns_equal && pk_equal)
-        return true;
 
     if (throw_on_error)
     {
@@ -774,7 +793,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
         zk_metadata_string,
         local_metadata_string);
 
-    return false;
+    return std::nullopt;
 }
 
 
@@ -1465,7 +1484,7 @@ StorageKeeperMap::TableStatus StorageKeeperMap::getTableStatus(const ContextPtr 
                     return;
                 }
 
-                if (!isMetadataStringEqual(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
+                if (!getNormalizedMetadataStringIfCompatible(stored_metadata_string, metadata_string, /*throw_on_error=*/ false))
                 {
                     table_status = TableStatus::INVALID_METADATA;
                     return;
