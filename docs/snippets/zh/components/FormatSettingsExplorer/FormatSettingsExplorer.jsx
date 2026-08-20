@@ -132,7 +132,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "input_format_*",
-      count: 128,
+      count: 129,
       settings: [
         { name: "input_format_allow_errors_num", path: "/input-format#input_format_allow_errors_num", default: "0" },
         { name: "input_format_allow_errors_ratio", path: "/input-format#input_format_allow_errors_ratio", default: "0" },
@@ -199,6 +199,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "input_format_json_infer_incomplete_types_as_strings", path: "/input-format#input_format_json_infer_incomplete_types_as_strings", default: "1" },
         { name: "input_format_json_map_as_array_of_tuples", path: "/input-format#input_format_json_map_as_array_of_tuples", default: "0" },
         { name: "input_format_json_max_depth", path: "/input-format#input_format_json_max_depth", default: "1000" },
+        { name: "input_format_json_max_object_size", path: "/input-format#input_format_json_max_object_size", default: "536870912" },
         { name: "input_format_json_max_string_column_growth_step", path: "/input-format#input_format_json_max_string_column_growth_step", default: "0" },
         { name: "input_format_json_named_tuples_as_objects", path: "/input-format#input_format_json_named_tuples_as_objects", default: "1" },
         { name: "input_format_json_read_arrays_as_strings", path: "/input-format#input_format_json_read_arrays_as_strings", default: "1" },
@@ -295,7 +296,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "output_format_*",
-      count: 106,
+      count: 107,
       settings: [
         { name: "output_format_always_write_decimal_point_in_float_and_decimal", path: "/output-format#output_format_always_write_decimal_point_in_float_and_decimal", default: "0" },
         { name: "output_format_arrow_compression_method", path: "/output-format#output_format_arrow_compression_method", default: "lz4_frame" },
@@ -365,6 +366,7 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
         { name: "output_format_parquet_row_group_size", path: "/output-format#output_format_parquet_row_group_size", default: "1000000" },
         { name: "output_format_parquet_row_group_size_bytes", path: "/output-format#output_format_parquet_row_group_size_bytes", default: "536870912" },
         { name: "output_format_parquet_string_as_string", path: "/output-format#output_format_parquet_string_as_string", default: "1" },
+        { name: "output_format_parquet_wide_integer_as_decimal", path: "/output-format#output_format_parquet_wide_integer_as_decimal", default: "0" },
         { name: "output_format_parquet_write_bloom_filter", path: "/output-format#output_format_parquet_write_bloom_filter", default: "1" },
         { name: "output_format_parquet_write_checksums", path: "/output-format#output_format_parquet_write_checksums", default: "1" },
         { name: "output_format_parquet_write_page_index", path: "/output-format#output_format_parquet_write_page_index", default: "1" },
@@ -637,13 +639,13 @@ const FormatSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            匹配到 {matchingCount} 项{matchingCount === 1 ? "设置" : "设置"}
+            {matchingCount} 项 {matchingCount === 1 ? "设置" : "设置"}
           </span>
         </div>
       )}
       <div className="mt-3 w-full overflow-x-auto rounded-xl border border-gray-200 bg-gray-50/50 px-4 py-3 font-mono text-sm leading-6 dark:border-white/10 dark:bg-transparent">
         <div className="flex min-w-full items-center justify-between gap-4">
-          <div className="min-w-max font-semibold">/format-settings</div>
+          <div className="min-w-max font-semibold">/format-设置</div>
           <button
             type="button"
             aria-label={allGroupsExpanded ? "全部折叠" : "全部展开"}
