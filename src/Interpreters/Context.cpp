@@ -308,8 +308,8 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
-    extern const SettingsBool read_through_distributed_cache;
-    extern const SettingsBool write_through_distributed_cache;
+    extern const SettingsBoolAuto force_read_through_distributed_cache;
+    extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -429,6 +429,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
+    extern const ServerSettingsBool read_through_distributed_cache;
+    extern const ServerSettingsBool write_through_distributed_cache;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
     extern const ServerSettingsUInt64 tables_loader_foreground_pool_size;
     extern const ServerSettingsNonZeroUInt64 prefetch_threadpool_pool_size;
@@ -477,6 +479,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
 }
+
+/// Per-query deviations from the server-level distributed cache switches. The background and buffer
+/// contexts are built once at startup, so a value coming from their profile would pin them for the
+/// lifetime of the server - which is exactly what makes the switch unobservable for merges,
+/// mutations and `Buffer` flushes. They are dropped there so the server setting always wins.
+/// The global context is dropped at resolution time instead (`resolveReadThroughDistributedCache`):
+/// it is already shared with running threads when profiles are applied, so a reset would race there.
+static const std::vector<String> distributed_cache_force_setting_names
+    = {"force_read_through_distributed_cache", "force_write_through_distributed_cache"};
 
 #define SHUTDOWN(log, desc, ptr, method) do             \
 {                                                       \
@@ -3902,6 +3913,7 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
     ContextMutablePtr background_context_ptr = Context::createCopy(shared_from_this());
     background_context_ptr->setCurrentProfile(shared->background_profile_name);
     background_context_ptr->is_background_operation = true;
+    background_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
 
     background_context_instance = background_context_ptr;
     background_context = background_context_ptr;
@@ -6523,6 +6535,44 @@ bool Context::getMessageQueueDisableInsertion() const
         || shared->server_settings[ServerSetting::disable_insertion_and_mutation];
 }
 
+bool Context::getReadThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::read_through_distributed_cache];
+}
+
+void Context::setReadThroughDistributedCache(bool read_through_distributed_cache) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("read_through_distributed_cache", read_through_distributed_cache);
+}
+
+bool Context::getWriteThroughDistributedCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->server_settings[ServerSetting::write_through_distributed_cache];
+}
+
+void Context::setWriteThroughDistributedCache(bool write_through_distributed_cache) const
+{
+    std::lock_guard lock(shared->mutex);
+    shared->server_settings.set("write_through_distributed_cache", write_through_distributed_cache);
+}
+
+bool Context::resolveReadThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getReadThroughDistributedCache();
+    return getSettingsRef()[Setting::force_read_through_distributed_cache].valueOr(getReadThroughDistributedCache());
+}
+
+bool Context::resolveWriteThroughDistributedCache() const
+{
+    if (isGlobalContext())
+        return getWriteThroughDistributedCache();
+    return getSettingsRef()[Setting::force_write_through_distributed_cache].valueOr(getWriteThroughDistributedCache());
+}
+
 std::shared_ptr<Cluster> Context::getCluster(const std::string & cluster_name) const
 {
     if (auto res = tryGetCluster(cluster_name))
@@ -7673,8 +7723,11 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
     makeBackgroundContext(config);
 
     shared->buffer_profile_name = config.getString("buffer_profile", shared->system_profile_name);
-    buffer_context = Context::createCopy(shared_from_this());
-    buffer_context->setCurrentProfile(shared->buffer_profile_name);
+    /// Settle the settings before publishing the context, so that a reader never sees them being changed.
+    ContextMutablePtr buffer_context_ptr = Context::createCopy(shared_from_this());
+    buffer_context_ptr->setCurrentProfile(shared->buffer_profile_name);
+    buffer_context_ptr->resetSettingsToDefaultValue(distributed_cache_force_setting_names);
+    buffer_context = buffer_context_ptr;
 }
 
 String Context::getDefaultProfileName() const
@@ -8620,7 +8673,7 @@ ReadSettings Context::getReadSettings() const
     res.remote_fs_settings.enable_hdfs_pread = settings_ref[Setting::enable_hdfs_pread];
     res.remote_fs_settings.enable_blob_storage_log = settings_ref[Setting::enable_blob_storage_log_for_read_operations];
 
-    res.read_through_distributed_cache = settings_ref[Setting::read_through_distributed_cache];
+    res.read_through_distributed_cache = resolveReadThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
     res.distributed_cache_settings.validate();
@@ -8646,7 +8699,7 @@ WriteSettings Context::getWriteSettings() const
     res.remote_throttler = getRemoteWriteThrottler();
     res.local_throttler = getLocalWriteThrottler();
 
-    res.write_through_distributed_cache = settings_ref[Setting::write_through_distributed_cache];
+    res.write_through_distributed_cache = resolveWriteThroughDistributedCache();
 #if ENABLE_DISTRIBUTED_CACHE
     res.distributed_cache_settings.load(settings_ref);
 #endif

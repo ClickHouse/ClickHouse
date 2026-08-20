@@ -248,6 +248,8 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
+    extern const ServerSettingsBool read_through_distributed_cache;
+    extern const ServerSettingsBool write_through_distributed_cache;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -2815,6 +2817,8 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
+            global_context->setReadThroughDistributedCache(new_server_settings[ServerSetting::read_through_distributed_cache]);
+            global_context->setWriteThroughDistributedCache(new_server_settings[ServerSetting::write_through_distributed_cache]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 

@@ -7423,11 +7423,11 @@ If reading `sample.csv` is successful, file will be renamed to `processed_sample
 )", 0) \
     \
     /* CLOUD ONLY */ \
-    DECLARE(Bool, read_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow reading from distributed cache
+    DECLARE(BoolAuto, force_read_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Overrides the server setting `read_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
-    DECLARE(Bool, write_through_distributed_cache, false, R"(
-Only has an effect in ClickHouse Cloud. Allow writing to distributed cache (writing to s3 will also be done by distributed cache)
+    DECLARE(BoolAuto, force_write_through_distributed_cache, Field("auto"), R"(
+Only has an effect in ClickHouse Cloud. Overrides the server setting `write_through_distributed_cache` for a single query. `auto` (the default) means to follow the server setting.
 )", 0) \
     DECLARE(Bool, distributed_cache_throw_on_error, false, R"(
 Only has an effect in ClickHouse Cloud. Rethrow exception happened during communication with distributed cache or exception received from distributed cache. Otherwise fallback to skipping distributed cache on error
@@ -7523,6 +7523,9 @@ Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
 )", 0) \
     DECLARE(String, distributed_cache_file_cache_name, "", R"(
 Only has an effect in ClickHouse Cloud. A setting used only for CI tests - filesystem cache name to use on distributed cache.
+)", 0) \
+    DECLARE(String, distributed_cache_client_id, "", R"(
+Only has an effect in ClickHouse Cloud. A setting used only for CI tests - overrides the registry-configured distributed cache client id for this query's requests when non-empty. Lets tests spread data across a bounded set of client ids while keeping the same data on the same client id. It requires `ci_mode` to be enabled in the distributed cache client config: when it is not (the default, as in production), a query that routes a read or write through the distributed cache fails with `SUPPORT_IS_DISABLED` instead of silently falling back to the configured client id. Queries that never reach the distributed cache are unaffected, so the value is ignored there.
 )", 0) \
     DECLARE(Bool, distributed_cache_registry_show_certificate_and_signature, false, R"(
 Only has an effect in ClickHouse Cloud. Show the `certificate` and `signature` columns in the `system.distributed_cache_registry` table. By default these columns are empty to keep the output compact; enable this setting to inspect them.
@@ -9128,6 +9131,8 @@ If false (default), AI functions refuse to use a named-collection `endpoint` tha
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, background_distributed_schedule_pool_size, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_read_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_remote_write_network_bandwidth_for_server, 0) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Bool, read_through_distributed_cache, false) \
+    MAKE_DEPRECATED_BY_SERVER_CONFIG(M, Bool, write_through_distributed_cache, false) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, async_insert_threads, 16) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_fetches_network_bandwidth_for_server, 0) \
     MAKE_DEPRECATED_BY_SERVER_CONFIG(M, UInt64, max_replicated_sends_network_bandwidth_for_server, 0) \
