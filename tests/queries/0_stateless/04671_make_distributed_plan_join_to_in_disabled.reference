@@ -1,0 +1,7 @@
+-- without make_distributed_plan the join converts to IN
+CreatingSets (Create sets before main query execution)
+-- with make_distributed_plan the join is kept
+JoinLogical
+-- results agree
+50
+50

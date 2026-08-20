@@ -30,6 +30,9 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
+#if USE_AWS_S3 && USE_SSL
+#include <Databases/DataLake/S3TablesCatalog.h>
+#endif
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -108,7 +111,6 @@ namespace Setting
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-
 }
 
 namespace DataLakeStorageSetting
@@ -206,8 +208,20 @@ void DatabaseDataLake::validateSettings()
     {
         if (settings[DatabaseDataLakeSetting::region].value.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+    }
+    else if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::S3_TABLES)
+    {
+        if (settings[DatabaseDataLakeSetting::region].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+
+        if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS warehouse=<table_bucket_arn>' in the CREATE DATABASE query");
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {
@@ -388,6 +402,23 @@ void DatabaseDataLake::initialize() const
             }
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::S3_TABLES:
+        {
+#if USE_AWS_S3 && USE_SSL
+            catalog_impl = std::make_shared<DataLake::S3TablesCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::region].value,
+                catalog_parameters,
+                Context::getGlobalContextInstance(),
+                allow_server_credentials_in_user_queries);
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Amazon S3 Tables catalog requires ClickHouse built with USE_AWS_S3 and USE_SSL");
+#endif
+            break;
+        }
     }
 }
 
@@ -476,6 +507,7 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
         {
             switch (type)
@@ -1431,6 +1463,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 
+        if (database_engine_name == "Iceberg"
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
+            && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, or `onelake` catalog type only");
+        }
+
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
@@ -1568,6 +1610,19 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 engine_func->name = "Paimon";
                 break;
             }
+            case DatabaseDataLakeCatalogType::S3_TABLES:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
+                }
+
+                engine_func->name = "Iceberg";
+                break;
+            }
             case DatabaseDataLakeCatalogType::NONE:
                 break;
         }
@@ -1667,8 +1722,8 @@ The following settings are supported:
 
 See below sections for examples of using the `DataLakeCatalog` engine:
 
-* [Unity Catalog](/use-cases/data-lake/unity-catalog)
-* [Glue Catalog](/use-cases/data-lake/glue-catalog)
+* [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
     Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
 ```sql

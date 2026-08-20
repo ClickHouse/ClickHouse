@@ -2,7 +2,7 @@
 slug: /use-cases/observability/clickstack/integration-partners/odigos
 title: 'إرسال OpenTelemetry إلى ClickStack باستخدام Odigos'
 sidebarTitle: 'Odigos'
-description: 'فعّل auto-instrumentation لأعباء عمل Kubernetes باستخدام Odigos وصدّر بيانات telemetry إلى ClickStack عبر OTLP'
+description: 'فعّل auto-instrumentation لأعباء عمل Kubernetes باستخدام Odigos وصدّر بيانات القياس عن بُعد إلى ClickStack عبر OTLP'
 doc_type: 'guide'
 keywords: ['Odigos', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'eBPF', 'auto-instrumentation']
 ---
@@ -190,7 +190,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   <Step title="تحقّق من بيانات القياس عن بُعد في ClickStack" id="verify-telemetry">
     1. افتح واجهة ClickStack ‏(HyperDX):
        * **ClickStack مفتوح المصدر**: على سبيل المثال، `http://<host>:8080` على صورة all-in-one.
-       * **ClickStack المُدار**: افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud)، ثم انقر على **Launch ClickStack**. راجع [الانتقال إلى واجهة ClickStack](/ar/clickstack/getting-started/managed#navigate-to-clickstack-ui-cloud) لمزيد من التفاصيل.
+       * **ClickStack المُدار**: افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud)، ثم انقر على **Launch ClickStack**.
     2. تحقّق من **Logs** و**Metrics** و**Traces** للتأكد من وجود بيانات من خدماتك التي جرى تزويدها بالقياس عن بُعد.
     3. صفِّ التتبعات حسب `odigos.version` للتحقق من اكتمال التصدير من البداية إلى النهاية.
 
