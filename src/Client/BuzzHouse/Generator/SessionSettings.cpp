@@ -414,7 +414,7 @@ std::unordered_map<String, CHSetting> performanceSettings
                 /// `ie_join` only handles an `ON` with two inequality comparisons, so on its own it
                 /// makes every ordinary join fail to plan. Add a fallback when the combination has
                 /// none; `grace_hash` and `parallel_hash` serve just as well, hence the substring test
-                if (res.find("ie_join") != String::npos && res.find("hash") == String::npos)
+                if (res.contains("ie_join") && !res.contains("hash"))
                     res.insert(res.size() - 1, ",hash");
                 return res;
             },
