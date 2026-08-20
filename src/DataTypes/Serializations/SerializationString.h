@@ -7,6 +7,8 @@
 namespace DB
 {
 
+class ColumnString;
+
 struct DeserializeBinaryBulkStateStringWithoutSizeStream : public ISerialization::DeserializeBinaryBulkState
 {
     /// Whether full string data is required during deserialization
@@ -100,6 +102,14 @@ private:
         SerializeBinaryBulkStatePtr & state) const;
 
     /// dispatch helpers for deserializeBinaryBulkWithMultipleStreams
+    /// Reads the size/offset stream (branching on position_independent_encoding), appends the read
+    /// offsets to column's offsets, and returns the number of data bytes to read next.
+    /// Precondition: settings.path.back() == Substream::StringSizes.
+    size_t deserializeStringOffsetsAndGetDataSize(
+        ColumnString & column,
+        size_t limit,
+        DeserializeBinaryBulkSettings & settings,
+        SubstreamsCache * cache) const;
     void deserializeBinaryBulkWithSizeStream(
         IColumn & column,
         size_t limit,

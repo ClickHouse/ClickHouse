@@ -1111,7 +1111,7 @@ SETTINGS storage_policy='web';
 | `remote_fs_read_backoff_threashold` | O tempo máximo de espera ao tentar ler dados de um disco remoto                    | `10000` segundos |
 | `remote_fs_read_backoff_max_tries`  | O número máximo de tentativas de leitura com backoff                               | `5`              |
 
-Se uma consulta falhar com a exceção `DB:Exception Unreachable URL`, você pode tentar ajustar as configurações: [http&#95;connection&#95;timeout](/pt-BR/reference/settings/session-settings#http_connection_timeout), [http&#95;receive&#95;timeout](/pt-BR/reference/settings/session-settings#http_receive_timeout), [keep&#95;alive&#95;timeout](/pt-BR/reference/settings/server-settings/settings#keep_alive_timeout).
+Se uma consulta falhar com a exceção `DB:Exception Unreachable URL`, você pode tentar ajustar as configurações: [http&#95;connection&#95;timeout](/pt-BR/reference/settings/session-settings/http#http_connection_timeout), [http&#95;receive&#95;timeout](/pt-BR/reference/settings/session-settings/http#http_receive_timeout), [keep&#95;alive&#95;timeout](/pt-BR/reference/settings/server-settings/settings/other#keep_alive_timeout).
 
 Para gerar os arquivos para upload, execute:
 `clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` pode ser encontrado na consulta `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
