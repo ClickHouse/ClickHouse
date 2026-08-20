@@ -316,13 +316,17 @@ def test_the_named_step_reaches_the_cidb_job_row():
     saved_env, saved_info = cidb_module._Environment, cidb_module.Info
     cidb_module._Environment = types.SimpleNamespace(get=lambda: FakeEnv())
     cidb_module.Info = FakeInfo
+    # Drive the production entry point, not the private formatter: `complete_job` is
+    # what every job script calls, so losing the call there must fail this test.
+    result = node(
+        "Stateless tests (amd_debug, parallel)",
+        Result.Status.FAIL,
+        "",
+        [node("Start ClickHouse Server", Result.Status.FAIL, SERVER_LOG), make_tests_stage()],
+    )
     try:
-        result = job(
-            [
-                node("Start ClickHouse Server", Result.Status.FAIL, SERVER_LOG),
-                make_tests_stage(),
-            ]
-        )
+        with pytest.raises(SystemExit):
+            result.complete_job(disable_attached_files_sorting=True)
         rows = [
             json.loads(row)
             for row in CIDB.json_data_generator(result, result_name_for_cidb="Tests")
