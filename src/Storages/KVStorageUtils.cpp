@@ -17,6 +17,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
 
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
 
 namespace DB
@@ -204,6 +205,11 @@ bool traverseDAGFilterSingleColumn(
         }
         else
         {
+            // castColumnAccurateOrNull refuses a target whose nested type cannot be inside Nullable,
+            // so a container primary key must not reach it.
+            if (!canBeAccurateCastOrNullTarget(primary_key_type))
+                return false;
+
             const auto casted_set_ptr = castColumnAccurateOrNull(set_column, primary_key_type);
             const auto & casted_set_nullable = assert_cast<const ColumnNullable &>(*casted_set_ptr);
             const auto & casted_set_null_map = casted_set_nullable.getNullMapData();

@@ -1657,7 +1657,8 @@ static bool applyFunctionChainToColumn(
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
         result_type = in_argument_type;
     }
-    else if (!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+    else if ((!in_argument_type->isNullable() && !in_argument_type->canBeInsideNullable())
+             || !canBeAccurateCastOrNullTarget(in_argument_type))
     {
         /// We cannot apply castColumnAccurateOrNull() because it will throw exception
         return false;

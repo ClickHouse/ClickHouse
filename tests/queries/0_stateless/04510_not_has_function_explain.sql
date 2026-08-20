@@ -312,3 +312,18 @@ SELECT count() FROM test_nullable_string_key WHERE notHas([CAST(NULL, 'Nullable(
 SELECT count() FROM test_nullable_string_key WHERE has([CAST('a', 'Nullable(String)')], k);
 
 DROP TABLE test_nullable_string_key;
+
+-- A monotonic wrapper whose argument type is the container key itself resolves the constant against
+-- that container type, which reaches the same rule.
+DROP TABLE IF EXISTS test_mono_container_key;
+CREATE TABLE test_mono_container_key (t Tuple(Array(String))) ENGINE = MergeTree
+ORDER BY materialize(t)
+SETTINGS index_granularity = 1;
+
+INSERT INTO test_mono_container_key VALUES ((['a'])), ((['b']));
+
+SELECT count() FROM test_mono_container_key WHERE t = CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))');
+SELECT count() FROM test_mono_container_key WHERE t = CAST(tuple(['a']), 'Tuple(Array(Nullable(String)))') SETTINGS use_primary_key = 0;
+SELECT count() FROM test_mono_container_key WHERE t = tuple(['a']);
+
+DROP TABLE test_mono_container_key;
