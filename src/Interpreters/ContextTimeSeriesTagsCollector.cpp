@@ -1116,13 +1116,16 @@ void ContextTimeSeriesTagsCollector::extractTag(
             if (tag_name == tag_to_extract)
             {
                 out_column.insertData(tag_value.data(), tag_value.size());
+                null_map[i] = tag_value.empty();
                 found = true;
                 break;
             }
         }
         if (!found)
+        {
             out_column.insertDefault();
-        null_map[i] = !found;
+            null_map[i] = 1;
+        }
     }
 }
 

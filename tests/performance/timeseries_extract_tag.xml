@@ -1,8 +1,8 @@
 <test>
     <!--
-        Benchmark extracting an absent tag from groups with 16 tags.
-        Keep group setup small and repeat the groups over many rows so the
-        tag lookup and output NULL-map construction dominate the query.
+        Benchmark extracting an early-hit, late-hit, and missing tag from
+        groups with 16 tags. Keep group setup small and repeat the groups over
+        many rows so tag lookup and NULL-map construction dominate the query.
     -->
     <query>
         WITH
@@ -33,7 +33,9 @@
                     ORDER BY number
                 )
             ) AS groups
-        SELECT timeSeriesExtractTag(groups[number % 4096 + 1], 'missing')
+        SELECT timeSeriesExtractTag(groups[number % 4096 + 1], 'tag00'),
+               timeSeriesExtractTag(groups[number % 4096 + 1], 'tag15'),
+               timeSeriesExtractTag(groups[number % 4096 + 1], 'missing')
         FROM numbers(20000000)
         SETTINGS max_threads = 1, max_block_size = 1000000
         FORMAT Null

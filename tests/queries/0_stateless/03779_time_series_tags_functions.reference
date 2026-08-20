@@ -7,6 +7,9 @@ timeSeriesStoreTags:
 timeSeriesExtractTag:
 1	http_requests_count	dev	\N	1	1
 
+timeSeriesExtractTag mixed rows:
+2	2	2
+
 timeSeriesCopyTag:
 [('__name__','http_codes'),('env','dev'),('region','eu')]	[('__name__','http_codes'),('code','404'),('env','dev'),('region','eu')]	1	1	[('__name__','http_codes'),('code','404'),('region','eu')]
 
