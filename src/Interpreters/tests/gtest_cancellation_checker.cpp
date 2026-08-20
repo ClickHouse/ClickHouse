@@ -154,6 +154,25 @@ TEST(CancellationChecker, LargeTimeoutIsNotTruncated)
     ASSERT_GT(saturated_ms, static_cast<UInt64>(now_ms) + static_cast<UInt64>(100 * ONE_YEAR_US / 1'000));
 }
 
+/// Converting the timeout to nanoseconds for the comparison overflowed once `max_execution_time`
+/// exceeded `UInt64::max()` nanoseconds (about 584 years), which `SettingFieldSeconds` accepts:
+/// the first overflowing value wrapped to 384 ns, so the query timed out almost immediately
+/// instead of never.
+TEST(ExecutionSpeedLimits, HugeMaxExecutionTimeDoesNotOverflow)
+{
+    /// The first value whose nanosecond conversion no longer fits into `UInt64`.
+    static constexpr Int64 FIRST_OVERFLOWING_US = static_cast<Int64>(std::numeric_limits<UInt64>::max() / 1000) + 1;
+
+    for (const Int64 timeout_us : {FIRST_OVERFLOWING_US - 1, FIRST_OVERFLOWING_US, FIRST_OVERFLOWING_US + 1, std::numeric_limits<Int64>::max()})
+    {
+        ExecutionSpeedLimits limits;
+        limits.max_execution_time = Poco::Timespan{timeout_us};
+
+        EXPECT_TRUE(limits.checkTimeLimit(/*elapsed_ns=*/1'000'000'000, OverflowMode::THROW))
+            << "a timeout of " << timeout_us << " us tripped after one second";
+    }
+}
+
 TEST(ExecutionSpeedLimits, FormatsFractionalMaxExecutionTime)
 {
     ExecutionSpeedLimits limits;
