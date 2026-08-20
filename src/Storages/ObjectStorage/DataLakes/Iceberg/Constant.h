@@ -81,6 +81,7 @@ DEFINE_ICEBERG_FIELD(file_sequence_number);
 DEFINE_ICEBERG_FIELD(snapshot_id);
 DEFINE_ICEBERG_FIELD(statistics);
 DEFINE_ICEBERG_FIELD(properties);
+DEFINE_ICEBERG_FIELD_ALIAS(low_cardinality_field_ids, clickhouse-low-cardinality-field-ids);
 DEFINE_ICEBERG_FIELD(owner);
 DEFINE_ICEBERG_FIELD(column_sizes);
 DEFINE_ICEBERG_FIELD(value_counts);

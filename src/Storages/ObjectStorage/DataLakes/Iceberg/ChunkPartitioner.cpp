@@ -3,6 +3,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <Functions/FunctionFactory.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
@@ -23,6 +24,14 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+static ColumnWithTypeAndName removeLowCardinalityFromPartitionSource(ColumnWithTypeAndName column)
+{
+    column.type = removeLowCardinality(column.type);
+    if (column.column)
+        column.column = column.column->convertToFullColumnIfLowCardinality();
+    return column;
 }
 
 ChunkPartitioner::ChunkPartitioner(
@@ -61,7 +70,7 @@ ChunkPartitioner::ChunkPartitioner(
         ColumnsWithTypeAndName columns_for_function;
         if (transform_and_argument->argument)
             columns_for_function.push_back(ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUInt64>(), ""));
-        columns_for_function.push_back(sample_block_->getByName(column_name));
+        columns_for_function.push_back(removeLowCardinalityFromPartitionSource(sample_block_->getByName(column_name)));
 
         result_data_types.push_back(function->getReturnType(columns_for_function));
         functions.push_back(function);
@@ -108,7 +117,7 @@ ChunkPartitioner::partitionChunk(const Chunk & chunk)
             auto const_column = ColumnConst::create(std::move(column_value), chunk.getNumRows());
             arguments.push_back(ColumnWithTypeAndName(const_column->clone(), type, "#"));
         }
-        arguments.push_back(name_to_column[columns_to_apply[transform_ind]]);
+        arguments.push_back(removeLowCardinalityFromPartitionSource(name_to_column[columns_to_apply[transform_ind]]));
         auto result
             = functions[transform_ind]->build(arguments)->execute(arguments, result_data_types[transform_ind], chunk.getNumRows(), false);
         functions_columns.push_back(result);

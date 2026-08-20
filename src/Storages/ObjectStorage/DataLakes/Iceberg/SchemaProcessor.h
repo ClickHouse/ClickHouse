@@ -16,6 +16,7 @@
 #include <Poco/JSON/Parser.h>
 #include <Common/SharedMutex.h>
 
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 namespace DB::Iceberg
@@ -111,6 +112,8 @@ public:
     /// Nullable in the ClickHouse type, so a writer emitting Iceberg `required` must consult this.
     static std::unordered_set<String> collectIcebergOptionalPaths(Poco::JSON::Array::Ptr schema);
 
+    void setLowCardinalityFieldIds(std::set<Int32> field_ids);
+
     void registerSnapshotWithSchemaId(Int64 snapshot_id, Int32 schema_id);
     Int32 getSchemaIdForSnapshot(Int64 snapshot_id) const;
     std::optional<Int32> tryGetSchemaIdForSnapshot(Int64 snapshot_id) const;
@@ -125,6 +128,9 @@ private:
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+    std::set<Int32> low_cardinality_field_ids TSA_GUARDED_BY(mutex);
+    std::unordered_map<Int32, std::set<Int32>> low_cardinality_field_ids_by_schema_id TSA_GUARDED_BY(mutex);
+    const std::set<Int32> * active_low_cardinality_field_ids TSA_GUARDED_BY(mutex) = nullptr;
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
@@ -134,6 +140,8 @@ private:
         bool required,
         String & current_full_name = default_link,
         bool is_subfield_of_root = false);
+
+    DataTypePtr wrapLowCardinalityIfNeeded(const Poco::JSON::Object::Ptr & field, const String & type_key, DataTypePtr type) const;
 
     bool allowPrimitiveTypeConversion(const String & old_type, const String & new_type);
     const Node * getDefaultNodeForField(const Poco::JSON::Object::Ptr & field);

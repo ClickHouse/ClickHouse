@@ -530,6 +530,7 @@ static bool writeConsolidatedManifestFile(
         }
 
         /// Derive partition value types from a schema that defines every source column the spec references, preferring the current schema then any historical one; register all schemas first so they can be queried by id.
+        persistent_table_components.schema_processor->setLowCardinalityFieldIds(Iceberg::getLowCardinalityFieldIds(metadata_object));
         for (UInt32 i = 0; i < schemas->size(); ++i)
             persistent_table_components.schema_processor->addIcebergTableSchema(schemas->getObject(i));
 

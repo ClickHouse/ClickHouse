@@ -5,6 +5,7 @@
 #if USE_AVRO
 
 #include <optional>
+#include <set>
 #include <string>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/FileNamesGenerator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
@@ -83,7 +84,12 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const std::optional<String> & table_uuid);
 
 
-std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter);
+using LowCardinalityFieldIds = std::set<Int32>;
+
+LowCardinalityFieldIds getLowCardinalityFieldIds(Poco::JSON::Object::Ptr metadata_object);
+void setLowCardinalityFieldIds(Poco::JSON::Object::Ptr metadata_object, const LowCardinalityFieldIds & field_ids);
+
+std::pair<Poco::Dynamic::Var, bool> getIcebergType(DataTypePtr type, Int32 & iter, Int32 field_id, LowCardinalityFieldIds & low_cardinality_field_ids);
 Poco::Dynamic::Var getAvroType(DataTypePtr type);
 
 /// Spec: https://iceberg.apache.org/spec/?h=metadata.json#table-metadata-fields

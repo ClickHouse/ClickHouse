@@ -108,6 +108,7 @@ struct ColumnChunkWriteState
     parq::ColumnChunk column_chunk;
 
     ColumnPtr primitive_column;
+    ColumnPtr dictionary_indexes;
     DataTypePtr type;
     CompressionMethod compression{}; // must match what's inside column_chunk
     int compression_level = 3;
