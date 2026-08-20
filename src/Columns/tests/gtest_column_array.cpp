@@ -1,6 +1,10 @@
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <gtest/gtest.h>
 #include <Common/Exception.h>
@@ -40,6 +44,39 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(0), 2);
     EXPECT_EQ(column->getSize(1), 0);
     EXPECT_EQ(column->getSize(2), 1);
+}
+
+TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
+{
+    auto dictionary_keys = ColumnUInt64::create();
+    for (UInt64 value : {0, 10, 20, 30})
+        dictionary_keys->insertValue(value);
+
+    ColumnPtr dictionary = DataTypeLowCardinality::createColumnUnique(DataTypeUInt64(), std::move(dictionary_keys));
+
+    auto indexes = ColumnUInt8::create();
+    for (UInt8 index : {UInt8{1}, UInt8{2}, UInt8{3}, UInt8{1}, UInt8{2}})
+        indexes->insertValue(index);
+
+    auto nested = ColumnLowCardinality::create(dictionary, std::move(indexes), /* is_shared = */ true);
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    for (ColumnArray::Offset offset : {2, 2, 5})
+        offsets->insertValue(offset);
+
+    auto column = ColumnArray::create(std::move(nested), std::move(offsets));
+    auto cut_column = column->cut(1, 2);
+    const auto & cut_array = assert_cast<const ColumnArray &>(*cut_column);
+    const auto & cut_nested = assert_cast<const ColumnLowCardinality &>(cut_array.getData());
+
+    ASSERT_TRUE(cut_nested.isSharedDictionary());
+    EXPECT_EQ(cut_nested.getDictionaryPtr().get(), dictionary.get());
+    ASSERT_EQ(cut_array.size(), 2);
+    EXPECT_EQ(cut_array.getSize(0), 0);
+    EXPECT_EQ(cut_array.getSize(1), 3);
+    ASSERT_EQ(cut_nested.size(), 3);
+    EXPECT_EQ(cut_nested.getUInt(0), 30);
+    EXPECT_EQ(cut_nested.getUInt(1), 10);
+    EXPECT_EQ(cut_nested.getUInt(2), 20);
 }
 
 /// Skipped under debug/sanitizers: LOGICAL_ERROR aborts there, so EXPECT_THROW can't catch it.
