@@ -10,6 +10,15 @@
 namespace DB
 {
 
+/// `nats_GetLastError` returns a null pointer when the thread has not recorded an error yet, and
+/// formatting a null `const char *` throws `fmt::format_error` instead of reporting the failure
+/// that is being logged. Never hand its result to a format string directly.
+inline const char * getNATSLastError()
+{
+    const char * last_error = nats_GetLastError(nullptr);
+    return last_error ? last_error : "none";
+}
+
 struct NATSConfiguration
 {
     String url;
