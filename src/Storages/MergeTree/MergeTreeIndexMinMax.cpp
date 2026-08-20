@@ -196,17 +196,27 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 namespace
 {
 
-KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+KeyCondition buildCondition(
+    const IndexDescription & index,
+    const Names & alternative_column_names,
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    return KeyCondition{
+        filter_dag, context, index.column_names, index.expression,
+        /*single_point_=*/ false, /*skip_analysis_=*/ false, /*require_ready_sets_=*/ false,
+        alternative_column_names};
 }
 
 }
 
 MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
-    const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
+    const IndexDescription & index,
+    const Names & alternative_column_names,
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context)
     : index_data_types(index.data_types)
-    , condition(buildCondition(index, filter_dag, context))
+    , condition(buildCondition(index, alternative_column_names, filter_dag, context))
 {
 }
 
@@ -250,8 +260,14 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
+    return createIndexConditionWithAlternativeNames(predicate, context, /*alternative_column_names=*/ {});
+}
+
+MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexConditionWithAlternativeNames(
+    const ActionsDAG::Node * predicate, ContextPtr context, const Names & alternative_column_names) const
+{
     ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
-    return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
+    return std::make_shared<MergeTreeIndexConditionMinMax>(index, alternative_column_names, filter_dag, context);
 }
 
 MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const

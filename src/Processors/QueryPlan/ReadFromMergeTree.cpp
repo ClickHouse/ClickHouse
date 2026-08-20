@@ -56,6 +56,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
+#include <Storages/MergeTree/MergeTreeIndexAnalyzerNames.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
@@ -2843,12 +2844,35 @@ void ReadFromMergeTree::buildIndexes(
         }
         else
         {
-            factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+            /// Match a minmax index not only by the original names of its expressions but also by
+            /// the names the same expressions get after the query analyzer's rewrite passes,
+            /// otherwise a rewritten filter expression does not match the index expression
+            /// (issue #103128). Computed once per query here because the factory is invoked
+            /// per part for constant folding.
+            const auto * minmax_index = typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get());
+            Names alternative_column_names;
+            if (minmax_index && filter_dag.predicate)
+                alternative_column_names = getAlternativeIndexColumnNamesForAnalyzer(index, query_context);
+
+            if (!alternative_column_names.empty())
             {
-                if (!predicate)
-                    return nullptr;
-                return index_helper->createIndexCondition(predicate, query_context);
-            };
+                factory = [index_helper, minmax_index, query_context, alternative_names = std::move(alternative_column_names)](
+                    const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+                {
+                    if (!predicate)
+                        return nullptr;
+                    return minmax_index->createIndexConditionWithAlternativeNames(predicate, query_context, alternative_names);
+                };
+            }
+            else
+            {
+                factory = [index_helper, query_context](const ActionsDAG *, const ActionsDAG::Node * predicate) -> MergeTreeIndexConditionPtr
+                {
+                    if (!predicate)
+                        return nullptr;
+                    return index_helper->createIndexCondition(predicate, query_context);
+                };
+            }
         }
 
         auto condition_template = std::make_shared<ConditionTemplate<MergeTreeIndexConditionPtr>>(filter_dag_ptr, std::move(factory), metadata_snapshot, query_context, skip_constant_folding);

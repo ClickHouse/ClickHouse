@@ -1455,7 +1455,8 @@ KeyCondition::KeyCondition(
     const ExpressionActionsPtr & key_expr_,
     bool single_point_,
     bool skip_analysis_,
-    bool require_ready_sets_)
+    bool require_ready_sets_,
+    const Names & alternative_key_column_names_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1466,6 +1467,21 @@ KeyCondition::KeyCondition(
     {
         key_columns.try_emplace(name, key_index);
         ++key_index;
+    }
+
+    /// Additionally match key columns by the names their expressions get after the query
+    /// analyzer's rewrite passes. Register them after the original names so an alternative
+    /// name never shadows an original one.
+    if (alternative_key_column_names_.size() == key_column_names_.size())
+    {
+        for (size_t i = 0; i < alternative_key_column_names_.size(); ++i)
+        {
+            const auto & alternative_name = alternative_key_column_names_[i];
+            if (alternative_name.empty() || alternative_name == key_column_names_[i])
+                continue;
+            if (key_columns.try_emplace(alternative_name, i).second)
+                alternative_to_original_key_column_name.emplace(alternative_name, key_column_names_[i]);
+        }
     }
 
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
@@ -3068,7 +3084,12 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     if (key_columns.end() != it)
     {
         out_key_column_num = it->second;
-        out_key_column_type = sample_block.getByName(name).type;
+        /// The sample block contains the key columns under their original names.
+        auto alternative_it = alternative_to_original_key_column_name.find(name);
+        const String & sample_block_name = alternative_it != alternative_to_original_key_column_name.end()
+            ? alternative_it->second
+            : name;
+        out_key_column_type = sample_block.getByName(sample_block_name).type;
         return true;
     }
 

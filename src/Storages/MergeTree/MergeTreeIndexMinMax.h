@@ -55,6 +55,7 @@ class MergeTreeIndexConditionMinMax final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionMinMax(
         const IndexDescription & index,
+        const Names & alternative_column_names,
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context);
 
@@ -85,6 +86,12 @@ public:
 
     MergeTreeIndexConditionPtr createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const override;
+
+    /// Same as createIndexCondition, but the index columns are additionally matched by the given
+    /// alternative names: the names the index expressions get after the query analyzer's rewrite
+    /// passes (see MergeTreeIndexAnalyzerNames.h). The list is parallel to index.column_names.
+    MergeTreeIndexConditionPtr createIndexConditionWithAlternativeNames(
+        const ActionsDAG::Node * predicate, ContextPtr context, const Names & alternative_column_names) const;
 
     MergeTreeIndexSubstreams getSubstreams() const override { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}; }
     MergeTreeIndexFormat getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const override;

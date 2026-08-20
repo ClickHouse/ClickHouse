@@ -73,6 +73,9 @@ public:
     /// This overload takes the key column names and expression without any direction information,
     /// so the condition treats the key as ascending in every column. Use it only for keys that
     /// cannot be reverse-sorted (e.g. skip index expressions, virtual row-offset columns).
+    /// `alternative_key_column_names` is a parallel list of additional names the key columns are
+    /// matched by (or empty): the names the key expressions get after the query analyzer's
+    /// rewrite passes (see MergeTreeIndexAnalyzerNames.h).
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
@@ -80,7 +83,8 @@ public:
         const ExpressionActionsPtr & key_expr,
         bool single_point_ = false,
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
-        bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
+        bool require_ready_sets_ = false, /// Analyse only already-built `IN` sets; never execute a subquery.
+        const Names & alternative_key_column_names = {});
 
     /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
     /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
@@ -651,6 +655,11 @@ private:
     /// `key_columns` may contain all columns of the key tuple or only the columns used in the
     /// KeyCondition. Either way, num_key_columns is the length of the whole key tuple.
     size_t num_key_columns = 0;
+
+    /// For key columns registered in `key_columns` under an alternative name (the name the key
+    /// expression gets after the query analyzer's rewrite passes), maps that name to the original
+    /// key column name, under which the column is present in the key expression sample block.
+    std::unordered_map<String, String> alternative_to_original_key_column_name;
 
     /// Space-filling curves in the key
     enum class SpaceFillingCurveType
