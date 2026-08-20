@@ -805,8 +805,9 @@ constexpr auto DEFAULT_SERVICE_ACCOUNT = "default";
 constexpr auto DEFAULT_METADATA_SERVICE = "metadata.google.internal";
 constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "computeMetadata/v1/instance/service-accounts";
 
-/// A non-positive timespan means "no limit" to both `ConnectionTimeouts::saturate` and Poco's socket
-/// layer, so it must be replaced by the cap and not merely compared against it.
+/// A non-positive receive timeout is unbounded downstream: Poco maps it to INT_MAX microseconds in
+/// `SecureSocketImpl::getMaxTimeoutOrLimit`, so it must be replaced by the cap rather than compared
+/// against it.
 Poco::Timespan capTimespan(Poco::Timespan timespan, Poco::Timespan cap)
 {
     if (timespan.totalMicroseconds() <= 0)
@@ -818,12 +819,9 @@ Poco::Timespan capTimespan(Poco::Timespan timespan, Poco::Timespan cap)
 
 ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts)
 {
-    const Poco::Timespan connect_cap(DEFAULT_CONNECT_TIMEOUT_MS * 1000);
     const Poco::Timespan request_cap(DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
 
     return ConnectionTimeouts(timeouts)
-        .withConnectionTimeout(capTimespan(timeouts.connection_timeout, connect_cap))
-        .withSecureConnectionTimeout(capTimespan(timeouts.secure_connection_timeout, connect_cap))
         .withSendTimeout(capTimespan(timeouts.send_timeout, request_cap))
         .withReceiveTimeout(capTimespan(timeouts.receive_timeout, request_cap));
 }

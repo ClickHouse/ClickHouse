@@ -1104,12 +1104,12 @@ TEST(IOTestAwsS3Client, ReadWithMatchingIfMatchSucceeds)
     EXPECT_EQ(content, body);
 }
 
-/// A credential round trip is bounded by the credential caps whatever the data-transfer timeouts are:
-/// a looser component is lowered to the cap, a non-positive one (no limit downstream) takes the cap,
-/// and a component already tighter than the cap is kept rather than raised.
+/// The response wait of a credential round trip is bounded by the credential cap whatever the
+/// data-transfer timeouts are: a looser component is lowered to the cap, a non-positive one
+/// (unbounded downstream) takes the cap, and one already tighter than the cap is kept rather than
+/// raised. The connect timeout is passed through untouched.
 TEST(IOTestAwsS3Client, CredentialAcquisitionTimeoutsAreCapped)
 {
-    const Poco::Timespan connect_cap(DB::S3::DEFAULT_CONNECT_TIMEOUT_MS * 1000);
     const Poco::Timespan request_cap(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000);
 
     struct Case
@@ -1135,9 +1135,9 @@ TEST(IOTestAwsS3Client, CredentialAcquisitionTimeoutsAreCapped)
     }
 
     const Case connect_cases[] = {
-        {"ten seconds is lowered to the cap", Poco::Timespan(10, 0), connect_cap},
-        {"no limit takes the cap", Poco::Timespan(0), connect_cap},
-        {"tighter than the cap is kept", Poco::Timespan(0, 500 * 1000), Poco::Timespan(0, 500 * 1000)},
+        {"the backup's ten seconds is kept", Poco::Timespan(10, 0), Poco::Timespan(10, 0)},
+        {"a custom metadata service budget is kept", Poco::Timespan(30, 0), Poco::Timespan(30, 0)},
+        {"no limit is kept", Poco::Timespan(0), Poco::Timespan(0)},
     };
 
     for (const auto & c : connect_cases)
@@ -1195,7 +1195,7 @@ TEST(IOTestAwsS3Client, CredentialCapDoesNotAffectDataPlaneTimeouts)
 
     auto credential = DB::S3::getCredentialAcquisitionTimeouts(data_plane);
     EXPECT_EQ(credential.receive_timeout, Poco::Timespan(DB::S3::DEFAULT_CREDENTIAL_REQUEST_TIMEOUT_MS * 1000));
-    EXPECT_EQ(credential.connection_timeout, Poco::Timespan(DB::S3::DEFAULT_CONNECT_TIMEOUT_MS * 1000));
+    EXPECT_EQ(credential.connection_timeout, Poco::Timespan(10, 0));
 }
 
 #endif

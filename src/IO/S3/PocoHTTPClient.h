@@ -46,9 +46,9 @@ namespace DB::S3
 /// HTTP 400 from S3 with non-empty `x-amz-bucket-region` (wrong SigV4 signing region for the bucket).
 bool isS3WrongSigningRegionBadRequest(int status_code, const Poco::Net::HTTPMessage & response);
 
-/// Bounds a credential-acquisition round trip independently of the data-transfer timeouts it is
-/// derived from, which callers such as backups legitimately raise to an hour. A component already
-/// tighter than the cap is kept; a non-positive one means "no limit" downstream, so it takes the cap.
+/// Bounds only the response wait of a credential-acquisition round trip; the connect timeout stays
+/// as the caller set it. An already tighter wait is kept, a non-positive one is unbounded downstream
+/// and so takes the cap.
 ConnectionTimeouts getCredentialAcquisitionTimeouts(const ConnectionTimeouts & timeouts);
 
 class ClientFactory;
