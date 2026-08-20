@@ -283,6 +283,13 @@ ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/limits.yaml $DEST_SERVER_PATH/users.d/
+# The http_allow_* settings are introduced by this feature and are not present in any
+# released version yet: 26.7 was released without them, so gate on 26.8 (the first version
+# that can contain them) to keep the previous-release server of the upgrade check bootable.
+if check_clickhouse_version 26.8; then
+    ln -sf $SRC_PATH/users.d/http_paths.xml $DEST_SERVER_PATH/users.d/
+    ln -sf $SRC_PATH/config.d/http_url_prefix.xml $DEST_SERVER_PATH/config.d/
+fi
 if check_clickhouse_version 26.1; then
     ln -sf $SRC_PATH/users.d/distributed_index_analysis.yaml $DEST_SERVER_PATH/users.d/
 fi

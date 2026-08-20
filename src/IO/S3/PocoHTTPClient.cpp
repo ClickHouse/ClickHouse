@@ -472,7 +472,7 @@ void PocoHTTPClient::makeRequestInternalImpl(
     auto method = getMethod(request);
 
     auto sdk_attempt = getSDKAttemptNumber(request);
-    auto ch_attempt = getClickhouseAttemptNumber(request);
+    auto ch_attempt = getClickHouseAttemptNumber(request);
     bool first_attempt = ch_attempt == 1 && sdk_attempt == 1;
 
     if (!first_attempt)

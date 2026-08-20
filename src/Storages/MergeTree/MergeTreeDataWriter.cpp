@@ -692,25 +692,25 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPart(
     bool may_have_leftover)
 {
     auto partition_id = block.partition.getID(metadata_snapshot->getPartitionKey().sample_block);
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*source_parts_set=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), /*patch_part_index=*/ {}, std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPatchPart(
     BlockWithPartition & block,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    SourcePartsSetForPatch source_parts_set,
+    PatchPartIndex patch_part_index,
     ContextPtr context,
     bool may_have_leftover)
 {
-    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(source_parts_set), std::move(context), data.insert_increment.get(), may_have_leftover);
+    return writeTempPartImpl(block, std::move(metadata_snapshot), std::move(partition_id), std::move(patch_part_index), std::move(context), data.insert_increment.get(), may_have_leftover);
 }
 
 MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     BlockWithPartition & block_with_partition,
     StorageMetadataPtr metadata_snapshot,
     String partition_id,
-    SourcePartsSetForPatch source_parts_set,
+    std::optional<PatchPartIndex> patch_part_index,
     ContextPtr context,
     UInt64 block_number,
     bool may_have_leftover)
@@ -735,8 +735,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     UInt32 new_part_level = optimize_on_insert ? 1 : 0;
     MergeTreePartInfo new_part_info(std::move(partition_id), block_number, block_number, new_part_level);
 
-    if (!source_parts_set.empty())
-        new_part_info.mutation = source_parts_set.getMaxDataVersion();
+    if (patch_part_index && !patch_part_index->empty())
+        new_part_info.mutation = patch_part_index->getMaxDataVersion();
 
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
@@ -830,18 +830,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     {
         const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
         /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
-        /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
-        /// is an O(1) atomic load of the compressed on-disk size of active parts; parts of the current
-        /// INSERT are not active yet, so we add the size of the block being written (`block.bytes()`,
-        /// the same estimate used below for the part size). The check is therefore per block, not per
-        /// INSERT: one INSERT is split into one block per partition (and into several blocks for a
-        /// streaming insert), and each of them is compared against the already active parts only, so a
-        /// single bulk load into an empty table can build statistics for all of its parts. That is
-        /// intentional - the gate is about the steady-state size of the table, and the parts of one
-        /// INSERT are not visible to each other. The block size is uncompressed (the compressed size is
-        /// unknown before the part is written), so the check is deliberately conservative by at most one
-        /// block; the only consequence of a skip is that statistics are built during merges instead.
-        /// `0` disables the limit.
+        /// statistics during merges instead, avoiding per-insert overhead.
+        /// Setting value = 0 disables the limit.
         if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
@@ -960,14 +950,17 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     }
 
     new_data_part->setColumns(columns, infos, metadata_snapshot->getMetadataVersion());
-    new_data_part->setSourcePartsSet(std::move(source_parts_set));
+
+    if (patch_part_index)
+        new_data_part->setPatchPartIndex(std::move(*patch_part_index));
+
     new_data_part->rows_count = block.rows();
     new_data_part->existing_rows_count = block.rows();
     new_data_part->partition = std::move(partition);
     new_data_part->setMinMaxIndex(std::move(minmax_idx));
     new_data_part->is_temp = true;
     /// In case of replicated merge tree with zero copy replication
-    /// Here Clickhouse claims that this new part can be deleted in temporary state without unlocking the blobs
+    /// Here ClickHouse claims that this new part can be deleted in temporary state without unlocking the blobs
     /// The blobs have to be removed along with the part, this temporary part owns them and does not share them yet.
     new_data_part->remove_tmp_policy = IMergeTreeDataPart::BlobsRemovalPolicyForTemporaryParts::REMOVE_BLOBS;
 
