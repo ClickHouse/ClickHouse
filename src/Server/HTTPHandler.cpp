@@ -1352,13 +1352,13 @@ void HTTPHandler::processQuery(
         Token token = lexer.nextToken();
         while (!token.isSignificant() && !token.isEnd() && !token.isError())
             token = lexer.nextToken();
-        const auto is_keyword = [](const Token & token, std::string_view keyword)
+        const auto is_keyword = [](const Token & candidate, std::string_view keyword)
         {
-            if (token.type != TokenType::BareWord || static_cast<size_t>(token.end - token.begin) != keyword.size())
+            if (candidate.type != TokenType::BareWord || static_cast<size_t>(candidate.end - candidate.begin) != keyword.size())
                 return false;
 
             for (size_t j = 0; j < keyword.size(); ++j)
-                if (toUpperIfAlphaASCII(token.begin[j]) != keyword[j])
+                if (toUpperIfAlphaASCII(candidate.begin[j]) != keyword[j])
                     return false;
 
             return true;
