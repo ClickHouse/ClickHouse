@@ -70,7 +70,9 @@ A beta resource announces itself in two places:
 
 Beta means the schema and behavior may change in a future provider version. Anything without the marker is GA and covered by the usual compatibility guarantees.
 
-> **Note:** Before v3.25.2, the provider marked these resources as *alpha* rather than *beta*, and the plan-time warning read `Alpha Resource`. Only the wording changed — no schema, behavior, or state migration is involved — but tooling that greps plan output for `Alpha Resource` will silently stop matching. Earlier releases also published a separate alpha build.
+<Note>
+Before v3.25.2, the provider marked these resources as *alpha* rather than *beta*, and the plan-time warning read `Alpha Resource`. Only the wording changed — no schema, behavior, or state migration is involved — but tooling that greps plan output for `Alpha Resource` will silently stop matching. Earlier releases also published a separate alpha build.
+</Note>
 
 ### Versioning {#versioning}
 
