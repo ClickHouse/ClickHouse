@@ -2,6 +2,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
@@ -88,6 +89,12 @@ public:
     {
         if (ignore_set)
             return ColumnUInt8::create(input_rows_count, static_cast<UInt8>(0));
+
+        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeLowCardinalityAndNullable(arguments[0].type));
+        if (decay_length)
+            validateExponentialTimeDecayingFloat64Column(
+                *arguments[0].column, *decay_length, "IN set probe");
 
         /// Second argument must be ColumnSet (possibly wrapped in ColumnConst).
         ColumnPtr column_set_ptr = arguments[1].column;
