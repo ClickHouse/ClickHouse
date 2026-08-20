@@ -92,6 +92,24 @@ def wait_for_query_finish(node, query_id, timeout=60):
     raise RuntimeError(f"Query {query_id} still running after {timeout}s")
 
 
+def wait_for_query_cancelled(node, query_id, timeout=30):
+    """Wait until a running query is marked as cancelled in `system.processes`.
+
+    A replacement query sets `is_killed` on its victim before it parks on
+    `query_finished`, so observing `is_cancelled = 1` on the still-running
+    victim proves the replacement has reached that wait.
+    """
+    start = time.monotonic()
+    while time.monotonic() - start < timeout:
+        result = node.query(
+            f"SELECT is_cancelled FROM system.processes WHERE query_id = '{query_id}'"
+        ).strip()
+        if result == "1":
+            return
+        time.sleep(0.05)
+    raise RuntimeError(f"Query {query_id} was not cancelled within {timeout}s")
+
+
 def wait_for_queue_length(node, expected, timeout=30):
     """Poll the Prometheus QueryAdmissionQueueLength metric until it equals `expected`.
 
@@ -474,8 +492,10 @@ def test_client_disconnect_while_replacing_query(started_cluster):
     sock.connect((node.ip_address, 8123))
     sock.sendall(request.encode())
 
-    # Let the server start the replacement and enter its `query_finished` wait.
-    time.sleep(0.1)
+    # Wait for an observable state instead of sleeping: the replacement marks the
+    # victim as cancelled before it parks on `query_finished`, so `is_cancelled = 1`
+    # on the still-running victim means the replacement is inside that wait.
+    wait_for_query_cancelled(node, query_id)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
     sock.close()
 
