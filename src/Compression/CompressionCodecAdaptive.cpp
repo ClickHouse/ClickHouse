@@ -106,7 +106,8 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
     if (deployment_default->isEncryption())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Adaptive codec pool must not be built from an encrypting default");
 
-    Codecs pool{CompressionCodecFactory::instance().get("NONE", {}), deployment_default};
+    static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
+    Codecs pool{none_codec, deployment_default};
     const TypeIndex type_id = type.getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
