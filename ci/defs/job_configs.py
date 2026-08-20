@@ -213,11 +213,13 @@ class JobConfigs:
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
                 # Same reason: the fuzzer-dictionary guards read the dictionary scripts and
-                # .options files, the if (FUZZER) block that generates all.dict, and the
-                # .gitignore entry that keeps it uncommitted.
+                # .options files, the if (FUZZER) block that generates all.dict, the
+                # .gitignore entry that keeps it uncommitted, and the codegen fuzzer's
+                # declaration of which sources regenerate its grammar.
                 "./tests/fuzz/",
                 "./CMakeLists.txt",
                 "./.gitignore",
+                "./src/Parsers/fuzzers/codegen_fuzzer/CMakeLists.txt",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],
