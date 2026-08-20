@@ -7,5 +7,7 @@ SET before semicolon comment ok
 allow_experimental_logsql_dialect
 1
 client standalone SET ok
+client SET semicolon comment ok
 1
-client SET comment multiquery ok
+client SET multiquery ok
+2024-01-01 00:00:00	cannot set error handler

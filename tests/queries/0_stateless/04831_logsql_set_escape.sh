@@ -39,8 +39,15 @@ ${CLICKHOUSE_CURL} -sS "$GATED_URL" --data-binary "set error | count()" |& grep 
 $CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04831 --dialect logsql -q "set error | count()"
 $CLICKHOUSE_CLIENT --dialect logsql -q "SET dialect = 'clickhouse'" && echo "client standalone SET ok"
 
-# In multiquery mode a comment after the semicolon belongs to the SET statement,
-# rather than becoming the next statement after the dialect has switched to SQL.
-printf "SET dialect = 'clickhouse'; #switch-back\nSELECT 1;\n" | $CLICKHOUSE_CLIENT --multiquery --dialect logsql && echo "client SET comment multiquery ok"
+# A LogsQL comment suffix after the semicolon belongs to the SET statement.
+$CLICKHOUSE_CLIENT --dialect logsql -q "SET dialect = 'clickhouse'; #switch-back" && echo "client SET semicolon comment ok"
+
+# In multiquery mode the statement separator stays visible, so the query following
+# the SET escape is executed with the dialect it has just switched to.
+printf "SET dialect = 'clickhouse';\nSELECT 1;\n" | $CLICKHOUSE_CLIENT --multiquery --dialect logsql && echo "client SET multiquery ok"
+
+# A LogsQL query that merely starts with the word `set` is a word filter, even when
+# it forms a valid shorthand `SET name` statement in SQL.
+$CLICKHOUSE_CLIENT --allow_experimental_logsql_dialect 1 --logsql_table logs_04831 --dialect logsql -q "set error"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE logs_04831"

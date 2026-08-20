@@ -56,7 +56,10 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         Tokens set_tokens(probe, raw_end, set_max_query_size, /*skip_insignificant=*/ true);
         Pos set_pos(set_tokens, pos);
         ASTPtr set_node;
-        ParserSetQuery set_parser;
+        /// The shorthand form `SET name` (without a value) is not accepted here: it
+        /// would steal LogsQL word filters such as `set error`, while the escape only
+        /// needs to assign settings like `dialect` and `logsql_table`.
+        ParserSetQuery set_parser(/*parse_only_internals_=*/ false, /*shorthand_syntax_=*/ false);
         if (set_parser.parse(set_pos, set_node, expected))
         {
             const char * set_statement_end = set_pos->begin;
@@ -78,19 +81,22 @@ bool ParserLogsQLQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     break;
             }
 
-            if (set_end != raw_end && set_pos->type != TokenType::Semicolon)
-                return false;
-
-            node = std::move(set_node);
-            /// Keep the separator visible to the multiquery scanner when another
-            /// statement follows. Advancing past it makes the following statement
-            /// look like unexpected input after this `SET` query. For a standalone
-            /// `SET` with a LogsQL-only comment suffix, consume the whole input so
-            /// that the generic token stream does not have to tokenize the comment.
-            const char * position_end = set_end == raw_end ? set_end : set_statement_end;
-            while (!pos->isEnd() && pos->begin < position_end)
-                ++pos;
-            return true;
+            /// The escape applies only when the `SET` covers the whole statement.
+            /// Otherwise the text is a LogsQL query that merely starts with the word
+            /// `set` (e.g. `set error | count()`), and it is parsed as LogsQL below.
+            if (set_end == raw_end || set_pos->type == TokenType::Semicolon)
+            {
+                node = std::move(set_node);
+                /// Keep the separator visible to the multiquery scanner when another
+                /// statement follows. Advancing past it makes the following statement
+                /// look like unexpected input after this `SET` query. For a standalone
+                /// `SET` with a LogsQL-only comment suffix, consume the whole input so
+                /// that the generic token stream does not have to tokenize the comment.
+                const char * position_end = set_end == raw_end ? set_end : set_statement_end;
+                while (!pos->isEnd() && pos->begin < position_end)
+                    ++pos;
+                return true;
+            }
         }
     }
 
