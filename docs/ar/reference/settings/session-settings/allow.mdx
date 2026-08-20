@@ -271,6 +271,17 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يسمح باستخدام CREATE MATERIALIZED VIEW مع استعلام SELECT يشير إلى جداول أو أعمدة غير موجودة. ويجب أن يظل صحيحًا من حيث الصياغة النحوية. لا ينطبق ذلك على MVs القابلة للتحديث. كما لا ينطبق إذا كان يجب استنتاج مخطط MV من استعلام SELECT (أي إذا كان CREATE لا يتضمن قائمة أعمدة ولا TO table). ويمكن استخدامه لإنشاء MV قبل الجدول المصدر الخاص بها.
 
+<div id="allow_metadata_only_named_tuple_alter">
+  ## allow_metadata_only_named_tuple_alter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد للتحكم في عمليات ALTER التي تقتصر على البيانات الوصفية عند إضافة حقول فرعية إلى Tuple مُسمّى."}]}]} />
+
+إذا كانت القيمة true، فإن عملية ALTER MODIFY COLUMN على Tuple مُسمّى تضيف حقولًا فرعية جديدة فقط تكون مقتصرة على البيانات الوصفية (من دون mutation للبيانات).
+اضبطها على false لفرض السلوك القديم الذي يتضمن mutation كاملًا.
+
 <div id="allow_minmax_index_for_json">
   ## allow_minmax_index_for_json
 </div>

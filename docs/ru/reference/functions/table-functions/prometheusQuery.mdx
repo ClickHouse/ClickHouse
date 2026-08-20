@@ -56,23 +56,26 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
   ### Функции
 </div>
 
-| Категория     | Функции                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------ |
-| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`   |
-| Математика    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
-| Тригонометрия | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
-| Дата и время  | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
-| Тип           | `scalar`, `vector`                                                                               |
-| Гистограмма   | `histogram_quantile`                                                                             |
-| Другое        | `time`, `pi`                                                                                     |
+| Категория     | Функции                                                                                                                       |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Диапазон      | `rate`, `irate`, `delta`, `idelta`, `increase`, `last_over_time`, `deriv`, `changes`, `resets`                                |
+| Математика    | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `round`, `clamp`, `clamp_min`, `clamp_max` |
+| Тригонометрия | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`                                |
+| Дата и время  | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year`                              |
+| Метка         | `label_replace`, `label_join`                                                                                                 |
+| Тип           | `scalar`, `vector`                                                                                                            |
+| Гистограмма   | `histogram_quantile`                                                                                                          |
+| Другое        | `time`, `pi`                                                                                                                  |
 
-**Note**: `histogram_quantile` использует линейную интерполяцию для классических бакетов гистограммы (обозначаемых меткой `le`). Нативные гистограммы пока не поддерживаются, а аргумент `phi` (уровень квантиля) сейчас должен быть константным скаляром — выражения, которые меняются на каждом шаге, например `histogram_quantile(time() / 1000, ...)`, отклоняются с ошибкой `NOT_IMPLEMENTED`.
+**Note**: `histogram_quantile` использует линейную интерполяцию для классических бакетов гистограммы (обозначаемых меткой `le`). Нативные гистограммы не поддерживаются. Аргумент `phi` (уровень квантиля) должен быть константным скаляром. Выражения, которые меняются на каждом шаге, например `histogram_quantile(time() / 1000, ...)`, отклоняются с исключением `NOT_IMPLEMENTED`.
 
 <div id="operators">
   ### Операторы
 </div>
 
-Все арифметические (`+`, `-`, `*`, `/`, `%`, `^`), сравнительные (`==`, `!=`, `<`, `>`, `<=`, `>=` с необязательным модификатором `bool`) и логические (`and`, `or`, `unless`) бинарные операторы, а также модификаторы `on()`/`ignoring()` и `group_left()`/`group_right()`.
+Все арифметические (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) и сравнительные (`==`, `!=`, `<`, `>`, `<=`, `>=` с необязательным модификатором `bool`) бинарные операторы, а также модификаторы `on()`/`ignoring()` и `group_left()`/`group_right()`.
+
+Логические операторы множеств `and`, `or` и `unless` с модификаторами `on()`/`ignoring()`.
 
 Унарные операторы `+` и `-`.
 
@@ -82,7 +85,13 @@ prometheusQuery('time_series_table', 'promql_query', evaluation_time)
 
 `sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — с необязательными модификаторами `by()` и `without()`.
 
-Пока не поддерживается: `count_values`.
+<div id="not-yet-supported">
+  ### Пока не поддерживаются
+</div>
+
+* Оператор агрегации `count_values`
+* Функции диапазона `predict_linear`, `avg_over_time`, `min_over_time`, `max_over_time`, `sum_over_time`, `count_over_time`, `quantile_over_time`, `stddev_over_time`, `stdvar_over_time`, `present_over_time`, `absent_over_time`, `mad_over_time`, `first_over_time`, `ts_of_min_over_time`, `ts_of_max_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+* Функция `absent`
 
 <div id="example">
   ## Пример

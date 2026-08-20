@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "セッション設定",
   "pages": [
     "ja/reference/settings/session-settings/additional",
     "ja/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "ja/reference/settings/session-settings/shared-merge",
     "ja/reference/settings/session-settings/short-circuit-function-evaluation",
     "ja/reference/settings/session-settings/show",
+    "ja/reference/settings/session-settings/shrink-over",
     "ja/reference/settings/session-settings/skip-unavailable-shards",
     "ja/reference/settings/session-settings/sleep-in",
     "ja/reference/settings/session-settings/split",
