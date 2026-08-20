@@ -368,7 +368,19 @@ public:
 
     void flush() override
     {
-        chassert(last_index_written);
+        /// `Changelog::writeThread` issues a `Flush` operation for every flush request, including
+        /// ones where no record was appended since the previous flush (an empty batch right after
+        /// startup, or right after a flush that already opened the next, still empty, S3 object).
+        /// In that state `last_index_written` is empty, so the old unconditional
+        /// `flushImpl(*last_index_written + 1)` read an empty `std::optional` and then passed the
+        /// resulting garbage start index to `flushImpl`, which would also reassign the live,
+        /// neither-finalized-nor-canceled `write_buffer` of the currently open object.
+        ///
+        /// There is nothing to publish when no record was appended, and the object that is already
+        /// open must stay open to receive the following appends, so an empty flush is a no-op.
+        if (!last_index_written)
+            return;
+
         flushImpl(*last_index_written + 1);
     }
 
@@ -393,10 +405,10 @@ public:
         /// Joining it first removes that data race during shutdown.
         stopCompactionThread();
 
-        /// `flush` dereferences `last_index_written`, which is empty until the first
-        /// `appendRecord`. Skip the flush if nothing was ever written (e.g. immediate
-        /// shutdown after startup) — mirrors the `isFileSet() && prealloc_done` guard
-        /// in the local `ChangelogWriter`.
+        /// Nothing was ever written when `last_index_written` is empty (e.g. immediate
+        /// shutdown after startup), so there is nothing to publish — mirrors the
+        /// `isFileSet() && prealloc_done` guard in the local `ChangelogWriter`. `flush`
+        /// is a no-op in that state anyway; the explicit check keeps the intent local.
         if (last_index_written)
             flush();
 
