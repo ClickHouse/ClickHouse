@@ -63,8 +63,16 @@ ${CLICKHOUSE_CLIENT} --user="${USER_NOOP}" -q "SET max_query_size = DEFAULT; SEL
 echo 'settings without a declared default are unaffected'
 # A custom setting is dropped rather than reset, and cannot carry a value constraint.
 ${CLICKHOUSE_CLIENT} -q "SET SQL_probe_05023 = 1; SET SQL_probe_05023 = DEFAULT; SELECT 'custom setting reset'"
-# It is still a session-state mutation, so readonly mode must reject the reset.
-${CLICKHOUSE_CLIENT} -q "SET SQL_probe_05023 = 1; SET readonly = 1; SET SQL_probe_05023 = DEFAULT" 2>&1 | grep -o "Cannot modify 'SQL_probe_05023' setting in readonly mode" | head -1
+# It is still a session-state mutation, so readonly mode must reject the reset. Unlike `readonly = 2`
+# above, `readonly = 1` rejects every setting change, including the ones the client and the test
+# runner send along with each statement (`send_logs_level`, `log_comment`, the randomized settings),
+# which would be rejected before the reset under test. The check therefore goes over HTTP with a
+# session and a bare URL that carries nothing but the session id.
+SESSION="s_05023_${CLICKHOUSE_DATABASE}_$$"
+SESSION_URL="${CLICKHOUSE_URL%%\?*}?session_id=${SESSION}"
+${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SET SQL_probe_05023 = 1"
+${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SET readonly = 1"
+${CLICKHOUSE_CURL} -sS "${SESSION_URL}" -d "SET SQL_probe_05023 = DEFAULT" 2>&1 | grep -o "Cannot modify 'SQL_probe_05023' setting in readonly mode" | head -1
 # An unknown setting is still silently ignored rather than reported
 ${CLICKHOUSE_CLIENT} -q "SET nonexistent_setting_05023 = DEFAULT; SELECT 'unknown setting ignored'"
 
