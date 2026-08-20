@@ -444,6 +444,76 @@ def test_toast_restore_with_defaulted_replica_identity_skips_table(started_clust
     pg_manager.drop_materialized_db()
 
 
+def test_toast_restore_with_missing_source_row_skips_table(started_cluster):
+    table = "test_toast_missing_source_row"
+    other_table = "test_toast_missing_source_row_other"
+    pg_manager.create_postgres_table(
+        table,
+        "",
+        """CREATE TABLE "{}" (id text PRIMARY KEY, toast_value text, other text)""",
+    )
+    pg_manager.create_postgres_table(
+        other_table,
+        "",
+        """CREATE TABLE "{}" (id integer PRIMARY KEY, other text)""",
+    )
+    pg_manager.execute(
+        f"ALTER TABLE {table} ALTER COLUMN toast_value SET STORAGE EXTERNAL"
+    )
+    pg_manager.create_materialized_db(
+        ip=started_cluster.postgres_ip,
+        port=started_cluster.postgres_port,
+        settings=[
+            f"materialized_postgresql_tables_list = '{table},{other_table}'",
+            "materialized_postgresql_backoff_min_ms = 100",
+            "materialized_postgresql_backoff_max_ms = 100",
+        ],
+        table_overrides=f" TABLE OVERRIDE {table} (COLUMNS (id UInt8, toast_value String, other String))",
+    )
+
+    pg_manager.execute(
+        f"INSERT INTO {table} VALUES ('1', repeat('a', 30000), 'initial')"
+    )
+    pg_manager.execute(f"INSERT INTO {other_table} VALUES (1, 'initial')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "initial\n"
+    )
+
+    # The replica identity is a PostgreSQL `text` column mapped to `UInt8`, so the
+    # two distinct PostgreSQL keys '1' and '01' become the same key in the nested
+    # table. Deleting '01' therefore deletes the nested row that backs the row
+    # still present in PostgreSQL under the key '1', which is the out-of-sync
+    # shape this branch has to survive.
+    pg_manager.execute(f"INSERT INTO {table} VALUES ('01', 'shadow value', 'shadow')")
+    assert_eq_with_retry(
+        instance, f"SELECT other FROM test_database.{table}", "shadow\n"
+    )
+    pg_manager.execute(f"DELETE FROM {table} WHERE id = '01'")
+    assert_eq_with_retry(instance, f"SELECT count() FROM test_database.{table}", "0\n")
+
+    # The row is gone from the nested table, so the unchanged `TOAST` value of
+    # this update cannot be restored from anywhere. Only this table may be
+    # skipped, the other replicated table has to keep advancing.
+    pg_manager.execute(f"UPDATE {table} SET other = 'updated' WHERE id = '1'")
+    pg_manager.execute(f"UPDATE {other_table} SET other = 'updated'")
+    check_tables_are_synchronized(
+        instance,
+        other_table,
+        postgres_database=pg_manager.get_default_database(),
+        order_by="id",
+    )
+    assert (
+        instance.query(f"SELECT other FROM test_database.{other_table}") == "updated\n"
+    )
+    assert_logs_contain_with_retry(
+        instance,
+        f"Table {table} is skipped from replication because an unchanged TOAST value cannot be restored",
+    )
+    assert instance.query(f"SELECT count() FROM test_database.{table}") == "0\n"
+
+    pg_manager.drop_materialized_db()
+
+
 def test_toast_in_changed_composite_replica_identity(started_cluster):
     table = "test_toast_in_changed_composite_replica_identity"
     pg_manager.create_postgres_table(
