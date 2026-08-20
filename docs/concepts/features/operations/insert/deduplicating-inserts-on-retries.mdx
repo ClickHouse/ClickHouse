@@ -111,7 +111,12 @@ The setting `deduplicate_insert_select` chooses what to do:
 
 `enable_when_possible` and `enable_even_for_bad_queries` also honor `deduplicate_insert`: if it is `disable`, the query isn't deduplicated. `force_enable` overrides `deduplicate_insert`.
 
-Keep in mind that the selected table can be updated between retries. The result data then changes and deduplication doesn't occur. Additionally, when you insert large amounts of data, the number of blocks can overflow the deduplication log window, and ClickHouse won't know to deduplicate the blocks.
+Keep in mind that the selected table can be updated between retries. The two paths then behave in opposite ways:
+
+- Without `insert_deduplication_token`, the `block_id`s are computed from the data. The changed result produces different `block_id`s, deduplication doesn't occur, and the retry inserts the new data on top of whatever the first attempt already wrote.
+- With `insert_deduplication_token`, the token alone identifies the insert. The retry is recognized as a duplicate and is dropped, even though it would have inserted different data.
+
+Choose the path that matches what you want a retry to mean. Additionally, when you insert large amounts of data, the number of blocks can overflow the deduplication log window, and ClickHouse won't know to deduplicate the blocks.
 
 ## Deduplication for asynchronous inserts {#deduplication-for-asynchronous-inserts}
 
@@ -123,7 +128,7 @@ Before version 26.2, deduplication of asynchronous inserts was disabled by defau
 
 ### Deduplication granularity {#asynchronous-insert-deduplication-granularity}
 
-The server collects several asynchronous inserts into one batch and writes that batch as a single part. Deduplication works per user query, not per batch:
+The server collects several asynchronous inserts into one batch and writes that batch as one or more parts, at least one per distinct partition key value. Deduplication works per user query, not per batch:
 
 - Each queued query contributes one deduplication token to the batch.
 - A token is either the value of `insert_deduplication_token`, when the query provides one, or a hash of the rows that this query contributed.
@@ -131,16 +136,16 @@ The server collects several asynchronous inserts into one batch and writes that 
 
 This has two consequences:
 
-- When one query in a batch is a duplicate, ClickHouse removes only the rows of that query. The rest of the batch is inserted normally. The part is skipped entirely only when every row is removed.
-- When two queries in the same batch carry the same token, the second one is dropped before the part is written.
+- When one query in a batch is a duplicate, ClickHouse removes only the rows of that query. The rest of the batch is inserted normally. A part is skipped entirely only when every row in it is removed.
+- When two queries in the same batch carry the same token, the second one is dropped before the part is written. This applies per partition: if the two queries write rows to different partitions, both survive.
 
 The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system.events`](/reference/system-tables/events) count these two cases.
 
 ### Asynchronous inserts and materialized views {#asynchronous-inserts-and-materialized-views}
 
-Deduplication of asynchronous inserts works together with dependent materialized views. One restriction applies: the inner query of a view must not produce more rows than it reads.
+Deduplication of asynchronous inserts works together with dependent materialized views. One restriction applies: the inner query of a view must not emit more than one block for one block of input. ClickHouse throws a `NOT_IMPLEMENTED` exception as soon as a view emits a second block.
 
-Column transformations, filtering, and aggregation are therefore all allowed, because none of them increases the row count. A `JOIN` that expands the result is not allowed. When a view inflates the row count, ClickHouse throws a `NOT_IMPLEMENTED` exception. To insert through such a view asynchronously, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
+In practice this means the view must not produce more rows than it reads. Column transformations, filtering, and aggregation stay within the restriction, because none of them increases the row count. A `JOIN` that expands the result does not. To insert through such a view asynchronously, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
 
 ## Insert deduplication with materialized views {#insert-deduplication-with-materialized-views}
 
