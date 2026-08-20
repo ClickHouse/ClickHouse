@@ -1974,7 +1974,23 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     /// definition (short attach, metadata load, backup restore) already records its spelling.
     if (!create.is_clone_as && !create.attach_short_syntax && !is_restore_from_backup
         && getContext()->getSettingsRef()[Setting::use_legacy_to_time])
+    {
         replaceLegacyToTimeInCreateQuery(query_ptr);
+
+        /// `properties` was derived before the rewrite, and the live table below is built from it while
+        /// the metadata written to disk comes from the rewritten query. `CREATE TABLE ... AS src` copies
+        /// the source column expressions verbatim, so without re-deriving them a `DEFAULT`, `MATERIALIZED`,
+        /// `ALIAS` or column `TTL` mentioning `toTime` would keep the source spelling in memory while the
+        /// metadata records `toTimeWithFixedDate`, and the same insert would produce different values
+        /// before and after a reload.
+        if (create.columns_list && create.columns_list->columns)
+        {
+            const bool check_defaults_over_virtual_columns
+                = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
+            properties.columns = getColumnsDescription(
+                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+        }
+    }
 
     DatabasePtr database;
     bool need_add_to_database = !create.isTemporary();
