@@ -11,6 +11,7 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -2833,6 +2834,13 @@ String FunctionArrayElement<mode>::getName() const
 template <ArrayElementExceptionMode mode>
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & arguments) const
 {
+    const bool arg_is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0]).get());
+
+    /// `useDefaultImplementationForNulls` is disabled for the whole overload set because of QBit
+    /// (see executeImpl). Reproduce the type of the default adapter for a NULL literal argument.
+    if (!arg_is_qbit && (arguments[0]->onlyNull() || arguments[1]->onlyNull()))
+        return makeNullable(std::make_shared<DataTypeNothing>());
+
     if (const auto * map_type = checkAndGetDataType<DataTypeMap>(arguments[0].get()))
     {
         auto value_type = recursiveRemoveLowCardinality(map_type->getValueType());
@@ -2910,9 +2918,6 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 
     auto nested_type = recursiveRemoveLowCardinality(array_type->getNestedType());
     auto index_type = removeNullable(removeLowCardinality(arguments[1]));
-    if (arguments[1]->onlyNull())
-        return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
-
     if (!isNativeInteger(index_type))
     {
         throw Exception(
@@ -2994,25 +2999,32 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 {
     const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
 
-    /// The regular nullable adapter would return NULL without evaluating the nested `Nothing`
-    /// column. Reproduce that behavior here because QBit handling disables the adapter for the
-    /// whole overload set.
-    if (!is_qbit && arguments[1].type->onlyNull())
-        return result_type->createColumnConstWithDefaultValue(input_rows_count);
-
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
     /// array-of-indices result: the result itself is an Array and cannot be wrapped in
-    /// Nullable. It is therefore handled by executeQBit below. For the established Array
-    /// and Map paths, retain the default convention for a non-nullable result: evaluate
-    /// the function on the nested index without turning the result into Nullable.
-    if (!is_qbit && arguments[1].type->isNullable())
+    /// Nullable. It is therefore handled by executeQBit below, and `useDefaultImplementationForNulls`
+    /// is disabled for the whole overload set. The established Array and Map paths keep the
+    /// conventions of the default adapter, which are reproduced here.
+    if (!is_qbit)
     {
-        auto nested_arguments = arguments;
-        nested_arguments[1] = columnGetNested(arguments[1]);
-        auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
-        return result_type->isNullable()
-            ? wrapInNullable(result, arguments, result_type, input_rows_count)
-            : result;
+        /// A NULL literal argument makes the result a NULL constant, without evaluating the function.
+        if (arguments[0].type->onlyNull() || arguments[1].type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+        if (arguments[1].type->isNullable())
+        {
+            /// The same for a constant NULL of a nullable type, as long as the result can hold a NULL.
+            if (result_type->isNullable() && isColumnConst(*arguments[1].column) && arguments[1].column->onlyNull())
+                return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
+            /// For a non-nullable result the convention is to evaluate the function on the nested index
+            /// without turning the result into Nullable.
+            auto nested_arguments = arguments;
+            nested_arguments[1] = columnGetNested(arguments[1]);
+            auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
+            return result_type->isNullable()
+                ? wrapInNullable(result, arguments, result_type, input_rows_count)
+                : result;
+        }
     }
 
     if (is_qbit)

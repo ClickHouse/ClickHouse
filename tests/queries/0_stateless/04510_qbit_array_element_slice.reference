@@ -61,3 +61,11 @@ Nullable(Float32)	Nullable(QBit(Float32, 2))
 MergeTree round trip
 1	9	[9,10,11,12,13,14,15,16]
 2	25	[25,26,27,28,29,30,31,32]
+NULL arguments of the non-QBit paths keep the default conventions
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(Nothing)
+\N	Nullable(UInt8)
+20	Nullable(UInt8)
+\N	Nullable(UInt8)
+\N	Nullable(String)

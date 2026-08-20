@@ -88,4 +88,13 @@ INSERT INTO qbit_mt VALUES (1, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 1
 SELECT id, vec[9], arraySlice(vec, 9, 8) FROM qbit_mt ORDER BY id;
 DROP TABLE qbit_mt;
 
+SELECT 'NULL arguments of the non-QBit paths keep the default conventions';
+SELECT NULL[1] AS v, toTypeName(v);
+SELECT [10, 20][NULL] AS v, toTypeName(v);
+SELECT map('a', 'b')[NULL] AS v, toTypeName(v);
+SELECT materialize([10, 20])[CAST(NULL, 'Nullable(UInt8)')] AS v, toTypeName(v);
+SELECT materialize([10, 20])[CAST(2, 'Nullable(UInt8)')] AS v, toTypeName(v);
+SELECT materialize([10, 20])[materialize(CAST(NULL, 'Nullable(UInt8)'))] AS v, toTypeName(v);
+SELECT materialize(map('a', 'b'))[CAST(NULL, 'Nullable(String)')] AS v, toTypeName(v);
+
 DROP TABLE qbit;
