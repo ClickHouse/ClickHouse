@@ -99,6 +99,13 @@ private:
 
     ServerSettings server_settings;
 
+    /// The `default_format` value `applyCmdOptions` seeded on `global_context` for the sessions of
+    /// the embedded protocol listeners. `makeFormatOptionsPrivateToTheClient` compares against it to
+    /// tell the synthetic seed apart from a `default_format` legitimately set by the default profile
+    /// (which `setDefaultProfiles` applies on top of the seed): only the untouched seed is reset on
+    /// `client_context`.
+    String listener_default_format_seed;
+
     /// Host passed explicitly via the `--listen_host` command-line option, if any. Stored separately
     /// from the configuration because it must act as a hard override: `config.setString("listen_host", ...)`
     /// would only replace the first `listen_host` key, leaving lower-priority repeated `listen_host[...]`

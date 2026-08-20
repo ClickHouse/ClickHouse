@@ -118,6 +118,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsString default_format;
     extern const SettingsSeconds http_receive_timeout;
     extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool implicit_select;
@@ -1959,7 +1960,16 @@ void LocalServer::makeFormatOptionsPrivateToTheClient()
     /// `--default_format` on the command line is left in place, and a later
     /// `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
     /// and keeps working.
-    if (!cmd_settings->isChanged("default_format"))
+    ///
+    /// Only the untouched synthetic seed is reset. A `default_format` set by the default profile
+    /// (`setDefaultProfiles` runs after `applyCmdOptions` and overwrites the seed) is a deliberate
+    /// user default and keeps its role in the per-query format resolution, mirroring how the
+    /// `database` and `format` settings preserve profile-provided values above. A profile value
+    /// that happens to equal the seed is indistinguishable from it and is reset too - harmless for
+    /// batch output (the fallback is the same value), it only restores the `PrettyCompact` display
+    /// default on a terminal.
+    if (!cmd_settings->isChanged("default_format")
+        && client_context->getSettingsRef()[Setting::default_format].value == listener_default_format_seed)
         client_context->resetSettingsToDefaultValue({"default_format"});
 }
 
@@ -1983,7 +1993,8 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// (for example, the version query used during the connection handshake). The interactive
     /// terminal default is only for rendering query results and is applied separately via
     /// `ClientBase::default_output_format`.
-    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
+    listener_default_format_seed = getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV"));
+    context->setSetting("default_format", listener_default_format_seed);
 
     /// This runs before `setDefaultProfiles`, which snapshots the context for the separate Buffer-table
     /// context, so the command-line settings have to be in place already. They are applied a second
