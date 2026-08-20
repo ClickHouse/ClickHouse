@@ -105,15 +105,13 @@ TEST(MemoryPressureMonitor, SetThresholdsRejectsInvalid)
     FakeMemoryPressureMonitor fake(0.80, SECOND);
     ScopedMemoryPressureMonitor scope(fake);
 
-    /// Out-of-range (any single value > 100) throws — previously wrapped
-    /// silently through `uint8_t` at the call site (e.g. 300 → 44).
+    /// Out-of-range (any single value > 100) throws.
     EXPECT_THROW(fake.setThresholds(101, 90, 95), DB::Exception);
     EXPECT_THROW(fake.setThresholds(75, 101, 95), DB::Exception);
     EXPECT_THROW(fake.setThresholds(75, 90, 101), DB::Exception);
     EXPECT_THROW(fake.setThresholds(300, 90, 95), DB::Exception);
 
-    /// Non-monotonic (level_1 > level_2 etc.) throws — previously silently
-    /// sorted, masking config typos.
+    /// Non-monotonic (elevated > high etc.) throws.
     EXPECT_THROW(fake.setThresholds(90, 75, 95), DB::Exception);
     EXPECT_THROW(fake.setThresholds(75, 95, 90), DB::Exception);
 
@@ -171,10 +169,8 @@ TEST(MemoryPressureMonitor, LevelForPressureIsStatelessThresholdMap)
     EXPECT_EQ(m.levelForPressure(0.10), MemoryPressureLevel::Normal);
 }
 
-/// The query-level (`Process`) limit governs when it is the most constraining,
-/// and the walk reacts to it directly — this is the signal the total-only
-/// reader used to miss. Root chain at `parent == nullptr` (non-Global) so the
-/// test allocates no real global memory.
+/// The walk reacts to the query-level (`Process`) limit when it is the most constraining. Root chain
+/// at `parent == nullptr` (non-Global) so the test allocates no real global memory.
 TEST(MemoryPressureMonitor, LocalPressureUsesQueryLevelLimit)
 {
     EXPECT_DOUBLE_EQ(localMemoryPressureFromChain(nullptr), 0.0);
@@ -243,9 +239,9 @@ TEST(MemoryPressureMonitor, SetThresholdsReflectedInLevelForPressure)
     m.setThresholds(50, 70, 90);
 
     const auto th = m.getThresholds();
-    EXPECT_EQ(th.l1_pct, 50u);
-    EXPECT_EQ(th.l2_pct, 70u);
-    EXPECT_EQ(th.l3_pct, 90u);
+    EXPECT_EQ(th.elevated_pct, 50u);
+    EXPECT_EQ(th.high_pct, 70u);
+    EXPECT_EQ(th.critical_pct, 90u);
 
     EXPECT_EQ(m.levelForPressure(0.40), MemoryPressureLevel::Normal);
     EXPECT_EQ(m.levelForPressure(0.55), MemoryPressureLevel::Elevated);

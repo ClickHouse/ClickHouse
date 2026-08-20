@@ -99,13 +99,8 @@ public:
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
-    /// Sticky level for THIS group's transient memory pressure (per-query /
-    /// per-user tracker chain), so pressure-scaled consumers do not flap on
-    /// the query's own alloc/free cycles at a threshold. Scoped to the group
-    /// on purpose: the state dies with the query and follows its threads (and
-    /// fibers) across carriers - a thread-scoped machine would leak one
-    /// query's spike into the next query on the pool thread. Classification
-    /// stays on the global monitor's ladder; this machine only cools down.
+    /// Cooldown state for this query's memory pressure, scoped to the group so it dies with the query
+    /// and does not leak into the next query on a pool thread. Classification stays on the global ladder.
     PressureLevelMachine memory_pressure_machine{PressureLevelMachine::QUERY_COOLDOWN_NS};
 
     struct SharedData

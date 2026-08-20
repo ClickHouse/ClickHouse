@@ -42,10 +42,7 @@ MemoryPressureLevel PressureLevelMachine::levelForPressure(double pressure) cons
 MemoryPressureLevel PressureLevelMachine::sample(double pressure, uint64_t now_ns)
 {
     std::lock_guard lk(mutex);
-
-    /// Classify under the lock: a concurrent `setThresholds` swaps the ladder and
-    /// resets the cooldown under this same lock, so the thresholds can't change
-    /// between this classification and the cooldown update below.
+    /// Classify under the lock so a concurrent `setThresholds` can't swap the ladder mid-update.
     return stickUnlocked(rawLevel(pressure), now_ns);
 }
 
@@ -65,8 +62,7 @@ MemoryPressureLevel PressureLevelMachine::stickUnlocked(uint8_t raw_level, uint6
     }
     else if (level > 0 && now_ns >= last_at_or_above_ns + cooldown_ns)
     {
-        /// Step down by ONE level per cooldown — a CRITICAL → NORMAL recovery
-        /// needs ≥ 3 × cooldowns of sustained low pressure.
+        /// Step down one level per cooldown, so a `Critical` -> `Normal` recovery needs >= 3 cooldowns.
         level -= 1;
         last_at_or_above_ns = now_ns;
     }
@@ -76,40 +72,32 @@ MemoryPressureLevel PressureLevelMachine::stickUnlocked(uint8_t raw_level, uint6
     return static_cast<MemoryPressureLevel>(level);
 }
 
-void validateMemoryPressureThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
+void validateMemoryPressureThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
 {
-    /// Validate range and ordering loudly. Silent clamping/sorting (the
-    /// previous behavior) hid config typos — e.g. `300` would wrap to `44`
-    /// through `uint8_t` at the call site and then look valid here, so the
-    /// server would silently apply a wrong threshold ladder.
-    if (l1_pct > 100 || l2_pct > 100 || l3_pct > 100)
+    if (elevated_pct > 100 || high_pct > 100 || critical_pct > 100)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Memory pressure thresholds must be in [0, 100], got "
-            "level_1={}, level_2={}, level_3={}",
-            l1_pct, l2_pct, l3_pct);
-    if (!(l1_pct <= l2_pct && l2_pct <= l3_pct))
+            "elevated={}, high={}, critical={}",
+            elevated_pct, high_pct, critical_pct);
+    if (!(elevated_pct <= high_pct && high_pct <= critical_pct))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Memory pressure thresholds must satisfy level_1 <= level_2 <= level_3, got "
-            "level_1={}, level_2={}, level_3={}",
-            l1_pct, l2_pct, l3_pct);
+            "Memory pressure thresholds must satisfy elevated <= high <= critical, got "
+            "elevated={}, high={}, critical={}",
+            elevated_pct, high_pct, critical_pct);
 }
 
-void PressureLevelMachine::setThresholds(UInt64 l1_pct, UInt64 l2_pct, UInt64 l3_pct)
+void PressureLevelMachine::setThresholds(UInt64 elevated_pct, UInt64 high_pct, UInt64 critical_pct)
 {
-    validateMemoryPressureThresholds(l1_pct, l2_pct, l3_pct);
+    validateMemoryPressureThresholds(elevated_pct, high_pct, critical_pct);
 
-    /// Publish all three as one packed value so `rawLevel` never sees a
-    /// half-applied ladder.
-    const uint32_t packed = (static_cast<uint32_t>(l1_pct) << 16)
-                          | (static_cast<uint32_t>(l2_pct) << 8)
-                          | static_cast<uint32_t>(l3_pct);
+    /// Pack all three so `rawLevel` never sees a half-applied ladder.
+    const uint32_t packed = (static_cast<uint32_t>(elevated_pct) << 16)
+                          | (static_cast<uint32_t>(high_pct) << 8)
+                          | static_cast<uint32_t>(critical_pct);
 
     std::lock_guard lk(mutex);
     thresholds_packed.store(packed, std::memory_order_relaxed);
-    /// Reset the cooldown under the same lock `sample` uses: a level classified
-    /// under the old ladder must not stick after the ladder changes. The next
-    /// `sample` reclassifies (snap-up is immediate, so genuinely-high pressure
-    /// re-escalates at once rather than waiting out a stale cooldown).
+    /// Reset the cooldown so a level classified under the old ladder can't stick.
     level = 0;
     last_at_or_above_ns = 0;
 }
@@ -148,9 +136,7 @@ double localMemoryPressureFromChain(MemoryTracker * start)
     double worst = 0.0;
     for (MemoryTracker * t = start; t != nullptr; t = t->getParent())
     {
-        /// The server total (`Global`) is handled by the cooldown-smoothed
-        /// total-pressure path; here we react only to the transient per-query
-        /// (`Process`) and per-user (`User`) limits.
+        /// `Global` is handled by the total-pressure path; react only to `Process`/`User` here.
         if (t->level == VariableContext::Global)
             continue;
         worst = std::max(worst, t->getPressure());
@@ -161,14 +147,10 @@ double localMemoryPressureFromChain(MemoryTracker * start)
 MemoryPressureLevel MemoryPressureMonitor::currentLevel()
 {
     const uint64_t now_ns = steadyNowNs();
-    /// Server-wide pressure keeps its 60s sticky-downward cooldown.
     const MemoryPressureLevel total_level = machine.sample(readTotalPressure(), now_ns);
 
-    /// Per-query / per-user pressure: classified on the global ladder, cooled
-    /// down on the THREAD GROUP's own machine - the sticky state is scoped to
-    /// the query (it dies with the group and follows its threads and fibers),
-    /// with the shorter query cooldown. A group-less thread has nowhere to
-    /// scope sticky state to and classifies transiently, as before.
+    /// Per-query/per-user pressure: classified on the global ladder but cooled down on the group's own
+    /// machine, so the sticky state is scoped to the query. A group-less thread classifies transiently.
     const double local_pressure = localMemoryPressureFromChain(CurrentThread::getMemoryTracker());
     const MemoryPressureLevel local_raw = machine.levelForPressure(local_pressure);
     MemoryPressureLevel local_level = local_raw;
@@ -188,8 +170,7 @@ MemoryPressureLevel FakeMemoryPressureMonitor::currentLevel()
 namespace
 {
 
-/// Atomic pointer to the active monitor. Production never writes after
-/// first init; tests swap it via `ScopedMemoryPressureMonitor`.
+/// The active monitor; tests swap it via `ScopedMemoryPressureMonitor`.
 std::atomic<IMemoryPressureMonitor *> & activeMonitorSlot()
 {
     static std::atomic<IMemoryPressureMonitor *> slot{nullptr};
@@ -211,9 +192,7 @@ IMemoryPressureMonitor & memoryPressureMonitor()
     if (current)
         return *current;
 
-    /// First access: install the production singleton. Concurrent first
-    /// callers all reference the same Meyers singleton; `compare_exchange`
-    /// ensures only one wins the slot, the rest pick up that value.
+    /// First access installs the production singleton; `compare_exchange` picks one winner.
     auto * production = &productionInstance();
     IMemoryPressureMonitor * expected = nullptr;
     slot.compare_exchange_strong(expected, production, std::memory_order_acq_rel);
@@ -222,9 +201,7 @@ IMemoryPressureMonitor & memoryPressureMonitor()
 
 ScopedMemoryPressureMonitor::ScopedMemoryPressureMonitor(IMemoryPressureMonitor & override_monitor)
 {
-    /// Force the production singleton to be constructed and slotted so the
-    /// dtor can restore it even if nothing called `memoryPressureMonitor()`
-    /// before this scope was entered.
+    /// Ensure the production singleton is slotted so the dtor can restore it.
     (void)memoryPressureMonitor();
     prior = activeMonitorSlot().exchange(&override_monitor, std::memory_order_acq_rel);
 }

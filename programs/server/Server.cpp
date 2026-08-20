@@ -350,9 +350,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_read_connections;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_1_pct;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_2_pct;
-    extern const ServerSettingsUInt64 reader_executor_memory_pressure_level_3_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_elevated_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_high_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_critical_level_pct;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -2688,14 +2688,11 @@ try
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
 
-            /// Reject an invalid memory-pressure threshold triple BEFORE applying any
-            /// live setting below: `setThresholds` validates too, but it runs after the
-            /// pools/throttlers/workloads are already reloaded, so a late throw would
-            /// leave those earlier settings from the same rejected reload published.
+            /// Validate before applying any live setting below, so an invalid triple rejects the whole reload.
             validateMemoryPressureThresholds(
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2969,12 +2966,11 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
 
-            /// Apply the thresholds (already validated above, so this won't throw)
-            /// to the global memory-pressure monitor read by `ReaderExecutor`.
+            /// Already validated above, so this won't throw.
             memoryPressureMonitor().setThresholds(
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_1_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_2_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_level_3_pct]);
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             if (config().has("resources") || config().has("workload_classifiers"))
             {

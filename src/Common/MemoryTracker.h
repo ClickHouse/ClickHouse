@@ -204,10 +204,7 @@ public:
         return soft_limit.load(std::memory_order_relaxed);
     }
 
-    /// Current memory pressure for THIS tracker: `amount / hard_limit`, or 0 when
-    /// there is no hard limit (or no usage). Lock-free (two relaxed atomic loads);
-    /// computed on read rather than maintained in `alloc`/`free` so the hot
-    /// allocation path stays untouched. Drives the `MemoryPressureMonitor`.
+    /// `amount / hard_limit` for this tracker, or 0 without a hard limit. Lock-free.
     double getPressure() const
     {
         const Int64 limit = hard_limit.load(std::memory_order_relaxed);

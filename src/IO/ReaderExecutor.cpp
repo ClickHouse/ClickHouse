@@ -43,21 +43,19 @@ namespace ErrorCodes
 namespace
 {
 
-/// The read window and block sizes to use at a given memory-pressure level. Under pressure the
-/// executor reads less at once, so its in-flight buffers hold less memory.
+/// The read window and block sizes at a given memory-pressure level.
 struct WindowAndBlock
 {
     size_t window_bytes;
     size_t block_bytes;
 };
 
-/// Divisors applied to the base window/block per level: `Normal` keeps the base sizes, higher
-/// levels shrink both. Indexed by `MemoryPressureLevel` (Normal, Elevated, High, Critical).
+/// Divisors applied to the base window/block, indexed by `MemoryPressureLevel`.
 constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
 constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()] = {1, 2, 2, 8};
 
-/// Shrink `base_window` / `base_block` for `pressure`, never below `FLOOR` and never above the base;
-/// the block is also capped at the window. A too-small window would stall progress, hence the floor.
+/// Shrink the base sizes for `pressure`, floored at `FLOOR` and capped at the base; the block is
+/// also capped at the window.
 WindowAndBlock sizesAtPressure(MemoryPressureLevel pressure, size_t base_window, size_t base_block)
 {
     static constexpr size_t FLOOR = 128ULL << 10;
@@ -409,8 +407,7 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     const StoredObject & object = start_piece.front().object;
     const size_t object_offset = start_piece.front().object_offset;
 
-    /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
-    /// `serve_block` is the pressure-adjusted block size (<= the base `block_size`).
+    /// Serve one `serve_block` from `window_offset`, capped by the window and by what is available up to `end`.
     auto serve_len = [&](size_t end) { return std::min({serve_block, max_serve, end - window_offset}); };
 
     /// A populating miss carries its own open writer; a bypass tier's miss is writer-less. `claim` is
@@ -657,8 +654,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_physical = toPhysical(position);
 
-    /// Shrink the window and block under memory pressure so in-flight buffers hold less. Sample the
-    /// level once per window; a `Normal` level keeps the base sizes.
+    /// Sample the pressure level once per window; `Normal` keeps the base sizes.
     const MemoryPressureLevel pressure = memoryPressureMonitor().currentLevel();
     const WindowAndBlock sizes = sizesAtPressure(pressure, window_size, block_size);
 
