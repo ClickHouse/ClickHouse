@@ -28,7 +28,7 @@ USING length(vec) = 2 AS RESTRICTIVE TO ALL;
 SELECT id FROM tab_vec_row_policy
 ORDER BY L2Distance(vec, [0., 2.]) ASC
 LIMIT 3
-SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0;
+SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0;
 
 -- `selectRangesToRead` may defer the row policy for FINAL before the optimizer's second pass.
 SELECT id FROM tab_vec_row_policy FINAL
@@ -69,9 +69,10 @@ SELECT count() FROM
     EXPLAIN SELECT id FROM tab_vec_row_policy
     ORDER BY L2Distance(vec, [0., 2.]) ASC
     LIMIT 3
-    SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0
+    SETTINGS vector_search_with_rescoring = 0, query_plan_optimize_lazy_materialization = 0, make_distributed_plan = 0
 )
-WHERE explain LIKE '%Sort description: sqrt(_distance)%';
+WHERE explain LIKE '%Sort description: sqrt(_distance)%'
+SETTINGS make_distributed_plan = 0;
 
 -- With `FINAL`, this non-consuming policy is deferred and replayed by `FilterTransform`. Its
 -- redundant vector-column passthrough must be pruned there as well, so the no-rescoring rewrite
@@ -86,7 +87,8 @@ WHERE explain LIKE '%Sort description: sqrt(_distance)%'
 SETTINGS
     vector_search_with_rescoring = 0,
     query_plan_optimize_lazy_materialization = 0,
-    use_skip_indexes_if_final = 1;
+    use_skip_indexes_if_final = 1,
+    make_distributed_plan = 0;
 
 -- Materializing a decorrelated correlated subquery clones the common subplan. One cloned read
 -- applies the no-rescoring rewrite, while its sibling still replays the deferred row policy.
@@ -106,7 +108,8 @@ SETTINGS
     correlated_subqueries_use_in_memory_buffer = 0,
     vector_search_with_rescoring = 0,
     query_plan_optimize_lazy_materialization = 0,
-    use_skip_indexes_if_final = 1;
+    use_skip_indexes_if_final = 1,
+    make_distributed_plan = 0;
 
 DROP TABLE tab_vec_row_policy_keys;
 
