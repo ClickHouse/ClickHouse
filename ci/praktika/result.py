@@ -369,13 +369,37 @@ class Result(MetaClasses.Serializable):
         if not self.info:
             total = 0
             fail_cnt = 0
+            failed_steps = []
             for r in self.results:
                 if not r.is_ok():
                     fail_cnt += 1
+                    if r.info:
+                        failed_steps.append(self._trim_step_info(f"{r.name}: {r.info}"))
                 total += 1
-            self.set_info(f"Failures: {fail_cnt}/{total}")
+            self.set_info("\n".join([f"Failures: {fail_cnt}/{total}"] + failed_steps))
 
         return self
+
+    @staticmethod
+    def _trim_step_info(line):
+        """Bounds one failed-step line, keeping both of its ends.
+
+        A step payload carries its cause either near the front (the
+        error-centered excerpt of ``from_commands_run``) or at the very tail
+        (its plain last-N excerpt), so trimming one end alone can drop the
+        cause. The head also carries the step name, which is the only
+        identifying text a job-level row has.
+
+        The bound sits above the widest shape ``from_commands_run`` produces
+        (300 retained lines, about 26 KB), so an ordinary step log is named
+        whole and only a step with pathologically long single lines is cut.
+        """
+        MAX_STEP_INFO_LEN = 32768
+        if len(line) <= MAX_STEP_INFO_LEN:
+            return line
+        half = MAX_STEP_INFO_LEN // 2
+        dropped = len(line) - 2 * half
+        return line[:half] + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + line[-half:]
 
     @classmethod
     def file_name_static(cls, name):
