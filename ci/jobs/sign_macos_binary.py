@@ -3,7 +3,6 @@ import json
 import os
 import struct
 import subprocess
-import urllib.request
 from pathlib import Path
 
 from ci.praktika.info import Info
@@ -48,59 +47,33 @@ MAX_SIZE_GROWTH_BYTES = 32 * 1024 * 1024
 
 
 def assume_signing_role():
-    # Exchange the GitHub Actions OIDC token for short-lived signing creds.
-    # The workflow grants id-token via permissions: write-all. NOTE: this only
-    # swaps env creds; the runner instance role stays reachable via IMDS.
-    req_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-    req_tok = os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-    request = urllib.request.Request(
-        f"{req_url}&audience=sts.amazonaws.com",
-        headers={"Authorization": f"Bearer {req_tok}"},
-    )
-    web_identity_token = json.loads(
-        urllib.request.urlopen(request, timeout=30).read().decode()
-    )["value"]
-    assert web_identity_token, "empty OIDC token from GitHub"
-    TEMP_DIR.mkdir(parents=True, exist_ok=True)
-    token_file = TEMP_DIR / "gh_oidc_token"
-    # The token is a bearer credential that can assume the signing role. Write it
-    # 0600 with O_EXCL|O_NOFOLLOW (drop any stale/pre-planted entry first) so a
-    # co-tenant can't read it or redirect the write via a symlink, and always
-    # remove it afterwards.
-    token_file.unlink(missing_ok=True)
-    fd = os.open(
-        token_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
-    )
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(web_identity_token)
-        creds = json.loads(
-            subprocess.check_output(
-                [
-                    "aws",
-                    "sts",
-                    "assume-role-with-web-identity",
-                    "--role-arn",
-                    SIGNING_ROLE_ARN,
-                    "--role-session-name",
-                    "macos-signing",
-                    "--web-identity-token",
-                    f"file://{token_file}",
-                    "--region",
-                    KMS_REGION,
-                    "--query",
-                    "Credentials",
-                    "--output",
-                    "json",
-                ]
-            )
+    # Assume the signing role in the security account. This job runs on the
+    # dedicated release-runner pool, whose instance role (release_runner) is
+    # the only principal release_signing trusts. We just swap the env creds for
+    # the short-lived signing creds; the instance role stays reachable via IMDS.
+    creds = json.loads(
+        subprocess.check_output(
+            [
+                "aws",
+                "sts",
+                "assume-role",
+                "--role-arn",
+                SIGNING_ROLE_ARN,
+                "--role-session-name",
+                "macos-signing",
+                "--region",
+                KMS_REGION,
+                "--query",
+                "Credentials",
+                "--output",
+                "json",
+            ]
         )
-    finally:
-        token_file.unlink(missing_ok=True)
+    )
     os.environ["AWS_ACCESS_KEY_ID"] = creds["AccessKeyId"]
     os.environ["AWS_SECRET_ACCESS_KEY"] = creds["SecretAccessKey"]
     os.environ["AWS_SESSION_TOKEN"] = creds["SessionToken"]
-    print("Assumed signing role via GitHub OIDC")
+    print("Assumed signing role")
 
 
 def report_tooling():
