@@ -350,7 +350,16 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     join->addBlockToJoin(block_to_insert, true);
 }
 
-void StorageJoin::rebuildFromBackups()
+void StorageJoin::checkInsertIsPossible(ContextPtr context) const
+{
+    /// Protection from `INSERT INTO test_table_join SELECT * FROM test_table_join`: the write lock
+    /// cannot be taken while the same query holds a read lock on this table.
+    if (!tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context))
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
+}
+
+void StorageJoin::rebuildFromBackups(ContextPtr context)
 {
     auto rebuilt_join = std::make_shared<HashJoin>(table_join, std::make_shared<const Block>(getRightSampleBlock()), overwrite);
     forEachBackupBlock([&](const Block & block)
@@ -360,7 +369,14 @@ void StorageJoin::rebuildFromBackups()
         rebuilt_join->addBlockToJoin(block_to_insert, true);
     });
 
-    TableLockHolder holder = tryLockTimedWithContext(rwlock, RWLockImpl::Write, nullptr);
+    /// Use the query id of the failed insert: waiting for a lock that the same query holds would
+    /// never finish, so fail instead of blocking until `lock_acquire_timeout`.
+    TableLockHolder holder = tryLockForCurrentQueryTimedWithContext(rwlock, RWLockImpl::Write, context);
+    if (!holder)
+        throw Exception(
+            ErrorCodes::DEADLOCK_AVOIDED,
+            "StorageJoin: cannot restore the state because current query tries to read from this storage");
+
     join = std::move(rebuilt_join);
 }
 

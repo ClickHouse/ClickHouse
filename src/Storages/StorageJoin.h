@@ -63,6 +63,8 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
+    void checkInsertIsPossible(ContextPtr context) const override;
+
     bool optimize(
         const ASTPtr & /*query*/,
         const StorageMetadataPtr & /*metadata_snapshot*/,
@@ -124,7 +126,7 @@ private:
     void insertBlock(const Block & block, ContextPtr context) override;
     void finishInsert() override {}
     size_t getSize(ContextPtr context) const override;
-    void rebuildFromBackups() override;
+    void rebuildFromBackups(ContextPtr context) override;
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
     static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);

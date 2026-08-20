@@ -33,6 +33,10 @@ public:
     Strings getDataPaths() const override { return {path}; }
     Disks getDataDisks() const override { return {disk}; }
 
+    /// Throw if the query behind `context` cannot update the live state, for example because it is
+    /// reading from this table. Checked before the staged backup of an `INSERT` is published.
+    virtual void checkInsertIsPossible(ContextPtr /*context*/) const {}
+
 protected:
     StorageSetOrJoinBase(
         DiskPtr disk_,
@@ -57,7 +61,7 @@ protected:
     void forEachBackupBlock(const std::function<void(const Block &)> & callback) const;
 
     /// Restore the live state after an insert failed while publishing its committed backup.
-    virtual void rebuildFromBackups() = 0;
+    virtual void rebuildFromBackups(ContextPtr context) = 0;
 
 private:
     void restoreFromFile(const String & file_path, ContextPtr context = nullptr);
@@ -105,7 +109,7 @@ private:
     void insertBlock(const Block & block, ContextPtr) override;
     void finishInsert() override;
     size_t getSize(ContextPtr) const override;
-    void rebuildFromBackups() override;
+    void rebuildFromBackups(ContextPtr) override;
 };
 
 }

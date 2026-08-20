@@ -149,7 +149,7 @@ void SetOrJoinSink::onException(std::exception_ptr)
 
     try
     {
-        table.rebuildFromBackups();
+        table.rebuildFromBackups(getContext());
     }
     catch (...)
     {
@@ -171,6 +171,11 @@ void SetOrJoinSink::consume(Chunk & chunk)
     {
         if (!backup_buf)
         {
+            /// The staged blocks are published to the live state only in `onFinish`. Check right away
+            /// that this query is allowed to update the state, so a query that reads from the same
+            /// table fails as early as it did when blocks were inserted one by one.
+            table.checkInsertIsPossible(getContext());
+
             backup_buf = table.disk->writeFile(fs::path(backup_tmp_path) / backup_file_name);
             compressed_backup_buf.emplace(*backup_buf);
             backup_stream.emplace(*compressed_backup_buf, 0, std::make_shared<const Block>(metadata_snapshot->getSampleBlock()));
@@ -186,6 +191,10 @@ void SetOrJoinSink::onFinish()
 {
     if (backup_buf)
     {
+        /// Fail before the staged file is promoted: publishing it and only then discovering that the
+        /// live state cannot be updated would leave the backup and the state out of sync.
+        table.checkInsertIsPossible(getContext());
+
         backup_stream->flush();
         compressed_backup_buf->finalize();
         backup_buf->finalize();
@@ -287,7 +296,7 @@ void StorageSet::finishInsert()
     current_set->finishInsert();
 }
 
-void StorageSet::rebuildFromBackups()
+void StorageSet::rebuildFromBackups(ContextPtr)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
     auto rebuilt_set = std::make_shared<Set>(SizeLimits(), 0, true);
