@@ -1,6 +1,8 @@
-as 1st argument 'latitude' to function 'geoToH3'. Expected: Float64, got: Float32
-as 2nd argument 'longitude' to function 'geoToH3'. Expected: Float64, got: Float32
-as 1st argument 'latitude' to function 'geoToH3'. Expected: Float64, got: BFloat16
-as 1st argument 'longitude' to function 'geoToH3'. Expected: Float64, got: Float32
-as 2nd argument 'latitude' to function 'geoToH3'. Expected: Float64, got: Float32
+Illegal type Float32 of argument 1 of function geoToH3
+Illegal type Float32 of argument 2 of function geoToH3
+Illegal type BFloat16 of argument 1 of function geoToH3
+Illegal type Float32 of argument 1 of function geoToH3
+Illegal type Float32 of argument 2 of function geoToH3
+kept
+kept
 644325524706363025

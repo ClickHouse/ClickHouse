@@ -34,12 +34,6 @@ namespace ErrorCodes
 namespace
 {
 
-/// Coordinate arguments are consumed as ColumnFloat64, so no other float type is acceptable.
-bool isFloat64Exactly(const IDataType & type)
-{
-    return WhichDataType(type).isFloat64();
-}
-
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
 /// and returns h3 index of this point
 class FunctionGeoToH3 final : public IFunction
@@ -65,12 +59,12 @@ public:
     {
         FunctionArgumentDescriptors mandatory_args = geotoh3_argument_order == GeoToH3ArgumentOrder::LON_LAT
             ? FunctionArgumentDescriptors{
-                {"longitude", &isFloat64Exactly, nullptr, "Float64"},
-                {"latitude", &isFloat64Exactly, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
                 {"resolution", &isUInt8, nullptr, "UInt8"}}
             : FunctionArgumentDescriptors{
-                {"latitude", &isFloat64Exactly, nullptr, "Float64"},
-                {"longitude", &isFloat64Exactly, nullptr, "Float64"},
+                {"latitude", &isFloat, nullptr, "Float64"},
+                {"longitude", &isFloat, nullptr, "Float64"},
                 {"resolution", &isUInt8, nullptr, "UInt8"}};
         validateFunctionArguments(*this, arguments, mandatory_args);
 
