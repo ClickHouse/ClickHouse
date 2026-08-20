@@ -10,6 +10,8 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
+#include <optional>
+#include <sstream>
 #include <unordered_set>
 #include <Core/SettingsEnums.h>
 #include "config.h"
@@ -36,6 +38,7 @@
 #include <Interpreters/Context.h>
 #include <filesystem>
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Server/HTTP/HTMLForm.h>
 #include <Formats/FormatFactory.h>
@@ -63,6 +66,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int NOT_IMPLEMENTED;
     extern const int CATALOG_NAMESPACE_DISABLED;
 }
 
@@ -74,6 +78,8 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_alter_catalog_update_schema_fail[];
+    extern const char iceberg_alter_catalog_commit_reported_as_failed[];
 }
 
 namespace ProfileEvents
@@ -186,6 +192,227 @@ std::unordered_set<std::string> getAllowedBigLakeMetadataServiceHosts(
 }
 
 
+}
+
+namespace
+{
+
+constexpr auto IDENTIFIER_FIELD_IDS = "identifier-field-ids";
+
+Poco::JSON::Object::Ptr cloneJsonObject(const Poco::JSON::Object::Ptr & obj)
+{
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    obj->stringify(oss);
+    Poco::JSON::Parser parser;
+    return parser.parse(oss.str()).extract<Poco::JSON::Object::Ptr>();
+}
+
+bool icebergJsonValueEquals(const Poco::Dynamic::Var & lhs, const Poco::Dynamic::Var & rhs);
+
+bool icebergJsonObjectEquals(const Poco::JSON::Object::Ptr & lhs, const Poco::JSON::Object::Ptr & rhs)
+{
+    if (lhs.isNull() || rhs.isNull())
+        return lhs.isNull() && rhs.isNull();
+    if (lhs->size() != rhs->size())
+        return false;
+    for (auto it = lhs->begin(); it != lhs->end(); ++it)
+    {
+        if (!rhs->has(it->first))
+            return false;
+        if (!icebergJsonValueEquals(it->second, rhs->get(it->first)))
+            return false;
+    }
+    return true;
+}
+
+bool icebergJsonArrayEquals(const Poco::JSON::Array::Ptr & lhs, const Poco::JSON::Array::Ptr & rhs)
+{
+    if (lhs.isNull() || rhs.isNull())
+        return lhs.isNull() && rhs.isNull();
+    if (lhs->size() != rhs->size())
+        return false;
+    for (UInt32 i = 0; i < lhs->size(); ++i)
+        if (!icebergJsonValueEquals(lhs->get(i), rhs->get(i)))
+            return false;
+    return true;
+}
+
+/// Structural, key-order-independent comparison of two parsed JSON values.
+bool icebergJsonValueEquals(const Poco::Dynamic::Var & lhs, const Poco::Dynamic::Var & rhs)
+{
+    const bool lhs_is_object = lhs.type() == typeid(Poco::JSON::Object::Ptr);
+    const bool rhs_is_object = rhs.type() == typeid(Poco::JSON::Object::Ptr);
+    if (lhs_is_object || rhs_is_object)
+    {
+        if (!(lhs_is_object && rhs_is_object))
+            return false;
+        return icebergJsonObjectEquals(lhs.extract<Poco::JSON::Object::Ptr>(), rhs.extract<Poco::JSON::Object::Ptr>());
+    }
+    const bool lhs_is_array = lhs.type() == typeid(Poco::JSON::Array::Ptr);
+    const bool rhs_is_array = rhs.type() == typeid(Poco::JSON::Array::Ptr);
+    if (lhs_is_array || rhs_is_array)
+    {
+        if (!(lhs_is_array && rhs_is_array))
+            return false;
+        return icebergJsonArrayEquals(lhs.extract<Poco::JSON::Array::Ptr>(), rhs.extract<Poco::JSON::Array::Ptr>());
+    }
+    return lhs.toString() == rhs.toString();
+}
+
+/// Two Iceberg schemas are equivalent when they differ only by their `schema-id`.
+/// `identifier-field-ids` is ignored as well: a schema committed through this catalog always
+/// carries it, while a freshly generated one does not, and an absent list means the same as an
+/// empty one.
+bool schemasEquivalentIgnoringId(const Poco::JSON::Object::Ptr & lhs, const Poco::JSON::Object::Ptr & rhs)
+{
+    Poco::JSON::Object::Ptr lhs_copy = cloneJsonObject(lhs);
+    Poco::JSON::Object::Ptr rhs_copy = cloneJsonObject(rhs);
+    for (auto * copy : {&lhs_copy, &rhs_copy})
+    {
+        (*copy)->remove(DB::Iceberg::f_schema_id);
+        if (auto identifier_field_ids = (*copy)->getArray(IDENTIFIER_FIELD_IDS);
+            identifier_field_ids.isNull() || identifier_field_ids->size() == 0)
+            (*copy)->remove(IDENTIFIER_FIELD_IDS);
+    }
+    return icebergJsonObjectEquals(lhs_copy, rhs_copy);
+}
+
+}
+
+Poco::JSON::Object::Ptr buildUpdateSchemaRequestBody(
+    const String & namespace_name,
+    const String & table_name,
+    Poco::JSON::Object::Ptr metadata,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id,
+    Int32 new_last_column_id)
+{
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+        request_body->set("identifier", identifier);
+    }
+
+    if (previous_schema_id >= 0)
+    {
+        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+        requirement->set("type", "assert-current-schema-id");
+        requirement->set("current-schema-id", previous_schema_id);
+
+        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+        requirements->add(requirement);
+        request_body->set("requirements", requirements);
+    }
+
+    Poco::JSON::Object::Ptr schema_for_rest = cloneJsonObject(new_schema);
+    if (!schema_for_rest->has(IDENTIFIER_FIELD_IDS))
+    {
+        Poco::JSON::Array::Ptr empty_identifier_field_ids = new Poco::JSON::Array;
+        schema_for_rest->set(IDENTIFIER_FIELD_IDS, empty_identifier_field_ids);
+    }
+
+    std::optional<Int32> existing_equivalent_schema_id;
+    if (metadata && metadata->has(DB::Iceberg::f_schemas))
+    {
+        auto schemas = metadata->getArray(DB::Iceberg::f_schemas);
+        auto new_schema_id = new_schema->getValue<Int32>(DB::Iceberg::f_schema_id);
+        for (UInt32 i = 0; i < schemas->size(); ++i)
+        {
+            auto existing_schema = schemas->getObject(i);
+            if (existing_schema->getValue<Int32>(DB::Iceberg::f_schema_id) == new_schema_id)
+                continue;
+            if (schemasEquivalentIgnoringId(existing_schema, new_schema))
+            {
+                existing_equivalent_schema_id = existing_schema->getValue<Int32>(DB::Iceberg::f_schema_id);
+                break;
+            }
+        }
+    }
+
+    Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+    if (existing_equivalent_schema_id.has_value())
+    {
+        Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+        set_current_schema->set("action", "set-current-schema");
+        set_current_schema->set("schema-id", *existing_equivalent_schema_id);
+        updates->add(set_current_schema);
+    }
+    else
+    {
+        {
+            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
+            add_schema->set("action", "add-schema");
+            add_schema->set("schema", schema_for_rest);
+            add_schema->set("last-column-id", new_last_column_id);
+            updates->add(add_schema);
+        }
+        {
+            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
+            set_current_schema->set("action", "set-current-schema");
+            set_current_schema->set("schema-id", -1);
+            updates->add(set_current_schema);
+        }
+    }
+
+    request_body->set("updates", updates);
+    return request_body;
+}
+
+Poco::JSON::Object::Ptr buildUpdateMetadataRequestBody(
+    const String & namespace_name, const String & table_name, Poco::JSON::Object::Ptr new_snapshot)
+{
+    if (!new_snapshot)
+        return nullptr;
+
+    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
+    {
+        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
+        identifier->set("name", table_name);
+        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
+        namespaces->add(namespace_name);
+        identifier->set("namespace", namespaces);
+
+        request_body->set("identifier", identifier);
+    }
+
+    if (new_snapshot->has("parent-snapshot-id"))
+    {
+        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
+        if (parent_snapshot_id != -1)
+        {
+            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
+            requirement->set("type", "assert-ref-snapshot-id");
+            requirement->set("ref", "main");
+            requirement->set("snapshot-id", parent_snapshot_id);
+
+            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
+            requirements->add(requirement);
+            request_body->set("requirements", requirements);
+        }
+    }
+
+    Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
+    {
+        Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
+        add_snapshot->set("action", "add-snapshot");
+        add_snapshot->set("snapshot", new_snapshot);
+        updates->add(add_snapshot);
+    }
+    {
+        Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
+        set_snapshot->set("action", "set-snapshot-ref");
+        set_snapshot->set("ref-name", "main");
+        set_snapshot->set("type", "branch");
+        set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
+        updates->add(set_snapshot);
+    }
+    request_body->set("updates", updates);
+
+    return request_body;
 }
 
 std::string RestCatalog::Config::toString() const
@@ -1454,7 +1681,7 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     {
         Poco::JSON::Object::Ptr initial_schema = metadata_content->getArray("schemas")->getObject(0);
         Poco::JSON::Array::Ptr identifier_fields = new Poco::JSON::Array;
-        initial_schema->set("identifier-field-ids", identifier_fields);
+        initial_schema->set(IDENTIFIER_FIELD_IDS, identifier_fields);
         request_body->set("schema", initial_schema);
     }
     request_body->set("partition-spec", metadata_content->getArray("partition-specs")->get(0));
@@ -1489,57 +1716,15 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
+    if (!new_snapshot)
+        throw DB::Exception(
+            DB::ErrorCodes::NOT_IMPLEMENTED,
+            "REST catalog does not support metadata-only updates without a snapshot "
+            "(required for EXPIRE SNAPSHOTS)");
+
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    if (new_snapshot->has("parent-snapshot-id"))
-    {
-        auto parent_snapshot_id = new_snapshot->getValue<Int64>("parent-snapshot-id");
-        if (parent_snapshot_id != -1)
-        {
-            Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-            requirement->set("type", "assert-ref-snapshot-id");
-            requirement->set("ref", "main");
-            requirement->set("snapshot-id", parent_snapshot_id);
-
-            Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-            requirements->add(requirement);
-
-            request_body->set("requirements", requirements);
-        }
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_snapshot = new Poco::JSON::Object;
-            add_snapshot->set("action", "add-snapshot");
-            add_snapshot->set("snapshot", new_snapshot);
-            updates->add(add_snapshot);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_snapshot = new Poco::JSON::Object;
-            set_snapshot->set("action", "set-snapshot-ref");
-            set_snapshot->set("ref-name", "main");
-            set_snapshot->set("type", "branch");
-            set_snapshot->set("snapshot-id", new_snapshot->getValue<Int64>("snapshot-id"));
-
-            updates->add(set_snapshot);
-        }
-        request_body->set("updates", updates);
-    }
+    auto request_body = buildUpdateMetadataRequestBody(namespace_name, table_name, new_snapshot);
 
     try
     {
@@ -1549,8 +1734,14 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        const auto status = static_cast<int>(ex.getHTTPStatus());
+        if (status == 408 || status == 409 || status == 429 || status >= 500)
+        {
+            LOG_WARNING(log, "Iceberg REST updateMetadata for {}.{} got retryable HTTP {}: {}",
+                namespace_name, table_name, status, ex.displayText());
+            return false;
+        }
+        throw;
     }
     return true;
 }
@@ -1560,50 +1751,16 @@ bool RestCatalog::updateSchema(
     const String & table_name,
     const String & /*new_metadata_path*/,
     Poco::JSON::Object::Ptr new_schema,
-    Int32 previous_schema_id) const
+    Int32 previous_schema_id,
+    Int32 new_last_column_id,
+    Poco::JSON::Object::Ptr metadata) const
 {
+    fiu_do_on(DB::FailPoints::iceberg_alter_catalog_update_schema_fail, { return false; });
+
     const std::string endpoint = (base_url / config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string();
 
-    Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
-    {
-        Poco::JSON::Object::Ptr identifier = new Poco::JSON::Object;
-        identifier->set("name", table_name);
-        Poco::JSON::Array::Ptr namespaces = new Poco::JSON::Array;
-        namespaces->add(namespace_name);
-        identifier->set("namespace", namespaces);
-
-        request_body->set("identifier", identifier);
-    }
-
-    {
-        Poco::JSON::Object::Ptr requirement = new Poco::JSON::Object;
-        requirement->set("type", "assert-current-schema-id");
-        requirement->set("current-schema-id", previous_schema_id);
-
-        Poco::JSON::Array::Ptr requirements = new Poco::JSON::Array;
-        requirements->add(requirement);
-        request_body->set("requirements", requirements);
-    }
-
-    {
-        Poco::JSON::Array::Ptr updates = new Poco::JSON::Array;
-
-        {
-            Poco::JSON::Object::Ptr add_schema = new Poco::JSON::Object;
-            add_schema->set("action", "add-schema");
-            add_schema->set("schema", new_schema);
-            updates->add(add_schema);
-        }
-
-        {
-            Poco::JSON::Object::Ptr set_current_schema = new Poco::JSON::Object;
-            set_current_schema->set("action", "set-current-schema");
-            set_current_schema->set("schema-id", -1);
-            updates->add(set_current_schema);
-        }
-
-        request_body->set("updates", updates);
-    }
+    auto request_body = buildUpdateSchemaRequestBody(
+        namespace_name, table_name, metadata, new_schema, previous_schema_id, new_last_column_id);
 
     try
     {
@@ -1611,9 +1768,20 @@ bool RestCatalog::updateSchema(
     }
     catch (const DB::HTTPException & ex)
     {
-        LOG_TRACE(log, "Unsucceeded request {}", ex.what());
-        return false;
+        const auto status = static_cast<int>(ex.getHTTPStatus());
+        if (status == 408 || status == 409 || status == 429 || status >= 500)
+        {
+            LOG_WARNING(log, "Iceberg REST updateSchema for {}.{} got retryable HTTP {}: {}",
+                namespace_name, table_name, status, ex.displayText());
+            return false;
+        }
+        throw;
     }
+
+    /// Simulates the Iceberg "commit state unknown" case: the catalog applied the update but the
+    /// client observes a failure, e.g. because a proxy turned the response into a 5xx.
+    fiu_do_on(DB::FailPoints::iceberg_alter_catalog_commit_reported_as_failed, { return false; });
+
     return true;
 }
 
