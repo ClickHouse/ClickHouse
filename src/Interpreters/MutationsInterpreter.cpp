@@ -1656,13 +1656,17 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 if (cleared_columns_with_dependencies.contains(column))
                 {
-                    /// For columns being cleared, provide the type default value
+                    /// For columns being cleared, provide the current column DEFAULT
+                    /// expression (or the type default when no expression exists)
                     /// instead of the original value from the source part.
                     auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
+                    ASTPtr cleared_value = col_decl.default_desc.expression
+                        ? col_decl.default_desc.expression->clone()
+                        : make_intrusive<ASTLiteral>(col_decl.type->getDefault());
                     stages.back().column_to_updated.emplace(
                         column,
                         makeASTFunction("_CAST",
-                            make_intrusive<ASTLiteral>(col_decl.type->getDefault()),
+                            std::move(cleared_value),
                             make_intrusive<ASTLiteral>(col_decl.type->getName())));
                 }
                 else
@@ -1674,7 +1678,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         }
     }
 
-    /// The cleared column entered the readonly stage above with its type-default value, so these
+    /// The cleared column entered the readonly stage above with its current DEFAULT value, so these
     /// level-ordered stages evaluate each hop against the freshly written value of the previous one.
     if (need_recalculate_materialized_for_clear)
         emit_materialized_recompute_stages(clear_affected_materialized);
