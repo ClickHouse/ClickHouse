@@ -248,7 +248,6 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -583,6 +582,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -659,6 +659,21 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
 
     /// Use more general restriction in case of emptiness
     return getListenHosts(config);
+}
+
+bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    return config.getBool("protocols." + protocol + ".introspection", false);
+}
+
+bool hasIntrospectionProtocols(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+    return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+    {
+        return isIntrospectionProtocol(config, protocol);
+    });
 }
 
 bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
@@ -1645,9 +1660,12 @@ try
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
+    std::unique_ptr<Poco::ThreadPool> introspection_server_pool;
+
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    std::vector<ProtocolServerAdapter> introspection_servers;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
@@ -1694,12 +1712,15 @@ try
         std::vector<ProtocolServerMetrics> metrics;
 
         std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+        metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+
+        for (const auto & server : introspection_servers)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
@@ -1736,6 +1757,9 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
+        /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
+        is_cancelled = true;
+
         /// Stop accepting connections on the regular servers. In the normal shutdown path they are
         /// already stopped, but on startup failure some of them can still be running: the Prometheus
         /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
@@ -2791,7 +2815,6 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
-            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3313,6 +3336,17 @@ try
         throw;
     }
 
+    auto disable_config_reload_callbacks = [&]
+    {
+        global_context->setConfigReloadCallback([]
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
+        });
+        if (cgroups_memory_usage_observer)
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([] {});
+    };
+    SCOPE_EXIT({ disable_config_reload_callbacks(); });
+
     if (cgroups_memory_usage_observer)
     {
         cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
@@ -3335,6 +3369,10 @@ try
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
+        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
+        /// In either case, we need to return an error.
+        if (is_cancelled || !global_context->isServerCompletelyStarted())
+            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
         createServers(
             config(),
             server_settings,
@@ -3468,6 +3506,72 @@ try
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
         global_context->getAsyncLoader().shutdown();
     );
+
+    /// The introspection servers accept TCP connections while the server is otherwise unreachable:
+    /// before attaching and after detaching of tables.
+    if (hasIntrospectionProtocols(config()))
+    {
+        global_context->setStopIntrospectionServersCallback([&]
+        {
+            if (introspection_servers.empty())
+                return;
+
+            LOG_DEBUG(log, "Waiting for current connections to introspection servers to finish.");
+            size_t current_connections = 0;
+            {
+                std::lock_guard lock(servers_lock);
+                for (auto & server : introspection_servers)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all introspection listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all introspection listening sockets.");
+
+            global_context->getProcessList().killAllQueries();
+
+            if (current_connections)
+                current_connections = waitServersToFinish(
+                    introspection_servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+
+            if (current_connections)
+            {
+                dumpCoverageReportIfPossible();
+                LOG_WARNING(log, "Closed connections to introspection servers. But {} remain. Will shutdown forcefully.", current_connections);
+                /// No leak check: remaining connection handlers still own memory it would report as
+                /// leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            LOG_INFO(log, "Closed connections to introspection servers.");
+            introspection_server_pool->joinAll();
+        });
+
+        introspection_server_pool = std::make_unique<Poco::ThreadPool>(
+            /* minCapacity */ 1,
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
+            /* idleTime */ 60,
+            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
+            server_settings[ServerSetting::global_profiler_real_time_period_ns],
+            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+
+        std::lock_guard lock(servers_lock);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            *introspection_server_pool,
+            *async_metrics,
+            introspection_servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::QUERIES_ALL),
+            /* only_introspection_protocols= */ true);
+    }
 
     try
     {
@@ -3710,6 +3814,7 @@ try
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            disable_config_reload_callbacks();
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
@@ -3729,6 +3834,7 @@ try
                 }
             }
 
+            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3752,21 +3858,26 @@ try
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
+            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>300</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
+            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
+
+            if (!joined_background_queries)
+                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks)
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3776,7 +3887,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                /// No leak check: remaining connection handlers or refresh tasks still own memory
+                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
                 /// it would report as leaked. Reported, because here stderr is the server log.
                 safeExit(0, LeakCheck::SkipAndReport);
             }
@@ -3926,7 +4037,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     std::string prefix = conf_name + ".";
     std::unordered_set<std::string> pset {conf_name};
 
-    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+    const bool is_introspection = isIntrospectionProtocol(config, protocol);
+    std::string innermost_type;
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
 
     while (true)
     {
@@ -3941,6 +4055,13 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 is_secure = true;
             }
 
+            if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Introspection protocol '{}' contains a '{}' layer, but only 'tcp' optionally wrapped "
+                    "into 'tls' and 'proxy1' layers is supported", protocol, type);
+
+            innermost_type = type;
             stack->append(create_factory(type, conf_name));
         }
 
@@ -3953,6 +4074,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    if (is_introspection && innermost_type != "tcp")
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
 
     return stack;
 }
@@ -3971,7 +4097,8 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    const ServerType & server_type)
+    const ServerType & server_type,
+    bool only_introspection_protocols)
 {
     const Settings & settings = global_context->getSettingsRef();
 
@@ -3994,6 +4121,10 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
+        const bool is_introspection = isIntrospectionProtocol(config, protocol);
+        if (is_introspection != only_introspection_protocols)
+            continue;
+
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
             continue;
 
@@ -4036,10 +4167,14 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(server_settings),
-                        connection_filter));
+                        is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
             });
         }
     }
+
+    /// Introspection ports can only be configured in the protocols config section.
+    if (only_introspection_protocols)
+        return;
 
     for (const auto & listen_host : listen_hosts)
     {
