@@ -38,6 +38,11 @@ ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_parser_depth=10&param_x=5"
 ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_parser_backtracks=2&param_x=6"
 ${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_query_size=10&param_x=7"
 
+echo "=== request-controlled construction settings still use the request limits ==="
+# Only the server-owned stored text is parsed without limits. The `filter`/`select`/`order`/`page` snippets
+# are named by the request, so they are parsed under the request's own parser limits.
+${CLICKHOUSE_CURL} -sS "${BASE}${URL}?max_parser_depth=1&param_x=8&filter=(((((1)))))" 2>&1 | grep -o -m1 "TOO_DEEP_RECURSION"
+
 echo "=== invoked through PARALLEL WITH under the same request limit ==="
 PARALLEL_HANDLER="h_parallel_parserlimits_${CLICKHOUSE_DATABASE}"
 PARALLEL_URL="/parallel_parserlimits_${CLICKHOUSE_DATABASE}"

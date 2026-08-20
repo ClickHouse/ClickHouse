@@ -8,6 +8,8 @@ Max query size exceeded
 1	5
 1	6
 1	7
+=== request-controlled construction settings still use the request limits ===
+TOO_DEEP_RECURSION
 === invoked through PARALLEL WITH under the same request limit ===
 1
 1

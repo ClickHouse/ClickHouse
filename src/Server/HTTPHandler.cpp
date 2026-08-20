@@ -472,16 +472,13 @@ void HTTPHandler::processQuery(
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
-    if (!introspection_handler_name.empty())
-    {
-        /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
-        /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
-        /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
-        /// This must happen after applying the request settings: otherwise a request could put its low
-        /// parser limits back and make an accepted handler uninvokable. `0` disables each limit.
-        context->setSetting("max_parser_depth", Field(0));
-        context->setSetting("max_parser_backtracks", Field(0));
-    }
+    /// The query a SQL-defined handler executes is the server's own stored text, parsed and validated
+    /// when the handler was created (possibly in a session with raised parser limits) and re-parsed
+    /// with unlimited limits on every reload (see `SQLDefinedHandlersMetadataStorage::readHandler`).
+    /// The parser limits are not zeroed on the query context here: `executeQuery` lifts them only for
+    /// the stored text itself via the `parse_server_owned_query_without_limits` flag (`has_server_owned_query`
+    /// is set by `PredefinedQueryHandler`, from which `SQLDefinedQueryHandler` inherits), so the
+    /// request-controlled construction snippets (`select`/`filter`/`order`/`page`) keep the caller's limits.
 
     const auto & settings = context->getSettingsRef();
 

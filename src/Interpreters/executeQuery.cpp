@@ -2392,24 +2392,27 @@ static BlockIO executeQueryImpl(
                 /// The query can become more verbose after formatting, so:
                 size_t size_t_max = -1;
                 size_t new_max_query_size = 0;
-                if (max_query_size == 0)
+                if (max_query_size_for_query_text == 0)
                     new_max_query_size = 0;
-                else if (max_query_size > (size_t_max - 1000) / 2)
+                else if (max_query_size_for_query_text > (size_t_max - 1000) / 2)
                     new_max_query_size = size_t_max;
                 else
-                    new_max_query_size = 1000 + 2 * max_query_size;
+                    new_max_query_size = 1000 + 2 * max_query_size_for_query_text;
 
                 ASTPtr ast2;
                 try
                 {
+                    /// Reparse with the same limits the query text itself was parsed with: a server-owned
+                    /// query (see `QueryFlags::parse_server_owned_query_without_limits`) may exceed the
+                    /// caller's parser limits, and this verification must not reject what the main parse accepted.
                     ast2 = parseQuery(
                         parser,
                         formatted1.data(),
                         formatted1.data() + formatted1.size(),
                         "",
                         new_max_query_size,
-                        settings[Setting::max_parser_depth],
-                        settings[Setting::max_parser_backtracks]);
+                        max_parser_depth_for_query_text,
+                        max_parser_backtracks_for_query_text);
                 }
                 catch (const Exception & e)
                 {
