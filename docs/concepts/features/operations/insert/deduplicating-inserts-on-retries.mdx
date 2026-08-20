@@ -147,7 +147,9 @@ The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system
 
 Deduplication of asynchronous inserts works together with dependent materialized views. One restriction applies: the inner query of a view must not emit more than one block for one block of input. ClickHouse throws a `NOT_IMPLEMENTED` exception as soon as a view emits a second block.
 
-In practice this means the view must not produce more rows than it reads. Column transformations, filtering, and aggregation stay within the restriction, because none of them increases the row count. A `JOIN` that expands the result does not. To insert through such a view asynchronously, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
+The row count itself is not the criterion. A view may emit more rows than it reads and still pass, as long as the result fits in one block. `max_block_size` sets that bound, so a `JOIN` that expands the input is the shape most likely to trip the guard: it passes while the expanded result stays under `max_block_size` and fails once it crosses that bound. Column transformations, filtering, and aggregation never increase the row count, so they always stay within the restriction.
+
+To insert through a view that emits more than one block, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
 
 ## Insert deduplication with materialized views {#insert-deduplication-with-materialized-views}
 
