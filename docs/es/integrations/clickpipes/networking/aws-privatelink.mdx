@@ -177,7 +177,7 @@ Es una opción recomendada para ClickPipes para MSK.
 Consulta la guía de [introducción](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) para obtener más información.
 
 <Info>
-  Actualiza la política de tu clúster de MSK y añade `072088201116` a los principales permitidos.
+  ClickPipes es propietario de la VPC del cliente y crea la conexión de VPC administrada. Para establecer la conexión de red, habilita la conectividad privada multi-VPC en tu clúster de MSK y autoriza la cuenta de AWS de ClickPipes en la política del clúster.
   Consulta la guía de AWS para [asociar una política de clúster](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) para obtener más información.
 </Info>
 
