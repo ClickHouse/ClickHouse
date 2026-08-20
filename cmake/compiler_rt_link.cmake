@@ -55,10 +55,9 @@ if (ENABLE_XRAY)
 endif()
 if (WITH_COVERAGE)
     # Tell clang not to inject its own (host-system) profile runtime — we
-    # provide ours.
+    # provide ours (appended after the objects below).
     list (APPEND SANITIZER_RUNTIMES
         "-noprofilelib"
-        "${COMPILER_RT_DIR}/libclang_rt_profile.a"
     )
 endif()
 string (REPLACE ";" " " SANITIZER_RUNTIMES "${SANITIZER_RUNTIMES}")
@@ -69,3 +68,22 @@ if (SANITIZER_RUNTIMES)
 endif()
 
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--whole-archive ${BUILTINS_LIBRARY} ${SANITIZER_RUNTIMES} -Wl,--no-whole-archive")
+
+if (WITH_COVERAGE)
+    # The profile runtime must come AFTER the object files in the link line,
+    # unlike the runtimes above. It defines `__llvm_profile_counter_bias` as a
+    # WEAK alias of its own `__llvm_profile_counter_bias_default` in order to
+    # detect whether the compiler emitted the real bias variable (which happens
+    # under `-mllvm -runtime-counter-relocation`, used for continuous mode `%c`):
+    # the compiler's definition is weak too, so the linker keeps whichever
+    # definition it encounters first. Linked through CMAKE_EXE_LINKER_FLAGS
+    # (which the link rule places before the objects), the runtime's alias always
+    # won, the runtime concluded the compiler did not define the bias, and every
+    # instrumented process failed continuous-mode startup with "LLVM Profile
+    # Error: Neither __llvm_profile_counter_bias nor __llvm_profile_bitmap_bias
+    # is defined" and wrote no profile. CMAKE_<LANG>_STANDARD_LIBRARIES is
+    # appended after the objects and the target link libraries, where the normal
+    # clang driver would put the runtime, so the compiler-emitted bias wins.
+    set (CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES} -Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
+    set (CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} -Wl,--whole-archive ${COMPILER_RT_DIR}/libclang_rt_profile.a -Wl,--no-whole-archive")
+endif()
