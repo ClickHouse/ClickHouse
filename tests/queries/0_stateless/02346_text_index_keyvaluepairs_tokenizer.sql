@@ -5,7 +5,7 @@
 -- which stores every (key, value) pair of a row as a single token and answers `m['key'] = 'value'`
 -- with an exact token lookup and direct read.
 --
--- Token layout: varint((length(key) << 1) | is_rest) || key || value
+-- Token layout: key || value || reversed-varint((length(key) << 1) | is_rest)
 -- `is_rest` is 0 for the first occurrence of a key in a row and 1 for later duplicates, because
 -- `m['key']` is the value of the *first* occurrence.
 
@@ -42,8 +42,8 @@ SELECT count() FROM tab WHERE m['nope'] = 'error';
 SELECT '-- token layout';
 SELECT hex(token), cardinality FROM mergeTreeTextIndex(currentDatabase(), tab, idx) ORDER BY token;
 
-SELECT '-- the token of the level-error pair is char(5 * 2) followed by the key and then the value';
-SELECT count() FROM mergeTreeTextIndex(currentDatabase(), tab, idx) WHERE token = concat(char(10), 'level', 'error');
+SELECT '-- the token of the level-error pair is the key, the value, then char(5 * 2)';
+SELECT count() FROM mergeTreeTextIndex(currentDatabase(), tab, idx) WHERE token = concat('level', 'error', char(10));
 
 SELECT '-- the index prunes granules';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE m['level'] = 'warn') WHERE explain LIKE '%Name:%' OR explain LIKE '%Granules:%';
@@ -97,7 +97,7 @@ SELECT 'first scan', id FROM tab_dup WHERE m['k'] = 'first' ORDER BY id SETTINGS
 SELECT 'second idx', id FROM tab_dup WHERE m['k'] = 'second' ORDER BY id;
 SELECT 'second scan', id FROM tab_dup WHERE m['k'] = 'second' ORDER BY id SETTINGS use_skip_indexes = 0;
 
-SELECT '-- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the length prefix';
+SELECT '-- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the trailer';
 SELECT arraySort(groupUniqArray(hex(token))) FROM mergeTreeTextIndex(currentDatabase(), tab_dup, idx);
 
 DROP TABLE tab_dup;
@@ -123,9 +123,9 @@ SELECT 'key 64', count() FROM tab_long WHERE m['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 SELECT 'key 65', count() FROM tab_long WHERE m['ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'] = 'v65';
 SELECT 'no false match', count() FROM tab_long WHERE m['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'] = 'v63';
 
-SELECT 'varint 1 byte', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(126), repeat('a', 63), 'v63');
-SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(128, 1), repeat('b', 64), 'v64');
-SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(130, 1), repeat('c', 65), 'v65');
+SELECT 'varint 1 byte', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(repeat('a', 63), 'v63', char(126));
+SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(repeat('b', 64), 'v64', char(1, 128));
+SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(repeat('c', 65), 'v65', char(1, 130));
 
 DROP TABLE tab_long;
 
@@ -145,7 +145,7 @@ SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
 
 INSERT INTO tab_bytes VALUES (1, map('ab', 'c')), (2, map('a', 'bc')), (3, map('a\0b', 'x\0y')), (4, map('', '')), (5, map('k', '')), (6, map('\xFF', '\xFF')), (7, map('', 'ek'));
 
-SELECT '-- the length prefix keeps the pairs ab-c and a-bc apart, which a plain concatenation would not';
+SELECT '-- the trailing length keeps the pairs ab-c and a-bc apart: their tokens differ only in it';
 SELECT id FROM tab_bytes WHERE m['ab'] = 'c' ORDER BY id;
 SELECT id FROM tab_bytes WHERE m['a'] = 'bc' ORDER BY id;
 

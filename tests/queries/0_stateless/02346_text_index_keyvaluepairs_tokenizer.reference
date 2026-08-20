@@ -8,11 +8,11 @@
 -- a key that does not exist
 0
 -- token layout
-0A6C6576656C6572726F72	2
-0A6C6576656C7761726E	1
-0E73657276696365617069	2
-0E73657276696365776562	1
--- the token of the level-error pair is char(5 * 2) followed by the key and then the value
+6C6576656C6572726F720A	2
+6C6576656C7761726E0A	1
+736572766963656170690E	2
+736572766963657765620E	1
+-- the token of the level-error pair is the key, the value, then char(5 * 2)
 1
 -- the index prunes granules
 Granules: 2/2
@@ -50,8 +50,8 @@ first idx	1
 first scan	1
 second idx	2
 second scan	2
--- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the length prefix
-['026B6669727374','026B7365636F6E64','036B7365636F6E64']
+-- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the trailer
+['6B666972737402','6B7365636F6E6402','6B7365636F6E6403']
 -- key lengths around the varint boundary: 63 bytes still fit one byte, 64 need two
 key 63	1
 key 64	1
@@ -61,7 +61,7 @@ varint 1 byte	1
 varint 2 bytes	1
 varint 2 bytes	1
 -- arbitrary bytes in keys and values, and empty keys and values
--- the length prefix keeps the pairs ab-c and a-bc apart, which a plain concatenation would not
+-- the trailing length keeps the pairs ab-c and a-bc apart: their tokens differ only in it
 1
 2
 -- NUL bytes, high bytes and an empty key are all searchable
@@ -72,11 +72,11 @@ varint 2 bytes	1
 idx	7
 scan	7
 -- every pair has a token, including the empty key and the empty value
-['00','00656B','02616263','026B','02FFFF','04616263','06610062780079']
+['00','61006278007906','61626302','61626304','656B00','6B02','FFFF02']
 -- LowCardinality keys and values
 idx	1
 scan	1
-['0A6C6576656C6572726F72','0A6C6576656C7761726E']
+['6C6576656C6572726F720A','6C6576656C7761726E0A']
 -- a mix of LowCardinality and String is accepted
 created
 -- a part without a materialized index must not lose rows under exact direct read
