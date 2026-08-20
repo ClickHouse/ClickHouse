@@ -776,9 +776,11 @@ void MutationsInterpreter::prepare(bool dry_run)
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
     if (need_materialized_analysis)
     {
-        /// Collect ephemeral columns and include them in the analysis set so
-        /// TreeRewriter can resolve MATERIALIZED expressions that reference them.
-        NamesAndTypesList all_columns_with_ephemeral = all_columns;
+        /// Every column of the table, not only the ones this task reads: deciding whether a MATERIALIZED
+        /// column has to be recalculated must not require reading its dependencies. An on-fly read narrows
+        /// `available_columns`, so a column that keeps its stored value has dependencies that are
+        /// legitimately absent and would fail to resolve. A materialising mutation already covers the part.
+        NamesAndTypesList all_columns_with_ephemeral = storage_snapshot->getColumns(options);
         std::unordered_set<String> ephemeral_columns;
         for (const auto & col : columns_desc.getEphemeral())
         {
@@ -804,8 +806,11 @@ void MutationsInterpreter::prepare(bool dry_run)
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
                     /// Warn if the mutation also updates a non-ephemeral dependency
-                    /// of this MATERIALIZED column — the on-disk value will become stale.
-                    if (std::ranges::any_of(required_columns, [&](const auto & dep)
+                    /// of this MATERIALIZED column — the on-disk value will become stale. Only when
+                    /// this interpreter writes the part: an on-fly read builds one per read task per
+                    /// part and writes nothing, so warning there is both untrue and per-read noise.
+                    if (settings.recalculate_dependencies_of_updated_columns
+                        && std::ranges::any_of(required_columns, [&](const auto & dep)
                         { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
                         LOG_WARNING(logger,
                             "MATERIALIZED column '{}' depends on both EPHEMERAL and regular "

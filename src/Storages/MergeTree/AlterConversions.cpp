@@ -5,11 +5,13 @@
 #include <Storages/MutationCommands.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <queue>
 #include <ranges>
 
 namespace ProfileEvents
@@ -513,36 +515,117 @@ std::vector<MutationActions> AlterConversions::getMutationActions(
     return interpreter.getMutationActions();
 }
 
+/// Extends the read set with the columns needed to recalculate the MATERIALIZED columns it contains.
+///
+/// A MATERIALIZED column is stored, so a query selecting it does not ask for the columns its expression
+/// reads. The read set must be closed over them: it gates which commands survive `filterMutationCommands`
+/// and which columns the interpreter can resolve expressions against, so a missing dependency leaves the
+/// pending mutation unapplied for this read task and returns the stale stored value.
 void AlterConversions::addColumnsRequiredForMaterialized(
     Names & read_columns,
     NameSet & read_columns_set,
     const StorageMetadataPtr & metadata_snapshot,
     const ContextPtr & context) const
 {
-    NameSet required_source_columns;
     const auto & columns_desc = metadata_snapshot->getColumns();
-    auto source_columns = metadata_snapshot->getColumns().getAllPhysical();
+    auto source_columns = columns_desc.getAllPhysical();
 
-    for (const auto & column_name : read_columns_set)
+    /// `getAllPhysical` omits EPHEMERAL columns, but a MATERIALIZED expression may mention one and
+    /// analysing it without them fails with UNKNOWN_IDENTIFIER.
+    NameSet ephemeral_columns;
+    for (const auto & column : columns_desc.getEphemeral())
     {
-        auto default_desc = columns_desc.getDefault(column_name);
-        if (default_desc && default_desc->kind == ColumnDefaultKind::Materialized)
-        {
-            auto query = default_desc->expression->clone();
-            auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
-
-            for (const auto & dependency : syntax_result->requiredSourceColumns())
-            {
-                if (all_updated_columns.contains(dependency))
-                    required_source_columns.insert(dependency);
-            }
-        }
+        ephemeral_columns.insert(column.name);
+        source_columns.push_back(column);
     }
 
-    for (const auto & column_name : required_source_columns)
+    /// `tryGet`, because the read set also holds virtual columns, which `columns_desc` does not know.
+    auto is_materialized = [&](const String & column_name)
     {
-        if (read_columns_set.emplace(column_name).second)
-            read_columns.push_back(column_name);
+        const auto * column = columns_desc.tryGet(column_name);
+        return column && column->default_desc.kind == ColumnDefaultKind::Materialized && column->default_desc.expression;
+    };
+
+    std::unordered_map<String, Names> dependencies_of;
+    auto get_dependencies = [&](const String & column_name) -> const Names &
+    {
+        auto it = dependencies_of.find(column_name);
+        if (it != dependencies_of.end())
+            return it->second;
+
+        /// Cloned because both calls below rewrite the expression in place, and it belongs to the shared
+        /// metadata snapshot. Only reached for a column `is_materialized` accepted, so `get` cannot throw.
+        auto query = columns_desc.get(column_name).default_desc.expression->clone();
+        /// Must match `MutationsInterpreter::prepare`: without the rewrite a default over a subcolumn
+        /// depends on `t.a` while the updated column is named `t`, so the dependency goes unrecognised.
+        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
+        auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
+        return dependencies_of.emplace(column_name, syntax_result->requiredSourceColumns()).first->second;
+    };
+
+    /// EPHEMERAL columns exist only during INSERT, so a default reading one is never recalculated. The
+    /// test is on what the expression reads, not on the column itself, as `MutationsInterpreter::prepare`
+    /// does when it skips such a column.
+    auto can_recalculate = [&](const String & column_name)
+    {
+        if (!is_materialized(column_name))
+            return false;
+
+        const auto & dependencies = get_dependencies(column_name);
+        return std::ranges::none_of(dependencies, [&](const auto & dep) { return ephemeral_columns.contains(dep); });
+    };
+
+    /// A dependency written by a command is tested here rather than by recursing: a written column is
+    /// usually plain and fails `can_recalculate`, so it ends the descent.
+    ///
+    /// Memoised. The entry is inserted before descending, so a cycle — which a well-formed default cannot
+    /// contain — reads it while still provisional and terminates. Otherwise an entry is only read once
+    /// final, because a column still being visited is reachable only from its own subtree.
+    std::unordered_map<String, bool> is_recalculated_of;
+    auto is_recalculated = [&](const String & column_name, auto && self) -> bool
+    {
+        if (!can_recalculate(column_name))
+            return false;
+
+        auto [it, inserted] = is_recalculated_of.emplace(column_name, false);
+        if (!inserted)
+            return it->second;
+
+        for (const auto & dependency : get_dependencies(column_name))
+        {
+            if (all_updated_columns.contains(dependency) || self(dependency, self))
+            {
+                /// Not through `it`: the recursion above may have rehashed the map.
+                is_recalculated_of[column_name] = true;
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    std::queue<String> columns_to_visit(read_columns_set.begin(), read_columns_set.end());
+
+    while (!columns_to_visit.empty())
+    {
+        auto column_name = std::move(columns_to_visit.front());
+        columns_to_visit.pop();
+
+        /// A recalculated column needs all of its dependencies, because the stage that rewrites it
+        /// evaluates its whole expression against the block — including the parts that read a column no
+        /// mutation touches. A column that keeps its stored value needs nothing.
+        if (!is_recalculated(column_name, is_recalculated))
+            continue;
+
+        for (const auto & dependency : get_dependencies(column_name))
+        {
+            if (read_columns_set.contains(dependency))
+                continue;
+
+            read_columns_set.insert(dependency);
+            read_columns.push_back(dependency);
+            columns_to_visit.push(dependency);
+        }
     }
 }
 

@@ -85,7 +85,8 @@ private:
         const StorageMetadataPtr & metadata_snapshot,
         const ContextPtr & context) const;
 
-    /// Adds source columns of expressions of MATERIALIZED columns from @read_columns if any.
+    /// Adds the columns needed to recalculate the MATERIALIZED columns of @read_columns: the columns
+    /// their expressions read, transitively, but only those through which an updated column is reachable.
     void addColumnsRequiredForMaterialized(
         Names & read_columns,
         NameSet & read_columns_set,
