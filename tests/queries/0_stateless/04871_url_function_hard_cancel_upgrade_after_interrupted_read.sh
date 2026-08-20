@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# no-parallel: the test pauses the server-wide `storage_url_pause_before_handling_interrupted_read_error`
-# failpoint, which any concurrent url query whose read fails would trip instead of this test's one.
+# no-parallel: the test pauses the server-wide `storage_url_pause_before_retry_attempt` and
+# `storage_url_pause_before_handling_interrupted_read_error` failpoints, which any concurrent url
+# query whose read fails would trip instead of this test's one.
 #
 # Test that an exception built under a soft cancellation does not outrun the upgrade of that
 # cancellation to a hard one. `ExecutingGraph::cancel` upgrades `PartialResult` to the reason of a
@@ -11,12 +12,18 @@
 # query: the peer whose error tore the pipeline down is the reason the query fails.
 #
 # The window between the throw and its handling is a few instructions wide, so the test holds the
-# source in it with a failpoint: one source retries an always-failing URI, the client is cancelled
-# with SIGINT - `partial_result_on_first_cancel` makes that a soft cancellation - which wakes the
-# retry backoff, and the thrown error of the interrupted read pauses on the failpoint. Only then a
-# second source, held by the test server until now, is released into a parse error: a real failure
-# the cancellation has nothing to do with, which cancels the pipeline hard and upgrades the
-# still-soft cancellation of the paused source. The released source must suppress its stale error.
+# source in it with a failpoint: one source retries an always-failing URI and is parked right
+# before its second attempt, the client is cancelled with SIGINT - `partial_result_on_first_cancel`
+# makes that a soft cancellation - and releasing the parked source makes it throw the error of its
+# interrupted read, which pauses on the second failpoint. Only then a second source, held by the
+# test server until now, is released into a parse error: a real failure the cancellation has
+# nothing to do with, which cancels the pipeline hard and upgrades the still-soft cancellation of
+# the paused source. The released source must suppress its stale error.
+#
+# Parking the retrying source before the cancellation, instead of letting the cancellation find it
+# in its backoff, is what makes the sequence deterministic: a source which is not parked can be
+# anywhere - it can even run out of attempts and fail the query on its own - and the test would
+# then wait for a pause which never comes.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -93,7 +100,7 @@ server.serve_forever()
 HTTP_PID=$!
 # The failpoint must not stay armed after the test: a query of a later test would pause on it with
 # no one left to release it.
-trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_handling_interrupted_read_error" 2>/dev/null; kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
+trap '$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_retry_attempt" 2>/dev/null; $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_handling_interrupted_read_error" 2>/dev/null; kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
 for _ in {1..300}; do
     [[ -s "$PORT_FILE" ]] && break
@@ -111,12 +118,24 @@ stat_count()
     curl -sS "http://127.0.0.1:$HTTP_PORT/stats" | python3 -c "import sys, json; print(json.load(sys.stdin).get('$1', 0))"
 }
 
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_retry_attempt"
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_url_pause_before_handling_interrupted_read_error"
+
+# The waits for a failpoint to pause have no timeout of their own: bound them, so that a sequence
+# which did not happen fails the test with a diagnostic instead of hanging it - and leaving the
+# failpoints armed for the tests which run after it.
+wait_for_pause()
+{
+    if ! timeout 300 $CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT $1 PAUSE"; then
+        echo "FAIL: the failpoint $1 was not reached"
+        exit 1
+    fi
+}
 
 QUERY_ID="${CLICKHOUSE_DATABASE}_hard_cancel_upgrade"
 
-# The retry backoff of the /bad source is where the soft cancellation finds it: long enough not to
-# run out of attempts before the test has delivered everything.
+# The /bad source retries often enough to park on the failpoint quickly, and has enough attempts
+# left not to run out of them before the test has delivered everything.
 # max_threads 2 runs both sources concurrently.
 # parallel_replicas_for_cluster_engines would rewrite url to urlCluster and read it in remote
 # queries with their own query ids: the cancel of this client would not reach the sources the same
@@ -149,12 +168,34 @@ for _ in {1..300}; do
     sleep 0.1
 done
 
-# The soft cancellation: the client asks for its partial result, the query keeps running. It wakes
-# the retry backoff of the /bad source, whose interrupted read throws its last error and pauses on
-# the failpoint before the error is handled.
+# The /bad source has failed its first attempt and is parked right before the second one, with the
+# error of that attempt at hand: exactly the state in which a cancellation makes it throw.
+wait_for_pause storage_url_pause_before_retry_attempt
+
+# The soft cancellation: the client asks for its partial result, the query keeps running.
 kill -SIGINT $CLIENT_PID
 
-$CLICKHOUSE_CLIENT --query "SYSTEM WAIT FAILPOINT storage_url_pause_before_handling_interrupted_read_error PAUSE"
+# Wait until the sources have seen it, so that the parked one is released into the cancelled state.
+CANCELLED=0
+for _ in {1..300}; do
+    $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS text_log"
+    if (($($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.text_log WHERE query_id = '$QUERY_ID' AND logger_name = 'StorageURLSource' AND message = 'The read has been cancelled, reason: PartialResult'") > 0)); then
+        CANCELLED=1
+        break
+    fi
+    sleep 0.1
+done
+if ((CANCELLED == 1)); then
+    echo "the soft cancellation was delivered to the retrying source"
+else
+    echo "FAIL: the soft cancellation was not delivered to the retrying source"
+fi
+
+# Released into the cancelled state, the parked source throws the error of its interrupted read and
+# pauses on the failpoint before that error is handled.
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_url_pause_before_retry_attempt"
+
+wait_for_pause storage_url_pause_before_handling_interrupted_read_error
 echo "the error of the interrupted read was caught before it was handled"
 
 # With the thrown error held in the window, deliver the hard failure of the peer: the /held source
