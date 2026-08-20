@@ -371,6 +371,7 @@ public:
     bool checkIfOutputFormatPrefersLargeBlocks(const String & name) const;
     bool checkIfOutputFormatIsTTYFriendly(const String & name) const;
     bool checkIfOutputFormatMayProduceRawBytes(const String & name, const FormatSettings & settings, const Block & header) const;
+    bool checkIfFormatIsRandomAccessInput(const String & name) const;
 
     bool checkParallelizeOutputAfterReading(const String & name, const ContextPtr & context) const;
 
