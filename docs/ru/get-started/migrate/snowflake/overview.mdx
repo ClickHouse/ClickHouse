@@ -150,9 +150,9 @@ ClickHouse превосходит Snowflake в сценариях Real-time ан
   привязан к конкретному узлу и не является [транзакционно согласованным](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design),
   что [лучше подходит ](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
   для Real-time аналитики. Пользователи также получают детальный контроль над его использованием:
-  можно управлять им [для каждого запроса отдельно](/ru/reference/settings/session-settings#use_query_cache),
-  задавать его [точный размер](/ru/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  определять, [кэшируется ли запрос](/ru/reference/settings/session-settings#enable_writes_to_query_cache)
+  можно управлять им [для каждого запроса отдельно](/ru/reference/settings/session-settings/use-query#use_query_cache),
+  задавать его [точный размер](/ru/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  определять, [кэшируется ли запрос](/ru/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (с ограничениями по длительности или минимальному числу выполнений), а также указывать, должен ли он
   использоваться только [пассивно](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings).
 

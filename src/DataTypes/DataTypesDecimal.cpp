@@ -766,8 +766,8 @@ DB::Exception: Can't compare.
 ```
 
 **See also**
-- [isDecimalOverflow](/sql-reference/functions/other-functions#isDecimalOverflow)
-- [countDigits](/sql-reference/functions/other-functions#countDigits)
+- [isDecimalOverflow](/reference/functions/regular-functions/other-functions#isDecimalOverflow)
+- [countDigits](/reference/functions/regular-functions/other-functions#countDigits)
 )DOCS_MD",
             .syntax = "Decimal(P, S)",
             .related = {"Decimal32", "Decimal64", "Decimal128", "Decimal256"},

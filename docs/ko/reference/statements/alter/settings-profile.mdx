@@ -6,7 +6,7 @@ title: 'ALTER SETTINGS PROFILE'
 doc_type: 'reference'
 ---
 
-settings profile을 변경합니다.
+settings 프로필을 변경합니다.
 
 구문:
 
@@ -15,6 +15,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -23,7 +24,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
 ```
 
-`ON CLUSTER` 절을 사용하면 클러스터 전체에서 settings profile을 변경할 수 있습니다. [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
+`ON CLUSTER` 절을 사용하면 클러스터 전체에서 settings 프로필을 변경할 수 있습니다. [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
 
 <div id="replacing-vs-modifying">
   ## 설정 교체와 수정
@@ -67,6 +68,8 @@ SHOW CREATE SETTINGS PROFILE p;
 * `DROP ALL SETTINGS` / `DROP ALL PROFILES` — 모든 설정 또는 모든 상위 프로필을 제거합니다.
 
 이러한 절 여러 개를 하나의 구문으로 결합할 수 있습니다. 예를 들어 `DROP SETTINGS a ADD SETTINGS b = 1`과 같습니다.
+
+`SET variable = value`는 `MODIFY SETTINGS variable = value`의 별칭입니다. `SET`이 더 자연스럽게 느껴지고, 증분 변경을 의도했는데도 전체를 대체하는 `SETTINGS` 절을 입력하는 실수가 흔하기 때문에 제공됩니다.
 
 <div id="examples">
   ## 예시

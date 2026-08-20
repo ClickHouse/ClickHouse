@@ -1,5 +1,5 @@
 -- Concat with Variant type containing LowCardinality caused a LOGICAL_ERROR
--- because convertToFullIfNeeded recursively stripped LowCardinality from inside the Variant column
+-- because convertToFullIfWrapped recursively stripped LowCardinality from inside the Variant column
 -- while the type was not updated, creating a type/column mismatch in serialization.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=97581&sha=320e7c9d8876b04a971bd26214b9ac0ab433c250&name_0=PR&name_1=AST%20fuzzer%20%28amd_debug%29
 

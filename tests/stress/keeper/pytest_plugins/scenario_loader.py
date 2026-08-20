@@ -205,7 +205,10 @@ def _parse_include_ids(cfg):
 
 def _resolve_matrix_backends(cfg):
     mb_raw = _getopt(cfg, "--matrix-backends")
-    if mb := [x.strip() for x in mb_raw.split(",") if x.strip()]:
+    # Lowercase here so the backend spelling is identical everywhere it ends up:
+    # clone IDs (the warehouse `scenario` key), backend dispatch, and the Grafana
+    # links composed by the CI job (which normalizes the same way).
+    if mb := [x.strip().lower() for x in mb_raw.split(",") if x.strip()]:
         return mb
     return []
 
@@ -266,7 +269,7 @@ def pytest_generate_tests(metafunc):
 
 
 def expand_matrix_clones(s, backends, topologies):
-    backs = backends or [s.get("backend")]
+    backs = backends or [(s.get("backend") or "default").strip().lower()]
     topos = topologies or [int(s.get("topology"))]
     clones = []
     for b in backs:

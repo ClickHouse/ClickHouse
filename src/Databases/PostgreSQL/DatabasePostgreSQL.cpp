@@ -6,6 +6,7 @@
 
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StoragePostgreSQL.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -16,6 +17,8 @@
 #include <Parsers/ASTDataType.h>
 #include <Common/escapeForFileName.h>
 #include <Common/parseRemoteDescription.h>
+#include <Common/RemoteHostFilter.h>
+#include <IO/WriteHelpers.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
@@ -32,11 +35,15 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 glob_expansion_max_elements;
-    extern const SettingsUInt64 postgresql_connection_pool_size;
-    extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
-    extern const SettingsUInt64 postgresql_connection_pool_retries;
-    extern const SettingsBool postgresql_connection_pool_auto_close_connection;
-    extern const SettingsUInt64 postgresql_connection_attempt_timeout;
+}
+
+namespace PostgreSQLSetting
+{
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_size;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_wait_timeout;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_pool_retries;
+    extern const PostgreSQLSettingsBool postgresql_connection_pool_auto_close_connection;
+    extern const PostgreSQLSettingsUInt64 postgresql_connection_attempt_timeout;
 }
 
 namespace ErrorCodes
@@ -78,7 +85,7 @@ DatabasePostgreSQL::DatabasePostgreSQL(
         db_disk->createDirectories(metadata_path);
     }
 
-    cleaner_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
+    cleaner_task = getContext()->getSchedulePool()->createTask(StorageID::createEmpty(), "PostgreSQLCleanerTask", [this]{ removeOutdatedTables(); });
     cleaner_task->deactivate();
 }
 
@@ -486,13 +493,43 @@ ASTPtr DatabasePostgreSQL::getCreateTableQueryImpl(const String & table_name, Co
     }
     else
     {
-        /// Remove extra engine argument (`schema` and `use_table_cache`)
-        if (storage_engine_arguments->children.size() >= 5)
-            storage_engine_arguments->children.resize(4);
+        auto & arguments = storage_engine_arguments->children;
+
+        /// The trailing `key = value` arguments (the TLS/SSL parameters) are accepted by the table
+        /// engine as well, so keep them in the synthesized definition; otherwise re-running it would
+        /// silently fall back to the libpq TLS defaults.
+        size_t num_positional_arguments = arguments.size();
+        while (num_positional_arguments > 0)
+        {
+            const auto * function = arguments[num_positional_arguments - 1]->as<ASTFunction>();
+            if (!function || function->name != "equals" || !function->arguments || function->arguments->children.size() != 2
+                || !function->arguments->children[0]->as<ASTIdentifier>())
+                break;
+            --num_positional_arguments;
+        }
+
+        /// Keep the fifth positional argument (the remote `schema`): once the table name is inserted
+        /// below it lands in the table engine's own `schema` position, and dropping it would silently
+        /// repoint the emitted definition at the default PostgreSQL schema. Remove the remaining
+        /// positional arguments (`use_table_cache`, including the deprecated form where it is the
+        /// numeric fifth argument), which the table engine does not take.
+        /// Whether the fifth argument is a schema is decided by the already-parsed configuration and
+        /// not by the shape of the stored AST: the database engine folds every positional argument
+        /// with `evaluateConstantExpressionOrIdentifierAsLiteral`, so the schema may be stored as an
+        /// arbitrary constant expression rather than a string literal. The folded value is emitted
+        /// instead of the original node for the same reason.
+        size_t num_positional_to_keep = 4;
+        if (num_positional_arguments > 4 && !configuration.schema.empty())
+        {
+            arguments[4] = make_intrusive<ASTLiteral>(configuration.schema);
+            num_positional_to_keep = 5;
+        }
+        if (num_positional_arguments > num_positional_to_keep)
+            arguments.erase(arguments.begin() + num_positional_to_keep, arguments.begin() + num_positional_arguments);
 
         /// Add table_name to engine arguments.
-        if (storage_engine_arguments->children.size() >= 2)
-            storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
+        if (num_positional_arguments >= 2)
+            arguments.insert(arguments.begin() + 2, make_intrusive<ASTLiteral>(table_id.table_name));
     }
 
     return create_table_query;
@@ -516,57 +553,87 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         auto use_table_cache = false;
         StoragePostgreSQL::Configuration configuration;
 
+        /// The connection-pool parameters are seeded from the query-level `postgresql_*` settings
+        /// (preserving the historical behaviour); a named collection may override them.
+        PostgreSQLSettings postgresql_settings;
+        postgresql_settings.loadFromQueryContext(*args.context);
+
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context))
         {
-            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, args.context, false);
+            configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);
             use_table_cache = named_collection->getOrDefault<UInt64>("use_table_cache", 0);
         }
         else
         {
-            if (engine_args.size() < 4 || engine_args.size() > 6)
+            /// The TLS/SSL parameters are trailing `key = value` arguments; the copy keeps them in
+            /// the stored `CREATE DATABASE` query, where they are masked when it is formatted.
+            ASTs positional_arguments = engine_args;
+            configuration.ssl = StoragePostgreSQL::extractSSLParamsFromArguments(positional_arguments, args.context);
+
+            if (positional_arguments.size() < 4 || positional_arguments.size() > 6)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                 "PostgreSQL Database require `host:port`, `database_name`, `username`, `password`"
-                                "[, `schema` = "", `use_table_cache` = 0");
+                                "[, `schema` = "", `use_table_cache` = 0] "
+                                "(optionally followed by sslmode = '...', sslrootcert_pem = '...', "
+                                "sslcert_pem = '...', sslkey_pem = '...')");
 
-            for (auto & engine_arg : engine_args)
-                engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
+            for (auto & positional_argument : positional_arguments)
+                positional_argument = evaluateConstantExpressionOrIdentifierAsLiteral(positional_argument, args.context);
 
-            const auto & host_port = safeGetLiteralValue<String>(engine_args[0], engine_name);
+            const auto & host_port = safeGetLiteralValue<String>(positional_arguments[0], engine_name);
             size_t max_addresses = args.context->getSettingsRef()[Setting::glob_expansion_max_elements];
 
             configuration.addresses = parseRemoteDescriptionForExternalDatabase(host_port, max_addresses, 5432);
-            configuration.database = safeGetLiteralValue<String>(engine_args[1], engine_name);
-            configuration.username = safeGetLiteralValue<String>(engine_args[2], engine_name);
-            configuration.password = safeGetLiteralValue<String>(engine_args[3], engine_name);
+            configuration.database = safeGetLiteralValue<String>(positional_arguments[1], engine_name);
+            configuration.username = safeGetLiteralValue<String>(positional_arguments[2], engine_name);
+            configuration.password = safeGetLiteralValue<String>(positional_arguments[3], engine_name);
 
             bool is_deprecated_syntax = false;
-            if (engine_args.size() >= 5)
+            if (positional_arguments.size() >= 5)
             {
-                auto arg_value = engine_args[4]->as<ASTLiteral>()->value;
+                auto arg_value = positional_arguments[4]->as<ASTLiteral>()->value;
                 if (arg_value.getType() == Field::Types::Which::String)
                 {
-                    configuration.schema = safeGetLiteralValue<String>(engine_args[4], engine_name);
+                    configuration.schema = safeGetLiteralValue<String>(positional_arguments[4], engine_name);
                 }
                 else
                 {
-                    use_table_cache = safeGetLiteralValue<UInt8>(engine_args[4], engine_name);
+                    use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[4], engine_name);
                     LOG_WARNING(getLogger("DatabaseFactory"), "A deprecated syntax of PostgreSQL database engine is used");
                     is_deprecated_syntax = true;
                 }
             }
 
-            if (!is_deprecated_syntax && engine_args.size() >= 6)
-                use_table_cache = safeGetLiteralValue<UInt8>(engine_args[5], engine_name);
+            if (!is_deprecated_syntax && positional_arguments.size() >= 6)
+                use_table_cache = safeGetLiteralValue<UInt8>(positional_arguments[5], engine_name);
         }
 
-        const auto & settings = args.context->getSettingsRef();
+        /// Enforce the server's outbound-host policy, exactly like the table engine and the table
+        /// function do in `StoragePostgreSQL::getConfiguration`: a user must not be able to reach a
+        /// host through the database engine that `remote_url_allow_hosts` forbids elsewhere.
+        /// Skip it only for an internal metadata replay (server startup / restore, the same
+        /// distinction `DatabaseDataLake` uses): startup rebuilds every database from persisted
+        /// metadata with an ATTACH query and `loadMetadata` aborts on the first exception, so
+        /// enforcing the policy there would turn one database created before the whitelist was
+        /// tightened into a server that cannot boot. A user-issued `ATTACH DATABASE` is not a
+        /// replay and stays fail-closed, otherwise it would be a direct bypass of the policy.
+        const bool is_internal_metadata_replay = args.internal && args.mode >= LoadingStrictnessLevel::ATTACH;
+        if (!is_internal_metadata_replay)
+        {
+            for (const auto & address : configuration.addresses)
+                args.context->getRemoteHostFilter().checkHostAndPort(address.first, toString(address.second));
+        }
+
+        if (!postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
-            settings[Setting::postgresql_connection_pool_size],
-            settings[Setting::postgresql_connection_pool_wait_timeout],
-            settings[Setting::postgresql_connection_pool_retries],
-            settings[Setting::postgresql_connection_pool_auto_close_connection],
-            settings[Setting::postgresql_connection_attempt_timeout]);
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_size],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_wait_timeout],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_retries],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_pool_auto_close_connection],
+            postgresql_settings[PostgreSQLSetting::postgresql_connection_attempt_timeout]);
 
         return std::make_shared<DatabasePostgreSQL>(
             args.context,
@@ -606,23 +673,30 @@ ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use
 - `schema` — PostgreSQL schema.
 - `use_table_cache` —  Defines if the database table structure is cached or not. Optional. Default value: `0`.
 
-## Data types support {#data_types-support}
+TLS/SSL parameters are forwarded to `libpq` and can be supplied through a [named collection](/operations/named-collections.md) or as trailing key-value arguments: `sslmode` (`disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`), and the certificates and the key in one of two forms. `sslrootcert` (CA certificate), `sslcert` (client certificate) and `sslkey` (client private key) are paths to server-local files, accepted only from a named collection defined in the server configuration file. `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` accept the literal contents of the corresponding file instead, can be specified from SQL (for example, `ENGINE = PostgreSQL('host:port', 'database', 'user', 'password', sslmode = 'verify-full', sslrootcert_pem = '...')`), and are masked in logs and `SHOW` queries like a password. When unset, `libpq` defaults apply (`sslmode=prefer`).
+
+<a id="data_types-support"></a>
+## Data types support {#data-types-support}
 
 | PostgreSQL       | ClickHouse                                                   |
 |------------------|--------------------------------------------------------------|
-| DATE             | [Date](../../sql-reference/data-types/date.md)               |
-| TIMESTAMP        | [DateTime](../../sql-reference/data-types/datetime.md)       |
-| REAL             | [Float32](../../sql-reference/data-types/float.md)           |
-| DOUBLE           | [Float64](../../sql-reference/data-types/float.md)           |
-| DECIMAL, NUMERIC | [Decimal](../../sql-reference/data-types/decimal.md)       |
-| SMALLINT         | [Int16](../../sql-reference/data-types/int-uint.md)          |
-| INTEGER          | [Int32](../../sql-reference/data-types/int-uint.md)          |
-| BIGINT           | [Int64](../../sql-reference/data-types/int-uint.md)          |
-| SERIAL           | [UInt32](../../sql-reference/data-types/int-uint.md)         |
-| BIGSERIAL        | [UInt64](../../sql-reference/data-types/int-uint.md)         |
-| TEXT, CHAR       | [String](../../sql-reference/data-types/string.md)           |
-| INTEGER          | Nullable([Int32](../../sql-reference/data-types/int-uint.md))|
-| ARRAY            | [Array](../../sql-reference/data-types/array.md)             |
+| DATE             | [Date](/reference/data-types/date)               |
+| TIMESTAMP        | [DateTime](/reference/data-types/datetime)       |
+| REAL             | [Float32](/reference/data-types/float)           |
+| DOUBLE           | [Float64](/reference/data-types/float)           |
+| DECIMAL, NUMERIC | [Decimal](/reference/data-types/decimal) (see note below) |
+| SMALLINT         | [Int16](/reference/data-types/int-uint)          |
+| INTEGER          | [Int32](/reference/data-types/int-uint)          |
+| BIGINT           | [Int64](/reference/data-types/int-uint)          |
+| SERIAL           | [UInt32](/reference/data-types/int-uint)         |
+| BIGSERIAL        | [UInt64](/reference/data-types/int-uint)         |
+| TEXT, CHAR       | [String](/reference/data-types/string)           |
+| INTEGER          | Nullable([Int32](/reference/data-types/int-uint))|
+| ARRAY            | [Array](/reference/data-types/array)             |
+
+:::note
+PostgreSQL `numeric(p, 0)` with a precision `p` greater than 76 (the maximum supported by `Decimal256`) — for example `numeric(78, 0)`, commonly used to store 256-bit integers — is mapped to [`Int256`](/reference/data-types/int-uint) instead of `Decimal`. Values that do not fit into the `Int256` range are rejected with an error.
+:::
 
 ## Examples of use {#examples-of-use}
 

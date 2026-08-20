@@ -1,6 +1,6 @@
 -- Quoted identifier `all` should be treated as a column reference,
 -- not as the special ALL keyword in ORDER BY, GROUP BY, and LIMIT BY.
--- LIMIT BY ALL requires the new analyzer.
+-- LIMIT BY ALL requires the analyzer.
 SET enable_analyzer = 1;
 
 -- ORDER BY `all` as a column reference (quoted)

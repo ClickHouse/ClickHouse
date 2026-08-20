@@ -28,9 +28,7 @@ O tempo de exportação de dados do BigQuery para o ClickHouse depende do tamanh
 | Total                                                                                             | 8.26 bilhões  | 23,577              | 3.982TB           | 8 min 3 s              | &gt; 6 dias 5 h | 53 min 45 s                  |
 
 <Steps>
-  <Step>
-    ## Exportar dados da tabela para o GCS
-
+  <Step title="Exportar dados da tabela para o GCS" id="1-export-table-data-to-gcs">
     Nesta etapa, usamos o [espaço de trabalho SQL do BigQuery](https://cloud.google.com/bigquery/docs/bigquery-web-ui) para executar nossos comandos SQL. Abaixo, exportamos uma tabela do BigQuery chamada `mytable` para um bucket do GCS usando a instrução [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements).
 
     ```sql
@@ -66,9 +64,7 @@ O tempo de exportação de dados do BigQuery para o ClickHouse depende do tamanh
     * O Parquet, por ser um formato orientado a colunas, é uma opção melhor para intercâmbio de dados, já que é compactado por natureza e mais rápido para o BigQuery exportar e para o ClickHouse consultar
   </Step>
 
-  <Step>
-    ## Importando dados do GCS para o ClickHouse
-
+  <Step title="Importando dados do GCS para o ClickHouse" id="2-importing-data-into-clickhouse-from-gcs">
     Quando a exportação for concluída, podemos importar esses dados para uma tabela no ClickHouse. Você pode usar o [Console SQL do ClickHouse](/pt-BR/integrations/connectors/sql-clients/sql-console) ou o [`clickhouse-client`](/pt-BR/concepts/features/interfaces/cli) para executar os comandos abaixo.
 
     Primeiro, você deve [criar sua tabela](/pt-BR/reference/statements/create/table) no ClickHouse:
@@ -121,9 +117,7 @@ O tempo de exportação de dados do BigQuery para o ClickHouse depende do tamanh
     </Info>
   </Step>
 
-  <Step>
-    ## Testando se a exportação de dados foi bem-sucedida
-
+  <Step title="Testando se a exportação de dados foi bem-sucedida" id="3-testing-successful-data-export">
     Para testar se seus dados foram inseridos corretamente, basta executar uma consulta `SELECT` na sua nova tabela:
 
     ```sql
