@@ -14,6 +14,7 @@
 #include <Common/RadixSort.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 
+#include <limits>
 #include <mutex>
 
 
@@ -49,6 +50,14 @@ void callWithType(TypeIndex type, F && f)
 
     UNREACHABLE();
 }
+
+/// The arithmetic type an ASOF key is compared as: the key itself, or for `Decimal` and
+/// `DateTime64` the integer they wrap.
+template <typename T>
+struct AsofKeyNativeType { using Type = T; };
+
+template <is_decimal T>
+struct AsofKeyNativeType<T> { using Type = typename T::NativeType; };
 
 template <typename TKey, ASOFJoinInequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
@@ -104,14 +113,47 @@ public:
             tolerance = applyVisitor(FieldVisitorConvertToNumber<TKey>(), *tolerance_);
     }
 
+    /// The key's own arithmetic type. `DateTime64` and the `Decimal`s are class types wrapping an
+    /// integer, and the comparison below is on that integer. Selected through a specialisation
+    /// rather than `std::conditional_t`, which would name `TKey::NativeType` even for a plain
+    /// arithmetic key that has no such member.
+    using Native = typename AsofKeyNativeType<TKey>::Type;
+
+    static ALWAYS_INLINE Native toNative(TKey value)
+    {
+        if constexpr (is_decimal<TKey>)
+            return value.value;
+        else
+            return value;
+    }
+
     /// Is the matched right-hand value close enough to the probe to be kept?
     /// The ASOF inequality fixes which side the match lies on, so only that direction is measured.
+    ///
+    /// The bound is added to the endpoint rather than subtracting the two values, because the
+    /// subtraction can leave the type's range just as easily. Either way the shifted endpoint can go
+    /// past the maximum, which wraps for an unsigned key and is undefined for a signed one, so a
+    /// valid match near the top of the domain would be dropped: with a `UInt8` key, right value 250
+    /// and probe 255, a bound of 10 would compute 250 + 10 = 4 and reject the row. When the endpoint
+    /// cannot be shifted without leaving the range, every value on that side is within the bound.
     ALWAYS_INLINE bool withinTolerance(TKey probe, TKey matched) const
     {
+        const Native probe_value = toNative(probe);
+        const Native matched_value = toNative(matched);
+        const Native bound = toNative(*tolerance);
+
         if constexpr (is_descending)
-            return probe <= matched + *tolerance;   /// matched <= probe
+        {
+            if (matched_value > std::numeric_limits<Native>::max() - bound)
+                return true;
+            return probe_value <= static_cast<Native>(matched_value + bound);
+        }
         else
-            return matched <= probe + *tolerance;   /// matched >= probe
+        {
+            if (probe_value > std::numeric_limits<Native>::max() - bound)
+                return true;
+            return matched_value <= static_cast<Native>(probe_value + bound);
+        }
     }
 
     void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override

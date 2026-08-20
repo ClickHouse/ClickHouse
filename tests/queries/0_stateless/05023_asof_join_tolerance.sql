@@ -72,7 +72,24 @@ FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
 ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
 ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 2 HOUR;
 
+SELECT '-- the bound survives plan serialization, as on distributed paths';
+SELECT count()
+FROM (SELECT 1 AS sym, toDateTime64('2024-01-01 10:00:00.000', 3) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toDateTime64('2024-01-01 09:00:00.000', 3) AS t) AS q
+ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND
+SETTINGS serialize_query_plan = 1;
+
+SELECT '-- a match near the top of the key domain is not lost to overflow';
+SELECT count()
+FROM (SELECT 1 AS sym, toUInt8(255) AS t) AS tr
+ASOF JOIN (SELECT 1 AS sym, toUInt8(250) AS t) AS q
+ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 10;
+
 SELECT '-- rejections';
+-- a fractional bound cannot be represented in an integer backed key
+SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE 0.5; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+-- nor can a bound wider than the key type itself
+SELECT count() FROM (SELECT 1 AS s, toUInt8(255) AS t) AS l ASOF JOIN (SELECT 1 AS s, toUInt8(250) AS t) AS r ON l.s = r.s AND l.t >= r.t TOLERANCE 1000; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 -- the legacy analyzer cannot carry the bound, so it must refuse rather than ignore it
 SELECT count() FROM trades AS tr ASOF JOIN quotes AS q ON tr.sym = q.sym AND tr.t >= q.t TOLERANCE INTERVAL 5 SECOND SETTINGS enable_analyzer = 0; -- { serverError NOT_IMPLEMENTED }
 -- only `hash` family algorithms can measure distance

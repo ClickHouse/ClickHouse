@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorConvertToNumber.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Common/IntervalKind.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnConst.h>
@@ -112,8 +113,23 @@ Field convertAsofToleranceToKeyUnits(const Field & tolerance, std::optional<Inte
     if (applyVisitor(FieldVisitorConvertToNumber<Float64>(), tolerance) < 0)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "TOLERANCE for ASOF JOIN must not be negative");
 
+    /// A bare number is already in the key's units, but it still has to fit that type exactly.
+    /// Storing it through a plain cast would truncate `TOLERANCE 0.5` on an integer key to zero,
+    /// silently turning the join into exact matches only, and would wrap an oversized bound on a
+    /// narrow key into a smaller one. Converting strictly turns both into an error instead.
     if (!interval_kind)
-        return tolerance;
+    {
+        try
+        {
+            return convertFieldToTypeOrThrow(tolerance, *removeNullable(key_type));
+        }
+        catch (const Exception &)
+        {
+            throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
+                "TOLERANCE for ASOF JOIN cannot be represented exactly in the ASOF key type {}",
+                key_type->getName());
+        }
+    }
 
     if (interval_kind->kind == IntervalKind::Kind::Month || interval_kind->kind == IntervalKind::Kind::Quarter
         || interval_kind->kind == IntervalKind::Kind::Year)

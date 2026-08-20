@@ -19,4 +19,8 @@
 -- two queries differing only in the bound must not answer alike
 0
 1
+-- the bound survives plan serialization, as on distributed paths
+0
+-- a match near the top of the key domain is not lost to overflow
+1
 -- rejections
