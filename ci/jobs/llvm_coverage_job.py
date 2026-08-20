@@ -143,7 +143,7 @@ _DIFF_OUTCOME_REASON = {
     ),
     DiffOutcome.FAILED: (
         "bash ci/jobs/scripts/generate_diff_coverage_report.sh failed"
-        " (see the command log attached to this result)"
+        " (its output is on the Generate LLVM Coverage Diff Report result)"
     ),
     DiffOutcome.UNKNOWN: (
         "bash ci/jobs/scripts/generate_diff_coverage_report.sh reported no outcome"
