@@ -17,10 +17,10 @@ INNER JOIN system.documentation AS documentation
     ON documentation.type = 'Statement' AND documentation.name = statements.name
 WHERE statements.description != documentation.description;
 
--- The enclosing statement is rendered as well, and a top-level statement has none.
-SELECT description LIKE '%**Part of:** `SELECT`%'
+-- Complete pages are exposed verbatim, without synthetic enclosing-statement sections.
+SELECT description NOT LIKE '%**Part of:**%'
 FROM system.documentation WHERE type = 'Statement' AND name = 'WHERE';
-SELECT description LIKE '%**Part of:**%'
+SELECT description NOT LIKE '%**Part of:**%'
 FROM system.documentation WHERE type = 'Statement' AND name = 'SELECT';
 
 -- Every statement carries the source file of the parser which documents it.
