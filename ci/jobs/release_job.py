@@ -418,8 +418,10 @@ def main():
     # for an already-created release (repo/Docker recovery). If the ref resolves
     # to a new release, they would otherwise fall through to the creation steps
     # below (push tag, bump version, PRs) and produce a partial new release, so
-    # reject that misuse and require the release tag instead.
-    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker):
+    # reject that misuse and require the release tag instead. A dry run publishes
+    # nothing, so the combination is fine there (it is how the PR checks trim the
+    # rehearsal to the git/gh logic).
+    if ok and not is_tag_pushed and (args.skip_repo or args.skip_docker) and not args.dry_run:
 
         def _require_recovery_ref():
             raise RuntimeError(
@@ -538,10 +540,10 @@ def main():
         def push_changelog_to_master():
             commit_msg = f"Update version_date.tsv and changelogs after {release_tag}"
             Shell.check(
-                "git config user.email robot-clickhouse@users.noreply.github.com",
+                "git config user.email robot-clickhouse@users.noreply.github.com"
+                " && git config user.name robot-clickhouse",
                 strict=True,
             )
-            Shell.check("git config user.name robot-clickhouse", strict=True)
             # The exact files the generation step touches; scanned vs HEAD + untracked.
             pathspec = " ".join(
                 [
@@ -572,8 +574,10 @@ def main():
                 os.makedirs(os.path.dirname(dst) or ".", exist_ok=True)
                 shutil.copy2(f, dst)
             try:
-                Shell.check("git fetch --quiet origin master", strict=True)
-                Shell.check("git checkout -f FETCH_HEAD", strict=True)
+                Shell.check(
+                    "git fetch --quiet origin master && git checkout -f FETCH_HEAD",
+                    strict=True,
+                )
                 for f in artifact_files:
                     os.makedirs(os.path.dirname(f) or ".", exist_ok=True)
                     shutil.copy2(os.path.join(backup_dir, f), f)

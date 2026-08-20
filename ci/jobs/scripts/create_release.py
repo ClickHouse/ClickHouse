@@ -508,12 +508,10 @@ class ReleaseInfo:
             )
             with checkout("master"):
                 Shell.check(
-                    f"{GIT_PREFIX} fetch --quiet origin master",
+                    f"{GIT_PREFIX} fetch --quiet origin master"
+                    f" && {GIT_PREFIX} reset --hard FETCH_HEAD",
                     strict=True,
                     verbose=True,
-                )
-                Shell.check(
-                    f"{GIT_PREFIX} reset --hard FETCH_HEAD", strict=True, verbose=True
                 )
                 # Skip once master already describes the bump — compare the version, not the file, since VERSION_GITHASH tracks the moving tip.
                 master_bumped = not CHVersion.get_current_version().is_older(version)
@@ -539,11 +537,8 @@ class ReleaseInfo:
                     if dry_run:
                         # Nothing was committed, so revert the working-tree edits after previewing them.
                         Shell.check(
-                            f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
-                            verbose=True,
-                        )
-                        Shell.check(
-                            f"{GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
+                            f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'"
+                            f" && {GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
                             verbose=True,
                         )
 
