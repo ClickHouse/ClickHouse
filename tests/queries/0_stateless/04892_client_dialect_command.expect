@@ -193,6 +193,37 @@ if {[regexp {(^|\n)5(\r?\n|$)} $output]} {
 }
 file delete $rejected_file
 
+# A line that looks like a dialect command inside an unfinished string literal
+# is a part of the SQL, not a command.
+set literal_file "$CLICKHOUSE_TMP/$basename.literal"
+set fp [open $literal_file w]
+puts $fp "SELECT 'a\n/dialect kusto\nb' AS x FORMAT TSVRaw;"
+close $fp
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --queries-file=$literal_file"} output]} {
+    puts stderr "clickhouse-local failed on a multiline string literal: $output"
+    exit 1
+}
+if {![regexp {(^|\n)/dialect kusto(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not keep /dialect inside a string literal: $output"
+    exit 1
+}
+file delete $literal_file
+
+# The other text-level meta-commands keep working in a script with a dialect command.
+set meta_file "$CLICKHOUSE_TMP/$basename.meta"
+set fp [open $meta_file w]
+puts $fp "/dialect kusto\nprint 6\n/dialect clickhouse\nclear"
+close $fp
+if {[catch {exec bash -c "source $basedir/../shell_config.sh; \$CLICKHOUSE_LOCAL --allow_experimental_kusto_dialect=1 --queries-file=$meta_file"} output]} {
+    puts stderr "clickhouse-local failed on a meta-command after a dialect command: $output"
+    exit 1
+}
+if {![regexp {(^|\n)6(\r?\n|$)} $output]} {
+    puts stderr "clickhouse-local did not process the script with a trailing meta-command: $output"
+    exit 1
+}
+file delete $meta_file
+
 # A newline-terminated noninteractive meta-command without a dialect command
 # must retain the regular `clickhouse-local` processing path.
 set clear_file "$CLICKHOUSE_TMP/$basename.clear"

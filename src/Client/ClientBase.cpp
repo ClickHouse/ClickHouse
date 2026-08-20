@@ -45,6 +45,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Formats/FormatFactory.h>
 
+#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Parsers/ASTFromJSON.h>
@@ -3714,21 +3715,70 @@ bool ClientBase::processQueryText(const String & text)
         return false;
     };
 
-    const auto has_dialect_command_line = [&]
+    const auto has_dialect_command_line = [&](std::string_view script)
     {
         size_t line_begin = 0;
-        while (line_begin < text.size())
+        while (line_begin < script.size())
         {
-            const size_t line_end = text.find('\n', line_begin);
-            const size_t line_size = (line_end == String::npos ? text.size() : line_end) - line_begin;
-            if (is_dialect_command(std::string_view{text.data() + line_begin, line_size}))
+            const size_t line_end = script.find('\n', line_begin);
+            const size_t line_size = (line_end == std::string_view::npos ? script.size() : line_end) - line_begin;
+            if (is_dialect_command(std::string_view{script.data() + line_begin, line_size}))
                 return true;
 
-            if (line_end == String::npos)
+            if (line_end == std::string_view::npos)
                 break;
             line_begin = line_end + 1;
         }
         return false;
+    };
+
+    /// Execute a chunk of the script that surrounds a dialect command. It goes through the regular
+    /// path, so that the other text-level meta-commands (`clear`, `ls`, `help`, `\i`, `exit`) keep
+    /// working in a script that also contains a dialect command. The recursion is bounded: a chunk
+    /// with a dialect-command line left in it (a line that belongs to inline `INSERT` data) is
+    /// executed as SQL directly, so the nested call never re-enters the splitter.
+    const auto execute_chunk = [&](const String & sql_chunk)
+    {
+        if (has_dialect_command_line(sql_chunk))
+            return executeMultiQuery(sql_chunk);
+        return processQueryText(sql_chunk);
+    };
+
+    /// Whether the chunk is the beginning of a statement that continues on the following lines,
+    /// e.g. a string literal or a bracket left open. Such a continuation line is a part of the SQL
+    /// even when it looks like a dialect command.
+    const auto chunk_is_unfinished = [](const String & sql_chunk)
+    {
+        Lexer lexer(sql_chunk.data(), sql_chunk.data() + sql_chunk.size());
+        ssize_t bracket_depth = 0;
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            switch (token.type)
+            {
+                case TokenType::ErrorMultilineCommentIsNotClosed:
+                case TokenType::ErrorSingleQuoteIsNotClosed:
+                case TokenType::ErrorDoubleQuoteIsNotClosed:
+                case TokenType::ErrorBackQuoteIsNotClosed:
+                    return true;
+                case TokenType::OpeningRoundBracket:
+                case TokenType::OpeningSquareBracket:
+                case TokenType::OpeningCurlyBrace:
+                    ++bracket_depth;
+                    break;
+                case TokenType::ClosingRoundBracket:
+                case TokenType::ClosingSquareBracket:
+                case TokenType::ClosingCurlyBrace:
+                    --bracket_depth;
+                    break;
+                default:
+                    break;
+            }
+
+            if (token.isError())
+                return false;
+        }
+
+        return bracket_depth > 0;
     };
 
     const auto dialect_command_is_insert_data = [&](const String & sql_chunk)
@@ -3747,12 +3797,13 @@ bool ClientBase::processQueryText(const String & text)
             }
             catch (...)
             {
-                /// Ok: the accumulated chunk is not parseable, so it is certainly not an unterminated
-                /// inline `INSERT` data block. This is also the case that makes the command an escape
-                /// hatch: after a `SET dialect = 'kusto'` earlier in the script the rest of the chunk
-                /// does not parse as ClickHouse SQL, and `/dialect` still has to switch back. The
-                /// surrounding SQL keeps its own error reporting in `executeMultiQuery`.
-                return false;
+                /// Ok: an unparseable chunk is either an unfinished ClickHouse statement, whose next
+                /// line is a continuation rather than a command, or a statement in another dialect -
+                /// and the latter is exactly the case the command exists for: after an earlier
+                /// `SET dialect = 'kusto'` the rest of the chunk does not parse as ClickHouse SQL,
+                /// and `/dialect` still has to switch back. The surrounding SQL keeps its own error
+                /// reporting in `executeMultiQuery`.
+                return chunk_is_unfinished(sql_chunk);
             }
 
             /// An empty, blank or comment-only prefix is not inline data either.
@@ -3797,7 +3848,7 @@ bool ClientBase::processQueryText(const String & text)
     /// `clickhouse-local` accepts client meta-commands in noninteractive input. Split standalone
     /// dialect-command lines from a script before feeding the surrounding SQL to the multiquery
     /// parser, because the latter necessarily parses a whole input chunk with one dialect.
-    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n') && has_dialect_command_line())
+    if (supportsLocalMetaCommands() && !is_interactive && text.contains('\n') && has_dialect_command_line(text))
     {
         String sql_chunk;
         size_t line_begin = 0;
@@ -3809,7 +3860,7 @@ bool ClientBase::processQueryText(const String & text)
 
             if (is_dialect_command(line) && !dialect_command_is_insert_data(sql_chunk))
             {
-                if (!sql_chunk.empty() && !executeMultiQuery(sql_chunk))
+                if (!sql_chunk.empty() && !execute_chunk(sql_chunk))
                     return false;
                 sql_chunk.clear();
 
@@ -3828,7 +3879,7 @@ bool ClientBase::processQueryText(const String & text)
             line_begin = line_end + 1;
         }
 
-        return sql_chunk.empty() || executeMultiQuery(sql_chunk);
+        return sql_chunk.empty() || execute_chunk(sql_chunk);
     }
 
     auto trimmed_input = trim(text, [](char c) { return isWhitespaceASCII(c) || c == ';'; });
