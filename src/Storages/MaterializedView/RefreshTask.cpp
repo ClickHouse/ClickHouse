@@ -173,7 +173,6 @@ RefreshTask::RefreshTask(
     if (strategy.settings != nullptr)
         refresh_settings.applyChanges(strategy.settings->changes);
 
-    coordination.root_znode.randomize();
     if (empty)
     {
         /// To skip initial refresh, set the initial scheduling-related state as if this view was just refreshed.
@@ -482,9 +481,6 @@ void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy
         std::lock_guard guard(mutex);
 
         refresh_schedule = RefreshSchedule(new_strategy);
-        /// The retained RANDOMIZE FOR draw belongs to the old schedule, and the new one can compute the
-        /// same base deadline, so the key alone would not notice.
-        scheduling.randomized_draw_key.reset();
         std::vector<StorageID> deps = parseRefreshDependencies(
             new_strategy, view ? view->getStorageID().database_name : String{});
 
@@ -1277,7 +1273,7 @@ void RefreshTask::executeRefresh()
         znode.last_success_dependencies = std::move(execution.dependencies);
         znode.previous_attempt_error = "";
         znode.attempt_number = 0;
-        znode.randomize();
+        znode.randomness_obsolete = drawRandomness();
     }
     execution.znode = znode;
 
@@ -1658,12 +1654,9 @@ RefreshTask::determineNextRefreshTime(std::chrono::system_clock::time_point now,
         waiting_for_dependencies = true;
     else
     {
-        /// Keyed on znode state, never on `when`: a retry or a zero-period dependency refresh derives
-        /// `when` from the wall clock, which would redraw on every pass.
-        RandomizedDrawKey key {znode.last_completed_timeslot, znode.randomness};
-        if (!scheduling.randomized_draw_key.has_value() || *scheduling.randomized_draw_key != key)
+        if (znode.last_completed_timeslot != scheduling.randomness_drawn_for_timeslot)
         {
-            scheduling.randomized_draw_key = key;
+            scheduling.randomness_drawn_for_timeslot = znode.last_completed_timeslot;
             scheduling.randomness = drawRandomness();
         }
         when = refresh_schedule.addRandomSpread(when, scheduling.randomness);
@@ -2070,11 +2063,6 @@ void RefreshTask::AllDependenciesInfo::readText(ReadBuffer & in)
     skipWhitespaceIfAny(in, /*one_line=*/ true);
 }
 
-void RefreshTask::CoordinationZnode::randomize()
-{
-    randomness = drawRandomness();
-}
-
 String RefreshTask::CoordinationZnode::toString() const
 {
     /// "format version" should be incremented when making incompatible change, to make older
@@ -2102,7 +2090,7 @@ String RefreshTask::CoordinationZnode::toString() const
         << "last_attempt_succeeded: " << last_attempt_succeeded << "\n"
         << "previous_attempt_error: " << escape << previous_attempt_error << "\n"
         << "attempt_number: " << attempt_number << "\n"
-        << "randomness: " << randomness << "\n"
+        << "randomness: " << randomness_obsolete << "\n"
         << "refresh_running: " << refresh_running << "\n"
         << "last_success_end_time_ns: " << Int64(last_success_end_time.time_since_epoch().count()) << "\n";
 
@@ -2192,7 +2180,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
     required_field("last_attempt_succeeded", last_attempt_succeeded);
     required_field("previous_attempt_error", previous_attempt_error);
     required_field("attempt_number", attempt_number);
-    required_field("randomness", randomness);
+    required_field("randomness", randomness_obsolete);
 
     refresh_running = running_znode_exists;
     optional_field("refresh_running", refresh_running);

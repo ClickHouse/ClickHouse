@@ -97,10 +97,8 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Random number in [-1e9, 1e9], re-rolled after every successful refresh. No longer the offset
-        /// applied to the refresh time, since each replica draws its own; it is the shared marker that
-        /// tells every replica when to redraw (see determineNextRefreshTime).
-        Int64 randomness = 0;
+        /// Unused. Serialized for compatibility.
+        Int64 randomness_obsolete = 0;
 
         /// Whether any replica is executing a refresh right now.
         /// May be inaccurate if the replica that's executing refresh lost zookeeper connection for
@@ -116,8 +114,6 @@ public:
 
         /// Znode version. Not serialized.
         int32_t version = -1;
-
-        void randomize(); // assigns `randomness`
 
         String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
@@ -307,19 +303,6 @@ private:
         bool out_of_schedule = false;
     };
 
-    /// What a RANDOMIZE FOR offset was drawn for. Redrawn whenever either changes.
-    struct RandomizedDrawKey
-    {
-        std::chrono::sys_seconds last_completed_timeslot;
-        Int64 success_generation;
-
-        bool operator==(const RandomizedDrawKey & rhs) const
-        {
-            return last_completed_timeslot == rhs.last_completed_timeslot
-                && success_generation == rhs.success_generation;
-        }
-    };
-
     struct SchedulingState
     {
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
@@ -330,9 +313,9 @@ private:
         /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
         bool out_of_schedule_refresh_requested = false;
 
-        /// This replica's RANDOMIZE FOR offset, and what it was drawn for. See determineNextRefreshTime.
-        /// Not persisted, so a restart draws again and moves a pending refresh time.
-        std::optional<RandomizedDrawKey> randomized_draw_key;
+        /// This replica's RANDOMIZE FOR offset, and what it was drawn for.
+        /// Redrawn when last_completed_timeslot changes.
+        std::chrono::sys_seconds randomness_drawn_for_timeslot {};
         Int64 randomness = 0;
 
         /// Solves this unusual case:
