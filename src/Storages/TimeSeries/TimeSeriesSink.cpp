@@ -655,6 +655,21 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         }
     }
 
+    /// The flags are parallel to the samples; check every row here, before the samples block can be
+    /// skipped for a chunk with no samples at all, where mismatched flags would vanish silently.
+    {
+        const auto & markers_offsets = ts_is_stale_markers->getOffsets();
+        for (size_t i = 0; i != markers_offsets.size(); ++i)
+        {
+            size_t num_markers = markers_offsets[i] - (i == 0 ? 0 : markers_offsets[i - 1]);
+            size_t num_samples = ts_offsets[i] - (i == 0 ? 0 : ts_offsets[i - 1]);
+            if (num_markers != 0 && num_markers != num_samples)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Column `{}` has {} flags for a time series with {} samples, it must be empty or have one flag per sample",
+                    TimeSeriesColumnNames::IsStaleMarker, num_markers, num_samples);
+        }
+    }
+
     PaddedPODArray<UInt8> filter;
     size_t num_time_series = buildNonEmptyTagsFilter(*metric_name_col.column, tags_offsets, filter);
 
