@@ -496,6 +496,48 @@ def window_function_generators(docs_dir, file_map):
     return gens
 
 
+DICTIONARY_LAYOUT_PAGE_ALIASES = {
+    "hashed-array": "hashed_array",
+    "ip-trie": "ip_trie",
+    "naive-bayes": "naive_bayes",
+    "range-hashed": "range_hashed",
+    "regexp-tree": "regexp_tree",
+    "ssd-cache": "ssd_cache",
+}
+
+
+def dictionary_layout_generators(docs_dir, file_map):
+    # One page per dictionary-layout family, discovered from the migrated docs
+    # tree. The canonical layout registrations expose their complete page bodies
+    # through `system.dictionary_layouts`. Some pages cover related complex-key
+    # variants as well, while page filenames use hyphens where registered layout
+    # names use underscores, so bridge those names explicitly.
+    gens = []
+    for docu, mint in sorted(file_map.items()):
+        if "/statements/create/dictionary/layouts/" not in mint or not mint.endswith(".mdx"):
+            continue
+        page = os.path.join(docs_dir, mint)
+        if not os.path.isfile(page):
+            continue
+        with open(page, encoding="utf-8") as f:
+            if not START_RE.search(f.read()):
+                continue
+        basename = os.path.basename(mint)[: -len(".mdx")]
+        gens.append({
+            "name": f"dictionary-layout:{basename}",
+            "sql": ["generate-dictionary-layouts.sql"],
+            "params": {
+                "layout": DICTIONARY_LAYOUT_PAGE_ALIASES.get(basename, basename)
+            },
+            "outfile": "temp-dictionary-layout.md",
+            "dest": docu,
+            "method": "markers",
+            "skip_if_empty": True,
+            "full_transform": True,
+        })
+    return gens
+
+
 ALL_GENERATORS = SETTINGS_GENERATORS + FUNCTION_GENERATORS
 
 
@@ -1822,9 +1864,10 @@ def main(argv=None):
     repo_root = os.path.dirname(docs_dir)
     slug_map = args.slug_map or os.path.join(docs_dir, "_migration", "slug-map.csv")
 
-    # The component-reference families (table/database engines, data types, formats,
-    # table/window functions) discover their pages by iterating the slug map
-    # (file_map), so build it even for a --no-remap-legacy run: those generators'
+    # The component-reference families (table/database engines, data types,
+    # formats, table/window functions, dictionary layouts) discover their pages
+    # by iterating the slug map (file_map), so build it even for a
+    # --no-remap-legacy run: those generators'
     # names are what the fast-fail check needs to tell whether the current selection
     # targets a family such a run cannot produce. The link/import remapping itself
     # only runs under --remap-legacy, so drop `migrate`/`lk` afterwards in that mode.
@@ -1840,6 +1883,7 @@ def main(argv=None):
         format_generators,
         table_function_generators,
         window_function_generators,
+        dictionary_layout_generators,
     ]
 
     all_generators = ALL_GENERATORS + aggregate_generators(docs_dir)
@@ -1860,8 +1904,9 @@ def main(argv=None):
         # source is updated to emit Mintlify-native paths (see the module
         # docstring). Today no family can be produced in it:
         #   * the component-reference families (table/database engines, data
-        #     types, formats, table/window functions) are discovered through the
-        #     slug map and need its link/path remapping to even be enumerated;
+        #     types, formats, table/window functions, dictionary layouts) are
+        #     discovered through the slug map and need its link/path remapping
+        #     to even be enumerated;
         #   * settings, functions and aggregate carry hard-coded Docusaurus
         #     `dest` paths (e.g. docs/operations/settings/settings.md,
         #     docs/sql-reference/aggregate-functions/reference/<fn>.md) whose
