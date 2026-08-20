@@ -30,9 +30,11 @@ struct CastDiagnostic
 
 FunctionBasePtr createInternalCast(ColumnWithTypeAndName from, DataTypePtr to, CastType cast_type, std::optional<CastDiagnostic> diagnostic, ContextPtr context);
 
-/// Whether CastType::accurateOrNull accepts this target. Both the target itself and every type nested
-/// in it must be able to be inside Nullable, because the cast reports a failure by wrapping the target
-/// in Nullable. A caller that cannot let that exception escape must ask first.
+/// Whether CastType::accurateOrNull accepts this target. Failure is reported by wrapping the target in
+/// Nullable, so the target itself must be able to be inside Nullable; a nested type is also accepted
+/// when it can carry a NULL of its own, as Dynamic and Variant do.
 bool canBeAccurateCastOrNullTarget(const DataTypePtr & type);
+
+FunctionOverloadResolverPtr createCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic);
 
 }
