@@ -46,6 +46,9 @@ release_dry_run_new_job = Job.Config(
         "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
         " --ref master --release-type new --dry-run --skip-repo --skip-docker"
     ),
+    # Mint a gh token via the PR lambda so `gh` reads and `git push --dry-run`
+    # authenticate: PR job commands otherwise get no GitHub token.
+    enable_gh_auth=True,
     digest_config=_release_dry_run_digest,
     timeout=1800,
 )
@@ -60,6 +63,7 @@ release_dry_run_patch_job = Job.Config(
         " --ref auto --release-type patch --dry-run --skip-repo --skip-docker"
         " --max-candidates 8"
     ),
+    enable_gh_auth=True,
     digest_config=_release_dry_run_digest,
     timeout=1800,
 )
