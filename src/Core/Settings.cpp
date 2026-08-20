@@ -8924,7 +8924,7 @@ Takes effect only together with `make_distributed_plan = 1`: the setting alone d
     DECLARE(Bool, cascades_aggregation_pushdown, true, R"(
 Consider pushing partial aggregation below a join (eager aggregation) as a cost-based alternative in the Cascades optimizer.
 Takes effect only together with `enable_cascades_optimizer = 1` and `make_distributed_plan = 1`.
-)", EXPERIMENTAL) \
+)", BETA) \
     DECLARE(Bool, enable_join_runtime_filters, true, R"(
 Filter left side by set of JOIN keys collected from the right side at runtime.
 )", BETA) \
