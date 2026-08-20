@@ -373,7 +373,12 @@ void ColumnLowCardinality::doInsertRangeFrom(const IColumn & src, size_t start, 
     if (&low_cardinality_src->getDictionary() == &getDictionary())
     {
         /// Dictionary is shared with src column. Insert only indexes.
-        idx.insertIndexesRange(low_cardinality_src->getIndexes(), start, length);
+        idx.insertIndexesRangeWithShift(
+            low_cardinality_src->getIndexes(),
+            start,
+            length,
+            /*shift=*/0,
+            low_cardinality_src->getDictionary().size() - 1);
     }
     else
     {

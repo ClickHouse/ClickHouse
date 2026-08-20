@@ -403,21 +403,57 @@ TEST(ColumnLowCardinality, EmptyDestinationSharesMinimalSourceDictionary)
     const auto & full_low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*full_destination);
     EXPECT_EQ(&full_low_cardinality_destination.getDictionary(), &source->getDictionary());
     EXPECT_TRUE(full_low_cardinality_destination.isSharedDictionary());
+    EXPECT_EQ(full_low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt8));
 
     auto sliced_destination = low_cardinality_type->createColumn();
     sliced_destination->insertRangeFrom(*source, 1, 4);
     const auto & sliced_low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*sliced_destination);
     EXPECT_EQ(&sliced_low_cardinality_destination.getDictionary(), &source->getDictionary());
     EXPECT_TRUE(sliced_low_cardinality_destination.isSharedDictionary());
-    EXPECT_EQ(sliced_low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt32));
+    EXPECT_EQ(sliced_low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt8));
     for (size_t i = 0; i < 4; ++i)
         EXPECT_EQ((*sliced_destination)[i], (*source)[i + 1]);
 
     sliced_destination->insertRangeFrom(*source, 5, 2);
     EXPECT_EQ(&sliced_low_cardinality_destination.getDictionary(), &source->getDictionary());
     EXPECT_TRUE(sliced_low_cardinality_destination.isSharedDictionary());
+    EXPECT_EQ(sliced_low_cardinality_destination.getSizeOfIndexType(), sizeof(UInt8));
     for (size_t i = 0; i < 2; ++i)
         EXPECT_EQ((*sliced_destination)[4 + i], (*source)[5 + i]);
+}
+
+TEST(ColumnLowCardinality, SharedDictionaryCopyUsesMinimalIndexWidth)
+{
+    auto check_width = [](size_t dictionary_size, size_t expected_index_width)
+    {
+        std::vector<UInt32> source_indexes;
+        source_indexes.reserve(dictionary_size - 1);
+        for (size_t index = 1; index < dictionary_size; ++index)
+            source_indexes.push_back(static_cast<UInt32>(index));
+
+        auto source = makeLowCardinalityUInt64Column<UInt32>(
+            dictionary_size, source_indexes, /*key_offset=*/0, /*is_shared=*/true);
+        ASSERT_EQ(source->getSizeOfIndexType(), sizeof(UInt32));
+
+        auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeUInt64>());
+        auto destination = low_cardinality_type->createColumn();
+
+        destination->insertRangeFrom(*source, 0, source->size());
+
+        const auto & low_cardinality_destination = assert_cast<const ColumnLowCardinality &>(*destination);
+        EXPECT_EQ(&low_cardinality_destination.getDictionary(), &source->getDictionary());
+        EXPECT_TRUE(low_cardinality_destination.isSharedDictionary());
+        EXPECT_EQ(low_cardinality_destination.getSizeOfIndexType(), expected_index_width);
+        expectRangeEquals(*destination, 0, *source, 0, source->size());
+
+        destination->insertRangeFrom(*source, 0, source->size());
+        EXPECT_EQ(low_cardinality_destination.getSizeOfIndexType(), expected_index_width);
+        expectRangeEquals(*destination, source->size(), *source, 0, source->size());
+    };
+
+    check_width(10, sizeof(UInt8));
+    check_width(256, sizeof(UInt8));
+    check_width(257, sizeof(UInt16));
 }
 
 TEST(ColumnLowCardinality, EmptyDestinationDoesNotShareUnsharedMinimalSourceDictionary)
