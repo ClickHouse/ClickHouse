@@ -1016,7 +1016,11 @@ document.getElementById('mass-editor-textarea').addEventListener('input', e => {
 
 let metrics_editor_active = false;
 const metric_column_regex = /\b(?:ProfileEvent|CurrentMetric)_[A-Za-z0-9_]+\b/;
-const async_metric_condition_regex = /\bmetric\s*(?:=|LIKE)\s*'[^']+'/;
+/// The whole asynchronous metric condition of a chart: the `metric` predicate together with the
+/// `key` predicate that a key-value metric adds after it. Both are matched as a unit, so that
+/// generating a chart from a template that is already keyed replaces the previous key instead of
+/// leaving it behind.
+const async_metric_condition_regex = /\bmetric\s*(?:=|LIKE)\s*'(?:[^'\\]|\\.)*'(?:\s+AND\s+key\s*=\s*'(?:[^'\\]|\\.)*')?/i;
 
 /// Extracts an ordered list of {kind, name, key?} from a pasted text, ignoring unrecognized lines. Accepted lines:
 ///     extern const Event RejectedInserts;
