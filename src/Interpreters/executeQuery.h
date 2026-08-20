@@ -108,6 +108,8 @@ std::pair<ASTPtr, BlockIO> executeQuery(
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete    /// To which stage the query must be executed.
 );
 
+void executeQueryInBackground(std::string_view query, const ASTPtr & ast, ContextMutablePtr context);
+
 /// Executes BlockIO returned from executeQuery(...)
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);

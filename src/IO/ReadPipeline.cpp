@@ -14,6 +14,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReaderExecutor.h>
 #include <IO/DiskCacheProvider.h>
+#include <IO/PageCacheProvider.h>
 #include <IO/PipelineReadBuffer.h>
 #include <IO/LocalSourceReader.h>
 #include <IO/ObjectStorageSourceReader.h>
@@ -204,14 +205,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor implements neither async prefetch, the distributed cache, nor the page cache,
-    /// so fall back rather than silently drop those stages. Decryption and the filesystem cache ARE
-    /// supported (fed below).
-    if (distributed_cache || memory_cache || async_prefetch)
+    /// The executor implements neither async prefetch nor the distributed cache, so fall back rather
+    /// than silently drop those stages. Decryption, the filesystem cache, and the page (memory) cache
+    /// ARE supported (fed below).
+    if (distributed_cache || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(distributed cache, page cache, or async prefetch not supported by the executor)");
+            "(distributed cache or async prefetch not supported by the executor)");
         return nullptr;
     }
 
@@ -253,6 +254,39 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path (source kind not supported by the executor)");
         return nullptr;
+    }
+
+    /// PageCache (memory) goes first in the chain (fastest). It's file-level: one `PageCacheFile`
+    /// derived from the front object serves every lookup. Skipped when any object has unknown size —
+    /// cells are sized to the file's real byte length (so the tail block has no past-EOF region),
+    /// which needs the total size up front. Object storage with an unknown-size object already fell
+    /// back above; this guard also covers any future unknown-size source.
+    bool any_unknown_size = false;
+    size_t total_file_size = 0;
+    for (const auto & object : source->objects)
+    {
+        if (object.bytes_size == StoredObject::UnknownSize)
+        {
+            any_unknown_size = true;
+            break;
+        }
+        total_file_size += object.bytes_size;
+    }
+
+    if (memory_cache && memory_cache->page_cache_settings.cache && !any_unknown_size)
+    {
+        const auto & page_cache_settings = memory_cache->page_cache_settings;
+        PageCacheFile cache_file;
+        cache_file.path = memory_cache->custom_cache_path.value_or(
+            memory_cache->cache_path_prefix + source->objects.front().remote_path);
+        cache_file.file_version = memory_cache->custom_file_version.value_or("");
+        cache_chain.push_back(std::make_shared<PageCacheProvider>(
+            page_cache_settings.cache,
+            std::move(cache_file),
+            page_cache_settings.block_size,
+            page_cache_settings.random_eviction_for_tests,
+            page_cache_settings.read_if_exists_otherwise_bypass,
+            total_file_size));
     }
 
     /// Cache chain of the filesystem cache(s). `filesystem_caches` is inner-to-outer; the executor
