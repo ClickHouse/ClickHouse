@@ -40,6 +40,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
 #include <DataTypes/hasNullable.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
@@ -233,7 +234,6 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -1022,6 +1022,38 @@ void MergeTreeData::checkProperties(
     if (!allow_suspicious_indices && !attach)
         if (const auto * index_function = typeid_cast<ASTFunction *>(new_sorting_key.definition_ast.get()))
             checkSuspiciousIndices(index_function);
+
+    /// Check that the table sorting column is not compressed by a lossy codec (e.g. SZ3). Lossy codecs
+    /// lose precision and may destroy the sorting. Not on attach, so a table stored by an earlier version
+    /// stays loadable.
+    if (!attach)
+    {
+        /// Collecting the sort key columns.
+        for (const auto & name : new_metadata.getColumnsRequiredForSortingKey())
+        {
+            const auto column = new_metadata.columns.tryGetColumnDescription(
+                GetColumnsOptions(GetColumnsOptions::AllPhysical), name);
+            if (!column || !column->codec)
+                continue;
+
+            /// A codec applies to `Array(Float64)` through its float substream, not through the outer type,
+            /// so lossiness is resolved per substream the way the part writer resolves it.
+            bool is_lossy = false;
+            ISerialization::StreamCallback callback = [&](const auto & substream_path)
+            {
+                if (is_lossy || !ISerialization::isSpecialCompressionAllowed(substream_path))
+                    return;
+                is_lossy = CompressionCodecFactory::instance()
+                               .get(column->codec, substream_path.back().data.type.get())->isLossyCompression();
+            };
+            column->type->getDefaultSerialization()->enumerateStreams(callback, column->type);
+
+            if (is_lossy)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Column {} is used in the sorting key, so it cannot be compressed with a lossy codec",
+                    backQuoteIfNeed(name));
+        }
+    }
 
     for (size_t i = 0; i < sorting_key_size; ++i)
     {
@@ -5334,40 +5366,37 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
     /// going through the experimental-codec gate that column codecs and `TTL ... RECOMPRESS` use. Enforce
-    /// `allow_experimental_codecs` for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
+    /// the gate for an explicit `ALTER TABLE ... MODIFY SETTING` here, on the initiator
     /// with the query context; applying the resulting metadata (`changeSettings`, e.g. on other replicas)
     /// is not re-checked, so tables that already carry such a codec keep working. The same applies to
     /// `ALTER TABLE ... RESET SETTING`: the post-reset value comes from the current `<merge_tree>` config
     /// defaults (`changeSettings` rebuilds from `getDefaultSettings`), so a config default carrying an
     /// experimental codec must not re-enter the table without the session opting in. The CREATE-time
     /// counterpart of this check lives in `registerStorageMergeTree`.
-    if (!settings[Setting::allow_experimental_codecs])
+    std::unique_ptr<MergeTreeSettings> default_settings;
+    for (const auto & command : commands)
     {
-        std::unique_ptr<MergeTreeSettings> default_settings;
-        for (const auto & command : commands)
+        if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
+            continue;
+
+        for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
         {
-            if (command.type != AlterCommand::MODIFY_SETTING && command.type != AlterCommand::RESET_SETTING)
-                continue;
-
-            for (const auto * setting_name : {"marks_compression_codec", "primary_key_compression_codec", "default_compression_codec"})
+            String codec;
+            if (command.type == AlterCommand::MODIFY_SETTING)
             {
-                String codec;
-                if (command.type == AlterCommand::MODIFY_SETTING)
-                {
-                    Field value;
-                    if (command.settings_changes.tryGet(setting_name, value))
-                        codec = value.safeGet<String>();
-                }
-                else if (command.settings_resets.contains(setting_name))
-                {
-                    if (!default_settings)
-                        default_settings = getDefaultSettings();
-                    codec = default_settings->get(setting_name).safeGet<String>();
-                }
-
-                if (!codec.empty())
-                    CompressionCodecFactory::instance().validateCodecString(codec, /*sanity_check=*/ false, /*allow_experimental_codecs=*/ false);
+                Field value;
+                if (command.settings_changes.tryGet(setting_name, value))
+                    codec = value.safeGet<String>();
             }
+            else if (command.settings_resets.contains(setting_name))
+            {
+                if (!default_settings)
+                    default_settings = getDefaultSettings();
+                codec = default_settings->get(setting_name).safeGet<String>();
+            }
+
+            if (!codec.empty())
+                CompressionCodecFactory::instance().validateCodecString(codec, CodecValidationSettings(settings));
         }
     }
 
@@ -12810,7 +12839,8 @@ void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
 
 bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
 {
-    if (subscription_manager.isEmpty())
+    auto subscriptions = subscription_manager.takeAllSubscriptions();
+    if (subscriptions.empty())
         return false;
 
     LocalPartsByPartition local_parts;
@@ -12820,12 +12850,12 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     auto promoters = buildPromoters();
 
     bool any_enriched = false;
-    subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
+    for (auto & subscription : subscriptions)
     {
         auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
         any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
         bounds_subscription.onEnrichmentRound();
-    });
+    }
 
     if (any_enriched)
         assignee.trigger();

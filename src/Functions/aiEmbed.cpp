@@ -44,10 +44,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -132,11 +128,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -171,7 +164,7 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();

@@ -501,6 +501,22 @@ Valores possíveis:
 
 Mantém a leitura em ordem da tabela à esquerda em operações JOIN, que pode ser aproveitada por etapas subsequentes.
 
+<div id="query_plan_read_in_order_through_spilling_join">
+  ## query_plan_read_in_order_through_spilling_join
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração que permite propagar a leitura em ordem por um hash join com um limite automático de spill, mantendo essa junção na memória para preservar a ordem prometida. previous_value=false para que a `compatibility` com versões anteriores à 26.8 restaure o comportamento conservador anterior, no qual essa junção nunca é usada para leitura em ordem, mas sempre pode fazer spill."}]}]} />
+
+Permite que [`query_plan_read_in_order_through_join`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_read_in_order_through_join) também se aplique a um hash join com um limite automático de spill para disco configurado por [`max_bytes_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) ou [`max_bytes_ratio_before_external_join`](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join).
+
+Essa junção só pode prometer preservar a ordem da tabela à esquerda se nunca fizer spill, pois o spill distribui as linhas em buckets por hash. Quando a otimização se aplica, a junção é mantida na memória e o limite de spill deixa de ser acionado: em vez disso, a tabela do lado direito é limitada pelo memory tracker, como se nenhum spill automático estivesse configurado.
+
+Defina como `0` para manter o comportamento conservador de nunca propagar a leitura em ordem por uma junção que possa fazer spill. As consultas que dependem de spill para permanecer dentro do limite de memória e que, de outra forma, se tornariam elegíveis para a otimização continuam funcionando como antes.
+
+A otimização independente de `ORDER BY ... LIMIT` por meio de `JOIN`, que envia um `Sort` e um `Limit` para o lado preservado da junção, nunca depende de a junção preservar alguma ordem e continua disponível para junções que podem fazer spill, independentemente desta configuração. No entanto, ela dá lugar à leitura em ordem quando isso é possível. Portanto, com esta configuração ativada, um `ORDER BY ... LIMIT` sobre uma junção que pode fazer spill, cujo lado preservado pode transmitir linhas na ordem solicitada, recebe o plano de leitura em ordem em vez de um `Sort` e `Limit` enviados para baixo. Essa transição mantém as condições anteriores, principalmente que [`query_plan_join_swap_table`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_join_swap_table) esteja explicitamente definido como `false`: com o `auto` padrão, uma otimização posterior pode trocar os lados da junção e invalidar o plano de leitura em ordem. Assim, a transição nunca é efetivada, e essas consultas mantêm o `Sort` e o `Limit` enviados para baixo.
+
 <div id="query_plan_remove_redundant_distinct">
   ## query_plan_remove_redundant_distinct
 </div>

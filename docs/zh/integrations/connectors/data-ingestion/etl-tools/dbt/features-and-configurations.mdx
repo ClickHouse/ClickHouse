@@ -61,11 +61,11 @@ your_profile_name:
 ```
 
 <div id="schema-vs-database">
-  ### schema 与 database
+  ### schema 与 数据库
 </div>
 
 dbt 模型的 relation 标识符 `database.schema.table` 与 ClickHouse 不兼容，因为 ClickHouse 不支持 `schema`。
-因此，我们采用简化形式 `schema.table`，其中 `schema` 表示 ClickHouse 的 database。不建议使用 `default` database。
+因此，我们采用简化形式 `schema.table`，其中 `schema` 表示 ClickHouse 的 数据库。不建议使用 `default` 数据库。
 
 <div id="set-statement-warning">
   ### SET 语句警告
@@ -172,16 +172,16 @@ dbt 依赖写入后读取一致性模型。如果无法保证所有操作都发�
 键，用于填充 S3 表函数的
 参数：
 
-| 参数名称                              | 描述                                                                                                                          |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| bucket                            | bucket 的基础 URL，例如 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`。如果未提供协议，则默认使用 `https://`。            |
-| path                              | 用于表查询的 S3 路径，例如 `/trips_4.gz`。支持 S3 通配符。                                                                                    |
-| fmt                               | 引用的 S3 对象所预期的 ClickHouse 输入格式 (例如 `TSV` 或 `CSVWithNames`) 。                                                                 |
-| structure                         | bucket 中数据的列结构，以名称/数据类型对列表表示，例如 `['id UInt32', 'date DateTime', 'value String']`。如果未提供，ClickHouse 将推断该结构。                   |
-| aws&#95;access&#95;key&#95;id     | S3 访问密钥 ID。                                                                                                                 |
-| aws&#95;secret&#95;access&#95;key | S3 密钥。                                                                                                                      |
-| role&#95;arn                      | 用于安全访问 S3 对象的 ClickhouseAccess IAM role 的 ARN。更多信息请参见此[文档](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。 |
-| compression                       | S3 对象使用的压缩方法。如果未提供，ClickHouse 将尝试根据文件名判断压缩方式。                                                                               |
+| 参数名称                              | 描述                                                                                                               |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| bucket                            | bucket 的基础 URL，例如 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi`。如果未提供协议，则默认使用 `https://`。 |
+| path                              | 用于表查询的 S3 路径，例如 `/trips_4.gz`。支持 S3 通配符。                                                                         |
+| fmt                               | 引用的 S3 对象所预期的 ClickHouse 输入格式 (例如 `TSV` 或 `CSVWithNames`) 。                                                      |
+| structure                         | bucket 中数据的列结构，以名称/数据类型对列表表示，例如 `['id UInt32', 'date DateTime', 'value String']`。如果未提供，ClickHouse 将推断该结构。        |
+| aws&#95;access&#95;key&#95;id     | S3 访问密钥 ID。                                                                                                      |
+| aws&#95;secret&#95;access&#95;key | S3 密钥。                                                                                                           |
+| role&#95;arn                      | 为安全访问 S3 而创建的 IAM role 的 ARN。更多信息请参见此[文档](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。       |
+| compression                       | S3 对象使用的压缩方法。如果未提供，ClickHouse 将尝试根据文件名判断压缩方式。                                                                    |
 
 有关如何使用此宏的示例，请参见
 [S3 测试文件](https://github.com/ClickHouse/dbt-clickhouse/blob/main/tests/integration/adapter/clickhouse/test_clickhouse_s3.py)。

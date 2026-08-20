@@ -393,6 +393,7 @@ Selecting the first 5 rows from the table from S3 file `https://datasets-documen
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -414,7 +415,8 @@ ClickHouse uses filename extensions to determine the format of the data. For exa
 ```sql
 SELECT *
 FROM s3(
-   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN
 )
 LIMIT 5;
 ```
@@ -455,7 +457,7 @@ Count the number of rows in files ending with numbers from 1 to 3:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -468,7 +470,7 @@ Count the total amount of rows in all files in these two directories:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -481,11 +483,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 </Tip>
 
-Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
+Count the total number of rows in files named `file-1.csv`, ..., `file-4.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -511,18 +513,18 @@ SELECT name, value FROM existing_table;
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Note. It is possible to specify custom URL mappers in the server configuration file. Example:
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 The URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` would be replaced to `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
@@ -650,7 +652,8 @@ Extracting data from these archives is possible using ::. Globs can be used both
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -713,7 +716,7 @@ The setting also applies to the [S3](/reference/engines/table-engines/integratio
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 ## Storage Settings {#storage-settings}
