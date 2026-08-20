@@ -6411,7 +6411,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     /// branch above this reorders a two-table chain too, since the first element
                     /// keeps having no clause. ARRAY JOIN elements carry no table to move.
                     std::vector<ASTTablesInSelectQueryElement *> elements;
-                    ASTs tables;
+                    ASTs table_expressions;
 
                     for (const auto & child : children)
                     {
@@ -6419,12 +6419,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                         if (element && element->table_expression)
                         {
                             elements.push_back(element);
-                            tables.push_back(element->table_expression);
+                            table_expressions.push_back(element->table_expression);
                         }
                     }
-                    std::shuffle(tables.begin(), tables.end(), fuzz_rand);
+                    std::shuffle(table_expressions.begin(), table_expressions.end(), fuzz_rand);
                     for (size_t i = 0; i < elements.size(); i++)
-                        elements[i]->replace(elements[i]->table_expression, tables[i]);
+                        elements[i]->replace(elements[i]->table_expression, table_expressions[i]);
                 }
             }
             /// Add array join
