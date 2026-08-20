@@ -36,7 +36,7 @@ doc_type: 'guide'
 
 **挿入時の重複排除をサポートするのは `*MergeTree` エンジンのみです。**
 
-`*ReplicatedMergeTree` エンジンでは、挿入の重複排除はデフォルトで有効になっており、[`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 設定で制御されます。非レプリケートの `*MergeTree` エンジンでは、挿入の重複排除は [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 設定で制御されます。
+`*ReplicatedMergeTree` エンジンでは、挿入の重複排除はデフォルトで有効になっており、[`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 設定で制御されます。非レプリケートの `*MergeTree` エンジンでは、挿入の重複排除は [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window) 設定で制御されます。
 
 上記の設定は、テーブルの重複排除ログのパラメーターを決定します。重複排除ログには有限個の `block_id` が保存され、これによって重複排除の動作が決まります (以下を参照) 。
 
@@ -69,11 +69,11 @@ ClickHouse にデータが挿入されると、行数とバイト数に基づい
 
 このプロセスは、ソーステーブルに対する次の設定で制御できます。
 
-* [`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window)
-* [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
-* [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
+* [`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
 
-さらに、ユーザープロファイル設定 [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) も有効にする必要があります。
+さらに、ユーザープロファイル設定 [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views) も有効にする必要があります。
 設定 `insert_deduplicate=1` を有効にすると、挿入されたデータはソーステーブルで重複排除されます。設定 `deduplicate_blocks_in_dependent_materialized_views=1` を有効にすると、依存先テーブルでの重複排除も追加で有効になります。完全な重複排除を行うには、両方を有効にする必要があります。
 
 materialized view 配下のテーブルにブロックを挿入する際、ClickHouse はソーステーブルの `block_id` と追加の識別子を組み合わせた文字列をハッシュ化して `block_id` を計算します。これにより、materialized view 内で正確な重複排除が保証され、materialized view 配下の宛先テーブルに到達する前にどのような変換が適用されたかにかかわらず、元の挿入に基づいてデータを区別できるようになります。

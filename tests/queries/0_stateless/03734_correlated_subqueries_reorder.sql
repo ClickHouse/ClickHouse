@@ -6,7 +6,6 @@ SET enable_analyzer = 1;
 
 SET query_plan_optimize_join_order_limit = 10;
 SET use_statistics = 1;
-SET materialize_statistics_on_insert = 1; -- materialize the auto-created column statistics so estimates are precise (no `no_statistics~` label)
 
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
 SET correlated_subqueries_use_in_memory_buffer = 1;
@@ -92,7 +91,7 @@ WHERE explain ilike '%ReadFrom%' or explain ilike '%JoinLogical%' or explain ili
 
 -- Test output now
 
-CREATE VIEW v_query1 AS
+CREATE VIEW v_query1 AS 
 SELECT
     sum(l_extendedprice) / 7.0 AS avg_yearly
 FROM
@@ -109,7 +108,7 @@ WHERE
             l_partkey = p_partkey
     );
 
-CREATE VIEW v_query2 AS
+CREATE VIEW v_query2 AS 
 SELECT
     sum(l_extendedprice) / 7.0 AS avg_yearly
 FROM
@@ -123,7 +122,7 @@ WHERE
         WHERE
             l_partkey = p_partkey
     );
-
+    
 -------------------------------------------
 SET correlated_subqueries_use_in_memory_buffer = 1;
 

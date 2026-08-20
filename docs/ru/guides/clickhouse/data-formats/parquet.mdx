@@ -182,7 +182,7 @@ SELECT * FROM file('time.parquet', Parquet);
 ```sql
 SELECT
     n,
-    toDateTime(time)                 <--- int to time
+    toDateTime(time)                 <--- int в time
 FROM file('time.parquet', Parquet);
 ```
 

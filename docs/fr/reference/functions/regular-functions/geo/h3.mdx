@@ -920,13 +920,13 @@ h3ExactEdgeLengthM(index)
 **Exemple**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthM(1310277011704381439), 6) AS exactEdgeLengthM;
+SELECT h3ExactEdgeLengthM(1310277011704381439) AS exactEdgeLengthM;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthM─┐
-│    195449.631634 │
-└──────────────────┘
+┌───exactEdgeLengthM─┐
+│ 195449.63163407316 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthkm">
@@ -952,13 +952,13 @@ h3ExactEdgeLengthKm(index)
 **Exemple**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthKm(1310277011704381439), 8) AS exactEdgeLengthKm;
+SELECT h3ExactEdgeLengthKm(1310277011704381439) AS exactEdgeLengthKm;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthKm─┐
-│      195.44963163 │
-└───────────────────┘
+┌──exactEdgeLengthKm─┐
+│ 195.44963163407317 │
+└────────────────────┘
 ```
 
 <div id="h3exactedgelengthrads">
@@ -984,13 +984,13 @@ h3ExactEdgeLengthRads(index)
 **Exemple**
 
 ```sql title="Query"
-SELECT round(h3ExactEdgeLengthRads(1310277011704381439), 12) AS exactEdgeLengthRads;
+SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads;;
 ```
 
 ```text title="Response"
-┌─exactEdgeLengthRads─┐
-│      0.030677980119 │
-└─────────────────────┘
+┌──exactEdgeLengthRads─┐
+│ 0.030677980118976447 │
+└──────────────────────┘
 ```
 
 <div id="h3numhexagons">
@@ -1053,9 +1053,9 @@ SELECT h3PointDistM(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistM;
 ```
 
 ```text title="Response"
-┌───────h3PointDistM─┐
-│ 2223901.0395045886 │
-└────────────────────┘
+┌──────h3PointDistM─┐
+│ 2223901.039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistkm">
@@ -1086,9 +1086,9 @@ SELECT h3PointDistKm(-10.0 ,0.0, 10.0, 0.0) AS h3PointDistKm;
 ```
 
 ```text title="Response"
-┌──────h3PointDistKm─┐
-│ 2223.9010395045884 │
-└────────────────────┘
+┌─────h3PointDistKm─┐
+│ 2223.901039504589 │
+└───────────────────┘
 ```
 
 <div id="h3pointdistrads">
@@ -1248,7 +1248,7 @@ Renvoie un nombre négatif si le calcul de la distance échoue.
 
 ```text title="Response"
 ┌─distance─┐
-│        6 │
+│        7 │
 └──────────┘
 ```
 
@@ -1291,7 +1291,7 @@ h3HexRing(index, k)
   ## h3GetUnidirectionalEdge
 </div>
 
-Renvoie un index H3 d’arête unidirectionnelle pour deux index de cellules H3 adjacentes (origine et destination). Lève une exception si l’une des entrées n’est pas une cellule H3 valide (ce comportement est contrôlé par le paramètre `functions_h3_default_if_invalid`). Pour des cellules valides qui ne sont pas voisines (y compris la même cellule deux fois), renvoie `0`.
+Renvoie l’index H3 d’une arête unidirectionnelle à partir de l’origine et de la destination fournies, ou 0 en cas d’erreur.
 
 **Syntaxe**
 
@@ -1329,7 +1329,7 @@ Détermine si le H3Index fourni correspond à une arête unidirectionnelle valid
 **Syntaxe**
 
 ```sql
-h3UnidirectionalEdgeIsValid(index)
+h3UnidirectionalEdgeisValid(index)
 ```
 
 **Paramètre**
@@ -1357,7 +1357,7 @@ h3UnidirectionalEdgeIsValid(index)
   ## h3GetOriginIndexFromUnidirectionalEdge
 </div>
 
-Renvoie l’index de l’hexagone d’origine à partir de l’arête unidirectionnelle H3Index. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie `0` uniquement lorsque ce paramètre est activé.
+Renvoie l’index de l’hexagone d’origine à partir de l’arête unidirectionnelle H3Index.
 
 **Syntaxe**
 
@@ -1372,17 +1372,16 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
 **valeur renvoyée**
 
 * Numéro d’index de l’hexagone d’origine. [UInt64](/fr/reference/data-types/int-uint).
-* Lève `INCORRECT_DATA` pour les arêtes dirigées non valides par défaut ; renvoie `0` lorsque `functions_h3_default_if_invalid = 1`.
 
 **Exemple**
 
 ```sql title="Query"
- SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707199) AS origin;
+ SELECT h3GetOriginIndexFromUnidirectionalEdge(1248204388774707197) AS origin;
 ```
 
 ```text title="Response"
 ┌─────────────origin─┐
-│ 599686042433355775 │
+│ 599686042433355773 │
 └────────────────────┘
 ```
 
@@ -1390,7 +1389,7 @@ h3GetOriginIndexFromUnidirectionalEdge(edge)
   ## h3GetDestinationIndexFromUnidirectionalEdge
 </div>
 
-Renvoie l’index du hexagone de destination à partir de l’arête unidirectionnelle H3Index. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie `0` uniquement lorsque ce paramètre est activé.
+Renvoie l’index du hexagone de destination à partir de l’arête unidirectionnelle H3Index.
 
 **Syntaxe**
 
@@ -1400,22 +1399,21 @@ h3GetDestinationIndexFromUnidirectionalEdge(edge)
 
 **Paramètre**
 
-* `edge` — Numéro d’index de l’hexagone représentant une arête unidirectionnelle. [UInt64](/fr/reference/data-types/int-uint).
+* `edge` — Numéro d’index d’hexagone représentant une arête unidirectionnelle. [UInt64](/fr/reference/data-types/int-uint).
 
 **Valeur renvoyée**
 
 * Numéro d’index de l’hexagone de destination. [UInt64](/fr/reference/data-types/int-uint).
-* Lève `INCORRECT_DATA` pour les arêtes dirigées non valides par défaut ; renvoie `0` lorsque `functions_h3_default_if_invalid = 1`.
 
 **Exemple**
 
 ```sql title="Query"
- SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707199) AS destination;
+ SELECT h3GetDestinationIndexFromUnidirectionalEdge(1248204388774707197) AS destination;
 ```
 
 ```text title="Response"
 ┌────────destination─┐
-│ 599686043507097599 │
+│ 599686043507097597 │
 └────────────────────┘
 ```
 
@@ -1433,7 +1431,7 @@ h3GetIndexesFromUnidirectionalEdge(edge)
 
 **Paramètre**
 
-* `edge` — Numéro d’index de l’hexagone représentant une arête unidirectionnelle. [UInt64](/fr/reference/data-types/int-uint).
+* `edge` — Numéro d’index d’hexagone représentant une arête unidirectionnelle. [UInt64](/fr/reference/data-types/int-uint).
 
 **Valeur renvoyée**
 
@@ -1442,7 +1440,7 @@ Un tuple composé de deux valeurs `tuple(origin,destination)` :
 * `origin` — numéro d’index de l’hexagone d’origine. [UInt64](/fr/reference/data-types/int-uint).
 * `destination` — numéro d’index de l’hexagone de destination. [UInt64](/fr/reference/data-types/int-uint).
 
-Lève une exception si l’entrée fournie n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie `(0,0)` uniquement lorsque ce paramètre est activé.
+Renvoyer `(0,0)` si l’entrée fournie n’est pas valide.
 
 **Exemple**
 
@@ -1460,7 +1458,7 @@ Lève une exception si l’entrée fournie n’est pas une arête dirigée valid
   ## h3GetUnidirectionalEdgesFromHexagon
 </div>
 
-Renvoie toutes les arêtes unidirectionnelles de l’H3Index fourni. Lève une exception si l’entrée n’est pas une cellule H3 valide (selon le paramètre `functions_h3_default_if_invalid`) ; renvoie un tableau vide uniquement lorsque ce paramètre est activé.
+Renvoie toutes les arêtes unidirectionnelles de l’H3Index fourni.
 
 **Syntaxe**
 
@@ -1470,17 +1468,16 @@ h3GetUnidirectionalEdgesFromHexagon(index)
 
 **Paramètre**
 
-* `index` — Numéro d&#39;index de l’hexagone représentant une cellule. [UInt64](/fr/reference/data-types/int-uint).
+* `index` — Numéro d&#39;index de l’hexagone représentant une arête unidirectionnelle. [UInt64](/fr/reference/data-types/int-uint).
 
 **Valeur renvoyée**
 
-* Array d&#39;index H3 représentant chaque arête unidirectionnelle. [Array](/fr/reference/data-types/array)([UInt64](/fr/reference/data-types/int-uint)).
-* Lève `INCORRECT_DATA` pour les cellules non valides par défaut ; renvoie `[]` lorsque `functions_h3_default_if_invalid = 1`.
+Array d&#39;index H3 représentant chaque arête unidirectionnelle. [Array](/fr/reference/data-types/array)([UInt64](/fr/reference/data-types/int-uint)).
 
 **Exemple**
 
 ```sql title="Query"
- SELECT h3GetUnidirectionalEdgesFromHexagon(599686042433355775) AS edges;
+ SELECT h3GetUnidirectionalEdgesFromHexagon(1248204388774707199) AS edges;
 ```
 
 ```text title="Response"
@@ -1493,7 +1490,7 @@ h3GetUnidirectionalEdgesFromHexagon(index)
   ## h3GetUnidirectionalEdgeBoundary
 </div>
 
-Renvoie les coordonnées qui définissent l’arête unidirectionnelle. Lève une exception si l’entrée n’est pas une arête dirigée valide (contrôlé par le paramètre `functions_h3_default_if_invalid`) ; renvoie un tableau vide uniquement lorsque ce paramètre est activé.
+Renvoie les coordonnées qui définissent l’arête unidirectionnelle.
 
 **Syntaxe**
 
@@ -1507,8 +1504,7 @@ h3GetUnidirectionalEdgeBoundary(index)
 
 **Valeur renvoyée**
 
-* Array de couples &#39;(lat, lon)&#39;. [Array](/fr/reference/data-types/array)([Float64](/fr/reference/data-types/float), [Float64](/fr/reference/data-types/float)).
-* Lève `INCORRECT_DATA` pour les arêtes dirigées non valides par défaut ; renvoie `[]` lorsque `functions_h3_default_if_invalid = 1`.
+* Tableau de couples &#39;(lon, lat)&#39;. [Array](/fr/reference/data-types/array)([Float64](/fr/reference/data-types/float), [Float64](/fr/reference/data-types/float)).
 
 **Exemple**
 

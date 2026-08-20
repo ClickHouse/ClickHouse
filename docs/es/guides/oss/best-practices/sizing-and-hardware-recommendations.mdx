@@ -84,7 +84,7 @@ Por ejemplo, al usar CPU de tipo M, recomendamos aprovisionar 100 GB de memoria 
   ## Memoria
 </div>
 
-Al igual que con la elección de la CPU, la elección de la proporción de memoria a almacenamiento, y entre memoria y CPU, depende de su caso de uso.
+Al igual que con la elección de la CPU, la elección de la proporción entre memoria y almacenamiento, y entre memoria y CPU, depende de su caso de uso.
 
 La cantidad de RAM necesaria generalmente depende de:
 
@@ -92,7 +92,7 @@ La cantidad de RAM necesaria generalmente depende de:
 * La cantidad de datos que se procesan en las consultas.
 
 Sin embargo, por lo general, cuanta más memoria tenga, más rápido se ejecutarán sus consultas.
-Si su caso de uso es sensible al precio, también pueden funcionar cantidades menores de memoria, ya que es posible habilitar ajustes ([`max_bytes_before_external_group_by`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings/max-bytes#max_bytes_before_external_sort)) para permitir el volcado de datos a disco, pero tenga en cuenta que esto puede afectar significativamente al rendimiento de las consultas.
+Si su caso de uso es sensible al precio, también pueden funcionar cantidades menores de memoria, ya que es posible habilitar ajustes ([`max_bytes_before_external_group_by`](/es/reference/settings/session-settings#max_bytes_before_external_group_by) y [`max_bytes_before_external_sort`](/es/reference/settings/session-settings#max_bytes_before_external_sort)) para permitir el volcado de datos a disco, pero tenga en cuenta que esto puede afectar significativamente al rendimiento de las consultas.
 
 <div id="what-should-the-memory-to-storage-ratio-be">
   ### ¿Cuál debería ser la proporción entre memoria y almacenamiento?
@@ -281,7 +281,7 @@ A continuación se incluyen entradas de blog publicadas sobre arquitecturas de e
 
 * [Cloudflare](https://blog.cloudflare.com/http-analytics-for-6m-requests-per-second-using-clickhouse/?utm_source=linkedin\&utm_medium=social\&utm_campaign=blog)
 * [eBay](https://innovation.ebayinc.com/tech/engineering/ou-online-analytical-processing/)
-* [GitLab](https://handbook.gitlab.com/handbook/engineering/architecture/design-documents/clickhouse_usage/)
+* [GitLab](https://handbook.gitlab.com/handbook/engineering/development/ops/monitor/observability/#clickhouse-datastore)
 * [Lyft](https://eng.lyft.com/druid-deprecation-and-clickhouse-adoption-at-lyft-120af37651fd)
 * [MessageBird](https://clickhouse.com/blog/how-messagebird-uses-clickhouse-to-monitor-the-delivery-of-billions-of-messages)
 * [Microsoft](https://clickhouse.com/blog/self-service-data-analytics-for-microsofts-biggest-web-properties)

@@ -1,6 +1,6 @@
 ---
 description: 'ウィンドウ関数の概要ページ'
-sidebarTitle: '概要'
+sidebarTitle: 'ウィンドウ関数'
 slug: /sql-reference/window-functions/
 title: 'ウィンドウ関数'
 doc_type: 'reference'
@@ -16,21 +16,21 @@ doc_type: 'reference'
 ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準 SQL 構文をサポートしています。
 以下の表は、現在サポートされている機能を示しています。
 
-| Feature                                                              | Supported? | Comment                                                                                                                                                                                                                                                                                                                 |
-| -------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| アドホックなウィンドウ指定 (`count(*) OVER (PARTITION BY id ORDER BY time DESC)`) | ✅          |                                                                                                                                                                                                                                                                                                                         |
-| ウィンドウ関数を含む式 (例: `(count(*) OVER ()) / 2`)                            | ✅          |                                                                                                                                                                                                                                                                                                                         |
-| `WINDOW` 句 (`SELECT ... FROM table WINDOW w AS (PARTITION BY id)`)   | ✅          |                                                                                                                                                                                                                                                                                                                         |
-| `ROWS` フレーム                                                          | ✅          |                                                                                                                                                                                                                                                                                                                         |
-| `RANGE` フレーム                                                         | ✅          | フレーム が明示的に指定されていない場合は、デフォルトで使用されます (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                              |
-| `DateTime` `RANGE OFFSET` フレーム 用の `INTERVAL` 構文                      | ❌          | 代わりに秒数を指定してください (`RANGE` は任意の数値型で使用できます) 。                                                                                                                                                                                                                                                                              |
-| `GROUPS` フレーム                                                        | ✅          | フレーム境界はピア グループ全体 (`ORDER BY` キーで等しい行) を数えます。`N PRECEDING` および `N FOLLOWING` は、現在の行のピア グループの前後にある `N` 個のピア グループを数えます。                                                                                                                                                                                                    |
-| フレーム に対する 集約関数 の計算 (`sum(value) OVER (ORDER BY time)`)               | ✅          | すべての 集約関数 がサポートされています。                                                                                                                                                                                                                                                                                                  |
-| `rank()`, `dense_rank()`/`denseRank()`, `row_number()`               | ✅          |                                                                                                                                                                                                                                                                                                                         |
-| `percent_rank()`/`percentRank()`                                     | ✅          | パーティション内での値の相対順位を効率的に計算します。これは、`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)` で表される、より冗長でコンピュート負荷の高い手動の SQL 計算を置き換えます。                                                                                                                                      |
-| `cume_dist()`                                                        | ✅          | 値のグループ内における値の累積分布を計算します。現在の行の値以下の値を持つ行の割合を返します。                                                                                                                                                                                                                                                                         |
-| `lag/lead(value, offset)`                                            | ✅          | 次のいずれかの回避策も使用できます:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`、または `lead` の場合は `PRECEDING` の代わりに `FOLLOWING` <br /> 2) `lagInFrame/leadInFrame`。これらは同様の関数ですが、ウィンドウ フレーム を考慮します。`lag/lead` と同一の動作を得るには、`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` を使用してください。 |
-| [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)      | ✅          | たとえば、ウィンドウは `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)` のように指定してください。                                                                                                                                                                                                        |
+| Feature                                                                | Supported? | Comment                                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| アドホックなウィンドウ指定 (`count(*) OVER (PARTITION BY id ORDER BY time DESC)`)   | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| ウィンドウ関数を含む式 (例: `(count(*) OVER ()) / 2`)                              | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `WINDOW` 句 (`SELECT ... FROM table WINDOW w AS (PARTITION BY id)`)     | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `ROWS` フレーム                                                           | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `RANGE` フレーム                                                          | ✅          | フレーム が明示的に指定されていない場合は、デフォルトで使用されます (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`) 。                                                                                                                                                                                                                              |
+| `DateTime` `RANGE OFFSET` フレーム 用の `INTERVAL` 構文                       | ❌          | 代わりに秒数を指定してください (`RANGE` は任意の数値型で使用できます) 。                                                                                                                                                                                                                                                                               |
+| `GROUPS` フレーム                                                         | ❌          |                                                                                                                                                                                                                                                                                                                          |
+| フレーム に対する 集約関数 の計算 (`sum(value) OVER (ORDER BY time)`) | ✅          | すべての 集約関数 がサポートされています。                                                                                                                                                                                                                                                                                    |
+| `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                 | ✅          |                                                                                                                                                                                                                                                                                                                          |
+| `percent_rank()`/`percentRank()`                                       | ✅          | パーティション内での値の相対順位を効率的に計算します。これは、`ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)` で表される、より冗長でコンピュート負荷の高い手動の SQL 計算を置き換えます。                                                                                                                                       |
+| `cume_dist()`                                                          | ✅          | 値のグループ内における値の累積分布を計算します。現在の行の値以下の値を持つ行の割合を返します。                                                                                                                                                                                                                                                                          |
+| `lag/lead(value, offset)`                                              | ✅          | 次のいずれかの回避策も使用できます:<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`、または `lead` の場合は `PRECEDING` の代わりに `FOLLOWING` <br /> 2) `lagInFrame/leadInFrame`。これらは同様の関数ですが、ウィンドウ フレーム を考慮します。`lag/lead` と同一の動作を得るには、`ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING` を使用してください。 |
+| `ntile(buckets)`                                                       | ✅          | たとえば、ウィンドウは `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)` のように指定してください。                                                                                                                                                                                                         |
 
 <div id="syntax">
   ## 構文
@@ -39,18 +39,18 @@ ClickHouse は、ウィンドウおよびウィンドウ関数に対する標準
 ```text
 aggregate_function (column_name)
   OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
-        [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]] | [window_name])
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
 FROM table_name
 WINDOW window_name as ([
   [PARTITION BY grouping_column]
   [ORDER BY sorting_column]
-  [ROWS, RANGE, or GROUPS expression_to_bound_rows_within_the_group]
+  [ROWS or RANGE expression_to_bound_rows_within_the_group]
 ])
 ```
 
 * `PARTITION BY` - 結果セットをどのようにグループに分けるかを定義します。
 * `ORDER BY` - aggregate&#95;function の計算時に、グループ内の行をどのような順序で並べるかを定義します。
-* `ROWS`、`RANGE`、または `GROUPS` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。`ROWS` は物理行を数え、`RANGE` は `ORDER BY` の値を数え、`GROUPS` はピアグループ (`ORDER BY` キーが等しい行) を数えます。
+* `ROWS or RANGE` - フレームの境界を定義し、aggregate&#95;function はそのフレーム内で計算されます。
 * `WINDOW` - 複数の式で同じウィンドウ定義を使えるようにします。
 
 ```text
@@ -84,13 +84,8 @@ WINDOW window_name as ([
 | [`nth_value(x, offset)`](/ja/reference/functions/window-functions/nth_value)                                                                   | 順序付けされたフレーム内の n 番目の行 (offset) で評価された、最初の非 NULL 値を返します。                 |
 | [`rank()`](/ja/reference/functions/window-functions/rank)                                                                                      | 現在の行に、パーティション内でギャップありの順位を付けます。                                         |
 | [`dense_rank()`](/ja/reference/functions/window-functions/dense_rank)                                                                          | 現在の行に、パーティション内でギャップなしの順位を付けます。                                         |
-| [`percent_rank()`](/ja/reference/functions/window-functions/percent_rank)                                                                      | 現在の行のパーティション内での相対順位を、0 から 1 の値として計算します。                                |
-| [`cume_dist()`](/ja/reference/functions/window-functions/cume_dist)                                                                            | 値のグループ内における値の累積分布を計算します。                                               |
-| [`lag(x, offset)`](/ja/reference/functions/window-functions/lag)                                                                               | パーティション内で、現在の行より offset 行前の行で評価された値を返します。                              |
-| [`lead(x, offset)`](/ja/reference/functions/window-functions/lead)                                                                             | パーティション内で、現在の行より offset 行後の行で評価された値を返します。                              |
 | [`lagInFrame(x)`](/ja/reference/functions/window-functions/lagInFrame)                                                                         | 順序付けされたフレーム内で、現在の行より指定した物理オフセット分だけ前にある行で評価された値を返します。                   |
 | [`leadInFrame(x)`](/ja/reference/functions/window-functions/leadInFrame)                                                                       | 順序付けされたフレーム内で、現在の行より offset 行後にある行で評価された値を返します。                        |
-| [`ntile(buckets)`](/ja/reference/functions/window-functions/ntile)                                                                             | パーティション内で順序付けされた行を指定した数のバケットに分割し、現在の行が属するバケット番号を返します。                  |
 | [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/ja/reference/functions/window-functions/nonNegativeDerivative) | `timestamp_column` に対する `metric_column` の非負の導関数を計算します。ClickHouse 固有です。 |
 
 <div id="examples">
@@ -526,44 +521,6 @@ ORDER BY
 │ [2,3,4,5]      │            3 │
 └────────────────┴──────────────┘
 ```
-
-<div id="groups-frame">
-  ### GROUPS フレーム
-</div>
-
-`GROUPS` フレームは、物理的な行 (`ROWS`) や `ORDER BY` 値 (`RANGE`) ではなく、`ORDER BY` キーが等しい行の集合である *ピアグループ* 全体を数えます。`N PRECEDING` と `N FOLLOWING` は、現在の行のピアグループの前後にある `N` 個のピアグループを数え、範囲に含まれるピアグループは常にそのすべての行を含みます。
-
-以下のクエリでは、`ROWS`、`RANGE`、`GROUPS` フレームに同じ `1 PRECEDING AND 1 FOLLOWING` 境界を適用します。`order` カラムには重複した非連続の値が含まれるため、3 つのモードで対象となる行は異なります。
-
-```sql
-CREATE TABLE wf_frame_groups (`order` UInt64, value UInt64) ENGINE = Memory;
-INSERT INTO wf_frame_groups FORMAT Values (10, 1), (10, 2), (20, 3), (30, 4), (30, 5);
-
-SELECT
-    order,
-    value,
-    groupArray(value) OVER (ORDER BY order ROWS   BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS rows_frame,
-    groupArray(value) OVER (ORDER BY order RANGE  BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS range_frame,
-    groupArray(value) OVER (ORDER BY order GROUPS BETWEEN 1 PRECEDING AND 1 FOLLOWING) AS groups_frame
-FROM wf_frame_groups
-ORDER BY order, value;
-```
-
-```response
-┌─order─┬─value─┬─rows_frame─┬─range_frame─┬─groups_frame─┐
-│    10 │     1 │ [1,2]      │ [1,2]       │ [1,2,3]      │
-│    10 │     2 │ [1,2,3]    │ [1,2]       │ [1,2,3]      │
-│    20 │     3 │ [2,3,4]    │ [3]         │ [1,2,3,4,5]  │
-│    30 │     4 │ [3,4,5]    │ [4,5]       │ [3,4,5]      │
-│    30 │     5 │ [4,5]      │ [4,5]       │ [3,4,5]      │
-└───────┴───────┴────────────┴─────────────┴──────────────┘
-```
-
-各モードで境界の解釈は異なります。
-
-* `ROWS` は物理的な行数に基づくため、フレームは最大で連続する3行、つまり現在の行とその前後それぞれ1行になります。
-* `RANGE` は `order` 値に基づくため、`1 PRECEDING` と `1 FOLLOWING` には、現在の行の `order` 値との差が1以内の行が含まれます。間隔が10ある場合、隣接行は条件を満たさないため、フレームには現在の `order` を共有する行のみが含まれます。
-* `GROUPS` はピアグループに基づくため、`1 PRECEDING` と `1 FOLLOWING` には、`order` 値間のギャップにかかわらず、隣接するグループ全体が常に含まれます。
 
 <div id="real-world-examples">
   ## 実践的な例

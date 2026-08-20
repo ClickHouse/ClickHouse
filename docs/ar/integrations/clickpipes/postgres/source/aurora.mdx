@@ -11,7 +11,6 @@ integration:
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
   ## إصدارات Postgres المدعومة
@@ -58,7 +57,7 @@ postgres=> SHOW rds.logical_replication ;
   ## إعداد مستخدم قاعدة البيانات
 </div>
 
-اتصل بمثيل الكتابة في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
+اتصل بمثيل writer في Aurora PostgreSQL كمستخدم مسؤول، ثم نفّذ الأوامر التالية:
 
 1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
 
@@ -98,17 +97,7 @@ postgres=> SHOW rds.logical_replication ;
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-يحدّد الـ publication المسمى `clickpipes` مجموعة الجداول التي ستُبث أحداث التغيير الخاصة بها إلى ClickPipes. نوصي بعدم استخدام `FOR ALL TABLES` إلا إذا كنت تنوي تكرار كل table، لأن تضمين جداول غير ضرورية يزيد من حركة WAL من Postgres إلى ClickPipes ويقلّل من الكفاءة الإجمالية للنسخ المتماثل.
-
-<div id="iam-authentication">
-  ### استخدام مصادقة IAM (اختياري)
-</div>
-
-<IAMAuthentication engine="postgres" service="aurora">
-  <Note>
-    يتطلب النسخ المتماثل باستخدام مصادقة IAM ضبط المعلَمة `rds.iam_auth_for_replication` على `1`.
-  </Note>
-</IAMAuthentication>
+سيحتوي الـ publication المسمى `clickpipes` على مجموعة أحداث التغيير الناتجة من الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفّق النسخ المتماثل.
 
 <div id="configure-network-access">
   ## إعداد الوصول إلى الشبكة
@@ -118,7 +107,7 @@ postgres=> SHOW rds.logical_replication ;
   ### التحكم في الوصول المستند إلى IP
 </div>
 
-إذا كنت تريد تقييد حركة المرور الواردة إلى عنقود Aurora، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الواردة في الوثائق](/ar/integrations/clickpipes/networking/static-ips) إلى `Inbound rules` في مجموعة الأمان الخاصة بـ Aurora.
+إذا كنت تريد تقييد حركة المرور الواردة إلى عنقود Aurora، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الواردة في الوثائق](/ar/integrations/clickpipes/home#list-of-static-ips) إلى `Inbound rules` في مجموعة الأمان الخاصة بـ Aurora.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="أين يمكنك العثور على مجموعة الأمان في Aurora PostgreSQL؟" size="lg" border />
 

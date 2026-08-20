@@ -1,6 +1,5 @@
 #pragma once
 
-#include <array>
 #include <memory>
 #include <base/sort.h>
 #include <boost/noncopyable.hpp>
@@ -450,17 +449,24 @@ public:
      */
     UInt8 rb_contains(UInt64 x) const /// NOLINT
     {
-        if constexpr (!std::is_same_v<T, UInt64>)
+        if (isSmall())
         {
-            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
+            if constexpr (!std::is_same_v<T, UInt64>)
+            {
+                if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
+                    return 0;
+            }
+
+            return small.find(static_cast<T>(x)) != small.end();
+        }
+
+        if constexpr (!std::is_same_v<Value, UInt64>)
+        {
+            if (x > static_cast<UInt64>(std::numeric_limits<Value>::max()))
                 return 0;
         }
 
-        /// Cast as T so narrow signed values retain a consistent, sign-extended Value through promotion.
-        if (isSmall())
-            return small.find(static_cast<T>(x)) != small.end();
-
-        return roaring_bitmap->contains(static_cast<Value>(static_cast<T>(x)));
+        return roaring_bitmap->contains(static_cast<Value>(x));
     }
 
     /**
@@ -490,8 +496,8 @@ public:
     }
 
     /**
-     * Return new set with specified value range (not including range_end).
-     * Element values are compared as UnsignedT.
+     * Return new set with specified range (not include the range_end)
+     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_range(UInt64 range_start, UInt64 range_end, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -503,7 +509,7 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (static_cast<UnsignedT>(val) >= range_start && static_cast<UnsignedT>(val) < range_end)
+                if (UInt32(val) >= range_start && UInt32(val) < range_end)
                 {
                     r1.add(val);
                     ++count;
@@ -514,12 +520,10 @@ public:
         {
             for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
             {
-                /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
-                const UInt64 uv = static_cast<UnsignedT>(*it);
-                if (uv < range_start)
+                if (*it < range_start)
                     continue;
 
-                if (uv < range_end)
+                if (*it < range_end)
                 {
                     r1.add(static_cast<T>(*it));
                     ++count;
@@ -532,7 +536,8 @@ public:
     }
 
     /**
-     * Return new set of the smallest `limit` values (as UnsignedT) which are no less than `range_start`.
+     * Return new set of the smallest `limit` values in set which is no less than `range_start`.
+     * It's used in subset and currently only support UInt32
      */
     UInt64 rb_limit(UInt64 range_start, UInt64 limit, RoaringBitmapWithSmallSet & r1) const /// NOLINT
     {
@@ -545,18 +550,14 @@ public:
             for (const auto & x : small)
             {
                 T val = x.getValue();
-                if (static_cast<UnsignedT>(val) >= range_start)
+                if (UInt32(val) >= range_start)
                 {
                     answer.push_back(val);
                 }
             }
             if (limit < answer.size())
             {
-                ::nth_element(
-                    answer.begin(),
-                    answer.begin() + limit,
-                    answer.end(),
-                    [](const T & lhs, const T & rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
+                ::nth_element(answer.begin(), answer.begin() + limit, answer.end());
                 answer.resize(limit);
             }
 
@@ -568,9 +569,7 @@ public:
         UInt64 count = 0;
         for (auto it = roaring_bitmap->begin(); it != roaring_bitmap->end(); ++it)
         {
-            /// Narrow signed values are stored sign-extended in UInt32, compare in UnsignedT domain.
-            const UInt64 uv = static_cast<UnsignedT>(*it);
-            if (uv < range_start)
+            if (*it < range_start)
                 continue;
 
             if (count < limit)
@@ -591,24 +590,14 @@ public:
 
         if (isSmall())
         {
-            /// The small set holds at most `small_set_size` elements, so no allocation is needed.
-            std::array<T, small_set_size> values{};
-            size_t num_values = 0;
-            for (const auto & x : small)
-                values[num_values++] = x.getValue();
+            UInt64 count = 0;
+            UInt64 offset_count = 0;
+            auto it = small.begin();
+            for (; it != small.end() && offset_count < offset; ++it)
+                ++offset_count;
 
-            /// `offset` is below the size, checked above.
-            const UInt64 count = std::min(limit, static_cast<UInt64>(num_values) - offset);
-
-            /// Only the first `offset + count` elements have to be in order.
-            ::partial_sort(
-                values.begin(),
-                values.begin() + (offset + count),
-                values.begin() + num_values,
-                [](T lhs, T rhs) { return static_cast<UnsignedT>(lhs) < static_cast<UnsignedT>(rhs); });
-
-            for (UInt64 i = offset; i < offset + count; ++i)
-                r1.add(values[i]);
+            for (; it != small.end() && count < limit; ++it, ++count)
+                r1.add(it->getValue());
             return count;
         }
 
@@ -642,15 +631,7 @@ public:
             }
             return min_val;
         }
-        /// CRoaring returns UINT32_MAX / UINT64_MAX for an empty bitmap.
-        if (roaring_bitmap->isEmpty())
-        {
-            if constexpr (sizeof(T) >= 8)
-                return std::numeric_limits<UInt64>::max();
-            return std::numeric_limits<UInt32>::max();
-        }
-        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
-        return static_cast<UnsignedT>(roaring_bitmap->minimum());
+        return roaring_bitmap->minimum();
     }
 
     UInt64 rb_max() const /// NOLINT
@@ -668,46 +649,25 @@ public:
             }
             return max_val;
         }
-        /// Narrow signed values are stored sign-extended in UInt32; truncate to UnsignedT to match the small-set.
-        return static_cast<UnsignedT>(roaring_bitmap->maximum());
+        return roaring_bitmap->maximum();
     }
 
     /**
      * Replace value.
-     * It's used in transform, from/to are interpreted in the UnsignedT domain.
+     * It's used in transform and currently can only support UInt32
      */
     void rb_replace(const UInt64 * from_vals, const UInt64 * to_vals, size_t num) /// NOLINT
     {
         if (isSmall())
             toLarge();
 
-        constexpr UInt64 max_element = std::is_same_v<T, UInt64>
-            ? std::numeric_limits<UInt64>::max()
-            : static_cast<UInt64>(std::numeric_limits<UnsignedT>::max());
-
         for (size_t i = 0; i < num; ++i)
         {
             if (from_vals[i] == to_vals[i])
                 continue;
-
-            /// Rejected regardless of whether the replacement applies, so that the outcome depends
-            /// on the arguments and not on the contents of the bitmap. Storing such a value would
-            /// silently truncate it to an unrelated element.
-            if (to_vals[i] > max_element)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Replacement value {} does not fit into the bitmap element type, the maximum is {}",
-                    to_vals[i],
-                    max_element);
-
-            /// The bitmap cannot hold this value, so there is nothing to replace. Consistent with
-            /// `bitmapContains`, which reports such a value as absent instead of failing.
-            if (from_vals[i] > max_element)
-                continue;
-
-            /// Cast through T so narrow signed values match sign-extended storage (e.g. Int8 255 -> -1 -> 0xFFFFFFFF).
-            if (roaring_bitmap->removeChecked(static_cast<Value>(static_cast<T>(from_vals[i]))))
-                roaring_bitmap->add(static_cast<Value>(static_cast<T>(to_vals[i])));
+            bool changed = roaring_bitmap->removeChecked(static_cast<Value>(from_vals[i]));
+            if (changed)
+                roaring_bitmap->add(static_cast<Value>(to_vals[i]));
         }
     }
 

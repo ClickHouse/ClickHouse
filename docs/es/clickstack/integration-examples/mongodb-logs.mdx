@@ -33,7 +33,9 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
 * Acceso a los archivos de registro de MongoDB
 
 <Steps>
-  <Step title="Verifique la configuración de logging de MongoDB" id="verify-mongodb">
+  <Step>
+    #### Verifique la configuración de logging de MongoDB
+
     MongoDB 4.4+ genera logs JSON estructurados de forma predeterminada. Compruebe la ubicación de su archivo de registro:
 
     ```bash
@@ -58,15 +60,17 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
     Después de cambiar la configuración, reinicie MongoDB:
 
     ```bash
-    # For systemd
+    # Para systemd
     sudo systemctl restart mongod
 
-    # For Docker
+    # Para Docker
     docker restart <mongodb-container>
     ```
   </Step>
 
-  <Step title="Cree una configuración personalizada para el OTel collector de MongoDB" id="custom-otel">
+  <Step>
+    #### Cree una configuración personalizada para el OTel collector de MongoDB
+
     ClickStack le permite ampliar la configuración base de OpenTelemetry Collector montando un archivo de configuración personalizado y estableciendo una variable de entorno. La configuración personalizada se fusiona con la configuración base administrada por HyperDX mediante OpAMP.
 
     Cree un archivo llamado `mongodb-monitoring.yaml` con la siguiente configuración:
@@ -130,7 +134,9 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
     </Note>
   </Step>
 
-  <Step title="Configurar ClickStack para cargar una configuración personalizada" id="load-custom">
+  <Step>
+    #### Configurar ClickStack para cargar una configuración personalizada
+
     Para habilitar una configuración personalizada del collector en su implementación actual de ClickStack, debe:
 
     1. Montar el archivo de configuración personalizado en `/etc/otelcol-contrib/custom.config.yaml`
@@ -174,7 +180,9 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
     </Note>
   </Step>
 
-  <Step title="Verificar logs en HyperDX" id="verifying-logs">
+  <Step>
+    #### Verificar logs en HyperDX
+
     Una vez completada la configuración, inicia sesión en HyperDX y verifica que los logs estén llegando:
 
     <Image img="/images/clickstack/mongodb/search-view.webp" alt="Vista de búsqueda de logs de MongoDB" />
@@ -190,7 +198,9 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
 Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de configurar tus sistemas de producción.
 
 <Steps>
-  <Step title="Descarga el dataset de ejemplo" id="download-sample">
+  <Step>
+    #### Descarga el dataset de ejemplo
+
     Descarga el archivo de logs de ejemplo:
 
     ```bash
@@ -198,7 +208,9 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
     ```
   </Step>
 
-  <Step title="Crea la configuración de prueba del collector" id="test-config">
+  <Step>
+    #### Crea la configuración de prueba del collector
+
     Crea un archivo llamado `mongodb-demo.yaml` con la siguiente configuración:
 
     ```yaml
@@ -257,7 +269,9 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
     ```
   </Step>
 
-  <Step title="Ejecuta ClickStack con la configuración de demostración" id="run-demo">
+  <Step>
+    #### Ejecuta ClickStack con la configuración de demostración
+
     Ejecuta ClickStack con los logs de demostración y esta configuración:
 
     ```bash
@@ -288,11 +302,13 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
 </div>
 
 <Steps>
-  <Step title="Descargar la configuración del dashboard" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Descargar el archivo de configuración del dashboard</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/mongodb-logs-dashboard.json'} download="mongodb-logs-dashboard.json" eventName="docs.mongodb_logs_monitoring.dashboard_download">Descargar</TrackedLink> la configuración del dashboard
   </Step>
 
-  <Step title="Importar dashboard preconfigurado" id="import-dashboard">
+  <Step>
+    #### Importar dashboard preconfigurado
+
     1. Abre HyperDX y ve a la sección Dashboards.
     2. Haz clic en &quot;Import Dashboard&quot; en la esquina superior derecha, en el menú de tres puntos.
 
@@ -303,7 +319,9 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
     <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Finalizar la importación del dashboard de logs de MongoDB" />
   </Step>
 
-  <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
+  <Step>
+    #### El dashboard se creará con todas las visualizaciones preconfiguradas
+
     Para el dataset de demostración, establece el intervalo de tiempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Dashboard de logs de MongoDB" />
@@ -353,4 +371,4 @@ Si la salida no es JSON válido, es posible que tu versión de MongoDB esté usa
   ## Paso a producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint de OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para obtener la configuración de producción.
+Esta guía aprovecha el OpenTelemetry Collector integrado de ClickStack para una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

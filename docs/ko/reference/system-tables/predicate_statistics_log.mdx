@@ -14,7 +14,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ## 설명
 </div>
 
-`MergeTree` 테이블을 읽는 동안 수집된 샘플링된 선택도 통계를 포함합니다. 이 테이블은 [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings/other#predicate_statistics_sample_rate)가 `0`보다 클 때만 채워집니다.
+`MergeTree` 테이블을 읽는 동안 수집된 샘플 선택도 통계를 포함합니다. 이 테이블은 [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings#predicate_statistics_sample_rate)가 `0`보다 클 때만 채워집니다.
 
 이 테이블을 사용하면 실제 워크로드에서 사용자 프레디케이트의 선택도가 어느 정도인지, 그리고 기본 키 또는 스킵 인덱스 필터링 후 그래뉼이 몇 개 남는지 확인할 수 있습니다. 이 데이터는 워크로드 기반 인덱스 및 프로젝션 권장 사항을 위한 입력으로 사용됩니다.
 
@@ -33,7 +33,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
   ## 샘플링과 오버헤드
 </div>
 
-샘플링은 [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings/other#predicate_statistics_sample_rate)로 제어합니다:
+샘플링은 [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings#predicate_statistics_sample_rate)로 제어합니다:
 
 * `0`은 수집을 비활성화합니다.
 * `1`은 모든 쿼리를 샘플링합니다.
@@ -99,5 +99,5 @@ LIMIT 10;
   ## 관련 항목
 </div>
 
-* [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings/other#predicate_statistics_sample_rate)
+* [`predicate_statistics_sample_rate`](/ko/reference/settings/session-settings#predicate_statistics_sample_rate)
 * [system.query&#95;log](/ko/reference/system-tables/query_log)

@@ -64,10 +64,12 @@ A continuación, ilustramos ambas arquitecturas.
 
 <Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="Migración de agentes" size="lg" background />
 
-En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vector de modo que reciba eventos de logs de Filebeat a través del protocolo Lumberjack. También proporcionamos VRL para mapear los eventos ECS entrantes a la especificación de OTel, antes de enviarlos al ClickStack OpenTelemetry collector mediante OTLP. Los usuarios que consumen eventos desde Kafka pueden sustituir el origen Logstash de Vector por el [origen Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/); todos los demás pasos siguen siendo los mismos.
+En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vector de modo que reciba eventos de logs de Filebeat a través del protocolo Lumberjack. También proporcionamos VRL para mapear los eventos ECS entrantes a la especificación de OTel, antes de enviarlos al ClickStack OpenTelemetry Collector mediante OTLP. Los usuarios que consumen eventos desde Kafka pueden sustituir el origen Logstash de Vector por el [origen Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/); todos los demás pasos siguen siendo los mismos.
 
 <Steps>
-  <Step title="Instalar Vector" id="install-vector">
+  <Step>
+    ### Instalar Vector
+
     Instale Vector mediante la [guía oficial de instalación](https://vector.dev/docs/setup/installation/).
 
     Puede instalarse en la misma instancia que su OTel collector de Elastic Stack.
@@ -75,7 +77,9 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
     Puede seguir las buenas prácticas en materia de arquitectura y seguridad al [llevar Vector a producción](https://vector.dev/docs/setup/going-to-prod/).
   </Step>
 
-  <Step title="Configurar vector" id="configure-vector">
+  <Step>
+    ### Configurar vector
+
     Vector debe configurarse para recibir eventos a través del protocolo Lumberjack, imitando una instancia de Logstash. Esto se puede lograr configurando un [source `logstash`](https://vector.dev/docs/reference/configuration/sources/logstash/) para Vector:
 
     ```yaml
@@ -84,8 +88,8 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
-          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
+          enabled: false  # Establezca en true si está usando TLS
+          # Los archivos a continuación se generan siguiendo los pasos en https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -112,29 +116,29 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
 
     <Accordion title="VRL - de ECS a OTel">
       ```javascript
-      # Define keys to ignore at root level
+      # Definir claves a ignorar en el nivel raíz
       ignored_keys = ["@metadata"]
 
-      # Define resource key prefixes
+      # Definir prefijos de claves de recurso
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # Create separate objects for resource and log record fields
+      # Crear objetos separados para los campos de recurso y de registro de log
       resource_obj = {}
       log_record_obj = {}
 
-      # Copy all non-ignored root keys to appropriate objects
+      # Copiar todas las claves raíz no ignoradas a los objetos correspondientes
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # Check if this is a resource field
+                  # Verificar si este es un campo de recurso
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # Add to appropriate object
+                  # Agregar al objeto correspondiente
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -144,11 +148,11 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
           }
       }
 
-      # Flatten both objects separately
+      # Aplanar ambos objetos por separado
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # Process resource attributes
+      # Procesar atributos de recurso
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -166,7 +170,7 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
           }
       }
 
-      # Process log record attributes
+      # Procesar atributos de registro de log
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -184,14 +188,14 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
           }
       }
 
-      # Get timestamp for timeUnixNano (convert to nanoseconds)
+      # Obtener timestamp para timeUnixNano (convertir a nanosegundos)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # Get message/body field
+      # Obtener el campo message/body
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -200,7 +204,7 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
           ""
       }
 
-      # Create the OpenTelemetry structure
+      # Crear la estructura de OpenTelemetry
       . = {
           "resourceLogs": [
               {
@@ -235,10 +239,10 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # receives events from a remap transform - see below
+        inputs: [remap_filebeat] # recibe eventos de una transformación remap - ver más abajo
         protocol:
-          type: http  # Use "grpc" for port 4317
-          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
+          type: http  # Usa "grpc" para el puerto 4317
+          uri: http://localhost:4318/v1/logs # endpoint de logs para el OTel collector 
           method: post
           encoding:
             codec: json
@@ -261,7 +265,7 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # Set to true if you're using TLS
+          enabled: false  # Establezca en true si está usando TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -278,7 +282,7 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # Use "grpc" for port 4317
+          type: http  # Use "grpc" para el puerto 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -290,23 +294,25 @@ En el siguiente ejemplo, proporcionamos los pasos iniciales para configurar Vect
     ```
   </Step>
 
-  <Step title="Configurar Filebeat" id="configure-filebeat">
+  <Step>
+    ### Configurar Filebeat
+
     Las instalaciones existentes de Filebeat solo deben modificarse para enviar sus eventos a Vector. Para ello, es necesario configurar una salida de Logstash; de nuevo, TLS puede configurarse de forma opcional:
 
     ```yaml
-    # ------------------------------ Logstash Output -------------------------------
+    # ------------------------------ Salida de Logstash -------------------------------
     output.logstash:
-      # The Logstash hosts
+      # Los hosts de Logstash
       hosts: ["localhost:5044"]
 
-      # Optional SSL. By default is off.
-      # List of root certificates for HTTPS server verifications
+      # SSL opcional. Desactivado por defecto.
+      # Lista de certificados raíz para verificaciones del servidor HTTPS
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # Certificate for SSL client authentication
+      # Certificado para la autenticación de cliente SSL
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # Client Certificate Key
+      # Clave del certificado de cliente
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -330,11 +336,15 @@ A continuación, mostramos ambas opciones.
 </div>
 
 <Steps>
-  <Step title="Instalar y configurar Vector" id="install-configure-vector">
+  <Step>
+    #### Instalar y configurar Vector
+
     Instala y configura Vector siguiendo los [mismos pasos](#install-vector) documentados para la migración desde Filebeat.
   </Step>
 
-  <Step title="Configurar Elastic Agent" id="configure-elastic-agent">
+  <Step>
+    #### Configurar Elastic Agent
+
     Elastic Agent debe configurarse para enviar datos a través del protocolo Lumberjack de Logstash. Este es un [patrón de implementación compatible](https://www.elastic.co/docs/manage-data/ingest/ingest-reference-architectures/ls-networkbridge) y puede configurarse de forma centralizada o [mediante el archivo de configuración del agente `elastic-agent.yaml`](https://www.elastic.co/docs/reference/fleet/logstash-output) si se implementa sin Fleet.
 
     La configuración centralizada a través de Kibana puede hacerse añadiendo [una salida en Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
@@ -347,7 +357,7 @@ A continuación, mostramos ambas opciones.
 
     Dado que esto requiere configurar comunicación segura mediante TLS, recomendamos la guía [&quot;Configure SSL/TLS for the Logstash output&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), que puede seguirse suponiendo que la instancia de Vector del usuario asume el rol de Logstash.
 
-    Ten en cuenta que esto también requiere que los usuarios configuren el origen Logstash en Vector con TLS mutuo. Usa las claves y los certificados [generados en la guía](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) para configurar correctamente la entrada.
+    Ten en cuenta que esto también requiere que los usuarios configuren TLS mutuo en el origen Logstash de Vector. Usa las claves y los certificados [generados en la guía](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs) para configurar correctamente la entrada.
 
     ```yaml
     sources:
@@ -381,7 +391,7 @@ Para ejecutar Elastic Agent con el collector EDOT, consulte la [guía oficial de
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Exportador para enviar logs y métricas a Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -404,7 +414,7 @@ Si Vector se ha configurado para usar TLS mutuo, con el certificado y las claves
 
 ```yaml
 exporters:
-  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
+  # Exportador para enviar logs y métricas a Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

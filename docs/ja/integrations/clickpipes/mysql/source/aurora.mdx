@@ -11,41 +11,42 @@ integration:
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
-import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 このステップバイステップガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon Aurora MySQL から ClickHouse Cloud にデータをレプリケートするよう設定する方法を説明します。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
 
 <div id="enable-binlog-retention-aurora">
-  ## バイナリログ保持を有効にする
+  ## バイナリログの保持期間を有効にする
 </div>
 
-バイナリログは、MySQL サーバーインスタンスで行われたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションにはバイナリログファイルが必要です。Aurora MySQL でバイナリログ保持を設定するには、[バイナリログを有効にし](#enable-binlog-logging)、[binlog の保持期間を延長する](#binlog-retention-interval)必要があります。
+バイナリログは、MySQL サーバーインスタンスに加えられたデータ変更に関する情報を含む一連のログファイルであり、レプリケーションに必要です。Aurora MySQL で binlog の保持期間を設定するには、[バイナリログを有効にする](#enable-binlog-logging) と [binlog の保持期間を延長する](#binlog-retention-interval) の両方を行う必要があります。
 
-<Steps>
-  <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging">
-    自動バックアップ機能によって、MySQL でバイナリログを有効にするかどうかが決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスを選択することで (まだ選択されていない場合) インスタンスに設定できます。
+<div id="enable-binlog-logging">
+  ### 1. 自動バックアップでバイナリログを有効にする
+</div>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Aurora で自動バックアップを有効にする" size="lg" border />
+MySQL でバイナリログを有効にするには、自動バックアップ機能を有効にする必要があります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスをオンにすることで、インスタンスに設定できます (まだ有効になっていない場合) 。
 
-    レプリケーションのユースケースに応じて、**Backup retention period** は十分に長い値に設定することを推奨します。
-  </Step>
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Aurora で自動バックアップを有効にする" size="lg" border />
 
-  <Step title="binlog の保持期間を延長する" id="binlog-retention-interval">
-    <Warning>
-      ClickPipes がレプリケーションの再開を試みた際、設定された binlog の保持期間が原因で必要な binlog ファイルがすでに削除されていると、ClickPipe はエラー状態になり、再同期が必要になります。
-    </Warning>
+レプリケーションの用途に応じて、**バックアップ保持期間** は十分に長めの値に設定することを推奨します。
 
-    デフォルトでは、Aurora MySQL はバイナリログをできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるようにするため、binlog の保持期間は少なくとも **72 時間** に延長することを推奨します。バイナリログ の保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
+<div id="binlog-retention-interval">
+  ### 2. binlog の保持期間を延長する
+</div>
 
-    [//]: # "注: 多くの CDC（変更データキャプチャ）プロバイダーは、Aurora RDS の最大保持期間（7 日間 / 168 時間）を推奨しています。これはディスク使用量に影響するため、ここでは控えめに最小 3 日間 / 72 時間を推奨しています。"
+<Warning>
+  ClickPipes がレプリケーションの再開を試みた際、設定された binlog の保持期間が原因で必要な binlog ファイルがすでに削除されていると、ClickPipe はエラー状態になり、再同期が必要になります。
+</Warning>
 
-    ```text
-    mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
-    ```
+デフォルトでは、Aurora MySQL はバイナリログをできるだけ早く削除します (つまり、*遅延パージ*) 。障害発生時でもレプリケーションに必要な バイナリログ ファイルを利用できるようにするため、binlog の保持期間は少なくとも **72 時間** に延長することを推奨します。バイナリログ の保持期間 ([`binlog retention hours`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration-usage-notes.binlog-retention-hours)) を設定するには、[`mysql.rds_set_configuration`](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/mysql-stored-proc-configuring.html#mysql_rds_set_configuration) プロシージャを使用します。
 
-    この設定がされていない、または間隔が短すぎると、バイナリログに欠落が生じ、ClickPipes がレプリケーションを再開できなくなるおそれがあります。
-  </Step>
-</Steps>
+[//]: # "注: 多くの CDC（変更データキャプチャ）プロバイダーは、Aurora RDS の最大保持期間（7 日間 / 168 時間）を推奨しています。これはディスク使用量に影響するため、ここでは控えめに最小 3 日間 / 72 時間を推奨しています。"
+
+```text
+mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
+```
+
+この設定がされていない、または間隔が短すぎると、バイナリログに欠落が生じ、ClickPipes がレプリケーションを再開できなくなるおそれがあります。
 
 <div id="binlog-settings">
   ## binlog 設定を構成する
@@ -133,12 +134,6 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
    GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
    ```
 
-<div id="iam-authentication">
-  ### IAM認証を使用する (任意)
-</div>
-
-<IAMAuthentication engine="mysql" service="aurora" />
-
 <div id="configure-network-access">
   ## ネットワークアクセスを設定する
 </div>
@@ -147,7 +142,7 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
   ### IP ベースのアクセス制御
 </div>
 
-Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、Aurora のセキュリティグループの **Inbound rules** に追加します。
+Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を Aurora のセキュリティグループの **Inbound rules** に追加します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Aurora MySQL でセキュリティグループはどこで確認できますか？" size="lg" border />
 
@@ -163,4 +158,4 @@ Aurora MySQL インスタンスにプライベートネットワーク経由で�
   ## 次のステップ
 </div>
 
-Amazon Aurora MySQL インスタンスで binlogレプリケーションが設定され、ClickHouse Cloud への安全な接続が確立されたら、[最初の MySQL ClickPipe を作成できます](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)。MySQL CDC (変更データキャプチャ) に関する一般的な質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。
+これで、Amazon Aurora MySQL インスタンスは binlog レプリケーション向けに設定され、ClickHouse Cloud への安全な接続も完了しました。[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。

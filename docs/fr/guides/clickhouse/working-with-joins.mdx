@@ -107,7 +107,7 @@ Une requête `FULL OUTER JOIN` combine `LEFT` et `RIGHT OUTER JOIN` et renvoie l
 <Image img="/images/starter_guides/joins/outer_join.webp" alt="Jointure externe" />
 
 <Note>
-  ClickHouse peut être [configuré](/fr/reference/settings/session-settings/join#join_use_nulls) pour renvoyer des [NULL](/fr/reference/syntax#null)s au lieu de valeurs par défaut (cependant, cela est moins recommandé pour des [raisons de performances](/fr/reference/data-types/nullable#storage-features)).
+  ClickHouse peut être [configuré](/fr/reference/settings/session-settings#join_use_nulls) pour renvoyer des [NULL](/fr/reference/syntax#null)s au lieu de valeurs par défaut (cependant, cela est moins recommandé pour des [raisons de performances](/fr/reference/data-types/nullable#storage-features)).
 </Note>
 
 Cette requête trouve tous les films sans genre en recherchant toutes les lignes de la table `movies` qui n’ont pas de correspondance dans la table `genres` et qui reçoivent donc (au moment de l’exécution de la requête) la valeur par défaut 0 pour la colonne `movie_id` :
@@ -232,7 +232,7 @@ LIMIT 10;
 └─────────────────────────────────────────────┘
 ```
 
-La clause `INNER JOIN` dans la version de requête `CROSS JOIN` optimisée sur le plan syntaxique contient le mot-clé `ALL`, ajouté explicitement afin de préserver la sémantique de produit cartésien de `CROSS JOIN` même lorsqu’elle est réécrite en `INNER JOIN`, pour lequel le produit cartésien peut être [désactivé](/fr/reference/settings/session-settings/join#join_default_strictness).
+La clause `INNER JOIN` dans la version de requête `CROSS JOIN` optimisée sur le plan syntaxique contient le mot-clé `ALL`, ajouté explicitement afin de préserver la sémantique de produit cartésien de `CROSS JOIN` même lorsqu’elle est réécrite en `INNER JOIN`, pour lequel le produit cartésien peut être [désactivé](/fr/reference/settings/session-settings#join_default_strictness).
 
 ```sql
 ALL
@@ -457,5 +457,5 @@ final_price:        9645
   ## Résumé
 </div>
 
-Ce guide montre comment ClickHouse prend en charge tous les types de JOIN SQL standard, ainsi que des jointures spécialisées pour les requêtes analytiques.
+Ce guide explique comment ClickHouse prend en charge tous les types standard de JOIN SQL, ainsi que des JOIN spécialisés pour les requêtes analytiques.
 Consultez la documentation de l’instruction [JOIN](/fr/reference/statements/select/join) pour plus de détails sur les JOIN.

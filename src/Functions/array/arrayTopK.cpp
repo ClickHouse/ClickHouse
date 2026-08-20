@@ -249,7 +249,7 @@ correspond to the arguments of `f`.
 and may be smaller when the input array contains fewer non-null elements than `K`.
 The element type of the result is the non-nullable counterpart of the input element type.
 
-`arrayTopK` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
+`arrayTopK` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 
 See also `arrayBottomK`, which returns the K smallest elements instead.
     )";
@@ -290,7 +290,7 @@ correspond to the arguments of `f`.
 and may be smaller when the input array contains fewer non-null elements than `K`.
 The element type of the result is the non-nullable counterpart of the input element type.
 
-`arrayBottomK` is a [higher-order function](/reference/functions/regular-functions/overview#higher-order-functions).
+`arrayBottomK` is a [higher-order function](/sql-reference/functions/overview#higher-order-functions).
 
 See also:
 

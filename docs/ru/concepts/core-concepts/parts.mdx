@@ -14,7 +14,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <br />
 
-Данные каждой таблицы ClickHouse из [семейства движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) хранятся на диске в виде набора неизменяемых `частей данных`.
+Данные каждой таблицы ClickHouse из [семейства движков MergeTree](/ru/reference/engines/table-engines/mergetree-family/index) хранятся на диске в виде набора неизменяемых `data parts`.
 
 Чтобы проиллюстрировать это, используем [эту](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) таблицу (адаптированную из [датасета с ценами на недвижимость в Великобритании](/ru/get-started/sample-datasets/uk-price-paid)), в которой содержатся данные о дате продажи, городе, улице и цене проданной недвижимости в Соединённом Королевстве:
 
@@ -56,7 +56,7 @@ ORDER BY (town, street);
   ## Слияние частей
 </div>
 
-Чтобы управлять количеством частей в таблице, [задача фонового слияния](/ru/concepts/core-concepts/merges) периодически объединяет более мелкие части в более крупные, пока они не достигнут [настраиваемого](/ru/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) сжатого размера (обычно ~150 ГБ). Слитые части помечаются как неактивные и удаляются через [настраиваемый](/ru/reference/settings/merge-tree-settings/other#old_parts_lifetime) интервал времени. Со временем этот процесс формирует иерархическую структуру слитых частей, поэтому такая таблица называется MergeTree:
+Чтобы управлять количеством частей в таблице, [задача фонового слияния](/ru/concepts/core-concepts/merges) периодически объединяет более мелкие части в более крупные, пока они не достигнут [настраиваемого](/ru/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) сжатого размера (обычно ~150 ГБ). Слитые части помечаются как неактивные и удаляются через [настраиваемый](/ru/reference/settings/merge-tree-settings#old_parts_lifetime) интервал времени. Со временем этот процесс формирует иерархическую структуру слитых частей, поэтому такая таблица называется MergeTree:
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

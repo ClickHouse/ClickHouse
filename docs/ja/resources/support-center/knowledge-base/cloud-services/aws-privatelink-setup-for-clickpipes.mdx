@@ -6,15 +6,19 @@ tags: ['セキュリティと認証', 'Cloud 管理']
 keywords: ['AWS PrivateLink', 'プライベート RDS', 'ClickPipes']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
-  ## AWS PrivateLink を使用して ClickPipes 向けにプライベート RDS を公開する設定
+  ## ClickPipes からプライベート RDS を利用できるようにする AWS PrivateLink の設定
 </div>
 
 AWS PrivateLink を介してプライベート RDS を ClickPipes から利用できるようにするための設定手順です。クロスリージョンアクセスにも対応しています。
 
 <Info>
   これは AWS Endpoint Service を使用する方法で、主にクロスリージョンアクセスに適しています。同一リージョンでのアクセスが必要な場合は、
-  [VPC リソースの作成](/ja/integrations/clickpipes/networking/aws-privatelink#vpc-resource) を
+  [VPC リソースの作成](/ja/integrations/clickpipes/aws-privatelink#vpc-resource) を
   推奨します。
 </Info>
 
@@ -61,7 +65,7 @@ RDS インスタンスが複数ある場合は、これらの手順を繰り返�
 7. **任意**: データベースのリージョンが ClickPipes のリージョンと異なる場合は、クロスリージョンのサポートを有効にします
    * VPC コンソールの `Endpoint Services` で、対象のエンドポイントサービスを選択します。
    * `Actions` ボタンをクリックし、`Modify supported Regions` を選択します。
-   * エンドポイントサービスへのアクセスを許可するリージョンを追加します。ClickPipes のリージョン一覧については、[こちらを参照](/ja/integrations/clickpipes/networking/static-ips)してください。
+   * エンドポイントサービスへのアクセスを許可するリージョンを追加します。ClickPipes のリージョン一覧については、[こちらを参照](/ja/integrations/clickpipes/home#list-of-static-ips)してください。
 
 8. **MySQL の場合に推奨**
    * MySQL を使用している場合は、ソースデータベースのパラメータとして `skip_name_resolve=1` を設定することを推奨します。
@@ -73,7 +77,7 @@ RDS インスタンスが複数ある場合は、これらの手順を繰り返�
   ## 接続の開始
 </div>
 
-完了したら、ガイドに従って[接続を開始](/ja/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)できます。
+完了したら、ガイドに従って[接続を開始](/ja/integrations/clickpipes/aws-privatelink#creating-clickpipe)できます。
 
 Console でステータスが `Ready` になったら、次のセクションに進んで ClickPipe を作成できます。
 

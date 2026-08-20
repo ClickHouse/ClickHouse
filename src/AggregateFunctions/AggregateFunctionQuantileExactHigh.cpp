@@ -60,7 +60,7 @@ void registerAggregateFunctionsQuantileExactHigh(AggregateFunctionFactory & fact
     AggregateFunctionProperties properties = { .returns_default_when_only_null = true };
 
     FunctionDocumentation::Description description = R"(
-Similar to [`quantileExact`](/reference/functions/aggregate-functions/quantileExact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+Similar to [`quantileExact`](/sql-reference/aggregate-functions/reference/quantileexact), this computes the exact [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
 
 To get the exact value, all the passed values are combined into an array, which is then fully sorted.
 The sorting algorithm's complexity is `O(N·log(N))`, where `N = std::distance(first, last)` comparisons.
@@ -71,7 +71,7 @@ Median is calculated similarly to the [`median_high`](https://docs.python.org/3/
 For all other levels, the element at the index corresponding to the value of `level * size_of_array` is returned.
 
 When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could).
-In this case, use the [quantiles](/reference/functions/aggregate-functions/quantiles) function.
+In this case, use the [quantiles](/sql-reference/aggregate-functions/reference/quantiles) function.
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileExactHigh(level)(expr)
@@ -116,7 +116,7 @@ SELECT quantileExactHigh(0.1)(number) FROM numbers(10);
     FunctionDocumentation::Description description_quantiles = R"(
 Exactly computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence at different levels simultaneously. For an even number of elements at level `0.5` it returns the higher of the two middle values.
 
-This function is equivalent to [`quantileExactHigh`](/reference/functions/aggregate-functions/quantileExactHigh) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantileExactHigh`](/sql-reference/aggregate-functions/reference/quantileExactHigh) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesExactHigh(level1, level2, ...)(expr)

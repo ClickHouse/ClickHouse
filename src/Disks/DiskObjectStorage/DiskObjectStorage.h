@@ -39,25 +39,16 @@ public:
         ObjectStorageRouterPtr object_storages_,
         DiskObjectStorageConstPtr wrapped_disk_,
         const Poco::Util::AbstractConfiguration & config,
-        const String & config_prefix);
+        const String & config_prefix,
+        bool use_fake_transaction_ = true);
     ~DiskObjectStorage() override;
 
     /// Create fake transaction
     DiskTransactionPtr createTransaction() override;
 
-    /// A shallow copy of this disk with a fresh writable in-memory metadata storage;
-    /// everything else is shared, no background threads are started.
-    DiskObjectStoragePtr wrapWithMemoryMetadata();
-
     DataSourceDescription getDataSourceDescription() const override { return data_source_description; }
 
-    /// Keeper metadata replicates itself; in-memory metadata is transient and has no local
-    /// metadata files zero-copy could ship (see `getReplicatedFilesDescriptionForRemoteDisk`).
-    bool supportZeroCopyReplication() const override
-    {
-        return metadata_storage->getType() != MetadataStorageType::Keeper
-            && metadata_storage->getType() != MetadataStorageType::Memory;
-    }
+    bool supportZeroCopyReplication() const override { return metadata_storage->getType() != MetadataStorageType::Keeper; }
 
     bool supportParallelWrite() const override { return object_storages->takePointingTo(cluster->getLocalLocation())->supportParallelWrite(); }
 
@@ -250,9 +241,6 @@ public:
 
 private:
 
-    /// Shallow-copy constructor for `wrapWithMemoryMetadata`.
-    DiskObjectStorage(const DiskObjectStorage & base, MetadataStoragePtr metadata_storage_);
-
     /// Create actual disk object storage transaction for operations
     /// execution.
     DiskTransactionPtr createObjectStorageTransaction();
@@ -295,6 +283,7 @@ private:
     scope_guard resource_changes_subscription;
     std::atomic_bool enable_distributed_cache;
 
+    const bool use_fake_transaction;
     std::atomic<bool> wait_blob_removal;
     UInt64 remove_shared_recursive_file_limit;
 };

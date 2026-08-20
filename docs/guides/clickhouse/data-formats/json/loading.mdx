@@ -70,7 +70,7 @@ ClickHouse can load data JSON in several formats, automatically inferring the ty
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 LIMIT 1
 ```
 
@@ -85,7 +85,7 @@ LIMIT 1
 Note how we're not required to specify the file format. Instead, we use a glob pattern to read all `*.json.gz` files in the bucket. ClickHouse automatically infers the format is `JSONEachRow` (ndjson) from the file extension and contents. A format can be manually specified through parameter functions in case ClickHouse is unable to detect it.
 
 ```sql
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN, JSONEachRow)
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
 ```
 
 <Info>
@@ -97,7 +97,7 @@ The above files are also compressed. This is automatically detected and handled 
 To load the rows in these files, we can use an [`INSERT INTO SELECT`](/reference/statements/insert-into#inserting-the-results-of-select):
 
 ```sql
-INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', NOSIGN)
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
 ```
 
 ```response
@@ -179,12 +179,12 @@ ORDER BY (project, date);
 We populate the table using the same approach as for the original dataset:
 
 ```sql
-INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```sql
 INSERT INTO pypi_with_tags SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz', NOSIGN)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
 ```
 
 ```response

@@ -14,4 +14,6 @@
 45
 10
 10
-SELECT sumIf(1, greater(number, 0))\nFROM numbers(10)\nWHERE 0
+SELECT sumIf(1, greater(number, 0))
+FROM numbers(10)
+WHERE 0

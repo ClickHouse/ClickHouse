@@ -1,0 +1,222 @@
+---
+slug: /cloud/managed-postgres/benchmarks
+sidebarTitle: '벤치마크'
+title: '성능 벤치마크'
+description: 'ClickHouse가 관리하는 Postgres와 AWS Aurora, RDS 및 기타 관리형 PostgreSQL 서비스의 성능을 비교한 벤치마크'
+keywords: ['Postgres 벤치마크', '성능', 'pgbench', 'aurora', 'rds', 'tps', '지연 시간', 'nvme 성능']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  **핵심 요약**
+
+  * 표준 [`pgbench`](https://www.postgresql.org/docs/current/pgbench.html) 테스트를 사용해 **ClickHouse가 관리하는 Postgres**와 AWS RDS(프로비저닝된 IOPS 16k), Aurora IO Optimized의 성능을 **벤치마크**했습니다
+  * **성능**: ClickHouse의 NVMe 기반 Postgres는 IO 집약적 워크로드에서 **4.3~9배 더 빠른 성능**을 제공하며, CPU 바운드 시나리오에서는 **12% 더 빠릅니다**
+  * 높은 transaction 처리율, 낮은 지연 시간의 데이터 액세스, IO 병목 없는 예측 가능한 성능이 필요한 **빠르게 성장하는 AI 기반 워크로드에 이상적입니다**
+</Info>
+
+<div id="overview">
+  ## 벤치마크 개요
+</div>
+
+중간 수준과 높은 동시성 시나리오에서의 워크로드 성능을 평가하기 위해 PostgreSQL의 표준 벤치마크 도구인 `pgbench`를 사용해 종합적인 성능 테스트를 수행했습니다.
+
+<div id="benchmarks">
+  ## 벤치마크
+</div>
+
+모든 성능 테스트는 공정한 비교를 위해 PostgreSQL 데이터베이스와 동일한 리전 및 가용 영역에 배치하고, 동일한 컴퓨트 용량을 갖춘 클라이언트 VM을 사용해 수행했습니다.
+
+<div id="test1">
+  ### 테스트 1: IO 집약적 - 읽기+쓰기 (500 GB 데이터셋)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readwrite.webp" alt="IO 집약적 읽기+쓰기 벤치마크 결과" size="md" border />
+
+**RDS(16k IOPS) 대비 성능 개선:**
+
+* **TPS 326% 더 높음** (4.3배 더 빠름)
+
+**Aurora IO Optimized 대비 성능 개선:**
+
+* **TPS 345% 더 높음** (4.5배 더 빠름)
+
+**분석**: 읽기/쓰기 혼합 워크로드는 NVMe 스토리지의 성능 이점을 가장 극적으로 보여 주며, 높은 처리량의 데이터 수집과 낮은 지연 시간의 읽기가 모두 필요한 **빠르게 성장하는 AI 기반 워크로드에 가장 현실적인 시나리오**를 잘 나타냅니다. **ClickHouse가 관리하는 Postgres는 더 높은 동시성에서 19.8K TPS를 달성**했으며, 이를 통해 NVMe 스토리지가 부하 상황에서도 효과적으로 확장된다는 점을 보여줍니다. 이는 **RDS와 Aurora보다 4.3~4.5배 빠른 속도**입니다. 네트워크 연결형 스토리지 솔루션은 쓰기 비중이 높은 작업에서 한계를 보였으며, RDS와 Aurora는 프로비저닝된 용량이 있고 Aurora의 IO Optimized 구성에서도 최대 4.4K~4.6K TPS에 그쳤습니다.
+
+<div id="test1-setup">
+  #### 설정
+</div>
+
+이 테스트는 500 GB의 대규모 데이터셋을 사용해 읽기/쓰기 혼합 성능을 평가하며, 스토리지 서브시스템의 읽기 및 쓰기 경로에 모두 부하를 줍니다.
+
+**인스턴스 구성:**
+
+| 구성         | ClickHouse가 관리하는 Postgres | 16k IOPS RDS           | Aurora IO Optimized     |
+| ---------- | ------------------------- | ---------------------- | ----------------------- |
+| **PG 버전**  | 17                        | 17                     | 17                      |
+| **vCPU 수** | 16                        | 16                     | 16                      |
+| **RAM**    | 64 GB                     | 64 GB                  | 128 GB                  |
+| **디스크 크기** | 1 TB                      | 1 TB                   | 1 TB                    |
+| **디스크 유형** | NVMe (무제한 IOPS)           | 네트워크 연결형 (16,000 IOPS) | 네트워크 연결형 (IO Optimized) |
+
+**테스트 구성:**
+
+```bash
+# 데이터베이스 초기화 (500 GB 데이터셋)
+pgbench -i -s 34247
+
+# 읽기+쓰기 벤치마크
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30
+```
+
+<div id="test2">
+  ### 테스트 2: IO 집약적 - 읽기 전용 (500 GB 데이터셋)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readonly.webp" alt="IO 집약적 읽기 전용 벤치마크 결과" size="md" border />
+
+**RDS(16k IOPS) 대비 성능 향상:**
+
+* **TPS 802% 더 높음** (9.0배 더 빠름)
+
+**분석**: IO 병목이 발생하는 읽기 집약적 워크로드에서는 성능 격차가 크게 벌어집니다. **ClickHouse가 관리하는 Postgres는 84.8K TPS를 기록한 반면**, 16,000 프로비저닝된 IOPS를 갖춘 RDS는 동일한 컴퓨트 리소스를 사용하고도 9.4K TPS에 그쳤습니다. 핵심적인 차이는 다음과 같습니다. ClickHouse의 NVMe 스토리지는 더 높은 동시성에서도 확장되지만, 네트워크 연결형 스토리지는 프로비저닝된 IOPS 한계로 인해 계속 제약을 받습니다. 프로비저닝된 IOPS를 적용하더라도 RDS는 여전히 ClickHouse보다 9배 느렸으며, 이는 IO 집약적 워크로드에서 스토리지 아키텍처가 얼마나 중요한지를 분명하게 보여줍니다.
+
+<div id="test1-setup">
+  #### 설정
+</div>
+
+이 테스트는 메모리에 적재되지 않는 500 GB의 대규모 데이터셋으로 읽기 성능을 평가하며, 디스크 I/O 성능에 부하를 줍니다.
+
+**인스턴스 구성:**
+
+| 구성         | ClickHouse가 관리하는 Postgres | 16k IOPS RDS           |
+| ---------- | ------------------------- | ---------------------- |
+| **PG 버전**  | 17                        | 17                     |
+| **vCPUs**  | 16                        | 16                     |
+| **RAM**    | 64 GB                     | 64 GB                  |
+| **디스크 크기** | 1 TB                      | 1 TB                   |
+| **디스크 유형** | NVMe (IOPS 무제한)           | 네트워크 연결형 (16,000 IOPS) |
+
+**테스트 구성:**
+
+```bash
+# 데이터베이스 초기화 (500 GB 데이터셋)
+pgbench -i -s 34247
+
+# 읽기 전용 벤치마크
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
+```
+
+<div id="test3">
+  ### 테스트 3: CPU 집약적(CPU Intensive) (데이터가 메모리에 모두 올라감)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/compute-intensive.webp" alt="CPU 집약적 벤치마크 결과" size="md" border />
+
+**성능 개선:**
+
+* **RDS PostgreSQL보다 TPS가 12.3% 더 높음**
+
+**분석**: 디스크 I/O가 거의 발생하지 않는 CPU 바운드 시나리오에서도 **ClickHouse가 관리하는 Postgres가 36.5K TPS로 가장 앞선 성능을 보였습니다**. 두 서비스 모두 CPU 사용률 100%에 도달했지만, ClickHouse의 NVMe 스토리지는 더 높은 캐시 적중률을 바탕으로 더 우수한 성능을 제공했습니다. RDS 대비 12%의 우위는 워크로드가 주로 CPU 바운드인 경우에도 기반 인프라의 효율성이 뛰어남을 보여줍니다.
+
+<div id="test1-setup">
+  #### 설정
+</div>
+
+이 테스트는 작업 세트가 전부 메모리에 적재되어 디스크 I/O 영향이 최소화되는 경우의 CPU 성능을 평가합니다.
+
+**인스턴스 구성:**
+
+| 구성         | ClickHouse가 관리하는 Postgres | RDS PostgreSQL |
+| ---------- | ------------------------- | -------------- |
+| **PG 버전**  | 17                        | 17             |
+| **vCPUs**  | 2                         | 2              |
+| **RAM**    | 8 GB                      | 8 GB           |
+| **디스크 유형** | NVMe                      | 네트워크 연결형 (gp3) |
+
+**테스트 구성:**
+
+```bash
+# 데이터베이스 초기화 (2 GB 데이터셋)
+pgbench -i -s 136
+
+# 데이터셋을 메모리에 로드하는 워밍업 실행
+pgbench -c 1 -T 60 -S -M prepared
+
+# 벤치마크 실행 (읽기 전용, prepared statements)
+pgbench -c 32 -j 16 -T 300 -S -M prepared -P 30
+```
+
+<div id="summary">
+  ## 성능 요약
+</div>
+
+<div id="key-findings">
+  ### 주요 결과
+</div>
+
+세 가지 벤치마크 시나리오 모두에서 ClickHouse가 관리하는 Postgres는 일관되게 더 우수한 성능을 보였습니다:
+
+1. **IO 집약적 읽기+쓰기 워크로드**: RDS(16k IOPS) 및 Aurora IO Optimized 대비 TPS가 4.3~4.5배 더 높았습니다
+2. **IO 집약적 읽기 워크로드**: 16k IOPS를 사용하는 RDS 대비 TPS가 9배 더 높았습니다
+3. **CPU 바운드 워크로드**: RDS 대비 TPS가 12% 더 높았습니다
+
+<div id="when-it-excels">
+  ### Postgres by ClickHouse가 뛰어난 경우
+</div>
+
+Postgres by ClickHouse는 다음과 같은 애플리케이션에 이상적입니다:
+
+* ClickHouse와의 원활한 통합을 통해 OLAP 워크로드를 기본적으로 분석할 수 있고, 높은 처리량의 데이터 수집, 빈번한 업서트, 실시간 피처 업데이트가 필요한 빠르게 성장하는 AI 기반 워크로드
+* 쓰기, 업데이트 또는 읽기/쓰기 혼합 작업이 빈번한 애플리케이션
+* 예측 가능하면서도 고성능 스토리지가 필요한 애플리케이션
+* 현재 기존 관리형 Postgres 서비스의 IOPS 제한으로 제약을 받는 애플리케이션
+
+**향후 분석 기능도 필요할 것으로 예상되고**, 더 긴밀한 ClickHouse 통합을 염두에 두고 있다면—트랜잭션 데이터가 실시간 대시보드, 피처 스토어, ML 파이프라인으로 연결되는 현대 AI 워크로드에서 흔한 패턴입니다—**Postgres by ClickHouse를 기본 선택지로 삼는 것이 좋습니다**. 네이티브 통합은 복잡한 ETL 파이프라인을 없애고, 운영 데이터베이스와 분석 쿼리 사이에서 데이터를 원활하게 흐르게 합니다.
+
+<div id="nvme-advantage">
+  ### NVMe 아키텍처의 장점
+</div>
+
+성능 이점은 아키텍처의 근본적인 차이에서 비롯됩니다.
+
+| 항목           | NVMe 스토리지 (Managed Postgres) | 네트워크 연결 스토리지 (프로비저닝된 IOPS) |
+| ------------ | ---------------------------- | -------------------------- |
+| **IOPS**     | 10만에서 사실상 무제한                | 16,000으로 프로비저닝됨            |
+| **네트워크 홉 수** | 0회(로컬 디바이스)                  | 모든 디스크 작업마다 네트워크 왕복이 필요함   |
+| **성능 스케일링**  | 동시성이 증가하면 선형적으로 확장됨          | 프로비저닝된 IOPS에 따라 제한됨        |
+
+NVMe 스토리지의 성능상 이점에 대한 자세한 내용은 [NVMe 기반 성능](/ko/products/managed-postgres/overview#nvme-performance)을 참조하십시오.
+
+<div id="cost-effectiveness">
+  ## 비용 효율성
+</div>
+
+단순한 성능을 넘어, ClickHouse가 관리하는 Postgres는 더 뛰어난 가격 대비 성능을 제공합니다.
+
+* **달러당 더 높은 처리량**: 16k 프로비저닝된 IOPS를 사용하는 RDS 및 Aurora IO Optimized와 비교해 4~9배 더 높은 TPS를 달성합니다
+* **예측 가능한 비용**: 추가 IOPS 용량을 프로비저닝할 필요가 없습니다. 무제한 로컬 IOPS가 포함됩니다
+* **더 낮은 컴퓨트 요구 사항**: 효율적인 I/O 덕분에 더 작은 인스턴스 크기로도 목표 성능을 달성할 수 있습니다
+* **읽기 레플리카 필요성 감소**: 단일 인스턴스의 높은 처리량으로 수평 스케일링의 필요성이 줄어듭니다
+
+현재 IOPS 한계로 성능이 제약되는 워크로드는 Managed Postgres로 전환하면 값비싼 프로비저닝된 IOPS나 IO Optimized 구성이 필요 없어지는 동시에 훨씬 더 우수한 성능을 얻을 수 있습니다.
+
+<div id="references">
+  ## 참고
+</div>
+
+전체 벤치마크 데이터, 구성, 상세 메트릭은 [벤치마크 결과 스프레드시트](https://docs.google.com/spreadsheets/d/17TLWmwNKZb3Ie1vSQqvjtqByHskvoX6CF2eQ_FRx1cA/edit?gid=845104392#gid=845104392)에서 확인할 수 있습니다.
+
+<div id="resources">
+  ## 추가 자료
+</div>
+
+* [PeerDB: Postgres 관리형 서비스 비교](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
+* [pgbench 문서](https://www.postgresql.org/docs/current/pgbench.html)
+* [Managed Postgres 개요](/ko/products/managed-postgres/overview)
+* [Postgres 인스턴스 스케일링](/ko/products/managed-postgres/scaling)

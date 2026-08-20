@@ -1,0 +1,164 @@
+---
+description: '快速上手 Moose Stack——一种基于代码、构建于 ClickHouse 之上的开发方式，支持类型安全的 schema 和本地开发'
+sidebarTitle: 'Moose OLAP（TypeScript / Python）'
+slug: /interfaces/third-party/moose-olap
+title: '基于 ClickHouse 使用 Moose OLAP 进行开发'
+keywords: ['Moose']
+doc_type: 'guide'
+---
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Moose OLAP](https://docs.fiveonefour.com/moosestack/olap) 是 [Moose Stack](https://docs.fiveonefour.com/moosestack) 的核心模块。Moose Stack 是一个开源开发者工具包，用于在 Typescript 和 Python 中构建实时分析后端。
+
+Moose OLAP 提供面向开发者的抽象层和类 ORM 功能，专为 ClickHouse 原生打造。
+
+<div id="key-features">
+  ## Moose OLAP 的主要特性
+</div>
+
+* **以代码定义 schema**：在 TypeScript 或 Python 中定义你的 ClickHouse 表，并享受类型安全和 IDE 自动补全
+* **类型安全的查询**：编写支持类型检查和自动补全的 SQL 查询
+* **本地开发**：基于本地 ClickHouse 实例进行开发和测试，而不影响生产环境
+* **迁移管理**：对你的 schema 变更进行版本控制，并通过代码管理迁移
+* **实时流式处理**：内置支持将 ClickHouse 与 Kafka 或 Redpanda 搭配使用，以进行流式摄取
+* **REST API**：可基于你的 ClickHouse 表和视图轻松生成文档完善的 REST API
+
+<div id="getting-started">
+  ## 5 分钟内快速入门
+</div>
+
+有关最新、最完善的 Installation 和 Getting Started 指南，请参阅 [Moose Stack 文档](https://docs.fiveonefour.com/moosestack/getting-started/from-clickhouse)。
+
+或者按照本指南，在现有的 ClickHouse 或 ClickHouse Cloud 部署上，于 5 分钟内完成 Moose OLAP 的启动运行。
+
+<div id="prerequisites">
+  ### 前置条件
+</div>
+
+* **Node.js 20+** 或 **Python 3.12+** - TypeScript 或 Python 开发所必需
+* **Docker Desktop** - 用于本地开发环境
+* **macOS/Linux** - Windows 可通过 WSL2 运行
+
+<Steps>
+  <Step>
+    ### 安装 Moose
+
+    将 Moose CLI 全局安装到系统中：
+
+    ```bash
+    bash -i <(curl -fsSL https://fiveonefour.com/install.sh) moose
+    ```
+  </Step>
+
+  <Step>
+    ### 设置项目
+
+    #### 选项 A：使用你现有的 ClickHouse 部署
+
+    **重要**：你的生产 ClickHouse 不会受到影响。此操作只会初始化一个新的 Moose OLAP 项目，并基于 ClickHouse 表生成数据模型。
+
+    ```bash
+    # TypeScript
+    moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language typescript
+
+    # Python
+    moose init my-project --from-remote <YOUR_CLICKHOUSE_CONNECTION_STRING> --language python
+    ```
+
+    你的 ClickHouse 连接字符串应采用以下格式：
+
+    ```bash
+    https://username:password@host:port/?database=database_name
+    ```
+
+    #### 选项 B：使用 ClickHouse Playground
+
+    还没有可用的 ClickHouse？使用 ClickHouse Playground 体验 Moose OLAP！
+
+    ```bash
+    # TypeScript
+    moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language typescript
+
+    # Python
+    moose init my-project --from-remote https://explorer:@play.clickhouse.com:443/?database=default --language python
+    ```
+  </Step>
+
+  <Step>
+    ### 安装依赖
+
+    ```bash
+    # TypeScript
+    cd my-project
+    npm install
+
+    # Python
+    cd my-project
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    ```
+
+    你应该会看到：`Successfully generated X models from ClickHouse tables`
+  </Step>
+
+  <Step>
+    ### 查看生成的模型
+
+    Moose CLI 会根据你现有的 ClickHouse 表自动生成 TypeScript 接口或 Python Pydantic 模型。
+
+    可在 `app/index.ts` 文件中查看新的数据模型。
+  </Step>
+
+  <Step>
+    ### 开始开发
+
+    启动开发服务器，拉起一个本地 ClickHouse 实例，并根据代码定义自动重建所有生产表：
+
+    ```bash
+    moose dev
+    ```
+
+    **重要**：你的生产 ClickHouse 不会受到影响。此操作会创建一个本地开发环境。
+  </Step>
+
+  <Step>
+    ### 向本地数据库填充数据
+
+    将数据填充到本地 ClickHouse 实例中：
+
+    #### 来自你自己的 ClickHouse
+
+    ```bash
+    moose seed --connection-string <YOUR_CLICKHOUSE_CONNECTION_STRING> --limit 100
+    ```
+
+    #### 来自 ClickHouse Playground
+
+    ```bash
+    moose seed --connection-string https://explorer:@play.clickhouse.com:443/?database=default --limit 100
+    ```
+  </Step>
+
+  <Step>
+    ### 使用 Moose OLAP 构建
+
+    现在你已经在代码中定义了表，因此可以获得与 Web 应用中 ORM 数据模型类似的优势——在基于分析数据构建 API 和 materialized views 时，具备类型安全和自动补全能力。接下来，你可以尝试：
+
+    * 使用 [Moose API](https://docs.fiveonefour.com/moosestack/apis) 构建 REST API
+    * 使用 [Moose Workflows](https://docs.fiveonefour.com/moosestack/workflows) 或 [Moose Streaming](https://docs.fiveonefour.com/moosestack/workflows) 摄取或转换数据
+    * 进一步了解如何通过 [Moose Build](https://docs.fiveonefour.com/moosestack/deploying) 和 [Moose Migrate](https://docs.fiveonefour.com/moosestack/migrate) 进入生产环境
+  </Step>
+</Steps>
+
+<div id="get-help-stay-connected">
+  ## 获取帮助并保持联系
+</div>
+
+* **Reference Application**：查看开源参考应用 [Area Code](https://github.com/514-labs/area-code)：这是一个入门仓库，包含构建功能丰富、企业级且需要专门基础设施的应用程序所需的全部基础组件。其中提供了两个示例应用：用户分析和运营数据仓库。
+* **Slack Community**：在 [Slack](https://join.slack.com/t/moose-community/shared_invite/zt-2fjh5n3wz-cnOmM9Xe9DYAgQrNu8xKxg) 上联系 Moose Stack 维护者，获取支持并提供反馈
+* **Watch Tutorials**：在 [YouTube](https://www.youtube.com/channel/UCmIj6NoAAP7kOSNYk77u4Zw) 上观看关于 Moose Stack 功能的视频教程、演示和深度讲解
+* **Contribute**：在 [GitHub](https://github.com/514-labs/moose) 上查看代码、为 Moose Stack 做贡献并报告问题

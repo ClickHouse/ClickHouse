@@ -6,6 +6,10 @@ tags: ['الأمان والمصادقة', 'إدارة Cloud']
 keywords: ['AWS PrivateLink', 'RDS خاص', 'ClickPipes']
 ---
 
+{frontMatter.description}
+
+{/* truncate */}
+
 <div id="aws-privatelink-setup-to-expose-private-rds-for-clickpipes">
   ## إعداد AWS PrivateLink لإتاحة RDS خاص لـ ClickPipes
 </div>
@@ -15,7 +19,7 @@ keywords: ['AWS PrivateLink', 'RDS خاص', 'ClickPipes']
 <Info>
   يستخدم هذا AWS Endpoint Service، وهو مناسب أساسًا للوصول عبر المناطق. إذا كنت تحتاج إلى وصول داخل المنطقة نفسها،
   فيُوصى بدلًا من ذلك
-  [بإنشاء مورد VPC](/ar/integrations/clickpipes/networking/aws-privatelink#vpc-resource).
+  [بإنشاء مورد VPC](/ar/integrations/clickpipes/aws-privatelink#vpc-resource).
 </Info>
 
 <div id="private-link-creation">
@@ -29,7 +33,7 @@ keywords: ['AWS PrivateLink', 'RDS خاص', 'ClickPipes']
    * انتقل إلى VPC المستهدف وأنشئ Network Load Balancer ‏(NLB). لاحظ أن NLB يجب أن يكون داخليًا (خاصًا) وليس مواجهًا للإنترنت (عامًا).
 
 2. اضبط مجموعة الهدف
-   * يجب أن تشير مجموعة الهدف إلى عنوان IP لنقطة نهاية RDS والمنفذ الخاص بمثيل RDS (عادةً 5432 لـ PostgreSQL أو 3306 لـ MySQL).
+   * يجب أن تشير مجموعة الهدف إلى endpoint IP والمنفذ الخاص بمثيل RDS (عادةً 5432 لـ PostgreSQL أو 3306 لـ MySQL).
 
 <Note>
   إذا كنت تريد أتمتة عملية تحديث مجموعة الهدف بعنوان IP الجديد لنقطة نهاية RDS، فيمكنك استخدام AWS Lambda functions أو أدوات أتمتة أخرى.
@@ -61,7 +65,7 @@ keywords: ['AWS PrivateLink', 'RDS خاص', 'ClickPipes']
 7. **اختياري**: فعّل دعم cross-region إذا كانت Region قاعدة البيانات مختلفة عن Region الخاصة بـ ClickPipes
    * ضمن `Endpoint Services` في VPC Console، حدِّد endpoint service الخاص بك.
    * انقر على زر `Actions` واختر `Modify supported Regions`.
-   * أضف المناطق التي تريد السماح لها بالوصول إلى endpoint service، [راجع هنا](/ar/integrations/clickpipes/networking/static-ips) للاطلاع على قائمة مناطق ClickPipes.
+   * أضف المناطق التي تريد السماح لها بالوصول إلى endpoint service، [راجع هنا](/ar/integrations/clickpipes/home#list-of-static-ips) للاطلاع على قائمة مناطق ClickPipes.
 
 8. **موصى به لـ MySQL**
    * إذا كنت تستخدم MySQL، فمن المستحسن تعيين `skip_name_resolve=1` كمعلمة في source database.
@@ -73,7 +77,7 @@ keywords: ['AWS PrivateLink', 'RDS خاص', 'ClickPipes']
   ## بدء الاتصال
 </div>
 
-عند اكتمال ذلك، يمكنك اتباع الدليل [لبدء الاتصال](/ar/integrations/clickpipes/networking/aws-privatelink#creating-clickpipe)
+عند اكتمال ذلك، يمكنك اتباع الدليل [لبدء الاتصال](/ar/integrations/clickpipes/aws-privatelink#creating-clickpipe)
 
 بمجرد أن تظهر الحالة `Ready` في Console، يمكنك الانتقال إلى القسم التالي لإنشاء ClickPipe.
 

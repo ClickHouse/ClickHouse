@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cmath>
 #include <limits>
 #include <base/arithmeticOverflow.h>
 #include <base/types.h>
@@ -18,8 +17,6 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTime.h>
@@ -59,7 +56,7 @@ namespace ErrorCodes
 
 constexpr time_t MAX_DATETIME64_TIMESTAMP = 253402300799LL;   //  9999-12-31 23:59:59 UTC
 constexpr time_t MIN_DATETIME64_TIMESTAMP = -62167219200LL;   //  0000-01-01 00:00:00 UTC
-constexpr time_t MAX_DATE32_TIMESTAMP = 253402300799LL;       //  9999-12-31 23:59:59 UTC (last day of Date32)
+constexpr time_t MAX_DATE32_TIMESTAMP = 10413791999LL;        //  2299-12-31 23:59:59 UTC (last day of Date32)
 constexpr time_t MAX_DATETIME_TIMESTAMP = 0xFFFFFFFF;
 constexpr time_t MAX_DATE_TIMESTAMP = 5662310399;       // 2149-06-06 23:59:59 UTC
 constexpr time_t MAX_TIME_TIMESTAMP = 3599999;              // 999:59:59
@@ -79,29 +76,6 @@ inline time_t maxWholeSecondsForDateTime64(Int64 scale_multiplier)
 inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
 {
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
-}
-
-/// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
-/// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
-/// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion
-/// has to reject (or saturate) day numbers outside this window instead of silently returning the clamped bound.
-inline std::pair<Int32, Int32> getDateTime64DayNumRange(Int64 scale_multiplier, const DateLUTImpl & time_zone)
-{
-    /// The cast to `DateLUTImpl::Time` is required: `toDayNum` only takes the out-of-LUT-range escape path for
-    /// exactly that type, and `time_t` is a distinct type from `Int64` on Darwin (see the note in `DateLUTImpl.h`).
-    const auto min_whole = static_cast<DateLUTImpl::Time>(minWholeSecondsForDateTime64(scale_multiplier));
-    const auto max_whole = static_cast<DateLUTImpl::Time>(maxWholeSecondsForDateTime64(scale_multiplier));
-
-    /// `toDayNum` returns the day containing the timestamp, whose midnight is not greater than it. That makes the
-    /// upper bound representable as is, while the lower one may need rounding up to the next day.
-    Int32 min_day = static_cast<Int32>(time_zone.toDayNum(min_whole));
-    if (time_zone.fromDayNum(ExtendedDayNum(min_day)) < min_whole)
-        ++min_day;
-    const Int32 max_day = static_cast<Int32>(time_zone.toDayNum(max_whole));
-
-    return {
-        std::max<Int32>(min_day, DATE_LUT_MIN_EXTEND_DAY_NUM),
-        std::min<Int32>(max_day, DATE_LUT_MAX_EXTEND_DAY_NUM)};
 }
 
 [[noreturn]] void throwDateIsNotSupported(const char * name);
@@ -603,22 +577,13 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
             Int64 origin_units = 0;
             if (common::mulOverflow(*origin, scale_diff, origin_units))
                 throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            const Int64 remainder = static_cast<Int64>(
-                (static_cast<UInt64>(t_units) - static_cast<UInt64>(origin_units)) % static_cast<UInt64>(num_units));
-            Int64 result = 0;
-            if (common::subOverflow(t_units, remainder, result))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            return result;
+            return t_units
+                - static_cast<Int64>((static_cast<UInt64>(t_units) - static_cast<UInt64>(origin_units)) % static_cast<UInt64>(num_units));
         }
         if (t >= 0) [[likely]]
             return t_units / num_units * num_units;
         else
-        {
-            Int64 result = 0;
-            if (common::mulOverflow((t_units + 1) / num_units - 1, num_units, result))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            return result;
-        }
+            return ((t_units + 1) / num_units - 1) * num_units;
     }
     else if (scale_multiplier > unit_scale)
     {
@@ -631,11 +596,8 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
             /// The exact interval start in the scale of t. It is not always a whole number of units (the origin
             /// can have a sub-unit part), so the conversion to the unit scale must floor it, never round it
             /// towards zero, otherwise the result would be greater than t for negative interval starts.
-            const Int64 remainder = static_cast<Int64>(
-                (static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units_scaled));
-            Int64 interval_start = 0;
-            if (common::subOverflow(t, remainder, interval_start))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
+            const Int64 interval_start
+                = t - static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units_scaled));
             if (interval_start >= 0) [[likely]]
                 return interval_start / scale_diff;
             else
@@ -654,23 +616,11 @@ inline Int64 toStartOfSubsecondInterval(Int64 t, Int64 num_units, Int64 unit_sca
     else
     {
         if (origin.has_value())
-        {
-            const Int64 remainder
-                = static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units));
-            Int64 result = 0;
-            if (common::subOverflow(t, remainder, result))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            return result;
-        }
+            return t - static_cast<Int64>((static_cast<UInt64>(t) - static_cast<UInt64>(*origin)) % static_cast<UInt64>(num_units));
         if (t >= 0) [[likely]]
             return t / num_units * num_units;
         else
-        {
-            Int64 result = 0;
-            if (common::mulOverflow((t + 1) / num_units - 1, num_units, result))
-                throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-            return result;
-        }
+            return ((t + 1) / num_units - 1) * num_units;
     }
 }
 
@@ -1540,9 +1490,7 @@ struct ToYearImpl
         if (point.getType() != Field::Types::UInt64) return nullptr;
 
         auto year = point.safeGet<UInt64>();
-        /// The year DATE_LUT_MAX_REPRESENTABLE_YEAR is excluded because the exclusive upper endpoint of its
-        /// preimage would be the first moment of the next year, which is not representable.
-        if (year >= DATE_LUT_MAX_REPRESENTABLE_YEAR) return nullptr;
+        if (year < DATE_LUT_MIN_YEAR || year >= DATE_LUT_MAX_YEAR) return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -2536,9 +2484,7 @@ struct ToYYYYMMImpl
         auto year = year_month / 100;
         auto month = year_month % 100;
 
-        /// The month DATE_LUT_MAX_REPRESENTABLE_YEAR-12 is excluded because the exclusive upper endpoint of its
-        /// preimage would be the first moment of the next month, which is not representable.
-        if (year > DATE_LUT_MAX_REPRESENTABLE_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_REPRESENTABLE_YEAR && month == 12))
+        if (year < DATE_LUT_MIN_YEAR || year > DATE_LUT_MAX_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_YEAR && month == 12))
             return nullptr;
 
         const DateLUTImpl & date_lut = DateLUT::instance("UTC");
@@ -2690,73 +2636,15 @@ struct Transformer
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeTime>)
+            if constexpr (is_any_of<ToType, DataTypeDate, DataTypeDateTime, DataTypeTime>)
             {
                 if constexpr (is_any_of<Additions, DateTimeAccurateConvertStrategyAdditions, DateTimeAccurateOrNullConvertStrategyAdditions>)
                 {
-                    using FromValueType = typename FromTypeVector::value_type;
-                    bool is_valid_input = false;
-                    if constexpr (std::is_same_v<ToType, DataTypeTime>)
-                    {
-                        /// `Time` is a signed count of seconds of a clock reading within
-                        /// `[-MAX_TIME_TIMESTAMP, MAX_TIME_TIMESTAMP]`, so it cannot share the unsigned `DateTime`
-                        /// window: negative numeric inputs are meaningful and preserved for `Time`, while values
-                        /// above its own maximum are not representable and would be silently saturated by the
-                        /// transform below, which is exactly what the accurate cast must reject.
-                        if constexpr (is_floating_point<FromValueType>)
-                        {
-                            /// `Float64` represents every `BFloat16` and `Float32` value and `MAX_TIME_TIMESTAMP`
-                            /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
-                            /// A non-integral value cannot be represented and would be truncated by the
-                            /// transform below, so the accurate cast must reject it too.
-                            const Float64 value = static_cast<Float64>(vec_from[i]);
-                            is_valid_input = value >= -static_cast<Float64>(MAX_TIME_TIMESTAMP)
-                                && value <= static_cast<Float64>(MAX_TIME_TIMESTAMP)
-                                && value == std::trunc(value);
-                        }
-                        else if constexpr (is_signed_v<FromValueType>)
-                            is_valid_input = vec_from[i] >= -MAX_TIME_TIMESTAMP && vec_from[i] <= MAX_TIME_TIMESTAMP;
-                        else
-                            is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_TIME_TIMESTAMP);
-                    }
-                    else if constexpr (std::is_same_v<ToType, DataTypeDate32>)
-                    {
-                        /// `Date32` spans `[0000-01-01, 9999-12-31]`, and a numeric source is read either as an
-                        /// extended day number or as a unix timestamp, so its representable window is
-                        /// `[DATE_LUT_MIN_EXTEND_DAY_NUM, MAX_DATE32_TIMESTAMP]`. Anything outside is silently
-                        /// clamped by the transform below, which is exactly what the accurate cast must reject.
-                        static constexpr Int64 lower_bound = DATE_LUT_MIN_EXTEND_DAY_NUM;
-                        if constexpr (is_floating_point<FromValueType>)
-                        {
-                            /// `Float64` represents every `BFloat16` and `Float32` value and both bounds exactly.
-                            /// Every comparison with a NaN is false, so a NaN is rejected as well.
-                            /// A non-integral value cannot be represented and would be truncated by the
-                            /// transform below, so the accurate cast must reject it too.
-                            const Float64 value = static_cast<Float64>(vec_from[i]);
-                            is_valid_input = value >= static_cast<Float64>(lower_bound)
-                                && value <= static_cast<Float64>(MAX_DATE32_TIMESTAMP)
-                                && value == std::trunc(value);
-                        }
-                        else if constexpr (is_signed_v<FromValueType>)
-                            is_valid_input = vec_from[i] >= lower_bound && vec_from[i] <= MAX_DATE32_TIMESTAMP;
-                        else
-                            is_valid_input = vec_from[i] <= static_cast<UInt64>(MAX_DATE32_TIMESTAMP);
-                    }
-                    else
-                    {
-                        if constexpr (is_floating_point<FromValueType>)
-                        {
-                            /// `Float64` represents every `BFloat16` and `Float32` value and the upper bound
-                            /// exactly. Every comparison with a NaN is false, so a NaN is rejected as well.
-                            /// A non-integral value cannot be represented and would be truncated by the
-                            /// transform below, so the accurate cast must reject it too.
-                            const Float64 value = static_cast<Float64>(vec_from[i]);
-                            is_valid_input = value >= 0 && value <= static_cast<Float64>(0xFFFFFFFFL)
-                                && value == std::trunc(value);
-                        }
-                        else
-                            is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<Int64>(0xFFFFFFFFL);
-                    }
+                    using UpperBoundType = std::conditional_t<
+                        std::is_floating_point_v<typename FromTypeVector::value_type>,
+                        typename FromTypeVector::value_type,
+                        Int64>;
+                    bool is_valid_input = vec_from[i] >= 0 && vec_from[i] <= static_cast<UpperBoundType>(0xFFFFFFFFL);
                     if (!is_valid_input)
                     {
                         if constexpr (std::is_same_v<Additions, DateTimeAccurateOrNullConvertStrategyAdditions>)
@@ -2768,7 +2656,7 @@ struct Transformer
                         else
                         {
                             throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Value {} cannot be safely converted into type {}",
-                                static_cast<double>(vec_from[i]), ToType::family_name);
+                                static_cast<double>(vec_from[i]), TypeName<ValueType>);
                         }
                     }
                 }

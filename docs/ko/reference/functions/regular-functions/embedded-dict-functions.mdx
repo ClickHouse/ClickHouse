@@ -27,16 +27,16 @@ ClickHouse는 특정 지역이 어느 국가에 속하는지에 대한 여러 �
 이 파일 외에도 이름(파일 확장자 앞)에 `_` 기호와 임의의 접미사가 붙은 같은 위치의 파일도 검색합니다.
 예를 들어 `/opt/geo/regions_hierarchy_ua.txt` 파일이 있으면 이 파일도 찾습니다. 여기서 `ua`를 딕셔너리 키라고 합니다. 접미사가 없는 딕셔너리의 키는 빈 문자열입니다.
 
-모든 딕셔너리는 런타임 중 다시 로드됩니다([`builtin_dictionaries_reload_interval`](/ko/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval) 구성 매개변수에 정의된 초 단위 간격마다 한 번, 기본값은 1시간에 한 번). 하지만 사용 가능한 딕셔너리 목록은 서버가 시작될 때 한 번만 결정됩니다.
+모든 딕셔너리는 런타임 중 다시 로드됩니다([`builtin_dictionaries_reload_interval`](/ko/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval) 구성 매개변수에 정의된 초 단위 간격마다 한 번, 기본값은 1시간에 한 번). 하지만 사용 가능한 딕셔너리 목록은 서버가 시작될 때 한 번만 결정됩니다.
 
 지역을 다루는 모든 함수는 마지막에 선택적 인수를 하나 받을 수 있으며, 이 인수가 딕셔너리 키입니다. 이를 지오베이스라고 합니다.
 
 예시:
 
 ```sql
-regionToCountry(RegionID) – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, '') – Uses the default dictionary: /opt/geo/regions_hierarchy.txt
-regionToCountry(RegionID, 'ua') – Uses the dictionary for the 'ua' key: /opt/geo/regions_hierarchy_ua.txt
+regionToCountry(RegionID) – 기본 딕셔너리 사용: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, '') – 기본 딕셔너리 사용: /opt/geo/regions_hierarchy.txt
+regionToCountry(RegionID, 'ua') – 'ua' 키에 해당하는 딕셔너리 사용: /opt/geo/regions_hierarchy_ua.txt
 ```
 
 ### regionToName

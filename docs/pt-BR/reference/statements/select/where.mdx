@@ -12,7 +12,7 @@ A cláusula `WHERE` permite filtrar os dados que vêm da cláusula[`FROM`](/pt-B
 Se houver uma cláusula `WHERE`, ela deve ser seguida de uma expressão do tipo `UInt8`.
 As linhas para as quais essa expressão resulta em `0` são excluídas de transformações posteriores ou do resultado.
 
-A expressão que segue a cláusula `WHERE` costuma ser usada com [operadores de comparação](/pt-BR/reference/operators/index#comparison-operators) e [operadores lógicos](/pt-BR/reference/operators/index#operators-for-working-with-data-sets), ou com uma das muitas [funções regulares](/pt-BR/reference/functions/regular-functions/overview).
+A expressão que segue a cláusula `WHERE` costuma ser usada com [operadores de comparação](/pt-BR/reference/operators/index#comparison-operators) e [operadores lógicos](/pt-BR/reference/operators/index#operators-for-working-with-data-sets), ou com uma das muitas [funções regulares](/pt-BR/reference/functions/regular-functions/regular-functions-index).
 
 A expressão na cláusula `WHERE` é avaliada considerando a possibilidade de usar índices e poda de partições, se o engine de tabela subjacente oferecer suporte a isso.
 

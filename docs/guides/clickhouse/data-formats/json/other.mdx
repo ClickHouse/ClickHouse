@@ -92,7 +92,7 @@ To insert into this schema, we need to use the `JSONAsString` format:
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', 'JSONAsString')
 ```
 
 ```response
@@ -578,7 +578,7 @@ A larger example of the above data is available in a public bucket in s3 at: `s3
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONEachRow')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONEachRow')
 LIMIT 1
 FORMAT PrettyJSONEachRow
 
@@ -606,7 +606,7 @@ The following statement inserts 10 million rows, so this may take a few minutes 
 ```sql
 INSERT INTO http
 SELECT `@timestamp` AS `timestamp`, clientip, [request], status,
-size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN,
+size FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz',
 'JSONEachRow');
 ```
 
@@ -653,7 +653,7 @@ To insert into this table, we need to structure the JSON as a list of keys and v
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 LIMIT 1
 FORMAT Vertical
 ```
@@ -674,7 +674,7 @@ INSERT INTO http_with_arrays
 SELECT
     arrayMap(x -> (x.1), JSONExtractKeysAndValues(json, 'String')) AS keys,
     arrayMap(x -> (x.2), JSONExtractKeysAndValues(json, 'String')) AS values
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', NOSIGN, 'JSONAsString')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/http/documents-01.ndjson.gz', 'JSONAsString')
 ```
 
 ```response

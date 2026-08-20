@@ -1,0 +1,85 @@
+---
+noindex: true
+title: "Redimensionner verticalement un cluster ClickHouse"
+sidebarTitle: "Redimensionner un cluster"
+description: "Ajustez les ressources CPU et mémoire d'un cluster ClickHouse à l'aide de l'API privée."
+---
+
+Ajustez les ressources CPU et mémoire d&#39;un cluster ClickHouse à l&#39;aide de l&#39;API privée.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* API privée ClickHouse installée et accessible (par exemple via un transfert de port vers `http://localhost:8080/`)
+* Au moins un cluster ClickHouse déployé (ce guide utilise `default-xx-01`)
+
+<Steps>
+  <Step>
+    ## 1. Créer la demande de mise à l’échelle
+
+    Créez un fichier JSON avec l’allocation de ressources souhaitée :
+
+    ```json
+    {
+      "vertical": {
+        "resources": {
+          "cpu": "4",
+          "memory": "16Gi"
+        }
+      }
+    }
+    ```
+
+    Enregistrez-le sous `scale.json`.
+  </Step>
+
+  <Step>
+    ## 2. Envoyer la demande
+
+    ```bash
+    curl -X POST "http://localhost:8080/api/v1/instances/default-xx-01/scale" \
+        -H "Content-Type: application/json" \
+        --data-binary "@scale.json"
+    ```
+  </Step>
+
+  <Step>
+    ## 3. Application du ratio CPU:mémoire
+
+    L’API applique un **ratio CPU/mémoire de 1:4** (1 cœur de CPU pour 4 GiB de mémoire), avec une marge de 5 %.
+
+    Si vous ne fournissez qu’un seul type de ressource, l’API déduit automatiquement l’autre. Par exemple, si vous indiquez uniquement `"memory": "16Gi"`, le CPU est automatiquement défini sur 4 cœurs.
+
+    **Formats de quantités de ressources acceptés :**
+
+    | Type    | Exemples                                                |
+    | ------- | ------------------------------------------------------- |
+    | CPU     | `"4"` (cœurs), `"2.5"` (décimal), `"500m"` (millicœurs) |
+    | Mémoire | `"16Gi"` (gibioctets), `"4096Mi"` (mébioctets)          |
+
+    Les unités binaires (Ki, Mi, Gi) sont recommandées pour la mémoire.
+  </Step>
+
+  <Step>
+    ## 4. Suivre la progression de la mise à l’échelle
+
+    Vérifiez l’état du cluster pour suivre l’opération de mise à l’échelle :
+
+    ```bash
+    curl "http://localhost:8080/api/v1/instances/default-xx-01/status"
+    ```
+
+    La réponse inclut : - `state` : état actuel du cluster - `previousState` : état avant la transition - `message` : détails sur le changement d’état
+
+    La mise à l’échelle est terminée lorsque le cluster revient à l’état Running.
+  </Step>
+</Steps>
+
+<div id="rolling-restart-behavior">
+  ## Comportement du redémarrage progressif
+</div>
+
+L’API met à jour le `ServerPodPolicy` de la ressource personnalisée `ClickhouseCluster`. L’opérateur effectue ensuite un redémarrage progressif des StatefulSets avec la nouvelle allocation de ressources.
+
+> **Important :** Contrairement à ClickHouse Cloud, ClickHouse Private n’utilise pas la [mise à l’échelle de type Make Before Break (MBB)](https://clickhouse.com/docs/manage/scaling#how-scaling-works-in-clickhouse-cloud). La mise à l’échelle verticale peut entraîner de brèves interruptions de service pendant le redémarrage progressif.

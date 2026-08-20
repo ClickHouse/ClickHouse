@@ -30,7 +30,6 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
-void registerTableFunctionBigQuery(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
@@ -40,7 +39,6 @@ void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
-void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);

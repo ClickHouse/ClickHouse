@@ -1,0 +1,225 @@
+---
+noindex: true
+title: "Prometheus 모니터링 설정"
+sidebarTitle: "Prometheus 모니터링 설정"
+description: "kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트릭을 스크레이프하고, 기본 제공되는 Grafana 대시보드에서 시각화하도록 Prometheus를 구성합니다"
+---
+
+kube-prometheus-stack과 ClickHouse Grafana mixin을 사용해 ClickHouse 메트릭을 스크레이프하고, 기본 제공되는 Grafana 대시보드에서 시각화하도록 Prometheus를 구성합니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 실행 중인 ClickHouse Private 배포
+* 워크스테이션에서 사용할 수 있는 [Helm](https://helm.sh/)
+* 대상 클러스터에 대한 `kubectl` 접근 권한
+* 프라이빗 레지스트리에서 사용할 수 있는 kube-prometheus-stack Helm 차트와 해당 컨테이너 이미지(아래의 [에어갭 이미지 준비](#prepare-images-for-airgap) 참고)
+
+<div id="steps">
+  ## 단계
+</div>
+
+<Steps>
+  <Step>
+    ### 1. kube-prometheus-stack 설치
+
+    Prometheus community Helm 리포지토리를 로컬 Helm 클라이언트에 추가하고 차트를 내려받으십시오:
+
+    ```bash
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+    helm pull prometheus-community/kube-prometheus-stack --version <version>
+    ```
+
+    그런 다음 Helm 리포지토리에서 설치하세요:
+
+    ```bash
+    helm install kube-prometheus-stack \
+      oci://<your-registry>/helm-charts/kube-prometheus-stack \
+      --version <version> \
+      --namespace monitoring \
+      --create-namespace \
+      --values kube-prometheus-stack-values.yaml
+    ```
+
+    > **참고:** kube-prometheus-stack에는 Prometheus, Alertmanager, Grafana, 그리고 Prometheus Operator가 함께 포함되어 있습니다. 프라이빗 레지스트리로 미러링해야 하는 전체 image 목록은 [chart 문서](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)에서 확인하십시오.
+  </Step>
+
+  <Step>
+    ### 2. ClickHouse Operator에서 PodMonitor 활성화
+
+    ClickHouse Operator Helm 차트에는 ClickHouse 서버와 Keeper용 PodMonitor 정의가 포함되어 있습니다. operator의 Helm values에서 이를 활성화하세요:
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseKeeper: true
+    ```
+
+    연산자 릴리스를 업그레이드하여 values를 적용하세요:
+
+    ```bash
+    helm upgrade clickhouse-operator \
+      oci://<your-registry>/helm-charts/clickhouse-operator \
+      --version <version> \
+      --namespace clickhouse-operator-system \
+      --values operator-values.yaml
+    ```
+
+    이렇게 하면 PodMonitor 리소스 2개가 생성됩니다:
+
+    | PodMonitor                  | 대상                                                     | Port                | 메트릭                              |
+    | --------------------------- | ------------------------------------------------------ | ------------------- | -------------------------------- |
+    | `clickhouse-server-metrics` | `app.kubernetes.io/name: clickhouse-server` 레이블이 있는 파드 | `prometheus` (8001) | 서버 메트릭, 컨테이너 이미지 태그에서 추출한 버전 레이블 |
+    | `clickhouse-keeper-metrics` | `app.kubernetes.io/name: clickhouse-keeper` 레이블이 있는 파드 | `prometheus` (8001) | Keeper 메트릭                       |
+
+    두 PodMonitor 모두 `release: kube-prometheus-stack` 레이블을 가지며, 이는 kube-prometheus-stack Prometheus 인스턴스의 기본 `podMonitorSelector`와 일치합니다.
+
+    > **참고:** Prometheus 인스턴스에서 다른 release 이름을 사용하는 경우, operator 차트 템플릿을 재정의하거나 kube-prometheus-stack values에서 `prometheus.prometheusSpec.podMonitorSelector`를 구성해 PodMonitor 레이블 셀렉터를 그에 맞게 업데이트하십시오.
+  </Step>
+
+  <Step>
+    ### 3. 사용자 지정 메트릭 핸들러 활성화(선택 사항)
+
+    ClickHouse 서버는 3123 포트의 전용 HTTP 핸들러를 통해 추가 `ClickHouse_CustomMetric_*` 메트릭을 노출합니다. 이 엔드포인트에 액세스하려면 인증이 필요합니다. 스크레이핑을 활성화하려면 다음을 수행하십시오:
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseServerCustomHandler: true
+          clickhouseKeeper: true
+        basicAuth:
+          username: prometheus-internal
+          password: "<password>"
+    ```
+
+    오퍼레이터는 자격 증명을 Kubernetes Secret에 저장하고, PodMonitor의 `basicAuth` 구성에서 이 자격 증명을 참조합니다.
+
+    사용자 지정 메트릭의 전체 목록과 권장 알림 임계값은 [메트릭 및 알림 참고](/ko/products/clickhouse-private/reference/metrics-and-alerts-reference)에서 확인할 수 있습니다.
+  </Step>
+
+  <Step>
+    ### 4. Prometheus 타깃 확인
+
+    배포 후 Prometheus가 ClickHouse 타깃을 발견해 스크레이프하는지 확인합니다:
+
+    ```bash
+    kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+    ```
+
+    브라우저에서 `http://localhost:9090/targets`를 여십시오. `podMonitor/clickhouse-operator-system/clickhouse-server-metrics` 및 `podMonitor/clickhouse-operator-system/clickhouse-keeper-metrics`라는 이름의 대상 그룹을 찾으십시오. 모든 대상의 **State**는 `UP`으로 표시되어야 합니다.
+
+    메트릭이 수집되고 있는지 확인하려면 테스트 쿼리를 실행하십시오:
+
+    ```text
+    up{job="clickhouse-server-metrics"}
+    ```
+  </Step>
+
+  <Step>
+    ### 5. ClickHouse Grafana Mixin 대시보드 가져오기
+
+    [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)은 ClickHouse 서버 및 Keeper 메트릭용으로 미리 만들어진 대시보드를 제공합니다. 에어갭 환경에서는 대시보드 JSON 파일을 수동으로 가져오십시오.
+
+    #### 대시보드 다운로드
+
+    [Grafana 통합 페이지](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/)에서 mixin 대시보드 JSON 파일을 다운로드하거나 기존 Grafana 인스턴스에서 내보내십시오.
+
+    #### Grafana UI를 통해 가져오기
+
+    1. Grafana를 엽니다(`kube-prometheus-stack`에 포함됨).
+
+       ```bash
+       kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+       ```
+
+    2. `http://localhost:3000`에 로그인합니다(기본 자격 증명: `admin` / `prom-operator`).
+
+    3. **Dashboards &gt; Import**로 이동합니다.
+
+    4. 각 대시보드 JSON 파일을 업로드하거나 해당 내용을 붙여넣습니다.
+
+    5. 메시지가 표시되면 Prometheus 데이터 소스를 선택합니다.
+
+    #### ConfigMap을 통해 가져오기
+
+    대시보드를 코드로 관리하려면 Grafana sidecar 레이블이 포함된 ConfigMap을 monitoring 네임스페이스에 생성합니다:
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: clickhouse-grafana-dashboards
+      namespace: monitoring
+      labels:
+        grafana_dashboard: "1"
+    data:
+      clickhouse-overview.json: |
+        { ... dashboard JSON ... }
+    ```
+
+    Grafana 사이드카는 `grafana_dashboard: "1"` 레이블이 지정된 ConfigMaps를 자동으로 감지해 대시보드를 불러옵니다.
+  </Step>
+
+  <Step>
+    ### 6. 알림 규칙 구성 (선택 사항)
+
+    `PrometheusRule` 리소스를 생성하여 권장 ClickHouse 알림 규칙을 Prometheus에 가져오십시오. 전체 알림 정의는 [알림 구성](/ko/products/clickhouse-private/guides/configure-alerting-for-clickhouse) 및 [메트릭 및 알림 참고](/ko/products/clickhouse-private/reference/metrics-and-alerts-reference)를 참조하십시오.
+
+    예시:
+
+    ```yaml
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: clickhouse-alerts
+      namespace: monitoring
+      labels:
+        release: kube-prometheus-stack
+    spec:
+      groups:
+        - name: clickhouse-server
+          rules:
+            - alert: ClickhouseOperatorNotReconciling
+              expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+              for: 120m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Operator has not reconciled {{ $labels.app }} in 2 hours"
+            - alert: ClickHouseDataLoss
+              expr: ClickHouse_CustomMetric_LostPartCount > 0
+              labels:
+                severity: critical
+              annotations:
+                summary: "Lost parts detected on {{ $labels.instance }}"
+    ```
+  </Step>
+</Steps>
+
+<div id="prepare-images-for-airgap">
+  ## 에어갭 환경용 이미지 준비
+</div>
+
+kube-prometheus-stack에는 다음 컨테이너 이미지가 필요합니다. 설치 전에 이를 프라이빗 레지스트리로 미리 미러링하십시오.
+
+| 구성 요소               | 이미지                                                     |
+| ------------------- | ------------------------------------------------------- |
+| Prometheus          | `quay.io/prometheus/prometheus`                         |
+| Alertmanager        | `quay.io/prometheus/alertmanager`                       |
+| Grafana             | `docker.io/grafana/grafana`                             |
+| Grafana 사이드카        | `quay.io/kiwigrid/k8s-sidecar`                          |
+| Prometheus Operator | `quay.io/prometheus-operator/prometheus-operator`       |
+| kube-state-metrics  | `registry.k8s.io/kube-state-metrics/kube-state-metrics` |
+| node-exporter       | `quay.io/prometheus/node-exporter`                      |
+
+> **참고:** 정확한 이미지 태그는 배포하는 kube-prometheus-stack 차트 버전에 따라 달라집니다. 다운로드한 차트에 대해 `helm template`를 실행하여 해당 버전의 정확한 이미지 참조를 추출하십시오.

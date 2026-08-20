@@ -8,7 +8,7 @@ keywords: ['同步', '异步', '数据读取']
 
 新设置 `allow_asynchronous_read_from_io_pool_for_merge_tree` 允许读取线程 (流) 的数量超过查询执行流水线其余部分的线程数。
 
-通常，[max&#95;threads](/zh/reference/settings/session-settings/max-threads#max_threads) 设置会[控制](https://clickhouse.com/company/events/query-performance-introspection)并行读取线程和并行查询处理线程的数量：
+通常，[max&#95;threads](/zh/reference/settings/session-settings#max_threads) 设置会[控制](https://clickhouse.com/company/events/query-performance-introspection)并行读取线程和并行查询处理线程的数量：
 
 <Image img={sync_read} size="md" alt="同步数据读取示意图" />
 

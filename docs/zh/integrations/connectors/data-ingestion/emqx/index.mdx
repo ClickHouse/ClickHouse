@@ -114,7 +114,7 @@ EMQX Cloud 为每个账户的标准部署和专业部署均提供 14 天免费�
 
 EMQX Cloud 默认不允许匿名连接，因此你需要添加客户端凭据，才能使用 MQTT 客户端工具向该 broker 发送数据。
 
-点击左侧菜单中的“Authentication &amp; ACL”，然后点击子菜单中的“Authentication”。点击右侧的“Add”按钮，并设置稍后用于 MQTT 连接的用户名和密码。这里我们将使用 `emqx` 和 `xxxxxx` 作为用户名和密码。
+点击左侧菜单中的“Authentication &amp; ACL”，然后点击子菜单中的“Authentication”。点击右侧的“Add”按钮，并为稍后建立 MQTT 连接设置用户名和密码。这里我们将使用 `emqx` 和 `xxxxxx` 作为用户名和密码。
 
 <Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_auth.webp" size="lg" border alt="用于添加凭据的 EMQX Cloud 身份验证设置界面" />
 
@@ -136,27 +136,27 @@ EMQX Cloud 默认不允许匿名连接，因此你需要添加客户端凭据，
   ## 将 EMQX Cloud 与 ClickHouse Cloud 集成
 </div>
 
-[EMQX Cloud Data Integrations](https://docs.emqx.com/en/cloud/latest/data_integration/introduction.html) 用于配置处理和响应 EMQX 消息流及设备事件的规则。Data Integrations 不仅提供了清晰、灵活且“可配置”的架构方案，还简化了开发流程，提升了易用性，并降低了业务系统与 EMQX Cloud 之间的耦合度。它还为定制 EMQX Cloud 的专有能力提供了更完善的基础设施。
+[EMQX Cloud 数据集成](https://docs.emqx.com/en/cloud/latest/rule_engine/introduction.html#general-flow) 用于配置处理和响应 EMQX 消息流及设备事件的规则。数据集成不仅提供了清晰、灵活且“可配置”的架构方案，还简化了开发流程，提升了易用性，并降低了业务系统与 EMQX Cloud 之间的耦合度。它还为定制 EMQX Cloud 的专有能力提供了更完善的基础设施。
 
-<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="显示可用连接器的 EMQX Cloud Data Integrations 选项" />
+<Image img="/images/integrations/data-ingestion/emqx/emqx_cloud_data_integration.png" size="lg" border alt="显示可用连接器的 EMQX Cloud 数据集成 选项" />
 
 EMQX Cloud 为常见数据系统提供了 30 多种原生集成，ClickHouse 就是其中之一。
 
-<Image img="/images/integrations/data-ingestion/emqx/data_integration_clickhouse.webp" size="lg" border alt="EMQX Cloud ClickHouse Data Integrations 连接器详情" />
+<Image img="/images/integrations/data-ingestion/emqx/data_integration_clickhouse.webp" size="lg" border alt="EMQX Cloud ClickHouse 数据集成 连接器详情" />
 
 <div id="create-clickhouse-resource">
   ### 创建 ClickHouse 资源
 </div>
 
-点击左侧菜单中的“数据集成”，然后点击“View All Resources”。你可以在 Data Persistence 部分找到 ClickHouse，也可以直接搜索 ClickHouse。
+点击左侧菜单中的“Data Integrations”，然后点击“View All Resources”。你可以在 Data Persistence 部分找到 ClickHouse，也可以直接搜索 ClickHouse。
 
 点击 ClickHouse 卡片以创建新资源。
 
-* Note：为该资源添加备注。
-* Server address：这是你的 ClickHouse Cloud 服务地址，记得填写端口。
-* Database name：我们在上述步骤中创建的 `emqx`。
-* User：用于连接到你的 ClickHouse Cloud 服务的用户名。
-* Key：连接密码。
+* 注意：为该资源添加备注。
+* 服务器地址：这是你的 ClickHouse Cloud 服务地址，记得填写端口。
+* 数据库名称：我们在上述步骤中创建的 `emqx`。
+* 用户：用于连接到你的 ClickHouse Cloud 服务的用户名。
+* 密钥：连接密码。
 
 <Image img="/images/integrations/data-ingestion/emqx/data_integration_resource.webp" size="lg" border alt="EMQX Cloud ClickHouse 资源设置表单，包含连接详情" />
 
@@ -166,7 +166,7 @@ EMQX Cloud 为常见数据系统提供了 30 多种原生集成，ClickHouse 就
 
 在创建资源时，您会看到一个弹窗，点击 &#39;New&#39; 即可进入规则创建页面。
 
-EMQX 提供了强大的[规则引擎](https://docs.emqx.com/en/cloud/latest/data_integration/rules.html)，可在将原始 MQTT 消息发送到第三方系统之前，对其进行转换和增强。
+EMQX 提供了强大的[规则引擎](https://docs.emqx.com/en/cloud/latest/rule_engine/rules.html)，可在将原始 MQTT 消息发送到第三方系统之前，对其进行转换和增强。
 
 以下是本教程中使用的规则：
 
@@ -253,7 +253,7 @@ INSERT INTO temp_hum (client_id, timestamp, topic, temp, hum) VALUES ('${client_
 输入如下：
 
 1. 将载荷格式设为 &quot;JSON&quot;。
-2. 将 topic 设为：`temp_hum/emqx` (即我们刚刚在规则中设置的 topic)
+2. 将 topic 设为：`temp_hum/emqx` (即我们刚刚在规则中设置的 topic) 
 3. JSON 正文：
 
 ```bash

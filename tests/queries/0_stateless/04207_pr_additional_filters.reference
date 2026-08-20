@@ -10,7 +10,6 @@ Positions: 0
       count()
         Function: count() → UInt64
         Arguments: none
-  Mode: memory-efficient
     Union
       Aggregating
       Keys:

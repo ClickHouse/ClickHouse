@@ -17,14 +17,14 @@ Contains information about the dependent views executed when running a query, fo
 
 To start logging:
 
-1. Configure parameters in the [query_views_log](/reference/settings/server-settings/settings/query#query_views_log) section.
-2. Set [log_query_views](/reference/settings/session-settings/log-query#log_query_views) to 1.
+1. Configure parameters in the [query_views_log](/reference/settings/server-settings/settings#query_views_log) section.
+2. Set [log_query_views](/reference/settings/session-settings#log_query_views) to 1.
 
-The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](/reference/settings/server-settings/settings/query#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
+The flushing period of data is set in `flush_interval_milliseconds` parameter of the [query_views_log](/reference/settings/server-settings/settings#query_views_log) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
 
-You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability)) setting to reduce the number of queries, registered in the `query_views_log` table.
+You can use the [log_queries_probability](/reference/settings/session-settings#log_queries_probability)) setting to reduce the number of queries, registered in the `query_views_log` table.
 
 ## Columns {#columns}
 
@@ -34,7 +34,7 @@ You can use the [log_queries_probability](/reference/settings/session-settings/l
 - `event_time` ([DateTime](/reference/data-types/datetime)) — The date and time when the view finished execution.
 - `event_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — The date and time when the view finished execution with microseconds precision.
 - `view_duration_ms` ([UInt64](/reference/data-types/int-uint)) — Duration of view execution (sum of its stages) in milliseconds.
-- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query in the same query chain.
+- `initial_query_id` ([String](/reference/data-types/string)) — ID of the initial query (for distributed query execution).
 - `view_name` ([String](/reference/data-types/string)) — Name of the view.
 - `view_uuid` ([UUID](/reference/data-types/uuid)) — UUID of the view.
 - `view_type` ([Enum8('Default' = 1, 'Materialized' = 2, 'Live' = 3, 'Window' = 4)](/reference/data-types/enum)) — Type of the view. Values: 'Default' = 1 — Default views. Should not appear in this log, 'Materialized' = 2 — Materialized views, 'Live' = 3 — Live views.

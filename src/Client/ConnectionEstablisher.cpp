@@ -1,5 +1,4 @@
 #include <Client/ConnectionEstablisher.h>
-#include <Common/CurrentThread.h>
 #include <Common/quoteString.h>
 #include <Common/ProfileEvents.h>
 #include <Common/FailPoint.h>
@@ -158,10 +157,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
 
     for (size_t tries = 0; ; ++tries)
     {
-        /// Every distributed connection attempt passes through here, so this is the one place where a
-        /// cancelled or timed out query can be stopped before it blocks on another connect.
-        CurrentThread::checkIfNotCancelled();
-
         try
         {
             try_establish();
@@ -198,12 +193,6 @@ void ConnectionEstablisher::run(ConnectionEstablisher::TryResult & result, std::
                 ProfileEvents::increment(ProfileEvents::DistributedConnectionReconnectCount);
                 continue;
             }
-
-            /// The check at the top of the loop cannot cover the last attempt: there is no next
-            /// iteration to reach it. Without this one, a query cancelled while the final connect was
-            /// in flight leaves the establisher reporting an ordinary soft failure, and the caller
-            /// then reports `ALL_CONNECTION_TRIES_FAILED` instead of the cancellation.
-            CurrentThread::checkIfNotCancelled();
 
             /// Report a soft failure, so the caller can retry on another replica instead of failing
             /// the whole distributed query.

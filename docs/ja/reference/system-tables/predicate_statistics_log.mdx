@@ -14,7 +14,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
   ## 説明
 </div>
 
-`MergeTree` テーブルの読み取り時に収集された、サンプルベースの選択性統計が含まれます。このテーブルにデータが格納されるのは、[`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings/other#predicate_statistics_sample_rate) が `0` より大きい場合のみです。
+`MergeTree` テーブルの読み取り時に収集された、サンプルベースの選択性統計が含まれます。このテーブルにデータが格納されるのは、[`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings#predicate_statistics_sample_rate) が `0` より大きい場合のみです。
 
 このテーブルを使用すると、実際のワークロードにおいてユーザー述語がどの程度の選択性を持つか、またプライマリキーまたはスキップ索引によるフィルタリング後にどれだけのグラニュールが残るかを確認できます。このデータは、ワークロードに基づく索引およびプロジェクションの推奨を行うための入力として利用されます。
 
@@ -33,7 +33,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
   ## サンプリングとオーバーヘッド
 </div>
 
-サンプリングは [`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings/other#predicate_statistics_sample_rate) で制御されます。
+サンプリングは [`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings#predicate_statistics_sample_rate) で制御されます。
 
 * `0` は収集を無効にします。
 * `1` はすべてのクエリをサンプリングします。
@@ -99,5 +99,5 @@ LIMIT 10;
   ## 関連項目
 </div>
 
-* [`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings/other#predicate_statistics_sample_rate)
+* [`predicate_statistics_sample_rate`](/ja/reference/settings/session-settings#predicate_statistics_sample_rate)
 * [system.query&#95;log](/ja/reference/system-tables/query_log)

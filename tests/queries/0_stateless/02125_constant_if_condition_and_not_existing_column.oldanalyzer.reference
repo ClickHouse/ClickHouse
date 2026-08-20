@@ -6,4 +6,7 @@
 42
 42
 42
-SELECT\n    x,\n    concat(x, \'_\')\nFROM test
+SELECT
+    x,
+    concat(x, \'_\')
+FROM test

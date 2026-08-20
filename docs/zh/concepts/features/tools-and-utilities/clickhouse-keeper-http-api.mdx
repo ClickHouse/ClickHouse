@@ -56,19 +56,6 @@ ClickHouse Keeper 提供 HTTP API 和内置 Web 仪表板，用于监控、健�
 * 存储浏览器
 * 命令执行界面
 
-<div id="dashboard-cluster-tab">
-  #### 集群选项卡
-</div>
-
-**集群**选项卡会以拓扑图和表格的形式展示 Raft 成员关系。每个成员会以不同颜色标示其健康状态：
-
-* **绿色** — 存活且与 leader 保持同步
-* **黄色** — 存活，但比 leader 落后超过 `stale_log_gap` 条日志条目
-* **红色** — 不可达 (心跳过期窗口内未收到成功的 Raft 响应) 
-* **灰色** — 未知 (只有从 leader 才能查看 peer 的健康状态；跟随者看到的 peer 状态均为未知) 
-
-表格还会显示每个成员的角色 (leader、follower 或 observer) 、Raft priority、最新日志索引、相对于 leader 的复制延迟，以及距上次成功收到 Raft 响应的时间。当当前节点不是 leader 时，此选项卡会提供一个深层链接，用于打开 leader 的仪表板，那里可查看完整的 peer 健康状态。也可通过 `/dashboard?tab=cluster` 直接打开此选项卡。
-
 <div id="readiness-probe">
   ### 就绪探针
 </div>

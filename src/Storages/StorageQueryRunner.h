@@ -30,6 +30,7 @@ public:
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 
+    void startup() override;
     void shutdown(bool is_drop) override;
     void drop() override;
 

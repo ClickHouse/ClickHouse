@@ -122,7 +122,7 @@ Test schema changes on smaller datasets first.
 
 ### External aggregation {#external-aggregation}
 
-Enable external aggregation for memory-intensive operations. It's slower but prevents out-of-memory crashes by spilling to disk. You can do this by using `max_bytes_before_external_group_by` which will help prevent out of memory crashes on large `GROUP BY` operations. You can learn more about this setting [here](/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by).
+Enable external aggregation for memory-intensive operations. It's slower but prevents out-of-memory crashes by spilling to disk. You can do this by using `max_bytes_before_external_group_by` which will help prevent out of memory crashes on large `GROUP BY` operations. You can learn more about this setting [here](/reference/settings/session-settings#max_bytes_before_external_group_by).
 
 ```sql
 SELECT 

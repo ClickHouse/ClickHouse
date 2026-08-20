@@ -9,7 +9,7 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
 
@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
   Esta integração oferece suporte tanto ao S3 da AWS quanto a outros provedores de armazenamento em nuvem.
 </Note>
 
-O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue, REST, Polaris etc.). Este guia orienta você nas etapas para consultar seus dados usando o ClickHouse e o [Nessie Catalog](https://projectnessie.org/).
+O ClickHouse oferece suporte à integração com vários catálogos (Unity, Glue, REST, Polaris etc.). Este guia orienta você nas etapas para consultar seus dados usando o ClickHouse e o catálogo [Nessie](https://projectnessie.org/).
 
 O Nessie é um catálogo transacional de código aberto para lagos de dados que oferece:
 
@@ -50,7 +50,7 @@ Para desenvolvimento e testes locais, você pode usar uma configuração contein
   ### Configurando o Nessie Catalog local
 </div>
 
-Você pode usar o [setup oficial do Docker Compose do Nessie](https://projectnessie.org/guides/), que fornece um ambiente completo com Nessie, repositório de versões em memória e MinIO para armazenamento de objetos.
+Você pode usar o [setup oficial do Docker Compose do Nessie](https://projectnessie.org/guides/setting-up/), que fornece um ambiente completo com Nessie, repositório de versões em memória e MinIO para armazenamento de objetos.
 
 **Etapa 1:** Crie uma nova pasta para executar o exemplo e, em seguida, crie um arquivo `docker-compose.yml` com a seguinte configuração:
 
@@ -108,13 +108,13 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:head
     container_name: nessie-clickhouse
-    user: '0:0'  # Ensures root permissions
+    user: '0:0'  # Garante permissões de root
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Mount dataset folder
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # Monta a pasta do dataset
     networks:
       - iceberg_net
     environment:

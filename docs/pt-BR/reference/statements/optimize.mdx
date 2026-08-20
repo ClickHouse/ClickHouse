@@ -24,14 +24,14 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 A consulta `OPTIMIZE` é compatível com a família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo [visões materializadas](/pt-BR/reference/statements/create/view#materialized-view)) e com os motores [Buffer](/pt-BR/reference/engines/table-engines/special/buffer). Outros motores de tabela não são compatíveis.
 
-Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de motores de tabela, o ClickHouse cria uma tarefa de mesclagem e aguarda sua execução em todas as réplicas (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `2`) ou na réplica atual (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `1`).
+Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de motores de tabela, o ClickHouse cria uma tarefa de mesclagem e aguarda sua execução em todas as réplicas (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) estiver definida como `2`) ou na réplica atual (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) estiver definida como `1`).
 
-* Se `OPTIMIZE` não executar uma mesclagem por qualquer motivo, o cliente não será notificado. Para ativar notificações, use a configuração [optimize&#95;throw&#95;if&#95;noop](/pt-BR/reference/settings/session-settings/optimize#optimize_throw_if_noop).
+* Se `OPTIMIZE` não executar uma mesclagem por qualquer motivo, o cliente não será notificado. Para ativar notificações, use a configuração [optimize&#95;throw&#95;if&#95;noop](/pt-BR/reference/settings/session-settings#optimize_throw_if_noop).
 * Se você especificar uma `PARTITION`, apenas a partição especificada será otimizada. [Como definir a expressão de partição](/pt-BR/reference/statements/alter/partition#how-to-set-partition-expression).
-* Se você especificar `FINAL` ou `FORCE`, a otimização será executada mesmo quando todos os dados já estiverem em uma única parte. Você pode controlar esse comportamento com [optimize&#95;skip&#95;merged&#95;partitions](/pt-BR/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). Além disso, a mesclagem é forçada mesmo se houver mesclagens simultâneas em execução.
+* Se você especificar `FINAL` ou `FORCE`, a otimização será executada mesmo quando todos os dados já estiverem em uma única parte. Você pode controlar esse comportamento com [optimize&#95;skip&#95;merged&#95;partitions](/pt-BR/reference/settings/session-settings#optimize_skip_merged_partitions). Além disso, a mesclagem é forçada mesmo se houver mesclagens simultâneas em execução.
 * Se você especificar `DEDUPLICATE`, linhas completamente idênticas (a menos que a cláusula BY seja especificada) serão desduplicadas (todas as colunas são comparadas); isso só faz sentido para o motor MergeTree.
 
-Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `OPTIMIZE` por meio da configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
+Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `OPTIMIZE` por meio da configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
 
 <Note>
   Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado pela configuração `replication_wait_for_inactive_replica_timeout`, então será gerada uma exceção `UNFINISHED`.
@@ -59,7 +59,7 @@ Isso é útil para:
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]
 ```
 
-Por padrão, a parte resultante da mesclagem é validada de forma semelhante à consulta [`CHECK TABLE`](/pt-BR/reference/statements/check-table). Esse comportamento é controlado pela configuração [optimize&#95;dry&#95;run&#95;check&#95;part](/pt-BR/reference/settings/session-settings/optimize#optimize_dry_run_check_part) (habilitada por padrão). Desabilitá-la faz com que a validação seja ignorada, o que pode ser útil para benchmarking da própria mesclagem.
+Por padrão, a parte resultante da mesclagem é validada de forma semelhante à consulta [`CHECK TABLE`](/pt-BR/reference/statements/check-table). Esse comportamento é controlado pela configuração [optimize&#95;dry&#95;run&#95;check&#95;part](/pt-BR/reference/settings/session-settings#optimize_dry_run_check_part) (habilitada por padrão). Desabilitá-la faz com que a validação seja ignorada, o que pode ser útil para benchmarking da própria mesclagem.
 
 **Exemplo**
 
@@ -69,13 +69,13 @@ CREATE TABLE dry_run_example (key UInt64, value String) ENGINE = MergeTree ORDER
 INSERT INTO dry_run_example VALUES (1, 'a'), (2, 'b');
 INSERT INTO dry_run_example VALUES (1, 'c'), (4, 'd');
 
--- Simulate merging using two parts
+-- Simular a mesclagem usando duas partes
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0';
 
--- Simulate merging with deduplication
+-- Simular a mesclagem com desduplicação
 OPTIMIZE TABLE dry_run_example DRY RUN PARTS 'all_1_1_0', 'all_2_2_0' DEDUPLICATE;
 
--- Parts and data remain unchanged after DRY RUN
+-- As partes e os dados permanecem inalterados após DRY RUN
 SELECT name, rows FROM system.parts
 WHERE database = currentDatabase() AND table = 'dry_run_example' AND active
 ORDER BY name;

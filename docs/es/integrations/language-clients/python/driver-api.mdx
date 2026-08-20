@@ -8,88 +8,77 @@ doc_type: 'reference'
 ---
 
 <Note>
-  Pase argumentos con nombre para las factorías de Client y los métodos con muchos parámetros opcionales.
+  Se recomienda usar argumentos con nombre en la mayoría de los métodos de la API, dado el número de argumentos posibles, la mayoría de ellos opcionales.
 
   *Los métodos que no se documentan aquí no se consideran parte de la API y pueden eliminarse o modificarse.*
 </Note>
 
 <div id="client-initialization">
-  ## Inicialización del Client
+  ## Inicialización del cliente
 </div>
 
-Utilice `clickhouse_connect.get_client` para crear un `Client` síncrono, o instale el extra `async` y espere `clickhouse_connect.get_async_client` para crear un `AsyncClient` nativo.
+La clase `clickhouse_connect.driver.client` proporciona la interfaz principal entre una aplicación de Python y el servidor de bases de datos ClickHouse. Utilice la función `clickhouse_connect.get_client` para obtener una instancia de Client, que acepta los siguientes argumentos:
 
 <div id="connection-arguments">
   ### Argumentos de conexión
 </div>
 
-| Parámetro                  | Tipo                                    | Por defecto                                    | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| -------------------------- | --------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `interface`                | str                                     | `"http"`                                       | `"http"` o `"https"`. La factoría síncrona también acepta el backend experimental `"chdb"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `host`                     | str                                     | `"localhost"`                                  | Nombre de host o dirección IP del servidor de ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `port`                     | int o None                              | `8123` o `8443`                                | El valor predeterminado es 8123 para HTTP y 8443 para HTTPS. Pasar `None` usa el valor predeterminado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `username`                 | str o None                              | `"default"`                                    | Nombre de usuario de ClickHouse. También se admiten los alias `user` y `user_name`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `password`                 | str                                     | `""`                                           | Contraseña para `username`. No combine la autenticación por usuario/contraseña con la autenticación por token.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `access_token`             | str o None                              | `None`                                         | Token de acceso JWT de ClickHouse Cloud. Es incompatible con `token_provider` y con la autenticación mediante usuario/contraseña.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `token_provider`           | callable o None                         | `None`                                         | Callable que proporciona un JWT al principio y tras un rechazo de autenticación. Puede usarse un proveedor asíncrono con `get_async_client`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `database`                 | str o None                              | Valor predeterminado del usuario               | Base de datos predeterminada. Si se pasa `None`, se solicita la predeterminada del servidor para el usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `secure`                   | bool o str                              | `False`                                        | Habilita HTTPS/TLS. `interface="https"` también selecciona HTTPS, al igual que el puerto 443 o 8443 cuando no se establece `interface`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `dsn`                      | str o None                              | `None`                                         | URL de conexión. Los argumentos explícitos por palabra clave prevalecen sobre los valores analizados a partir del DSN. Aplique codificación porcentual a los caracteres reservados en las credenciales y los nombres de bases de datos.                                                                                                                                                                                                                                                                                                                                                                                     |
-| `settings`                 | dict o None                             | `None`                                         | Ajustes de ClickHouse aplicados a cada petición realizada por el client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `headers`                  | dict o None                             | `None`                                         | Encabezados HTTP aplicados a cada solicitud, incluida la inicialización del client. Los encabezados de usuario se aplican después de los valores predeterminados del driver y pueden sobrescribirlos.                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `compress`                 | bool o str                              | `True`                                         | Active la compresión o seleccione `"lz4"`, `"zstd"`, `"br"` o `"gzip"`. Consulte [Compression](/es/integrations/language-clients/python/additional-options#compression).                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `query_limit`              | int                                     | `0`                                            | Límite predeterminado de filas que se añade a las consultas aptas. Cero significa sin límite. Transmita los resultados grandes en lugar de materializarlos todos en memoria.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `query_retries`            | int                                     | `2`                                            | Límite de reintentos para errores de lectura reintentables. Por lo general, los comandos y las inserciones no se reintentan, ya que repetirlas puede duplicar los efectos secundarios.                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `connect_timeout`          | int                                     | `10`                                           | Tiempo de espera de conexión en segundos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `send_receive_timeout`     | int                                     | `300`                                          | Tiempo de espera de lectura del socket en segundos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `client_name`              | str o None                              | `None`                                         | Prefijo añadido al User-Agent de HTTP para su identificación en `system.query_log`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `session_id`               | str o None                              | Generado para síncrono                         | ID de sesión de ClickHouse explícito. Los client síncronos generan uno de forma predeterminada; los client async no lo hacen.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `autogenerate_session_id`  | bool o None                             | Configuración global en sync, `False` en async | Sobrescribe la generación automática del ID de sesión. Desactívala en un client compartido por operaciones concurrentes, a menos que se requiera estado de sesión.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `autogenerate_query_id`    | bool o None                             | Configuración global, `True`                   | Sobrescribe la generación automática del ID de consulta UUID.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| `http_proxy`               | str o None                              | Entorno/valor predeterminado                   | Dirección del proxy HTTP de cada client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `https_proxy`              | str o None                              | Entorno/valor predeterminado                   | Dirección del proxy HTTPS para cada client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `pool_mgr`                 | `urllib3.PoolManager` o None            | Valor predeterminado compartido                | manager de grupo personalizado solo para el client síncrono.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| `tz_source`                | str o None                              | `"auto"`                                       | Fuente de zona horaria de respaldo para columnas sin metadatos de zona horaria: `"auto"`, `"server"` o `"local"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `tz_mode`                  | str o None                              | `"naive_utc"`                                  | Política para resultados en UTC: `"naive_utc"`, `"aware"` o `"schema"`. Consulte [Zonas horarias](/es/integrations/language-clients/python/advanced-querying#time-zones).                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `show_clickhouse_errors`   | bool, cadena booleana, `"scrub"` o None | `True`                                         | Controla `str(exc)` para errores del servidor, errores de transporte y `StreamFailureError` durante la transmisión. `True` incluye la URL de la solicitud y el sufijo con la versión del servidor. `"scrub"` conserva el texto del error SQL y el nombre simbólico, pero elimina el host/URL y el sufijo `(version ...)`. `False` devuelve un mensaje genérico (`code` sigue establecido para los errores del servidor). Se aceptan cadenas booleanas. Otras cadenas generan `ProgrammingError`. Para los errores de transporte, `__cause__` y los rastreos de pila siguen conteniendo la excepción de transporte original. |
-| `proxy_path`               | str                                     | `""`                                           | Prefijo de ruta añadido a la URL del servidor al enrutar a través de un proxy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| `form_encode_query_params` | bool                                    | `False`                                        | Coloca siempre los parámetros de consulta en el cuerpo de la solicitud codificado como formulario. Las cargas útiles de parámetros no binarios de gran tamaño se mueven automáticamente incluso cuando esto es false.                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `rename_response_column`   | str o None                              | `None`                                         | Estrategia de cambio de nombre de columnas: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"` o `"to_underscore_without_prefix"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-
-La factoría asíncrona también acepta `connector_limit=100`, `connector_limit_per_host=20` y `keepalive_timeout=30.0` para configurar su grupo de conexiones de aiohttp. No acepta `pool_mgr`. El backend síncrono de chDB acepta `path` y `chdb_options`; consulta [backend chDB integrado](#embedded-chdb-backend).
+| Parámetro                            | Tipo       | Predeterminado                | Descripción                                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------ | ---------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| interface                            | str        | http                          | Debe ser http o https.                                                                                                                                                                                                                                                                                                                                     |
+| host                                 | str        | localhost                     | El nombre de host o la dirección IP del servidor de ClickHouse. Si no se establece, se usará `localhost`.                                                                                                                                                                                                                                                  |
+| port                                 | int        | 8123 o 8443                   | El puerto HTTP o HTTPS de ClickHouse. Si no se establece, el valor predeterminado será 8123, o 8443 si *secure*=*True* o *interface*=*https*.                                                                                                                                                                                                              |
+| username                             | str        | default                       | El nombre de usuario de ClickHouse. Si no se establece, se usará el usuario `default` de ClickHouse.                                                                                                                                                                                                                                                       |
+| password                             | str        | *&lt;cadena vacía&gt;*        | La contraseña de *username*.                                                                                                                                                                                                                                                                                                                               |
+| database                             | str        | *None*                        | La base de datos predeterminada para la conexión. Si no se establece, ClickHouse Connect usará la base de datos predeterminada de *username*.                                                                                                                                                                                                              |
+| secure                               | bool       | False                         | Usa HTTPS/TLS. Esto anula los valores inferidos a partir de los argumentos de interfaz o puerto.                                                                                                                                                                                                                                                           |
+| dsn                                  | str        | *None*                        | Una cadena en formato DSN (Data Source Name) estándar. Otros valores de conexión (como el host o el usuario) se extraerán de esta cadena si no se establecen de otro modo.                                                                                                                                                                                 |
+| compress                             | bool o str | True                          | Habilita la compresión para las inserciones HTTP de ClickHouse y los resultados de consultas. Consulta [Additional Options (Compression)](/es/integrations/language-clients/python/additional-options#compression)                                                                                                                                            |
+| query&#95;limit                      | int        | 0 (ilimitado)                 | Número máximo de filas que se devolverán para cualquier respuesta de `query`. Establece este valor en cero para devolver filas ilimitadas. Ten en cuenta que límites de consulta altos pueden provocar excepciones por falta de memoria si los resultados no se transmiten en streaming, ya que todos los resultados se cargan en memoria de una sola vez. |
+| query&#95;retries                    | int        | 2                             | Número máximo de reintentos para una solicitud `query`. Solo se reintentará en respuestas HTTP &quot;reintentables&quot;. Las solicitudes `command` o `insert` no se reintentan automáticamente por el driver para evitar solicitudes duplicadas no deseadas.                                                                                              |
+| connect&#95;timeout                  | int        | 10                            | Tiempo de espera de la conexión HTTP, en segundos.                                                                                                                                                                                                                                                                                                         |
+| send&#95;receive&#95;timeout         | int        | 300                           | Tiempo de espera de envío/recepción para la conexión HTTP, en segundos.                                                                                                                                                                                                                                                                                    |
+| client&#95;name                      | str        | *None*                        | `client_name` antepuesto a la cabecera HTTP User Agent. Establece este valor para rastrear las consultas del cliente en `system.query_log` de ClickHouse.                                                                                                                                                                                                  |
+| pool&#95;mgr                         | obj        | *&lt;default PoolManager&gt;* | El PoolManager de la biblioteca `urllib3` que se usará. Para casos de uso avanzados que requieren múltiples pools de conexiones a distintos hosts.                                                                                                                                                                                                         |
+| http&#95;proxy                       | str        | *None*                        | Dirección del proxy HTTP (equivalente a establecer la variable de entorno HTTP&#95;PROXY).                                                                                                                                                                                                                                                                 |
+| https&#95;proxy                      | str        | *None*                        | Dirección del proxy HTTPS (equivalente a establecer la variable de entorno HTTPS&#95;PROXY).                                                                                                                                                                                                                                                               |
+| apply&#95;server&#95;timezone        | bool       | True                          | Usa la zona horaria del servidor para los resultados de consultas con zona horaria. Consulta [Timezone Precedence](/es/integrations/language-clients/python/advanced-querying#time-zones)                                                                                                                                                                     |
+| show&#95;clickhouse&#95;errors       | bool       | True                          | Incluye mensajes detallados de error del servidor de ClickHouse y códigos de excepción en las excepciones del cliente.                                                                                                                                                                                                                                     |
+| autogenerate&#95;session&#95;id      | bool       | *None*                        | Anula la configuración global `autogenerate_session_id`. Si es True, genera automáticamente un ID de sesión UUID4 cuando no se proporciona ninguno.                                                                                                                                                                                                        |
+| proxy&#95;path                       | str        | &lt;cadena vacía&gt;          | Prefijo de ruta opcional para añadir a la URL del servidor de ClickHouse en configuraciones de proxy.                                                                                                                                                                                                                                                      |
+| form&#95;encode&#95;query&#95;params | bool       | False                         | Envía los parámetros de consulta como datos codificados de formulario en el cuerpo de la solicitud en lugar de parámetros de URL. Es útil para consultas con conjuntos grandes de parámetros que podrían superar los límites de longitud de la URL.                                                                                                        |
+| rename&#95;response&#95;column       | str        | *None*                        | Función de callback opcional o correspondencia de nombres de columnas para renombrar las columnas de respuesta en los resultados de consultas.                                                                                                                                                                                                             |
 
 <div id="httpstls-arguments">
   ### Argumentos de HTTPS/TLS
 </div>
 
-| Parámetro          | Tipo        | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                |
-| ------------------ | ----------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify`           | bool or str | `True`         | Valida el certificado del servidor y el hostname. `verify="proxy"` habilita el modo TLS de proxy.                                                                                                                                                                                                          |
-| `ca_cert`          | str or None | `None`         | Ruta del paquete de CA. Usa `"certifi"` para seleccionar el paquete incluido en `certifi`.                                                                                                                                                                                                                 |
-| `client_cert`      | str or None | `None`         | Certificado PEM del cliente, incluidos los certificados intermedios cuando sea necesario.                                                                                                                                                                                                                  |
-| `client_cert_key`  | str or None | `None`         | Ruta de la clave privada cuando no está incluida en `client_cert`.                                                                                                                                                                                                                                         |
-| `server_host_name` | str or None | `None`         | Hostname del certificado TLS/SNI cuando difiere de `host`, por ejemplo, a través de un túnel o un endpoint privado.                                                                                                                                                                                        |
-| `tls_mode`         | str or None | `None`         | `"mutual"` usa la autenticación TLS mutua de ClickHouse. `"proxy"` y `"strict"` envían el certificado en la capa TLS sin habilitar los headers de autenticación por certificado de ClickHouse. El valor predeterminado `None` se comporta como `"mutual"` cuando se proporciona un certificado de cliente. |
+| Parámetro                | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------ | ---- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| verify                   | bool | True           | Valida el certificado TLS/SSL del servidor de ClickHouse (nombre de host, caducidad, etc.) si se usa HTTPS/TLS.                                                                                                                                                                                                                                 |
+| ca&#95;cert              | str  | *None*         | Si *verify*=*True*, la ruta del archivo a la raíz de la autoridad de certificación usada para validar el certificado del servidor de ClickHouse, en formato .pem. Se ignora si verify es False. No es necesario si el certificado del servidor de ClickHouse está firmado por una raíz de confianza global reconocida por el sistema operativo. |
+| client&#95;cert          | str  | *None*         | Ruta del archivo a un certificado de cliente TLS en formato .pem (para autenticación mutua TLS). El archivo debe contener la cadena completa de certificados, incluidos los certificados intermedios.                                                                                                                                           |
+| client&#95;cert&#95;key  | str  | *None*         | Ruta del archivo a la clave privada del certificado de cliente. Es obligatoria si la clave privada no está incluida en el archivo del certificado de cliente.                                                                                                                                                                                   |
+| server&#95;host&#95;name | str  | *None*         | El nombre de host del servidor de ClickHouse, tal como lo identifica el CN o el SNI de su certificado TLS. Establécelo para evitar errores de SSL al conectarte a través de un proxy o túnel con un nombre de host distinto                                                                                                                     |
+| tls&#95;mode             | str  | *None*         | Controla el comportamiento avanzado de TLS. `proxy` y `strict` no usan una conexión TLS mutua de ClickHouse, pero sí envían el certificado y la clave del cliente. `mutual` asume autenticación TLS mutua de ClickHouse con un certificado de cliente. El comportamiento *None*/predeterminado es `mutual`                                      |
 
 <div id="settings-argument">
   ### Argumento `settings`
 </div>
 
-Por último, el argumento `settings` de `get_client` se utiliza para pasar al servidor ajustes de ClickHouse adicionales en cada solicitud del Client. Ten en cuenta que, en la mayoría de los casos, los usuarios con acceso *readonly*=*1* no pueden modificar los ajustes enviados con una consulta, por lo que ClickHouse Connect omitirá esos ajustes en la solicitud final y registrará una advertencia. Los siguientes ajustes solo se aplican a las consultas/sesiones HTTP que usa ClickHouse Connect y no están documentados como ajustes generales de ClickHouse.
+Por último, el argumento `settings` de `get_client` se utiliza para pasar al servidor ajustes de ClickHouse adicionales en cada solicitud del cliente. Ten en cuenta que, en la mayoría de los casos, los usuarios con acceso *readonly*=*1* no pueden modificar los ajustes enviados con una consulta, por lo que ClickHouse Connect omitirá esos ajustes en la solicitud final y registrará una advertencia. Los siguientes ajustes solo se aplican a las consultas/sesiones HTTP que usa ClickHouse Connect y no están documentados como ajustes generales de ClickHouse.
 
-| Setting                   | Descripción                                                                                                                                              |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `buffer_size`             | Tamaño del búfer de la respuesta HTTP del lado del servidor, en bytes.                                                                                   |
-| `session_id`              | ID de sesión utilizado para asociar solicitudes relacionadas. Es obligatorio para las tablas temporales y el estado de la sesión.                        |
-| `compress`                | Solicita al servidor que comprima una respuesta HTTP. Normalmente lo gestiona la opción de compresión del Client.                                        |
-| `decompress`              | Indica al servidor que descomprima el cuerpo de la solicitud. Se usa para inserciones &quot;raw&quot; precomprimidas.                                    |
-| `quota_key`               | La clave de cuota asociada a esta solicitud.                                                                                                             |
-| `session_check`           | Solicita al servidor que valide que existe una sesión.                                                                                                   |
-| `session_timeout`         | Tiempo de espera por inactividad de la sesión, en segundos.                                                                                              |
-| `wait_end_of_query`       | Almacena en búfer la respuesta completa en el servidor. El Client establece este ajuste cuando es necesario para la información de resumen no streaming. |
-| `query_id`                | ID de consulta explícito para la solicitud.                                                                                                              |
-| `client_protocol_version` | Nivel de capacidad del protocolo del Client para el formato nativo. Normalmente se negocia automáticamente.                                              |
-| `role`                    | Rol de ClickHouse que se usará para la solicitud/sesión.                                                                                                 |
+| Setting                       | Descripción                                                                                                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| buffer&#95;size               | Tamaño del búfer (en bytes) que utiliza el servidor de ClickHouse antes de escribir en el canal HTTP.                                                                                         |
+| session&#95;id                | Un ID de sesión único para asociar consultas relacionadas en el servidor. Es obligatorio para las tablas temporales.                                                                          |
+| compress                      | Indica si el servidor de ClickHouse debe comprimir los datos de la respuesta POST. Este ajuste solo debe usarse para consultas &quot;raw&quot;.                                               |
+| decompress                    | Indica si deben descomprimirse los datos enviados al servidor de ClickHouse. Este ajuste solo debe usarse para inserciones &quot;raw&quot;.                                                   |
+| quota&#95;key                 | La clave de cuota asociada a esta solicitud. Consulta la documentación del servidor de ClickHouse sobre quotas.                                                                               |
+| session&#95;check             | Se utiliza para comprobar el estado de la sesión.                                                                                                                                             |
+| session&#95;timeout           | Número de segundos de inactividad antes de que la sesión identificada por el ID de sesión agote el tiempo de espera y deje de considerarse válida. El valor predeterminado es 60 segundos.    |
+| wait&#95;end&#95;of&#95;query | Almacena en búfer la respuesta completa en el servidor de ClickHouse. Este ajuste es necesario para devolver información de resumen y se establece automáticamente en consultas no streaming. |
+| role                          | Rol de ClickHouse que se usará para la sesión. Es un ajuste de transporte válido que puede incluirse en el contexto de la consulta.                                                           |
 
 Para ver otros ajustes de ClickHouse que pueden enviarse con cada consulta, consulta [la documentación de ClickHouse](/es/reference/settings/session-settings).
 
@@ -104,6 +93,7 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 print(client.server_version)
+# Salida: '22.10.1.98'
 ```
 
 * Conectarse a un servidor externo de ClickHouse con HTTPS
@@ -111,14 +101,9 @@ print(client.server_version)
 ```python
 import clickhouse_connect
 
-client = clickhouse_connect.get_client(
-    host="play.clickhouse.com",
-    secure=True,
-    port=443,
-    username="play",
-    password="clickhouse",
-)
-print(client.command("SELECT timezone()"))
+client = clickhouse_connect.get_client(host='play.clickhouse.com', secure=True, port=443, user='play', password='clickhouse')
+print(client.command('SELECT timezone()'))
+# Salida: 'Etc/UTC'
 ```
 
 * Conectarse con un ID de sesión y otros parámetros de conexión personalizados, así como ajustes de ClickHouse.
@@ -127,87 +112,61 @@ print(client.command("SELECT timezone()"))
 import clickhouse_connect
 
 client = clickhouse_connect.get_client(
-    host="play.clickhouse.com",
-    username="play",
-    password="clickhouse",
+    host='play.clickhouse.com',
+    user='play',
+    password='clickhouse',
     port=443,
-    secure=True,
-    session_id="example_session_1",
+    session_id='example_session_1',
     connect_timeout=15,
-    database="github",
-    settings={"distributed_ddl_task_timeout": 300},
+    database='github',
+    settings={'distributed_ddl_task_timeout':300},
 )
 print(client.database)
-# Output: github
+# Salida: 'github'
 ```
-
-<div id="embedded-chdb-backend">
-  ### Backend integrado de chDB
-</div>
-
-Instala `clickhouse-connect[chdb]` para usar el backend experimental de chDB en el mismo proceso. Expone los métodos síncronos de consulta, insert, streaming y Arrow del Client:
-
-```python
-import clickhouse_connect
-
-with clickhouse_connect.get_client(interface="chdb") as client:
-    result = client.query("SELECT sum(number) FROM numbers(10)")
-    print(result.first_row)
-    # Output: (45,)
-```
-
-De forma predeterminada, se usa una base de datos en memoria. Pase `path="/data/my_chdb"` o use `dsn="chdb:///data/my_chdb"` para contar con almacenamiento persistente. El backend permite una sola ruta de engine por proceso y no admite `get_async_client` ni datos externos.
 
 <div id="client-lifecycle-and-best-practices">
-  ## Ciclo de vida del Client y buenas prácticas
+  ## Ciclo de vida del cliente y buenas prácticas
 </div>
 
-Crear un Client de ClickHouse Connect es una operación costosa, ya que implica establecer una conexión, recuperar metadatos del servidor e inicializar el ajuste. Siga estas buenas prácticas para lograr un rendimiento óptimo:
+Crear un cliente de ClickHouse Connect es una operación costosa, ya que implica establecer una conexión, recuperar metadatos del servidor e inicializar el ajuste. Siga estas buenas prácticas para lograr un rendimiento óptimo:
 
 <div id="core-principles">
   ### Principios básicos
 </div>
 
-* **Reutiliza los Clients**: Crea los Clients una sola vez al iniciar la aplicación y reutilízalos durante toda su vida útil
-* **Evita crearlos con frecuencia**: No crees un Client nuevo para cada consulta o solicitud
-* **Limpia correctamente**: Cierra siempre los Clients al apagar la aplicación para liberar los recursos del grupo de conexiones
-* **Compártelos cuando sea posible**: Un solo Client puede gestionar muchas consultas concurrentes a través de su grupo de conexiones (consulta las notas sobre hilos más abajo)
+* **Reutiliza los clientes**: Crea los clientes una sola vez al iniciar la aplicación y reutilízalos durante toda su vida útil
+* **Evita crearlos con frecuencia**: No crees un cliente nuevo para cada consulta o solicitud (esto desperdicia cientos de milisegundos por operación)
+* **Limpia correctamente**: Cierra siempre los clientes al apagar la aplicación para liberar los recursos del pool de conexiones
+* **Compártelos cuando sea posible**: Un solo cliente puede gestionar muchas consultas concurrentes a través de su pool de conexiones (consulta las notas sobre hilos más abajo)
 
 <div id="basic-patterns">
   ### Patrones básicos
 </div>
 
-Reutiliza un único Client:
+**✅ Correcto: reutiliza un único cliente**
 
 ```python
 import clickhouse_connect
 
-# Create once at startup
-client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-)
+# Crear una vez al inicio
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
 
-# Reuse for all queries
+# Reutilizar para todas las consultas
 for i in range(1000):
-    result = client.query("SELECT count() FROM users")
+    result = client.query('SELECT count() FROM users')
 
-# Close on shutdown
+# Cerrar al apagar
 client.close()
 ```
 
-Evita crear Clients repetidamente:
+**❌ Incorrecto: crear clientes repetidamente**
 
 ```python
-# BAD: Creates 1000 clients with expensive initialization overhead
+# MAL: Crea 1000 clientes con una costosa sobrecarga de inicialización
 for i in range(1000):
-    client = clickhouse_connect.get_client(
-        host="my-host",
-        username="default",
-        password="password",
-    )
-    result = client.query("SELECT count() FROM users")
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    result = client.query('SELECT count() FROM users')
     client.close()
 ```
 
@@ -216,25 +175,25 @@ for i in range(1000):
 </div>
 
 <Warning>
-  Las instancias de Client **NO son seguras para subprocesos** cuando se usan ID de sesión. De forma predeterminada, los Clients tienen un ID de sesión generado automáticamente, y las consultas concurrentes dentro de la misma sesión provocarán un `ProgrammingError`.
+  Las instancias de cliente **NO son seguras para subprocesos** cuando se usan ID de sesión. De forma predeterminada, los clientes tienen un ID de sesión generado automáticamente, y las consultas concurrentes dentro de la misma sesión provocarán un `ProgrammingError`.
 </Warning>
 
-Para compartir un Client entre hilos de forma segura:
+Para compartir un cliente entre hilos de forma segura:
 
 ```python
 import clickhouse_connect
 import threading
 
-# Option 1: Disable sessions (recommended for shared clients)
+# Opción 1: Deshabilitar sesiones (recomendado para clientes compartidos)
 client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-    autogenerate_session_id=False,
+    host='my-host',
+    username='default',
+    password='password',
+    autogenerate_session_id=False  # Necesario para la seguridad entre hilos
 )
 
 def worker(thread_id):
-    # All threads can now safely use the same client
+    # Todos los hilos pueden usar el mismo cliente de forma segura
     result = client.query(f"SELECT {thread_id}")
     print(f"Thread {thread_id}: {result.result_rows[0][0]}")
 
@@ -245,20 +204,27 @@ for t in threads:
     t.join()
 
 client.close()
+# Salida:
+# Thread 0: 0
+# Thread 7: 7
+# Thread 1: 1
+# Thread 9: 9
+# Thread 4: 4
+# Thread 2: 2
+# Thread 8: 8
+# Thread 5: 5
+# Thread 6: 6
+# Thread 3: 3
 ```
 
-**Alternativa para las sesiones:** Si necesita sesiones (p. ej., para tablas temporales), cree un Client independiente por hilo:
+**Alternativa para las sesiones:** Si necesita sesiones (p. ej., para tablas temporales), cree un cliente independiente por hilo:
 
 ```python
 def worker(thread_id):
-    # Each thread gets its own client with isolated session
-    client = clickhouse_connect.get_client(
-        host="my-host",
-        username="default",
-        password="password",
-    )
-    client.command("CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory")
-    # ... use temp table ...
+    # Cada hilo tiene su propio cliente con sesión aislada
+    client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
+    client.command('CREATE TEMPORARY TABLE temp (id UInt32) ENGINE = Memory')
+    # ... usar tabla temporal ...
     client.close()
 ```
 
@@ -266,16 +232,12 @@ def worker(thread_id):
   ### Limpieza adecuada
 </div>
 
-Cierra siempre los Clients al apagar el sistema. Ten en cuenta que `client.close()` elimina el Client y cierra las conexiones HTTP agrupadas solo cuando el Client tiene su propio administrador de grupos (por ejemplo, cuando se crea con opciones personalizadas de TLS/proxy). Para el grupo compartido predeterminado, usa `client.close_connections()` para limpiar proactivamente los sockets; de lo contrario, las conexiones se recuperan automáticamente por expiración por inactividad y al salir del proceso.
+Cierra siempre los clientes al apagar el sistema. Ten en cuenta que `client.close()` elimina el cliente y cierra las conexiones HTTP agrupadas solo cuando el cliente tiene su propio administrador de pools (por ejemplo, cuando se crea con opciones personalizadas de TLS/proxy). Para el pool compartido predeterminado, usa `client.close_connections()` para limpiar proactivamente los sockets; de lo contrario, las conexiones se recuperan automáticamente por expiración por inactividad y al salir del proceso.
 
 ```python
-client = clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-)
+client = clickhouse_connect.get_client(host='my-host', username='default', password='password')
 try:
-    result = client.query("SELECT 1")
+    result = client.query('SELECT 1')
 finally:
     client.close()
 ```
@@ -283,12 +245,8 @@ finally:
 O bien, usa un administrador de contexto:
 
 ```python
-with clickhouse_connect.get_client(
-    host="my-host",
-    username="default",
-    password="password",
-) as client:
-    result = client.query("SELECT 1")
+with clickhouse_connect.get_client(host='my-host', username='default', password='password') as client:
+    result = client.query('SELECT 1')
 ```
 
 <div id="when-to-use-multiple-clients">
@@ -316,33 +274,23 @@ Varios métodos del cliente usan uno o ambos argumentos comunes, `parameters` y 
 Los métodos `query*` y `command` del cliente ClickHouse Connect aceptan un argumento opcional de palabra clave `parameters`, que se utiliza para vincular expresiones de Python a una expresión de valor de ClickHouse. Hay dos tipos de vinculación disponibles.
 
 <div id="server-side-binding">
-  #### Vinculación del lado del servidor
+  #### Vinculación en el servidor
 </div>
 
-ClickHouse admite la [vinculación del lado del servidor](/es/concepts/features/interfaces/client#cli-queries-with-parameters) para los valores de la consulta. El valor vinculado se envía por separado de la consulta como un parámetro HTTP. ClickHouse Connect usa este modo cuando detecta una expresión con el formato `{<name>:<datatype>}`. Pase los valores como un diccionario de Python.
+ClickHouse admite la [vinculación en el servidor](/es/concepts/features/interfaces/client#cli-queries-with-parameters) para la mayoría de los valores de una consulta, donde el valor vinculado se envía por separado de la consulta como un parámetro de consulta HTTP. ClickHouse Connect añadirá los parámetros de consulta correspondientes si detecta una expresión de vinculación con el formato `{<name>:<datatype>}`. Para la vinculación en el servidor, el argumento `parameters` debe ser un diccionario de Python.
 
-Use `None` de Python para valores que admiten valores nulos. Se admiten valores `None` anidados dentro de parámetros `Array` y `Tuple`, y dentro de literales `Map` cuando `dict_parameter_format` se establece en `"map"`.
-
-* Vinculación del lado del servidor con diccionario de Python, valor DateTime y valor de cadena
+* Vinculación en el servidor con un diccionario de Python, un valor DateTime y un valor de cadena
 
 ```python
 import datetime
 
 my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
 
-parameters = {
-    "table": "my_table",
-    "v1": my_date,
-    "v2": "a string with a single quote'",
-}
-client.query(
-    "SELECT * FROM {table:Identifier} "
-    "WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}",
-    parameters=parameters,
-)
+parameters = {'table': 'my_table', 'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM {table:Identifier} WHERE date >= {v1:DateTime} AND string ILIKE {v2:String}', parameters=parameters)
 ```
 
-Esto equivale a:
+Esto genera la siguiente consulta en el servidor:
 
 ```sql
 SELECT *
@@ -352,7 +300,7 @@ WHERE date >= '2022-10-01 15:20:05'
 ```
 
 <Warning>
-  La vinculación del lado del servidor es compatible con las consultas `SELECT`. No funciona con `ALTER`, `DELETE`, `INSERT` ni con otros tipos de sentencias.
+  La vinculación en el servidor solo es compatible (por el servidor de ClickHouse) con consultas `SELECT`. No funciona con `ALTER`, `DELETE`, `INSERT` ni con otros tipos de consultas. Esto puede cambiar en el futuro; consulta https://github.com/ClickHouse/ClickHouse/issues/42092.
 </Warning>
 
 <div id="client-side-binding">
@@ -361,7 +309,7 @@ WHERE date >= '2022-10-01 15:20:05'
 
 ClickHouse Connect también admite la vinculación de parámetros en el cliente, lo que permite una mayor flexibilidad al generar consultas SQL con plantillas. Para la vinculación en el cliente, el argumento `parameters` debe ser un diccionario o una secuencia. La vinculación en el cliente utiliza el formato de cadenas [estilo &quot;printf&quot;](https://docs.python.org/3/library/stdtypes.html#old-string-formatting) de Python para la sustitución de parámetros.
 
-Ten en cuenta que, a diferencia de la vinculación del lado del servidor, la vinculación en el cliente no funciona con identificadores de bases de datos, como nombres de bases de datos, tablas o columnas, ya que el formato de estilo Python no puede distinguir entre los distintos tipos de cadenas y estos deben formatearse de forma diferente (backticks o comillas dobles para identificadores de bases de datos, comillas simples para valores de datos).
+Ten en cuenta que, a diferencia de la vinculación en el servidor, la vinculación en el cliente no funciona con identificadores de bases de datos, como nombres de bases de datos, tablas o columnas, ya que el formato de estilo Python no puede distinguir entre los distintos tipos de cadenas y estos deben formatearse de forma diferente (backticks o comillas dobles para identificadores de bases de datos, comillas simples para valores de datos).
 
 * Ejemplo con un diccionario de Python, un valor DateTime y escape de cadenas
 
@@ -370,12 +318,8 @@ import datetime
 
 my_date = datetime.datetime(2022, 10, 1, 15, 20, 5)
 
-parameters = {"v1": my_date, "v2": "a string with a single quote'"}
-client.query(
-    "SELECT * FROM my_table "
-    "WHERE date >= %(v1)s AND string ILIKE %(v2)s",
-    parameters=parameters,
-)
+parameters = {'v1': my_date, 'v2': "a string with a single quote'"}
+client.query('SELECT * FROM my_table WHERE date >= %(v1)s AND string ILIKE %(v2)s', parameters=parameters)
 ```
 
 Esto genera la siguiente consulta en el servidor:
@@ -393,10 +337,7 @@ WHERE date >= '2022-10-01 15:20:05'
 import ipaddress
 
 parameters = (35200.44, ipaddress.IPv4Address(0x443d04fe))
-client.query(
-    "SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s",
-    parameters=parameters,
-)
+client.query('SELECT * FROM some_table WHERE metric >= %s AND ip_address = %s', parameters=parameters)
 ```
 
 Esto genera la siguiente consulta en el servidor:
@@ -405,31 +346,26 @@ Esto genera la siguiente consulta en el servidor:
 SELECT *
 FROM some_table
 WHERE metric >= 35200.44
-  AND ip_address = '68.61.4.254'
+  AND ip_address = '68.61.4.254''
 ```
 
 <Note>
-  La vinculación de valores DateTime trata los valores sin zona horaria como hora de pared. El client formatea un `datetime` sin zona horaria literalmente. ClickHouse lo interpreta usando la zona horaria declarada en un placeholder del lado del servidor, como `{dt:DateTime('Europe/Berlin')}`, después `session_timezone` si está configurada y, por último, la zona horaria del servidor. Un `datetime` con zona horaria se convierte a la zona horaria declarada en el placeholder cuando está presente; de lo contrario, a la zona horaria del servidor indicada al momento de la conexión. Si la configuración `session_timezone` difiere de la zona horaria del servidor indicada, declare una zona horaria en el placeholder para mantener el instante previsto para los valores con zona horaria.
+  Para vincular argumentos DateTime64 (tipos de ClickHouse con precisión de fracciones de segundo) se requiere uno de estos dos enfoques personalizados:
 
-  Para compatibilidad temporal con la conversión heredada de la hora local del host, establezca `common.set_setting("naive_datetime_binding", "legacy")` antes de vincular parámetros. Para preservar un instante, adjunte el `tzinfo` previsto al valor `datetime` antes de pasarlo como parámetro. Los inserts mediante `client.insert` interpretan de forma predeterminada los valores `datetime` sin zona horaria en la zona horaria local del proceso. Establezca la configuración global `naive_datetime_insert` en `"server"` para interpretarlos como hora de pared en la zona horaria de la columna o, si la columna no tiene ninguna, en la zona horaria del servidor. Consulte [Objetos datetime sin zona horaria](/es/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects).
+  * Envuelva el valor `datetime.datetime` de Python en la nueva clase DT64Param, por ejemplo:
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}'  # Vinculación en el servidor con diccionario
+      parameters={'p1': DT64Param(dt_value)}
 
-  Para un placeholder `{value:DateTime64(precision)}` del lado del servidor, el tipo declarado conserva automáticamente la precisión de fracciones de segundo, incluso dentro de las pistas `Array` y `Tuple`.
+      query = 'SELECT %s as string, toDateTime64(%s,6) as dateTime' # Vinculación en el cliente con lista 
+      parameters=['a string', DT64Param(datetime.now())]
+    ```
+    * Si usa un diccionario de valores de parámetros, añada la cadena `_64` al nombre del parámetro
+    ```python
+      query = 'SELECT {p1:DateTime64(3)}, {a1:Array(DateTime(3))}'  # Vinculación en el servidor con diccionario
 
-  La vinculación `%s` en el cliente no tiene un tipo declarado. Envuelva un `datetime` en `DT64Param` cuando deba representarse con precisión de fracciones de segundo:
-
-  ```python
-  from datetime import datetime
-
-  from clickhouse_connect.driver.binding import DT64Param
-
-  query = "SELECT toDateTime64(%s, 6)"
-  parameters = [DT64Param(datetime.now())]
-  client.query(query, parameters=parameters)
-  ```
-
-  Por compatibilidad con versiones anteriores, un nombre de parámetro de diccionario que termina en `_64` también solicita el formato DateTime64 cuando ese nombre exacto con sufijo no está presente en la consulta.
-
-  Un parámetro `datetime.time` o `datetime.timedelta` se formatea como un literal `[-]HH:MM:SS[.ffffff]` para las columnas `Time` y `Time64` de ClickHouse, en ambos estilos de vinculación y dentro de valores `Array` y `Tuple`. El client añade las comillas, así que no incluya el placeholder entre comillas en la consulta. Un `timedelta` puede ser negativo y superar las 24 horas. Un `Timedelta` de pandas conserva sus nanosegundos y se formatea con una fracción de nueve dígitos para `Time64(9)`. La información de zona horaria de un `time` con zona horaria se ignora porque `Time` de ClickHouse no tiene zona horaria.
+      parameters={'p1_64': dt_value, 'a1_64': [dt_value1, dt_value2]}
+    ```
 </Note>
 
 <div id="settings-argument">
@@ -443,31 +379,25 @@ Al igual que con los ajustes a nivel de cliente, ClickHouse Connect descartará 
 Ejemplo de uso de ajustes de ClickHouse:
 
 ```python
-settings = {
-    "merge_tree_min_rows_for_concurrent_read": 65535,
-    "session_id": "session_1234",
-    "use_skip_indexes": False,
-}
-client.query(
-    "SELECT event_type, sum(timeout) "
-    "FROM event_errors WHERE event_time > '2022-08-01'",
-    settings=settings,
-)
+settings = {'merge_tree_min_rows_for_concurrent_read': 65535,
+            'session_id': 'session_1234',
+            'use_skip_indexes': False}
+client.query("SELECT event_type, sum(timeout) FROM event_errors WHERE event_time > '2022-08-01'", settings=settings)
 ```
 
 <div id="client-command-method">
-  ## Método `command` del Client
+  ## Método `command` del cliente
 </div>
 
-Use `Client.command` para sentencias que no devuelven un conjunto de datos tabular, o para consultas que devuelven un valor primitivo o una fila. Según la respuesta, devuelve una cadena, un entero, una secuencia de cadenas o `QuerySummary`. Una lectura que produce un conjunto de resultados vacío devuelve una cadena vacía.
+Use el método `Client.command` para enviar consultas SQL al servidor de ClickHouse que normalmente no devuelven datos o que devuelven un único valor primitivo o de tipo Array, en lugar de un conjunto de datos completo. Este método acepta los siguientes parámetros:
 
 | Parámetro              | Tipo             | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                              |
 | ---------------------- | ---------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | cmd                    | str              | *Obligatorio*  | Una sentencia de ClickHouse SQL que devuelve un único valor o una única fila de valores.                                                                                                                                                                                                                                 |
-| parameters             | dict or sequence | *None*         | Consulte la [descripción de los parámetros](#parameters-argument).                                                                                                                                                                                                                                                       |
+| parameters             | dict or iterable | *None*         | Consulte la [descripción de los parámetros](#parameters-argument).                                                                                                                                                                                                                                                       |
 | data                   | str or bytes     | *None*         | Datos opcionales para incluir con el comando como cuerpo de la solicitud POST.                                                                                                                                                                                                                                           |
-| settings               | dict             | *None*         | Consulte la [descripción del ajuste](#settings-argument-1).                                                                                                                                                                                                                                                              |
-| use&#95;database       | bool             | True           | Usa la base de datos del Client (especificada al crear el Client). False significa que el comando usará la base de datos predeterminada del servidor de ClickHouse para el usuario conectado.                                                                                                                          |
+| settings               | dict             | *None*         | Consulte la [descripción del ajuste](#settings-argument).                                                                                                                                                                                                                                                                |
+| use&#95;database       | bool             | True           | Usa la base de datos del cliente (especificada al crear el cliente). False significa que el comando usará la base de datos predeterminada del servidor de ClickHouse para el usuario conectado.                                                                                                                          |
 | external&#95;data      | ExternalData     | *None*         | Un objeto `ExternalData` que contiene datos de archivo o binarios para usar con la consulta. Consulte [Advanced Queries (External Data)](/es/integrations/language-clients/python/advanced-querying#external-data)                                                                                                          |
 | transport&#95;settings | dict             | *None*         | Diccionario opcional de encabezados HTTP para incluir con esta solicitud. Cada par clave-valor se añade como un encabezado HTTP (p. ej., `{'X-Custom-Header': 'value'}`). Resulta útil para la autenticación del proxy, el tracing de solicitudes o para pasar encabezados requeridos por la infraestructura intermedia. |
 
@@ -484,18 +414,14 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Create a table. A successful DDL returns QuerySummary.
-summary = client.command(
-    "CREATE TABLE test_command "
-    "(col_1 String, col_2 DateTime) "
-    "ENGINE MergeTree ORDER BY tuple()"
-)
-print(summary.query_id())
+# Crear una tabla
+result = client.command("CREATE TABLE test_command (col_1 String, col_2 DateTime) ENGINE MergeTree ORDER BY tuple()")
+print(result)  # Devuelve QuerySummary con query_id
 
-# Show table definition
+# Mostrar la definición de la tabla
 result = client.command("SHOW CREATE TABLE test_command")
 print(result)
-# Output:
+# Salida:
 # CREATE TABLE default.test_command
 # (
 #     `col_1` String,
@@ -504,7 +430,7 @@ print(result)
 # ENGINE = MergeTree
 # ORDER BY tuple()
 
-# Drop table
+# Eliminar tabla
 client.command("DROP TABLE test_command")
 ```
 
@@ -517,13 +443,15 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Single value result
+# Resultado de valor único
 count = client.command("SELECT count() FROM system.tables")
 print(count)
+# Salida: 151
 
-# Server version
+# Versión del servidor
 version = client.command("SELECT version()")
 print(version)
+# Salida: "25.8.2.29"
 ```
 
 <div id="commands-with-parameters">
@@ -566,29 +494,27 @@ result = client.command(
 ```
 
 <div id="client-query-method">
-  ## Método `query` de Client
+  ## Método `query` del cliente
 </div>
 
-`Client.query` recupera un conjunto de datos tabular en formato Native de ClickHouse y devuelve un `QueryResult`. El resultado completo se materializa al acceder a una propiedad del resultado. Use un método de streaming para resultados que no deban mantenerse en memoria.
+El método `Client.query` es la forma principal de recuperar un único conjunto de datos &quot;por lote&quot; del servidor de ClickHouse. Utiliza el formato nativo de ClickHouse sobre HTTP para transmitir grandes conjuntos de datos (hasta aproximadamente un millón de filas) de forma eficiente. Este método acepta los siguientes parámetros:
 
-| Parámetro            | Tipo             | Predeterminado | Descripción                                                                                                                                                                             |
-| -------------------- | ---------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `query`              | str              | Required       | consulta de ClickHouse que devuelve un resultado tabular, normalmente `SELECT` o `DESCRIBE`. Puede omitirse cuando se proporciona mediante `context`.                                   |
-| `parameters`         | dict or sequence | `None`         | Consulte [Parameters argument](#parameters-argument).                                                                                                                                   |
-| `settings`           | dict             | `None`         | Consulte [Settings argument](#settings-argument-1).                                                                                                                                     |
-| `query_formats`      | dict             | `None`         | Formato de lectura por tipo de ClickHouse. Consulte [Read formats](/es/integrations/language-clients/python/advanced-querying#read-formats).                                               |
-| `column_formats`     | dict             | `None`         | Formato de lectura por columna del resultado, incluidas las correspondencias de formato para Nested type.                                                                               |
-| `encoding`           | str              | `None`         | Codificación de columna String. El valor predeterminado es UTF-8.                                                                                                                       |
-| `use_none`           | bool             | `True`         | Devuelve `None` para SQL NULL. Cuando es `false`, devuelve el valor nulo predeterminado del tipo. Los methods de NumPy/Pandas eligen valores predeterminados orientados al rendimiento. |
-| `column_oriented`    | bool             | `False`        | Orienta el resultado por columnas en lugar de por filas.                                                                                                                                |
-| `use_numpy`          | bool             | `False`        | Lee las columnas de resultado compatibles en arrays de NumPy dentro de `QueryResult`. Prefiera `query_np` cuando el resultado deseado sea una sola matriz de NumPy.                     |
-| `max_str_len`        | int              | `0`            | Con `use_numpy`, usa un `dtype` Unicode de ancho fijo para columna String de hasta esta longitud. Cero usa arrays de objetos.                                                           |
-| `context`            | `QueryContext`   | `None`         | Contexto de consulta reutilizable. Los argumentos explícitos del método prevalecen sobre los valores del contexto.                                                                      |
-| `query_tz`           | str or `tzinfo`  | `None`         | Zona horaria aplicada a todas las columnas de resultado `DateTime` y `DateTime64`.                                                                                                      |
-| `column_tzs`         | dict             | `None`         | correspondencia de zona horaria por columna.                                                                                                                                            |
-| `external_data`      | `ExternalData`   | `None`         | Archivo externo o datos binarios. Consulte [External data](/es/integrations/language-clients/python/advanced-querying#external-data).                                                      |
-| `transport_settings` | dict             | `None`         | HTTP headers añadidos a esta solicitud.                                                                                                                                                 |
-| `tz_mode`            | str              | Client default | sobrescritura por consulta para el manejo de zona horaria `"naive_utc"`, `"aware"` o `"schema"`.                                                                                        |
+| Parameter                   | Type             | Default    | Description                                                                                                                                                                                                                                                                                                        |
+| --------------------------- | ---------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| query                       | str              | *Required* | La consulta `SELECT` o `DESCRIBE` de ClickHouse SQL.                                                                                                                                                                                                                                                               |
+| parameters                  | dict or iterable | *None*     | Consulte la [descripción de los parámetros](#parameters-argument).                                                                                                                                                                                                                                                 |
+| settings                    | dict             | *None*     | Consulte la [descripción del ajuste](#settings-argument).                                                                                                                                                                                                                                                          |
+| query&#95;formats           | dict             | *None*     | Especificación de formato de tipos de datos para los valores del resultado. Consulte Uso avanzado (Formatos de lectura)                                                                                                                                                                                            |
+| column&#95;formats          | dict             | *None*     | Formato de tipos de datos por columna. Consulte Uso avanzado (Formatos de lectura)                                                                                                                                                                                                                                 |
+| encoding                    | str              | *None*     | Codificación utilizada para convertir las columnas `String` de ClickHouse en cadenas de Python. Python usa `UTF-8` de forma predeterminada si no se especifica.                                                                                                                                                    |
+| use&#95;none                | bool             | True       | Use el tipo *None* de Python para los valores nulos de ClickHouse. Si es False, use un valor predeterminado del tipo de dato (como 0) para los valores nulos de ClickHouse. Nota: el valor predeterminado es False para NumPy/Pandas por motivos de rendimiento.                                                   |
+| column&#95;oriented         | bool             | False      | Devuelve los resultados como una secuencia de columnas en lugar de una secuencia de filas. Es útil para transformar datos de Python a otros formatos de datos orientados a columnas.                                                                                                                               |
+| query&#95;tz                | str              | *None*     | Un nombre de zona horaria de la base de datos `zoneinfo`. Esta zona horaria se aplicará a todos los objetos datetime o Pandas Timestamp devueltos por la consulta.                                                                                                                                                 |
+| column&#95;tzs              | dict             | *None*     | Un diccionario que asigna nombres de columna a nombres de zona horaria. Al igual que `query_tz`, pero permite especificar distintas zonas horarias para diferentes columnas.                                                                                                                                       |
+| use&#95;extended&#95;dtypes | bool             | True       | Use tipos de datos extendidos de Pandas (como StringArray), además de pandas.NA y pandas.NaT para los valores `NULL` de ClickHouse. Se aplica solo a los métodos `query_df` y `query_df_stream`.                                                                                                                   |
+| external&#95;data           | ExternalData     | *None*     | Un objeto ExternalData que contiene datos de archivo o binarios para usar con la consulta. Consulte [Consultas avanzadas (Datos externos)](/es/integrations/language-clients/python/advanced-querying#external-data)                                                                                                  |
+| context                     | QueryContext     | *None*     | Se puede usar un objeto QueryContext reutilizable para encapsular los argumentos anteriores del método. Consulte [Consultas avanzadas (QueryContexts)](/es/integrations/language-clients/python/advanced-querying#querycontexts)                                                                                      |
+| transport&#95;settings      | dict             | *None*     | Diccionario opcional de encabezados HTTP para incluir en esta solicitud. Cada par clave-valor se añade como un encabezado HTTP (p. ej., `{'X-Custom-Header': 'value'}`). Es útil para la autenticación de proxy, el tracing de solicitudes o el envío de encabezados requeridos por la infraestructura intermedia. |
 
 <div id="query-examples">
   ### Ejemplos de consultas
@@ -603,24 +529,22 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Simple SELECT query
-result = client.query(
-    "SELECT number, toString(number) AS label FROM numbers(3)"
-)
+# Consulta SELECT sencilla
+result = client.query("SELECT name, database FROM system.tables LIMIT 3")
 
-# Access results as rows
+# Accede a los resultados como filas
 for row in result.result_rows:
     print(row)
-# Output:
-# (0, '0')
-# (1, '1')
-# (2, '2')
+# Salida:
+# ('CHARACTER_SETS', 'INFORMATION_SCHEMA')
+# ('COLLATIONS', 'INFORMATION_SCHEMA')
+# ('COLUMNS', 'INFORMATION_SCHEMA')
 
-# Access column names and types
+# Accede a los nombres y tipos de las columnas
 print(result.column_names)
-# Output: ('number', 'label')
+# Salida: ("name", "database")
 print([col_type.name for col_type in result.column_types])
-# Output: ['UInt64', 'String']
+# Salida: ['String', 'String']
 ```
 
 <div id="accessing-query-results">
@@ -634,29 +558,29 @@ client = clickhouse_connect.get_client()
 
 result = client.query("SELECT number, toString(number) AS str FROM system.numbers LIMIT 3")
 
-# Row-oriented access (default)
+# Acceso por filas (predeterminado)
 print(result.result_rows)
-# Output: [(0, '0'), (1, '1'), (2, '2')]
+# Salida: [[0, "0"], [1, "1"], [2, "2"]]
 
-# Column-oriented access
+# Acceso por columnas
 print(result.result_columns)
-# Output: [[0, 1, 2], ['0', '1', '2']]
+# Salida: [[0, 1, 2], ["0", "1", "2"]]
 
-# Named results (list of dictionaries)
+# Resultados con nombres (lista de diccionarios)
 for row_dict in result.named_results():
     print(row_dict)
-# Output:
-# {'number': 0, 'str': '0'}
-# {'number': 1, 'str': '1'}
-# {'number': 2, 'str': '2'}
+# Salida: 
+# {"number": 0, "str": "0"}
+# {"number": 1, "str": "1"}
+# {"number": 2, "str": "2"}
 
-# First row as dictionary
+# Primera fila como diccionario
 print(result.first_item)
-# Output: {'number': 0, 'str': '0'}
+# Salida: {"number": 0, "str": "0"}
 
-# First row as tuple
+# Primera fila como tupla
 print(result.first_row)
-# Output: (0, '0')
+# Salida: (0, "0")
 ```
 
 <div id="query-with-client-side-parameters">
@@ -720,19 +644,22 @@ result = client.query(
 
 El método base `query` devuelve un objeto `QueryResult` con las siguientes propiedades públicas:
 
-* `result_rows` -- Matriz de resultados orientada por filas.
-* `result_columns` -- Matriz de resultados orientada por columnas.
-* `result_set` -- `result_rows` o `result_columns`, según la orientación de la consulta.
-* `column_names` -- `Tuple` con los nombres de las columnas del resultado.
-* `column_types` -- `Tuple` de objetos `ClickHouseType`.
-* `row_count` -- Número de filas de resultados materializadas.
-* `query_id` -- ID de consulta informado o generado para la solicitud. Una cadena vacía significa que no había ninguno disponible.
-* `summary` -- Diccionario decodificado del header de respuesta `X-ClickHouse-Summary`.
-* `first_item` -- Primera fila como diccionario, o `None` si el resultado está vacío.
-* `first_row` -- Primera fila como secuencia, o `None` si el resultado está vacío.
-* `column_block_stream`, `row_block_stream` y `rows_stream` -- Contextos internos de stream. Use en su lugar los métodos de streaming correspondientes del Client.
+* `result_rows` -- Una matriz de los datos devueltos en forma de una secuencia de filas, donde cada elemento de fila es una secuencia de valores de columna.
+* `result_columns` -- Una matriz de los datos devueltos en forma de una secuencia de columnas, donde cada elemento de columna es una secuencia de los valores de fila de esa columna
+* `column_names` -- Una tupla de cadenas que representa los nombres de las columnas en el `result_set`
+* `column_types` -- Una tupla de instancias de ClickHouseType que representa el tipo de dato de ClickHouse de cada columna en `result_columns`
+* `query_id` -- El query&#95;id de ClickHouse (útil para examinar la consulta en la tabla `system.query_log`)
+* `summary` -- Cualquier dato devuelto por el encabezado de respuesta HTTP `X-ClickHouse-Summary`
+* `first_item` -- Una propiedad práctica para recuperar la primera fila de la respuesta como un diccionario (las claves son nombres de columna)
+* `first_row` -- Una propiedad práctica para devolver la primera fila del resultado
+* `column_block_stream` -- Un generador de resultados de consultas en formato orientado a columnas. No se debe hacer referencia a esta propiedad directamente (véase más abajo).
+* `row_block_stream` -- Un generador de resultados de consultas en formato orientado a filas. No se debe hacer referencia a esta propiedad directamente (véase más abajo).
+* `rows_stream` -- Un generador de resultados de consultas que produce una sola fila por invocación. No se debe hacer referencia a esta propiedad directamente (véase más abajo).
+* `summary` -- Como se describe en el método `command`, un diccionario de información resumida devuelta por ClickHouse
 
-Consulte [Consultas en streaming](/es/integrations/language-clients/python/advanced-querying#streaming-queries) para conocer las API de `StreamContext` compatibles.
+Las propiedades `*_stream` devuelven un Context de Python que puede usarse como iterador para los datos devueltos. Solo se debe acceder a ellas indirectamente mediante los métodos `*_stream` del cliente.
+
+Los detalles completos del streaming de resultados de consultas (mediante objetos StreamContext) se describen en [Consultas avanzadas (consultas en streaming)](/es/integrations/language-clients/python/advanced-querying#streaming-queries).
 
 <div id="consuming-query-results-with-numpy-pandas-or-arrow">
   ## Consumo de resultados de consultas con NumPy, Pandas o Arrow
@@ -747,25 +674,25 @@ ClickHouse Connect proporciona métodos de consulta específicos para trabajar c
 Para transmitir grandes conjuntos de resultados, ClickHouse Connect ofrece varios métodos de streaming. Consulta [Consultas avanzadas (Streaming Queries)](/es/integrations/language-clients/python/advanced-querying#streaming-queries) para obtener más información y ejemplos.
 
 <div id="client-insert-method">
-  ## Método `insert` del Client
+  ## Método `insert` del cliente
 </div>
 
 Para el caso de uso habitual de insertar varios registros en ClickHouse, está el método `Client.insert`. Acepta los siguientes parámetros:
 
-| Parámetro            | Tipo                       | Predeterminado           | Descripción                                                                                                                             |
-| -------------------- | -------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `table`              | str                        | Required                 | Tabla de destino. Se permite un nombre completo con la base de datos. Puede omitirse cuando lo proporciona `context`.                   |
-| `data`               | Sequence of Sequences      | Required                 | Matriz de datos orientada a filas o orientada a columna. Puede proporcionarse más adelante mediante un `InsertContext`.                 |
-| `column_names`       | str or Sequence[str]       | `"*"`                    | Columnas ordenadas. `"*"` ejecuta una consulta de metadatos para detectar todas las columnas insertables.                               |
-| `database`           | str or None                | Base de datos del Client | Base de datos de destino cuando `table` no está calificada.                                                                             |
-| `column_types`       | Sequence[`ClickHouseType`] | `None`                   | Tipos de columna explícitos. Evita la consulta de metadatos cuando se proporcionan.                                                     |
-| `column_type_names`  | Sequence[str]              | `None`                   | Nombres de tipos de ClickHouse explícitos. Alternativa a `column_types`.                                                                |
-| `column_oriented`    | bool                       | `False`                  | Interpreta `data` como columnas en lugar de filas.                                                                                      |
-| `settings`           | dict                       | `None`                   | Consulte [argumento Settings](#settings-argument-1).                                                                                    |
-| `context`            | `InsertContext`            | `None`                   | Contexto de inserción reutilizable. Consulte [InsertContexts](/es/integrations/language-clients/python/advanced-inserting#insertcontexts). |
-| `transport_settings` | dict                       | `None`                   | headers HTTP añadidos a esta solicitud.                                                                                                 |
+| Parámetro                 | Tipo                              | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                   |
+| ------------------------- | --------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| table                     | str                               | *Required*     | La tabla de ClickHouse en la que se insertarán los datos. Se permite el nombre completo de la tabla (incluida la base de datos).                                                                                                                                                                              |
+| data                      | Sequence of Sequences             | *Required*     | La matriz de datos que se va a insertar: puede ser una Sequence de filas, cada una de ellas una secuencia de valores de columna, o una Sequence de columnas, cada una de ellas una secuencia de valores de fila.                                                                                              |
+| column&#95;names          | Sequence of str, or str           | &#39;*&#39;    | Una lista de `column_names` para la matriz de datos. Si en su lugar se usa &#39;*&#39;, ClickHouse Connect ejecutará una &quot;consulta previa&quot; para recuperar todos los nombres de columna de la tabla.                                                                                                 |
+| database                  | str                               | &#39;&#39;     | La base de datos de destino de la inserción. Si no se especifica, se asumirá la base de datos del cliente.                                                                                                                                                                                                    |
+| column&#95;types          | Sequence of ClickHouseType        | *None*         | Una lista de instancias de ClickHouseType. Si no se especifican ni `column_types` ni `column_type_names`, ClickHouse Connect ejecutará una &quot;consulta previa&quot; para recuperar todos los tipos de columna de la tabla.                                                                                 |
+| column&#95;type&#95;names | Sequence of ClickHouse type names | *None*         | Una lista de nombres de tipos de datos de ClickHouse. Si no se especifican ni `column_types` ni `column_type_names`, ClickHouse Connect ejecutará una &quot;consulta previa&quot; para recuperar todos los tipos de columna de la tabla.                                                                      |
+| column&#95;oriented       | bool                              | False          | Si es True, se asume que el argumento `data` es una Sequence de columnas (y no será necesario hacer ningún &quot;pivot&quot; para insertar los datos). En caso contrario, `data` se interpreta como una Sequence de filas.                                                                                    |
+| settings                  | dict                              | *None*         | Consulte la [descripción del ajuste](#settings-argument).                                                                                                                                                                                                                                                     |
+| context                   | InsertContext                     | *None*         | Se puede usar un objeto InsertContext reutilizable para encapsular los argumentos del método anteriores. Consulte [Inserciones avanzadas (InsertContexts)](/es/integrations/language-clients/python/advanced-inserting#insertcontexts)                                                                           |
+| transport&#95;settings    | dict                              | *None*         | Diccionario opcional de headers HTTP que se incluirán con esta solicitud. Cada par clave-valor se añade como un header HTTP (por ejemplo, `{'X-Custom-Header': 'value'}`). Es útil para la autenticación de proxy, el tracing de solicitudes o el envío de headers requeridos por infraestructura intermedia. |
 
-Este método devuelve `QuerySummary`. Su diccionario `summary` contiene valores informados por el server. `written_rows` es una propiedad de conveniencia, mientras que `written_bytes()` y `query_id()` devuelven los valores correspondientes. Un fallo en la inserción genera una excepción.
+Este método devuelve un diccionario de &quot;resumen de la consulta&quot;, tal como se describe en el método &quot;command&quot;. Se generará una excepción si la inserción falla por cualquier motivo.
 
 Para métodos de inserción especializados que funcionan con Pandas DataFrames, tablas PyArrow y DataFrames respaldados por Arrow, consulte [Inserciones avanzadas (Métodos de inserción especializados)](/es/integrations/language-clients/python/advanced-inserting#specialized-insert-methods).
 
@@ -788,10 +715,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Row-oriented data: each inner list is a row
+# Datos orientados a filas: cada lista interna es una fila
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
 ]
 
 client.insert("users", data, column_names=["id", "name", "age"])
@@ -806,11 +734,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Column-oriented data: each inner list is a column
+# Datos orientados a columna: cada lista interna es una columna
 data = [
-    [13, 79],  # id column
-    ["user_1", "user_2"],  # name column
-    [25, 30],  # age column
+    [1, 2, 3],  # columna id
+    ["Alice", "Bob", "Joe"],  # columna name
+    [25, 30, 28],  # columna age
 ]
 
 client.insert("users", data, column_names=["id", "name", "age"], column_oriented=True)
@@ -825,10 +753,11 @@ import clickhouse_connect
 
 client = clickhouse_connect.get_client()
 
-# Useful when you want to avoid a DESCRIBE query to the server
+# Útil cuando se quiere evitar una consulta DESCRIBE al servidor
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
+    [3, "Joe", 28],
 ]
 
 client.insert(
@@ -849,11 +778,11 @@ import clickhouse_connect
 client = clickhouse_connect.get_client()
 
 data = [
-    [13, "user_1", 25],
-    [79, "user_2", 30],
+    [1, "Alice", 25],
+    [2, "Bob", 30],
 ]
 
-# Insert into a table in a specific database
+# Insertar en una tabla en una base de datos específica
 client.insert(
     "users",
     data,
@@ -874,55 +803,17 @@ Para insertar datos directamente desde archivos en tablas de ClickHouse, consult
 
 Para casos de uso avanzados que requieran acceso directo a las interfaces HTTP de ClickHouse sin transformaciones de tipos, consulte [Uso avanzado (Raw API)](/es/integrations/language-clients/python/advanced-usage#raw-api).
 
-<div id="python-db-api-20">
-  ## Python DB-API 2.0
-</div>
-
-El módulo `clickhouse_connect.dbapi` implementa la interfaz de conexión y cursor definida por PEP 249. Declara el nivel de API 2.0, `threadsafety=2` y `paramstyle="pyformat"`. El módulo también proporciona los constructores de tipos PEP 249 `Date`, `Time`, `Timestamp` y `Binary`, y las funciones `DateFromTicks`, `TimeFromTicks` y `TimestampFromTicks`.
-
-```python
-from clickhouse_connect import dbapi
-
-connection = dbapi.connect(
-    host="localhost",
-    username="default",
-    password="password",
-    database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
-```
-
-`Cursor.execute` y `Cursor.executemany` aceptan argumentos adicionales de palabra clave, `settings` y `query_formats`. `settings` pasa ajustes de ClickHouse. `query_formats` aplica formatos de lectura según el tipo de ClickHouse cuando una sentencia devuelve filas, usando la misma correspondencia que `Client.query`. `executemany` usa la ruta nativa de inserción masiva del driver para las sentencias `INSERT ... VALUES` compatibles con una secuencia materializada de filas. `fetchone`, `fetchmany` y `fetchall` consumen el resultado materializado actual.
-
-`Cursor.description` deriva `null_ok` del tipo de cada columna de resultado. Los tipos que no admiten valores NULL informan `False`, y los tipos que admiten valores NULL informan `True`, incluidos los envoltorios `Nullable`, `Variant` y `Dynamic`. `None` significa que se desconoce la nulabilidad. Cuando una consulta que comienza con `SELECT` o `WITH`, ignorando los comentarios iniciales, no devuelve filas ni metadatos de columnas, el cursor ejecuta una consulta de metadatos `LIMIT 0` para poblar `description`. Si esa consulta de metadatos falla, `description` se deja vacío.
-
-ClickHouse no proporciona transacciones tradicionales a través de esta interfaz HTTP. `Connection.commit()` y `Connection.rollback()` no tienen efecto. Las [reglas de concurrencia del ID de sesión](/es/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) siguen aplicándose cuando se comparte una conexión.
-
 <div id="utility-classes-and-functions">
   ## Clases y funciones de utilidad
 </div>
 
-Los siguientes módulos proporcionan funciones auxiliares públicas adicionales que usan las aplicaciones Client.
-
-La versión del paquete instalado se expone como la cadena `clickhouse_connect.__version__`.
+Las siguientes clases y funciones también se consideran parte de la API &quot;pública&quot; de `clickhouse-connect` y, al igual que las clases y los métodos documentados anteriormente, son estables entre versiones menores. Los cambios incompatibles en estas clases y funciones solo se producirán en una versión menor (no en una de parche) y permanecerán disponibles como obsoletas durante al menos una versión menor.
 
 <div id="exceptions">
   ### Excepciones
 </div>
 
-Las excepciones personalizadas, incluida la jerarquía de excepciones de DB-API 2.0, se definen en `clickhouse_connect.driver.exceptions`. `DatabaseError` y `OperationalError` exponen un atributo numérico `code` con el código de error de ClickHouse y un atributo `name` con el nombre simbólico, como `UNKNOWN_TABLE`, para que las aplicaciones puedan basarse en `exc.code` en lugar de tener que analizar el mensaje. `code` se establece incluso cuando `show_clickhouse_errors` está deshabilitado, mientras que `name` requiere detalles del error (`True` o `"scrub"`). Ambos son `None` cuando no están disponibles, por ejemplo, en errores de transporte. Use `show_clickhouse_errors="scrub"` cuando los usuarios finales deban ver errores de SQL sin información del host ni de la versión del servidor. Esta configuración también controla los mensajes de `StreamFailureError` durante la transmisión y los mensajes de transporte genéricos. Solo afecta a `str(exc)`. Los errores de transporte siguen adjuntos como `__cause__`, y los seguimientos de pila pueden contener el texto original del error del host, la URL o la biblioteca.
+Todas las excepciones personalizadas (incluidas las definidas en la especificación DB API 2.0) se definen en el módulo `clickhouse_connect.driver.exceptions`. Las excepciones que detecte el driver utilizarán uno de estos tipos.
 
 <div id="clickhouse-sql-utilities">
   ### Utilidades de ClickHouse SQL
@@ -936,11 +827,11 @@ Las funciones y la clase DT64Param del módulo `clickhouse_connect.driver.bindin
 
 Para obtener información sobre el uso de ClickHouse Connect en aplicaciones multihilo, multiproceso y asíncronas/orientadas a eventos, consulte [Uso avanzado (casos de uso multihilo, multiproceso y asíncronos/orientados a eventos)](/es/integrations/language-clients/python/advanced-usage#multithreaded-multiprocess-and-asyncevent-driven-use-cases).
 
-<div id="asyncclient">
-  ## AsyncClient
+<div id="asyncclient-wrapper">
+  ## Wrapper de AsyncClient
 </div>
 
-Para obtener información sobre el uso nativo de asyncio, consulte [Uso avanzado (AsyncClient)](/es/integrations/language-clients/python/advanced-usage#asyncclient).
+Para obtener información sobre cómo usar el wrapper de AsyncClient en entornos de asyncio, consulte [Uso avanzado (wrapper de AsyncClient)](/es/integrations/language-clients/python/advanced-usage#asyncclient-wrapper).
 
 <div id="managing-clickhouse-session-ids">
   ## Gestión de los IDs de sesión de ClickHouse

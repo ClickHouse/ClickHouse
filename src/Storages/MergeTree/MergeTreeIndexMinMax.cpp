@@ -254,30 +254,16 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getPhysicalFormat(const IMergeTreeDataPart & part, const std::string & relative_path_prefix) const
-{
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx2", &part.getDataPartStorage()))
-        return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-
-    if (indexFileExistsInChecksums(part.checksums, relative_path_prefix, ".idx", &part.getDataPartStorage()))
-        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
-
-    return {0 /* unknown */, {}};
-}
-
-MergeTreeIndexSubstreams MergeTreeIndexMinMax::getAllSubstreamsInPart(
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & relative_path_prefix,
     const IDataPartStorage * storage) const
 {
-    /// minmax format changed `.idx` (v1) -> `.idx2` (v2); a part may carry both. Return every
-    /// extension present, not just the preferred one, so cleanup does not miss the stale file.
-    MergeTreeIndexSubstreams substreams;
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx2"});
+        return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
-        substreams.push_back({MergeTreeIndexSubstream::Type::Regular, "", ".idx"});
-    return substreams;
+        return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
+    return {0 /* unknown */, {}};
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,

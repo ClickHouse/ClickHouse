@@ -25,7 +25,7 @@ import S3Settings from '/snippets/zh/_s3_settings.mdx';
 数据处理错误或数据损坏。
 
 很多情况下，这类失误会影响所有副本。ClickHouse 内置了
-一些保护机制来防止某些类型的错误。例如，在[默认](/zh/reference/settings/session-settings/max#max_table_size_to_drop)情况下，
+一些保护机制来防止某些类型的错误。例如，在[默认](/zh/reference/settings/session-settings#max_table_size_to_drop)情况下，
 你不能直接删除使用 `MergeTree` 家族引擎且包含超过
 50 GB 数据的表。不过，这些保护机制并不能覆盖所有可能的情况，
 问题仍然可能发生。

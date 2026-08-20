@@ -3,7 +3,6 @@
 -- WHERE, a PREWHERE, or a lightweight DELETE, and must still distribute the read.
 
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_mod;
 CREATE TABLE t_mod (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k SETTINGS index_granularity = 256;

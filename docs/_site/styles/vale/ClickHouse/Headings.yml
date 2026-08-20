@@ -427,7 +427,7 @@ exceptions:
   - run-debug.sh
   - tasks.json
   - Third-Party Libraries
-  - Build ClickHouse with DEFLATE_QPL
+  - Build Clickhouse with DEFLATE_QPL
   - Run Benchmark with DEFLATE_QPL
   - Rust Libraries
   - DEFLATE_QPL

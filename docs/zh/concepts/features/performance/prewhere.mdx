@@ -106,7 +106,7 @@ ClickHouse 会先 ① 读取 `town` 列中选定的粒度，并检查其中哪�
   ## PREWHERE 优化会自动生效
 </div>
 
-如上例所示，可以手动添加 PREWHERE 子句。不过，你其实不必手动编写 PREWHERE。当启用设置 [`optimize_move_to_prewhere`](/zh/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) 时 (默认为 true) ，ClickHouse 会自动将过滤条件从 WHERE 移到 PREWHERE，并优先选择那些最能减少读取量的条件。
+如上例所示，可以手动添加 PREWHERE 子句。不过，你其实不必手动编写 PREWHERE。当启用设置 [`optimize_move_to_prewhere`](/zh/reference/settings/session-settings#optimize_move_to_prewhere) 时 (默认为 true) ，ClickHouse 会自动将过滤条件从 WHERE 移到 PREWHERE，并优先选择那些最能减少读取量的条件。
 
 其原理在于，较小的列扫描起来更快，而在处理较大的列时，大多数粒度往往已经被过滤掉。由于所有列的行数都相同，列的大小主要取决于其数据类型。例如，`UInt8` 列通常会比 `String` 列小得多。
 

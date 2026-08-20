@@ -109,7 +109,7 @@ private:
 REGISTER_FUNCTION(StringToH3)
 {
     FunctionDocumentation::Description description = R"(
-Converts the string representation of an H3 index to the `H3Index` ([UInt64](/reference/data-types/int-uint)) representation.
+Converts the string representation of an H3 index to the `H3Index` ([UInt64](/sql-reference/data-types/int-uint)) representation.
     )";
     FunctionDocumentation::Syntax syntax = "stringToH3(index_str)";
     FunctionDocumentation::Arguments arguments = {

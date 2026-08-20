@@ -1,6 +1,6 @@
 ---
 sidebarTitle: 'BladePipe'
-keywords: ['ClickHouse', 'BladePipe', '接続', 'インテグレーション', 'CDC', 'ETL', 'Data Integration']
+keywords: ['ClickHouse', 'BladePipe', '接続', 'インテグレーション', 'CDC', 'ETL', 'データ統合']
 slug: /integrations/bladepipe
 description: 'BladePipe のデータパイプラインを使用して ClickHouse にデータを取り込みます'
 title: 'BladePipe を ClickHouse に接続する'
@@ -9,7 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
+import PartnerBadge from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
 
@@ -35,7 +35,9 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
 今後さらに多くのソースに対応する予定です。
 
 <Steps>
-  <Step title="BladePipe をダウンロードして実行する" id="1-run-bladepipe">
+  <Step>
+    ## BladePipe をダウンロードして実行する
+
     1. <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a> にログインします。
 
     2. <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">Worker のインストール (Docker) </a> または <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">Worker のインストール (バイナリ) </a> の手順に従って、BladePipe Worker をダウンロードしてインストールします。
@@ -45,7 +47,9 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     </Note>
   </Step>
 
-  <Step title="ターゲットとして ClickHouse を追加する" id="2-add-clickhouse-as-a-target">
+  <Step>
+    ## ターゲットとして ClickHouse を追加する
+
     <Note>
       1. BladePipe は ClickHouse バージョン `20.12.3.3` 以降をサポートしています。
       2. ClickHouse をターゲットとして使用するには、ユーザーに SELECT、INSERT、および一般的な DDL 権限が付与されていることを確認してください。
@@ -60,7 +64,9 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     3. 下部にある &quot;Add DataSource&quot; をクリックすると、ClickHouse インスタンスが追加されます。
   </Step>
 
-  <Step title="MySQL をソースとして追加する" id="3-add-mysql-as-a-source">
+  <Step>
+    ## MySQL をソースとして追加する
+
     このチュートリアルでは、ソースとして MySQL インスタンスを使用し、MySQL のデータを ClickHouse に読み込む手順を説明します。
 
     <Note>
@@ -76,7 +82,9 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
     3. 下部の &quot;Add DataSource&quot; をクリックすると、MySQL インスタンスが追加されます。
   </Step>
 
-  <Step title="パイプラインを作成する" id="4-create-a-pipeline">
+  <Step>
+    ## パイプラインを作成する
+
     1. BladePipe で、&quot;DataJob&quot; &gt; &quot;Create DataJob&quot; をクリックします。
 
     2. 追加した MySQL インスタンスと ClickHouse インスタンスを選択し、&quot;Test Connection&quot; をクリックして BladePipe がそれぞれのインスタンスに接続できることを確認します。続いて、移行対象のデータベースを選択します。
@@ -95,7 +103,9 @@ ClickHouse は、BladePipe であらかじめ用意されているコネクタ�
        <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob は実行中です" />
   </Step>
 
-  <Step title="データを検証する" id="5-verify-the-data">
+  <Step>
+    ## データを検証する
+
     1. MySQL インスタンスへのデータ書き込みを停止し、ClickHouse でデータがマージされるまで待ちます。
 
     <Note>

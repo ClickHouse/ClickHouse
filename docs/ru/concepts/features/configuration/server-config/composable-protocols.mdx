@@ -176,7 +176,7 @@ HTTP (порт 8123) и HTTPS (порт 8443):
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### Пользовательские HTTP-обработчики для отдельных конечных точек
+  ### Пользовательские HTTP-обработчики для отдельных эндпоинтов
 </div>
 
 По умолчанию все записи протокола `type=http` используют одну и ту же конфигурацию
@@ -204,12 +204,12 @@ HTTP (порт 8123) и HTTPS (порт 8443):
 
 </protocols>
 
-<!-- Default handlers used by plain_http (port 8123) -->
+<!-- Обработчики по умолчанию для plain_http (порт 8123) -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- Alternative handlers used by alt_http (port 8124) -->
+<!-- Альтернативные обработчики для alt_http (порт 8124) -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -227,7 +227,7 @@ HTTP (порт 8123) и HTTPS (порт 8443):
 не указан, конечная точка использует значение по умолчанию — `<http_handlers>`.
 
 Раздел пользовательских обработчиков имеет тот же формат, что и
-[`<http_handlers>`](/ru/reference/settings/server-settings/settings/http#http_handlers).
+[`<http_handlers>`](/ru/reference/settings/server-settings/settings#http_handlers).
 Изменения в разделе пользовательских обработчиков отслеживаются при перезагрузке конфигурации, и
 соответствующая конечная точка автоматически перезапускается.
 

@@ -31,7 +31,7 @@ Une conversion de type est effectuée pour les unions. Par exemple, si deux requ
 
 Les requêtes faisant partie de `UNION` peuvent être placées entre `()`. [ORDER BY](/fr/reference/statements/select/order-by) et [LIMIT](/fr/reference/statements/select/limit) s’appliquent à chaque requête séparément, et non au résultat final. Si vous devez appliquer une conversion au résultat final, vous pouvez placer toutes les requêtes avec `UNION` dans une sous-requête de la clause [FROM](/fr/reference/statements/select/from).
 
-Si vous utilisez `UNION` sans préciser explicitement `UNION ALL` ou `UNION DISTINCT`, vous pouvez définir le mode d’union à l’aide du paramètre [union&#95;default&#95;mode](/fr/reference/settings/session-settings/other#union_default_mode). Les valeurs de ce paramètre peuvent être `ALL`, `DISTINCT` ou une chaîne vide. Cependant, si vous utilisez `UNION` avec le paramètre `union_default_mode` défini sur une chaîne vide, une exception sera levée. Les exemples suivants montrent les résultats des requêtes selon les différentes valeurs du paramètre.
+Si vous utilisez `UNION` sans préciser explicitement `UNION ALL` ou `UNION DISTINCT`, vous pouvez définir le mode d’union à l’aide du paramètre [union&#95;default&#95;mode](/fr/reference/settings/session-settings#union_default_mode). Les valeurs de ce paramètre peuvent être `ALL`, `DISTINCT` ou une chaîne vide. Cependant, si vous utilisez `UNION` avec le paramètre `union_default_mode` défini sur une chaîne vide, une exception sera levée. Les exemples suivants montrent les résultats des requêtes selon les différentes valeurs du paramètre.
 
 ```sql title="Query"
 SET union_default_mode = 'DISTINCT';
@@ -74,5 +74,5 @@ Les requêtes faisant partie de `UNION/UNION ALL/UNION DISTINCT` peuvent être e
 
 **Voir aussi**
 
-* paramètre [insert&#95;null&#95;as&#95;default](/fr/reference/settings/session-settings/insert#insert_null_as_default).
-* paramètre [union&#95;default&#95;mode](/fr/reference/settings/session-settings/other#union_default_mode).
+* paramètre [insert&#95;null&#95;as&#95;default](/fr/reference/settings/session-settings#insert_null_as_default).
+* paramètre [union&#95;default&#95;mode](/fr/reference/settings/session-settings#union_default_mode).

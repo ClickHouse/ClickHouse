@@ -12,7 +12,7 @@ doc_type: 'reference'
 
 ClickHouse は通常、[C++ プログラムと同じ動作](https://en.cppreference.com/w/cpp/language/implicit_conversion)をします。
 
-`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings/cast#cast_keep_nullable) 設定で変更できます。
+`to<type>` 関数と [cast](#CAST) は、場合によっては異なる動作をします。たとえば [LowCardinality](/ja/reference/data-types/lowcardinality) の場合、[cast](#CAST) は [LowCardinality](/ja/reference/data-types/lowcardinality) 特性を取り除きますが、`to<type>` 関数は取り除きません。[Nullable](/ja/reference/data-types/nullable) についても同様です。この動作は SQL 標準とは互換性がなく、[cast&#95;keep&#95;nullable](/ja/reference/settings/session-settings#cast_keep_nullable) 設定で変更できます。
 
 <Note>
   データ型の値をより小さいデータ型 (たとえば `Int64` から `Int32`) に変換する場合や、
@@ -252,8 +252,8 @@ SELECT accurateCast(42, 'UInt16')
 
 ```response title=Response
 ┌─accurateCast(42, 'UInt16')─┐
-│                         42 │
-└────────────────────────────┘
+│                        42 │
+└───────────────────────────┘
 ```
 
 **文字列から数値**
@@ -392,7 +392,7 @@ SELECT accurateCastOrNull('abc', 'UInt32')
 
 導入バージョン: v20.7.0
 
-任意の式を、指定されたフォーマットで文字列に変換します。
+任意の式を、指定したフォーマットを通じて文字列に変換します。
 
 <Note>
   フォーマットに接尾辞/プレフィックスが含まれている場合、それらは各行に書き込まれます。
@@ -425,9 +425,12 @@ FROM numbers(3)
 
 ```response title=Response
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"                        ↴│
-│ 1,"good"                        ↴│
-│ 2,"good"                        ↴│
+│ 0,"good"
+                         │
+│ 1,"good"
+                         │
+│ 2,"good"
+                         │
 └──────────────────────────────────┘
 ```
 
@@ -441,15 +444,15 @@ SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_resul
 
 ```response title=Response
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>                                    ↴│
-│↳0	good                                     ↴│
-│↳<suffix>                                     │
-│ <prefix>                                    ↴│
-│↳1	good                                     ↴│
-│↳<suffix>                                     │
-│ <prefix>                                    ↴│
-│↳2	good                                     ↴│
-│↳<suffix>                                     │
+│ <prefix>
+0    good
+<suffix>                   │
+│ <prefix>
+1    good
+<suffix>                   │
+│ <prefix>
+2    good
+<suffix>                   │
 └──────────────────────────────────────────────┘
 ```
 
@@ -851,7 +854,7 @@ SELECT
 MySQL の日付フォーマット文字列に従って、サブ秒精度の日付と時刻の文字列を解析します。
 
 この関数は、DateTime64 に対する [`formatDateTime`](/ja/reference/functions/regular-functions/date-time-functions) の逆関数です。
-フォーマット String を使って String 型の argument を解析します。0000 年から 9999 年までの日付をサブ秒精度で表現できる DateTime64 型を返します (値は tick 数を表す `Int64` として格納されるため、高い精度では扱える範囲がより狭くなります。精度 8 ではおよそ 4892 年まで、精度 9 では 1677 年から 2262 年までです) 。
+フォーマット String を使って String 型の argument を解析します。1900 年から 2299 年までの日付をサブ秒精度で表現できる DateTime64 型を返します。
 
 **構文**
 
@@ -862,7 +865,7 @@ parseDateTime64(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime64 に解析する文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` の解析方法を指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` の解析方法を指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 省略可。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -879,8 +882,8 @@ SELECT parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                         2025-01-04 23:00:00.123000 │
-└────────────────────────────────────────────────────────────────────┘
+│                                       2025-01-04 23:00:00.123       │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64BestEffort">
@@ -1135,7 +1138,7 @@ SELECT parseDateTime64BestEffortUSOrZero('02/10/2025 12:30:45.123') AS valid_us,
 Joda の日付フォーマット文字列に従って、秒未満の精度を持つ日付と時刻の文字列を解析します。
 
 この関数は、DateTime64 に対する [`formatDateTimeInJodaSyntax`](/ja/reference/functions/regular-functions/date-time-functions#formatDateTimeInJodaSyntax) の逆関数です。
-Joda 形式のフォーマット String を使用して String 型の引数を解析します。戻り値は、0000 年から 9999 年までの日付を秒未満の精度で表現できる DateTime64 型です (値は `Int64` の ticks 数として格納されるため、高い精度では扱える範囲がより狭くなります。精度 8 ではおよそ 4892 年まで、精度 9 では 1677 年から 2262 年までです) 。
+Joda 形式のフォーマット String を使用して String 型の引数を解析します。戻り値は、1900 年から 2299 年までの日付を秒未満の精度で表現できる DateTime64 型です。
 
 フォーマットパターンについては、[Joda Time documentation](https://joda-time.sourceforge.net/apidocs/org/joda/time/format/DateTimeFormat.html) を参照してください。
 
@@ -1165,8 +1168,8 @@ SELECT parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntax('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                           2025-01-04 23:00:00.123 │
-└───────────────────────────────────────────────────────────────────────────────────┘
+│                                                          2025-01-04 23:00:00.123   │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrNull">
@@ -1186,7 +1189,7 @@ parseDateTime64InJodaSyntaxOrNull(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime64 にパースする対象の文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` をどのようにパースするかを指定する Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` をどのようにパースするかを指定する Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 任意。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1203,8 +1206,8 @@ SELECT parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrNull('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                                 2025-01-04 23:00:00.123 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                             2025-01-04 23:00:00.123      │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64InJodaSyntaxOrZero">
@@ -1224,7 +1227,7 @@ parseDateTime64InJodaSyntaxOrZero(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime64 にパースする文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` をどのようにパースするかを指定する Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` をどのようにパースするかを指定する Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 任意。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1241,8 +1244,8 @@ SELECT parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd 
 
 ```response title=Response
 ┌─parseDateTime64InJodaSyntaxOrZero('2025-01-04 23:00:00.123', 'yyyy-MM-dd HH:mm:ss.SSS')─┐
-│                                                                 2025-01-04 23:00:00.123 │
-└─────────────────────────────────────────────────────────────────────────────────────────┘
+│                                                              2025-01-04 23:00:00.123     │
+└──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrNull">
@@ -1262,7 +1265,7 @@ parseDateTime64OrNull(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime64 にパースする対象の文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` をどのようにパースするかを指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` をどのようにパースするかを指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 省略可能。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1279,8 +1282,8 @@ SELECT parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrNull('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                               2025-01-04 23:00:00.123000 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                            2025-01-04 23:00:00.123        │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTime64OrZero">
@@ -1300,7 +1303,7 @@ parseDateTime64OrZero(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime64 にパースされる文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` のパース方法を指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` のパース方法を指定するフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 任意。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1317,8 +1320,8 @@ SELECT parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')
 
 ```response title=Response
 ┌─parseDateTime64OrZero('2025-01-04 23:00:00.123', '%Y-%m-%d %H:%i:%s.%f')─┐
-│                                               2025-01-04 23:00:00.123000 │
-└──────────────────────────────────────────────────────────────────────────┘
+│                                             2025-01-04 23:00:00.123       │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeBestEffort">
@@ -1639,7 +1642,7 @@ parseDateTimeInJodaSyntax(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime に解析される文字列。 [`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` をどのように解析するかを指定する Joda 構文のフォーマット文字列。 [`String`](/ja/reference/data-types/string)
+* `format` — `time_string` をどのように解析するかを指定する Joda 構文のフォーマット文字列。 [`String`](/ja/reference/data-types/string)
 * `timezone` — 任意。タイムゾーン。 [`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1656,8 +1659,8 @@ SELECT parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntax('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                     2025-01-04 23:00:00 │
-└─────────────────────────────────────────────────────────────────────────┘
+│                                                      2025-01-04 23:00:00 │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrNull">
@@ -1677,7 +1680,7 @@ parseDateTimeInJodaSyntaxOrNull(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime にパースされる文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` のパース方法を指定する、Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` のパース方法を指定する、Joda 構文のフォーマット文字列。[`String`](/ja/reference/data-types/string)
 * `timezone` — 任意。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1694,8 +1697,8 @@ SELECT parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrNull('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                           2025-01-04 23:00:00 │
-└───────────────────────────────────────────────────────────────────────────────┘
+│                                                         2025-01-04 23:00:00    │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeInJodaSyntaxOrZero">
@@ -1715,12 +1718,12 @@ parseDateTimeInJodaSyntaxOrZero(time_string, format[, timezone])
 **引数**
 
 * `time_string` — DateTime にパースする文字列。[`String`](/ja/reference/data-types/string)
-* `format` — `time&#95;string` のパース方法を指定する、Joda 構文 の format string。[`String`](/ja/reference/data-types/string)
+* `format` — `time_string` のパース方法を指定する、Joda 構文 の format string。[`String`](/ja/reference/data-types/string)
 * `timezone` — 省略可能。タイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-入力文字列からパースされた DateTime を返します。パースに失敗した場合はゼロ値の DateTime を返します。[`DateTime`](/ja/reference/data-types/datetime)
+入力文字列からパースされた DateTime を返します。パースに失敗した場合はゼロ DateTime を返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
@@ -1732,8 +1735,8 @@ SELECT parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:
 
 ```response title=Response
 ┌─parseDateTimeInJodaSyntaxOrZero('2025-01-04 23:00:00', 'yyyy-MM-dd HH:mm:ss')─┐
-│                                                           2025-01-04 23:00:00 │
-└───────────────────────────────────────────────────────────────────────────────┘
+│                                                          2025-01-04 23:00:00   │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="parseDateTimeOrNull">
@@ -1821,7 +1824,6 @@ SELECT parseDateTimeOrZero('2025-01-04+23:00:00', '%Y-%m-%d+%H:%i:%s')
 導入バージョン: v1.1.0
 
 指定された値 `x` のメモリ上のバイト列をそのまま使用し、宛先の型として再解釈します。
-宛先の型が `String` の場合、ソースの `Array` がサポートされるのは、その要素型が固定サイズで、かつメモリ上で連続している場合 (たとえば `Array(UInt8)` や `Array(FixedString(2))`) に限られます。このとき、各要素のバイトはネイティブなメモリ上の順序のままそのままコピーされるため、どのアーキテクチャでも、結果を元の `Array` 型へ再解釈し直すことができます。要素が可変長の `Array` (たとえば `Array(String)`) や、要素が Nullable の `Array` (たとえば `Array(Nullable(Int32))`) はサポートされません。
 
 **構文**
 
@@ -1831,7 +1833,7 @@ reinterpret(x, type)
 
 **引数**
 
-* `x` — 再解釈する値。`String` に再解釈する場合、元の `Array` は固定サイズで連続した要素を持っている必要があります。[`Any`](/ja/reference/data-types/index)
+* `x` — 任意の型。[`Any`](/ja/reference/data-types/index)
 * `type` — 変換先の型。配列の場合、配列の要素型は固定長型である必要があります。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
@@ -1864,18 +1866,6 @@ SELECT reinterpret(x'3108b4403108d4403108b4403108d440', 'Array(Float32)') AS str
 ┌─string_to_array_of_Float32─┐
 │ [5.626,6.626,5.626,6.626]  │
 └────────────────────────────┘
-```
-
-**Array から String への変換例**
-
-```sql title=Query
-SELECT hex(reinterpret([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8), 'String')) AS array_of_UInt8_to_string
-```
-
-```response title=Response
-┌─array_of_UInt8_to_string─┐
-│ 0102FF                   │
-└──────────────────────────┘
 ```
 
 <div id="reinterpretAsDate">
@@ -2315,9 +2305,8 @@ SELECT
 
 導入バージョン: v1.1.0
 
-入力値を文字列として再解釈します。
-スカラー値では、バイト順序はリトルエンディアンに正規化され、末尾のヌルバイトは無視されます。たとえば、UInt32 型の値 255 に対しては、1 文字の文字列を返します。
-固定サイズ要素の `Array` では、要素のバイト列は、末尾のゼロバイトを削除せず、リトルエンディアンへの正規化も行わずに、ネイティブなインメモリ順序のままそのままコピーされます。そのため、結果はどのアーキテクチャでも元の `Array` 型として再解釈できます。
+入力値を文字列として再解釈します (リトルエンディアン順を前提とします) 。
+末尾のヌルバイトは無視されます。たとえば、UInt32 型の値 255 に対しては、1 文字の文字列を返します。
 
 **構文**
 
@@ -2327,7 +2316,7 @@ reinterpretAsString(x)
 
 **引数**
 
-* `x` — 文字列として再解釈する値。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`Array`](/ja/reference/data-types/array)
+* `x` — 文字列として再解釈する値。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime)
 
 **戻り値**
 
@@ -2347,18 +2336,6 @@ SELECT
 ┌─reinterpretAsString(toDateTime('1970-01-01 01:01:05'))─┬─reinterpretAsString(toDate('1970-03-07'))─┐
 │ A                                                      │ A                                         │
 └────────────────────────────────────────────────────────┴───────────────────────────────────────────┘
-```
-
-**Array を String に変換する例**
-
-```sql title=Query
-SELECT hex(reinterpretAsString([toUInt8(1), toUInt8(2), toUInt8(255)]::Array(UInt8))) AS array_of_UInt8_to_string
-```
-
-```response title=Response
-┌─array_of_UInt8_to_string─┐
-│ 0102FF                   │
-└──────────────────────────┘
 ```
 
 <div id="reinterpretAsUInt128">
@@ -2704,7 +2681,7 @@ String 型の入力値を BFloat16 型の値に変換します。
 
 サポートされない引数 (`NULL` を返します):
 
-* 2進数および16進数を表す文字列。
+* バイナリ値および16進値を表す文字列。
 * 数値。
 
 <Note>
@@ -2735,9 +2712,9 @@ toBFloat16OrNull(x)
 **使用例**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
-       toBFloat16OrNull('12.3'), -- typical use
-       toBFloat16OrNull('12.3456789') -- silent loss of precision
+SELECT toBFloat16OrNull('0x5E'), -- サポート対象外の引数
+       toBFloat16OrNull('12.3'), -- 一般的な使用例
+       toBFloat16OrNull('12.3456789') -- 精度が失われても通知されない
 ```
 
 ```response title=Response
@@ -2761,7 +2738,7 @@ String 型の入力値を BFloat16 型の値に変換します。
 
 サポートされない引数 (`0` を返します):
 
-* 2進数および16進数を表す文字列。
+* バイナリ値および 16 進数値を表す文字列。
 * 数値。
 
 <Note>
@@ -2792,9 +2769,9 @@ toBFloat16OrZero(x)
 **使用例**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
-       toBFloat16OrZero('12.3'), -- typical use
-       toBFloat16OrZero('12.3456789') -- silent loss of precision
+SELECT toBFloat16OrZero('0x5E'), -- サポート対象外の引数
+       toBFloat16OrZero('12.3'), -- 一般的な使用例
+       toBFloat16OrZero('12.3456789') -- 精度が暗黙的に失われる
 ```
 
 ```response title=Response
@@ -2911,7 +2888,7 @@ SELECT toDate(20297)
 導入バージョン: v21.9.0
 
 引数を [Date32](/ja/reference/data-types/date32) データ型に変換します。
-値が `[0000-01-01, 9999-12-31]` の範囲外の場合、`toDate32` は [Date32](/ja/reference/data-types/date32) でサポートされる境界値を返します。
+値が範囲外の場合、`toDate32` は [Date32](/ja/reference/data-types/date32) でサポートされる境界値を返します。
 引数の型が [`Date`](/ja/reference/data-types/date) の場合は、その範囲が考慮されます。
 
 **構文**
@@ -2944,7 +2921,7 @@ value:           2025-01-01
 toTypeName(value): Date32
 ```
 
-**1900年以前**
+**範囲外**
 
 ```sql title=Query
 SELECT toDate32('1899-01-01') AS value, toTypeName(value)
@@ -2954,7 +2931,7 @@ FORMAT Vertical
 ```response title=Response
 Row 1:
 ──────
-value:           1899-01-01
+value:           1900-01-01
 toTypeName(value): Date32
 ```
 
@@ -2964,9 +2941,7 @@ toTypeName(value): Date32
 
 導入バージョン: v21.11.0
 
-引数を [Date32](/ja/reference/data-types/date32) 型に変換します。引数を変換できない場合 ([Date32](/ja/reference/data-types/date32) の範囲外の数値を含む) 、関数はデフォルト値を返します。これは第 2 引数が指定されている場合はその値、指定されていない場合は [Date32](/ja/reference/data-types/date32) の従来のデフォルト値である `1900-01-01` です ([Date32](/ja/reference/data-types/date32) の下限値ではなく、下限値は `0000-01-01` です)。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。
-
-[toDate32](#toDate32) とは異なり、この関数は範囲外の数値引数を [Date32](/ja/reference/data-types/date32) の境界値に飽和させません。このような引数は変換不能として扱われます。
+引数を [Date32](/ja/reference/data-types/date32) 型に変換します。値が範囲外の場合、`toDate32OrDefault` は [Date32](/ja/reference/data-types/date32) でサポートされている下限値を返します。引数が [Date](/ja/reference/data-types/date) 型の場合は、その型の範囲が考慮されます。無効な引数を受け取った場合は、デフォルト値を返します。
 
 **構文**
 
@@ -2999,16 +2974,6 @@ SELECT toDate32OrDefault('1930-01-01', toDate32('2020-01-01'))
 
 ```sql title=Query
 SELECT toDate32OrDefault('xx1930-01-01', toDate32('2020-01-01'))
-```
-
-```response title=Response
-2020-01-01
-```
-
-**範囲外の数値**
-
-```sql title=Query
-SELECT toDate32OrDefault(toUInt64(18446744073709551615), toDate32('2020-01-01'))
 ```
 
 ```response title=Response
@@ -3058,9 +3023,8 @@ SELECT toDate32OrNull('2025-01-01'), toDate32OrNull('invalid')
 
 導入バージョン: v21.9.0
 
-入力値を [Date32](/ja/reference/data-types/date32) 型の値に変換します。無効な引数を受け取った場合は、デフォルト値 `1900-01-01` を返します。
-[toDate32](#toDate32) と同様ですが、無効な引数を受け取った場合は `1900-01-01` を返します。
-`1900-01-01` は無効な入力に対する歴史的なデフォルト値であり、`0000-01-01` である [Date32](/ja/reference/data-types/date32) の下限値ではないことに注意してください。
+入力値を [Date32](/ja/reference/data-types/date32) 型の値に変換します。無効な引数を受け取った場合は、[Date32](/ja/reference/data-types/date32) の下限値を返します。
+[toDate32](#toDate32) と同様ですが、無効な引数を受け取った場合は [Date32](/ja/reference/data-types/date32) の下限値を返します。
 
 関連項目:
 
@@ -3080,7 +3044,7 @@ toDate32OrZero(x)
 
 **戻り値**
 
-成功した場合は Date32 値を返し、失敗した場合は無効な入力に対する従来のデフォルト値 (`1900-01-01`) を返します。[`Date32`](/ja/reference/data-types/date32)
+成功した場合は Date32 値を返し、失敗した場合は Date32 の下限値 (`1900-01-01`) を返します。[`Date32`](/ja/reference/data-types/date32)
 
 **例**
 
@@ -3149,7 +3113,6 @@ SELECT toDateOrDefault('', CAST('2023-01-01', 'Date'))
 
 入力値を `Date` 型の値に変換しますが、無効な引数が渡された場合は `NULL` を返します。
 [`toDate`](#toDate) と同様ですが、無効な引数が渡された場合は `NULL` を返します。
-整数引数は `toDate` と同じ方法で解釈されます (65535 以下の場合は 1970-01-01 からの日数、それ以外の場合は Unix timestamp) 。また、`Date` 型の範囲外である場合は `NULL` を返します。
 
 **構文**
 
@@ -3159,7 +3122,7 @@ toDateOrNull(x)
 
 **引数**
 
-* `x` — 日付の文字列表現、または日数を表す整数、あるいは Unix timestamp です。[`String`](/ja/reference/data-types/string) または [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
+* `x` — 日付の文字列表現です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -3175,8 +3138,8 @@ SELECT toDateOrNull('2025-12-30'), toDateOrNull('invalid')
 
 ```response title=Response
 ┌─toDateOrNull('2025-12-30')─┬─toDateOrNull('invalid')─┐
-│                 2025-12-30 │                    ᴺᵁᴸᴸ │
-└────────────────────────────┴─────────────────────────┘
+│                 2025-12-30 │                   ᴺᵁᴸᴸ │
+└────────────────────────────┴────────────────────────┘
 ```
 
 <div id="toDateOrZero">
@@ -3274,10 +3237,8 @@ toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
 導入バージョン: v20.9.0
 
 入力値を `DateTime` 型に変換します。
-`String`、`FixedString`、`Date`、`Date32`、`Time`、`DateTime`、`DateTime64`、または数値型 (`(U)Int8`、`(U)Int16`、`(U)Int32`、`(U)Int64`、`BFloat16`、`Float32`、`Float64`) からの変換をサポートします。`Decimal` および `Time64` の値はサポートされておらず、例外が発生します。`Time` 型および `(U)Int128`/`(U)Int256` などのワイド整数型では、飽和ではなくラップアラウンドが発生します。
-`DateTime32` は `DateTime` の alias であり、`1970-01-01 00:00:00` から `2106-02-07 06:28:15` までの日付をサポートします。
-文字列、または上記の飽和する数値型から変換する場合、この範囲外の値は範囲の境界値に飽和されます。非有限の浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
-`Date32` や `DateTime64` など、他の日付と時刻型からの変換は、`date_time_overflow_behavior` 設定に従います。デフォルトの `ignore` モードではラップアラウンドした値が生成される場合があり、`saturate` では値が範囲の境界値に制限され、`throw` では例外が発生します。
+`String`、`FixedString`、`Date`、`Date32`、`DateTime`、または数値型 (`(U)Int*`、`Float*`、`Decimal`) からの変換をサポートします。
+DateTime32 は `DateTime` より広い範囲を扱え、`1900-01-01` から `2299-12-31` までの日付をサポートします。
 
 **構文**
 
@@ -3287,49 +3248,54 @@ toDateTime32(x[, timezone])
 
 **引数**
 
-* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string)、[`FixedString`](/ja/reference/data-types/fixedstring)、[`(U)Int*`](/ja/reference/data-types/int-uint)、[`Float*`](/ja/reference/data-types/float)、[`BFloat16`](/ja/reference/data-types/float)、[`Date`](/ja/reference/data-types/date)、[`Date32`](/ja/reference/data-types/date32)、[`Time`](/ja/reference/data-types/time)、[`DateTime`](/ja/reference/data-types/datetime)、または [`DateTime64`](/ja/reference/data-types/datetime64)
-* `timezone` — 省略可能。返される `DateTime` 値のタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `x` — 変換する入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`UInt*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Date`](/ja/reference/data-types/date) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64)
+* `timezone` — 省略可能。返される `DateTime` 値に使用するタイムゾーン。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-変換後の入力値を返します。[`DateTime`](/ja/reference/data-types/datetime)
+変換された入力値を返します。[`DateTime`](/ja/reference/data-types/datetime)
 
 **例**
 
-**文字列から**
+**値が範囲内にある場合**
 
 ```sql title=Query
-SELECT toDateTime32('2025-01-01 00:00:00') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00.000', 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00 │ DateTime          │
-└─────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('20255-01-01 00:00:00.000', 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                                          │
+└─────────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-**Unix timestampから**
+**精度付きの Decimal として**
 
 ```sql title=Query
-SELECT toDateTime32(1735689600, 'UTC') AS value, toTypeName(value);
+SELECT toDateTime64(1735689600.000, 3) AS value, toTypeName(value);
+-- 小数点がない場合でも、この値は引き続き秒単位の Unix timestamp として扱われます
+SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─┐
-│ 2025-01-01 00:00:00 │ DateTime('UTC')   │
-└─────────────────────┴───────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64(1735689600.000, 3))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3)                            │
+└─────────────────────────┴──────────────────────────────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64(1546300800000, 3))─┐
+│ 2282-12-31 00:00:00.000 │ DateTime64(3)                              │
+└─────────────────────────┴────────────────────────────────────────────┘
 ```
 
-**タイムゾーンを指定する場合**
+**タイムゾーンを指定した場合**
 
 ```sql title=Query
-SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName(value);
+SELECT toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul') AS value, toTypeName(value);
 ```
 
 ```response title=Response
-┌───────────────value─┬─toTypeName(value)─────────┐
-│ 2025-01-01 00:00:00 │ DateTime('Asia/Istanbul') │
-└─────────────────────┴───────────────────────────┘
+┌───────────────────value─┬─toTypeName(toDateTime64('2025-01-01 00:00:00', 3, 'Asia/Istanbul'))─┐
+│ 2025-01-01 00:00:00.000 │ DateTime64(3, 'Asia/Istanbul')                                      │
+└─────────────────────────┴─────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toDateTime64">
@@ -3453,19 +3419,16 @@ SELECT toDateTime64OrDefault('1976-10-18 00:00:00 30', 3, 'UTC', toDateTime64('2
 
 入力値を `DateTime64` 型の値に変換します。無効な引数を受け取った場合は `NULL` を返します。
 `toDateTime64` と同様ですが、無効な引数を受け取った場合は `NULL` を返します。
-整数の引数は、秒単位の Unix timestamp として解釈され、`DateTime64` 型の範囲外の場合は `NULL` を返します。
 
 **構文**
 
 ```sql
-toDateTime64OrNull(x[, precision[, timezone]])
+toDateTime64OrNull(x)
 ```
 
 **引数**
 
-* `x` — 日時 (秒未満の精度を含む) の文字列表現、または整数の Unix timestamp。[`String`](/ja/reference/data-types/string) または [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `precision` — オプション。返される値の秒未満の精度。[`UInt8`](/ja/reference/data-types/int-uint)
-* `timezone` — オプション。返される値のタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `x` — 日時 (秒未満の精度を含む) の文字列表現。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -3481,8 +3444,8 @@ SELECT toDateTime64OrNull('2025-12-30 13:44:17.123'), toDateTime64OrNull('invali
 
 ```response title=Response
 ┌─toDateTime64OrNull('2025-12-30 13:44:17.123')─┬─toDateTime64OrNull('invalid')─┐
-│                       2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────┴───────────────────────────────┘
+│                         2025-12-30 13:44:17.123 │                          ᴺᵁᴸᴸ │
+└─────────────────────────────────────────────────┴───────────────────────────────┘
 ```
 
 <div id="toDateTime64OrZero">
@@ -3524,8 +3487,8 @@ SELECT toDateTime64OrZero('2025-12-30 13:44:17.123'), toDateTime64OrZero('invali
 
 ```response title=Response
 ┌─toDateTime64OrZero('2025-12-30 13:44:17.123')─┬─toDateTime64OrZero('invalid')─┐
-│                       2025-12-30 13:44:17.123 │       1970-01-01 00:00:00.000 │
-└───────────────────────────────────────────────┴───────────────────────────────┘
+│                         2025-12-30 13:44:17.123 │             1970-01-01 00:00:00.000 │
+└─────────────────────────────────────────────────┴─────────────────────────────────────┘
 ```
 
 <div id="toDateTimeOrDefault">
@@ -3582,18 +3545,16 @@ SELECT toDateTimeOrDefault('', 'UTC', CAST('2023-01-01', 'DateTime(\'UTC\')'))
 
 入力値を `DateTime` 型の値に変換しますが、無効な引数が渡された場合は `NULL` を返します。
 [`toDateTime`](#toDateTime) と同様ですが、無効な引数が渡された場合は `NULL` を返します。
-整数の引数は Unix timestamp として解釈され、`DateTime` 型の範囲外である場合は `NULL` を返します。
 
 **構文**
 
 ```sql
-toDateTimeOrNull(x[, timezone])
+toDateTimeOrNull(x)
 ```
 
 **引数**
 
-* `x` — 日時の文字列表現、または Unixタイムスタンプの整数値。[`String`](/ja/reference/data-types/string) または [`(U)Int8/16/32/64`](/ja/reference/data-types/int-uint)
-* `timezone` — 省略可能。戻り値のタイムゾーン。[`String`](/ja/reference/data-types/string)
+* `x` — 日時の文字列表現。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -3611,18 +3572,6 @@ SELECT toDateTimeOrNull('2025-12-30 13:44:17'), toDateTimeOrNull('invalid')
 ┌─toDateTimeOrNull('2025-12-30 13:44:17')─┬─toDateTimeOrNull('invalid')─┐
 │                     2025-12-30 13:44:17 │                        ᴺᵁᴸᴸ │
 └─────────────────────────────────────────┴─────────────────────────────┘
-```
-
-**タイムゾーン付きの整数引数**
-
-```sql title=Query
-SELECT toDateTimeOrNull(1583851242, 'Asia/Shanghai'), toDateTimeOrNull(4294967296)
-```
-
-```response title=Response
-┌─toDateTimeOrNull(1583851242, 'Asia/Shanghai')─┬─toDateTimeOrNull(4294967296)─┐
-│                           2020-03-10 22:40:42 │                         ᴺᵁᴸᴸ │
-└───────────────────────────────────────────────┴──────────────────────────────┘
 ```
 
 <div id="toDateTimeOrZero">
@@ -3679,7 +3628,7 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 サポートされない引数:
 
 * Float* 型の値 `NaN` および `Inf` の文字列表現 (大文字と小文字を区別しません) 。
-* 2進数および16進数の文字列表現。例: `SELECT toDecimal128('0xc0fe', 1);`。
+* 二進数値および16進数値の文字列表現。例: `SELECT toDecimal128('0xc0fe', 1);`。
 
 <Note>
   `expr` の値が `Decimal128` の範囲 `(-1*10^(38 - S), 1*10^(38 - S))` を超えると、オーバーフローが発生する可能性があります。
@@ -3721,7 +3670,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 a:      99
 type_a: Decimal(38, 1)
@@ -3849,7 +3798,7 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 サポートされない引数 (`0` を返します):
 
 * Float* 型の値 `NaN` および `Inf`、またはその文字列表現 (大文字と小文字を区別しません) 。
-* 2進数および16進数の文字列表現。
+* 2 進数および 16 進数の文字列表現。
 
 <Note>
   入力値が `Decimal128` の範囲 `(-1*10^(38 - S), 1*10^(38 - S))` を超える場合、この関数は `0` を返します。
@@ -3899,12 +3848,12 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 
 サポートされない引数:
 
-* Float* 値 `NaN` および `Inf`、またはその文字列表現 (大文字と小文字は区別されません)。
-* 2進数および16進数の文字列表現。例: `SELECT toDecimal256('0xc0fe', 1);`。
+* Float* 値 `NaN` および `Inf` の値、またはその文字列表現 (大文字と小文字を区別しません) 。
+* バイナリ値および16進数値の文字列表現。例: `SELECT toDecimal256('0xc0fe', 1);`。
 
 <Note>
   `expr` の値が `Decimal256` の範囲 `(-1*10^(76 - S), 1*10^(76 - S))` を超えると、オーバーフローが発生する可能性があります。
-  小数部の桁数が多すぎる場合は切り捨てられます (丸めは行われません)。
+  小数部の桁数が多すぎる場合は切り捨てられます (丸めは行われません) 。
   整数部の桁数が多すぎる場合は例外が発生します。
 </Note>
 
@@ -3942,7 +3891,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 a:      99
 type_a: Decimal(76, 1)
@@ -4069,8 +4018,8 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 
 サポートされない引数 (`0` を返します):
 
-* Float* 型の値 `NaN` および `Inf`、またはその文字列表現 (大文字と小文字を区別しません)。
-* 2進数および16進数の文字列表現。
+* Float* 型の値 `NaN` および `Inf` の値、またはその文字列表現 (大文字と小文字を区別しません) 。
+* バイナリ値および16進数値の文字列表現。
 
 <Note>
   入力値が `Decimal256` の範囲 `(-1*10^(76 - S), 1*10^(76 - S))` を超える場合、関数は `0` を返します。
@@ -4126,8 +4075,8 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 
 サポートされない引数:
 
-* Float* 型の値 `NaN` および `Inf`、またはそれらの文字列表現 (大文字と小文字は区別されません) 。
-* 2進数および16進数の文字列表現。例: `SELECT toDecimal32('0xc0fe', 1);`。
+* Float* 型の値 `NaN` および `Inf`、またはそれらの文字列表現 (大文字と小文字を区別しません) 。
+* バイナリ値および16進数値の文字列表現。例: `SELECT toDecimal32('0xc0fe', 1);`。
 
 <Note>
   `expr` の値が `Decimal32` の範囲 `(-1*10^(9 - S), 1*10^(9 - S))` を超えると、オーバーフローが発生する可能性があります。
@@ -4138,7 +4087,7 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 <Warning>
   変換時には余分な桁が切り捨てられ、演算は浮動小数点命令を使って実行されるため、Float32/Float64 入力を扱う場合は予期しない結果になることがあります。
   例: `toDecimal32(1.15, 2)` は `1.14` になります。これは、浮動小数点では 1.15 * 100 が 114.99 になるためです。
-  代わりに String 入力を使うと、演算には基になる整数型が使用されます: `toDecimal32('1.15', 2) = 1.15`
+  代わりに String 入力を使うと、演算に基になる整数型が使用されます: `toDecimal32('1.15', 2) = 1.15`
 </Warning>
 
 **構文**
@@ -4169,7 +4118,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 a:      2
 type_a: Decimal(9, 1)
@@ -4349,7 +4298,7 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 サポートされない引数:
 
 * Float* 型の値 `NaN` および `Inf`、またはそれらの文字列表現 (大文字と小文字は区別されません) 。
-* 2進数および16進数の文字列表現。例: `SELECT toDecimal64('0xc0fe', 1);`。
+* 2進数および16進数の値の文字列表現。例: `SELECT toDecimal64('0xc0fe', 1);`。
 
 <Note>
   `expr` の値が `Decimal64` の範囲 `(-1*10^(18 - S), 1*10^(18 - S))` を超えると、オーバーフローが発生する可能性があります。
@@ -4391,7 +4340,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 a:      2.0
 type_a: Decimal(18, 1)
@@ -4516,7 +4465,7 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 * (U)Int* 型の値、またはその文字列表現。
 * Float* 型の値、またはその文字列表現。
 
-サポートされない引数 (`0` を返します):
+サポートされない引数 (`0` を返します) :
 
 * Float* 型の値 `NaN` および `Inf`、またはそれらの文字列表現 (大文字と小文字は区別されません) 。
 * 2進数および16進数の文字列表現。
@@ -5110,8 +5059,8 @@ toFloat64OrZero('abc'):  0
 
 サポートされない引数:
 
-* `NaN` および `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toInt128('0xc0fe');`。
+* `NaN` および `Inf` を含む、Float* 型の値を表す文字列。
+* 2 進数および 16 進数の値を表す文字列。例: `SELECT toInt128('0xc0fe');`。
 
 <Note>
   入力値が Int128 の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -5216,10 +5165,10 @@ SELECT toInt128OrDefault('abc', CAST('-1', 'Int128'))
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`NULL` を返します):
+サポートされない引数 (`NULL` を返します) :
 
-* `NaN` および `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toInt128OrNull('0xc0fe');`。
+* `NaN` および `Inf` を含む、Float* 値の文字列表現。
+* 2 進数および 16 進数の文字列表現。例: `SELECT toInt128OrNull('0xc0fe');`。
 
 <Note>
   入力値が [Int128](/ja/reference/data-types/int-uint) の範囲内に収まらない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -5332,7 +5281,7 @@ SELECT toInt128OrZero('abc')
 サポートされない引数:
 
 * `NaN` や `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toInt16('0xc0fe');`。
+* 2進数および16進数の値の文字列表現。例: `SELECT toInt16('0xc0fe');`。
 
 <Note>
   入力値が [Int16](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -5377,7 +5326,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toInt16(-16):    -16
 toInt16(-16.16): -16
@@ -5466,7 +5415,7 @@ toInt16OrNull(x)
 
 **引数**
 
-* `x` — 数値の文字列表現。 [`String`](/ja/reference/data-types/string)
+* `x` — 数値を表す文字列。 [`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -5834,7 +5783,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toInt32(-32):    -32
 toInt32(-32.32): -32
@@ -5902,7 +5851,7 @@ SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))
 サポートされない引数 (`NULL` を返します) :
 
 * `NaN` および `Inf` を含む Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toInt32OrNull('0xc0fe');`。
+* 2 進数および 16 進数の文字列表現。例: `SELECT toInt32OrNull('0xc0fe');`。
 
 <Note>
   入力値が [Int32](/ja/reference/data-types/int-uint) の範囲内に収まらない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -6033,7 +5982,7 @@ toInt32OrZero('abc'): 0
 </Note>
 
 <Note>
-  この関数は [ゼロ方向への丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数部分を切り捨てます。
+  この関数は [ゼロ方向への丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数部分を切り落とします。
 </Note>
 
 関連項目:
@@ -6069,7 +6018,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toInt64(-64):    -64
 toInt64(-64.64): -64
@@ -6250,7 +6199,7 @@ SELECT toInt64OrZero('abc')
 サポートされない引数:
 
 * `NaN` および `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の値の文字列表現。例: `SELECT toInt8('0xc0fe');`。
+* 2 進数および 16 進数の値の文字列表現。例: `SELECT toInt8('0xc0fe');`。
 
 <Note>
   入力値が [Int8](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -6420,7 +6369,7 @@ toInt8OrNull('abc'): \N
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`0` を返します) :
+サポートされていない引数 (`0` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
 * 2 進数および 16 進数の文字列表現。例: `SELECT toInt8OrZero('0xc0fe');`。
@@ -6462,7 +6411,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toInt8OrZero('8'): 8
 toInt8OrZero('abc'): 0
@@ -6980,7 +6929,7 @@ SELECT date + interval_to_year AS result
 
 導入バージョン: v18.12.0
 
-入力引数を、同じデータ型の [LowCardinality](/ja/reference/data-types/lowcardinality) 版に変換します。
+入力引数を、同じデータ型の[LowCardinality](/ja/reference/data-types/lowcardinality)版に変換します。
 
 <Tip>
   `LowCardinality` データ型から通常のデータ型に変換するには、[CAST](#CAST) 関数を使用します。
@@ -7099,7 +7048,7 @@ SELECT
 ```
 
 ```response title=Response
-┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\0world')─┐
+┌─toStringCutToZero('hello')─┬─toStringCutToZero('hello\\0world')─┐
 │ hello                      │ hello                             │
 └────────────────────────────┴───────────────────────────────────┘
 ```
@@ -7108,23 +7057,10 @@ SELECT
   ## toTime
 </div>
 
-導入バージョン: v25.5.0
+導入バージョン: v1.1.0
 
 入力値を [Time](/ja/reference/data-types/time) 型に変換します。
-String、FixedString、DateTime、DateTime64、または深夜0時からの経過秒数を表す数値型からの変換をサポートします。
-型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) は範囲の境界値に飽和され、有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
-
-<Info>
-  **レガシー `toTime`**
-
-  v25.5 より前の `toTime` は別の関数であり、時刻の
-  部分を保持したまま日時を固定日付 (`1970-01-02`) に変換していました。この関数は現在も [`toTimeWithFixedDate`](/ja/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) という名前で利用できます。
-
-  [`use_legacy_to_time`](/ja/reference/settings/session-settings#use_legacy_to_time) を `1` に設定すると、名前 `toTime` はレガシー
-  関数にバインドされたままになります。つまり、`toTime` の呼び出しは、ここで説明する変換関数ではなく `toTimeWithFixedDate` に解決されます。
-  この設定が有効な間は、`CAST(x AS Time)` または `x::Time` を使用して `Time` 型に変換してください。
-  この設定のデフォルトは v26.7 以降では `0` ですが、v25.6 から v26.6 までは `1` でした。そのため、以下の例では明示的に設定しています。
-</Info>
+String、FixedString、DateTime、または深夜0時からの経過秒数を表す数値型からの変換をサポートします。
 
 **構文**
 
@@ -7134,7 +7070,7 @@ toTime(x)
 
 **引数**
 
-* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`BFloat16`](/ja/reference/data-types/float) または [`Float*`](/ja/reference/data-types/float)
+* `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime`](/ja/reference/data-types/datetime) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
 
 **戻り値**
 
@@ -7142,12 +7078,10 @@ toTime(x)
 
 **例**
 
-**DateTime64からTimeへの変換**
+**StringからTimeへの変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
+SELECT toTime('14:30:25')
 ```
 
 ```response title=Response
@@ -7157,8 +7091,6 @@ SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 **DateTimeからTimeへの変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7166,12 +7098,10 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**整数 (エポックからの秒数) からTimeへの変換**
+**整数からTimeへの変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SET use_legacy_to_time = 0;
-SELECT toTime(toDateTime(52225, 'UTC'))
+SELECT toTime(52225)
 ```
 
 ```response title=Response
@@ -7185,53 +7115,49 @@ SELECT toTime(toDateTime(52225, 'UTC'))
 導入バージョン: v25.6.0
 
 入力値を [Time64](/ja/reference/data-types/time64) 型に変換します。
-String、FixedString、DateTime64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
-時刻値に対して秒未満の精度を提供し、小数点以下の桁数は最大 `scale` 桁です。
+String、FixedString、DateTime64、または午前0時からの経過時間をマイクロ秒で表した数値型からの変換をサポートします。
+時刻値をマイクロ秒精度で表現できます。
 
 **構文**
 
 ```sql
-toTime64(x, scale)
+toTime64(x)
 ```
 
 **引数**
 
 * `x` — 変換対象の入力値。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`DateTime64`](/ja/reference/data-types/datetime64) または [`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float)
-* `scale` — 変換後の `Time64` の精度 (小数点以下の桁数、`0`–`9`) 。[`(U)Int*`](/ja/reference/data-types/int-uint)
 
 **戻り値**
 
-指定した `scale` で変換した値を返します。[`Time64`](/ja/reference/data-types/time64)
+入力値をマイクロ秒精度で変換した値を返します。[`Time64(6)`](/ja/reference/data-types/time64)
 
 **例**
 
 **String から Time64 への変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64('14:30:25.123456', 6)
+SELECT toTime64('14:30:25.123456')
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**DateTime64からTime64への変換**
+**DateTime64 から Time64 への変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**Float (午前0時からの秒数) から Time64 への変換**
+**整数型から Time64 への変換**
 
 ```sql title=Query
-SET enable_time_time64_type = 1;
-SELECT toTime64(52225.123456, 6)
+SELECT toTime64(52225123456)
 ```
 
 ```response title=Response
@@ -7313,15 +7239,15 @@ SELECT toTime64OrZero('12:30:45.123'), toTime64OrZero('invalid')
 
 ```response title=Response
 ┌─toTime64OrZero('12:30:45.123')─┬─toTime64OrZero('invalid')─┐
-│                   12:30:45.123 │              00:00:00.000 │
-└────────────────────────────────┴───────────────────────────┘
+│                   12:30:45.123 │             00:00:00.000 │
+└────────────────────────────────┴──────────────────────────┘
 ```
 
 <div id="toTimeOrNull">
   ## toTimeOrNull
 </div>
 
-導入バージョン: v25.5.0
+導入バージョン: v1.1.0
 
 入力値を Time 型の値に変換します。エラーが発生した場合は `NULL` を返します。
 [`toTime`](#toTime) と同様ですが、変換エラー時に例外をスローする代わりに `NULL` を返します。
@@ -7363,7 +7289,7 @@ SELECT toTimeOrNull('12:30:45'), toTimeOrNull('invalid')
   ## toTimeOrZero
 </div>
 
-導入バージョン: v25.5.0
+導入バージョン: v1.1.0
 
 入力値を Time 型の値に変換します。エラーが発生した場合は `00:00:00` を返します。
 `toTime` と同様ですが、変換エラー時に例外をスローする代わりに `00:00:00` を返します。
@@ -7522,7 +7448,7 @@ SELECT toUInt128OrDefault('abc', CAST('0', 'UInt128'))
 サポートされない引数 (`NULL` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt128OrNull('0xc0fe');`。
+* バイナリ値および 16 進数値の文字列表現。例: `SELECT toUInt128OrNull('0xc0fe');`。
 
 <Note>
   入力値が [`UInt128`](/ja/reference/data-types/int-uint) の範囲内に収まらない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -7579,10 +7505,10 @@ toUInt128OrNull('abc'): \N
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`0` を返します):
+サポートされない引数 (`0` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt128OrZero('0xc0fe');`。
+* バイナリ値および16進数値の文字列表現。例: `SELECT toUInt128OrZero('0xc0fe');`。
 
 <Note>
   入力値が [`UInt128`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -7636,15 +7562,15 @@ toUInt128OrZero('abc'): 0
 入力値を[`UInt16`](/ja/reference/data-types/int-uint)型の値に変換します。
 エラーが発生した場合は例外をスローします。
 
-サポートされる引数:
+対応する引数:
 
 * (U)Int* 型の値、またはその文字列表現。
 * Float* 型の値。
 
-サポートされない引数:
+対応していない引数:
 
 * `NaN` や `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt16('0xc0fe');`。
+* バイナリ値や16進値の文字列表現。例: `SELECT toUInt16('0xc0fe');`。
 
 <Note>
   入力値が[`UInt16`](/ja/reference/data-types/int-uint)の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -7754,13 +7680,13 @@ SELECT toUInt16OrDefault('abc', CAST('0', 'UInt16'))
 
 * (U)Int8/16/32/128/256 の文字列表現。
 
-サポートされない引数 (`NULL` を返します):
+サポートされない引数 (`NULL` を返します) :
 
-* `NaN` および `Inf` を含む Float* 値の文字列表現。
-* 2進数および16進数の値の文字列表現。例: `SELECT toUInt16OrNull('0xc0fe');`。
+* `NaN` および `Inf` を含む Float* 型の値の文字列表現。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt16OrNull('0xc0fe');`。
 
 <Note>
-  入力値が [`UInt16`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
+  入力値が [`UInt16`](/ja/reference/data-types/int-uint) の範囲内に収まらない場合、結果はオーバーフローまたはアンダーフローします。
   これはエラーとは見なされません。
 </Note>
 
@@ -7817,7 +7743,7 @@ toUInt16OrNull('abc'): \N
 サポートされない引数 (`0` を返します):
 
 * `NaN` および `Inf` を含む Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt16OrZero('0xc0fe');`。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt16OrZero('0xc0fe');`。
 
 <Note>
   入力値が [`UInt16`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -7880,7 +7806,7 @@ toUInt16OrZero('abc'): 0
 サポートされない引数:
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数値および16進数値の文字列表現 (例: `SELECT toUInt256('0xc0fe');`)。
+* 2進数値および16進数値の文字列表現 (例: `SELECT toUInt256('0xc0fe');`) 。
 
 <Note>
   入力値を UInt256 の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -7901,7 +7827,7 @@ toUInt256(expr)
 
 **引数**
 
-* `expr` — 数値、または数値の文字列表現を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
+* `expr` — 数値、または数値を表す文字列を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
 
 **戻り値**
 
@@ -7985,10 +7911,10 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`NULL` を返します):
+サポートされない引数 (`NULL` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt256OrNull('0xc0fe');`。
+* 2 進数値および 16 進数値の文字列表現。例: `SELECT toUInt256OrNull('0xc0fe');`。
 
 <Note>
   入力値が [`UInt256`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -8009,7 +7935,7 @@ toUInt256OrNull(x)
 
 **引数**
 
-* `x` — 数値の文字列表現。[`String`](/ja/reference/data-types/string)
+* `x` — 数値を表す文字列。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -8045,10 +7971,10 @@ toUInt256OrNull('abc'): \N
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`0` を返します):
+サポートされない引数 (`0` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt256OrZero('0xc0fe');`。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt256OrZero('0xc0fe');`。
 
 <Note>
   入力値が [`UInt256`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -8110,7 +8036,7 @@ toUInt256OrZero('abc'): 0
 サポートされない引数:
 
 * `NaN` および `Inf` を含む、Float* 型の値の文字列表現。
-* 2進数および16進数の値の文字列表現。例: `SELECT toUInt32('0xc0fe');`
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt32('0xc0fe');`
 
 <Note>
   入力値が [`UInt32`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -8119,7 +8045,7 @@ toUInt256OrZero('abc'): 0
 </Note>
 
 <Note>
-  この関数は [ゼロ方向への丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数点以下の桁を切り捨てます。
+  この関数は [ゼロ方向への丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数点以下を切り捨てます。
 </Note>
 
 関連項目:
@@ -8136,7 +8062,7 @@ toUInt32(expr)
 
 **引数**
 
-* `expr` — 数値、または数値の文字列表現を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
+* `expr` — 数値、または数値を表す文字列を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
 
 **戻り値**
 
@@ -8223,7 +8149,7 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 サポートされない引数 (`NULL` を返します) :
 
 * `NaN` および `Inf` を含む Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt32OrNull('0xc0fe');`。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt32OrNull('0xc0fe');`。
 
 <Note>
   入力値を [`UInt32`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果にオーバーフローまたはアンダーフローが発生します。
@@ -8244,7 +8170,7 @@ toUInt32OrNull(x)
 
 **引数**
 
-* `x` — 数値の文字列表現です。[`String`](/ja/reference/data-types/string)
+* `x` — 数値を表す `String` です。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -8283,7 +8209,7 @@ toUInt32OrNull('abc'): \N
 サポートされない引数 (`0` を返します):
 
 * `NaN` および `Inf` を含む Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt32OrZero('0xc0fe');`。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt32OrZero('0xc0fe');`。
 
 <Note>
   入力値が [`UInt32`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -8322,7 +8248,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Row 1:
+行 1:
 ──────
 toUInt32OrZero('32'):  32
 toUInt32OrZero('abc'): 0
@@ -8371,7 +8297,7 @@ toUInt64(expr)
 
 **引数**
 
-* `expr` — 数値、または数値の文字列表現を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
+* `expr` — 数値、または数値を表す文字列を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
 
 **戻り値**
 
@@ -8458,7 +8384,7 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 サポートされない引数 (`NULL` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt64OrNull('0xc0fe');`。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt64OrNull('0xc0fe');`。
 
 <Note>
   入力値を [`UInt64`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果でオーバーフローまたはアンダーフローが発生します。
@@ -8479,7 +8405,7 @@ toUInt64OrNull(x)
 
 **引数**
 
-* `x` — 数値の文字列表現。[`String`](/ja/reference/data-types/string)
+* `x` — 数値を表す文字列。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -8515,7 +8441,7 @@ toUInt64OrNull('abc'): \N
 
 * (U)Int* の文字列表現。
 
-サポートされない引数 (`0` を返します):
+サポートされない引数 (`0` を返します) :
 
 * `NaN` および `Inf` を含む、Float* 値の文字列表現。
 * 2進数および16進数の値の文字列表現。例: `SELECT toUInt64OrZero('0xc0fe');`。
@@ -8539,7 +8465,7 @@ toUInt64OrZero(x)
 
 **引数**
 
-* `x` — 数値の文字列表現。[`String`](/ja/reference/data-types/string)
+* `x` — 数値を表す文字列。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -8579,8 +8505,8 @@ toUInt64OrZero('abc'): 0
 
 サポートされない引数:
 
-* `NaN` および `Inf` を含む、Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt8('0xc0fe');`。
+* `NaN` および `Inf` を含む、Float* 型の値の文字列表現。
+* バイナリ値および16進数値の文字列表現。例: `SELECT toUInt8('0xc0fe');`。
 
 <Note>
   入力値が [UInt8](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -8589,7 +8515,7 @@ toUInt64OrZero('abc'): 0
 </Note>
 
 <Note>
-  この関数は [ゼロ方向への丸め](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数点以下の桁を切り捨てます。
+  この関数は [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) を使用します。つまり、数値の小数点以下の桁を切り捨てます。
 </Note>
 
 関連項目:
@@ -8606,7 +8532,7 @@ toUInt8(expr)
 
 **引数**
 
-* `expr` — 数値、または数値を表す文字列を返す式。[`式`](/ja/reference/data-types/special-data-types/expression)
+* `expr` — 数値、または数値を表す文字列を返す式。[`Expression`](/ja/reference/data-types/special-data-types/expression)
 
 **戻り値**
 
@@ -8692,8 +8618,8 @@ SELECT toUInt8OrDefault('abc', CAST('0', 'UInt8'))
 
 サポートされない引数 (`NULL` を返します):
 
-* `NaN` および `Inf` を含む、通常の Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt8OrNull('0xc0fe');`。
+* `NaN` および `Inf` を含む、通常の Float* 型の値の文字列表現。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt8OrNull('0xc0fe');`。
 
 <Note>
   入力値を [`UInt8`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果のオーバーフローまたはアンダーフローが発生します。
@@ -8752,8 +8678,8 @@ toUInt8OrNull('abc'): \N
 
 サポートされない引数 (`0` を返します):
 
-* `NaN` および `Inf` を含む、通常の Float* 値の文字列表現。
-* 2進数および16進数の文字列表現。例: `SELECT toUInt8OrZero('0xc0fe');`。
+* `NaN` および `Inf` を含む、通常の Float* 型の値の文字列表現。
+* 2進数値および16進数値の文字列表現。例: `SELECT toUInt8OrZero('0xc0fe');`。
 
 <Note>
   入力値が [`UInt8`](/ja/reference/data-types/int-uint) の範囲内で表現できない場合、結果はオーバーフローまたはアンダーフローします。
@@ -8921,8 +8847,8 @@ SELECT toUnixTimestamp64Micro(dt64);
 
 ```response title=Response
 ┌─toUnixTimestamp64Micro(dt64)─┐
-│             1739489491011123 │
-└──────────────────────────────┘
+│               1739489491011123 │
+└────────────────────────────────┘
 ```
 
 <div id="toUnixTimestamp64Milli">
@@ -8935,7 +8861,7 @@ SELECT toUnixTimestamp64Micro(dt64);
 入力値は、その精度に応じて適切にスケールアップまたはスケールダウンされます。
 
 <Note>
-  出力値は、入力値のタイムゾーンではなく UTC を基準とします。
+  出力値は入力値のタイムゾーンではなく、UTC を基準とします。
 </Note>
 
 **構文**
@@ -8974,7 +8900,7 @@ SELECT toUnixTimestamp64Milli(dt64);
 導入バージョン: v20.5.0
 
 [`DateTime64`](/ja/reference/data-types/datetime64) を、固定のナノ秒精度を持つ [`Int64`](/ja/reference/functions/regular-functions/type-conversion-functions#toInt64) 値に変換します。
-入力値は、その精度に応じて適切にスケールアップまたはスケールダウンされます。
+入力値は、その精度に応じて適切に拡大または縮小されます。
 
 <Note>
   出力値は、入力値のタイムゾーンではなく、UTC を基準にしています。

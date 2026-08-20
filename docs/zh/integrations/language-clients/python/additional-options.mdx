@@ -13,78 +13,90 @@ ClickHouse Connect 提供了许多适用于高级用例的其他选项。
   ## 全局设置
 </div>
 
-有少量设置可用于全局控制 ClickHouse Connect 的行为。这些设置可通过顶层 `common` 包访问：
+只有少量设置项可用于全局控制 ClickHouse Connect 的行为。可通过顶层 `common` 包访问这些设置：
 
 ```python
 from clickhouse_connect import common
 
-common.set_setting("autogenerate_session_id", False)
-print(common.get_setting("invalid_setting_action"))
-# Output: error
+common.set_setting('autogenerate_session_id', False)
+common.get_setting('invalid_setting_action')
+'drop'
 ```
 
 <Note>
-  请在创建客户端前配置客户端创建设置。生成的会话/查询 ID、产品标识等设置会被复制到客户端专属状态中，因此之后对全局设置的更改不会更新现有客户端。绑定和插入设置则不同：绑定参数时会读取 `naive_datetime_binding` 和 `dict_parameter_format`；序列化包含 Python `datetime` 对象或 `DateTime64` ISO 字符串的原生插入列时，会读取 `naive_datetime_insert`。更改这些设置会影响现有客户端。可复用的插入上下文会在每次插入时使用当前的 `naive_datetime_insert` 值。
+  在使用 `clickhouse_connect.get_client` 方法创建客户端之前，*务必*先修改这些常用设置：`autogenerate_session_id`、`product_name` 和 `readonly`。在客户端创建后再更改这些设置，不会影响现有客户端的行为。
 </Note>
 
 当前定义了以下全局设置：
 
-| 设置名称                      | 默认值        | 选项                            | 描述                                                                                                                                                                                     |
-| ------------------------- | ---------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `autogenerate_session_id` | `True`     | `True`, `False`               | 除非提供了会话 ID，否则为每个同步客户端生成 UUID 会话 ID。异步工厂默认会将其覆盖为 `False`。                                                                                                                               |
-| `autogenerate_query_id`   | `True`     | `True`, `False`               | 除非提供了查询 ID，否则为每个请求生成 UUID 查询 ID。                                                                                                                                                       |
-| `dict_parameter_format`   | `"json"`   | `"json"`, `"map"`             | 将参数绑定中使用的 Python 字典格式化为 JSON 或 ClickHouse Map 字面量。                                                                                                                                     |
-| `invalid_setting_action`  | `"error"`  | `"drop"`, `"send"`, `"error"` | 针对服务器报告为只读的设置采取的操作。`drop` 会忽略该设置，`send` 会将其转发，`error` 会引发 `ProgrammingError`。对于当前用户在 `system.settings` 中不存在的设置，例如在角色中设为 `CHANGEABLE_IN_READONLY` 的设置，除非操作为 `drop`，否则会将其转发，由服务器决定接受或拒绝。 |
-| `naive_datetime_binding`  | `"wall"`   | `"wall"`, `"legacy"`          | 控制朴素 `datetime` 查询参数的绑定方式。`wall` 会原样格式化朴素日期时间。`legacy` 会恢复旧版的主机本地时间转换行为。请附加 `tzinfo` 以保留时间点。                                                                                           |
-| `naive_datetime_insert`   | `"local"`  | `"local"`, `"server"`         | 控制插入朴素 `datetime` 值以及 `DateTime64` 接受的朴素 ISO 字符串这两类 Python 对象的方式。`local` 为兼容性使用进程时区。`server` 使用声明的列时区，其次使用服务器时区。`datetime64`-dtype 的 NumPy 和 Pandas 列不受影响。                             |
-| `max_connection_age`      | `600`      | 任意秒数                          | 可复用 HTTP keep-alive 连接的最长存活时间。轮换连接有助于将连接分散到负载均衡器后的各节点。                                                                                                                                 |
-| `product_name`            | `""`       | 任意字符串                         | 添加到客户端信息中的产品标识符。使用类似 `"my-product/1.0"` 的值。                                                                                                                                            |
-| `readonly`                | `0`        | `0`, `1`                      | 为兼容 1.x 而保留的已弃用空操作设置。客户端会直接读取服务器的 `readonly` 设置。                                                                                                                                       |
-| `send_os_user`            | `True`     | `True`, `False`               | 在客户端信息中包含检测到的操作系统用户。                                                                                                                                                                   |
-| `send_integration_tags`   | `True`     | `True`, `False`               | 在 HTTP User-Agent 中包含客户端使用的集成信息，例如 Pandas 或 SQLAlchemy。                                                                                                                                |
-| `use_protocol_version`    | `True`     | `True`, `False`               | 协商 Native 格式功能 (例如 `DateTime` 列时区元数据) 所使用的客户端协议版本。对于拒绝 `client_protocol_version` 的代理，请禁用此设置。                                                                                           |
-| `max_error_size`          | `1024`     | 任意非负整数                        | 客户端错误中包含的最大字符数。使用 `0` 可获取完整消息。                                                                                                                                                         |
-| `http_buffer_size`        | `10485760` | 字节                            | 用于流式 HTTP 查询的内存中缓冲区大小，默认值为 10 MiB。                                                                                                                                                     |
+| 设置名称                                            | 默认值             | 可选值                                             | 说明                                                                                                                                                                                           |
+| ----------------------------------------------- | --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| autogenerate&#95;session&#95;id                 | True            | True, False                                     | 为每个客户端会话自动生成一个新的 UUID(1) 会话 ID (如果未提供) 。如果未提供会话 ID (无论是在客户端级别还是查询级别) ，ClickHouse 都会为每个查询生成一个随机的内部 ID。                                                                                        |
+| dict&#95;parameter&#95;format                   | &#39;json&#39;  | &#39;json&#39;, &#39;map&#39;                   | 控制参数化查询是将 Python 字典转换为 JSON，还是转换为 ClickHouse Map 语法。`json` 应用于插入 JSON 列，`map` 用于 ClickHouse Map 列。                                                                                           |
+| invalid&#95;setting&#95;action                  | &#39;error&#39; | &#39;drop&#39;, &#39;send&#39;, &#39;error&#39; | 当提供了无效设置或只读设置时 (无论是客户端会话还是查询级别) ，指定要采取的操作。如果为 `drop`，则忽略该设置；如果为 `send`，则将该设置发送给 ClickHouse；如果为 `error`，则会在客户端抛出 ProgrammingError。                                                            |
+| max&#95;connection&#95;age                      | 600             |                                                 | HTTP Keep-Alive 连接保持打开或复用的最长时间 (秒) 。这可避免在负载均衡器/代理后方，连接过度集中到某一个 ClickHouse 节点。默认值为 10 分钟。                                                                                                     |
+| product&#95;name                                |                 |                                                 | 随查询一起传递给 ClickHouse 的字符串，用于跟踪使用 ClickHouse Connect 的应用。应采用 &lt;product name;&amp;gl/&lt;product version&gt; 的格式。                                                                             |
+| readonly                                        | 0               | 0, 1                                            | 适用于 19.17 之前版本的隐式 &quot;read&#95;only&quot; ClickHouse 设置。可将其设置为与 ClickHouse 的 &quot;read&#95;only&quot; 设置值一致，以便兼容非常旧的 ClickHouse 版本。                                                       |
+| send&#95;os&#95;user                            | True            | True, False                                     | 在发送给 ClickHouse 的客户端信息中包含检测到的操作系统用户名 (HTTP User-Agent 字符串) 。                                                                                                                                 |
+| send&#95;integration&#95;tags                   | True            | True, False                                     | 在发送给 ClickHouse 的客户端信息中包含所使用的集成库及其版本 (例如 Pandas/SQLAlchemy 等)  (HTTP User-Agent 字符串) 。                                                                                                       |
+| use&#95;protocol&#95;version                    | True            | True, False                                     | 使用客户端协议版本。这是 `DateTime` 时区列所必需的，但会与当前版本的 chproxy 不兼容。                                                                                                                                        |
+| max&#95;error&#95;size                          | 1024            |                                                 | 客户端错误消息返回的最大字符数。将此设置设为 0 可获取完整的 ClickHouse 错误消息。默认值为 1024 个字符。                                                                                                                               |
+| http&#95;buffer&#95;size                        | 10MB            |                                                 | 用于 HTTP 流式查询的“内存中”缓冲区大小 (以字节为单位) 。                                                                                                                                                           |
+| preserve&#95;pandas&#95;datetime&#95;resolution | False           | True, False                                     | 当为 True 且使用 pandas 2.x 时，会保留 datetime64/timedelta64 dtype 的分辨率 (例如 &#39;s&#39;、&#39;ms&#39;、&#39;us&#39;、&#39;ns&#39;) 。如果为 False (或在 pandas &lt;2.x 中) ，则会强制转换为纳秒 (&#39;ns&#39;) 分辨率以保持兼容性。 |
 
 <div id="compression">
   ## 压缩
 </div>
 
-ClickHouse Connect 支持 `lz4`、`zstd`、`brotli`、`gzip` 和 `deflate` 响应压缩。Native insert 支持 `lz4`、`zstd`、`brotli` 和 `gzip`。压缩以增加 CPU time 开销为代价，减少网络传输量。
+ClickHouse Connect 支持对查询结果和插入使用 lz4、zstd、brotli 和 gzip 压缩。请始终记住，使用压缩通常需要在网络带宽/传输速度与 CPU 使用率之间进行权衡 (客户端和服务器端都是如此) 。
 
-要接收压缩数据，ClickHouse server 的 `enable_http_compression` 必须设置为 1，或者用户必须具有按“每次查询”修改该设置的 permission。
+要接收压缩数据，ClickHouse server 的 `enable_http_compression` 必须设置为 1，或者用户必须具有按“每次查询”更改该设置的 permission。
 
-压缩由传给 `get_client` 和 `get_async_client` 的 `compress` argument 控制。默认值 `True` 会声明所有可用的响应编码，并使用 `lz4` 压缩 Native insert 块。将 `compress=False` 可禁用压缩，或者传入 `"lz4"`、`"zstd"`、`"br"` 或 `"gzip"` 之一来请求特定 method。
+调用 `clickhouse_connect.get_client` 工厂 method 时，可通过 `compress` parameter 控制压缩。默认情况下，`compress` 设置为 `True`，这会启用默认压缩设置。对于通过 `query`、`query_np` 和 `query_df` client methods 执行的查询，ClickHouse Connect 会添加 `Accept-Encoding` 请求头，其中包含
+`lz4`、`zstd`、`br` (如果已安装 brotli 库，则表示 brotli) 、`gzip` 和 `deflate` 编码；这些编码会用于通过 `query` client method 执行的查询 (以及间接通过 `query_np` 和 `query_df` 执行的查询) 。 (对于绝大多数请求，ClickHouse
+server 会返回使用 `zstd` 压缩的载荷。) 对于插入操作，默认情况下 ClickHouse Connect 会使用 `lz4` 压缩插入块，并发送 `Content-Encoding: lz4` HTTP 请求头。
 
-原始 client methods 不使用 client 级别的 `compress` 设置。`raw_query` 和 `raw_stream` 返回未压缩数据，而 `raw_insert` 使用其自身的 `compression` argument 说明已应用于载荷的压缩方式。
+`get_client` 的 `compress` parameter 也可以设置为特定的压缩方法，即 `lz4`、`zstd`、`br` 或 `gzip` 之一。随后，该方法将同时用于插入和查询结果 (如果 ClickHouse server 支持) 。现在，所需的 `zstd` 和 `lz4` 压缩库默认会随 ClickHouse Connect 一起安装。如果指定 `br`/brotli，则必须单独安装 brotli 库。
 
-ClickHouse Connect 安装时自带 `lz4` 和 `zstd` 支持。在 Python 3.14 上，`zstd` 使用标准库 `compression.zstd` module。Python 3.10 到 3.13 使用 `backports.zstd`。如果是未启用 `zstd` 支持构建的自定义 CPython 3.14+ 解释器，导入仍会成功；`zstd` 会从可用 methods 中移除，并且只有在显式请求 `zstd` 时才会引发 error。`brotli` 是可选项，使用 `compress="br"` 之前必须单独安装。
+请注意，`raw*` client methods 不会使用 client configuration 中指定的压缩设置。
 
-对于 ClickHouse workloads，`gzip` 通常比 `lz4` 或 `zstd` 更慢。
+我们也不建议使用 `gzip` 压缩，因为无论是压缩还是解压数据，它都明显比其他方案更慢。
 
 <div id="http-proxy-support">
   ## HTTP 代理支持
 </div>
 
-ClickHouse Connect 可识别标准的 `HTTP_PROXY` 和 `HTTPS_PROXY` 环境变量。这些变量会应用于该进程中的每个客户端。若要为每个客户端单独配置代理，请将 `http_proxy` 或 `https_proxy` 传递给 `get_client` 或 `get_async_client`。
+ClickHouse Connect 通过 `urllib3` 库提供基础的 HTTP 代理支持。它可识别标准的 `HTTP_PROXY` 和 `HTTPS_PROXY` 环境变量。请注意，使用这些环境变量会影响通过 `clickhouse_connect.get_client` 方法创建的任何 client。或者，如果要为每个 client 单独配置，可以向 `get_client` 方法传入 `http_proxy` 或 `https_proxy` argument。有关 HTTP 代理支持实现的详细信息，请参阅 [urllib3](https://urllib3.readthedocs.io/en/stable/advanced-usage.html#http-and-https-proxies) 文档。
 
-同步客户端使用 `urllib3`。若要使用 SOCKS 代理，请安装 PySocks，并将 `urllib3.contrib.socks.SOCKSProxyManager` 作为 `pool_mgr` 参数传递给 `get_client`。异步客户端不支持 `pool_mgr`。
+如需使用 SOCKS 代理，可以将 `urllib3` 的 `SOCKSProxyManager` 作为 `pool_mgr` argument 传递给 `get_client`。请注意，这需要直接安装 PySocks 库，或为 `urllib3` 依赖项启用 `[socks]` 选项。
 
-<div id="variant-dynamic-json-data-types">
-  ## Variant、Dynamic 和 JSON 数据类型
+<div id="old-json-data-type">
+  ## “旧” JSON 数据类型
 </div>
 
-ClickHouse Connect 支持当前 ClickHouse 的 `Variant`、`Dynamic` 和 `JSON` 数据类型。旧版 `Object('json')` 类型已在 clickhouse-connect 0.14 中移除，且不再受支持。
+实验性的 `Object` (或 `Object('json')`) 数据类型已弃用，应避免在生产环境中使用。出于向后兼容的考虑，ClickHouse Connect 仍为该数据类型提供有限支持。请注意，这种支持不包括那些预期会以字典或等效类型返回“顶层”或“父级” JSON 值的查询，这类查询会导致异常。
+
+<div id="new-variantdynamicjson-datatypes-experimental-feature">
+  ## “新” Variant/Dynamic/JSON 数据类型 (Experimental 功能)
+</div>
+
+从 0.8.0 版本开始，`clickhouse-connect` 开始对新的 (同样处于 Experimental 阶段的) ClickHouse 类型 Variant、Dynamic 和 JSON 提供实验性支持。
 
 <div id="usage-notes">
   ### 使用说明
 </div>
 
-* `Variant` 值会按对应的 Python 类型读取。原生插入会根据 Python 值的类型选择成员。
-* 当多个 `Variant` 成员映射到同一种 Python 类型时，使用 `clickhouse_connect.datatypes.dynamic.typed_variant(value, "TypeName")` 包装该值，以显式选择成员。
-* `typed` Variant 读取格式会返回 `TypedVariant(value, type_name)` 对象，并保留其原始成员类型。可通过 `query_formats={"Variant": "typed"}` 启用。
-* `Dynamic` 值会按对应的 Python 类型读取。插入目前通过 String 字符串表示形式发送。
-* `JSON` 值可作为 Python 字典或 JSON object 字符串插入。默认读取格式返回字典；使用 `"string"` 读取格式可返回 JSON 字符串。
-* 选择 `Variant`、`Dynamic` 或 `JSON` 子列的查询会返回该子列的具体类型。
+* JSON 数据可以作为 Python 字典插入，也可以作为包含 JSON 对象 `{}` 的 JSON 字符串插入。不支持其他形式的 JSON 数据。
+* 对这些类型使用 subcolumns/paths 的查询将返回该子列的类型。
+* 其他使用说明请参见 ClickHouse [文档](/zh/)。
 
-存储在 `JSON` 或 `Dynamic` 列的 `shared-data` 区域中的某些值使用了客户端目前尚无法解码的类型。这些值会以原始字节形式返回。这些复杂类型也会走纯 Python 转换路径，因此可能比成熟的标量类型更慢。
+<div id="known-limitations">
+  ### 已知限制
+</div>
+
+* 使用这些类型前，必须先在 ClickHouse 设置中启用它们。
+* “新” JSON 类型自 ClickHouse 24.8 版本起可用。
+* 由于内部格式发生变化，`clickhouse-connect` 仅兼容 ClickHouse 24.7 及以上版本中的 Variant 类型。
+* 返回的 JSON 对象最多只会返回 `max_dynamic_paths` 个元素 (默认值为 1024) 。此问题将在未来版本中修复。
+* 插入到 `Dynamic` 列中的值始终会采用 Python 值的字符串表示形式。待 https://github.com/ClickHouse/ClickHouse/issues/70395 修复后，此问题将在未来版本中修复。
+* 这些新类型的实现尚未用 C 代码优化，因此性能可能会比更简单、更成熟的数据类型稍慢。

@@ -12,7 +12,7 @@ A cláusula `GROUP BY` coloca a consulta `SELECT` no modo de agregação, que fu
 * Todas as expressões nas cláusulas [SELECT](/pt-BR/reference/statements/select/index), [HAVING](/pt-BR/reference/statements/select/having), e [ORDER BY](/pt-BR/reference/statements/select/order-by) **devem** ser calculadas com base em expressões-chave **ou** em [funções de agregação](/pt-BR/reference/functions/aggregate-functions/index) aplicadas a expressões que não são chave (incluindo colunas simples). Em outras palavras, cada coluna selecionada da tabela deve ser usada em uma expressão-chave ou dentro de uma função de agregação, mas não em ambas.
 * O resultado da agregação da consulta `SELECT` conterá tantas linhas quantos forem os valores únicos da &quot;chave de agrupamento&quot; na tabela de origem. Em geral, isso reduz significativamente o número de linhas, muitas vezes em ordens de grandeza, mas não necessariamente: o número de linhas permanece o mesmo se todos os valores da &quot;chave de agrupamento&quot; forem distintos.
 
-Quando quiser agrupar dados na tabela por números de colunas em vez de nomes de colunas, habilite a configuração [enable&#95;positional&#95;arguments](/pt-BR/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments).
+Quando quiser agrupar dados na tabela por números de colunas em vez de nomes de colunas, habilite a configuração [enable&#95;positional&#95;arguments](/pt-BR/reference/settings/session-settings#enable_positional_arguments).
 
 <Note>
   Há outra forma de executar agregação em uma tabela. Se uma consulta contiver colunas da tabela apenas dentro de funções de agregação, a `cláusula GROUP BY` poderá ser omitida, e a agregação por um conjunto vazio de chaves será assumida. Essas consultas sempre retornam exatamente uma linha.
@@ -85,7 +85,7 @@ Considere a tabela t:
 SELECT year, month, day, count(*) FROM t GROUP BY ROLLUP(year, month, day);
 ```
 
-Como a cláusula `GROUP BY` tem três expressões-chave, o resultado contém quatro tabelas com subtotais &quot;acumulados&quot; da direita para a esquerda:
+Como a seção `GROUP BY` tem três expressões-chave, o resultado contém quatro tabelas com subtotais &quot;acumulados&quot; da direita para a esquerda:
 
 * `GROUP BY year, month, day`;
 * `GROUP BY year, month` (e a coluna `day` é preenchida com zeros);
@@ -123,7 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 **Veja também**
 
-* Configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
+* Configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
 <div id="cube-modifier">
   ## Modificador CUBE
@@ -220,7 +220,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 **Veja também**
 
-* A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
+* A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
 <div id="with-totals-modifier">
   ## Modificador WITH TOTALS
@@ -362,10 +362,10 @@ Para resolver esse problema, a função `GROUPING` deve ser usada.
 As duas consultas a seguir são equivalentes.
 
 ```sql
--- Query 1
+-- Consulta 1
 SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
--- Query 2
+-- Consulta 2
 SELECT year, month, day, count(*) FROM t GROUP BY
 GROUPING SETS
 (
@@ -378,7 +378,7 @@ GROUPING SETS
 
 **Veja também**
 
-* A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings/group-by#group_by_use_nulls) para compatibilidade com o padrão SQL.
+* A configuração [group&#95;by&#95;use&#95;nulls](/pt-BR/reference/settings/session-settings#group_by_use_nulls) para compatibilidade com o padrão SQL.
 
 <div id="implementation-details">
   ## Detalhes da implementação
@@ -390,19 +390,19 @@ A agregação é uma das funcionalidades mais importantes de um SGBD orientado a
   ### Otimização de GROUP BY dependendo da chave de ordenação da tabela
 </div>
 
-A agregação pode ser executada com mais eficiência se a tabela estiver ordenada por alguma chave e a expressão `GROUP BY` contiver pelo menos um prefixo da chave de ordenação ou funções injetivas. Nesse caso, quando uma nova chave é lida da tabela, o resultado intermediário da agregação pode ser finalizado e enviado ao cliente. Esse comportamento é ativado pela configuração [optimize&#95;aggregation&#95;in&#95;order](/pt-BR/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Essa otimização reduz o uso de memória durante a agregação, mas, em alguns casos, pode tornar a execução da consulta mais lenta.
+A agregação pode ser executada com mais eficiência se a tabela estiver ordenada por alguma chave e a expressão `GROUP BY` contiver pelo menos um prefixo da chave de ordenação ou funções injetivas. Nesse caso, quando uma nova chave é lida da tabela, o resultado intermediário da agregação pode ser finalizado e enviado ao cliente. Esse comportamento é ativado pela configuração [optimize&#95;aggregation&#95;in&#95;order](/pt-BR/reference/settings/session-settings#optimize_aggregation_in_order). Essa otimização reduz o uso de memória durante a agregação, mas, em alguns casos, pode tornar a execução da consulta mais lenta.
 
 <div id="group-by-in-external-memory">
   ### GROUP BY em memória externa
 </div>
 
 Você pode ativar o despejo de dados temporários em disco para limitar o uso de memória durante o `GROUP BY`.
-A configuração [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) determina o limite de consumo de RAM para despejar dados temporários do `GROUP BY` no sistema de arquivos. Se for definida como 0 (o padrão), ela fica desabilitada.
-Como alternativa, você pode definir [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/pt-BR/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_group_by), que permite usar `GROUP BY` em memória externa somente quando a consulta atingir um determinado limite de uso de memória.
+A configuração [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/pt-BR/reference/settings/session-settings#max_bytes_before_external_group_by) determina o limite de consumo de RAM para despejar dados temporários do `GROUP BY` no sistema de arquivos. Se for definida como 0 (o padrão), ela fica desabilitada.
+Como alternativa, você pode definir [max&#95;bytes&#95;ratio&#95;before&#95;external&#95;group&#95;by](/pt-BR/reference/settings/session-settings#max_bytes_ratio_before_external_group_by), que permite usar `GROUP BY` em memória externa somente quando a consulta atingir um determinado limite de uso de memória.
 
 Ao usar `max_bytes_before_external_group_by`, recomendamos definir `max_memory_usage` com um valor aproximadamente duas vezes maior (ou `max_bytes_ratio_before_external_group_by=0.5`). Isso é necessário porque há dois estágios na agregação: ler os dados e formar dados intermediários (1) e mesclar os dados intermediários (2). O despejo de dados no sistema de arquivos só pode ocorrer durante o estágio 1. Se os dados temporários não tiverem sido despejados, o estágio 2 poderá exigir até a mesma quantidade de memória do estágio 1.
 
-Por exemplo, se [max&#95;memory&#95;usage](/pt-BR/reference/settings/session-settings/max-memory-usage#max_memory_usage) tiver sido definido como 10000000000 e você quiser usar agregação externa, faz sentido definir `max_bytes_before_external_group_by` como 10000000000 e `max_memory_usage` como 20000000000. Quando a agregação externa é acionada (se tiver havido pelo menos um despejo de dados temporários), o consumo máximo de RAM fica apenas ligeiramente acima de `max_bytes_before_external_group_by`.
+Por exemplo, se [max&#95;memory&#95;usage](/pt-BR/reference/settings/session-settings#max_memory_usage) tiver sido definido como 10000000000 e você quiser usar agregação externa, faz sentido definir `max_bytes_before_external_group_by` como 10000000000 e `max_memory_usage` como 20000000000. Quando a agregação externa é acionada (se tiver havido pelo menos um despejo de dados temporários), o consumo máximo de RAM fica apenas ligeiramente acima de `max_bytes_before_external_group_by`.
 
 Com o processamento distribuído de consultas, a agregação externa é realizada em servidores remotos. Para que o servidor solicitante use apenas uma pequena quantidade de RAM, defina `distributed_aggregation_memory_efficient` como 1.
 

@@ -22,7 +22,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <Steps>
-  <Step title="ClickHouse デプロイメントを作成する" id="1-create-a-clickhouse-deployment">
+  <Step>
+    ## ClickHouse デプロイメントを作成する
+
     このガイドは、Ubuntu 20.04 を使用し、以下のホストに DEB パッケージ (apt を使用) で ClickHouse をインストールした環境を前提に作成されています。ドメインは `marsnet.local` です。
 
     | Host      | IP Address    |
@@ -36,7 +38,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </Note>
   </Step>
 
-  <Step title="TLS 証明書を作成する" id="2-create-tls-certificates">
+  <Step>
+    ## TLS 証明書を作成する
+
     <Note>
       自己署名証明書の使用はデモ目的に限られ、本番環境では使用すべきではありません。証明書要求は組織による署名を前提に作成し、設定で構成する CA チェーンを使って検証できるようにする必要があります。ただし、これらの手順は設定の構成とテストに使用でき、後で実際に使用する証明書に置き換えることができます。
     </Note>
@@ -86,7 +90,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
        ```
   </Step>
 
-  <Step title="証明書と秘密鍵を格納するディレクトリを作成して設定します。" id="3-create-and-configure-a-directory-to-store-certificates-and-keys">
+  <Step>
+    ## 証明書と秘密鍵を格納するディレクトリを作成して設定します。
+
     <Note>
       これは各ノードで実施する必要があります。各ホストでは、それぞれに対応する適切な証明書と秘密鍵を使用してください。
     </Note>
@@ -117,8 +123,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
        ```
   </Step>
 
-  <Step title="ClickHouse Keeperを使用した基本クラスターによる環境の構成" id="4-configure-the-environment-with-basic-clusters-using-clickhouse-keeper">
-    このデプロイ環境では、各ノードで以下の ClickHouse Keeper 設定が使用されます。各サーバーはそれぞれ固有の `<server_id>` を持ちます (例：ノード `chnode1` の場合は `<server_id>1</server_id>`) 。
+  <Step>
+    ## ClickHouse Keeperを使用した基本クラスターによる環境の構成
+
+    このデプロイメント環境では、各ノードで以下の ClickHouse Keeper 設定を使用します。各サーバーにはそれぞれ固有の `<server_id>` が設定されます (例：ノード `chnode1` には `<server_id>1</server_id>`、以降も同様) 。
 
     <Note>
       ClickHouse Keeper の推奨ポートは `9281` です。ただし、ポートは設定可能であり、このポートが環境内の別のアプリケーションですでに使用されている場合は、別のポートに設定できます。
@@ -195,7 +203,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     3. `chnode1` と `chnode2` のクラスター設定を更新し、以下の設定を追加します。`chnode3` は ClickHouse Keeper のクォーラムに使用します。
 
     <Note>
-      この構成では、例として設定されているクラスターは 1 つだけです。テスト用のサンプルクラスターは削除するか、コメントアウトする必要があります。あるいは、テスト対象の既存のクラスターがある場合は、ポートを更新し、`<secure>` オプションを追加する必要があります。インストール時または `users.xml` ファイルで `default` ユーザーにあらかじめパスワードが設定されていた場合は、`<user` と `<password>` も設定する必要があります。
+      この構成では、設定されているサンプルのクラスターは 1 つだけです。テスト用のサンプルクラスターは削除するかコメントアウトする必要があります。あるいは、テスト対象の既存のクラスターがある場合は、ポートを更新し、`<secure>` オプションを追加する必要があります。インストール時または `users.xml` ファイルで `default` ユーザーにあらかじめパスワードが設定されていた場合は、`<user` と `<password>` を設定する必要があります。
     </Note>
 
     以下は、2台のサーバー (各ノードに1台) に1つの分片レプリカを持つクラスターを作成します。
@@ -242,7 +250,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
        ```
   </Step>
 
-  <Step title="ClickHouse ノードで TLS インターフェイスを設定する" id="5-configure-tls-interfaces-on-clickhouse-nodes">
+  <Step>
+    ## ClickHouse ノードで TLS インターフェイスを設定する
+
     以下の設定は、ClickHouse サーバーの `config.xml` で行います。
 
     1. デプロイメントの表示名を設定します (任意) 。
@@ -305,7 +315,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     </openSSL>
     ```
 
-    詳細については、[このページ](/ja/reference/settings/server-settings/settings/other#openssl)を参照してください。
+    詳細については、[このページ](/ja/reference/settings/server-settings/settings#openssl)を参照してください。
 
     7. すべてのノードで gRPC 用の TLS を設定します。
 
@@ -349,8 +359,10 @@ import { Image } from "/snippets/ja/components/Image.jsx";
        ```
   </Step>
 
-  <Step title="テスト" id="6-testing">
-    1. 各ノードを順番に起動します:
+  <Step>
+    ## テスト
+
+    1. すべてのノードを1台ずつ起動します。
        ```bash
        service clickhouse-server start
        ```

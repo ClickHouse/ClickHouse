@@ -29,11 +29,11 @@ integration:
 </Accordion>
 
 <Accordion title="ClickPipes for Kafka를 사용하기 위한 요구 사항은 무엇입니까?">
-  ClickPipes for Kafka를 사용하려면 실행 중인 Kafka broker와 ClickPipes가 활성화된 ClickHouse Cloud 서비스가 필요합니다. 또한 ClickHouse Cloud에서 Kafka broker에 접근할 수 있어야 합니다. 이를 위해 Kafka 측에서 원격 연결을 허용하고, Kafka 설정에서 [ClickHouse Cloud Egress IP addresses](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 허용 목록에 추가할 수 있습니다. 또는 [AWS PrivateLink](/ko/integrations/clickpipes/networking/aws-privatelink)를 사용해 ClickPipes for Kafka를 Kafka broker에 연결할 수도 있습니다.
+  ClickPipes for Kafka를 사용하려면 실행 중인 Kafka broker와 ClickPipes가 활성화된 ClickHouse Cloud 서비스가 필요합니다. 또한 ClickHouse Cloud에서 Kafka broker에 접근할 수 있어야 합니다. 이를 위해 Kafka 측에서 원격 연결을 허용하고, Kafka 설정에서 [ClickHouse Cloud Egress IP addresses](/ko/products/cloud/guides/data-sources/cloud-endpoints-api)를 허용 목록에 추가할 수 있습니다. 또는 [AWS PrivateLink](/ko/integrations/clickpipes/aws-privatelink)를 사용해 ClickPipes for Kafka를 Kafka broker에 연결할 수도 있습니다.
 </Accordion>
 
 <Accordion title="ClickPipes for Kafka는 AWS PrivateLink를 지원합니까?">
-  AWS PrivateLink를 지원합니다. 설정 방법에 대한 자세한 내용은 [문서](/ko/integrations/clickpipes/networking/aws-privatelink)를 참조하십시오.
+  AWS PrivateLink를 지원합니다. 설정 방법에 대한 자세한 내용은 [문서](/ko/integrations/clickpipes/aws-privatelink)를 참조하십시오.
 </Accordion>
 
 <Accordion title="ClickPipes for Kafka를 사용해 Kafka topic에 데이터를 쓸 수 있습니까?">
@@ -63,7 +63,7 @@ integration:
 </Accordion>
 
 <Accordion title="Azure Schema Registry를 ClickPipes와 함께 사용할 수 있습니까?">
-  아니요. ClickPipes는 Confluent 호환 레지스트리와 AWS Glue Schema Registry를 지원하지만 Azure Schema Registry는 지원하지 않습니다. 현재 지원 매트릭스는 [Kafka ClickPipe용 스키마 레지스트리](/ko/integrations/clickpipes/kafka/schema-registries)를 참조하십시오. Azure Schema Registry 지원이 필요하면 [팀에 문의하십시오](https://clickhouse.com/company/contact?loc=clickpipes).
+  아니요. ClickPipes는 Confluent 스키마 레지스트리와 API 호환되는 스키마 레지스트리만 지원하며, Azure Schema Registry는 여기에 해당하지 않습니다. 이 스키마 레지스트리에 대한 지원이 필요하면 [팀에 문의하십시오](https://clickhouse.com/company/contact?loc=clickpipes).
 </Accordion>
 
 <Accordion title="Azure Event Hubs에서 데이터를 소비하려면 정책에 어떤 권한이 필요합니까?">
@@ -79,7 +79,7 @@ integration:
 </Accordion>
 
 <Accordion title="Azure Event Hubs에도 ClickPipes IPs가 여전히 적용됩니까?">
-  예. Event Hubs 인스턴스로의 트래픽을 제한하려면 [문서화된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Event Hubs 네임스페이스의 IP 방화벽 규칙에 추가하십시오.
+  예. Event Hubs 인스턴스로의 트래픽을 제한하려면 [문서화된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 에 추가하십시오.
 </Accordion>
 
 <Accordion title="연결 문자열은 Event Hub용입니까, 아니면 Event Hub 네임스페이스용입니까?">

@@ -1,2 +1,11 @@
 0	0
-WITH\n    it AS\n    (\n        SELECT *\n        FROM numbers(1)\n    )\nSELECT\n    it.number,\n    i.number\nFROM it AS i
+WITH
+    it AS
+    (
+        SELECT *
+        FROM numbers(1)
+    )
+SELECT
+    it.number,
+    i.number
+FROM it AS i

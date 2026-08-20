@@ -172,7 +172,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### 엔드포인트별 사용자 지정 HTTP 처리기
+  ### 엔드포인트별 사용자 지정 HTTP handler
 </div>
 
 기본적으로 모든 `type=http` 프로토콜 항목은 동일한 `<http_handlers>`
@@ -180,7 +180,7 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 가리키도록 설정하면 이를 재정의할 수 있습니다. 이렇게 하면 각 HTTP 포트가
 서로 다른 HTTP 라우팅 규칙 집합을 제공할 수 있습니다.
 
-예를 들어, 포트 8124에서 자체 처리기를 사용하는 대체 HTTP API를 실행하려면:
+예를 들어, 포트 8124에서 자체 handler를 사용하는 대체 HTTP API를 실행하려면:
 
 ```xml
 <protocols>
@@ -200,12 +200,12 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 
 </protocols>
 
-<!-- Default handlers used by plain_http (port 8123) -->
+<!-- plain_http(포트 8123)에서 사용하는 기본 핸들러 -->
 <http_handlers>
     <defaults/>
 </http_handlers>
 
-<!-- Alternative handlers used by alt_http (port 8124) -->
+<!-- alt_http(포트 8124)에서 사용하는 대체 핸들러 -->
 <http_handlers_alt>
     <rule>
         <url>/custom</url>
@@ -222,10 +222,10 @@ HTTP(포트 8123)와 HTTPS(포트 8443)용 엔드포인트를 정의할 수 있�
 포트 8124에 대한 요청은 `<http_handlers_alt>` 규칙을 사용합니다. `<handlers>`를
 생략하면 엔드포인트는 기본 `<http_handlers>`로 대체됩니다.
 
-사용자 지정 처리기 섹션은
-[`<http_handlers>`](/ko/reference/settings/server-settings/settings/http#http_handlers)와 동일한
+사용자 지정 핸들러 섹션은
+[`<http_handlers>`](/ko/reference/settings/server-settings/settings#http_handlers)와 동일한
 포맷을 따릅니다.
-사용자 지정 처리기 섹션의 변경 사항은 구성 다시 로드 시 감지되며, 해당
+사용자 지정 핸들러 섹션의 변경 사항은 구성 다시 로드 시 감지되며, 해당
 엔드포인트는 자동으로 다시 시작됩니다.
 
 <div id="some-modules-can-contain-specific-for-its-layer-parameters">

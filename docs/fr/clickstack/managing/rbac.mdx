@@ -27,11 +27,11 @@ ClickStack s’authentifie via ClickHouse Cloud. Avant de pouvoir attribuer des 
 1. **Être invité dans votre organisation ClickHouse Cloud.** Un administrateur de l’organisation invite les utilisateurs depuis le Cloud Console. Consultez [Manage cloud users](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users) pour en savoir plus.
 2. **Disposer d’un accès à SQL Console sur le service.** Accédez à **Settings** → **SQL Console Access** de votre service et définissez le niveau d’autorisation approprié :
 
-| Accès à Cloud SQL Console                 | Accès ClickStack                                                                              |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **SQL Console Admin** (Accès complet)     | Accès complet à ClickStack. Requis pour activer les [alertes](/fr/clickstack/features/alerts). |
-| **SQL Console Read Only** (Lecture seule) | Permet de consulter les données d’observabilité et de créer des tableaux de bord.             |
-| **No access**                             | Impossible d’accéder à ClickStack.                                                            |
+| Accès à Cloud SQL Console                 | Accès ClickStack                                                                           |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **SQL Console Admin** (Accès complet)     | Accès complet à ClickStack. Requis pour activer les [alerts](/fr/clickstack/features/alerts). |
+| **SQL Console Read Only** (Lecture seule) | Permet de consulter les données d’observabilité et de créer des tableaux de bord.          |
+| **No access**                             | Impossible d’accéder à ClickStack.                                                         |
 
 Une fois qu’un utilisateur a accès au Cloud, il apparaît dans la page **Team Settings** de ClickStack, où vous pouvez lui attribuer un rôle ClickStack.
 
@@ -81,24 +81,30 @@ Vous pouvez définir un rôle par défaut pour les nouveaux utilisateurs dans le
 </div>
 
 <Steps>
-  <Step title="Accéder à Team Settings" id="step-navigate">
-    Ouvrez **Team Settings** et faites défiler jusqu’à **RBAC Roles**.
+  <Step>
+    ### Accéder à Team Settings
+
+    Ouvrez **Team Settings** et faites défiler la page jusqu’à **RBAC Roles**.
 
     <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
   </Step>
 
-  <Step title="Ajouter un nouveau rôle" id="step-add-role">
+  <Step>
+    ### Ajouter un nouveau rôle
+
     Cliquez sur **+ Add Role**. Saisissez un **Role Name** et, si vous le souhaitez, ajoutez une **Description**.
   </Step>
 
-  <Step title="Configurer les autorisations et enregistrer" id="step-configure">
+  <Step>
+    ### Configurer les autorisations et enregistrer
+
     Définissez les autorisations du rôle, puis cliquez sur **Create Role**.
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Fenêtre modale Add Role" size="md" />
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Boîte de dialogue Add Role" size="md" />
   </Step>
 </Steps>
 
-Les rôles personnalisés apparaissent à côté des rôles système dans la section **RBAC Roles**, avec les options **Edit** et **Delete**.
+Les rôles personnalisés apparaissent à côté des rôles système dans la section RBAC Roles, avec les options **Edit** et **Delete**.
 
 <div id="role-permissions">
   ## Autorisations du rôle
@@ -161,11 +167,11 @@ Chaque règle d’accès se compose d’une **condition** et d’un **niveau d�
 
 <Image img="/images/clickstack/rbac/condition-tip.webp" alt="Infobulle de condition : faire correspondre les ressources par nom ou par tag (indiqué par le titre), ou par ID (visible dans l’URL)" size="md" />
 
-| Champ de condition | Opérateurs       | Correspondance                                                                                                                                                                             | Exemple                                                                                                             |
-| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| **Name**           | `is`, `contains` | Le nom d’affichage de la ressource — par exemple, le titre du dashboard.                                                                                                                   | Le nom contient `production` — correspond à n’importe quel dashboard dont le titre contient &quot;production&quot;. |
-| **Tag**            | `is`, `contains` | Les tags attribués à la ressource via le panneau de tags dans l’angle supérieur droit de la vue de la ressource. Disponible uniquement pour tableaux de bord, recherches enregistrées et Notebooks. | Le tag est `critical` — correspond aux ressources marquées &quot;critical&quot;.                                    |
-| **ID**             | `is`, `contains` | L’identifiant de la ressource, visible dans la barre d’URL lorsque vous ouvrez la ressource.                                                                                               | L’ID est `abc123` — correspond à une ressource spécifique.                                                          |
+| Champ de condition | Opérateurs       | Correspondance                                                                                                                                                                       | Exemple                                                                                                             |
+| ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| **Name**           | `is`, `contains` | Le nom d’affichage de la ressource — par exemple, le titre du dashboard.                                                                                                             | Le nom contient `production` — correspond à n’importe quel dashboard dont le titre contient &quot;production&quot;. |
+| **Tag**            | `is`, `contains` | Les tags attribués à la ressource via le panneau de tags dans l’angle supérieur droit de la vue de la ressource. Disponible uniquement pour tableaux de bord, Saved Searches et Notebooks. | Le tag est `critical` — correspond aux ressources marquées &quot;critical&quot;.                                    |
+| **ID**             | `is`, `contains` | L’identifiant de la ressource, visible dans la barre d’URL lorsque vous ouvrez la ressource.                                                                                         | L’ID est `abc123` — correspond à une ressource spécifique.                                                          |
 
 La capture d’écran suivante montre à la fois l’ID du dashboard mis en évidence dans la barre d’URL et un tag &quot;TESTING&quot; visible dans le panneau de tags (en haut à droite).
 
@@ -175,7 +181,7 @@ Vous pouvez ajouter plusieurs règles par type de ressource. Chaque règle est �
 
 <Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Infobulle des règles d’accès avec logique OR" size="md" />
 
-**Exemple** : pour donner à un rôle un accès en lecture seule aux tableaux de bord de test, développez tableaux de bord, activez le contrôle granulaire, puis ajoutez deux règles :
+**Exemple** : pour donner à un rôle un accès en lecture seule aux tableaux de bord de test, développez tableaux de bord, activez Fine-Grained Controls, puis ajoutez deux règles :
 
 * **Name** `contains` `testing` avec le niveau d’accès **Read**
 * **Tag** `is` `testing` avec le niveau d’accès **Read**

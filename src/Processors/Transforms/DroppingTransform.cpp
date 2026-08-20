@@ -5,23 +5,20 @@
 namespace DB
 {
 
-static InputPorts createInputPorts(
-    SharedHeader header, size_t num_streams, SharedHeader totals_header, SharedHeader extremes_header)
+static InputPorts createInputPorts(SharedHeader header, size_t num_streams, bool has_totals, bool has_extremes)
 {
     InputPorts res;
     for (size_t i = 0; i < num_streams; ++i)
         res.emplace_back(header);
-    if (totals_header)
-        res.emplace_back(totals_header);
-    if (extremes_header)
-        res.emplace_back(extremes_header);
+    if (has_totals)
+        res.emplace_back(header);
+    if (has_extremes)
+        res.emplace_back(header);
     return res;
 }
 
-DroppingTransform::DroppingTransform(
-    SharedHeader header, size_t num_streams_, SharedHeader totals_header, SharedHeader extremes_header)
-    : IProcessor(
-        createInputPorts(header, num_streams_, totals_header, extremes_header), OutputPorts(num_streams_, header))
+DroppingTransform::DroppingTransform(SharedHeader header, size_t num_streams_, bool has_totals, bool has_extremes)
+    : IProcessor(createInputPorts(header, num_streams_, has_totals, has_extremes), OutputPorts(num_streams_, header))
     , num_streams(num_streams_)
 {
     data_inputs.reserve(num_streams);
@@ -31,13 +28,13 @@ DroppingTransform::DroppingTransform(
     for (size_t i = 0; i < num_streams; ++i, ++input_it)
         data_inputs.push_back(&*input_it);
 
-    if (totals_header)
+    if (has_totals)
     {
         totals_input = &*input_it;
         ++input_it;
     }
 
-    if (extremes_header)
+    if (has_extremes)
     {
         extremes_input = &*input_it;
         ++input_it;
@@ -86,16 +83,27 @@ IProcessor::Status DroppingTransform::prepare()
             need_data = true;
     }
 
-    /// Never request the dropped streams: a `TotalsHavingTransform` above a discarded totals port would
-    /// evaluate `HAVING` on the totals row. Close them only once the data streams are done, because
-    /// closing a `DelayedPortsProcessor` output finishes its pair and releases the gate.
+    /// Totals / extremes: drain and discard.
+    for (InputPort * aux : {totals_input, extremes_input})
+    {
+        if (!aux)
+            continue;
+        if (aux->isFinished())
+            continue;
+        aux->setNeeded();
+        if (aux->hasData())
+            aux->pull(); /// discard
+        else
+            need_data = true;
+    }
+
     if (all_outputs_done)
     {
-        for (InputPort * aux : {totals_input, extremes_input})
-        {
-            if (aux)
-                aux->close();
-        }
+        /// Close any still-open aux inputs so upstream can stop.
+        if (totals_input)
+            totals_input->close();
+        if (extremes_input)
+            extremes_input->close();
         return Status::Finished;
     }
 

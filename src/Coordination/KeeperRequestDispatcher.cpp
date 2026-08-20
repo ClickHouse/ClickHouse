@@ -3,7 +3,6 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -12,9 +11,6 @@
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <Common/FailPoint.h>
-#include <Common/assert_cast.h>
-#include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
 template class NonblockingBoundedQueue<DB::KeeperResponseForSession>;
@@ -73,11 +69,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-}
-
-namespace FailPoints
-{
-    extern const char keeper_shutdown_delay_before_queue_check[];
 }
 
 static size_t getSubrequestCount(const Coordination::ZooKeeperRequest & request)
@@ -204,15 +195,11 @@ struct BusyWaitBackoff
     }
 };
 
-KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
+KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
     : server(server_)
     , keeper_context(server->getKeeperContext())
-    , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
-    if (!special_response_router)
-        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
-
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -241,24 +228,7 @@ void KeeperRequestDispatcher::startupDispatchThread()
     dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
 }
 
-size_t KeeperRequestDispatcher::drainQueues()
-{
-    /// Don't bother sending replies because client connections should already be closed by now
-    /// (or stuck and timed out).
-    /// Don't need to do anything with in_flight_batches.
-    KeeperRequestForSession request_for_session;
-    while (tryPopRequest(request_for_session)) {}
-    size_t drained_response_bytes = 0;
-    KeeperResponseForSession response_for_session;
-    while (responses_queue.tryPop(response_for_session))
-    {
-        drained_response_bytes += getResponseBytesCost(*response_for_session.response);
-        onResponseDeallocated(*response_for_session.response);
-    }
-    return drained_response_bytes;
-}
-
-void KeeperRequestDispatcher::shutdownRequests()
+void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
 {
     shutting_down.store(true);
     if (dispatch_thread.joinable())
@@ -268,9 +238,20 @@ void KeeperRequestDispatcher::shutdownRequests()
 
     stream.reset();
 
-    /// Free up response queue space before submitting the Close requests below, so that a commit
-    /// landing meanwhile doesn't block nuraft's commit thread in onResponse flow control.
-    drainQueues();
+    /// Drain queues just to check for counter leaks.
+    /// Don't bother sending replies because client connections should already be closed by now
+    /// (or stuck and timed out, if closed_all_connections is false).
+    /// Don't need to do anything with in_flight_batches.
+    KeeperRequestForSession request_for_session;
+    while (tryPopRequest(request_for_session)) {}
+    KeeperResponseForSession response_for_session;
+    while (responses_queue.tryPop(response_for_session))
+        onResponseDeallocated(*response_for_session.response);
+    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
+    {
+        chassert(requests_queue_bytes.load() == 0);
+        chassert(response_bytes_in_all_queues.load() == 0);
+    }
 
     /// Send to leader Close requests for active sessions.
     /// Maybe we should go further and do this when client connection is closed for any reason
@@ -347,25 +328,6 @@ void KeeperRequestDispatcher::shutdownRequests()
                 log,
                 "Failed to close sessions in {}ms. If they are not closed, they will be closed after session timeout.",
                 std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time).count());
-    }
-
-    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
-}
-
-void KeeperRequestDispatcher::drainAndCheckQueues(bool closed_all_connections)
-{
-    /// Drain again after all request/response producers were stopped (if closed_all_connections).
-    size_t drained_response_bytes = drainQueues();
-
-    fiu_do_on(FailPoints::keeper_shutdown_delay_before_queue_check, { sleepForMilliseconds(3000); });
-
-    if (closed_all_connections) // otherwise there might be concurrent putRequest calls or missing onResponseDeallocated calls
-    {
-        /// (test_no_logical_error_on_shutdown_with_late_commit relies on this message, update the
-        ///  test if changing wording or logic.)
-        LOG_DEBUG(log, "Checking dispatcher queue byte accounting, drained {} response bytes", drained_response_bytes);
-        chassert(requests_queue_bytes.load() == 0);
-        chassert(response_bytes_in_all_queues.load() == 0);
     }
 }
 
@@ -1071,10 +1033,7 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->zxid = 0;
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
-    DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
-    if (special_response_router(response_for_session))
-        return;
-    onResponse(std::move(response_for_session));
+    onResponse(DB::KeeperResponseForSession{request_for_session.session_id, response});
 }
 
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
@@ -1106,18 +1065,6 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         req.request->xid != request_for_session.request->xid)
     {
         return;
-    }
-
-    /// SessionID requests all carry session_id -1 and xid 0, so the check above matches any of them,
-    /// including ones originating on other servers (onCommit runs for every committed entry on every
-    /// node). Their identity is (server_id, internal_id).
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-    {
-        /// Session id -1 is reserved for SessionID requests, so the matching head is one too.
-        const auto & head = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*req.request);
-        const auto & committed = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
-        if (head.server_id != committed.server_id || head.internal_id != committed.internal_id)
-            return;
     }
 
     if (current_stream_is_suspect.load())

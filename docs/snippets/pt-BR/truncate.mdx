@@ -21,9 +21,9 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 | `ON CLUSTER cluster` | Executa o comando em todo o cluster especificado.                                                                                        |
 | `SYNC`               | Torna o truncamento síncrono entre réplicas ao usar tabelas replicadas. Se omitido, o truncamento ocorre de forma assíncrona por padrão. |
 
-Você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) para configurar a espera pela execução de ações nas réplicas.
+Você pode usar a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings#alter_sync) para configurar a espera pela execução de ações nas réplicas.
 
-Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `TRUNCATE` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
+Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `TRUNCATE` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
 
 <Info>
   Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado pela configuração `replication_wait_for_inactive_replica_timeout`, uma exceção `UNFINISHED` será gerada.

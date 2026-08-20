@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -24,7 +24,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 Интеграция JupySQL с ClickHouse реализована с помощью библиотеки clickhouse&#95;sqlalchemy. Эта библиотека упрощает взаимодействие между двумя системами, позволяя подключаться к ClickHouse и передавать SQL dialect. После подключения вы сможете выполнять SQL-запросы напрямую из нативного интерфейса ClickHouse или непосредственно из Jupyter notebook.
 
 ```python
-# Install required packages
+# Установка необходимых пакетов
 %pip install --quiet jupysql clickhouse_sqlalchemy
 ```
 
@@ -34,7 +34,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 import pandas as pd
 from sklearn_evaluation import plot
 
-# Import jupysql Jupyter extension to create SQL cells
+# Импортировать расширение Jupyter jupysql для создания SQL-ячеек
 %load_ext sql
 %config SqlMagic.autocommit=False
 ```

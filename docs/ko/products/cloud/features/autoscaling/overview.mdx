@@ -7,27 +7,27 @@ title: '자동 스케일링'
 doc_type: 'guide'
 ---
 
-import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-스케일링은 클라이언트 요구를 충족할 수 있도록 사용 가능한 리소스를 조정하는 기능입니다. Scale 및 Enterprise tier 서비스는 API를 프로그래밍 방식으로 호출하거나 UI에서 설정을 변경해 수평으로 스케일링할 수 있습니다. 표준 `1:4` 프로필을 사용하는 Scale tier 서비스와 Enterprise tier 서비스는 애플리케이션 요구에 맞춰 수직으로 **자동 스케일링**될 수도 있습니다.
+스케일링은 클라이언트 요구를 충족할 수 있도록 사용 가능한 리소스를 조정하는 기능입니다. Scale 및 Enterprise(표준 1:4 프로필 사용) 티어 서비스는 API를 프로그래밍 방식으로 호출하거나 UI에서 설정을 변경해 시스템 리소스를 조정함으로써 수평으로 스케일링할 수 있습니다. 또한 이러한 서비스는 애플리케이션 요구에 맞춰 수직으로 **자동 스케일링**될 수 있습니다.
 
 <ScalePlanFeatureBadge feature="자동 수직 스케일링" />
 
 <Note>
-  Scale 및 Enterprise tier는 단일 레플리카 및 다중 레플리카 서비스를 모두 지원합니다. 단일 레플리카 Scale 서비스와 표준 `1:4` 프로필을 사용하는 Enterprise 서비스는 셀프 서비스 수직 자동 스케일링을 지원합니다. 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다. Scale 및 Enterprise 서비스는 여러 레플리카로 수평 스케일링할 수 있습니다. Basic tier 서비스는 단일 레플리카이며 크기가 고정되어 있어 수직 또는 수평 스케일링을 지원하지 않습니다. 자세한 내용은 [대규모 단일 레플리카 서비스](/ko/products/cloud/features/large-single-replica-services)를 참조하십시오.
+  Scale 및 Enterprise 티어는 단일 및 다중 레플리카 서비스를 모두 지원하는 반면, Basic 티어는 단일 레플리카 서비스만 지원합니다. 단일 레플리카 서비스는 크기가 고정되도록 설계되어 수직 또는 수평 스케일링을 지원하지 않습니다. 서비스를 스케일링하려면 Scale 또는 Enterprise 티어로 업그레이드할 수 있습니다.
 </Note>
 
 <div id="how-scaling-works-in-clickhouse-cloud">
   ## ClickHouse Cloud에서 스케일링이 작동하는 방식
 </div>
 
-ClickHouse Cloud는 Scale 및 Enterprise tier 서비스에서 수동 수평 스케일링을 지원합니다. Scale tier 서비스는 수직 자동 스케일링도 지원하며, Enterprise tier의 수직 자동 스케일링 지원 여부는 아래에 설명된 대로 프로필에 따라 다릅니다. [수평 자동 스케일링](/ko/products/cloud/features/autoscaling/horizontal-autoscaling)은 Scale 및 Enterprise tier 서비스에서 비공개 프리뷰로 제공됩니다.
+현재 ClickHouse Cloud는 Scale tier 서비스에서 수직 자동 스케일링과 수동 수평 스케일링을 지원합니다.
 
 Enterprise tier 서비스의 스케일링은 다음과 같이 작동합니다:
 
 * **수평 스케일링**: Enterprise tier의 모든 표준 및 사용자 지정 프로필에서 수동 수평 스케일링을 사용할 수 있습니다.
 * **수직 스케일링**:
-  * 표준 `1:4` 프로필은 수직 자동 스케일링을 지원합니다.
+  * 표준 프로필(1:4)은 수직 자동 스케일링을 지원합니다.
   * 사용자 지정 프로필(`highMemory` 및 `highCPU`)은 수직 자동 스케일링이나 수동 수직 스케일링을 지원하지 않습니다. 하지만 지원팀에 문의하면 이러한 서비스도 수직 스케일링할 수 있습니다.
 
 <Note>
@@ -44,10 +44,8 @@ Enterprise tier 서비스의 스케일링은 다음과 같이 작동합니다:
 </div>
 
 * [수직 자동 스케일링](/ko/products/cloud/features/autoscaling/vertical) — 사용량에 따라 CPU와 메모리를 자동으로 스케일링
-* [수평 자동 스케일링](/ko/products/cloud/features/autoscaling/horizontal-autoscaling) — 워크로드 수요에 따라 레플리카를 자동으로 스케일링
 * [수평 스케일링](/ko/products/cloud/features/autoscaling/horizontal) — API 또는 UI를 통한 수동 레플리카 스케일링
 * [Make Before Break (MBB)](/ko/products/cloud/features/autoscaling/make-before-break) — ClickHouse Cloud가 중단 없이 원활하게 스케일링 작업을 수행하는 방식
 * [자동 유휴 상태 전환](/ko/products/cloud/features/autoscaling/idling) — 서비스 자동 일시 중지를 통한 비용 절감
 * [스케일링 권장 사항](/ko/products/cloud/features/autoscaling/scaling-recommendations) — 스케일링 권장 사항 이해하기
 * [예약 스케일링](/ko/products/cloud/features/autoscaling/scheduled-scaling) — real-time 메트릭과 관계없이 서비스의 확장 또는 축소 시점을 정확히 지정할 수 있는 Scheduled Scaling 기능 이해하기
-* [대규모 단일 레플리카 서비스](/ko/products/cloud/features/large-single-replica-services) — Scale 및 Enterprise tier의 단일 레플리카 서비스용 수직 스케일링

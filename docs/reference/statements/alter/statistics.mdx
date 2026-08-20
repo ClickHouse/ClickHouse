@@ -6,7 +6,7 @@ title: 'Manipulating Column Statistics'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge/>
 
@@ -31,7 +31,7 @@ Also, they are replicated, syncing statistics metadata via ZooKeeper.
 Adding two statistics types to two columns:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
 ```
 
 <Note>
