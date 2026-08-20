@@ -6,12 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 # The queries go over HTTP because the value is only observable on a thread that both initiates the
-# query and performs the reads: over the native protocol the reads happen on a separate pipeline
-# thread, so the row of the initiating thread reads nothing and would assert nothing. Parallel
-# replicas move the reads off the initiating thread the same way, hence the no-parallel-replicas
+# query and performs the reads.
+# Parallel replicas move the reads off the initiating thread the same way, hence the no-parallel-replicas
 # tag. The four queries of an arm are sent as one curl invocation with --next, so they share a
-# single keep-alive connection and therefore a single handler thread; the test asserts that
-# precondition below rather than relying on the connection pool to reuse a thread by chance.
+# single keep-alive connection and therefore a single handler thread.
 URL="${CLICKHOUSE_URL}&log_queries=1&log_query_threads=1&log_profile_events=1"
 
 ${CLICKHOUSE_CLIENT} -q "
