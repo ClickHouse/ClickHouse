@@ -41,6 +41,10 @@ INSERT INTO wrappers_04839 VALUES
     NULL
 );
 
+-- Read each part on its own (like the sections below): a single SELECT spanning both parts goes
+-- through the merging-sorted path, which rebuilds the result columns and re-routes every dynamic
+-- path into shared data in the in-memory result regardless of any policy (current upstream
+-- behavior for all JSON columns), hiding the storage placement this test asserts.
 SELECT
     'before alter',
     id,
@@ -53,7 +57,21 @@ SELECT
     arraySort(JSONDynamicPaths(nul)),
     arraySort(JSONSharedDataPaths(nul))
 FROM wrappers_04839
-ORDER BY id;
+WHERE id = 1;
+
+SELECT
+    'before alter',
+    id,
+    arrayMap(x -> arraySort(JSONDynamicPaths(x)), arr),
+    arrayMap(x -> arraySort(JSONSharedDataPaths(x)), arr),
+    arraySort(JSONDynamicPaths(tup.doc)),
+    arraySort(JSONSharedDataPaths(tup.doc)),
+    arrayMap(x -> arraySort(JSONDynamicPaths(x)), mapValues(mp)),
+    arrayMap(x -> arraySort(JSONSharedDataPaths(x)), mapValues(mp)),
+    arraySort(JSONDynamicPaths(nul)),
+    arraySort(JSONSharedDataPaths(nul))
+FROM wrappers_04839
+WHERE id = 2;
 
 -- Policy-only comparison must recurse through all four wrappers, so this ALTER is metadata-only.
 ALTER TABLE wrappers_04839
