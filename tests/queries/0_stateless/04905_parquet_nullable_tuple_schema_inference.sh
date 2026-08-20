@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest
-# no-fasttest: Parquet format is not available in fasttest builds
+# no-fasttest: Parquet is not available in fasttest builds, and pyarrow crafts three fixtures.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -122,11 +122,70 @@ $CLICKHOUSE_LOCAL -m -q "
     SELECT 'Parquet', startsWith(toTypeName(p), 'Nullable(Tuple') FROM file('${T}_top.parquet', Parquet) LIMIT 1;"
 rm -f "${T}_s.orc" "${T}_s.arrow"
 
+# The three fixtures below need a schema no compliant writer emits, so pyarrow writes a valid file
+# and one field of its Thrift FileMetaData is rewritten. Each anchor spans the element's name, which
+# makes it unique within the footer, and each rewrite is asserted to have landed.
+python3 - "$T" <<'PYEOF'
+import struct, sys
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+T = sys.argv[1]
+
+# SchemaElement fields: 1=type 3=repetition_type 4=name 5=num_children. A Thrift compact field
+# header is (field_id_delta << 4) | type, with I32 = 5 and BINARY = 8; an I32 value is zigzag, so
+# a small n encodes as 2*n. REQUIRED = 0, OPTIONAL = 1; INT32 = 1, DOUBLE = 5.
+def patch_footer(path, was, now, what):
+    b = bytearray(open(path, "rb").read())
+    flen = struct.unpack("<I", b[-8:-4])[0]
+    start = len(b) - 8 - flen
+    foot = b[start:start + flen]
+    assert foot.count(was) == 1, f"{what}: anchor found {foot.count(was)} times, wanted 1"
+    patched = foot.replace(was, now)
+    assert was not in patched and patched.count(now) == 1, f"{what}: rewrite did not take"
+    b[start:start + flen] = patched
+    open(path, "wb").write(bytes(b))
+
+# optional group p { required group q { } }. pyarrow refuses to write a childless group, so q gets
+# an INT32 child and its num_children is cleared. Zero rows keeps the row group self-consistent:
+# a childless group has no column chunk.
+p = f"{T}_leafless.parquet"
+pq.write_table(pa.Table.from_pylist([], schema=pa.schema([
+    pa.field("p", pa.struct([pa.field("q", pa.struct([
+        pa.field("c", pa.int32(), nullable=False)]), nullable=False)]), nullable=True)])),
+    p, compression="none")
+assert str(pq.ParquetFile(p).schema_arrow.field("p").type) \
+    == "struct<q: struct<c: int32 not null> not null>", "leafless: unexpected pre-patch schema"
+patch_footer(p, b"\x35\x00\x18\x01q\x15\x02", b"\x35\x00\x18\x01q\x15\x00",
+             "leafless num_children 1 -> 0")
+
+# A map whose key group is OPTIONAL. The Parquet MAP spec requires a REQUIRED key.
+p = f"{T}_mapkey.parquet"
+pq.write_table(pa.Table.from_pylist([{"m": [({"kx": 1}, 5)]}], schema=pa.schema([
+    pa.field("m", pa.map_(pa.struct([pa.field("kx", pa.int32(), nullable=False)]),
+                          pa.int32()), nullable=True)])), p, compression="none")
+assert pq.ParquetFile(p).metadata.num_rows == 1, "mapkey: expected one row"
+patch_footer(p, b"\x35\x00\x18\x03key\x15\x02", b"\x35\x02\x18\x03key\x15\x02",
+             "map key repetition REQUIRED -> OPTIONAL")
+
+# optional group p { required double u }, still annotated INTEGER(8, unsigned). A UInt8 leaf is
+# INT32 physical with that annotation, so widening only the physical type leaves the annotation
+# behind and this reader rejects the leaf.
+p = f"{T}_unsup.parquet"
+pq.write_table(pa.Table.from_pylist([{"p": {"u": 1}}], schema=pa.schema([
+    pa.field("p", pa.struct([pa.field("u", pa.uint8(), nullable=False)]), nullable=True)])),
+    p, compression="none")
+col = pq.ParquetFile(p).schema.column(0)
+assert col.physical_type == "INT32", f"unsupported: physical {col.physical_type}"
+assert str(col.logical_type) == "Int(bitWidth=8, isSigned=false)", \
+    f"unsupported: logical {col.logical_type}"
+patch_footer(p, b"\x15\x02\x25\x00\x18\x01u", b"\x15\x0a\x25\x00\x18\x01u",
+             "unsupported physical INT32 -> DOUBLE")
+PYEOF
+
 # A group whose only child is skipped has no leaf to reconstruct the null map from, so it must keep
-# inferring a plain empty Tuple rather than a Nullable one. The fixture is an optional group whose
-# only child declares an INTEGER logical type on a DOUBLE physical type, which this reader rejects.
+# inferring a plain empty Tuple rather than a Nullable one.
 echo '--- optional group with all children skipped as unsupported'
-cp "$CUR_DIR"/data_parquet/parquet_optional_struct_unsupported_child.parquet "${T}_unsup.parquet"
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
     DESC file('${T}_unsup.parquet', Parquet)
@@ -139,7 +198,6 @@ $CLICKHOUSE_LOCAL -q "
 # A childless group is an output column with no primitive below it, so nothing carries the
 # definition levels the group null map is reconstructed from.
 echo '--- optional group whose only child is a childless group'
-cp "$CUR_DIR"/data_parquet/parquet_optional_struct_leafless_child.parquet "${T}_leafless.parquet"
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
     DESC file('${T}_leafless.parquet', Parquet);
@@ -148,7 +206,6 @@ $CLICKHOUSE_LOCAL -m -q "
 # DataTypeMap rejects a Nullable key, so a Map key group stays a plain Tuple whatever its
 # repetition type. The Parquet spec requires a REQUIRED key, so the fixture is non-compliant.
 echo '--- optional Map key group'
-cp "$CUR_DIR"/data_parquet/parquet_optional_map_key_group.parquet "${T}_mapkey.parquet"
 $CLICKHOUSE_LOCAL -m -q "
     SET $OPTS;
     DESC file('${T}_mapkey.parquet', Parquet);

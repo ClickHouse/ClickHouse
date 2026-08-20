@@ -54,9 +54,6 @@ EXCLUDE=(
     # logical type this reader rejects, so loading it here would print an exception.
     parquet_variant_logical_type.parquet
     parquet_required_json_column.parquet
-    # Schema fixture for 04905: an INTEGER logical type on a DOUBLE physical type, which this
-    # reader rejects, so loading it here would print an exception.
-    parquet_optional_struct_unsupported_child.parquet
     # Schema fixtures for 04065 Nullable(Tuple) wrapper test (LIST/MAP optional wrappers).
     04065_optional_list_wrapper_required_element.parquet
     04065_optional_map_wrapper_required_value.parquet

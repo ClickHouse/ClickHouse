@@ -717,13 +717,6 @@
 2	(NULL)	1	7748429148434536745
 
 \N	(NULL)	8	6283787242822260491
-=== Try load data from parquet_optional_map_key_group.parquet
-0	{(1):5}	1	12649122976475471755
-
-\N	{}	1	12649122976475471755
-=== Try load data from parquet_optional_struct_leafless_child.parquet
-
-\N	(())	0	\N
 === Try load data from row_group.parquet
 73	world	74	1	4937392231375272272
 89	world	90	1	18166975957598732095
