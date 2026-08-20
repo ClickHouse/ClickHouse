@@ -526,45 +526,40 @@ Chunk PCAPBlockInputFormat::read()
         return ColumnNullable::create(std::move(col), std::move(nullmap));
     };
 
+    /// Every column is moved exactly once here, outside of any loop.
+    std::array<ColumnPtr, COL_COUNT> built;
+    built[COL_NUMBER] = std::move(col_number);
+    built[COL_TIMESTAMP] = std::move(col_timestamp);
+    built[COL_CAPTURE_LENGTH] = std::move(col_capture_length);
+    built[COL_ORIGINAL_LENGTH] = std::move(col_original_length);
+    built[COL_LINK_TYPE] = std::move(col_link_type);
+    built[COL_PROTOCOLS] = ColumnArray::create(std::move(col_protocols_data), std::move(col_protocols_offsets));
+    built[COL_ETH_SRC] = make_nullable(std::move(col_eth_src), std::move(col_eth_src_null));
+    built[COL_ETH_DST] = make_nullable(std::move(col_eth_dst), std::move(col_eth_dst_null));
+    built[COL_ETH_TYPE] = std::move(col_eth_type);
+    built[COL_VLAN_ID] = make_nullable(std::move(col_vlan_id), std::move(col_vlan_id_null));
+    built[COL_IP_VERSION] = make_nullable(std::move(col_ip_version), std::move(col_ip_version_null));
+    built[COL_SRC_ADDR] = make_nullable(std::move(col_src_addr), std::move(col_src_addr_null));
+    built[COL_DST_ADDR] = make_nullable(std::move(col_dst_addr), std::move(col_dst_addr_null));
+    built[COL_IP_PROTOCOL] = std::move(col_ip_protocol);
+    built[COL_IP_TTL] = make_nullable(std::move(col_ip_ttl), std::move(col_ip_ttl_null));
+    built[COL_SRC_PORT] = make_nullable(std::move(col_src_port), std::move(col_src_port_null));
+    built[COL_DST_PORT] = make_nullable(std::move(col_dst_port), std::move(col_dst_port_null));
+    built[COL_TCP_FLAGS] = make_nullable(std::move(col_tcp_flags), std::move(col_tcp_flags_null));
+    built[COL_TCP_SEQ] = make_nullable(std::move(col_tcp_seq), std::move(col_tcp_seq_null));
+    built[COL_TCP_ACK] = make_nullable(std::move(col_tcp_ack), std::move(col_tcp_ack_null));
+    built[COL_PAYLOAD_LENGTH] = std::move(col_payload_length);
+    built[COL_PAYLOAD] = std::move(col_payload);
+    built[COL_RAW] = std::move(col_raw);
+
     Columns cols;
+    cols.reserve(header.columns());
     for (const std::string & name : header.getNames())
     {
-        switch (column_name_to_idx.at(name))
-        {
-            case COL_NUMBER: cols.push_back(std::move(col_number)); break;
-            case COL_TIMESTAMP: cols.push_back(std::move(col_timestamp)); break;
-            case COL_CAPTURE_LENGTH: cols.push_back(std::move(col_capture_length)); break;
-            case COL_ORIGINAL_LENGTH: cols.push_back(std::move(col_original_length)); break;
-            case COL_LINK_TYPE:
-                cols.push_back(std::move(col_link_type));
-                break;
-            case COL_PROTOCOLS:
-                cols.push_back(ColumnArray::create(std::move(col_protocols_data), std::move(col_protocols_offsets)));
-                break;
-            case COL_ETH_SRC: cols.push_back(make_nullable(std::move(col_eth_src), std::move(col_eth_src_null))); break;
-            case COL_ETH_DST: cols.push_back(make_nullable(std::move(col_eth_dst), std::move(col_eth_dst_null))); break;
-            case COL_ETH_TYPE:
-                cols.push_back(std::move(col_eth_type));
-                break;
-            case COL_VLAN_ID: cols.push_back(make_nullable(std::move(col_vlan_id), std::move(col_vlan_id_null))); break;
-            case COL_IP_VERSION: cols.push_back(make_nullable(std::move(col_ip_version), std::move(col_ip_version_null))); break;
-            case COL_SRC_ADDR: cols.push_back(make_nullable(std::move(col_src_addr), std::move(col_src_addr_null))); break;
-            case COL_DST_ADDR: cols.push_back(make_nullable(std::move(col_dst_addr), std::move(col_dst_addr_null))); break;
-            case COL_IP_PROTOCOL:
-                cols.push_back(std::move(col_ip_protocol));
-                break;
-            case COL_IP_TTL: cols.push_back(make_nullable(std::move(col_ip_ttl), std::move(col_ip_ttl_null))); break;
-            case COL_SRC_PORT: cols.push_back(make_nullable(std::move(col_src_port), std::move(col_src_port_null))); break;
-            case COL_DST_PORT: cols.push_back(make_nullable(std::move(col_dst_port), std::move(col_dst_port_null))); break;
-            case COL_TCP_FLAGS: cols.push_back(make_nullable(std::move(col_tcp_flags), std::move(col_tcp_flags_null))); break;
-            case COL_TCP_SEQ: cols.push_back(make_nullable(std::move(col_tcp_seq), std::move(col_tcp_seq_null))); break;
-            case COL_TCP_ACK: cols.push_back(make_nullable(std::move(col_tcp_ack), std::move(col_tcp_ack_null))); break;
-            case COL_PAYLOAD_LENGTH: cols.push_back(std::move(col_payload_length)); break;
-            case COL_PAYLOAD: cols.push_back(std::move(col_payload)); break;
-            case COL_RAW: cols.push_back(std::move(col_raw)); break;
-            default:
-                throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected PCAP column index");
-        }
+        size_t idx = column_name_to_idx.at(name);
+        if (idx >= COL_COUNT || !built[idx])
+            throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Unexpected PCAP column index");
+        cols.push_back(built[idx]);
     }
 
     return Chunk(std::move(cols), num_rows);
