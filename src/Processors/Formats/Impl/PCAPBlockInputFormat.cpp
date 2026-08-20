@@ -161,7 +161,8 @@ void PCAPBlockInputFormat::closeFile()
     sniffer.reset();
     if (mem_file != nullptr)
     {
-        fclose(mem_file);
+        /// The stream is backed by memory, so there is nothing to flush and nothing that can fail.
+        [[maybe_unused]] int rc = fclose(mem_file);
         mem_file = nullptr;
     }
 }

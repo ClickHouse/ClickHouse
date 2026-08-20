@@ -33,7 +33,7 @@ public:
     void resetParser() override;
 
     size_t getApproxBytesReadForChunk() const override { return approx_bytes_read_for_chunk; }
-    void onCancel() noexcept override { is_stopped = 1; }
+    void onCancel() noexcept override { is_stopped = true; }
 
 protected:
     Chunk read() override;
