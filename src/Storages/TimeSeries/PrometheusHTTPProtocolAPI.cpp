@@ -347,10 +347,17 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseStringBlock(WriteBuffer & resp
 
 void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer & response, const Block & result_block, bool first)
 {
+    if (result_block.rows() == 0)
+        return;
+
     const auto & timestamp_column = result_block.getByName(TimeSeriesColumnNames::Timestamp).column;
     auto timestamp_data_type = result_block.getByName(TimeSeriesColumnNames::Timestamp).type;
     UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
     const auto & value_column = result_block.getByName(TimeSeriesColumnNames::Value).column;
+
+    WriteBufferFromOwnString timestamp_buffer;
+    writeTimestamp(timestamp_buffer, timestamp_column->getInt(0), timestamp_scale);
+    const std::string_view timestamp_text = timestamp_buffer.stringView();
 
     bool need_comma = !first;
 
@@ -371,8 +378,7 @@ void PrometheusHTTPProtocolAPI::writeQueryResponseInstantVectorBlock(WriteBuffer
         writeString("\"value\":[", response);
 
         // Write timestamp
-        DateTime64 timestamp = timestamp_column->getInt(i);
-        writeTimestamp(response, timestamp, timestamp_scale);
+        writeString(timestamp_text, response);
 
         writeString(",", response);
 
