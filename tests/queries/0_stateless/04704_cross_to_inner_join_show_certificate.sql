@@ -9,7 +9,9 @@ DROP TABLE IF EXISTS r;
 CREATE TABLE l (a UInt64) ENGINE = Log;
 CREATE TABLE r (a UInt64) ENGINE = Log;
 
--- `showCertificate` must not become a join key.
+-- `showCertificate` must not become a join key: its value is the executing node's own
+-- certificate, so the two sides of a distributed join can disagree. Before this fix, the
+-- rewrite turned this comma join into an `INNER` join keyed on the `concat` expression.
 SELECT count() = 0 FROM (
 EXPLAIN QUERY TREE run_passes = 1
 SELECT count() FROM l, r
