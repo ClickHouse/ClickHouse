@@ -148,6 +148,12 @@ SET transform_null_in = 0;
 
 SELECT count() FROM test_dynamic_null_set WHERE has(CAST(['a'], 'Array(Dynamic)'), k);
 
+-- Dropping the unrepresentable NULL leaves the surviving element usable, so the mixed set still
+-- prunes rather than giving up the index entirely.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_dynamic_null_set WHERE has(CAST(['a', NULL], 'Array(Dynamic)'), k)) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_dynamic_null_set WHERE has(CAST(['a', NULL], 'Array(Dynamic)'), k);
+SELECT count() FROM test_dynamic_null_set WHERE has(CAST(['a', NULL], 'Array(Dynamic)'), k) SETTINGS use_primary_key = 0;
+
 DROP TABLE test_dynamic_null_set;
 
 -- A NULL-free Dynamic element keeps its set index, so only the unrepresentable NULL loses the fast
@@ -332,6 +338,47 @@ SELECT count() FROM test_nullable_key_prune WHERE has([CAST(NULL, 'Dynamic')], k
 SELECT count() FROM test_nullable_key_prune WHERE has([CAST(NULL, 'Dynamic')], k) SETTINGS use_primary_key = 0;
 
 DROP TABLE test_nullable_key_prune;
+
+-- The NULL a Dynamic or a LowCardinality dictionary carries must reach a Nullable key as a NULL, so
+-- it matches the NULL row and not the empty-string one. isNull reports which row matched, which a
+-- count cannot: a NULL that decayed to '' would return the same count off the other row. The two
+-- rows stay in separate parts so the granule count also reacts, hence merges are stopped.
+DROP TABLE IF EXISTS test_nullable_key_null_elem;
+DROP TABLE IF EXISTS test_nullable_key_null_elem_mem;
+CREATE TABLE test_nullable_key_null_elem (k Nullable(String)) ENGINE = MergeTree
+ORDER BY k
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+CREATE TABLE test_nullable_key_null_elem_mem (k Nullable(String)) ENGINE = Memory;
+
+SYSTEM STOP MERGES test_nullable_key_null_elem;
+
+INSERT INTO test_nullable_key_null_elem VALUES ('');
+INSERT INTO test_nullable_key_null_elem VALUES (NULL);
+INSERT INTO test_nullable_key_null_elem_mem VALUES (''), (NULL);
+
+SELECT count() FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_key_null_elem' AND active;
+
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'Dynamic')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'Dynamic')], k) SETTINGS use_primary_key = 0;
+SELECT isNull(k) FROM test_nullable_key_null_elem_mem WHERE has([CAST(NULL, 'Dynamic')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE notHas([CAST(NULL, 'Dynamic')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE notHas([CAST(NULL, 'Dynamic')], k) SETTINGS use_primary_key = 0;
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k) SETTINGS use_primary_key = 0;
+SELECT isNull(k) FROM test_nullable_key_null_elem_mem WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE notHas([CAST(NULL, 'LowCardinality(Nullable(String))')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'Nullable(String)')], k);
+-- The empty-string row is matchable, which is what makes a decayed NULL observable above, and it is
+-- also the arm that proves these assertions can print the other value.
+SELECT isNull(k) FROM test_nullable_key_null_elem WHERE has([CAST('', 'Dynamic')], k);
+SELECT isNull(k) FROM test_nullable_key_null_elem_mem WHERE has([CAST('', 'Dynamic')], k);
+-- The NULL element still prunes on a Nullable key, so it reaches one granule and not both.
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'Dynamic')], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_null_elem WHERE has([CAST('', 'Dynamic')], k)) WHERE explain LIKE '%Granules:%/%';
+
+DROP TABLE test_nullable_key_null_elem;
+DROP TABLE test_nullable_key_null_elem_mem;
 
 -- A monotonic wrapper whose argument type is the container key itself resolves the constant against
 -- that container type, which reaches the same rule.

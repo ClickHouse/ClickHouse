@@ -12,8 +12,19 @@ ReadType: FullScan
 ReadType: GetKeys
 ReadType: GetKeys
 1
+ReadType: GetKeys
+1
 0
 1
 1
 1
 ReadType: GetKeys
+ReadType: GetKeys
+ReadType: GetKeys
+x
+x
+ReadType: GetKeys
+y
+ReadType: GetKeys
+0
+0

@@ -72,6 +72,10 @@ SELECT count() FROM 04701_rdb_scalar WHERE k IN ('a');
 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST(NULL, 'Nullable(String)'));
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_scalar WHERE k IN ('a')) WHERE explain LIKE '%ReadType%';
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST('a', 'Nullable(String)'))) WHERE explain LIKE '%ReadType%';
+-- A Nullable set element is unwrapped by the set itself, so the two assertions above take the safe
+-- branch. A Dynamic element reaches the guarded branch and is what reports a guard widened too far.
+SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST('a', 'Dynamic'));
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST('a', 'Dynamic'))) WHERE explain LIKE '%ReadType%';
 
 DROP TABLE 04701_rdb_scalar;
 
@@ -91,5 +95,35 @@ SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Variant(
 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Nullable(String)'));
 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN ('a');
 SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN ('a')) WHERE explain LIKE '%ReadType%';
+-- The counts above stay correct through a full scan, so the read type is asserted on the two
+-- carriers themselves.
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Dynamic'))) WHERE explain LIKE '%ReadType%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Variant(String, UInt8)'))) WHERE explain LIKE '%ReadType%';
 
 DROP TABLE 04701_rdb_lc_nullable;
+
+-- A LowCardinality(String) key is only an encoding of String, so the cast target is stripped and the
+-- point lookup survives an element the key type cannot be cast to safely.
+
+DROP TABLE IF EXISTS 04701_rdb_lc;
+DROP TABLE IF EXISTS 04701_mem_lc;
+
+CREATE TABLE 04701_rdb_lc (k LowCardinality(String), v String)
+ENGINE = EmbeddedRocksDB PRIMARY KEY (k);
+CREATE TABLE 04701_mem_lc (k LowCardinality(String), v String) ENGINE = Memory;
+
+INSERT INTO 04701_rdb_lc VALUES ('a', 'x'), ('b', 'y');
+INSERT INTO 04701_mem_lc VALUES ('a', 'x'), ('b', 'y');
+
+-- Selecting the value proves the stripped cast target still produces the declared key encoding: a
+-- wrong encoding would find no key on the point-lookup plan.
+SELECT v FROM 04701_rdb_lc WHERE k IN (SELECT CAST('a', 'Dynamic'));
+SELECT v FROM 04701_mem_lc WHERE k IN (SELECT CAST('a', 'Dynamic'));
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc WHERE k IN (SELECT CAST('a', 'Dynamic'))) WHERE explain LIKE '%ReadType%';
+SELECT v FROM 04701_rdb_lc WHERE k IN (SELECT CAST('b', 'Variant(String, UInt8)'));
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc WHERE k IN (SELECT CAST('b', 'Variant(String, UInt8)'))) WHERE explain LIKE '%ReadType%';
+SELECT count() FROM 04701_rdb_lc WHERE k IN (SELECT CAST(NULL, 'Dynamic'));
+SELECT count() FROM 04701_mem_lc WHERE k IN (SELECT CAST(NULL, 'Dynamic'));
+
+DROP TABLE 04701_rdb_lc;
+DROP TABLE 04701_mem_lc;
