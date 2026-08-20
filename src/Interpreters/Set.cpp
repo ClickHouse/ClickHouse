@@ -198,7 +198,15 @@ bool Set::insertFromBlock(const ColumnsWithTypeAndName & columns)
     Columns cols;
     cols.reserve(columns.size());
     for (const auto & column : columns)
+    {
+        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeNullable(recursiveRemoveLowCardinality(column.type)));
+        if (decay_length)
+            validateExponentialTimeDecayingFloat64Column(
+                *column.column, *decay_length, "IN set construction");
+
         cols.emplace_back(column.column);
+    }
     return insertFromColumns(cols);
 }
 
@@ -516,8 +524,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
 
-        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
-            removeNullable(recursiveRemoveLowCardinality(data_types[i])));
+        auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeNullable(recursiveRemoveLowCardinality(column_before_cast.type)));
+        if (!decay_length)
+            decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+                removeNullable(recursiveRemoveLowCardinality(data_types[i])));
         if (decay_length)
             validateExponentialTimeDecayingFloat64Column(*result, *decay_length, "IN set probe");
 
