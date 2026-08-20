@@ -3,9 +3,6 @@
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 
-#include <boost/algorithm/string/join.hpp>
-
-
 namespace DB
 {
 
@@ -22,7 +19,9 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
         natsOptions_SetToken(options.get(), configuration.token.c_str());
-    if (!configuration.credential_file.empty())
+    if (!configuration.credentials.empty())
+        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
+    else if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)
@@ -75,9 +74,9 @@ String NATSConnection::connectionInfoForLog() const
 {
     if (!configuration.url.empty())
     {
-        return "url : " + configuration.url;
+        return "url: [hidden]";
     }
-    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
+    return "cluster: [hidden]";
 }
 
 bool NATSConnection::isConnected()
@@ -134,7 +133,7 @@ void NATSConnection::connectImpl(const Lock &)
     if (status != NATS_OK)
     {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
+                  connectionInfoForLog(), natsStatus_GetText(status), getNATSLastError());
         return;
     }
     connection.reset(new_conection);
