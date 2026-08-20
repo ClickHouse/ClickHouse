@@ -7,36 +7,36 @@
       "versionId": "3915da6f92b40e6eff0be61bc108be40668964851aca08d295febd67341da029",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-20T17:12:37.225Z",
+          "updatedAt": "2026-08-20T17:44:02.909Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-20T17:12:37.451Z",
+          "updatedAt": "2026-08-20T17:44:03.192Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-20T17:12:37.909Z",
+          "updatedAt": "2026-08-20T17:44:03.769Z",
           "fileName": "docs.json",
-          "postProcessHash": "fccbd45c1bc02bb4af9365c7ce0df1a243db142203a4bfd2b8800085dc595c0b"
+          "postProcessHash": "adf09b7cbf2afe57d93583dc7ddc079f9daa1a4d4577e065f7fd5af2f2573fda"
         },
         "es": {
-          "updatedAt": "2026-08-20T17:12:36.204Z",
+          "updatedAt": "2026-08-20T17:44:01.704Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-20T17:12:36.500Z",
+          "updatedAt": "2026-08-20T17:44:01.991Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-20T17:12:36.751Z",
+          "updatedAt": "2026-08-20T17:44:02.336Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-20T17:12:36.992Z",
+          "updatedAt": "2026-08-20T17:44:02.617Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-20T17:12:37.676Z",
+          "updatedAt": "2026-08-20T17:44:03.485Z",
           "fileName": "docs.json"
         }
       },
@@ -99885,47 +99885,47 @@
     },
     {
       "fileId": "b6c7a0850b568e9fa84ad2efdb1bb9a96894ff92179e9e765eda322ee73838c9",
-      "versionId": "30bbad7e3d7efafb137b074be1ae69617d64d32ad9bd1bdc4367942ebcf112ac",
+      "versionId": "57ba56f3a232b683919a7a9dd09eb21d66fe8511092416e93d12b64a2d5f7fbf",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-08-20T15:52:44.882Z",
-          "fileName": "zh/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "b3faac746d2560ecdcbe31e808b11cb7e496f70915439b15a3a9f930654112ed"
-        },
-        "ru": {
-          "updatedAt": "2026-08-20T15:52:45.290Z",
-          "fileName": "ru/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "fecf1258cfaa0cfb343cdca172a9464448c83f5f4c38cf54ab274059ae5818cf"
-        },
         "ja": {
-          "updatedAt": "2026-08-20T15:52:45.500Z",
+          "updatedAt": "2026-08-20T17:44:09.458Z",
           "fileName": "ja/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "7c9372e26fbd33220d76c00969fefbbdbdf63cd1206bfb3e09d3875958a1d5d1"
+          "postProcessHash": "68204bb8f5de5bf567c1a031766efc353e84a62d0269a877b36fcd4d0e2d92e6"
         },
-        "es": {
-          "updatedAt": "2026-08-20T15:52:45.501Z",
-          "fileName": "es/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "5f69fcd882c27ab10bf5e477cc9b0adb073f30179734b29d224ce8690780c26d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-20T15:52:45.717Z",
-          "fileName": "ar/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "2546c5e655ca9d573656fcc470d5d29b741f0ad2fcd652379616a89cbd887b7d"
-        },
-        "fr": {
-          "updatedAt": "2026-08-20T15:52:46.320Z",
-          "fileName": "fr/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "10f0aaa68afa75a24d676a6cd24b3a08b8e7fe462ea6c4787d835ff0a49f3b2c"
+        "zh": {
+          "updatedAt": "2026-08-20T17:44:09.459Z",
+          "fileName": "zh/products/cloud/guides/security/cloud-access-management/index.mdx",
+          "postProcessHash": "38a0b3e54139355dd1bb193d44d49362adfa9911f70ef6d3994115031c3dec66"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-20T15:52:46.522Z",
+          "updatedAt": "2026-08-20T17:44:09.460Z",
           "fileName": "pt-BR/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "dc63b04df821a1b57d524644f54ed2a1b1fbacfc42fecc937ed00b8c60de93ea"
+          "postProcessHash": "27fb53b6d4c91af5f966b04c7fc5d42b382d9662f92bce3c7903faa27be5f341"
+        },
+        "ru": {
+          "updatedAt": "2026-08-20T17:44:09.461Z",
+          "fileName": "ru/products/cloud/guides/security/cloud-access-management/index.mdx",
+          "postProcessHash": "a718a382deb927ea8647f2f280a20108b42a489a981112e1bf3f0acd50e16007"
+        },
+        "fr": {
+          "updatedAt": "2026-08-20T17:44:09.461Z",
+          "fileName": "fr/products/cloud/guides/security/cloud-access-management/index.mdx",
+          "postProcessHash": "cb0182dceeb02a45aec1ac1be2969eb97309bdbab66f11e1c8dab81cd6c4c52b"
         },
         "ko": {
-          "updatedAt": "2026-08-20T15:52:46.547Z",
+          "updatedAt": "2026-08-20T17:44:09.462Z",
           "fileName": "ko/products/cloud/guides/security/cloud-access-management/index.mdx",
-          "postProcessHash": "de6d805b8584b0341d1c140711f61bc2b5f7009202e189e818a89c1616e625d5"
+          "postProcessHash": "7b4df74e6ffba73042239b39c30163a4fbaefd163c300b9ab66cda1bf6896a70"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T17:44:09.463Z",
+          "fileName": "es/products/cloud/guides/security/cloud-access-management/index.mdx",
+          "postProcessHash": "c479684eafc74a03620ea8381b26d41cc6651f2887511e6e78105da42287ddea"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T17:44:09.463Z",
+          "fileName": "ar/products/cloud/guides/security/cloud-access-management/index.mdx",
+          "postProcessHash": "35a9285bae5b9bb96ce36ca05e601d3dbb991e5af3ab25ccc9ed5800c525acd6"
         }
       },
       "fileName": "products/cloud/guides/security/cloud-access-management/index.mdx",
