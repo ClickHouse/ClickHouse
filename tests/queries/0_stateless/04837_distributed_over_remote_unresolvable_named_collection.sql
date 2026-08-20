@@ -15,13 +15,20 @@
 DROP NAMED COLLECTION IF EXISTS nc_04837_local;
 CREATE NAMED COLLECTION nc_04837_local AS addresses_expr = '127.0.0.1', database = '', table = 'bind_src';
 
+-- Note on the expected error codes: the two spellings below fail in two different places, deterministically.
+-- Without a `database` / `db` override, the database-binding walk itself must resolve the collection to read
+-- the stored database, and it reports an absent one as `BAD_ARGUMENTS`. With an explicit override the walk has
+-- nothing to read from the collection and skips it; the absent collection is then caught by target-argument
+-- validation (`TableFunctionRemote` parsing), which reports `NAMED_COLLECTION_DOESNT_EXIST`. Do not "unify"
+-- these expectations to a single code based on one failing query: they are intentionally different.
+
 -- The `key = value` form leaves no other reading of the first argument: it must name a collection.
 CREATE TABLE dist_nc_unknown (n UInt64)
-    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, table = 'bind_src')); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist, table = 'bind_src')); -- { serverError BAD_ARGUMENTS }
 
 -- The single-argument form as well, when the name is neither a collection nor a configured cluster.
 CREATE TABLE dist_nc_unknown_single (n UInt64)
-    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist)); -- { serverError NAMED_COLLECTION_DOESNT_EXIST }
+    ENGINE = Distributed(test_cluster_multiple_nodes_all_unavailable, remote(nc_04837_does_not_exist)); -- { serverError BAD_ARGUMENTS }
 
 -- A database override no longer permits an unresolvable named collection: validation must resolve the
 -- collection to make the persistent target safe to use.
