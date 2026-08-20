@@ -7,36 +7,36 @@
       "versionId": "3915da6f92b40e6eff0be61bc108be40668964851aca08d295febd67341da029",
       "translations": {
         "ru": {
-          "updatedAt": "2026-08-20T20:34:25.130Z",
+          "updatedAt": "2026-08-20T23:27:47.444Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-08-20T20:34:25.345Z",
+          "updatedAt": "2026-08-20T23:27:47.702Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-08-20T20:34:25.776Z",
+          "updatedAt": "2026-08-20T23:27:48.187Z",
           "fileName": "docs.json",
           "postProcessHash": "adf09b7cbf2afe57d93583dc7ddc079f9daa1a4d4577e065f7fd5af2f2573fda"
         },
         "es": {
-          "updatedAt": "2026-08-20T20:34:24.217Z",
+          "updatedAt": "2026-08-20T23:27:46.508Z",
           "fileName": "docs.json"
         },
         "ja": {
-          "updatedAt": "2026-08-20T20:34:24.453Z",
+          "updatedAt": "2026-08-20T23:27:46.727Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-08-20T20:34:24.674Z",
+          "updatedAt": "2026-08-20T23:27:46.935Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-20T20:34:24.904Z",
+          "updatedAt": "2026-08-20T23:27:47.179Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-08-20T20:34:25.550Z",
+          "updatedAt": "2026-08-20T23:27:47.959Z",
           "fileName": "docs.json"
         }
       },
@@ -101613,47 +101613,47 @@
     },
     {
       "fileId": "c2930f9cac95e10bc048dd98188c2e83371c720f4a3da6b9eb2f5a2b6ae7478c",
-      "versionId": "4f8a10dc5f7a43ae35ea205c3793bdb387fda1eae93aa28398f9e938aeb62a99",
+      "versionId": "d6857bfb635f767d2e2365f69ec250cd0d770081ab889be6892b4c522a6d4766",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.682Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "b5d4640ff97b1784bffb703b6888c13d37d164a03a4201681287cf5808e961fb"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.682Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "f35829a6c966786510fa6d97acd3db52c9af0dc683c378dac5f70d4b554d7d1a"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.682Z",
+          "updatedAt": "2026-08-20T23:27:53.410Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "8752dd94a4e9fcf1e6d6941952b2c840d4ce79144e5780a088f9857ae42f48a9"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "2be8b7b7d134189184bcdead85de124f630a538762c386c4ced3271e7edf4226"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "067ef1d402ed8f69244bc5a5f3ccea5435443a532cd842588f0a9c55c2f7db34"
+          "postProcessHash": "8da26fcac3da9fefd0b7f196f499a7fe019fe88d590dd8525086c9245b8d03e9"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
+          "updatedAt": "2026-08-20T23:27:53.424Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "52fe689783a7e593b7d057c9e5f5cf35b0e9e2b11e85e7ab4251aaefd87d70a8"
+          "postProcessHash": "69cdb6da572a1dc116b2e080dc3c453482595055b3888ef662ec53831a13c9de"
         },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "23d4cee89f65568037a8fca63bb19bb6864dc7abba51ac23ecff1073e40b7f58"
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.425Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/cassandra.mdx",
+          "postProcessHash": "3bae11ad63da1459358dc43bb92170583ad4b09156bc4ed2021b320a0bfcbfbb"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.428Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/cassandra.mdx",
+          "postProcessHash": "62f0a8edd21a3ab535f9e5eadaaa870c9831c8ffabe4525ae78e4ec2b0cabb75"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
+          "updatedAt": "2026-08-20T23:27:53.431Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/cassandra.mdx",
-          "postProcessHash": "42edd51b6f2ac522408104763d1ed39d32a1b6d9061c508093988cb267c611fd"
+          "postProcessHash": "39f31eb2f7f71d29dd1a3b8030a6fef4af7b1eed7a0d3b0507e3e3d7a5181246"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.433Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/cassandra.mdx",
+          "postProcessHash": "e850fdbfaca019352cdbf8c412cb7d6e51e640e472e34ac63b929fa933b9737f"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.438Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/cassandra.mdx",
+          "postProcessHash": "95d91ff41a594a58ebec65bda59cee2b0d2d7789a7ed2733224ddbedbc1971a4"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.446Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/cassandra.mdx",
+          "postProcessHash": "dd6eb765b5db25cc3c76c72ffec55d3a277a0f694ae6ad45394257109acef820"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/cassandra.mdx",
@@ -101661,47 +101661,47 @@
     },
     {
       "fileId": "5566cd72e9cc10bd822f3e280aeab1627f20aebe16a6f79713e1ef546f43087f",
-      "versionId": "5e71517714f9e810ae545218686fdc0d551f1d3ecfb535c5186add0f8b7aa098",
+      "versionId": "54044ee7a677efac94afe0941cd7855310e8427668001a777edb632df31eb0af",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.683Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "b8e840b61d1f24bdd1d1bc7b9bc70d3e896d222bb2f97086d5fb88f40f3029c2"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "885195c6be1fdf6191c5171bb53020411501f3bff0082ea5452906042ebee9aa"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "876ef4aee346fa3d7c173629ffbfa2a670d8422aa7c09fefbe107b5ae15ab041"
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.409Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/clickhouse.mdx",
+          "postProcessHash": "15ccbe9cfc92c7ea8003b5473cc4637e3ddc3ce2618e97f7467ad99f40c8cd34"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
+          "updatedAt": "2026-08-20T23:27:53.428Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "c7a00177583b63d46bb1cb2ed7d9603abe3898bad8e664685c031ba39a40be77"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "48e10fc201793e0a30a27f0e3d02f903513b2efa2b9d144d2c001bc3d2f60eb9"
+          "postProcessHash": "c7d15517961d369411d6bf758b8aa7a388c726dc3557354f521cc0cfce936d7b"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
+          "updatedAt": "2026-08-20T23:27:53.433Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "7d6c22e90320104036eb17d8612fcb60f56cc1360a39179eddad663885b6bf2d"
+          "postProcessHash": "b01b3da320be8914c93ae13269c62e603e21b513744c541c855bd039f088581b"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
+          "updatedAt": "2026-08-20T23:27:53.435Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "9382938d6d3437a2495c6be0492105d92230efcd4d080b97473c582d6fa5a41a"
+          "postProcessHash": "059386b4e5de34c514fde66566e059a40ea303f4ff3171edeb6e5f9baccce099"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.684Z",
+          "updatedAt": "2026-08-20T23:27:53.436Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/clickhouse.mdx",
-          "postProcessHash": "b391363a140c56f0a0fc04cb2e049e67085fe130a3c72b140c0d20433ee70c7f"
+          "postProcessHash": "43e9e2614071acbedb4d7241c622c11b5bb4a3be08c2e5bedaa1bb7a7624f2c1"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.441Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/clickhouse.mdx",
+          "postProcessHash": "7fcf51efb86ded1f3dded2d6b520c2f663a2063cd6002e48c43bda8fa70408fc"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.448Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/clickhouse.mdx",
+          "postProcessHash": "f443d90eabd5c09b959f0d50c2b8e21e195f7c53657e96d21010ae2465ef655c"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.462Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/clickhouse.mdx",
+          "postProcessHash": "d1f20da885e724aae5c0ada4db834efeb87053c30bbd8e075805c90854c3b30f"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/clickhouse.mdx",
@@ -101709,47 +101709,47 @@
     },
     {
       "fileId": "a68f2a5efd4e5ba5b4a39d849a48c303d71e65cbaf69cd595baeabdca6df4a4a",
-      "versionId": "dd993b2c06a94b9976bfacb4bffac61eec5075f4d4caf7204b1499bd80bdc861",
+      "versionId": "6fb6e3fef460b87555553b3998845d3c84b97276e0544ea1c17dcbd070ba8702",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "0bef668656d8a83a004b45a0c986fe07ce02055ab4764d418c313c396239b1c2"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "7c11d2637a3d8465f2b68058d136190557b2883910d07ef59f43163f468302ae"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
+          "updatedAt": "2026-08-20T23:27:53.426Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "1a736e32f9bda7c167b92cc45f0a20a192f27fdefeee160e9c16439650b539d6"
+          "postProcessHash": "de8dbc041e091e816b7c80ff8eedf5baa2a9dcfa1839438ccfb4d942826e6322"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
+          "updatedAt": "2026-08-20T23:27:53.430Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "5af85f4c68d55be61161794012246052d5142f5e62e9ce9cd39ad52b78b0d524"
+          "postProcessHash": "365d6338005a621fb2694ea643d7f27b89df021e75dc7a9b7ff7d2816252ad19"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.434Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/executable-file.mdx",
+          "postProcessHash": "b984aa7dee4090cf4ef66bdf831768068747c44a5271e0dbd0291db93aa946c2"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
+          "updatedAt": "2026-08-20T23:27:53.444Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "a9248d59cc3ac3ba6a1775d3a40d904146bbba7060ac31f54156c4d7c58d05f7"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "df1ec12aa7e10b4477a18f1ecb75cbd5ad0bc6ac51fa48395b76bf0907879e85"
+          "postProcessHash": "23e6251bccaf360de2ab00ea4bb9a4a7ac55e7c873022415bf2fc94038f62e96"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.685Z",
+          "updatedAt": "2026-08-20T23:27:53.457Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "245d5a197051d5624bc405d895369db8d69d17a7e2fb9d5ab09efeac300ba6f3"
+          "postProcessHash": "aa009abcfca09233b4fbcb9992c3b7bef8e66f9d3aa1d2c137581e9c2d894795"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
+          "updatedAt": "2026-08-20T23:27:53.461Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/executable-file.mdx",
-          "postProcessHash": "aba77f1665b451a985850b691e87c3a0c369afbea15c0b445673fe535f4a3dbe"
+          "postProcessHash": "42c498703797e2d59391a9667272136a896d0395e998d6ef4198d6c8b7e1c033"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.462Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/executable-file.mdx",
+          "postProcessHash": "2bbf1c691ea65249a8846773944a944ff42d126111a85964fa37348c40e68078"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.465Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/executable-file.mdx",
+          "postProcessHash": "512282bd62bfc1bdc3324989a22a2ed8034693dcd7016890d4300c845557bc19"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/executable-file.mdx",
@@ -101757,47 +101757,47 @@
     },
     {
       "fileId": "408a2a39c3e49ffe78c95daf0c9cd4e1499369638b03c803c1f1d831a539a437",
-      "versionId": "6c4f8f7112e0a698c6cd84a66bd4fd0b4eaccc9efd6faffd8983c9f8df1d4719",
+      "versionId": "c52aadb0d6c133f9e64f063cbe9e165811a0662e94c06eeea0e77194712a1900",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
+          "updatedAt": "2026-08-20T23:27:53.443Z",
           "fileName": "es/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "2ad71092d8d80936ed4e6492ccd6301d2a30035084db92b12d4bdace856f9afb"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "c5db80583759d0635b4dab63ab00ec0e173ce4b4b6a0b2d96ab0dbb6b341ce48"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "8addc609df7aa988bf5afa7a7f233a7aa8440e53cf9588b3807c4a1b5bd193cc"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "29d3374e89db7e66f3c925f1d4e562edaf52893b3e5a0271313da8676744988a"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.686Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "a351e3841b911275149e00bb1b5363d256c9a1724f8f519c99b77b53f7666dce"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "52c207ce8aa3de6f9757d413e03727e838390dbdd64ae4f850af9254958bf6d9"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "b1910e54b58fca2b6d17b9f9c8f2bf40be506c7d126a6b130c75686296d91295"
+          "postProcessHash": "77bae1cd14325fd4d65fc89d89aa41c942672107a81d186f396d98f5cd26a8da"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
+          "updatedAt": "2026-08-20T23:27:53.444Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/executable-pool.mdx",
-          "postProcessHash": "1a82869b5f7347d9f3a4d5788aee0103e8b002d15ca7d5fe71c7e5708d820369"
+          "postProcessHash": "a1d58c79a9e626eb304dd799288ea892ec4fa1d626540c22e646b37c73b908c8"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.449Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "4b7cbbb248f3c03ad1bc7cd5a403653af677ce9b7b04f7a2c4ede7f8842a86ec"
+        },
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.451Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "e474689dcf94002b134712251d1bce643c8e033cd2e83a5279b1a3c8897dfc01"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.452Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "c8b569c530f2e86cfd2bc2f87785fe40e3e59fd45bd5686129b605e99c69e611"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.453Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "bfd187d2a470bed47d6560644c188e02d4634b704c6e386d16fcf7975d95d6bf"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.454Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "5aeec06685cf07f46253a66acf2ce2f0f6b862380345f471511c94c3e35af63d"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.455Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/executable-pool.mdx",
+          "postProcessHash": "beafd7001abb89648d7dd44fbc5624de17951e92560576644a2c3125157ce225"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/executable-pool.mdx",
@@ -101805,47 +101805,47 @@
     },
     {
       "fileId": "9bcb145a9ef78b30e1677869cbf6465ffaeed0d5b21df8f96aade0e3e1db9575",
-      "versionId": "7c5727dd2006842d7857e07c9d00cd050465e9e60da4ae644ecb02e2baefed74",
+      "versionId": "b8981f740e8cfebddab95af9e9dc3b862512a6f08fe97a54cb766895faa95cfc",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "9e395de45241dc315858e20d5e8d91db4718d12d639d3ea6ae5f20e32c404922"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "6a39fc8bea9ea5ecfae597961fe2fc248bc984c3928636fb77cec70a2e167144"
+        "fr": {
+          "updatedAt": "2026-08-20T23:27:53.414Z",
+          "fileName": "fr/reference/statements/create/dictionary/sources/http.mdx",
+          "postProcessHash": "63a971d489ced2b34a0824de2d3cd2d009e652a4ae7dfe4ddec3570182bc4d7a"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.687Z",
+          "updatedAt": "2026-08-20T23:27:53.424Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "c5357fc15e697c3b13cf2f8c2ac29c161b5ed19906bb57232bd6e0786b7b52fa"
+          "postProcessHash": "db5cb6b4ab7e8f3af8aacb7ba98466887b20fd8689c65e06a966c2579914fb17"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
+          "updatedAt": "2026-08-20T23:27:53.427Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "8f290a78972a1b1bcf053e4a49cbaed35d1bdb090feafca316eca1c0ed5ffdb3"
+          "postProcessHash": "bb46b96b970040f4ffba68b9bc7faf561bca155c9885e4e2b4b598baa88a8fb4"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.429Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/http.mdx",
+          "postProcessHash": "4e03a21e92174c6ace4864d17c24f8c8f37ecc4cebfb76bc2e1a2aa746078d64"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
+          "updatedAt": "2026-08-20T23:27:53.436Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "25d41b0c252cb7da7f8bd86069320bf6e94d20d6a5805718f9441b226f463019"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "858f3b434da42acfeeb8efb04d4d1cd51a105fda12787a6a5fdc6910d646144c"
+          "postProcessHash": "bcfcab6897528c7d16a036618d4bdf27a41ea57dd810574486334788347944f8"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
+          "updatedAt": "2026-08-20T23:27:53.440Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "066b526ef70be81ba5a339eb910801ccdd5b6f8777ee533d0404ecf6699c4591"
+          "postProcessHash": "534aa520abbd61eff0efaade7a1ed9ecb91b2429b4b00c929982f9b80a8f470e"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
-          "fileName": "fr/reference/statements/create/dictionary/sources/http.mdx",
-          "postProcessHash": "6427c977db91e541f595c0e897f185b5c682d5eb73825f2dc6343b0d1480ff24"
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.447Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/http.mdx",
+          "postProcessHash": "73f005d1432f7519865e7ffaef0aed7381e78c77529c3ea80d59e07fdb0e71db"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.449Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/http.mdx",
+          "postProcessHash": "f3b6268ab4ad18e125a42b2109366d3b7e2b4e747543f95740734b996be53fe0"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/http.mdx",
@@ -101853,47 +101853,47 @@
     },
     {
       "fileId": "aebead23790da838c38c6257eae56ffa35cdb473b1433d208cb68b1918a66119",
-      "versionId": "3ca2e9a87e943549bd196e68a2e60a451e00088129d7f76280cc69688be100fd",
+      "versionId": "49ee7b7256604ee7c2c489599c418a4320a31c465be16a26667ef7c70985a70a",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "25bed6e64b77c39f76a63779aaa1361cf436d77c4094378a1682b2512cccd824"
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.410Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/local-file.mdx",
+          "postProcessHash": "7c61df92e5506e3a691f5b5db66fdcfabb70cb1fb6a812ec9dd5c1beae2b932d"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.688Z",
+          "updatedAt": "2026-08-20T23:27:53.411Z",
           "fileName": "ja/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "4b7ce6a315c78a46c0d816e675d4be87ca04f21a4e3ded16a055fe3f49ef0cf9"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "4c5a1f303e0a13ee6bf9e6984f738d27a9acf9471b108fba9610f117d4185980"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "3dbd7c4e53707740dc5a76b41a48a1c5567f210a227e4a298af287a54070df05"
+          "postProcessHash": "b6a3375d8024322a0748074a4197fba6fd7e9764ae5982bdcb653c359552675e"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
+          "updatedAt": "2026-08-20T23:27:53.413Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "80b8422ccc3d04afc98edb8353f0da519e40d6fb2e9caed9623be801fa5ae555"
+          "postProcessHash": "f33eb41f3a3133d5d4782738188502a342ed892dc449078a26ad847e9a3dedd7"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
+          "updatedAt": "2026-08-20T23:27:53.427Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "7fc5a287000a81ffeaba082a7ed3aeba0efb67d1d7f8cc1a541ffabb6aff8909"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "670035507eba6c9b2123557c2b2957f3bf063da417baf6a9cf9107ef14609f34"
+          "postProcessHash": "1582537cac8be7e8c95608fb12b050b9734e39f8b6ff503297a8b8f3e7adab0e"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
+          "updatedAt": "2026-08-20T23:27:53.434Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/local-file.mdx",
-          "postProcessHash": "9de0e3d0e7c58aebb88c00e53203e62713b95488ef7cf5267218ed5c23ef7714"
+          "postProcessHash": "48e16dfaee257d27d62432d81ee336305a30840ca123dc71e889435dcc68079f"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.437Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/local-file.mdx",
+          "postProcessHash": "18b3b6c64990f1722d43463ea97029ca58719e87d3648c3a55b2286448ef7180"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.445Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/local-file.mdx",
+          "postProcessHash": "8a1b924db89e649f6ac9a1f301ea785d2f08d8b7defdc9e33dc873c074d5613d"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.460Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/local-file.mdx",
+          "postProcessHash": "d5484cd0a0ff7afa89d9b68120f2eeeafb80a17f16bd51d720c4fbbcf6a7029d"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/local-file.mdx",
@@ -101901,47 +101901,47 @@
     },
     {
       "fileId": "b879c0e3159b788f7605d03ab0cdd2c4232c023780e7f052ba415b01651bb265",
-      "versionId": "c73a4a53f01549ac2ad359912fd186cb3ce146d3d8e0e8745b0277d5fa929243",
+      "versionId": "3427b1cfcc63c1b75100a1179d284c23f6c06dd150c9e4da8236bad9852dc1c3",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.689Z",
+          "updatedAt": "2026-08-20T23:27:53.408Z",
           "fileName": "es/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "670585193041b7ec63072d2bf98a7c3ae08b17f471eebd557a34dee6479eca72"
+          "postProcessHash": "a4c49fb793104b76091fe5bf78247e18157a426a355736caf7149b18d4230b24"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
+          "updatedAt": "2026-08-20T23:27:53.411Z",
           "fileName": "ja/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "66ee5c397d7f6f16ac83dce714a346f8e9c1511562f79f9aafbb3d3588aded29"
+          "postProcessHash": "bc108a94751aa0d4f88f5b406482b3090ed320515c37620eaec0e519a7fe2b26"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
+          "updatedAt": "2026-08-20T23:27:53.414Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "b78b9da2129dd5337c75bf5a0d721679768ee8d641a5dad7d20d943dbc28e4d5"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "deb51ba69bc7d69953dc8b3646ddb0ff1e6b91a9910b40f59db1d76423825a11"
+          "postProcessHash": "1876865b5581bde6b7a34ed9156d1daf9c1a2709962acf9309246a79e4230989"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
+          "updatedAt": "2026-08-20T23:27:53.421Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "12db70a0690dd93ec2de1121efde0764462f0945a5da3fdef1e367e37cf13042"
+          "postProcessHash": "5556d20579d0f4d34cc47f5e49efff046cb80fb80bda6a107f9300e03e1ace33"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "d6126c9723315abe85abcde02396f4aacdeff1059384eb1b7c469452ba8a8265"
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.421Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/mongodb.mdx",
+          "postProcessHash": "791c2161b7481bfcd7e5be191d5bbf295aa3957f5b8b464c40df019fa24a6702"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
+          "updatedAt": "2026-08-20T23:27:53.429Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "c6f4dc109138afff2c6616b89ccbd63b3db94196e400ae6809e5508833fdf0ad"
+          "postProcessHash": "b15b18fbe5eb3ef802923e4255a66b90767535f8d138ffda09cb58ae9de06cd6"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.432Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/mongodb.mdx",
+          "postProcessHash": "33f1f35faf38cbec7da539626629cee42602888a32e92b743eefd16aa0d31625"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.690Z",
+          "updatedAt": "2026-08-20T23:27:53.438Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/mongodb.mdx",
-          "postProcessHash": "1bf25a54b1fe1e3824fade0262d4dca5a7ce6a0134aec90671617bae586e0741"
+          "postProcessHash": "a42f81db4e1054b6ae388b89b6ad2d41bda65b67c237f80ebace036c35efd79c"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/mongodb.mdx",
@@ -101949,47 +101949,47 @@
     },
     {
       "fileId": "d8fced086b618c858a872244a98fcae6ef48f3e4daeaee44528633f81aeee88e",
-      "versionId": "aa79dd7479cde20f22aa9405cbabb9a75b69376aa543ceb5eba6bc32b8348279",
+      "versionId": "a1bce89bbd4c7e9a2a1a50b0c60161578da20af23d4e36b1e6008162da7f6e05",
       "translations": {
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.453Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/mysql.mdx",
+          "postProcessHash": "671c50fe0df66a77b034779e704e5e8c552525c0a894b9b946bd774fc4ceac65"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
+          "updatedAt": "2026-08-20T23:27:53.454Z",
           "fileName": "es/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "3fa3ad191dcd9f05386fdb62d741df1633484370d6f762486d5987fcab577a8e"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "02c94842f582c8679b27c01ee34636f120e46a6b4d92fed9673eb94c88d51ab6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "e42601ef883fd885c92da578d4aea2dcefa6111064b37532c29e4d9ac7e49c43"
+          "postProcessHash": "2b94cef9d662ef8a4f0f60b7292f0312f8539dd13a35eda02962251ee6fcb2dc"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
+          "updatedAt": "2026-08-20T23:27:53.458Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "ad567bfa74a30de7adeef498e782d6466be1fde2a969cfd20a7e9048cd99f28b"
+          "postProcessHash": "0632d7696c046c7df306763c502f15bb66d509c8ba14741830695eb82501328c"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "8d962f2629e04f4f4746401c76a5a3d5b5d6cf9428ac5e3d29bd3cee91b43e31"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "b786672e9e6a64d9dc85a8e503ee341524804b9e1162e48e0df66060a5bdf271"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "a9159c7a66e9327d6610dcee014665b8cc32961e425658fe9f131a086fe00ff3"
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.459Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/mysql.mdx",
+          "postProcessHash": "ac5450c03f76b286d2c3c5d4bd6e986fe7aa9497688f7922582e386d991ee395"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
+          "updatedAt": "2026-08-20T23:27:53.463Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/mysql.mdx",
-          "postProcessHash": "a44eeb0219715248574acc04dbe6cd052b4dafa84116344dc133d7578cd9cdca"
+          "postProcessHash": "abbf7819d90d1081c4f7537d0db7494dd0d8427558ed943bbcc586b3c80d70b9"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.464Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/mysql.mdx",
+          "postProcessHash": "e701d11915a833809fa10c64b0ad423f8ba4c2f54b3a074b150d9b4dc50559ee"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.466Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/mysql.mdx",
+          "postProcessHash": "2d1983cca41b3fe1ccee5c2e516abb2b294cefb0bac8d41cf325a62ae87d0b6b"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.467Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/mysql.mdx",
+          "postProcessHash": "dcaab1f10c6221d5241591ff570f692e163ebd0d1bec66c57ab6ef7156db081f"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/mysql.mdx",
@@ -101997,47 +101997,47 @@
     },
     {
       "fileId": "e7ac62596e7a8d1c529f38f977113ca30857b99ba2d721d2f4db7a2e865765b8",
-      "versionId": "a12a9ce49924255d281f7f6048e5a2a35a86bcae4e2c8791b8211d0ca0a77847",
+      "versionId": "29039a0cd6fe81d65861af3d13552302cfd90b3675d5c684b65e30b015c26b67",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.691Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "1d125b12f8c9f2133146b07b3a27a54fbd65cbb33326583a36c8ffebf7ddf09c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "1d081b320763717ece0ce33b1cf10813a186c89351310dcd36502d263da188ff"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
+          "updatedAt": "2026-08-20T23:27:53.405Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "e244202f148ed5ccf1a9721027fa8bba2d59d7b598089fd0480f50e558285729"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "7d367fc8c3f9562c0bdf001d3098ec4021a58e869e61413fdd0889970c72b943"
+          "postProcessHash": "5072f461a5c42119a1965910e9f57706e39eb0c1f974d2d3180685ede5d3fc6b"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
+          "updatedAt": "2026-08-20T23:27:53.407Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "d8056696df3e9e88dcdc58c36fc5cdb9ec7530d152e8eb9d6147505dc8e49a60"
+          "postProcessHash": "51a5771c2965f7b492190327b99bbcd0c10c64f36aca3f109f831924b4b9172c"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
+          "updatedAt": "2026-08-20T23:27:53.408Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "970e33f8699300be34a16e69deaf397bf7bb7de16742879ef5ce513b4d2c2c5d"
+          "postProcessHash": "8c68ff805ae97997c14a6d4da0f8c5fff4cb3b566fe52e3ba382153914e64546"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.415Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/null.mdx",
+          "postProcessHash": "5757a13e577bdbd4e09fd9d36b9c8f69a22c68e2ac7a4c3744e67d5c9df5f5ef"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.417Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/null.mdx",
+          "postProcessHash": "18548dbfa99d472ca6734d043d3e95078109c7e466dfe3c4dc5b84a4ca73543b"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
+          "updatedAt": "2026-08-20T23:27:53.418Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "996cef6bde6689aefee0982fbe37605337290e2f75ffb7c6e56b726c1115a970"
+          "postProcessHash": "9585daec753e0cab3bd8e075bf47111ec8ff9c0de5032abc57e2621ef0cf3947"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.419Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/null.mdx",
+          "postProcessHash": "d1691a9c0553e19bbfe3a1084bfa93a8f0f9aa5ff9dd500012c08a240d2a29ed"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.692Z",
+          "updatedAt": "2026-08-20T23:27:53.422Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/null.mdx",
-          "postProcessHash": "a05e67e6ede7fbcc08c0ef61296adaf5998195b3bc428b30130a3da20ba203e6"
+          "postProcessHash": "21b86446b587df7bd360320b608ffb9968b5911592351a645fdfdde4a9278967"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/null.mdx",
@@ -102045,47 +102045,47 @@
     },
     {
       "fileId": "21d9645f3efd56c65a8f4a2568f46bffc55c4142539f8409203266f45661f464",
-      "versionId": "063c5006fb23c8aaf07991c34788a8a0d65f1f23c1174bff8ef14e1a32a9af3b",
+      "versionId": "b16dcd7ade16e4f26b8bb47e7613cc8ec8e71b0c3b1b07f3a421f9d03c443992",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "c89c63bf059261594aae1ecebfd16b6bea0cf75e88e12bddf3f3b598a2d68181"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "ad9189fc676716d5f30b29af06dbf23a02d5082558dde6750c542445cdba199a"
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.439Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/odbc.mdx",
+          "postProcessHash": "2586a96815ca04ce28d1a3a92058917f802b91556a330aac0bb4a0c2ea33486a"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
+          "updatedAt": "2026-08-20T23:27:53.443Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "a151ec2cb959e273337d5e1ce44430300fd41372d3585b7d6b43f9af3926bcfa"
+          "postProcessHash": "452725d0f5e3b0dc594c87fc2453390780c648a40b816fee1565384326acdd2e"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
+          "updatedAt": "2026-08-20T23:27:53.445Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "06ef570cfbea3d90c76e29152b9c714d560cca48f1ab72d4340dbc5719bd8cfa"
+          "postProcessHash": "dc29829924b2d6ec005068ca9c4471f91d1719cd0a2b10c2ce8eaa698b0c8e85"
         },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "28f2e0085ce637b0ea20125edfafaa06075c678a918dba3a39c6634581829b60"
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.448Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/odbc.mdx",
+          "postProcessHash": "ab71d2ba984ca7b52cb847fec18ec610bbbe23e37a360e3e2625aca733fe968d"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "924e1b6f93a0a5051cdadcfa75123f821abcd87164206d3c988c87ba3cacafff"
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.458Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/odbc.mdx",
+          "postProcessHash": "c93cef1a51d69284732b70aa6f1c6eaec1417884b1c387d5dc396e6097d3bd67"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.693Z",
+          "updatedAt": "2026-08-20T23:27:53.463Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "8411fc1a0976fba063c08cd1be8f567d457889d0c46fad4255c083d0f3e7e45d"
+          "postProcessHash": "0959f0f29fe279ce9703fb3a2cf92c39f1a8dd5b6d8ddc4bed9e001dee4a3b08"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.464Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/odbc.mdx",
+          "postProcessHash": "b083678d46ee77669654e9ce7a24311f508905675d098f5eeca13086c04c11fa"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.694Z",
+          "updatedAt": "2026-08-20T23:27:53.465Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/odbc.mdx",
-          "postProcessHash": "518789903e24fee9e249ce4da2a40b0243879c9167112eead1ab2b0fc0acd9e6"
+          "postProcessHash": "1f8f17b2c281b3e32d5c02b03dad3ca3c9fdddff81ac314f8af5969d02dca3c6"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/odbc.mdx",
@@ -102141,47 +102141,47 @@
     },
     {
       "fileId": "6eb6bec4869b148446aeb6be14321c6060f6b79d24f37e827b10b09a4095ac64",
-      "versionId": "d2dc950e4843cbf84c325ef9f72a1c46d2c215ecb04e16aec3abfb8ebd9eca31",
+      "versionId": "246b30e52472ddee6c5e336d24398274835281fab1fe358e2317befe251d40ef",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.695Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "69c0aafc90416c9d82f4106e761d5ddbbed08ee38f9233686aed1bc06ec5d7b8"
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.450Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/postgresql.mdx",
+          "postProcessHash": "dcbf695b29572577bdcd3de78993cb6273a86c3dd16514fa72abac73673083ae"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.695Z",
+          "updatedAt": "2026-08-20T23:27:53.455Z",
           "fileName": "ja/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "26c45a4941428f847a6e045c11fad9878ac814ba83dd490e1d6cc4dac8914c98"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.695Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "ba22f5280fea12da84da7761429f3bce8bc6774c45f6637f6a852f320b90a883"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.695Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "0d054c7d01317c6b43e6c0818e03ff2f2383a96cacf42fe502979343e53d36ee"
+          "postProcessHash": "19036c936688340f058fde50411874a66c72355466a6b021734d52627cd92a78"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
+          "updatedAt": "2026-08-20T23:27:53.456Z",
           "fileName": "ru/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "92919e9b5e914c7986c9081f05766e7ee1257805cddc05644f023c52e66edf9b"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "a3016cdb4636ff423666011ffc3141660b99e4c36a6dc1bd7564089e948c1f59"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "ee6daf2f0154fd77656af30f951b3293f597784ce1af36bd013a067278e19b69"
+          "postProcessHash": "44786edc4b50ee4cb9c33ab4d05cf73a2247c3190557672d953fd07a57491324"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
+          "updatedAt": "2026-08-20T23:27:53.459Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/postgresql.mdx",
-          "postProcessHash": "fd1ec9b74a7a6aefa016ca3a14da7419f138c92bbad9ee0b0e86eff25a9b494a"
+          "postProcessHash": "a60a297349076da15c29b6f2b243f6097f3dc6b94a6f985349a8650140a81b47"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.460Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/postgresql.mdx",
+          "postProcessHash": "3ec5e0afd33858c769e0084ab2f4faa1f5ce07cf27b077bfc38591d89919ca5e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.461Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/postgresql.mdx",
+          "postProcessHash": "66b5b3b6ed1db52250a6f998fc84ecf6ca201e1995c8d605e2d84b9470a29464"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.468Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/postgresql.mdx",
+          "postProcessHash": "9005a39da940924d7f031eda43d17bdb2b5828b33d41ddcc5ff465b8a3804065"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.468Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/postgresql.mdx",
+          "postProcessHash": "5e006b640a945125c7a2a01a9f25e8eb429c16ece771d1839b9c71db870ca77e"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/postgresql.mdx",
@@ -102189,47 +102189,47 @@
     },
     {
       "fileId": "884fc4e959f3bf7de1a150d116f3081eb02320afd0fb6899358b8d6c40839b51",
-      "versionId": "06879396f21791371512399d83f22751073e5575274d94ca5e68504578923165",
+      "versionId": "d5c82f77654e8a760b52d62968a749661dc9926130f0a242f849db4ddd15ecee",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "1c2ca3767bd3bfd14d48d4ea46d251ade75ce808e38d0c34f4409797bff1b943"
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.406Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/redis.mdx",
+          "postProcessHash": "4cf5ddfa7f9418f060006ac5815f4da9df86fece434f1df01f57cd93212a1768"
         },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.696Z",
+          "updatedAt": "2026-08-20T23:27:53.412Z",
           "fileName": "ja/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "1bff3b5e6d554236f7f8959ca896a3f9530f9e32a36ac23bf8a51fb8ce095759"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "f9600ec5b8b1a3484d700ec791080d911e9e5f313f3c8f61985278b43a1e376b"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
-          "fileName": "pt-BR/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "88ec1a92d2c835955b099cfa029ee59f0dc70228a380d8b9b8b158718ba0cfd9"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "c515ab84e72b16a6b239cdf29014fdcb0c94148c8b5199d07554bfc4f38d2022"
+          "postProcessHash": "4eea2d1963aff6a005aaa62ea82949c303372ef806c0955a05be375e23656348"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
+          "updatedAt": "2026-08-20T23:27:53.415Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "74dd4a9075ed9bd5283f564dac43031380f0dc0dfa04ff836bc8c5b4cef11469"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
-          "fileName": "ar/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "28d2032588106203e7156fab40670c4aab9ce4bc2dba08e96351d691a2daee64"
+          "postProcessHash": "52ea0e34f08d8a75ac122ebb5655f946366591b6fb376712fad6d1fdd149a828"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.697Z",
+          "updatedAt": "2026-08-20T23:27:53.417Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/redis.mdx",
-          "postProcessHash": "98266174e41a85b91b8796ebe8f97d069d13d418f8b49faf33704516f6e51e30"
+          "postProcessHash": "390c2daaad49a03e61c003fa32c4596d4664e0570df76d924af3402b0e7ae513"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.418Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/redis.mdx",
+          "postProcessHash": "23f5d54a2cdbe678ea0a76e311e5f14e0bab71c3f9b75218c9107f32845060e2"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-08-20T23:27:53.423Z",
+          "fileName": "pt-BR/reference/statements/create/dictionary/sources/redis.mdx",
+          "postProcessHash": "bd3a877d1eca6bba002355e4ae963537198e42c768f662a6bff541166e94c3da"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.425Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/redis.mdx",
+          "postProcessHash": "3f50ffc82340215e33c697895183f0164b34e94b3807a3dcaeb6ff53cc579adf"
+        },
+        "ar": {
+          "updatedAt": "2026-08-20T23:27:53.432Z",
+          "fileName": "ar/reference/statements/create/dictionary/sources/redis.mdx",
+          "postProcessHash": "43592191d912bbe39e780e14a4fac2fe649a495feadcd59b0d212da1b29dfccd"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/redis.mdx",
@@ -102237,47 +102237,47 @@
     },
     {
       "fileId": "119959e1d108f7ebbe6157a2a26c05c13231aef12a61c54ab0ebbf0cfec36f1d",
-      "versionId": "8cb02d7144caf151f6793911948238cb220ee69d651f8c8fe05f275c0b79655d",
+      "versionId": "d85369eebdf348a605a4e6617600eeaac534819cb6d42f3861fb49ae1546c3f7",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "5622f6bd12aa4e6656d7d6714cf7074381e12547e2798d56471afd752c29b6a6"
-        },
         "ja": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
+          "updatedAt": "2026-08-20T23:27:53.426Z",
           "fileName": "ja/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "6033a76dc03ae53d8fdb04c533007152095a4d3528813531de42826c68f89a38"
+          "postProcessHash": "c28f5e71167ef6944923a5d47c308722893925a81fdfdaf8f6b84693f24253fa"
         },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
+          "updatedAt": "2026-08-20T23:27:53.431Z",
           "fileName": "ko/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "b2831b618d8fd75ea6ac5da6a085ccebd084cea4f128e9ad3b1dc3da4faec143"
+          "postProcessHash": "3556114eb7f751def6abe5b7e67fff14da17424049a46e63b904b900e825800e"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
+          "updatedAt": "2026-08-20T23:27:53.441Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "7dc71fc17552e29c9cb6c592d23f8c94e59300661f9567747c5b96a76a2c4918"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "64eb2a96cf62d269bd3e21725e31e5ab516c56be18ba5a9fe773eb9c2c9ca6cb"
+          "postProcessHash": "c8bf6b2e502298938293ba8e81ccb101075eb68938c850d8c560741d88c2070b"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
+          "updatedAt": "2026-08-20T23:27:53.442Z",
           "fileName": "zh/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "a0dcfab5228bd913865b1ab171d6b33e612ddc30a4e7048261e95d33347d0276"
+          "postProcessHash": "817cf66c90f8dea6d8286ab5a08a0ccc067e74bade689fa354553029fefbdfc2"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.698Z",
+          "updatedAt": "2026-08-20T23:27:53.446Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "02887cd1eb4b05dabdd8b1dcd8629d1c7f17cfafbe47b75c346c03fdac03c663"
+          "postProcessHash": "ff8f341faadb61a766e87cb72a1c4aedc151b35d3f733839b6938435937cd5e4"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
+          "updatedAt": "2026-08-20T23:27:53.451Z",
           "fileName": "fr/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
-          "postProcessHash": "e7d01aace35b9f68a538a18578f9fe229e118afd44142f599b669b75443eaf4b"
+          "postProcessHash": "1aedf0ec9a9f90a7c21edc013e9c06c9afed59eb6a208807d409cdeaae0570e2"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.455Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
+          "postProcessHash": "ff1c0cdca1a599da98965eeb7e782fbacfd4158c4620b38cc05b83de158defbc"
+        },
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.456Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/yamlregexptree.mdx",
+          "postProcessHash": "51ef07e659f0b6fdb2623533bc09d495df46c34a99579afd4bb1be254976bc56"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/yamlregexptree.mdx",
@@ -102285,47 +102285,47 @@
     },
     {
       "fileId": "8b73eb39eac18c475760c367302927a33b48cc6348c292530603283deed7eada",
-      "versionId": "beee32a1d50722524ff0531116f5ad8822a1375ff5ee6632eca09a9d413af966",
+      "versionId": "fe84e7489f86462e0f263667cbf2092ae1d90c0f5fa5a2e897d6fdf9d3592983",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
-          "fileName": "es/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "6438320eedd6512c365af403f42d8380ede5452c6df548a987ee3585890e172f"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
-          "fileName": "ja/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "18e49d98f8f50304c158118d2b219d086ad0ce5e75331051212009824513be4b"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
-          "fileName": "ko/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "5a2743d2897ddd5e60b0d002df88da695225ff31f08858c6f177be1ea4069812"
+        "fr": {
+          "updatedAt": "2026-08-20T23:27:53.409Z",
+          "fileName": "fr/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "ae0f87f8a1932a2911f9f5d6f9ea6e614328496113a64863d27b3528fa094fcb"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
+          "updatedAt": "2026-08-20T23:27:53.416Z",
           "fileName": "pt-BR/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "b58d0c6992ad2bbc745c4104b5eaf8de3082842d7c28f67869bf1d02bcf78405"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
-          "fileName": "ru/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "be4d901a8e8599230d75b324e667148bdd7f8b52b8324b0c4ab976f3dec4ff34"
-        },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
-          "fileName": "zh/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "b36fe3e809357981a23d575bafa3e7b261122e285931ff4681c2b6b45abd12b8"
+          "postProcessHash": "d81c2d518522e7de9bc83dd0ef676a7a590a21b6be1ccccb07521c4ae4578612"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:08.699Z",
+          "updatedAt": "2026-08-20T23:27:53.419Z",
           "fileName": "ar/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "21c49462cdc10255eaa841a78b22c9399aabc82daa54cfb518034fc720e23672"
+          "postProcessHash": "11e1cb053c4f3a692028ced1609220335bc86df29d8016b81475162cd2359f30"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:08.700Z",
-          "fileName": "fr/reference/statements/create/dictionary/sources/ytsaurus.mdx",
-          "postProcessHash": "d72f7c7a46a3ff518bf645ff303a57b86620091d755908650adc203ae9b1b1c4"
+        "ru": {
+          "updatedAt": "2026-08-20T23:27:53.420Z",
+          "fileName": "ru/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "6158fafdd34f9cfda1546063f27ea693f3fab544ea441265251fdae5f4b0ae32"
+        },
+        "ja": {
+          "updatedAt": "2026-08-20T23:27:53.420Z",
+          "fileName": "ja/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "2d81cec41bf60e34a82596f9b6307d20c2cbaca099be07ac8673ef01b683173d"
+        },
+        "es": {
+          "updatedAt": "2026-08-20T23:27:53.422Z",
+          "fileName": "es/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "51f8788fec166309ea91a0bf7d21cdbd533ae4ef2fb14fed68d52f473febdc0f"
+        },
+        "zh": {
+          "updatedAt": "2026-08-20T23:27:53.437Z",
+          "fileName": "zh/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "265c894d63b019fa10a60c4454f314423220f062e94c7de91c2118582f9b2d4b"
+        },
+        "ko": {
+          "updatedAt": "2026-08-20T23:27:53.439Z",
+          "fileName": "ko/reference/statements/create/dictionary/sources/ytsaurus.mdx",
+          "postProcessHash": "1127b95338fc27469bb61abf1bd90703df23b1b28d6198f292ac28757df19de8"
         }
       },
       "fileName": "reference/statements/create/dictionary/sources/ytsaurus.mdx",
