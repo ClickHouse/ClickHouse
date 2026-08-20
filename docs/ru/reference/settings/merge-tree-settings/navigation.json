@@ -1,11 +1,11 @@
 {
   "directory": "none",
-  "group": "Настройки таблиц семейства MergeTree",
+  "group": "Настройки таблиц MergeTree",
   "pages": [
     "ru/reference/settings/merge-tree-settings/add-minmax",
     "ru/reference/settings/merge-tree-settings/allow",
     "ru/reference/settings/merge-tree-settings/allow-experimental",
-    "ru/reference/settings/merge-tree-settings/always",
+    "ru/reference/settings/merge-tree-settings/always-fetch",
     "ru/reference/settings/merge-tree-settings/async",
     "ru/reference/settings/merge-tree-settings/cache-populated-by-fetch",
     "ru/reference/settings/merge-tree-settings/check",
