@@ -31,6 +31,9 @@ do
     echo "names the setting: $(has join_algorithm)"
     echo "names the algorithm that was tried: $(has grace_hash)"
     echo "names the JOIN strictness: $(has ASOF)"
+    echo "names the JOIN kind: $(has INNER)"
+    # Both parts together, so the test also fails if they stop being reported as one JOIN.
+    echo "names the JOIN as a whole: $(has 'ASOF INNER JOIN')"
     # The setting only accepts lowercase, so the uppercase enum spelling must not be what is printed.
     echo "prints the unusable uppercase spelling: $(has GRACE_HASH)"
 done
