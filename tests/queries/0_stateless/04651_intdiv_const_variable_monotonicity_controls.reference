@@ -1,0 +1,29 @@
+c6 span eq	1
+c6 span ge	1
+c6 zero right eq	1
+c6 zero right ge	1
+c6 zero right le	1
+c6 zero left ge	1
+c6 zero left le	1
+c6 both unsigned eq	1
+c6 both unsigned ge	1
+c6 both unsigned hi eq	1
+c6 both unsigned hi ge	1
+c6 both unsigned hi le	1
+c6 float divisor	1
+c6 float divisor ge	1
+c6 float divisor le	1
+c6 wrap eq 1	1
+c6 wrap eq 100	1
+c6 wrap eq -100	1
+c6 wrap ge 50	1
+c6 wrap le -50	1
+c6 wrap eq 0	1
+c6 wrap pos eq 1	1
+c6 wrap pos le -1	1
+c6 wrap g2 ge 50	1
+c6 wrap g2 eq 1	1
+c6 wrap g2 le -50	1
+c8 live wrap ge	1
+c8 live wrap eq	1
+c8 live wrap le	1
