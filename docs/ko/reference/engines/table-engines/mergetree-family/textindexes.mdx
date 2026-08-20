@@ -84,6 +84,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -122,6 +123,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | chinese[(granularity)]
                                             | icu(locale)
                                             | japanese
                                             | ngrams[(N)]
@@ -160,6 +162,8 @@ ALTER TABLE table DROP INDEX text_idx;
   각 문자열은 여러 문자로 구성될 수 있습니다(예시의 `', '`).
   명시적으로 지정하지 않으면(예: `tokenizer = splitByString`) 기본 구분자 목록은 공백 1개인 `[' ']`입니다.
 * `asciiCJK`는 유니코드 단어 경계 규칙을 사용해 문자열을 토큰으로 분할합니다([Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)와 유사). ASCII 영숫자와 밑줄은 연결 문자와 함께 토큰을 이룹니다(문자의 경우 ASCII `:`, 같은 유형의 문자에는 `.` 및 `'`). [CJK](https://en.wikipedia.org/wiki/CJK_characters) 문자를 포함한 비ASCII 유니코드 문자는 한 글자 토큰이 됩니다.
+* `chinese[(granularity)]`는 딕셔너리와 은닉 마르코프 모델을 사용해 중국어 텍스트를 단어로 세분화합니다(알고리즘은 [jieba](https://github.com/fxsjy/jieba)를 따르며, 내장 딕셔너리와 모델 데이터는 [cppjieba](https://github.com/yanyiwu/cppjieba)에서 파생되었습니다). 모든 비ASCII 문자를 한 글자 토큰으로 처리하는 `asciiCJK`와 달리, `chinese`는 연속된 중국어 문자를 단어로 그룹화합니다(예: `北京大学`는 한 글자 토큰 4개가 아니라 하나의 토큰 `北京大学`가 됩니다). 이를 통해 중국어 텍스트에 더 의미 있는 토큰과 더 높은 검색 품질을 제공합니다. 일반/혼합 텍스트에는 `asciiCJK`를 사용하고, 중국어 전용 텍스트에는 `chinese`를 사용하십시오. 선택적 `granularity` 인수는 `'coarse_grained'`(지정하지 않은 경우 기본값) 또는 `'fine_grained'`입니다. 후자는 겹치는 하위 단어도 추가로 열거하므로, 예를 들어 `北京邮电大学`에서는 `北京`, `邮电`, `大学`도 생성됩니다. 세분화 수준이 높은 토큰화는 더 큰 인덱스를 사용하는 대신 재현율을 높입니다.
+  `chinese` 텍스트 인덱스는 ASCII 구분자만 기준으로 분할하는 `hasToken`이 아니라, 니들을 `chinese` 토크나이저로 토큰화하는 [hasAnyTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAnyTokens) / [hasAllTokens](/ko/reference/functions/regular-functions/string-search-functions#hasAllTokens)로 검색하십시오.
 * `icu(locale)`는 [ICU](https://icu.unicode.org/) 라이브러리의 유니코드 단어 분할(UAX #29)을 사용해 문자열을 단어 토큰으로 분할합니다. 단어 사이에 공백을 사용하지 않는 문자 체계(예: 중국어, 일본어, 태국어)의 경우 ICU는 딕셔너리 기반 세분화를 적용하므로, `asciiCJK`와 달리 이러한 텍스트를 단일 문자가 아닌 의미 있는 여러 글자 단어로 분할합니다. 여기서 &quot;딕셔너리&quot;는 해당 문자 체계를 위해 ICU에 포함된 단어 목록을 의미하며([`brkitr/dictionaries`](https://github.com/unicode-org/icu/tree/main/icu4c/source/data/brkitr/dictionaries) 참조), ICU는 이 단어들을 기준으로 가장 가능성 높은 분할을 선택합니다.
   `locale`은 세그먼터에 전달되는 ICU 로캘입니다. 세분화는 주로 문자 체계와 딕셔너리에 의해 결정되며, 로캘은 ICU의 로캘별 조정을 선택합니다. 이는 필수 매개변수입니다. 예: `tokenizer = icu('ja')` 또는 `tokenizer = icu('zh')`.
   사용 가능한 로캘은 `SELECT * FROM system.collations`로 나열할 수 있습니다.
@@ -266,6 +270,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 ASCII 이외 텍스트의 경우 CJK 문자를 포함한 유니코드 단어 경계를 올바르게 처리하는 `asciiCJK` 토크나이저를 권장합니다.
 공백으로 단어를 구분하지 않는 언어(예: 중국어, 일본어, 태국어)의 경우 `icu(locale)` 토크나이저는 ICU의 딕셔너리 기반 단어 분할을 통해 의미 있는 여러 문자로 구성된 단어 토큰을 생성합니다.
 특히 일본어의 경우 `japanese` 토크나이저(MeCab)는 텍스트를 개별 문자가 아닌 단어로 분할하며, 일반적으로 더 나은 검색 결과를 제공합니다.
+특히 중국어의 경우 `chinese` 토크나이저(jieba)는 텍스트를 개별 문자가 아닌 단어로 분할하며, 일반적으로 더 나은 검색 결과를 제공합니다.
 
 <a id="preprocessor-argument-optional" />**전처리기 인수(선택 사항)**. 전처리기는 토큰화 전에 입력 문자열에 적용되는 표현식을 의미합니다.
 
@@ -1462,6 +1467,40 @@ LIKE/ILIKE 쿼리 패턴이 `%<alpha-numeric-characters-without-spaces>%`이고 
 * [text&#95;index&#95;like&#95;max&#95;postings&#95;to&#95;read](/ko/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
 이 최적화는 `like` 및 `ilike` 함수만 지원합니다.
+
+<div id="count-queries-perf">
+  ### 단순 count 쿼리
+</div>
+
+텍스트 검색 프레디케이트와 일치하는 행의 수만 계산하는 쿼리
+
+```sql
+SELECT count()
+FROM [...]
+WHERE hasToken(column_with_text_index, 'token')
+-- or: hasAllTokens(column_with_text_index, ['token', ...])
+-- or: hasAnyTokens(column_with_text_index, ['token', ...])
+```
+
+텍스트 인덱스에서 결과를 반환하므로 일치하는 행을 읽지 않습니다.
+ClickHouse는 인덱스의 포스팅 리스트 카디널리티에서 개수를 가져오므로, 일치하는 행을 표시하는 가상 컬럼과 이에 대한 집계를 건너뜁니다. 단일 토큰에는 딕셔너리 카디널리티만 필요하므로 포스팅 리스트를 읽지 않습니다. 여러 토큰 프레디케이트는 포스팅 리스트를 합집합(`hasAnyTokens`)하거나 교집합(`hasAllTokens`)하기 위해서만 읽습니다. 텍스트 인덱스는 파트 전체를 포괄하므로 개수는 정확하며, 매우 큰 파트에서도 빠르게 유지됩니다.
+
+이 최적화는 단일 `hasToken`, `hasAnyTokens` 또는 `hasAllTokens` 프레디케이트(또는 이에 상응하는 `Array`/`Map` 표현식)로 필터링된 단독 `count()`에 적용됩니다. `AND`/`OR`/`NOT`로 결합된 프레디케이트, 추가 필터(예: `... AND id > 10`), `m['key'] = 'value'`와 같은 힌트 모드 프레디케이트, 개수 외 항목 선택, 구문 검색 또는 `LIKE`/패턴 검색이 있으면 쿼리는 대신 행을 읽습니다. 구체화된 인덱스가 없는 파트도 행을 읽어 정확하게 계산됩니다.
+
+최적화가 적용되었는지 확인하려면 쿼리 계획에서 `ReadFromTextIndexCount`를 확인하십시오:
+
+```sql
+EXPLAIN
+SELECT count() FROM table WHERE hasToken(col, 'sometoken')
+```
+
+```text
+[...]
+Aggregating
+└──ReadFromTextIndexCount (Trivial count from text index (idx, token = 'sometoken'))
+```
+
+이 최적화는 [query&#95;plan&#95;optimize&#95;count&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_count_from_text_index)로 제어되며, 기본적으로 활성화되어 있습니다. 이 기능은 [직접 읽기](#direct-read)를 기반으로 하므로 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/ko/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index), [use&#95;skip&#95;indexes](/ko/reference/settings/session-settings/use-skip-indexes#use_skip_indexes), [optimize&#95;trivial&#95;count&#95;query](/ko/reference/settings/session-settings/optimize-trivial#optimize_trivial_count_query)도 활성화되어 있어야 합니다. 이들 설정도 모두 기본적으로 활성화되어 있습니다.
 
 <div id="caching">
   ### 캐싱

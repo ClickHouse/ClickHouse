@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Server Settings",
+  "group": "إعدادات الخادم",
   "pages": [
     "ar/reference/settings/server-settings/settings",
     "ar/reference/settings/server-settings/settings/access-control",

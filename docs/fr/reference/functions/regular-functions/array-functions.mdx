@@ -725,6 +725,13 @@ Récupère l&#39;élément du tableau fourni à l&#39;indice `n`, où `n` peut �
 Si l&#39;indice est en dehors des limites du tableau, la fonction renvoie une valeur par défaut (0 pour les nombres, une chaîne vide pour les chaînes de caractères, etc.),
 sauf pour les arguments correspondant à un tableau non constant et à un indice constant égal à 0. Dans ce cas, l&#39;erreur `Array indices are 1-based` est renvoyée.
 
+Lorsque `n` est un tableau d&#39;entiers, renvoie un tableau contenant les éléments aux positions spécifiées (opération de collecte).
+Cela équivaut à `arrayMap(i -> arr[i], n)`, mais possède une implémentation distincte et plus efficace.
+Les positions hors limites produisent la valeur par défaut, comme pour un indice scalaire.
+Les éléments d&#39;indice peuvent être nullable. Un indice `NULL` produit `NULL` (et rend le type d&#39;élément du résultat nullable) lorsque le type d&#39;élément peut être
+encapsulé dans `Nullable` ; pour les types d&#39;éléments qui ne peuvent pas être contenus dans `Nullable` (comme `Array`, `Map`), un indice `NULL` produit à la place la
+valeur par défaut. Il s&#39;agit du même comportement que pour un indice scalaire `NULL`.
+
 <Note>
   Les tableaux dans ClickHouse sont indexés à partir de 1.
 </Note>
@@ -741,11 +748,11 @@ arrayElement(arr, n)
 
 **Arguments**
 
-* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l&#39;élément à récupérer. [`(U)Int*`](/fr/reference/data-types/int-uint).
+* `arr` — Le tableau à parcourir. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l&#39;élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
 
 **Valeur renvoyée**
 
-Renvoie un tableau unique combiné à partir des arguments de tableau fournis [`Array(T)`](/fr/reference/data-types/array)
+Lorsque `n` est un scalaire, renvoie l&#39;élément de type `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si les éléments d&#39;indice sont nullables et que `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. [`Any`](/fr/reference/data-types/index) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -789,6 +796,16 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 0
 ```
 
+**Tableau d’indices**
+
+```sql title=Query
+SELECT [10, 20, 30, 40][[2, 4, 1]]
+```
+
+```response title=Response
+[20,40,10]
+```
+
 <div id="arrayElementOrNull">
   ## arrayElementOrNull
 </div>
@@ -796,7 +813,13 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 Introduit dans : v1.1.0
 
 Renvoie l’élément du tableau fourni à l’indice `n`, où `n` peut être de n’importe quel type entier.
-Si l’indice est hors des limites du tableau, `NULL` est renvoyé au lieu d’une valeur par défaut.
+Si l’indice est hors des limites du tableau, `NULL` est renvoyé au lieu d’une valeur par défaut,
+à condition que le type de résultat puisse être nullable. Pour les types d’éléments qui ne sont pas déjà nullable et ne peuvent pas être
+placés dans `Nullable` (comme `Array`, `Map`), la valeur par défaut du type d’élément est renvoyée à la place.
+
+Lorsque `n` est un tableau d’entiers, renvoie un tableau contenant les éléments aux positions spécifiées.
+Cela équivaut à `arrayMap(i -> arrayElementOrNull(arr, i), n)`, mais bénéficie d’une implémentation distincte et plus efficace.
+Les positions hors limites et les indices `NULL` produisent des valeurs `NULL` dans le tableau résultant, suivant la même règle que pour un indice scalaire.
 
 <Note>
   Les tableaux dans ClickHouse sont indexés à partir de 1.
@@ -807,16 +830,16 @@ Les indices négatifs sont pris en charge. Dans ce cas, l’élément correspond
 **Syntaxe**
 
 ```sql
-arrayElementOrNull(arrays)
+arrayElementOrNull(arr, n)
 ```
 
 **Arguments**
 
-* `arrays` — Nombre arbitraire d&#39;arguments de type tableau. [`Array`](/fr/reference/data-types/array)
+* `arr` — Le tableau dans lequel effectuer la recherche. [`Array(T)`](/fr/reference/data-types/array). - `n` — Position de l’élément à récupérer, ou tableau de positions. Les positions peuvent être nullables. [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Array((U)Int*)`](/fr/reference/data-types/array).
 
 **Valeur renvoyée**
 
-Renvoie un seul tableau combiné à partir des arguments de tableau fournis. [`Array(T)`](/fr/reference/data-types/array)
+Lorsque `n` est un scalaire, renvoie `Nullable(T)` si `T` peut être encapsulé dans `Nullable`, sinon `T`. Lorsque `n` est un tableau, renvoie `Array(Nullable(T))` si `T` peut être encapsulé dans `Nullable`, sinon `Array(T)`. [`Any`](/fr/reference/data-types/index) ou [`Nullable(T)`](/fr/reference/data-types/nullable) ou [`Array(T)`](/fr/reference/data-types/array) ou [`Array(Nullable(T))`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -848,6 +871,16 @@ SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 
 ```response title=Response
 NULL
+```
+
+**Tableau d’indices**
+
+```sql title=Query
+SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
+```
+
+```response title=Response
+[10,NULL,20]
 ```
 
 <div id="arrayEnumerate">
@@ -1731,6 +1764,12 @@ et avec les fonctions d’agrégation, qui prennent un groupe de lignes et les &
 
 Toutes les valeurs des colonnes sont simplement copiées, à l’exception de celles de la colonne à laquelle cette fonction est appliquée ;
 celles-ci sont remplacées par la valeur correspondante du tableau.
+
+`arrayJoin`, y compris via son alias `unnest`, ne peut pas être utilisé dans une condition `JOIN ON` évaluée lors de la jointure, car une telle condition doit
+préserver le nombre de lignes. Une condition qui ne porte que sur un seul côté, ainsi qu’une clé d’égalité sur `arrayJoin`, sont
+extraites avant la jointure et ne sont pas affectées. Une condition `ALL INNER JOIN` sans disjonction n’est pas non plus affectée,
+car la condition y est appliquée après la jointure.
+Lorsque l’expansion ne dépend que d’un côté, déplacez-la dans un `ARRAY JOIN` d’une sous-requête avant la jointure ; une condition dont l’argument `arrayJoin` lit des colonnes des deux côtés doit être restructurée.
 
 <Note>
   Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
@@ -5369,6 +5408,71 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="notHas">
+  ## notHas
+</div>
+
+Introduite dans : v26.8.0
+
+Renvoie si le tableau ne contient pas l’élément spécifié, si la map ne contient pas la clé spécifiée ou si l’objet JSON ne contient pas le chemin spécifié. Négation de `has`.
+
+**Syntaxe**
+
+```sql
+notHas(haystack, needle)
+```
+
+**Arguments**
+
+* `haystack` — Le tableau, la map ou le JSON source. [`Array`](/fr/reference/data-types/array), [`Map`](/fr/reference/data-types/map) ou [`JSON`](/fr/reference/data-types/newjson)
+* `needle` — La valeur à rechercher (un élément dans un tableau, une clé dans une map ou une chaîne de chemin dans un JSON).
+
+**Valeur renvoyée**
+
+Renvoie `1` si le haystack ne contient pas le needle spécifié, sinon `0`. [`UInt8`](/fr/reference/data-types/int-uint)
+
+**Exemples**
+
+**Utilisation de base avec un tableau**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 2)
+```
+
+```response title=Response
+0
+```
+
+**tableau introuvable**
+
+```sql title=Query
+SELECT notHas([1, 2, 3], 4)
+```
+
+```response title=Response
+1
+```
+
+**Utilisation de base de Map**
+
+```sql title=Query
+SELECT notHas(map('a', 1, 'b', 2), 'c')
+```
+
+```response title=Response
+1
+```
+
+**Utilisation de base de JSON**
+
+```sql title=Query
+SELECT notHas('{"a" : 1, "b" : {"c" : 2}}'::JSON, 'b.c')
+```
+
+```response title=Response
+0
 ```
 
 <div id="randomHadamardTransform">
