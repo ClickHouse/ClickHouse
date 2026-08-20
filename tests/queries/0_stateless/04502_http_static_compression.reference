@@ -13,9 +13,9 @@ Content-Encoding: zstd
 --- test 7: Accept-Encoding: zstd on /schema ---
 Content-Encoding: zstd
 --- test 8: zstd response is valid and decompressable ---
-clickhouse.com
+<title>ClickHouse Query</title>
 --- test 9: gzip response is valid and decompressable ---
-clickhouse.com
+<title>ClickHouse Query</title>
 --- test 10: ClickStack still pre-gzipped ---
 Content-Encoding: gzip
 --- test 11: Vary: Accept-Encoding advertised on negotiated response ---

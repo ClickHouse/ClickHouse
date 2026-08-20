@@ -7,6 +7,6 @@ Vary: Accept-Encoding
 --- test 4: unknown coding (compress) -> no Content-Encoding ---
 no Content-Encoding (expected)
 --- test 5: unknown coding (compress) body is valid uncompressed HTML ---
-clickhouse.com
+<title>ClickHouse Query</title>
 --- test 6: body is valid uncompressed HTML (identity) ---
-clickhouse.com
+<title>ClickHouse Query</title>
