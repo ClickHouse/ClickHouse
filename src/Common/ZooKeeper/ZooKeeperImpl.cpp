@@ -1373,7 +1373,10 @@ void ZooKeeper::receiveEvent()
 
         /// Unrecoverable. Don't leave incorrect state in memory.
         if (!response)
+        {
+            logDeferredExceptions();
             std::terminate();
+        }
 
         /// In case we cannot read the response, we should indicate it as the error of that type
         ///  when the user cannot assume whether the request was processed or not.
