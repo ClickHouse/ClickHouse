@@ -3451,6 +3451,12 @@ class QueryResultElement extends HTMLElement
                     background: var(--table-header-color);
                 }
 
+                /* Set off from the page numbers, so the two controls of the pager read as two. */
+                .page-size-label
+                {
+                    margin-left: 0.6rem;
+                }
+
                 .page-input
                 {
                     width: 5rem;
@@ -5304,6 +5310,7 @@ class QueryResultElement extends HTMLElement
             this._pager.appendChild(button);
         }
         this._appendPageJump();
+        this._appendPageSize(size);
     }
 
     /// The trailing ellipsis of the pager: the number of pages is unknown, so instead of listing them
@@ -5344,6 +5351,68 @@ class QueryResultElement extends HTMLElement
             input.focus();
         });
         this._pager.appendChild(jump);
+    }
+
+    /// How many rows a page holds, shown after the page numbers and edited the same way as the page
+    /// jump: click the value, type another, and it is taken when the field loses focus.
+    _appendPageSize(size)
+    {
+        const label = document.createElement('span');
+        label.className = 'page-size-label';
+        label.appendChild(document.createTextNode('Per page:'));
+        this._pager.appendChild(label);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'page-btn';
+        button.textContent = String(size);
+        const title = 'Rows per page (at most ' + this._pageSize() + ', which is all this result can show at once)';
+        button.title = title;
+        button.setAttribute('aria-label', title);
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.inputMode = 'numeric';
+            input.className = 'page-input';
+            input.value = String(size);
+            input.setAttribute('aria-label', title);
+            /// Keep every key in the input: the page binds global shortcuts on the document.
+            input.addEventListener('keydown', (ev) => {
+                ev.stopPropagation();
+                if (ev.key === 'Enter') { input.blur(); }
+                else if (ev.key === 'Escape') { input.value = ''; input.blur(); }
+            });
+            input.addEventListener('keyup', (ev) => ev.stopPropagation());
+            input.addEventListener('blur', () => {
+                const entered = Math.floor(Number(input.value.trim()));
+                if (entered >= 1) { this._setPageSize(entered); }
+                else { this.renderPagination(); }
+            });
+            button.replaceWith(input);
+            input.focus();
+            input.select();
+        });
+        this._pager.appendChild(button);
+    }
+
+    /// Re-cut the result into pages of a different size and show the first of them. The page number is
+    /// not kept: pages of a new size hold different rows, so the one the user was on no longer denotes
+    /// the slice they were looking at (the same reason changing the sort or a filter starts over).
+    ///
+    /// Capped at what this result can display at once: a larger page would return rows the table then
+    /// truncates away, and the next page would start beyond them, so paging on would silently skip the
+    /// rows that never fit. The cap is what the value shows afterwards, so it is always the size in
+    /// effect rather than the one that was asked for.
+    _setPageSize(size)
+    {
+        if (!this._shapeable) { return; }
+        const cap = this._pageSize();
+        if (!(size >= 1) || cap < 1) { return; }
+        /// In place: `_pagination` is the owning tab's object, aliased by every element of the tab.
+        this._pagination.size = Math.min(Math.floor(size), cap);
+        this._pagination.page = 1;
+        commitResultShape(this);
     }
 
     /// Show one page of the result: the page becomes the `page` construction setting and the display

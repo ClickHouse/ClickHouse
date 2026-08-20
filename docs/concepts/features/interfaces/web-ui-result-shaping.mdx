@@ -60,7 +60,7 @@ A filtered result that comes back empty keeps its column headers (instead of the
 A result is displayed up to a limit — 1000 rows, or fewer for a very wide result. When a result is cut off at that limit there is more of it to see, and a pager appears under the table:
 
 ```text
-Page: 1 2 …
+Page: 1 2 …   Per page: 1000
 ```
 
 Clicking a page number sets the page size to the display limit and that page as the [`page`](/reference/settings/session-settings/other#page) setting, then re-runs the query; the server translates the page into the corresponding `OFFSET`. The pager then stays for as long as the result is paged, even though each page is exactly full and so no longer looks cut off.
@@ -68,6 +68,8 @@ Clicking a page number sets the page size to the display limit and that page as 
 The number of pages is not shown, because it is not known — counting the rows of the result would mean running a second query. The pager lists the ten pages before the current one, the current one, and the next one, followed by `…`. Clicking `…` turns it into an input for any page number, which is taken when the input loses focus (pressing <kbd>Enter</kbd> does that).
 
 The next page is offered only while the current one is full. A page that came back with fewer rows than fit on it is the end of the result, so there is no page after it. (A result whose length happens to be an exact multiple of the page size still offers one more page, which then comes back empty: telling that case apart would again mean counting the rows.)
+
+`Per page` shows how many rows a page holds, and is edited the same way: click the value and type another. It cannot exceed what the result can display at once — a larger page would return rows the table then truncates away, and the next page would start beyond them, so paging on would silently skip the rows that never fit; a bigger number is taken as that maximum, which is then what the value shows. Changing it starts again at the first page, since pages of a new size hold different rows.
 
 Changing the sort or any filter goes back to the first page: both change which rows the result has, or in what order, so the page the user was on no longer denotes the same slice of it.
 
