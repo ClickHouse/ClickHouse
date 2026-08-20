@@ -366,17 +366,23 @@ class Result(MetaClasses.Serializable):
         return self
 
     def _add_job_summary_to_info(self):
+        # A job whose direct children are test cases publishes a row per case and
+        # renders each one on its report page, so naming every failure here would
+        # repeat those payloads and grow this text with the failure count. Naming
+        # a few is enough to identify a job that died in one of its steps, which
+        # is the case that has no other carrier.
+        MAX_NAMED_STEPS = 3
         if not self.info:
             total = 0
             fail_cnt = 0
-            failed_steps = []
+            named = []
             for r in self.results:
                 if not r.is_ok():
                     fail_cnt += 1
-                    if r.info:
-                        failed_steps.append(self._trim_step_info(f"{r.name}: {r.info}"))
+                    if r.info and len(named) < MAX_NAMED_STEPS:
+                        named.append(self._trim_step_info(f"{r.name}: {r.info}"))
                 total += 1
-            self.set_info("\n".join([f"Failures: {fail_cnt}/{total}"] + failed_steps))
+            self.set_info("\n".join([f"Failures: {fail_cnt}/{total}"] + named))
 
         return self
 

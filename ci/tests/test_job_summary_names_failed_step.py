@@ -217,7 +217,10 @@ def test_real_payload_shapes_are_named_whole(payload, line_count):
 
     named = result.info.split("\n", 1)[1]
     assert len(step.info.splitlines()) == line_count
-    assert named.startswith(f"{step.name}: ")
+    # Exact equality: a real payload of this size is named whole, so any clip of
+    # the appended text - at either end or in the middle - reddens here.
+    assert named == f"{step.name}: {step.info}"
+    assert len(named) > 20_000
     assert MARKER in named
 
 
@@ -246,3 +249,89 @@ def test_trim_keeps_both_ends_of_an_oversized_step(cause_at_end):
 def test_trim_bounds_a_pathological_step_info():
     result = job([node("Install ClickHouse", Result.Status.FAIL, "z" * 500_000)])
     assert len(result.info) < 34_000
+
+
+def test_many_failing_cases_are_not_all_copied_into_the_job_row():
+    """
+    A pytest-style job (`ci/jobs/ci_tests_job.py`) has test cases as its direct
+    children and no CIDB selector, so every case already has its own row. Naming all
+    of them here would repeat those payloads in the job row and scale it with the
+    failure count.
+    """
+    cases = [node(f"test_{i}", Result.Status.FAIL, "E" * 3000) for i in range(40)]
+    result = job(cases)
+
+    assert result.info.startswith("Failures: 40/40\n")
+    assert len(result.info) < 32_768
+    assert result.info.count("test_") <= 3
+
+
+def test_the_first_failing_steps_are_named_in_order():
+    steps = [
+        node("Install ClickHouse", Result.Status.FAIL, "A_MARKER"),
+        node("Start ClickHouse Server", Result.Status.FAIL, "B_MARKER"),
+        node("Collect logs", Result.Status.FAIL, "C_MARKER"),
+        node("Check errors", Result.Status.FAIL, "D_MARKER"),
+    ]
+    result = job(steps)
+
+    assert result.info.splitlines()[0] == "Failures: 4/4"
+    assert "Install ClickHouse: A_MARKER" in result.info
+    assert "Start ClickHouse Server: B_MARKER" in result.info
+    assert "Collect logs: C_MARKER" in result.info
+    assert "D_MARKER" not in result.info
+
+
+def test_the_named_step_reaches_the_cidb_job_row():
+    """
+    End-to-end through the real publisher: the summary must survive into the
+    job-level row's `test_context_raw`, and it must not add or alter any test row.
+    """
+    import json
+    import types
+
+    import ci.praktika.cidb as cidb_module
+    from ci.praktika.cidb import CIDB
+
+    class FakeEnv:
+        PR_NUMBER = 0
+        SHA = "d6473dbb36b463ff3d5a46edfe76dae8eef0065b"
+        COMMIT_URL = ""
+        CHANGE_URL = ""
+        BASE_BRANCH = "master"
+        REPOSITORY = "ClickHouse/ClickHouse"
+        BRANCH = "master"
+        FORK_NAME = "ClickHouse/ClickHouse"
+        INSTANCE_TYPE = "c6a.4xlarge"
+        INSTANCE_LIFE_CYCLE = "spot"
+        INSTANCE_ID = "i-0"
+
+    class FakeInfo:
+        def get_job_report_url(self, *a, **k):
+            return "https://example.invalid/report"
+
+        def get_job_url(self, *a, **k):
+            return "https://example.invalid/job"
+
+    saved_env, saved_info = cidb_module._Environment, cidb_module.Info
+    cidb_module._Environment = types.SimpleNamespace(get=lambda: FakeEnv())
+    cidb_module.Info = FakeInfo
+    try:
+        result = job(
+            [
+                node("Start ClickHouse Server", Result.Status.FAIL, SERVER_LOG),
+                make_tests_stage(),
+            ]
+        )
+        rows = [
+            json.loads(row)
+            for row in CIDB.json_data_generator(result, result_name_for_cidb="Tests")
+        ]
+    finally:
+        cidb_module._Environment, cidb_module.Info = saved_env, saved_info
+
+    assert rows[0]["test_context_raw"] == result.info
+    assert "Start ClickHouse Server: " in rows[0]["test_context_raw"]
+    assert MARKER in rows[0]["test_context_raw"]
+    # No pseudo test case, and the real child row is untouched.
+    assert [r["test_name"] for r in rows] == ["", "00001_ok"]
