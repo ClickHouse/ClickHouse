@@ -422,7 +422,13 @@ def main():
                 "ENGINE = AggregatingMergeTree ORDER BY id "
                 "SETTINGS min_bytes_for_wide_part = 0, "
                 "vertical_merge_algorithm_min_rows_to_activate = 1000000000, "
-                "vertical_merge_algorithm_min_columns_to_activate = 1000000000",
+                "vertical_merge_algorithm_min_columns_to_activate = 1000000000, "
+                # 'Manual' disables automatic merge selection, so the only merges this table ever
+                # runs are the churn workers' explicit `OPTIMIZE`s below. With the default selector a
+                # background merge could compact the pending parts first, leaving a worker's
+                # `OPTIMIZE` a no-op that still flipped `churn_ok` - "the churn works" would then be
+                # concluded without a single merge having run under the script's own observation.
+                "merge_selector_algorithm = 'Manual'",
             )
         except subprocess.TimeoutExpired:
             die("timed out creating table m (server wedged during setup)")
@@ -531,7 +537,14 @@ def main():
                     if record_tracked_limit_rejection(insert, kills_before_insert):
                         return
                     kills_before_optimize = oom_kill_count()
-                    optimize = bounded_client("-q", "OPTIMIZE TABLE m FINAL")
+                    # `optimize_throw_if_noop = 1` makes a no-op `OPTIMIZE` fail loudly instead of
+                    # returning success: together with the table's 'Manual' merge selector it means a
+                    # successful cycle really did run a merge under observation, which is what
+                    # `churn_ok` is supposed to certify. (`OPTIMIZE ... FINAL` merges even a single
+                    # part, so the freshly inserted part alone is enough for a real merge.)
+                    optimize = bounded_client(
+                        "-q", "OPTIMIZE TABLE m FINAL SETTINGS optimize_throw_if_noop = 1"
+                    )
                 except subprocess.TimeoutExpired as timeout_error:
                     if not churn_ok.is_set() and oom_kill_count() == oom_before:
                         churn_failures.append(timeout_error)
@@ -547,6 +560,15 @@ def main():
                     return
                 if insert.returncode == 0 and optimize.returncode == 0:
                     churn_ok.set()
+                    continue
+                # Another worker's `OPTIMIZE` was already merging every part of the partition, so this
+                # one had nothing left to take (`CANNOT_ASSIGN_OPTIMIZE`, surfaced as an error only
+                # because of `optimize_throw_if_noop = 1`). That is not a broken reproducer - it is
+                # direct evidence that a merge is running concurrently - so it must not abort the run;
+                # but this cycle merged nothing itself, so it must not certify the churn via
+                # `churn_ok` either. Just retry. Only reachable when the `INSERT` succeeded, so a
+                # decisive `INSERT` failure in the same cycle is still classified below.
+                if insert.returncode == 0 and "CANNOT_ASSIGN_OPTIMIZE" in optimize.stderr:
                     continue
                 failed = insert if insert.returncode != 0 else optimize
                 if not churn_ok.is_set() and oom_kill_count() == oom_before:
