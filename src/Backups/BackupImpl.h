@@ -27,7 +27,8 @@ class IArchiveWriter;
 class BackupImpl : public IBackup
 {
 #if CLICKHOUSE_CLOUD
-    /// Reopens a destination this backup already owns; needs the write-open state below.
+    /// Reopens a destination this backup already owns, which needs the writer, the lock file and the
+    /// helpers below that claim and release it.
     friend class BackupResumer;
 #endif
 
