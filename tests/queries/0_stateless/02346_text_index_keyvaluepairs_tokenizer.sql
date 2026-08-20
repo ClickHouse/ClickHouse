@@ -102,3 +102,91 @@ SELECT arraySort(groupUniqArray(hex(token))) FROM mergeTreeTextIndex(currentData
 
 DROP TABLE tab_dup;
 
+SELECT '-- key lengths around the varint boundary: 63 bytes still fit one byte, 64 need two';
+
+DROP TABLE IF EXISTS tab_long;
+
+CREATE TABLE tab_long
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_long SELECT 1, map(repeat('a', 63), 'v63', repeat('b', 64), 'v64', repeat('c', 65), 'v65');
+
+SELECT 'key 63', count() FROM tab_long WHERE m['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'] = 'v63';
+SELECT 'key 64', count() FROM tab_long WHERE m['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'] = 'v64';
+SELECT 'key 65', count() FROM tab_long WHERE m['ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'] = 'v65';
+SELECT 'no false match', count() FROM tab_long WHERE m['bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'] = 'v63';
+
+SELECT 'varint 1 byte', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(126), repeat('a', 63), 'v63');
+SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(128, 1), repeat('b', 64), 'v64');
+SELECT 'varint 2 bytes', count() FROM mergeTreeTextIndex(currentDatabase(), tab_long, idx) WHERE token = concat(char(130, 1), repeat('c', 65), 'v65');
+
+DROP TABLE tab_long;
+
+SELECT '-- arbitrary bytes in keys and values, and empty keys and values';
+
+DROP TABLE IF EXISTS tab_bytes;
+
+CREATE TABLE tab_bytes
+(
+    id UInt32,
+    m Map(String, String),
+    INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_bytes VALUES (1, map('ab', 'c')), (2, map('a', 'bc')), (3, map('a\0b', 'x\0y')), (4, map('', '')), (5, map('k', '')), (6, map('\xFF', '\xFF')), (7, map('', 'ek'));
+
+SELECT '-- the length prefix keeps the pairs ab-c and a-bc apart, which a plain concatenation would not';
+SELECT id FROM tab_bytes WHERE m['ab'] = 'c' ORDER BY id;
+SELECT id FROM tab_bytes WHERE m['a'] = 'bc' ORDER BY id;
+
+SELECT '-- NUL bytes, high bytes and an empty key are all searchable';
+SELECT id FROM tab_bytes WHERE m['a\0b'] = 'x\0y' ORDER BY id;
+SELECT id FROM tab_bytes WHERE m['\xFF'] = '\xFF' ORDER BY id;
+SELECT id FROM tab_bytes WHERE m[''] = 'ek' ORDER BY id;
+
+SELECT '-- an empty value cannot be answered by the index, but the result must stay correct';
+SELECT 'idx', count() FROM tab_bytes WHERE m['k'] = '' SETTINGS optimize_empty_string_comparisons = 0;
+SELECT 'scan', count() FROM tab_bytes WHERE m['k'] = '' SETTINGS optimize_empty_string_comparisons = 0, use_skip_indexes = 0;
+
+SELECT '-- every pair has a token, including the empty key and the empty value';
+SELECT arraySort(groupUniqArray(hex(token))) FROM mergeTreeTextIndex(currentDatabase(), tab_bytes, idx);
+
+DROP TABLE tab_bytes;
+
+SELECT '-- LowCardinality keys and values';
+
+DROP TABLE IF EXISTS tab_lc;
+
+CREATE TABLE tab_lc
+(
+    id UInt32,
+    m Map(LowCardinality(String), LowCardinality(String)),
+    INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 2, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_lc VALUES (1, {'level':'error'}), (2, {'level':'warn'});
+
+SELECT 'idx', id FROM tab_lc WHERE m['level'] = 'error' ORDER BY id;
+SELECT 'scan', id FROM tab_lc WHERE m['level'] = 'error' ORDER BY id SETTINGS use_skip_indexes = 0;
+SELECT arraySort(groupUniqArray(hex(token))) FROM mergeTreeTextIndex(currentDatabase(), tab_lc, idx);
+
+DROP TABLE tab_lc;
+
+SELECT '-- a mix of LowCardinality and String is accepted';
+DROP TABLE IF EXISTS tab_lc_mixed;
+CREATE TABLE tab_lc_mixed (id UInt32, m Map(LowCardinality(String), String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id;
+SELECT 'created';
+DROP TABLE tab_lc_mixed;

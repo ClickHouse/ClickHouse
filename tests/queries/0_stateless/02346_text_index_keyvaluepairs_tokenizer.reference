@@ -52,3 +52,30 @@ second idx	2
 second scan	2
 -- the later duplicate is a distinct token: is_rest = 1 sets the lowest bit of the length prefix
 ['026B6669727374','026B7365636F6E64','036B7365636F6E64']
+-- key lengths around the varint boundary: 63 bytes still fit one byte, 64 need two
+key 63	1
+key 64	1
+key 65	1
+no false match	0
+varint 1 byte	1
+varint 2 bytes	1
+varint 2 bytes	1
+-- arbitrary bytes in keys and values, and empty keys and values
+-- the length prefix keeps the pairs ab-c and a-bc apart, which a plain concatenation would not
+1
+2
+-- NUL bytes, high bytes and an empty key are all searchable
+3
+6
+7
+-- an empty value cannot be answered by the index, but the result must stay correct
+idx	7
+scan	7
+-- every pair has a token, including the empty key and the empty value
+['00','00656B','02616263','026B','02FFFF','04616263','06610062780079']
+-- LowCardinality keys and values
+idx	1
+scan	1
+['0A6C6576656C6572726F72','0A6C6576656C7761726E']
+-- a mix of LowCardinality and String is accepted
+created
