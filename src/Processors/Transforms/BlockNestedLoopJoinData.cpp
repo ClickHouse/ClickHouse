@@ -252,6 +252,12 @@ BlockNestedLoopJoinData::StoreSize BlockNestedLoopJoinData::appendBlock(BuildBlo
             || (store_settings.min_bytes_to_compress != 0 && bytes_in_join >= store_settings.min_bytes_to_compress)))
         compressed_block = compressBuildBlock(build_block);
 
+    /// What keeping this block would add to memory, which is the compressed form where there is one.
+    /// `block_bytes` is what it costs decompressed - what the spill writes out, and what
+    /// `max_bytes_in_join` counts so that neither compressing nor spilling quietly raises that limit -
+    /// and comparing it against a threshold on what stays resident would spill a build side that fits.
+    const size_t resident_bytes = compressed_block ? compressed_block->allocatedBytes() : block_bytes;
+
     /// What this call writes once the lock is released, in the order the file takes them: whatever a
     /// flush took out of memory, and this block after it.
     std::vector<BuildBlockPtr> to_spill;
@@ -265,7 +271,7 @@ BlockNestedLoopJoinData::StoreSize BlockNestedLoopJoinData::appendBlock(BuildBlo
         const bool spill = canSpill()
             && (getNumSpilledBlocks() != 0
                 || (store_settings.max_bytes_in_memory != 0
-                    && getInMemoryBytes() + block_bytes > store_settings.max_bytes_in_memory));
+                    && getInMemoryBytes() + resident_bytes > store_settings.max_bytes_in_memory));
 
         if (spill)
         {
