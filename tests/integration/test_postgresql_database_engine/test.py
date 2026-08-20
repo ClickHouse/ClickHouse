@@ -723,7 +723,7 @@ def test_postgresql_permanent_detach_marker_preserved_after_remote_drop(started_
         "SELECT count() FROM system.detached_tables "
         "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
     ).strip()
-    assert still_detached == "1", f"Expected table still detached after recreation"
+    assert still_detached == "1", "Expected table still detached after recreation"
 
     # Now ATTACH should work and remove the marker
     node1.query("ATTACH TABLE postgres_marker_test.test_marker_persist")
