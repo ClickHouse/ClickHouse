@@ -174,15 +174,10 @@ struct ChangelogFileOperation
             error = e;
     }
 
-    void rethrowIfFailed() const
+    std::exception_ptr getError() const
     {
-        std::exception_ptr e;
-        {
-            std::lock_guard lock(error_mutex);
-            e = error;
-        }
-        if (e)
-            std::rethrow_exception(e);
+        std::lock_guard lock(error_mutex);
+        return error;
     }
 
 private:
@@ -4340,7 +4335,17 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
     for (const auto & op : pending_superseded_removes)
     {
         op->done.wait(false);
-        op->rethrowIfFailed();
+        if (auto error = op->getError())
+        {
+            tryLogException(
+                std::move(error),
+                log,
+                fmt::format(
+                    "Failed to remove a superseded changelog while rewriting at index {}. Terminating to avoid an inconsistent changelog state",
+                    index),
+                LogsLevel::fatal);
+            std::terminate();
+        }
     }
 
     /// Remove redundant logs from memory
