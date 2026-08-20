@@ -2570,6 +2570,7 @@ static const Strings text_index_tokenizers
        "chinese",
        "icu",
        "japanese",
+       "keyword",
        "ngrambf_v1",
        "ngrams",
        "sparseGrams",

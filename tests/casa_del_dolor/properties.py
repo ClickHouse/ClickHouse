@@ -2096,6 +2096,8 @@ keeper_settings = {
         ),
         "unflushed_memtables_soft_limit": threshold_generator(0.2, 0.2, 1, 16, 4),
         "use_new_dispatcher": true_false_lambda,
+        "storage_memory_only": true_false_lambda,
+        "use_lsmt_storage": true_false_lambda,
         "use_xid_64": true_false_lambda,
         "write_snapshot_version": lambda: random.choice([6, 7, 8, 9]),
         "write_throttling_factor": threshold_generator(0.2, 0.2, 1.0, 64.0),
