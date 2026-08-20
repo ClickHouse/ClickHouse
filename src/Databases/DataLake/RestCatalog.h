@@ -230,7 +230,7 @@ protected:
         Poco::JSON::Object::Ptr request_body,
         const String & method,
         bool ignore_result,
-        const std::optional<DB::ReadSettings> & read_settings = std::nullopt) const;
+        const std::optional<DB::ReadSettings> & read_settings) const;
 
     std::pair<std::shared_ptr<IStorageCredentials>, String> getCredentialsAndEndpoint(Poco::JSON::Object::Ptr object, const String & location) const;
 

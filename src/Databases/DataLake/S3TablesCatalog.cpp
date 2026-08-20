@@ -248,7 +248,8 @@ void S3TablesCatalog::dropTable(const String & namespace_name, const String & ta
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(
+            *state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true, /* read_settings */ std::nullopt);
         LOG_INFO(log, "S3 Tables: dropped table {}.{} (purgeRequested=True)", namespace_name, table_name);
     }
     catch (const DB::HTTPException & ex)
