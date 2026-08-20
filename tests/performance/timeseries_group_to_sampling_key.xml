@@ -1,12 +1,8 @@
 <test>
-    <settings>
-        <max_insert_threads>8</max_insert_threads>
-    </settings>
-
     <!--
-        Benchmarks materializing sampling keys for a repeated vector of groups.
-        The query is intentionally large enough for the temporary sampling-key
-        vector and the final UInt64 column to be visible in the result.
+        Benchmark sampling-key materialization separately from group setup.
+        Keep the group vector small and repeat it over many output rows so the
+        temporary vector and copy removed by this change dominate the query.
     -->
     <query>
         WITH
@@ -16,13 +12,13 @@
                 (
                     SELECT number,
                            timeSeriesTagsToGroup([('tag', toString(number))]) AS group
-                    FROM numbers(500000)
+                    FROM numbers(4096)
                     ORDER BY number
                 )
             ) AS groups
-        SELECT timeSeriesGroupToSamplingKey(groups[number % 500000 + 1])
-        FROM numbers(5000000)
-        SETTINGS max_threads = 1, max_block_size = 500000
+        SELECT timeSeriesGroupToSamplingKey(groups[number % 4096 + 1])
+        FROM numbers(20000000)
+        SETTINGS max_threads = 1, max_block_size = 1000000
         FORMAT Null
     </query>
 </test>
