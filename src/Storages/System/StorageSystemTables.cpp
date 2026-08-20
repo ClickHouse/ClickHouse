@@ -2,6 +2,8 @@
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 
+#include <set>
+
 #include <Access/ContextAccess.h>
 #include <Core/UUID.h>
 #if CLICKHOUSE_CLOUD
@@ -17,6 +19,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -50,7 +53,6 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 select_sequential_consistency;
-    extern const SettingsBool show_table_uuid_in_table_create_query_if_not_nil;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -217,7 +219,7 @@ ColumnPtr getFilteredTables(
 {
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
 
     MutableColumnPtr table_column = ColumnString::create();
@@ -347,6 +349,7 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
         {"primary_key", std::make_shared<DataTypeString>(), "The primary key expression specified in the table."},
         {"sampling_key", std::make_shared<DataTypeString>(), "The sampling key expression specified in the table."},
         {"unique_key", std::make_shared<DataTypeString>(), "The unique key expression specified in the table (UNIQUE KEY clause)."},
+        {"skipping_indices_types", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()), "An array of the distinct types of data skipping indices defined on the table (for example minmax, set, bloom_filter, ngrambf_v1, tokenbf_v1, text, vector_similarity). Empty for tables without skip indices."},
         {"storage_policy", std::make_shared<DataTypeString>(), "The storage policy. Relevant for tables using MergeTree and Distributed engines."},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
             "Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise NULL (including underlying Buffer table)."
@@ -453,6 +456,26 @@ protected:
             return {};
 
         return inner_query->as<ASTSelectWithUnionQuery>()->getQueryParameters();
+    }
+
+    void fillSkippingIndicesTypes(MutableColumns & columns, const StorageMetadataPtr & metadata_snapshot, size_t & res_index)
+    {
+        Array skipping_indices_types;
+        if (metadata_snapshot)
+        {
+            /// Collect distinct types, sorted, so the result is deterministic.
+            /// Skip implicitly created indices (e.g. via add_minmax_index_for_numeric_columns)
+            /// so the column reports only skip indices explicitly defined on the table.
+            std::set<String> types;
+            for (const auto & index : metadata_snapshot->getSecondaryIndices())
+                if (!index.isImplicitlyCreated())
+                    types.insert(index.type);
+
+            skipping_indices_types.reserve(types.size());
+            for (const auto & type : types)
+                skipping_indices_types.push_back(type);
+        }
+        columns[res_index++]->insert(skipping_indices_types);
     }
 
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
@@ -602,7 +625,13 @@ protected:
                                 // parameterized view parameters
                                 fillParametralizedViewData(res_columns, table.second, res_index);
                             }
-                            else if (src_index == 21 && columns_mask[src_index])
+                            // skipping_indices_types
+                            else if (src_index == 20 && columns_mask[src_index])
+                            {
+                                const auto metadata_snapshot = table.second->getInMemoryMetadataPtr(context, false);
+                                fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
+                            }
+                            else if (src_index == 22 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -620,7 +649,7 @@ protected:
                                 ++res_index;
                             }
                             // total_bytes
-                            else if (src_index == 22 && columns_mask[src_index])
+                            else if (src_index == 23 && columns_mask[src_index])
                             {
                                 try
                                 {
@@ -798,45 +827,25 @@ protected:
                 if (columns_mask[src_index] || columns_mask[src_index + 1] || columns_mask[src_index + 2])
                 {
                     /// Skip the catalog query for a null-storage row (unresolvable DataLakeCatalog
-                    /// table, or one dropped concurrently with the scan): tryGetCreateTableQuery
-                    /// re-enters DatabaseDataLake::getCreateTableQueryImpl, which can throw again
-                    /// and abort the whole scan. A null ast makes the block below emit defaults.
-                    ASTPtr ast = table ? database->tryGetCreateTableQuery(table_name, context) : nullptr;
-                    auto * ast_create = ast ? ast->as<ASTCreateQuery>() : nullptr;
+                    /// table, or one dropped concurrently with the scan): it re-enters
+                    /// DatabaseDataLake::getCreateTableQueryImpl, which can throw again and abort
+                    /// the whole scan. Such a row renders as empty strings.
+                    const RenderedCreateQueryFields fields{
+                        .create_table_query = columns_mask[src_index] != 0,
+                        .engine_full = columns_mask[src_index + 1] != 0,
+                        .as_select = columns_mask[src_index + 2] != 0};
 
-                    if (ast_create && !context->getSettingsRef()[Setting::show_table_uuid_in_table_create_query_if_not_nil])
-                    {
-                        ast_create->uuid = UUIDHelpers::Nil;
-                        if (ast_create->targets)
-                            ast_create->targets->resetInnerUUIDs();
-                    }
+                    auto rendered = table ? database->getRenderedCreateTableQuery(table_name, context, fields)
+                                          : renderCreateQuery(nullptr, RenderOptions{}, fields);
 
                     if (columns_mask[src_index++])
-                        res_columns[res_index++]->insert(ast ? format({context, *ast}) : "");
+                        res_columns[res_index++]->insert(rendered->create_table_query);
 
                     if (columns_mask[src_index++])
-                    {
-                        String engine_full;
-
-                        if (ast_create && ast_create->storage)
-                        {
-                            engine_full = format({context, *ast_create->storage});
-
-                            static const char * const extra_head = " ENGINE = ";
-                            if (startsWith(engine_full, extra_head))
-                                engine_full = engine_full.substr(strlen(extra_head));
-                        }
-
-                        res_columns[res_index++]->insert(engine_full);
-                    }
+                        res_columns[res_index++]->insert(rendered->engine_full);
 
                     if (columns_mask[src_index++])
-                    {
-                        String as_select;
-                        if (ast_create && ast_create->select)
-                            as_select = format({context, *ast_create->select});
-                        res_columns[res_index++]->insert(as_select);
-                    }
+                        res_columns[res_index++]->insert(rendered->as_select);
                 }
                 else
                     src_index += 3;
@@ -885,6 +894,9 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                    fillSkippingIndicesTypes(res_columns, metadata_snapshot, res_index);
 
                 if (columns_mask[src_index++])
                 {
@@ -1202,7 +1214,7 @@ void ReadFromSystemTables::applyFilters(ActionDAGNodes added_filter_nodes)
     /// instead of enumerating the entire catalog.
     Block sample{
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "name"),
-        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "uuid"),
+        ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeUUID>(), "uuid"),
         ColumnWithTypeAndName(nullptr, std::make_shared<DataTypeString>(), "engine")};
     if (auto dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &sample, context))
         tables_filter = extractTableNameFilter(dag->getOutputs().at(0));

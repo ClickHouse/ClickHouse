@@ -135,9 +135,9 @@ clickhouse-client --format_csv_allow_single_quotes 0 --input_format_null_as_defa
 
 データ フィールドでは二重引用符のみを使用し、単一引用符は値の中に含まれる可能性があるため、CSV パーサーが混乱しないように `format_csv_allow_single_quotes` を無効にします。
 
-データには [NULL](/ja/reference/settings/formats#input_format_null_as_default) が含まれないため、[input&#95;format&#95;null&#95;as&#95;default](/ja/reference/settings/formats#input_format_null_as_default) を無効にします。そうしないと、ClickHouse は `\N` シーケンスを解析しようとして、データ内の `\` と混同するおそれがあります。
+データには [NULL](/ja/reference/settings/formats/input-format#input_format_null_as_default) が含まれないため、[input&#95;format&#95;null&#95;as&#95;default](/ja/reference/settings/formats/input-format#input_format_null_as_default) を無効にします。そうしないと、ClickHouse は `\N` シーケンスを解析しようとして、データ内の `\` と混同するおそれがあります。
 
-設定 [date&#95;time&#95;input&#95;format best&#95;effort](/ja/reference/settings/formats#date_time_input_format) を使うと、[DateTime](/ja/reference/data-types/datetime) フィールドをさまざまなフォーマットで解析できます。たとえば、秒を含まない ISO-8601 形式の &#39;2000-01-01 01:02&#39; も認識されます。この設定がない場合は、固定の DateTime フォーマットのみが許可されます。
+設定 [date&#95;time&#95;input&#95;format best&#95;effort](/ja/reference/settings/formats/date-time#date_time_input_format) を使うと、[DateTime](/ja/reference/data-types/datetime) フィールドをさまざまなフォーマットで解析できます。たとえば、秒を含まない ISO-8601 形式の &#39;2000-01-01 01:02&#39; も認識されます。この設定がない場合は、固定の DateTime フォーマットのみが許可されます。
 
 <div id="denormalize-data">
   ## データを非正規化する

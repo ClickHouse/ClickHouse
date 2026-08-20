@@ -42,6 +42,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -51,13 +52,16 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   * us-west-1
   * us-east-2
   * us-east-1
-    اعتبارات التسعير: ستفرض AWS رسومًا على المستخدمين مقابل نقل البيانات عبر المناطق. راجع الأسعار [هنا](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+  تفرض AWS رسومًا على نقل البيانات عبر المناطق. راجع [أسعار AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/) للاطلاع على التفاصيل.
 </Note>
 
 **يُرجى إكمال ما يلي لتمكين AWS PrivateLink**:
 
-1. احصل على &quot;Service name&quot; الخاص بالـ Endpoint.
-2. أنشئ AWS Endpoint.
+1. احصل على &quot;Service name&quot; الخاص بنقطة النهاية.
+2. أنشئ نقطة نهاية AWS.
 3. أضف &quot;Endpoint ID&quot; إلى المؤسسة في ClickHouse Cloud.
 4. أضف &quot;Endpoint ID&quot; إلى قائمة السماح لخدمة ClickHouse.
 
@@ -163,7 +167,9 @@ jq .result
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="إعدادات نقطة نهاية AWS PrivateLink" border />
 
-إذا كنت تريد إنشاء اتصال بين المناطق عبر PrivateLink، ففعِّل مربع الاختيار &quot;Cross region endpoint&quot; وحدِّد Region الخاصة بالخدمة. Region الخاصة بالخدمة هي المنطقة التي يعمل فيها مثيل ClickHouse.
+<Note>
+  لإنشاء اتصال بين المناطق، فعِّل مربع الاختيار **Cross region endpoint** وحدِّد Region الخاصة بالخدمة التي تعمل فيها خدمة ClickHouse الخاصة بك.
+</Note>
 
 إذا ظهرت لك رسالة الخطأ &quot;Service name couldn&#39;t be verified.&quot;، فيُرجى التواصل مع دعم العملاء لطلب إضافة Regions جديدة إلى قائمة المناطق المدعومة.
 

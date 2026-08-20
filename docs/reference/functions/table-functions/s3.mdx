@@ -74,7 +74,7 @@ Arguments can also be passed using [named collections](/concepts/features/config
 | `no_sign_request`             | disabled by default.                                                                                                                                                              |
 | `expiration_window_seconds`   | default value is 120.                                                                                                                                                             |
 
-## Returned value {#returned_value}
+## Returned value {#returned-value}
 
 A table with the specified structure for reading or writing data in the specified file.
 
@@ -86,6 +86,7 @@ Selecting the first 5 rows from the table from S3 file `https://datasets-documen
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -107,7 +108,8 @@ ClickHouse uses filename extensions to determine the format of the data. For exa
 ```sql
 SELECT *
 FROM s3(
-   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+   'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN
 )
 LIMIT 5;
 ```
@@ -148,7 +150,7 @@ Count the number of rows in files ending with numbers from 1 to 3:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -161,7 +163,7 @@ Count the total amount of rows in all files in these two directories:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -174,11 +176,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 </Tip>
 
-Count the total amount of rows in files named `file-000.csv`, `file-001.csv`, ... , `file-999.csv`:
+Count the total number of rows in files named `file-1.csv`, ..., `file-4.csv`:
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -204,18 +206,18 @@ SELECT name, value FROM existing_table;
 Glob ** can be used for recursive directory traversal. Consider the below example, it will fetch all files from `my-test-bucket-768` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 The below get data from all `test-data.csv.gz` files from any folder inside `my-test-bucket` directory recursively:
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Note. It is possible to specify custom URL mappers in the server configuration file. Example:
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 The URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` would be replaced to `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
@@ -343,7 +345,8 @@ Extracting data from these archives is possible using ::. Globs can be used both
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -396,11 +399,25 @@ FROM s3('https://coiled-datasets-rp.s3.us-east-1.amazonaws.com/1trc/measurements
 Peak memory usage: 192.27 KiB.
 ```
 
+## Resolving relative URLs {#resolving-relative-urls}
+
+The [s3_base](/reference/settings/session-settings/s3#s3_base) setting allows passing a relative URL to the `s3` function. When `s3_base` is set and the function argument has no scheme, it is resolved against the base URL per [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986), using the same rules as the [url_base](/reference/settings/session-settings/url#url_base) setting of the [url](/reference/functions/table-functions/url#resolving-relative-urls) function. Absolute URLs are passed through unchanged.
+
+The setting also applies to the [S3](/reference/engines/table-engines/integrations/s3) table engine and to the table functions sharing the `s3` configuration (`s3Cluster`, `gcs`, `oss`). For the `S3` table engine, the resolved URL is materialized into the stored table definition, so the table does not depend on the value of `s3_base` after creation.
+
+**Example**
+
+```sql
+SET s3_base = 's3://clickhouse-public-datasets/';
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
+```
+
 ## Storage Settings {#storage-settings}
 
 - [s3_truncate_on_insert](/reference/settings/session-settings/s3#s3_truncate_on_insert) - allows to truncate file before insert into it. Disabled by default.
 - [s3_create_new_file_on_insert](/reference/settings/session-settings/s3#s3_create_new_file_on_insert) - allows to create a new file on each insert if format has suffix. Disabled by default.
 - [s3_skip_empty_files](/reference/settings/session-settings/s3#s3_skip_empty_files) - allows to skip empty files while reading. Enabled by default.
+- [s3_base](/reference/settings/session-settings/s3#s3_base) - base URL for resolving relative URLs passed to the `s3` function. Empty (disabled) by default.
 
 ## Nested Avro Schemas {#nested-avro-schemas}
 
@@ -429,6 +446,7 @@ SELECT
     data
 FROM s3('https://bucket-name/*.avro', 'Avro')
 SETTINGS schema_inference_mode='union';
+```
 
 ## Related {#related}
 

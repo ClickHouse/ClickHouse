@@ -29,7 +29,7 @@ In the ClickHouse Cloud console, navigate to **Billing**. You should see the nam
 
 Signing up for ClickHouse Cloud from the cloud provider marketplace is a two step process:
 1. You first "subscribe" to ClickHouse Cloud on the cloud providers' marketplace portal.  After you have finished subscribing, you click on "Pay Now" or "Manage on Provider" (depending on the marketplace). This redirects you to ClickHouse Cloud.
-2. On Clickhouse Cloud you either register for a new account, or sign in with an existing account.  Either way, a new ClickHouse Cloud organization will be created for you which is tied to your marketplace billing.
+2. On ClickHouse Cloud you either register for a new account, or sign in with an existing account.  Either way, a new ClickHouse Cloud organization will be created for you which is tied to your marketplace billing.
 
 NOTE: Your existing services and organizations from any prior ClickHouse Cloud signups will remain and they won't be connected to the marketplace billing.  ClickHouse Cloud allows you to use the same account to manage multiple organization, each with different billing.
 
@@ -86,6 +86,10 @@ There is no difference in pricing between marketplace billing and signing up dir
 ### Can I set up multiple ClickHouse Organizations to bill to a single cloud marketplace billing account (AWS, GCP, or Azure)? {#multiple-organizations-to-bill-to-single-cloud-marketplace-account}
 
 Yes. Multiple ClickHouse organizations can be configured to bill usage in arrears to the same cloud marketplace billing account (AWS, GCP, or Azure). However, prepaid credits aren't shared across organizations by default. If you need to share credits between organizations, please contact [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+### Can I bill different services within the same organization to different marketplace subscriptions? {#can-i-bill-different-services-within-the-same-organization-to-different-marketplace-subscriptions}
+
+No. Billing is configured at the organization level, so all services within a single ClickHouse Cloud organization are billed to the same marketplace subscription. If you need to bill services separately, create separate organizations for each billing arrangement. You can manage multiple organizations from the same ClickHouse Cloud console user account, each with its own billing configuration.
 
 ### If my ClickHouse Organization is billed through a cloud marketplace committed spend agreement will I automatically move to PAYG billing when I run out of credits? {#automatically-move-to-PAYG-when-running-out-of-credit}
 
