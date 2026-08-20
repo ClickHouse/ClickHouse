@@ -9681,7 +9681,6 @@ void MergeTreeData::optimizeDryRun(
         cleanup,
         merging_params,
         nullptr /* txn */,
-        /*need_prefix=*/ true,
         /*projection=*/ nullptr,
         /*parent_part=*/ nullptr,
         dry_run_suffix);
