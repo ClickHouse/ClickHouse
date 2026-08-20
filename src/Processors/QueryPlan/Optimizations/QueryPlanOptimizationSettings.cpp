@@ -107,6 +107,7 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsNonZeroUInt64 distributed_plan_default_reader_bucket_count;
     extern const SettingsUInt64 distributed_plan_max_rows_to_broadcast;
+    extern const SettingsUInt64 distributed_plan_workers_num;
     extern const SettingsBool distributed_plan_prefer_replicas_over_workers;
     extern const SettingsUInt64 join_runtime_bloom_filter_bytes;
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
@@ -266,6 +267,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     }
 
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
+    distributed_plan_workers_num = from[Setting::distributed_plan_workers_num];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
     distributed_plan_optimize_exchanges = from[Setting::distributed_plan_optimize_exchanges];
