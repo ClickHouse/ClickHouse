@@ -10,6 +10,8 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET correlated_subqueries_default_join_kind = 'left';
 SET enable_parallel_replicas = 0;
+-- Pinned because filter-to-Prewhere relocation changes the step descriptions the plan probes match.
+SET query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
 
 -- Case 1 tables: the reproducer from the issue.
 CREATE TABLE customer (c_customer_sk Int64 NOT NULL, c_current_cdemo_sk Nullable(Int64), c_current_addr_sk Nullable(Int64)) ENGINE=MergeTree ORDER BY c_customer_sk;
@@ -97,7 +99,10 @@ INSERT INTO t_inner_12c VALUES ('a'), ('bb');
 
 -- {echoOn}
 -- Case 1: issue reproducer, nullability-only mismatch must not plan a CROSS JOIN.
-SELECT countIf(explain ILIKE '%cross%')
+-- The NULL pre-filter is pushed past the subquery join into the `store_sales` Prewhere,
+-- so its step description is not asserted here (cases 4, 5, 7-10 pin it).
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted
 FROM
 (
     EXPLAIN PLAN actions = 1
@@ -125,49 +130,85 @@ ORDER BY c_customer_sk;
 SELECT x FROM t_outer_2 AS o WHERE EXISTS (SELECT 1 FROM t_inner_2 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 3: EXISTS, outer side `Nullable(Int64)`: outer NULL rows must not match.
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_3 AS o WHERE EXISTS (SELECT 1 FROM t_inner_3 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_3 AS o WHERE EXISTS (SELECT 1 FROM t_inner_3 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 4: scalar subquery with `count`: outer 0 must count only genuine 0 rows, not inner NULLs.
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_4 AS i WHERE i.x = o.x) FROM t_outer_4 AS o);
 SELECT x, (SELECT count() FROM t_inner_4 AS i WHERE i.x = o.x) FROM t_outer_4 AS o ORDER BY x;
 
 -- Case 5: correlated column also used in a second expression inside the subquery.
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_5 AS o WHERE EXISTS (SELECT 1 FROM t_inner_5 AS i WHERE i.x = o.x AND i.y + o.x > 5));
 SELECT x FROM t_outer_5 AS o WHERE EXISTS (SELECT 1 FROM t_inner_5 AS i WHERE i.x = o.x AND i.y + o.x > 5) ORDER BY x;
 
 -- Case 6: NOT EXISTS complement of case 2.
 SELECT x FROM t_outer_2 AS o WHERE NOT EXISTS (SELECT 1 FROM t_inner_2 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 7: minimal two-table plan check for the nullability-only mismatch.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_2 AS o WHERE EXISTS (SELECT 1 FROM t_inner_2 AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_2 AS o WHERE EXISTS (SELECT 1 FROM t_inner_2 AS i WHERE i.x = o.x));
 
 -- Case 8: widening, outer `Int64` vs inner `Int32`: no cross join, exact matches only.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8 AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 8: the `Nullable(Int32)` inner variant.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8n AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8n AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_8 AS o WHERE EXISTS (SELECT 1 FROM t_inner_8n AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 9: narrowing, outer `Int32` vs inner `Int64`: no cross join, out-of-range 5000000000 must not match 705032704.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_9 AS o WHERE EXISTS (SELECT 1 FROM t_inner_9 AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_9 AS o WHERE EXISTS (SELECT 1 FROM t_inner_9 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_9 AS o WHERE EXISTS (SELECT 1 FROM t_inner_9 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 10: sideways supertype, outer `Int32` vs inner `UInt32`: no cross join, 3000000000 must not match -1294967296.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_10a AS o WHERE EXISTS (SELECT 1 FROM t_inner_10a AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_10a AS o WHERE EXISTS (SELECT 1 FROM t_inner_10a AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_10a AS o WHERE EXISTS (SELECT 1 FROM t_inner_10a AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 10: outer `Int32` vs inner `Float64`: no cross join, 1.5 must not match 1 or 2, 3.0 must match 3.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_10b AS o WHERE EXISTS (SELECT 1 FROM t_inner_10b AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_10b AS o WHERE EXISTS (SELECT 1 FROM t_inner_10b AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_10b AS o WHERE EXISTS (SELECT 1 FROM t_inner_10b AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 11: lossless float direction, outer `Float64` vs inner `Int32`: no cross join, 1.5 and 100.25 must not match.
-SELECT countIf(explain ILIKE '%cross%') FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x));
+SELECT countIf(explain ILIKE '%cross%') AS cross_joins,
+       countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0 AS substituted,
+       countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0 AS null_prefiltered
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_11 AS o WHERE EXISTS (SELECT 1 FROM t_inner_11 AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 12: guarded fallback, outer `Float64` vs inner `Int64`: comparison is exact, 9007199254740992.0 must not match 9007199254740993.
+SELECT countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') AS substituted FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_12a AS o WHERE EXISTS (SELECT 1 FROM t_inner_12a AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_12a AS o WHERE EXISTS (SELECT 1 FROM t_inner_12a AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 12: guarded fallback, outer `Int64` vs inner `UInt64`: -1 must not match 18446744073709551615.
+SELECT countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') AS substituted FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_12b AS o WHERE EXISTS (SELECT 1 FROM t_inner_12b AS i WHERE i.x = o.x));
 SELECT x FROM t_outer_12b AS o WHERE EXISTS (SELECT 1 FROM t_inner_12b AS i WHERE i.x = o.x) ORDER BY x;
 
 -- Case 12: guarded fallback, `String` vs `FixedString(2)`: comparison ignores padding, 'a' must match toFixedString('a', 2).
+SELECT countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') AS substituted FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_12c AS o WHERE EXISTS (SELECT 1 FROM t_inner_12c AS i WHERE i.s = o.s));
 SELECT s FROM t_outer_12c AS o WHERE EXISTS (SELECT 1 FROM t_inner_12c AS i WHERE i.s = o.s) ORDER BY s;
