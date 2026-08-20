@@ -384,6 +384,7 @@ ORDER BY day DESC
         storage_usage: Optional[StorageUsage] = None,
         compute_usage: Optional[ComputeUsage] = None,
         job_counts: Optional[dict] = None,
+        duration_s: Optional[float] = None,
     ):
         """Write a single workflow-level summary row carrying pipeline
         utilization, storage and compute usage in the ``attributes`` JSON
@@ -400,6 +401,10 @@ ORDER BY day DESC
         columns in a way inconsistent with their schema meaning."""
         info = Info()
         attributes: dict = {}
+        if duration_s is not None:
+            # Whole-pipeline wall-clock duration (first job start to last job
+            # end), distinct from pipeline_wall_time_s which sums job runtimes.
+            attributes["pipeline_duration_s"] = round(duration_s, 1)
         for bucket, count in (job_counts or {}).items():
             attributes[f"pipeline_{bucket}_jobs"] = count
         if pipeline_utilization and pipeline_utilization.jobs:
@@ -442,7 +447,7 @@ ORDER BY day DESC
             ),
             instance_id=info.instance_id,
             test_name="",
-            test_status=Result.Status.OK,
+            test_status="",
             test_duration_ms=0,
             test_context_raw="",
             attributes=attributes,

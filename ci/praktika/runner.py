@@ -880,6 +880,7 @@ class Runner:
                             1 for j in workflow_result.results if j.is_dropped()
                         ),
                     },
+                    duration_s=workflow_result.update_duration().duration,
                 )
 
         if workflow.enable_gh_summary_comment and (

@@ -115,6 +115,7 @@ workflow-level aggregates from the workflow `Result.ext`:
 
 | `attributes` key | Source |
 |---|---|
+| `pipeline_duration_s` | whole-pipeline wall-clock duration (first job start to last job end), distinct from `pipeline_wall_time_s` which sums job runtimes |
 | `pipeline_total_jobs`, `pipeline_run_jobs`, `pipeline_success_jobs`, `pipeline_failed_jobs`, `pipeline_skipped_jobs`, `pipeline_dropped_jobs` | job counts in the pipeline by status (`run` = jobs that actually ran, i.e. not skipped/dropped), unlike `pipeline_jobs` which counts only the qualifying jobs |
 | `pipeline_*` (e.g. `pipeline_jobs`, `pipeline_cpu_hours`, `pipeline_mem_gb_hours`, `pipeline_disk_gb_hours`, `pipeline_cpu_util_pct`, `pipeline_cpu_stall_pct`, `pipeline_mem_full_pct`, …) | every field of `PipelineUtilization.to_summary`, prefixed `pipeline_` |
 | `storage_uploaded_bytes`, `storage_uploaded_items`, `storage_downloaded_bytes`, `storage_downloaded_items` | `StorageUsage` |
