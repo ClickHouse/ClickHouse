@@ -226,7 +226,7 @@ def main():
     )
     assert (
         '"name":"openSSL.client.caConfig",'
-        '"href":"/reference/settings/server-settings/settings/other'
+        '"path":"/other'
         '#openssl.client.caconfig","default":"0"'
     ) in complex_explorer
     assert complex_anchor_routes["openssl.client.caconfig"] == \
@@ -371,8 +371,12 @@ def main():
         assert "py-2 pl-9 pr-3" in explorer
         assert '<details' not in explorer
         assert '<summary' not in explorer
-        assert explorer.startswith("const SessionSettingsExplorer = () => {")
-        component_start = explorer.index("const SessionSettingsExplorer = () => {")
+        assert explorer.startswith(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
+        component_start = explorer.index(
+            "const SessionSettingsExplorer = ({ href: baseRoute }) => {"
+        )
         assert component_start == 0
         assert explorer.index(
             "  const [entries] = useState(() => ("
@@ -388,7 +392,7 @@ def main():
             '"/reference/settings/session-settings/filesystem-cache"'
         ) in routes_script
         assert (
-            '"href":"/reference/settings/session-settings/filesystem-cache#filesystem_cache_alpha"'
+            '"path":"/filesystem-cache#filesystem_cache_alpha"'
             in explorer)
         assert '"default":"0"' in explorer
         assert 'title="Default value"' in explorer
@@ -397,7 +401,7 @@ def main():
         assert 'gridTemplateColumns: "44ch max-content"' in explorer
         assert 'style={{ overflowWrap: "anywhere" }}' in explorer
         assert (
-            'href={`https://clickhouse.com/docs${item.value.href}`}'
+            'href={`https://clickhouse.com/docs${baseRoute}${item.value.path}`}'
             in explorer
         )
         assert 'item.value.name.split("_")' in explorer
@@ -467,7 +471,7 @@ def main():
         )
         assert (
             '"name":"empty_default",'
-            '"href":"/reference/settings/session-settings/empty#empty_default",'
+            '"path":"/empty#empty_default",'
             '"default":"\\"\\""'
         ) in empty_default_explorer
         server_empty_default_explorer = mod._settings_explorer_component(
@@ -492,7 +496,7 @@ def main():
         )
         assert (
             '"name":"server_empty_default",'
-            '"href":"/reference/settings/server-settings/settings/other'
+            '"path":"/other'
             '#server_empty_default","default":"\\"\\""'
         ) in server_explorer
         server_sql = (
@@ -563,10 +567,7 @@ def main():
         for name, default_value in expected_manual_server_defaults.items():
             expected_setting = {
                 "name": name,
-                "href": (
-                    "/reference/settings/server-settings/settings/other"
-                    f"#{name}"
-                ),
+                "path": f"/other#{name}",
                 "default": default_value,
             }
             assert json.dumps(
@@ -631,6 +632,126 @@ def main():
             "/reference/settings/session-settings/stream-like",
         ]
         assert all(not page.children for page in representative_pages)
+
+        stable_manifest = {
+            "anchorRoutes": {
+                "select_sequential_consistency": (
+                    "/reference/settings/session-settings/other"
+                ),
+                "sort_overflow_mode": (
+                    "/reference/settings/session-settings/other"
+                ),
+                "stable_alpha": (
+                    "/reference/settings/session-settings/stable"
+                ),
+                "stable_beta": (
+                    "/reference/settings/session-settings/stable"
+                ),
+            },
+            "routes": [
+                {
+                    "prefix": "stable",
+                    "mode": "token",
+                    "target": "/reference/settings/session-settings/stable",
+                },
+                {
+                    "prefix": "",
+                    "mode": "raw",
+                    "target": "/reference/settings/session-settings/other",
+                },
+            ],
+        }
+        stable_pages = mod.group_session_settings([
+            mod.SettingSection(name, name, name)
+            for name in [
+                "select",
+                "select_sequential_consistency",
+                "sort",
+                "sort_overflow_mode",
+                "stable_alpha",
+                "stable_beta",
+                "stable_gamma",
+                "brand_new_alpha",
+                "brand_new_beta",
+            ]
+        ], previous_manifest=stable_manifest)
+        stable_pages_by_route = {
+            page.route: page for page in stable_pages
+        }
+        assert "/reference/settings/session-settings/select" not in \
+            stable_pages_by_route
+        assert "/reference/settings/session-settings/sort" not in \
+            stable_pages_by_route
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/other"
+            ].sections
+        ] == [
+            "select",
+            "select_sequential_consistency",
+            "sort",
+            "sort_overflow_mode",
+        ]
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/stable"
+            ].sections
+        ] == ["stable_alpha", "stable_beta", "stable_gamma"]
+        assert [
+            section.name for section in stable_pages_by_route[
+                "/reference/settings/session-settings/brand-new"
+            ].sections
+        ] == ["brand_new_alpha", "brand_new_beta"]
+        shrunk_pages = mod.group_session_settings([
+            mod.SettingSection(
+                "stable_alpha", "stable_alpha", "stable_alpha")
+        ], previous_manifest=stable_manifest)
+        assert len(shrunk_pages) == 1
+        assert shrunk_pages[0].route == \
+            "/reference/settings/session-settings/stable"
+
+        with tempfile.TemporaryDirectory() as stable_temp:
+            stable_docs = Path(stable_temp)
+            stable_dest = (
+                stable_docs / "reference/settings/session-settings.mdx"
+            )
+            stable_manifest_path = (
+                stable_docs
+                / "reference/settings/session-settings/manifest.json"
+            )
+            stable_manifest_path.parent.mkdir(parents=True)
+            stable_manifest_path.write_text(
+                json.dumps(stable_manifest), encoding="utf-8")
+            stable_artifacts = mod.split_session_settings_page(
+                stable_dest,
+                generated_page([
+                    "select",
+                    "select_sequential_consistency",
+                    "sort",
+                    "sort_overflow_mode",
+                ]),
+                stable_docs,
+            )
+            stable_artifacts_by_path = {
+                artifact.path: artifact.content
+                for artifact in stable_artifacts
+            }
+            assert (
+                stable_docs / "reference/settings/session-settings/select.mdx"
+            ) not in stable_artifacts_by_path
+            assert (
+                stable_docs / "reference/settings/session-settings/sort.mdx"
+            ) not in stable_artifacts_by_path
+            stable_other = stable_artifacts_by_path[
+                stable_docs / "reference/settings/session-settings/other.mdx"
+            ]
+            assert "## select {#select}" in stable_other
+            assert (
+                "## select_sequential_consistency "
+                "{#select_sequential_consistency}"
+            ) in stable_other
+            assert "## sort {#sort}" in stable_other
+            assert "## sort_overflow_mode {#sort_overflow_mode}" in stable_other
 
         large_prefix_pages = mod.group_session_settings([
             mod.SettingSection(
@@ -737,9 +858,13 @@ def main():
             by_path = {artifact.path: artifact.content for artifact in artifacts}
 
             root = by_path[dest]
-            assert f"<{family['component_name']} />" in root
+            explorer_tag = (
+                f'<{family["component_name"]} '
+                f'href="{family["base_route"]}" />'
+            )
+            assert explorer_tag in root
             assert f"## {family['browse_title']}" in root
-            assert root.count(f"<{family['component_name']} />") == 1
+            assert root.count(explorer_tag) == 1
             assert root.count(f"## {family['browse_title']}") == 1
             assert "## filesystem_cache_alpha" not in root
             routes_script_path = (
@@ -762,9 +887,13 @@ def main():
 
             component_path = docs / family["component_path"]
             explorer = by_path[component_path]
-            assert f'const {family["component_name"]} = () => {{' in explorer
+            component_declaration = (
+                f'const {family["component_name"]} = '
+                '({ href: baseRoute }) => {'
+            )
+            assert component_declaration in explorer
             component_start = explorer.index(
-                f'const {family["component_name"]} = () => {{')
+                component_declaration)
             assert component_start == 0
             assert explorer.index(
                 "  const [entries] = useState(() => ("
@@ -791,7 +920,7 @@ def main():
             assert "const isOpen = isSearching || expandedGroups.has(key)" in explorer
             assert "No matching settings" in explorer
             assert (
-                f'"href":"{family["base_route"]}/filesystem-cache'
+                '"path":"/filesystem-cache'
                 '#filesystem_cache_alpha"'
             ) in explorer
 

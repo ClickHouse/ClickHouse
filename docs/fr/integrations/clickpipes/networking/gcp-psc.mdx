@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'GCP Private Service Connect'
+description: 'Établissez une connexion sécurisée entre ClickPipes et une source de données hébergée sur GCP à l’aide de Private Service Connect (PSC).'
+slug: /integrations/clickpipes/networking/gcp-psc
+title: 'GCP Private Service Connect pour ClickPipes'
+doc_type: 'guide'
+keywords: ['gcp psc', 'private service connect', 'sécurité ClickPipes', 'reverse private endpoint', 'connectivité privée']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Vous pouvez utiliser GCP [Private Service Connect (PSC)](https://cloud.google.com/vpc/docs/private-service-connect) pour établir une connexion sécurisée entre ClickPipes et une source de données hébergée sur GCP. ClickPipes crée un **point de terminaison privé inversé (RPE)** dans son VPC et le configure pour cibler un endpoint service privé publié pour votre source de données, afin que le trafic ne soit jamais exposé à Internet.
+
+<Note>
+  La connectivité PSC de GCP est disponible uniquement lorsque le service ClickPipes est déployé sur GCP. Consultez la [liste des régions GCP dans lesquelles ClickPipes est hébergé](/fr/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips) avant de commencer.
+</Note>
+
+<div id="supported-patterns">
+  ## Modèles pris en charge
+</div>
+
+| Modèle                           | Applicable lorsque                                                                                                                                                 | Attachement de service                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| **PSC natif**                    | Services managés qui publient automatiquement un attachement de service PSC, tels qu&#39;AlloyDB.                                                                      | Créé automatiquement lorsque vous activez PSC sur l&#39;instance. |
+| **PSC détenu par le producteur** | Sources de données qui ne publient pas d’attachement de service, telles que Postgres sur Compute Engine ou un service managé accessible uniquement via une IP privée. | Créé et géré par vous.                                            |
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Un service ClickHouse Cloud hébergé sur GCP, dans une [région où ClickPipes est hébergé](/fr/integrations/clickpipes/networking/static-ips#google-cloud-static-nat-ips).
+* Les droits IAM nécessaires pour activer PSC sur votre source et gérer les attachements de service PSC (`roles/compute.networkAdmin`).
+* Le **projet consommateur de ClickPipes** autorisé à se connecter à votre attachement de service. Pour ClickPipes en production, il s’agit de `clickpipes-production`.
+* La clé API/le secret ClickHouse Cloud de l’organisation propriétaire du service (requis uniquement si vous effectuez le provisionnement via Terraform ou l’API).
+
+<div id="create-rpe">
+  ## Créer le point de terminaison privé inversé
+</div>
+
+Pour créer un RPE, vous avez besoin des informations suivantes concernant votre source de données :
+
+* **URI de l&#39;attachement de service** : `projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>`, le
+  point de terminaison PSC exposé devant votre source de données.
+* **Nom DNS privé** : le nom d&#39;hôte auquel votre pipe se connecte. Un point de terminaison PSC reçoit une adresse IP interne statique
+  sans nom DNS associé. ClickPipes résout donc ce nom d&#39;hôte vers cette adresse IP pour vous.
+
+<Tabs>
+  <Tab title="Interface utilisateur ClickPipes">
+    1. Dans ClickHouse Cloud, ouvrez votre service, puis accédez à **Sources de données** &gt; **ClickPipes**.
+    2. Sélectionnez la source de données à partir de laquelle vous souhaitez ingérer des données.
+    3. Sous **Configurez votre connexion ClickPipe**, activez **Utiliser une connexion sécurisée**, puis cliquez sur **+ Point de terminaison privé inversé** et choisissez **Attachement de service GCP PSC**.
+    4. Renseignez l&#39;**URI de l&#39;attachement de service**, le **nom DNS privé** et une **description**.
+    5. Cliquez sur **Créer**. Le point de terminaison passe de `Provisioning` à `Ready`. (Le PSC natif accepte automatiquement la connexion ; vous ne verrez donc pas `PendingAcceptance`.)
+  </Tab>
+
+  <Tab title="Terraform">
+    Les mappages DNS privé personnalisés ne constituent pas un attribut de `clickhouse_clickpipes_reverse_private_endpoint` : ils sont gérés par la ressource distincte `clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns`, qui accepte une liste complète de mappages de remplacement et référence le point de terminaison par son ID :
+
+    ```hcl
+    resource "clickhouse_clickpipes_reverse_private_endpoint" "gcp_psc" {
+      service_id             = var.clickhouse_service_id
+      description            = "GCP PSC endpoint"
+      type                   = "GCP_PSC_SERVICE_ATTACHMENT"
+      gcp_service_attachment = "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>"
+    }
+
+    resource "clickhouse_clickpipes_reverse_private_endpoint_custom_private_dns" "gcp_psc" {
+      service_id                  = var.clickhouse_service_id
+      reverse_private_endpoint_id = clickhouse_clickpipes_reverse_private_endpoint.gcp_psc.id
+
+      mapping = [
+        { private_dns_name = "<PRIVATE_DNS_NAME>" }
+      ]
+    }
+    ```
+  </Tab>
+
+  <Tab title="API">
+    ```bash
+    curl --silent --user $KEY_ID:$KEY_SECRET \
+      -X POST -H "Content-Type: application/json" \
+      https://api.clickhouse.cloud/v1/organizations/<ORG_ID>/services/<SERVICE_ID>/clickpipesReversePrivateEndpoints \
+      -d '{
+        "type": "GCP_PSC_SERVICE_ATTACHMENT",
+        "description": "GCP PSC endpoint",
+        "gcpServiceAttachment": "projects/<PROJECT>/regions/<REGION>/serviceAttachments/<NAME>",
+        "customPrivateDnsMappings": [
+          { "privateDnsName": "<PRIVATE_DNS_NAME>" }
+        ]
+      }'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="custom-private-dns-rules">
+  ### Noms DNS privés personnalisés
+</div>
+
+Comme GCP PSC ne propage pas les DNS, un mappage DNS privé personnalisé est indispensable pour chaque point de terminaison GCP PSC : vous fournissez toujours de cette manière le nom DNS privé de la source, que ClickPipes résout vers l’adresse IP interne statique du point de terminaison PSC.
+
+Les [règles standard de nommage DNS privé personnalisé](/fr/integrations/clickpipes/networking/aws-privatelink#custom-private-dns) de ClickPipes s’appliquent : la prise en charge des caractères génériques, l’unicité entre les points de terminaison privés inversés d’un service et les restrictions sur les suffixes réservés sont appliquées de manière identique, quel que soit le fournisseur. Les caractères génériques sont particulièrement utiles sur GCP : un seul mappage tel que `*.<cluster>.<region>.managedkafka.<project>.cloud.goog` couvre tous les brokers d’un cluster Kafka Managed.
+
+Pour GCP PSC, seul le champ `privateDnsName` du mappage est utilisé. Le champ `internalDNSName` n’est pas pris en charge, car un point de terminaison PSC expose une adresse IP statique sans nom DNS auquel l’associer : les mappages sont toujours résolus vers cette adresse IP.
+
+<div id="producer-owned">
+  ## Approbation des connexions gérées par le producteur
+</div>
+
+Pour un PSC détenu par le producteur, ajoutez le projet consommateur de ClickPipes à la liste d’acceptation automatique de l’attachement de service afin que la connexion soit acceptée automatiquement. Sinon, le RPE reste à l’état `PendingAcceptance` jusqu’à ce que vous l’approuviez manuellement.
+
+Pour accepter la connexion, la liste d’acceptation des consommateurs de l’attachement de service doit contenir l’URI du point de terminaison basé sur son ID numérique (`projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID>`). Cette valeur est le champ `endpointWithId` de la connexion en attente sur l’attachement de service ; utilisez describe pour la trouver :
+
+```bash
+gcloud beta compute service-attachments describe <SERVICE_ATTACHMENT_NAME> \
+  --region=<REGION> --project=<YOUR_PROJECT_ID> \
+  --format='json(connectedEndpoints)'
+```
+
+Récupérez l’`endpointWithId` de l’entrée dont le `status` est `PENDING`, supprimez le préfixe `https://www.googleapis.com/compute/beta/`, puis transmettez le résultat à `--consumer-accept-list` :
+
+```bash
+gcloud beta compute service-attachments update <SERVICE_ATTACHMENT_NAME> \
+  --region=<REGION> --project=<YOUR_PROJECT_ID> \
+  --consumer-accept-list=projects/<PROJECT>/regions/<REGION>/forwardingRules/<NUMERIC_ID> \
+  --reconcile-connections
+```
+
+<Warning>
+  N’utilisez pas ici l’`endpoint_id` de la réponse de l’API ClickPipes/Terraform : cette valeur correspond au *nom* de la règle de transfert, et non à l’ID numérique requis par GCP ; la liste d’acceptation ne correspondrait donc pas. Utilisez toujours l’ID numérique de l’`endpointWithId` en attente de l’attachement de service.
+
+  `--consumer-accept-list` remplace également la liste d’acceptation au lieu d’y ajouter des éléments. Si l’attachement de service accepte déjà d’autres projets ou endpoints, transmettez-les tous dans la même commande, sous peine de retirer l’accès à ceux que vous omettez.
+</Warning>
+
+<div id="managing-rpes">
+  ## Gestion des points de terminaison privés inversés
+</div>
+
+Vous pouvez gérer les points de terminaison privés inversés existants dans les paramètres du service ClickHouse Cloud :
+
+1. Dans la barre latérale, recherchez le bouton `Settings` et cliquez dessus.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="Paramètres ClickHouse Cloud" size="lg" border />
+
+2. Cliquez sur `Reverse private endpoints` dans la section `ClickPipe reverse private endpoints`.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="Paramètres ClickHouse Cloud" size="md" border />
+
+   Les informations détaillées sur le point de terminaison privé inversé s&#39;affichent dans le volet latéral.
+
+   Cette vue est en lecture seule, hormis la suppression : cliquez sur le `×` d&#39;un point de terminaison et confirmez sa suppression. Celle-ci est définitive et interrompt tout ClickPipe utilisant actuellement ce point de terminaison.
+
+   Pour modifier les mappages DNS privé personnalisés d&#39;un point de terminaison, utilisez l&#39;API ou Terraform. La mise à jour remplace l&#39;intégralité de la liste des mappages au lieu d&#39;y ajouter des éléments.
+
+Si un point de terminaison affiche `Rejected` ou `Failed`, lisez le message associé à son statut : il permet de distinguer une connexion rejetée par le producteur d&#39;une connexion fermée ou nécessitant une intervention. Ces deux cas signifient généralement que la liste d&#39;acceptation de l&#39;attachement de service n&#39;inclut pas le projet consommateur ClickPipes. Pour consulter le statut signalé par GCP pour le point de terminaison, décrivez les `connectedEndpoints` de votre attachement de service.
+
+<div id="limitations">
+  ## Limitations
+</div>
+
+* L’endpoint RPE et l’attachement de service doivent se trouver dans la **même région GCP**. Le PSC interrégional via l’[accès global](https://docs.cloud.google.com/vpc/docs/about-accessing-vpc-hosted-services-endpoints#global-access) n’est pas encore pris en charge. Utilisez le [tunnel SSH](/fr/integrations/clickpipes/networking/index#ssh-tunneling) si votre source se trouve dans une autre région.
+* Un attachement de service PSC ne peut être revendiqué que par un seul service ClickHouse Cloud à la fois ; il ne peut pas être réutilisé par plusieurs services. Pour déplacer un attachement de service vers un autre service, [contactez le support ClickHouse](https://clickhouse.com/support/program) afin de libérer la revendication existante.
