@@ -168,12 +168,13 @@ public:
     using Base::Base;
 
     /// `createAggregator` switches to the two-stack queue once the average number of populated buckets in a
-    /// window reaches this value; below it, recomputing the window each grid point is cheaper. Reuses the
-    /// thresholds `AggregateFunctionTimeseriesLinearRegression` measured with the
-    /// `timeseries_to_grid_two_stack_vs_recompute` example (see its `createAggregator` for the benchmark this is
-    /// based on): this `Summary` (a timestamp, a value, and a bool) is smaller than that one's (five `Float64`s),
-    /// so recompute here is at least as expensive per populated bucket and two-stacks is at least as favorable,
-    /// which makes reusing the same crossover a safe, conservative choice.
+    /// window reaches this value; below it, recomputing the window each grid point is cheaper. The
+    /// `timeseries_to_grid_two_stack_vs_recompute` example measures this summary directly: its two-stacks
+    /// crossover sits at ~2 populated buckets per window and its 2x point at ~14 (Apple M-class; the
+    /// linear-regression summary lands at 4 and 12 on the same machine), both below the 10/20 the
+    /// linear-regression functions use. Keeping the shared 10/20 is therefore conservative for this summary -
+    /// two-stacks is only enabled where it measures well ahead - and keeps one selector policy across the
+    /// non-invertible functions.
     static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
 
     /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets (see
