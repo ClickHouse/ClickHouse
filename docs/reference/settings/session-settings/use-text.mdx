@@ -30,6 +30,15 @@ Using the text index header cache can significantly reduce latency and increase 
 
 Enable evaluation of LIKE/ILIKE queries by scanning the inverted text index dictionary.
 
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "New setting to cache absent text index tokens and avoid repeated dictionary lookups."}]}]}/>
+
+Whether to cache text index tokens that are absent from a data part.
+The negative tokens cache uses the text index tokens cache and avoids repeated dictionary lookups for absent tokens.
+
 ## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />

@@ -3,6 +3,7 @@
 #if USE_NURAFT
 
 #include <Coordination/CoordinationSettings.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ProfileEvents.h>
@@ -12,6 +13,7 @@
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
+#include <Common/assert_cast.h>
 #include <base/sleep.h>
 
 template class NonblockingBoundedQueue<DB::KeeperRequestForSession>;
@@ -202,11 +204,15 @@ struct BusyWaitBackoff
     }
 };
 
-KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_)
+KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : server(server_)
     , keeper_context(server->getKeeperContext())
+    , special_response_router(std::move(special_response_router_))
     , log(getLogger("KeeperRequestDispatcher"))
 {
+    if (!special_response_router)
+        throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcher requires a special response router");
+
     const auto & coordination_settings = keeper_context->getCoordinationSettings();
     size_t max_request_queue_size = coordination_settings[CoordinationSetting::max_request_queue_size];
     requests_queue.init(max_request_queue_size);
@@ -1065,7 +1071,10 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     response->zxid = 0;
     response->error = error;
     response->enqueue_ts = std::chrono::steady_clock::now();
-    onResponse(DB::KeeperResponseForSession{request_for_session.session_id, response});
+    DB::KeeperResponseForSession response_for_session{request_for_session.session_id, response};
+    if (special_response_router(response_for_session))
+        return;
+    onResponse(std::move(response_for_session));
 }
 
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
@@ -1097,6 +1106,18 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         req.request->xid != request_for_session.request->xid)
     {
         return;
+    }
+
+    /// SessionID requests all carry session_id -1 and xid 0, so the check above matches any of them,
+    /// including ones originating on other servers (onCommit runs for every committed entry on every
+    /// node). Their identity is (server_id, internal_id).
+    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
+    {
+        /// Session id -1 is reserved for SessionID requests, so the matching head is one too.
+        const auto & head = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*req.request);
+        const auto & committed = assert_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+        if (head.server_id != committed.server_id || head.internal_id != committed.internal_id)
+            return;
     }
 
     if (current_stream_is_suspect.load())
