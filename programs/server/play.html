@@ -88,6 +88,11 @@
                beside it. Used only for the emoji icons, which cannot take a text color; the glyph icons
                are muted with `--misc-text-color` instead. */
             --icon-muted-filter: grayscale(1) brightness(1.1);
+            /* What a header control in effect on its column is drawn in - the arrow of the active sort
+               direction, the funnel of a filtered column, and the filter it shows underneath. Its own
+               colour rather than the link colour: these are not links, and a hue nothing else in the
+               result uses makes the shaped columns pick themselves out of a wide header at a glance. */
+            --active-control-color: #C0C;
             --table-hover-filter: brightness(0.9);
             --link-color: #06D;
             --logo-color: #FFF;
@@ -168,6 +173,7 @@
             --error-color: #400;
             --table-header-color: #102020;
             --icon-muted-filter: grayscale(1) brightness(0.85);
+            --active-control-color: #FF0;
             --table-hover-filter: contrast(0.9) brightness(2);
             --link-color: #4BDAF7;
             --logo-color: #444;
@@ -3103,7 +3109,7 @@ class QueryResultElement extends HTMLElement
                 .sort-toggle.sort-active,
                 th.filtered-column .filter-toggle
                 {
-                    color: var(--link-color);
+                    color: var(--active-control-color);
                 }
 
                 .pin-toggle,
@@ -3210,7 +3216,7 @@ class QueryResultElement extends HTMLElement
                     max-width: 100%;
                     font-size: 85%;
                     font-weight: normal;
-                    color: var(--link-color);
+                    color: var(--active-control-color);
                 }
 
                 th.filtered-column .filter-state
@@ -3248,20 +3254,27 @@ class QueryResultElement extends HTMLElement
 
                 .filter-reset:hover
                 {
-                    color: var(--link-color);
+                    color: var(--active-control-color);
                 }
 
-                /* The filter input, revealed in place under the header cell it belongs to. Built once
-                   with the header and only shown/hidden, so what the user typed survives a click
-                   elsewhere. The apply button is glued to the input: one box, no gap, a single outer
-                   border, so it reads as "type here, then press this". */
+                /* The filter input takes exactly the place the filter itself occupies once it is set: a
+                   second line inside the header cell, which grows to make room for it the moment the
+                   funnel is clicked, and shrinks back when the input goes away. Editing a filter
+                   therefore happens where that filter is going to be read, rather than in a panel
+                   hanging over the rows. Built once with the header and only shown and hidden, so what
+                   the user typed survives a click elsewhere in the header.
+
+                   In flow rather than absolutely positioned, so the header cell reserves the room
+                   instead of the input covering the first rows of the result; it takes the width of the
+                   cell, down to a floor that keeps it usable in a narrow column, where it overflows onto
+                   the neighbouring header (the frozen table layout keeps the column widths, and a header
+                   cell paints over the one to its right). The apply button is glued to the input: one
+                   box, no gap, a single outer border, so it reads as "type here, then press this". */
                 .filter-popover
                 {
                     display: none;
-                    position: absolute;
-                    top: 100%;
-                    left: -1px;
-                    z-index: 1;
+                    min-width: 8rem;
+                    margin-top: 0.15rem;
                     font-weight: normal;
                     border: 1px solid var(--border-color-selected);
                     background: var(--element-background-color);
@@ -3272,15 +3285,22 @@ class QueryResultElement extends HTMLElement
                     display: flex;
                 }
 
+                /* One line at a time: while the input is open it stands in for the filter it edits. */
+                th.filter-open .filter-state
+                {
+                    display: none;
+                }
+
                 .filter-input
                 {
-                    width: 12rem;
-                    max-width: 40vw;
+                    flex: 1;
+                    min-width: 0;
                     padding: 0.15rem 0.3rem;
                     border: none;
                     outline: none;
                     font: inherit;
                     font-size: 90%;
+                    text-align: left;
                     color: var(--text-color);
                     background: var(--element-background-color);
                 }
