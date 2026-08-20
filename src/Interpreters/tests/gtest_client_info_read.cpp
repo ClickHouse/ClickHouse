@@ -46,7 +46,13 @@ String makeClientInfoPrefix(ClientInfo::QueryKind query_kind, const String & add
 /// helper this emits every field ClientInfo::read expects, so read() runs to completion even when it
 /// does not reject the address. Used to prove that an INITIAL_QUERY accepts a non-IP initial_address
 /// leniently (the server overwrites it later) instead of throwing.
-String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & address_string)
+String makeFullClientInfoWire(
+    ClientInfo::QueryKind query_kind,
+    const String & address_string,
+    UInt64 client_version_major = 1,
+    UInt64 client_version_minor = 1,
+    UInt64 client_version_patch = DBMS_TCP_PROTOCOL_VERSION,
+    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION)
 {
     WriteBufferFromOwnString buf;
     writeBinary(static_cast<UInt8>(query_kind), buf);
@@ -59,12 +65,12 @@ String makeFullClientInfoWire(ClientInfo::QueryKind query_kind, const String & a
     writeBinary(String("os-user"), buf);                       /// os_user
     writeBinary(String("client-host"), buf);                   /// client_hostname
     writeBinary(String("ClickHouse client"), buf);             /// client_name
-    writeVarUInt(static_cast<UInt64>(1), buf);                 /// client_version_major
-    writeVarUInt(static_cast<UInt64>(1), buf);                 /// client_version_minor
-    writeVarUInt(static_cast<UInt64>(DBMS_TCP_PROTOCOL_VERSION), buf); /// client_tcp_protocol_version
+    writeVarUInt(client_version_major, buf);                   /// client_version_major
+    writeVarUInt(client_version_minor, buf);                   /// client_version_minor
+    writeVarUInt(client_tcp_protocol_version, buf);            /// client_tcp_protocol_version
     writeBinary(String(""), buf);                              /// quota_key (>= 54060)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// distributed_depth (>= 54448)
-    writeVarUInt(static_cast<UInt64>(DBMS_TCP_PROTOCOL_VERSION), buf); /// client_version_patch (TCP, >= 54401)
+    writeVarUInt(client_version_patch, buf);                   /// client_version_patch (TCP, >= 54401)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have OpenTelemetry trace id = no (>= 54442)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// collaborate_with_initiator (>= 54453)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// obsolete_count_participating_replicas
@@ -376,4 +382,65 @@ TEST(ClientInfoRead, CurrentRolesRoundTripsTriState)
     auto some = round_trip(std::vector<String>{"role_a", "role_b"});
     ASSERT_TRUE(some.has_value());
     EXPECT_EQ(*some, (std::vector<String>{"role_a", "role_b"}));
+}
+
+/// An older peer can forward a server-initiated query whose context was never filled with a
+/// version, so `client_version_*` arrives as 0.0.0 over the wire and `read` overwrites the seed
+/// taken from the session. `setClientVersionFromConnectionIfUnknown` must then restore the peer's
+/// version from the connection hello, so that version-gated compatibility logic and the
+/// zero-version check in `RemoteQueryExecutor` on the next hop do not misfire during a rolling
+/// upgrade. This mirrors the exact `TCPHandler::receiveQuery` sequence: seed, read, normalize.
+TEST(ClientInfoVersionFromConnection, ZeroWireVersionFilledFromConnectionHello)
+{
+    ClientInfo info;
+    info.connection_client_version_major = 26;
+    info.connection_client_version_minor = 7;
+    info.connection_client_version_patch = 1;
+    info.connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+
+    ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000", 0, 0, 0, 0));
+    ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION));
+    ASSERT_EQ(info.client_version_major, 0u);
+
+    info.setClientVersionFromConnectionIfUnknown();
+
+    EXPECT_EQ(info.client_version_major, 26u);
+    EXPECT_EQ(info.client_version_minor, 7u);
+    EXPECT_EQ(info.client_version_patch, 1u);
+    EXPECT_EQ(info.client_tcp_protocol_version, DBMS_TCP_PROTOCOL_VERSION);
+}
+
+/// A known (non-zero) wire version is authoritative: it identifies the initial client, which may
+/// differ from the immediate peer, and must never be replaced by the connection hello version.
+TEST(ClientInfoVersionFromConnection, KnownWireVersionIsKept)
+{
+    ClientInfo info;
+    info.connection_client_version_major = 26;
+    info.connection_client_version_minor = 7;
+    info.connection_client_version_patch = 1;
+    info.connection_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+
+    ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::SECONDARY_QUERY, "127.0.0.1:9000", 25, 3, 2, 54467));
+    ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION));
+
+    info.setClientVersionFromConnectionIfUnknown();
+
+    EXPECT_EQ(info.client_version_major, 25u);
+    EXPECT_EQ(info.client_version_minor, 3u);
+    EXPECT_EQ(info.client_version_patch, 2u);
+    EXPECT_EQ(info.client_tcp_protocol_version, 54467u);
+}
+
+/// Without a connection hello version (e.g. a synthesized local context, not a TCP connection)
+/// there is nothing trustworthy to fill from, so the zero version must stay zero - the sender-side
+/// check in `RemoteQueryExecutor` is what reports such a context as a logical error.
+TEST(ClientInfoVersionFromConnection, NoConnectionVersionIsNoop)
+{
+    ClientInfo info;
+    info.setClientVersionFromConnectionIfUnknown();
+
+    EXPECT_EQ(info.client_version_major, 0u);
+    EXPECT_EQ(info.client_version_minor, 0u);
+    EXPECT_EQ(info.client_version_patch, 0u);
+    EXPECT_EQ(info.client_tcp_protocol_version, 0u);
 }

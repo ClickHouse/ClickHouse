@@ -36,8 +36,11 @@ QUERY_PLAN_SERIALIZATION_SETTINGS_SUPPORTED_TYPES(QueryPlanSerializationSettings
  * Usage lifecycle within QueryPlan (de)serialization:
  * Serialize:
  *  1. For every node/step in depth-first traversal QueryPlan::serialize creates a QueryPlanSerializationSettings instance.
- *  2. The step is asked to `serializeSettings(settings)` (step-specific method)
+ *  2. The step is asked to `serializeSettings(settings, version)` (step-specific method)
  *     so it copies only the settings it depends on (usually via context->getSettingsRef()).
+ *     `version` is the query-plan serialization version the stream is being written with
+ *     (already the minimum of ours and the peer's), so a step can withhold a setting name
+ *     the receiving peer would reject as unknown.
  *  3. `writeChangedBinary()` writes out just the non-default values after the step header, preceding the step-specific payload.
  * Deserialize:
  *  1. A new settings instance is constructed per step right after reading the step's output header.
