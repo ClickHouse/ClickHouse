@@ -43,7 +43,8 @@ using URLShardsWithFailover = std::vector<URLFailoverOptions>;
 
 URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_addresses, const String & func_name = "url")
 {
-    auto disclosed_urls = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name);
+    auto disclosed_urls
+        = parseRemoteDescription(uri, 0, uri.size(), ',', max_addresses, func_name, GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
 
     URLShardsWithFailover result;
     result.reserve(disclosed_urls.size());
@@ -51,9 +52,17 @@ URLShardsWithFailover parseURLShardsWithFailover(const String & uri, size_t max_
 
     for (const auto & disclosed_url : disclosed_urls)
     {
-        auto failover_options = parseRemoteDescription(disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name);
+        auto failover_options = parseRemoteDescription(
+            disclosed_url, 0, disclosed_url.size(), '|', max_addresses, func_name, GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
         if (url_options_count + failover_options.size() > max_addresses)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}': first argument generates too many result addresses", func_name);
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table function '{}': first argument generates too many result addresses: {}, while at most {} are allowed"
+                " (see the '{}' setting)",
+                func_name,
+                url_options_count + failover_options.size(),
+                max_addresses,
+                GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
 
         url_options_count += failover_options.size();
         result.push_back(std::move(failover_options));

@@ -167,7 +167,14 @@ String getSampleURI(String uri, ContextPtr context)
 {
     if (urlWithGlobs(uri))
     {
-        auto uris = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements]);
+        auto uris = parseRemoteDescription(
+            uri,
+            0,
+            uri.size(),
+            ',',
+            context->getSettingsRef()[Setting::glob_expansion_max_elements],
+            "url",
+            GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
         if (!uris.empty())
             return uris[0];
     }
@@ -290,7 +297,7 @@ namespace
 
     StorageURLSource::FailoverOptions getFailoverOptions(const String & uri, size_t max_addresses)
     {
-        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses);
+        return parseRemoteDescription(uri, 0, uri.size(), '|', max_addresses, "url", GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
     }
 }
 
@@ -299,7 +306,7 @@ class StorageURLSource::DisclosedGlobIterator::Impl
 public:
     Impl(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context)
     {
-        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses);
+        uris = parseRemoteDescription(uri_, 0, uri_.size(), ',', max_addresses, "url", GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
 
         std::optional<ActionsDAG> filter_dag;
         if (!uris.empty())
@@ -1098,7 +1105,14 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
 
     std::vector<String> urls_to_check;
     if (urlWithGlobs(uri))
-        urls_to_check = parseRemoteDescription(uri, 0, uri.size(), ',', context->getSettingsRef()[Setting::glob_expansion_max_elements], "url");
+        urls_to_check = parseRemoteDescription(
+            uri,
+            0,
+            uri.size(),
+            ',',
+            context->getSettingsRef()[Setting::glob_expansion_max_elements],
+            "url",
+            GLOB_EXPANSION_MAX_ELEMENTS_SETTING);
     else
         urls_to_check = {uri};
 
