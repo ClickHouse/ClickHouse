@@ -447,19 +447,36 @@ void DatabasePostgreSQL::removeOutdatedTables()
         }
     }
 
+    /// Reconcile detached_or_dropped with the live remote schema:
+    /// - If a table was only ordinarily DETACH'd (no .removed marker), and the remote table
+    ///   has disappeared, the entry is pruned (nothing left to ATTACH).
+    /// - If a table was permanently detached (DETACH TABLE PERMANENTLY or DROP TABLE → .removed exists),
+    ///   the marker and entry are preserved even if the remote table disappears. This ensures that
+    ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
+    ///   explicit ATTACH TABLE — matching the documented behavior.
     auto db_disk = getDisk();
     for (auto iter = detached_or_dropped.begin(); iter != detached_or_dropped.end();)
     {
         if (!actual_tables.contains(*iter))
         {
-            auto table_name = *iter;
-            iter = detached_or_dropped.erase(iter);
-
-            if (!persistent)
-                continue;
-
+            const auto & table_name = *iter;
             fs::path table_marked_as_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
-            db_disk->removeFileIfExists(table_marked_as_removed);
+            bool is_permanent = persistent && db_disk->existsFile(table_marked_as_removed);
+
+            /// Only prune non-permanent detach entries when the remote table disappears.
+            /// Permanent detach markers (.removed) are preserved so a recreated remote table
+            /// stays hidden until explicit ATTACH TABLE.
+            if (!is_permanent)
+            {
+                if (persistent)
+                    db_disk->removeFileIfExists(table_marked_as_removed);
+                iter = detached_or_dropped.erase(iter);
+            }
+            else
+            {
+                /// Permanent detach: preserve the marker and keep the table in detached_or_dropped
+                ++iter;
+            }
         }
         else
             ++iter;

@@ -595,6 +595,209 @@ def test_backup_database(started_cluster):
     node1.query("DROP DATABASE backup_database")
 
 
+def test_postgresql_detached_tables_permanent_marker(started_cluster):
+    """
+    Test that system.detached_tables correctly reports is_permanently for PostgreSQL databases.
+    Tests both DETACH TABLE PERMANENTLY and ordinary DETACH TABLE.
+    PR #107943
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        f"CREATE DATABASE postgres_test_detach ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+    )
+
+    create_postgres_table(cursor, "test_permanent")
+    create_postgres_table(cursor, "test_ordinary")
+    assert "test_permanent" in node1.query("SHOW TABLES FROM postgres_test_detach")
+    assert "test_ordinary" in node1.query("SHOW TABLES FROM postgres_test_detach")
+
+    # Test DETACH TABLE PERMANENTLY
+    node1.query("DETACH TABLE postgres_test_detach.test_permanent PERMANENTLY")
+    is_perm = node1.query(
+        "SELECT is_permanently FROM system.detached_tables "
+        "WHERE database = 'postgres_test_detach' AND table = 'test_permanent'"
+    ).strip()
+    assert is_perm == "1", f"Expected is_permanently=1 for DETACH PERMANENTLY, got {is_perm}"
+
+    # Test ordinary DETACH TABLE (not PERMANENTLY)
+    node1.query("DETACH TABLE postgres_test_detach.test_ordinary")
+    is_perm_ordinary = node1.query(
+        "SELECT is_permanently FROM system.detached_tables "
+        "WHERE database = 'postgres_test_detach' AND table = 'test_ordinary'"
+    ).strip()
+    assert is_perm_ordinary == "0", f"Expected is_permanently=0 for ordinary DETACH, got {is_perm_ordinary}"
+
+    # Attach both back
+    node1.query("ATTACH TABLE postgres_test_detach.test_permanent")
+    node1.query("ATTACH TABLE postgres_test_detach.test_ordinary")
+
+    # Clean up
+    node1.query("DROP DATABASE postgres_test_detach")
+    drop_postgres_table(cursor, "test_permanent")
+    drop_postgres_table(cursor, "test_ordinary")
+
+
+def test_postgresql_permanent_detach_marker_preserved_after_remote_drop(started_cluster):
+    """
+    Test that permanent detach markers (.removed) are preserved when the remote
+    PostgreSQL table is dropped and later recreated, ensuring the table stays hidden
+    in ClickHouse until explicit ATTACH TABLE.
+
+    This tests the fix in DatabasePostgreSQL::removeOutdatedTables that mirrors
+    the MySQL behavior from commit 1986888a213.
+    PR #107943
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        f"CREATE DATABASE postgres_marker_test ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+    )
+
+    # Create table in PostgreSQL
+    create_postgres_table(cursor, "test_marker_persist")
+    assert "test_marker_persist" in node1.query("SHOW TABLES FROM postgres_marker_test")
+
+    # DROP TABLE in ClickHouse (creates .removed marker via detachTablePermanently)
+    node1.query("DROP TABLE postgres_marker_test.test_marker_persist")
+
+    # Verify table is in detached_tables with is_permanently=1
+    detached_count = node1.query(
+        "SELECT count() FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert detached_count == "1", f"Expected table in detached_tables, got count {detached_count}"
+
+    is_perm = node1.query(
+        "SELECT is_permanently FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert is_perm == "1", f"Expected is_permanently=1 after DROP TABLE, got {is_perm}"
+
+    # Drop table in remote PostgreSQL
+    drop_postgres_table(cursor, "test_marker_persist")
+
+    # Trigger schema refresh in ClickHouse by querying the database
+    # This calls removeOutdatedTables() which should preserve the permanent marker
+    node1.query("SHOW TABLES FROM postgres_marker_test")
+
+    # Wait a bit for background cleaner_task to run (if it runs)
+    import time
+    time.sleep(2)
+
+    # Verify the permanent marker is still preserved even though remote table is gone
+    detached_after_remote_drop = node1.query(
+        "SELECT count() FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert detached_after_remote_drop == "1", (
+        f"Expected permanent marker preserved after remote drop, "
+        f"but table not in detached_tables (count={detached_after_remote_drop})"
+    )
+
+    is_perm_after_drop = node1.query(
+        "SELECT is_permanently FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert is_perm_after_drop == "1", (
+        f"Expected is_permanently=1 preserved after remote drop, got {is_perm_after_drop}"
+    )
+
+    # Recreate table in PostgreSQL with same name
+    create_postgres_table(cursor, "test_marker_persist")
+
+    # Verify table DOES NOT reappear in ClickHouse (marker kept it hidden)
+    tables_after_recreate = node1.query("SHOW TABLES FROM postgres_marker_test")
+    assert "test_marker_persist" not in tables_after_recreate, (
+        "Table should stay hidden after remote recreation due to preserved .removed marker"
+    )
+
+    # Still in detached_tables
+    still_detached = node1.query(
+        "SELECT count() FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert still_detached == "1", f"Expected table still detached after recreation"
+
+    # Now ATTACH should work and remove the marker
+    node1.query("ATTACH TABLE postgres_marker_test.test_marker_persist")
+    assert "test_marker_persist" in node1.query("SHOW TABLES FROM postgres_marker_test")
+
+    # Marker should be cleared
+    after_attach = node1.query(
+        "SELECT count() FROM system.detached_tables "
+        "WHERE database = 'postgres_marker_test' AND table = 'test_marker_persist'"
+    ).strip()
+    assert after_attach == "0", f"Expected marker cleared after ATTACH, got count {after_attach}"
+
+    # Clean up
+    node1.query("DROP DATABASE postgres_marker_test")
+    drop_postgres_table(cursor, "test_marker_persist")
+
+
+def test_postgresql_ordinary_detach_pruned_after_remote_drop(started_cluster):
+    """
+    Test that ordinary DETACH TABLE entries (without .removed marker) are pruned
+    from detached_or_dropped when the remote table is dropped.
+
+    This ensures the reconciliation logic correctly distinguishes between:
+    - Permanent detach (marker preserved)
+    - Ordinary detach (entry pruned when remote table disappears)
+    PR #107943
+    """
+    conn = get_postgres_conn(
+        started_cluster.postgres_ip, started_cluster.postgres_port, database=True
+    )
+    cursor = conn.cursor()
+
+    node1.query(
+        f"CREATE DATABASE postgres_prune_test ENGINE = PostgreSQL('postgres1:5432', 'postgres_database', 'postgres', '{pg_pass}')"
+    )
+
+    # Create table in PostgreSQL
+    create_postgres_table(cursor, "test_prune")
+    assert "test_prune" in node1.query("SHOW TABLES FROM postgres_prune_test")
+
+    # Ordinary DETACH (not PERMANENTLY)
+    node1.query("DETACH TABLE postgres_prune_test.test_prune")
+
+    # Verify in detached_tables with is_permanently=0
+    is_perm = node1.query(
+        "SELECT is_permanently FROM system.detached_tables "
+        "WHERE database = 'postgres_prune_test' AND table = 'test_prune'"
+    ).strip()
+    assert is_perm == "0", f"Expected is_permanently=0, got {is_perm}"
+
+    # Drop table in remote PostgreSQL
+    drop_postgres_table(cursor, "test_prune")
+
+    # Trigger schema refresh
+    node1.query("SHOW TABLES FROM postgres_prune_test")
+
+    # Wait for background task
+    import time
+    time.sleep(2)
+
+    # Verify the entry is PRUNED (not in detached_tables anymore)
+    pruned_count = node1.query(
+        "SELECT count() FROM system.detached_tables "
+        "WHERE database = 'postgres_prune_test' AND table = 'test_prune'"
+    ).strip()
+    assert pruned_count == "0", (
+        f"Expected ordinary detach entry pruned after remote drop, "
+        f"but still in detached_tables (count={pruned_count})"
+    )
+
+    # Clean up
+    node1.query("DROP DATABASE postgres_prune_test")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
