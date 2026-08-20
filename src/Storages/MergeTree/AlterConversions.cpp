@@ -170,15 +170,6 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
-        /// Handle a reused rename target: if column A was renamed to B, B was then dropped and C is
-        /// now renamed to B, erase the entry mapping B to A. This runs before the chained lookup
-        /// below, because C can reach B through a chain as well, and it never erases the entry that
-        /// lookup is about to update: that would take renaming a column to the name it already has.
-        std::erase_if(rename_map, [&](const RenamePair & entry)
-        {
-            return entry.rename_to == command.rename_to && dropped_columns.contains(entry.rename_from);
-        });
-
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
@@ -196,19 +187,17 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
     }
     else if (command.type == DROP_COLUMN)
     {
-        /// Handle a drop after a rename: if column A was renamed to B and B is now dropped, record the
-        /// drop under A
-        auto name_in_part = command.column_name;
-        for (const auto & entry : rename_map)
+        /// Handle a drop after a rename: if column A was renamed to B and B is now dropped,
+        /// record the drop under A, and erase the mapping of A to B.
+        auto dropped_column_name = command.column_name;
+        auto it = std::ranges::find(rename_map, command.column_name, &RenamePair::rename_to);
+        if (it != rename_map.end())
         {
-            if (entry.rename_to == name_in_part)
-            {
-                name_in_part = entry.rename_from;
-                break;
-            }
+            dropped_column_name = it->rename_from;
+            rename_map.erase(it);
         }
 
-        dropped_columns.emplace(std::move(name_in_part));
+        dropped_columns.emplace(std::move(dropped_column_name));
     }
     else if (command.type == READ_COLUMN)
     {
