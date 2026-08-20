@@ -171,38 +171,29 @@ namespace
         checkTypeOfTagNameArgument(function_name, type, argument_index);
     }
 
-    /// Extracts strings from a column.
-    VectorWithMemoryTracking<std::string_view> extractStringViewFromArgument(const IColumn & column)
-    {
-        size_t num_rows = column.size();
-        VectorWithMemoryTracking<std::string_view> res{num_rows, ""};
-        for (size_t i = 0; i != res.size(); ++i)
-        {
-            if (!column.isNullAt(i))
-            {
-                auto str = std::string_view{column.getDataAt(i)};
-                trimRight(str, '\0'); /// Trim zero characters in case FixedString was used for this column.
-                res[i] = str;
-            }
-        }
-        return res;
-    }
-
     /// Extracts tags from two columns: the first column contains names and the second column contains values.
     void extractTagNameAndValueFromTwoColumns(const IColumn & column_tag_name,
                                               const IColumn & column_tag_value,
                                               VectorWithMemoryTracking<TagNamesAndValues> & out_tags_vector)
     {
-        size_t num_rows = column_tag_name.size();
-        chassert(column_tag_name.size() == num_rows);
+        const size_t num_rows = column_tag_name.size();
+        chassert(column_tag_value.size() == num_rows);
         chassert(out_tags_vector.size() == num_rows);
 
-        VectorWithMemoryTracking<std::string_view> tag_names = extractStringViewFromArgument(column_tag_name);
-        VectorWithMemoryTracking<std::string_view> tag_values = extractStringViewFromArgument(column_tag_value);
+        const auto extractStringViewAt = [](const IColumn & column, size_t row) -> std::string_view
+        {
+            if (column.isNullAt(row))
+                return {};
+
+            auto value = std::string_view{column.getDataAt(row)};
+            trimRight(value, '\0'); /// Trim zero characters in case FixedString was used for this column.
+            return value;
+        };
+
         for (size_t i = 0; i != num_rows; ++i)
         {
-            auto tag_name = tag_names[i];
-            auto tag_value = tag_values[i];
+            auto tag_name = extractStringViewAt(column_tag_name, i);
+            auto tag_value = extractStringViewAt(column_tag_value, i);
             out_tags_vector[i].emplace_back(tag_name, tag_value);
         }
     }
