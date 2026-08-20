@@ -739,9 +739,11 @@ def client_stacktrace_delay_seconds():
 
 
 def worker_cleanup_grace_seconds():
-    """The delays `kill_process_group` sleeps for, which a parent must allow before
-    it kills a worker mid-cleanup. Not a bound on the whole cleanup: the client
-    stacktrace collection that follows those sleeps is not counted."""
+    """The diagnostic sleeps of ONE `kill_process_group` invocation, which a parent
+    must allow before it kills a worker mid-cleanup. Not a bound on the whole
+    cleanup: the client stacktrace collection that follows those sleeps is not
+    counted, nor is the 0.1s between that call's SIGTERM and SIGKILL, and a worker
+    holding children in more than one process group pays these sleeps per group."""
     grace = SANITIZER_REPORT_GRACE_SECONDS if SANITIZED else 0
     if CAPTURE_CLIENT_STACKTRACE:
         grace += client_stacktrace_delay_seconds()
@@ -755,13 +757,17 @@ WORKER_STOP_MARGIN_SECONDS = 10
 
 def terminate_workers(processes):
     """SIGTERM every worker, then wait for them to finish `kill_process_group`
-    before SIGKILLing the stragglers. The wait must outlast that cleanup's sleeps,
-    or a worker is killed part-way through it and leaves its own children alive
-    and its sanitizer report unfinished. Workers clean up concurrently, so the
-    grace is one deadline for all of them rather than a budget each, but no wait
-    ever drops below the margin: they are all already terminated, so a shared
-    deadline alone would give the last ones no time at all. Every wait stays
-    bounded, so a wedged worker cannot hang the run."""
+    before SIGKILLing the stragglers. The wait must outlast the sleeps of a single
+    such invocation, or a worker is killed part-way through it and leaves its own
+    children alive and its sanitizer report unfinished. It is not a bound on a
+    worker holding children in several process groups: `cleanup_child_processes`
+    then sleeps once per group, and the later groups are still cut short, though
+    never earlier than the flat 10s wait this replaced.
+
+    Workers clean up concurrently, so the grace is one deadline for all of them
+    rather than a budget each, but no wait ever drops below the margin, which
+    covers a worker that was slow to start its cleanup. Every wait stays bounded,
+    so a wedged worker cannot hang the run."""
     for p in processes:
         if p.is_alive():
             p.terminate()
