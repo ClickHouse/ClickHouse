@@ -592,6 +592,17 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
     const auto & table_name = table_expression_data.table_name;
     const auto & database_name = table_expression_data.database_name;
 
+    /** A materialized CTE is registered under an internal temporary table name, but queries refer to it
+      * by its CTE name, which is visible in the same way as a table name. Every place that decides whether
+      * an identifier binds to a table expression has to know that name, otherwise a column of another table
+      * expression is not qualified enough to be distinguished from the CTE columns, and a qualifier that
+      * matches both the CTE and a table is not reported as ambiguous.
+      */
+    std::string_view materialized_cte_name;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        if (table_node->isMaterializedCTE())
+            materialized_cte_name = table_node->getMaterializedCTE()->cte_name;
+
     if (identifier_lookup.isTableExpressionLookup())
     {
         size_t parts_size = identifier_lookup.identifier.getPartsSize();
@@ -602,6 +613,8 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
                 table_expression_node->formatASTForErrorMessage());
 
         if (parts_size == 1 && path_start == table_name)
+            return true;
+        if (parts_size == 1 && !materialized_cte_name.empty() && path_start == materialized_cte_name)
             return true;
         if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return true;
@@ -615,6 +628,9 @@ bool IdentifierResolver::tryBindIdentifierToTableExpression(const IdentifierLook
         return false;
 
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
+        return true;
+
+    if (!materialized_cte_name.empty() && path_start == materialized_cte_name)
         return true;
 
     if (identifier.getPartsSize() == 2)
@@ -825,8 +841,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
         else if (parts_size == 2 && path_start == database_name && identifier[1] == table_name)
             return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
-        else
-            return {};
+
+        /** A materialized CTE is stored under an internal temporary table name, but it has to be addressable
+          * by its CTE name in the same way as by a table name. The qualifier of a qualified matcher is looked
+          * up as a table expression after the expression lookup misses, so without this the matcher variant
+          * of a materialized CTE reference is not resolved.
+          * Example: WITH cte AS MATERIALIZED (SELECT 42 AS id) SELECT cte.* FROM cte;
+          */
+        if (parts_size == 1 && table_expression_node_type == QueryTreeNodeType::TABLE)
+        {
+            const auto * table_node = table_expression_node->as<TableNode>();
+            if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
+                return { .resolved_identifier = table_expression_node, .resolve_place = IdentifierResolvePlace::JOIN_TREE };
+        }
+
+        return {};
     }
 
     /** Compatibility setting: when enabled, multi-part identifiers prefer the alias-prefix
@@ -842,7 +871,20 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         const bool prefix_matches_table_name = !table_name_compat.empty() && path_start == table_name_compat;
         const bool prefix_matches_alias
             = table_expression_node->hasAlias() && path_start == table_expression_node->getAlias();
-        if (prefix_matches_table_name || prefix_matches_alias)
+        /** A materialized CTE is stored under an internal temporary table name, so its `table_name` never
+          * matches the qualifier the user wrote. Its visible CTE name is a qualifier carrier just like a
+          * table name or an alias, and it has to take part in this compatibility path as well, otherwise
+          * `cte.id` prefers a same-named subcolumn of the CTE while the equivalent shape with a regular CTE
+          * or a table alias prefers the qualified column.
+          */
+        bool prefix_matches_cte_name = false;
+        if (table_expression_node_type == QueryTreeNodeType::TABLE)
+        {
+            const auto * table_node = table_expression_node->as<TableNode>();
+            prefix_matches_cte_name
+                = table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name;
+        }
+        if (prefix_matches_table_name || prefix_matches_alias || prefix_matches_cte_name)
         {
             auto alias_prefix_result = tryResolveIdentifierFromStorage(
                 identifier_lookup, table_expression_node, table_expression_data, scope,
@@ -879,20 +921,104 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromTableExpress
         return {};
 
     const auto & table_name = table_expression_data.table_name;
+    const auto & database_name = table_expression_data.database_name;
+
+    /** The identifier first part can match a table name or an alias of one table expression and at the same
+      * time be the database name of some table expression in the scope. Then the identifier as a whole can be
+      * qualified with the table name or the alias, with the database name and the table name, or refer to
+      * another table expression from that database.
+      * Resolution with a single-part qualifier is attempted first, but it must be allowed to fail, so that the
+      * other interpretations are attempted next.
+      * Example: SELECT db1.db1.id FROM db1.db1;
+      * Example: SELECT db1.tbl.id FROM db1.db1 JOIN db1.tbl USING (id);
+      * Example: SELECT db1.tbl.id FROM (SELECT 1 AS id) AS db1 JOIN db1.tbl USING (id);
+      * Parent scopes participate as well: resolution from a parent scope (a correlated identifier) is
+      * attempted only after the current scope returns no result, so an early exception here would make
+      * the outer interpretation unreachable.
+      * Example: SELECT (SELECT db1.tbl.id FROM db2.db1 LIMIT 1) FROM db1.tbl;
+      * The fall-through is only valid when there is an actual database-and-table interpretation to try:
+      * some table expression in this scope or in a parent scope is the table `identifier[1]` inside the
+      * database `path_start`. Without such a candidate a failed lookup must throw as before; e.g. a
+      * two-part `db.x` against the table `db` with no table `x` in the database `db` must not fall
+      * through to a column literally named `db.x` of a sibling table expression.
+      * For a two-part identifier the database-and-table interpretation is the table expression itself,
+      * which is not a valid column expression, so an expression lookup must still throw
+      * (e.g. plain `db.db` selected from the table `db.db`). The only exception is the qualifier of
+      * a qualified matcher (`db.db.*`): it is resolved as an expression first, and that lookup must be
+      * allowed to fail so that the matcher can resolve the qualifier as a table expression next.
+      * The candidate check is evaluated lazily, only after a failed qualifier lookup, to avoid
+      * scanning the scope chain on the hot path of successful resolution.
+      */
+    auto identifier_can_fall_through_to_database_and_table = [&]() -> bool
+    {
+        if (identifier.getPartsSize() == 2 && !identifier_lookup.is_matcher_qualifier)
+            return false;
+
+        for (const IdentifierResolveScope * current_scope = &scope; current_scope; current_scope = current_scope->parent_scope)
+        {
+            for (const auto & [_, other_table_expression_data] : current_scope->table_expression_node_to_data)
+            {
+                if (!other_table_expression_data.database_name.empty() && path_start == other_table_expression_data.database_name
+                    && identifier[1] == other_table_expression_data.table_name)
+                    return true;
+            }
+        }
+
+        return false;
+    };
+
     if ((!table_name.empty() && path_start == table_name) || (table_expression_node->hasAlias() && path_start == table_expression_node->getAlias()))
-        return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+    {
+        auto lookup_result = tryResolveIdentifierFromStorage(
+            identifier_lookup,
+            table_expression_node,
+            table_expression_data,
+            scope,
+            1 /*identifier_column_qualifier_parts*/,
+            true /*can_be_not_found*/);
+
+        if (lookup_result.resolved_identifier)
+            return lookup_result;
+
+        /// No other interpretation is possible: repeat the lookup to throw the proper exception.
+        if (!identifier_can_fall_through_to_database_and_table())
+            return tryResolveIdentifierFromStorage(
+                identifier_lookup,
+                table_expression_node,
+                table_expression_data,
+                scope,
+                1 /*identifier_column_qualifier_parts*/);
+    }
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE)
     {
         auto * table_node = table_expression_node->as<TableNode>();
         if (table_node->isMaterializedCTE() && path_start == table_node->getMaterializedCTE()->cte_name)
-            return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 1 /*identifier_column_qualifier_parts*/);
+        {
+            auto lookup_result = tryResolveIdentifierFromStorage(
+                identifier_lookup,
+                table_expression_node,
+                table_expression_data,
+                scope,
+                1 /*identifier_column_qualifier_parts*/,
+                true /*can_be_not_found*/);
+
+            if (lookup_result.resolved_identifier)
+                return lookup_result;
+
+            if (!identifier_can_fall_through_to_database_and_table())
+                return tryResolveIdentifierFromStorage(
+                    identifier_lookup,
+                    table_expression_node,
+                    table_expression_data,
+                    scope,
+                    1 /*identifier_column_qualifier_parts*/);
+        }
     }
 
     if (identifier.getPartsSize() == 2)
         return {};
 
-    const auto & database_name = table_expression_data.database_name;
     if (!database_name.empty() && path_start == database_name && identifier[1] == table_name)
         return tryResolveIdentifierFromStorage(identifier_lookup, table_expression_node, table_expression_data, scope, 2 /*identifier_column_qualifier_parts*/);
 
@@ -1149,15 +1275,26 @@ QueryTreeNodePtr createProjectionForUsing(const ColumnNode & using_column_node, 
     return function_node;
 }
 
+/// With `database_qualified = false`, the qualifier is the first identifier part matched against
+/// aliases, table names and materialized CTE names. With `database_qualified = true`, the first two identifier parts are
+/// matched against the database and table names of the leaf table expressions (`db.table.column`);
+/// this binding is weaker and must not compete with a successful alias / table-name resolution,
+/// it is only used to rescue a miss (see tryResolveIdentifierFromJoin).
 static bool qualifierBindsToJoinSubtree(
     const TableExpressionNodePtr & join_tree_node,
-    const std::string & qualifier,
-    const IdentifierResolveScope & scope)
+    const Identifier & identifier,
+    const IdentifierResolveScope & scope,
+    bool database_qualified)
 {
-    if (!join_tree_node || qualifier.empty())
+    if (!join_tree_node)
         return false;
 
-    if (join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
+    const auto & qualifier = identifier.front();
+
+    if (qualifier.empty())
+        return false;
+
+    if (!database_qualified && join_tree_node->hasAlias() && join_tree_node->getAlias() == qualifier)
         return true;
 
     switch (join_tree_node->getNodeType())
@@ -1165,8 +1302,8 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::JOIN:
         {
             const auto & join = join_tree_node->as<JoinNode &>();
-            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), qualifier, scope)
-                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(join.getLeftTableExpressionNodeTyped(), identifier, scope, database_qualified)
+                || qualifierBindsToJoinSubtree(join.getRightTableExpressionNodeTyped(), identifier, scope, database_qualified);
         }
         case QueryTreeNodeType::CROSS_JOIN:
         {
@@ -1175,7 +1312,7 @@ static bool qualifierBindsToJoinSubtree(
             for (size_t i = 0; i < num_tables; ++i)
             {
                 auto expr = cross.getTableExpressionTypedAt(i);
-                if (qualifierBindsToJoinSubtree(expr, qualifier, scope))
+                if (qualifierBindsToJoinSubtree(expr, identifier, scope, database_qualified))
                     return true;
             }
             return false;
@@ -1183,7 +1320,7 @@ static bool qualifierBindsToJoinSubtree(
         case QueryTreeNodeType::ARRAY_JOIN:
         {
             const auto & arr = join_tree_node->as<ArrayJoinNode &>();
-            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), qualifier, scope);
+            return qualifierBindsToJoinSubtree(arr.getTableExpressionNodeTyped(), identifier, scope, database_qualified);
         }
         default:
             break;
@@ -1192,7 +1329,20 @@ static bool qualifierBindsToJoinSubtree(
     auto it = scope.table_expression_node_to_data.find(join_tree_node);
     if (it == scope.table_expression_node_to_data.end())
         return false;
-    return !it->second.table_name.empty() && it->second.table_name == qualifier;
+    if (database_qualified)
+        return !it->second.database_name.empty() && it->second.database_name == qualifier
+            && it->second.table_name == identifier[1];
+
+    if (!it->second.table_name.empty() && it->second.table_name == qualifier)
+        return true;
+
+    /// A materialized CTE is registered under its internal temporary table name;
+    /// the name visible to queries is the CTE name, and it qualifies like a table name.
+    if (const auto * table_node = join_tree_node->as<TableNode>())
+        if (table_node->isMaterializedCTE() && table_node->getMaterializedCTE()->cte_name == qualifier)
+            return true;
+
+    return false;
 }
 
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const IdentifierLookup & identifier_lookup,
@@ -1253,9 +1403,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     bool binds_right = true;
     if (prefer_alias && identifier_lookup.isExpressionLookup() && identifier_lookup.identifier.getPartsSize() > 1)
     {
-        const auto & path_start = identifier_lookup.identifier.front();
-        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), path_start, scope);
-        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), path_start, scope);
+        binds_left = qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
+        binds_right = qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ false);
     }
 
     QueryTreeNodePtr left_resolved_identifier = nullptr;
@@ -1264,6 +1413,21 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+
+    /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
+      * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
+      * is the table name of one side and the database name of the other). The database-qualified
+      * interpretation must not compete with a successful alias / table-name resolution — that would
+      * turn the precedence the setting establishes into `AMBIGUOUS_IDENTIFIER` — so it is attempted
+      * only when the restricted side produced no result.
+      */
+    if (binds_left != binds_right && !left_resolved_identifier && !right_resolved_identifier)
+    {
+        if (binds_left && qualifierBindsToJoinSubtree(from_join_node.getRightTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+            right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
+        else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
+            left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+    }
 
     if (!identifier_lookup.isExpressionLookup())
     {

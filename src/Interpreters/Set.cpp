@@ -89,7 +89,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
 {
     typename Method::State state(key_columns, key_sizes, nullptr);
     if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
-        state.precomputeKeys(0, rows);
+        state.tryPrecomputeKeys(0, rows);
 
     /// For all rows
     for (size_t i = 0; i < rows; ++i)
@@ -590,11 +590,13 @@ void NO_INLINE Set::executeImplCase(
     Arena pool;
     typename Method::State state(key_columns, key_sizes, nullptr);
     if constexpr (ColumnsHashing::uses_precomputed_keys<typename Method::State>)
-        state.precomputeKeys(0, rows);
+        state.tryPrecomputeKeys(0, rows);
 
-    /// NOTE Optimization is not used for consecutive identical strings.
-
-    /// For all rows
+    /// Clustered key columns (e.g. a primary key prefix) arrive in runs of equal consecutive
+    /// rows. The consecutive-keys optimization in ColumnsHashing handles them inside `findKey`:
+    /// the last-element cache compares the key with the previous row's before probing the hash
+    /// table, and `HashMethodHashed` additionally compares the raw key bytes before even
+    /// calculating the hash.
     for (size_t i = 0; i < rows; ++i)
     {
         if (has_null_map && (*null_map)[i])
