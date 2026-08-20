@@ -6,7 +6,6 @@
 -- the scale multiplier was not applied, causing the value to be
 -- reinterpreted instead of converted (e.g., seconds treated as milliseconds).
 
-DROP TABLE IF EXISTS t;
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 
 SELECT '--- DateTime to DateTime64 via multiIf ---';
@@ -72,5 +71,3 @@ SELECT
     = (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
         WHERE current_database = currentDatabase() AND log_comment = '03916_control_shape' AND type = 'QueryFinish'
         ORDER BY event_time_microseconds DESC LIMIT 1);
-
-DROP TABLE IF EXISTS t;
