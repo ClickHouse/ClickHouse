@@ -101,7 +101,8 @@ StorageNATS::StorageNATS(
     const ColumnsDescription & columns_,
     const String & comment,
     std::unique_ptr<NATSSettings> nats_settings_,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool authentication_determined_by_table_)
     : IStreamingStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , nats_settings(std::move(nats_settings_))
@@ -121,16 +122,25 @@ StorageNATS::StorageNATS(
     auto nats_token = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_token]);
     auto nats_credential_file = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credential_file]);
     auto nats_credentials = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_credentials]);
-    const bool has_table_authentication = !nats_username.empty() || !nats_password.empty() || !nats_token.empty()
-        || !nats_credential_file.empty() || !nats_credentials.empty();
+    /// `libnats` sends every configured authentication method in the `CONNECT` frame, so a table
+    /// authentication method must not be combined with the server-global fallback: inline
+    /// credentials can be used with a query-supplied destination.
+    /// The decision is made on provenance rather than on the resulting values. A query which
+    /// clears the authentication a named collection carries - `nats_username = ''` - would
+    /// otherwise resurrect the global fallback and send the global account to the destination it
+    /// selected. `authentication_determined_by_table` says whether the table definition decided
+    /// its authentication at all, in either direction, including clearing it.
+    const bool has_table_authentication = authentication_determined_by_table_ || !nats_username.empty() || !nats_password.empty()
+        || !nats_token.empty() || !nats_credential_file.empty() || !nats_credentials.empty();
 
-    /// libnats sends all configured authentication methods in the `CONNECT` frame.
-    /// Do not combine any table authentication method with the server-global fallback.
-    /// Inline credentials can be used with a query-supplied destination, and `libnats`
-    /// sends every configured authentication method in the `CONNECT` frame.
     const String global_username = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.user", "");
     const String global_password = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.password", "");
     const String global_token = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.token", "");
+    /// A path in the server configuration file is an operator-selected source, like the other
+    /// global fallbacks, so it keeps the established behavior of authenticating tables which
+    /// define no authentication of their own.
+    const String global_credential_file
+        = has_table_authentication ? "" : getContext()->getConfigRef().getString("nats.credential_file", "");
 
     configuration
         = {.url = getContext()->getMacros()->expand((*nats_settings)[NATSSetting::nats_url]),
@@ -138,7 +148,7 @@ StorageNATS::StorageNATS(
            .username = nats_username.empty() ? global_username : nats_username,
            .password = nats_password.empty() ? global_password : nats_password,
            .token = nats_token.empty() ? global_token : nats_token,
-           .credential_file = nats_credential_file,
+           .credential_file = nats_credential_file.empty() ? global_credential_file : nats_credential_file,
            .credentials = nats_credentials,
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
            .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
@@ -904,7 +914,11 @@ constexpr std::string_view CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE
 /// applied on top of the collection values. They are about provenance rather than about the resulting
 /// value: an assignment of the empty string is an assignment too, and dropping the credentials the
 /// operator configured is exactly what has to be refused.
-void resolveCredentialSource(
+/// Returns whether the table definition decided its authentication itself, so the server-global
+/// fallback must not be applied. This is provenance, not value: a query which clears the
+/// authentication a named collection carries has decided it too, and resurrecting the global
+/// account for the destination that query selected is exactly what has to be prevented.
+bool resolveCredentialSource(
     NATSSettings & nats_settings,
     const NamedCollection * named_collection,
     bool collection_defined_in_config,
@@ -1078,6 +1092,13 @@ void resolveCredentialSource(
     /// collection itself comes from the server configuration file.
     if (!loading_from_existing_metadata && !nats_settings[NATSSetting::nats_credential_file].value.empty() && !collection_defined_in_config)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", CREDENTIAL_FILE_ONLY_FROM_CONFIG_MESSAGE);
+
+    const bool authentication_in_collection = !credential_file_in_collection.empty() || !credentials_in_collection.empty()
+        || !username_in_collection.empty() || !password_in_collection.empty() || !token_in_collection.empty();
+    const bool authentication_assigned_by_query = credential_file_assigned_by_query || credentials_assigned_by_query
+        || username_assigned_by_query || password_assigned_by_query || token_assigned_by_query;
+
+    return authentication_in_collection || authentication_assigned_by_query;
 }
 
 }
@@ -1159,7 +1180,7 @@ void registerStorageNATS(StorageFactory & factory)
         (*nats_settings)[NATSSetting::nats_credential_file] = macros->expand((*nats_settings)[NATSSetting::nats_credential_file]);
         (*nats_settings)[NATSSetting::nats_credentials] = macros->expand((*nats_settings)[NATSSetting::nats_credentials]);
 
-        resolveCredentialSource(
+        const bool authentication_determined_by_table = resolveCredentialSource(
             *nats_settings,
             named_collection.get(),
             collection_defined_in_config,
@@ -1177,7 +1198,13 @@ void registerStorageNATS(StorageFactory & factory)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "To use NATS jet stream, you must specify `nats_stream` setting");
 
         return std::make_shared<StorageNATS>(
-            args.table_id, args.getContext(), args.columns, args.comment, std::move(nats_settings), args.mode);
+            args.table_id,
+            args.getContext(),
+            args.columns,
+            args.comment,
+            std::move(nats_settings),
+            args.mode,
+            authentication_determined_by_table);
     };
 
     factory.registerStorage(
