@@ -134,6 +134,29 @@ static HashJoin::Type mergeJoinMethods(HashJoin::Type lhs, HashJoin::Type rhs)
     return Type::hashed;
 }
 
+/// The right columns a join with several disjuncts adds to the result. Every right key is read to build
+/// the maps, but only the keys the query asks for belong in the result; the analyzer is what says which
+/// those are, so without it every key is kept, as before.
+static Block rightColumnsToAddWithSeveralDisjuncts(const TableJoin & table_join, const Block & right_columns)
+{
+    if (!table_join.enableAnalyzer())
+        return right_columns;
+
+    NameSet key_names;
+    for (const auto & clause : table_join.getClauses())
+        key_names.insert(clause.key_names_right.begin(), clause.key_names_right.end());
+
+    const NameSet required_keys = table_join.requiredRightKeys();
+
+    Block columns_to_add;
+    for (const auto & column : right_columns)
+    {
+        if (!key_names.contains(column.name) || required_keys.contains(column.name))
+            columns_to_add.insert(column);
+    }
+    return columns_to_add;
+}
+
 HashJoin::HashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
@@ -197,8 +220,12 @@ HashJoin::HashJoin(
     }
     else
     {
-        /// required right keys concept does not work well if multiple disjuncts, we need all keys
-        sample_block_with_columns_to_add = right_table_keys = materializeBlock(right_sample_block);
+        /// With several disjuncts a right key can differ from the left key it matched - the match may
+        /// have come from another clause - so it cannot be restored from the left column the way
+        /// `required_right_keys` does it, and a key the query asks for stays a column the join adds.
+        /// The keys nobody asks for are needed to build the maps and for nothing else.
+        right_table_keys = materializeBlock(right_sample_block);
+        sample_block_with_columns_to_add = rightColumnsToAddWithSeveralDisjuncts(*table_join, right_table_keys);
     }
 
     /// Detect a single non-nullable LowCardinality key before the keys are materialized below, so it

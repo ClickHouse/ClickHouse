@@ -67,7 +67,7 @@ bool tryEstimateWithStatistics(
     double selectivity = std::min(1.0, static_cast<double>(profile.rows) / static_cast<double>(unfiltered.rows));
     result.skip_ratio = 1.0 - selectivity;
     result.estimated_marks = std::max<UInt64>(1, static_cast<UInt64>(static_cast<double>(analysis.selected_marks) * selectivity));
-    result.estimate_source = "statistical";
+    result.estimate_source = WhatIfIndexEstimator::IndexResult::Statistical;
     return true;
 }
 

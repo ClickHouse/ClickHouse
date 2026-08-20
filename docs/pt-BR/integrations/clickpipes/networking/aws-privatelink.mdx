@@ -169,7 +169,7 @@ Para configurar o PrivateLink com um recurso da VPC:
   ### Conectividade multi-VPC do MSK
 </div>
 
-A [conectividade multi-VPC](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) é um recurso nativo do AWS MSK que permite conectar várias VPCs a um único cluster do MSK.
+A [conectividade multi-VPC](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) é um recurso nativo do AWS MSK que permite conectar várias VPCs a um único cluster MSK.
 O suporte a DNS privado é disponibilizado de imediato e não requer nenhuma configuração adicional.
 Não há suporte para conexões entre regiões.
 
@@ -177,7 +177,7 @@ Essa é uma opção recomendada para ClickPipes para MSK.
 Consulte o guia de [introdução](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) para mais detalhes.
 
 <Info>
-  Atualize a política do cluster MSK e adicione `072088201116` aos principais permitidos no cluster MSK.
+  O ClickPipes é proprietário da VPC do cliente e cria a conexão de VPC gerenciada. Para estabelecer a conexão de rede, habilite a conectividade privada multi-VPC no cluster MSK e autorize a conta AWS do ClickPipes na política do cluster.
   Consulte o guia da AWS sobre [como anexar uma política de cluster](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) para mais detalhes.
 </Info>
 
