@@ -43,6 +43,10 @@ struct WriteSettings
     std::string object_storage_write_if_none_match;
     std::string object_storage_write_if_match;
 
+    /// Store a file of at most this many bytes inline in its metadata instead of uploading a blob.
+    /// 0 disables. Honored only by metadata storages that support inline data.
+    size_t inline_file_max_bytes = 0;
+
     bool operator==(const WriteSettings & other) const = default;
 };
 
