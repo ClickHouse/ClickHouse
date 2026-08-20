@@ -194,7 +194,10 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     MergeTreeIndexPtr index_helper;
     try
     {
-        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(),fresh_index_desc, *data.getSettings());
+        /// validate before get, same as CREATE: creators read their arguments unguarded
+        const auto & merge_tree_settings = *data.getSettings();
+        MergeTreeIndexFactory::instance().validate(fresh_index_desc, /* attach = */ false, merge_tree_settings);
+        index_helper = MergeTreeIndexFactory::instance().get(read_step->getStorageMetadata(), fresh_index_desc, merge_tree_settings);
     }
     catch (const Exception &)
     {
@@ -206,15 +209,6 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     /// CREATE checked these columns, but the scan reads them now, so re-check SELECT against
     /// current grants, a grant revoked since CREATE should deny the estimate
     context->checkAccess(AccessType::SELECT, data.getStorageID(), index_helper->getColumnsRequiredForIndexCalc());
-
-    /// TODO(yariks5s): text indexes need a tokenized block layout the empirical pipeline doesn't build
-    /// also, add a whitelist index types so the logic will not be broken by a new type
-    if (index_helper->isTextIndex())
-    {
-        result.status = WhatIfIndexEstimator::IndexResult::NotApplicable;
-        result.not_applicable_reason = "EXPLAIN WHATIF does not yet support empirical estimation for text indexes";
-        return result;
-    }
 
     const auto & filter_dag = read_step->getFilterActionsDAG();
     if (!filter_dag)
@@ -278,7 +272,7 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     if (tryEstimateWithStatistics(result, index_helper, read_step, analysis, saved_parts, predicate, context))
         return result;
 
-    result.estimate_source = "applicability_only";
+    result.estimate_source = WhatIfIndexEstimator::IndexResult::ApplicabilityOnly;
     result.estimated_marks = analysis.selected_marks;
     result.skip_ratio = 0.0;
 
@@ -465,7 +459,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
             index_desc, read_step, analysis, baseline_parts, settings, want_combined ? &surviving_marks : nullptr, plan_context);
 
         /// push empirically-evaluated candidates in a per-mark survival set we can intersect
-        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == "empirical")
+        if (want_combined && index_result.status == IndexResult::Applicable && index_result.estimate_source == IndexResult::Empirical)
         {
             if (!combined_started)
             {
@@ -500,7 +494,7 @@ WhatIfIndexEstimator::Result WhatIfIndexEstimator::run(
         combined.index_name = "(combined: " + joined + ")";
         combined.status = IndexResult::Applicable;
         combined.empirical_status = IndexResult::Ok;
-        combined.estimate_source = "empirical";
+        combined.estimate_source = IndexResult::Empirical;
         combined.estimated_marks = survivors;
         combined.skip_ratio = static_cast<double>(result.baseline_marks - survivors) / static_cast<double>(result.baseline_marks);
         combined.sampled_parts = analysis.selected_parts;
