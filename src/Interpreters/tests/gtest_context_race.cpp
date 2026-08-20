@@ -229,6 +229,72 @@ TEST(Context, MakeQueryContextDoesNotInheritPrivileges)
     }
 }
 
+/// Test for a data race on the Settings block between Context::getReadSettings() /
+/// Context::getWriteSettings() and a concurrent settings write.
+///
+/// Every writer of the Settings block holds Context::mutex exclusively, but both getters read
+/// ~130 settings through the unsynchronized `getSettingsRef()` accessor. A background thread with
+/// no query context resolves free `DB::getReadSettings()` to the global context, so it reads the
+/// same block a settings write mutates. `local_filesystem_read_method` is a `SettingFieldString`,
+/// so the reader can also observe a torn `std::string`.
+///
+/// This test only carries signal on a ThreadSanitizer build, where it reports a race between
+/// `Context::getReadSettings` and `SettingsImpl::set` without the fix. On every other build it
+/// passes either way.
+///
+/// `max_local_read_bandwidth` and `max_remote_read_network_bandwidth` are non-zero so the
+/// throttler getters reach their `std::lock_guard(mutex)` branch: reading the settings and taking
+/// that exclusive lock must not overlap, or this test deadlocks.
+TEST(Context, GetReadSettingsRace)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+
+    context->setSetting("max_local_read_bandwidth", Field(UInt64(1000000)));
+    context->setSetting("max_remote_read_network_bandwidth", Field(UInt64(1000000)));
+
+    constexpr size_t num_reader_threads = 4;
+    constexpr size_t num_iterations = 1000;
+    std::atomic<bool> stop{false};
+
+    std::vector<std::thread> readers;
+    for (size_t i = 0; i < num_reader_threads; ++i)
+    {
+        readers.emplace_back([&context, &stop]
+        {
+            while (!stop.load(std::memory_order_relaxed))
+            {
+                try
+                {
+                    (void)context->getReadSettings();
+                    (void)context->getWriteSettings();
+                }
+                catch (...) // Ok: a torn read of a string setting throws UNKNOWN_READ_METHOD  // NOLINT(bugprone-empty-catch)
+                {
+                }
+            }
+        });
+    }
+
+    /// `local_filesystem_read_method` alternates between two valid `LocalFSReadMethod` names, so the
+    /// value the reader parses is well-formed unless it is torn.
+    /// `s3_allow_parallel_part_upload` is read by `getWriteSettings` and not by `getReadSettings`, so
+    /// each getter races against a setting only it reads.
+    std::thread writer([&context, &stop]
+    {
+        for (size_t i = 0; i < num_iterations; ++i)
+        {
+            context->setSetting("local_filesystem_read_method", Field(String(i % 2 ? "pread" : "read")));
+            context->setSetting("s3_allow_parallel_part_upload", Field(UInt64(i % 2)));
+        }
+        stop.store(true, std::memory_order_relaxed);
+    });
+
+    writer.join();
+    for (auto & t : readers)
+        t.join();
+}
+
 /// Regression test for a startup race between DNSCacheUpdater and ConfigReloader.
 ///
 /// DNSCacheUpdater::run() can call Context::reloadClusterConfig() before the first
