@@ -65,6 +65,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"force_distinct_partitions_independently", false, false, "New setting to force independent per-partition evaluation of `DISTINCT` even when the cost heuristic would skip it."},
             {"max_number_of_partitions_for_independent_distinct", 128, 128, "New setting: maximal number of partitions to apply independent per-partition `DISTINCT`."},
             {"allow_lossy_numeric_supertype", false, false, "New setting that lets if/multiIf/coalesce/ifNull/array/map resolve all-numeric branches with no lossless common type (e.g. Decimal + Float64) to a numeric supertype (Float64, with possible precision loss), so the result can be aggregated. Independent of use_variant_as_common_type: with it off such branches previously raised NO_COMMON_TYPE, with it on they became a Variant; either way they now resolve to Float64."},
+            {"explain_syntax_single_record", false, true, "From 26.8, `EXPLAIN SYNTAX` returns the reformatted query as a single record (with embedded newlines) instead of one record per line. Set this to `false` to restore the pre-26.8 one-record-per-line output."},
             {"query_plan_optimize_count_from_text_index", false, true, "New setting"},
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below `materialize_statistics_on_insert_max_table_size`, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
             {"materialize_statistics_on_insert_max_table_size", 0, 26843545600, "New setting."},
@@ -114,6 +115,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_arrow_use_native_reader", true, true, "Obsolete setting, the native ClickHouse reader is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based reader has been removed)."},
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
+            {"run_query_in_background", false, false, "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"merge_tree_min_bytes_per_read_stream", 0, (64 * 1024), "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."},
             {"analyzer_compatibility_multiple_joins_qualify_column_names", false, false, "New compatibility setting. When enabled, the analyzer mimics the old analyzer's qualified result column names for queries whose FROM clause has two or more JOINs."},
@@ -1410,6 +1412,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"shared_merge_tree_merge_coordinator_distribution_algorithm", "water_filling", "sainte_lague", "Enable Sainte-Lague distribution by default."},
             {"text_index_max_processed_tokens_before_flush", 100000000, 100000000, "New setting"},
             {"text_index_max_memory_usage_before_flush", std::numeric_limits<UInt64>::max(), 1073741824, "New setting. The previous value disables memory-based flushing to preserve pre-26.8 behavior"},
+            {"text_index_serialization_version", "v1_with_codec", "v2_with_positions", "Allow the 'v2_with_positions' text index format that persists token positions for phrase search. Reverts to 'v1_with_codec' under older compatibility so that newer servers keep writing the format that older servers can read during a rolling upgrade."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
@@ -1438,6 +1441,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"text_index_dictionary_block_frontcoding_compression", true, true, "New setting"},
             {"text_index_posting_list_block_size", 1048576, 1048576, "New setting"},
             {"text_index_posting_list_codec", "none", "none", "New setting"},
+            {"text_index_serialization_version", "v0_initial", "v1_with_codec", "New setting. Controls the on-disk format version of text indexes. Reverts to 'v0_initial' under older compatibility so that newer servers keep writing the previous format that older servers can read during a rolling upgrade."},
             {"materialize_projections_on_insert", true, true, "New setting"},
             {"materialize_projections_on_merge", false, false, "New setting"},
             {"shared_merge_tree_inactive_replica_cutoff_seconds", 0, 0, "New setting which controls for how long an inactive replica is taken into account by the background cleanup (0 means two ZooKeeper session timeouts)"},

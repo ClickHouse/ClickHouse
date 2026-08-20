@@ -2716,6 +2716,14 @@ Specifying the `actions`, `compact`, or `pretty` options explicitly in the `EXPL
 `EXPLAIN PLAN` with `json = 1` or `distributed = 1` keeps the legacy (pre-26.7) defaults regardless of this setting, unless `actions`, `compact`, or `pretty` are set explicitly. The pretty output cannot represent JSON results or per-shard distributed plans, so those modes are only rendered correctly in legacy form.
 )", 0) \
     \
+    DECLARE(Bool, explain_syntax_single_record, true, R"(
+Return `EXPLAIN SYNTAX` output as a single record (with embedded newlines) instead of one record per line, so the result is a single, recoverable row (for example, `SELECT count() FROM (EXPLAIN SYNTAX ...)` returns `1`).
+
+Specifying the `single_record` option explicitly in the `EXPLAIN SYNTAX` statement (for example, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) always overrides this setting.
+
+Set to `false` to restore the pre-26.8 one-record-per-line output, or set `compatibility` to any version older than `26.8`.
+)", 0) \
+    \
     DECLARE(UInt64, query_plan_max_step_description_length, 500, R"(
 Maximum length of step description in EXPLAIN PLAN.
 )", 0) \
@@ -2851,6 +2859,17 @@ Used for shadow traffic, benchmarks, and fuzzing.
 Has no effect for secondary queries.
 
 Affects only the native TCP protocol.
+)", 0) \
+    DECLARE(Bool, run_query_in_background, false, R"(
+If enabled, the server schedules the query in the background, immediately returns an empty successful result, and runs the query to completion regardless of what happens to the connection.
+
+A background query does not survive a server restart. On shutdown it obeys the same server settings as a foreground query: `shutdown_wait_unfinished_queries` chooses between cancelling it and waiting for it (queued entries are discarded either way, without a `system.query_log` entry), and `shutdown_wait_unfinished` limits how long the server waits.
+
+Track the query by its `query_id`: in `system.processes` while it is running and in `system.query_log` after it finishes and the query log entry is flushed.
+
+Applies to queries received over the native TCP and HTTP protocols. Over HTTP, pass the setting as a URL parameter. It cannot be changed with `SET`; enable it per query, or at the user or profile level.
+
+The main use case is a long `INSERT ... SELECT` that must not be lost when the client connection drops.
 )", 0) \
     \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
@@ -5637,7 +5656,7 @@ Query:
 ```sql
 CREATE TABLE fuse_tbl(a Int8, b Int8) Engine = Log;
 SET optimize_syntax_fuse_functions = 1;
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSV;
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT sum(a), sum(b), count(b), avg(b) from fuse_tbl FORMAT TSVRaw;
 ```
 
 Result:
@@ -9031,20 +9050,20 @@ Initial delay in milliseconds before the first retry of a failed AI function API
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of input tokens, since the number of input tokens of a call are not known in advance. Set to 0 to disable.
+Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by one call's worth of output tokens, since the number of output tokens of a call are not known in advance. Set to 0 to disable.
+Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Set to 0 to disable.
+Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
 )", EXPERIMENTAL) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String).
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
