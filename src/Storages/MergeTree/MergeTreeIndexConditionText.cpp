@@ -876,16 +876,62 @@ bool isInfixPattern(const String & pattern)
     return pattern.starts_with('%') && pattern.ends_with('%');
 }
 
+/// Escapes the LIKE metacharacters so that `needle` is matched literally.
+String escapeForLikePattern(std::string_view needle)
+{
+    String pattern;
+    pattern.reserve(needle.size());
+
+    for (char c : needle)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            pattern += '\\';
+        pattern += c;
+    }
+
+    return pattern;
+}
+
 }
 
 std::vector<OptimizedRegularExpression>
 MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
 {
-    /// Handles '%value%', 'value%' and '%value' with an alphanumeric needle; rejects anything more complex.
+    /// Returns a single-element vector on success, empty when the pattern is not eligible for a dictionary scan.
 
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
         return {};
+
+    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
+
+    auto compile_pattern = [&](const String & pattern)
+    {
+        std::vector<OptimizedRegularExpression> patterns;
+        if (case_insensitive)
+            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+        else
+            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+        return patterns;
+    };
+
+    /// The array tokenizer does not split a value, so a token is the whole value and any pattern matches a token
+    /// exactly when it matches the value: anchors, punctuation, '_' and several '%'-separated needles included.
+    if (tokenizer->getType() == ITokenizer::Type::Array)
+    {
+        /// Count the characters the pattern requires the value to contain, across the whole pattern: adding
+        /// literal content only shrinks the match set, so it must only score higher - the longest run alone
+        /// would rank '%foo%bar%baz%' below the '%foobar%' it is a subset of. One such character is required
+        /// even at 0, otherwise the pattern can match the empty string, which has no token.
+        const auto literal_length = std::ranges::count_if(value, [](char c) { return c != '%' && c != '_'; });
+        if (static_cast<size_t>(literal_length) < std::max<size_t>(1, min_pattern_length))
+            return {};
+
+        return compile_pattern(value);
+    }
+
+    /// A tokenizer that splits a value only handles '%value%', 'value%' and '%value' with an alphanumeric
+    /// needle: such a needle cannot span a token boundary, so a token contains it exactly when the value does.
 
     const char * data = value.data();
     const size_t length = value.size();
@@ -920,7 +966,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
         return {};
 
     /// Reject short needles: they might match too many dictionary tokens.
-    if (end - start < getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length])
+    if (end - start < min_pattern_length)
         return {};
 
     String pattern;
@@ -930,12 +976,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     if (has_trailing_wildcard)
         pattern += '%';
 
-    std::vector<OptimizedRegularExpression> patterns;
-    if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
-    else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
-    return patterns;
+    return compile_pattern(pattern);
 }
 
 /// Converts a Field value to its text representation using `serializeText`,
@@ -1356,12 +1397,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const bool is_prefix = (function_name == "startsWith");
 
         /// A needle inside a single token yields no complete token below, so evaluate it as `LIKE 'needle%'`.
-        /// Safe for a literal needle: one that would need LIKE escaping is not alphanumeric and is rejected.
+        /// The needle is a literal, so escape it: with the array tokenizer any pattern is accepted below, and
+        /// an unescaped `%` or `_` in the needle would otherwise be taken for a wildcard.
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             const auto & needle = value_field.safeGet<String>();
-            const auto affix_pattern = is_prefix ? needle + "%" : "%" + needle;
+            const auto affix_pattern = is_prefix ? escapeForLikePattern(needle) + "%" : "%" + escapeForLikePattern(needle);
             auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false);
             if (patterns.size() == 1 && affix_patterns_allowed)
             {
@@ -1393,7 +1435,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
-            /// TODO(ahmadov): Only the '%foo%', 'foo%' and '%foo' patterns are eligible for a dictionary scan.
+            /// TODO(ahmadov): With a tokenizer that splits a value, only the '%foo%', 'foo%' and '%foo'
+            /// patterns are eligible for a dictionary scan.
             /// Add support for multiple patterns later with hint mode:
             /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
             /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
