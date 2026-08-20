@@ -5,6 +5,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Field.h>
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <thread>
 #include <atomic>
@@ -337,11 +338,22 @@ TEST(Context, SetDefaultProfilesRace)
     /// The fixture's AccessControl has no storage, so `default` would not resolve and
     /// `setCurrentProfile` would throw `Settings profile 'default' not found`. An empty element list
     /// is enough: the profile only has to resolve.
+    ///
+    /// `createCopy` shares the fixture's ContextSharedPart, so this AccessControl is the one every
+    /// other test in this binary sees. All three steps below are needed to restore it: dropping the
+    /// storage does not evict the profile from `SettingsProfilesCache`, and removing the profile does
+    /// not reset the cached default profile id.
     auto & access_control = context->getAccessControl();
     access_control.addMemoryStorage("test_memory", /*allow_backup_=*/false);
     auto profile = std::make_shared<SettingsProfile>();
     profile->setName("default");
-    access_control.insert(profile);
+    const UUID profile_id = access_control.insert(profile);
+    SCOPE_EXIT({
+        access_control.setDefaultProfileName({});
+        access_control.remove(profile_id, /*throw_if_not_exists=*/false);
+        if (auto storage = access_control.findStorageByName("test_memory"))
+            access_control.removeStorage(storage);
+    });
 
     /// No <background_profile>: that takes the branch of makeBackgroundContext which reuses the
     /// system profile and needs no second profile to exist.
