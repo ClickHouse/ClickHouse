@@ -1680,9 +1680,6 @@ void MutationsInterpreter::prepare(bool dry_run)
             {
                 for (const auto & index : indices_desc)
                 {
-                    if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
-                        continue;
-
                     for (const auto & required_column : index.expression->getRequiredColumns())
                     {
                         auto resolved = columns_desc.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);

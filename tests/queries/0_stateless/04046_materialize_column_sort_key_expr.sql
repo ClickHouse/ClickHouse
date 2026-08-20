@@ -473,7 +473,7 @@ DROP TABLE IF EXISTS t_mat_ttl_sign;
 CREATE TABLE t_mat_ttl_sign
     (a Int, c DateTime MATERIALIZED toDateTime(2000000000), sign Int8 TTL c + INTERVAL 1 SECOND)
     ENGINE = CollapsingMergeTree(sign) ORDER BY a;
-INSERT INTO t_mat_ttl_sign (a) VALUES (1);
+INSERT INTO t_mat_ttl_sign (a, sign) VALUES (1, 1);
 ALTER TABLE t_mat_ttl_sign MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_ttl_sign;
 
@@ -593,9 +593,9 @@ ALTER TABLE t_mat_mixed_subcolumn_compact UPDATE t = tuple(20, 200) WHERE 1, MAT
 SELECT t, m FROM t_mat_mixed_subcolumn_compact;
 DROP TABLE t_mat_mixed_subcolumn_compact;
 
--- Case 46: A part inserted before ADD PROJECTION has no projection data to preserve. Materializing
--- a column used by that projection's sorting key must be allowed; MATERIALIZE PROJECTION can build
--- the projection later from the rewritten part.
+-- Case 46: The refusals are metadata-based and run at validation time, before any part is selected,
+-- so they do not depend on whether the existing parts already carry the derived object. A projection
+-- added after the data was inserted still refuses materializing a column used by its sorting key.
 DROP TABLE IF EXISTS t_mat_projection_added_late;
 CREATE TABLE t_mat_projection_added_late
     (a UInt64, c2 UInt64 MATERIALIZED a * 10)
@@ -603,12 +603,11 @@ CREATE TABLE t_mat_projection_added_late
 INSERT INTO t_mat_projection_added_late (a) VALUES (5);
 ALTER TABLE t_mat_projection_added_late ADD PROJECTION p (SELECT * ORDER BY metroHash64(c2));
 ALTER TABLE t_mat_projection_added_late MODIFY COLUMN c2 UInt64 MATERIALIZED a * 10 + 1000;
-ALTER TABLE t_mat_projection_added_late MATERIALIZE COLUMN c2 SETTINGS mutations_sync = 2;
-SELECT c2 FROM t_mat_projection_added_late;
+ALTER TABLE t_mat_projection_added_late MATERIALIZE COLUMN c2; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_projection_added_late;
 
--- Case 47: Likewise, a part inserted before ADD INDEX has no index files. A subcolumn index that
--- was added later must not reject materializing its parent column.
+-- Case 47: Likewise for a subcolumn skip index added after the data was inserted: the command is
+-- refused up front rather than accepted and then failed while processing the part.
 DROP TABLE IF EXISTS t_mat_index_added_late;
 CREATE TABLE t_mat_index_added_late
     (a UInt64, t Tuple(k UInt64) MATERIALIZED tuple(a * 10))
@@ -616,6 +615,5 @@ CREATE TABLE t_mat_index_added_late
 INSERT INTO t_mat_index_added_late (a) VALUES (5);
 ALTER TABLE t_mat_index_added_late ADD INDEX idx_tk t.k TYPE minmax GRANULARITY 1;
 ALTER TABLE t_mat_index_added_late MODIFY COLUMN t Tuple(k UInt64) MATERIALIZED tuple(a * 10 + 1000);
-ALTER TABLE t_mat_index_added_late MATERIALIZE COLUMN t SETTINGS mutations_sync = 2;
-SELECT t.k FROM t_mat_index_added_late;
+ALTER TABLE t_mat_index_added_late MATERIALIZE COLUMN t; -- { serverError CANNOT_UPDATE_COLUMN }
 DROP TABLE t_mat_index_added_late;
