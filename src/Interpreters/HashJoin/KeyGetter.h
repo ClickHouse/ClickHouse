@@ -153,7 +153,8 @@ struct LowCardinalityKeyGetterForJoin
         const bool found = it;
         Mapped * mapped = found ? &it->getMapped() : nullptr;
 
-        /// Only the used-flag paths ask, and only they keep the prefix sums current.
+        /// Only the used-flag paths ask; `freezeMapsForProbing` computed the prefix sums
+        /// before any probe.
         size_t offset = 0;
         if constexpr (use_offset)
             offset = found ? data.offsetInternalUnsafe(it) : 0;

@@ -233,6 +233,8 @@ TEST(TwoLevelHashTableBuckets, OffsetInternalIsUniquePerCell)
     for (UInt64 key = 1; key <= num_keys; ++key)
         insertKeyValue(map, key, key);
 
+    map.computeBucketPrefix();
+
     std::unordered_set<size_t> offsets;
     for (UInt64 key = 1; key <= num_keys; ++key)
     {
@@ -246,8 +248,8 @@ TEST(TwoLevelHashTableBuckets, OffsetInternalIsUniquePerCell)
 
 TEST(TwoLevelHashTableBuckets, OffsetInternalUnsafeMatchesSafeAfterComputeBucketPrefix)
 {
-    /// The probe's pattern: compute once at the end of the build, then skip the "already
-    /// computed" check on every lookup. The two must agree.
+    /// The probe's pattern: compute once at the end of the build, then read offsets with no
+    /// per-lookup guard. Both accessors must agree.
     RoutedMap map;
     constexpr UInt64 num_keys = 2000;
     for (UInt64 key = 1; key <= num_keys; ++key)
@@ -384,12 +386,14 @@ TEST(TwoLevelHashTableBuckets, ForEachMappedVisitsEveryBucket)
 
 TEST(TwoLevelHashTableBuckets, OffsetsStayValidAfterRecomputingPrefixPostGrowth)
 {
-    /// The prefix-sum cache is computed lazily and does not notice later growth, by design.
-    /// `StorageJoin` can insert after offsets were handed out, so it has to recompute.
+    /// The prefix-sum cache does not notice later growth, by design: whoever grows the table
+    /// must recompute before handing out offsets again. `StorageJoin` inserts between queries,
+    /// and every query recomputes through `reuseJoinedData`'s freeze.
     MapWithBits<4> map;
     for (UInt64 key = 1; key <= 200; ++key)
         insertKeyValue(map, key, key);
 
+    map.computeBucketPrefix();
     for (UInt64 key = 1; key <= 200; ++key)
         ASSERT_GT(map.offsetInternal(map.find(key)), 0u);
 

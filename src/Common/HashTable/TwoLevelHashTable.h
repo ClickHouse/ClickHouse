@@ -3,7 +3,6 @@
 #include <base/defines.h>
 #include <vector>
 #include <type_traits>
-#include <mutex>
 #include <Common/HashTable/HashTable.h>
 
 /** Two-level hash table.
@@ -83,14 +82,6 @@ private:
             computed = true;
         }
 
-        /// Costs a `std::call_once` per lookup; a hot loop should `compute` up front instead.
-        template <typename BucketAt>
-        size_t offset(UInt32 bucket_count, BucketAt && bucket_at, size_t buck, size_t cell_offset)
-        {
-            std::call_once(compute_once, [&] { compute(bucket_count, bucket_at); });
-            return offsetUnsafe(buck, cell_offset);
-        }
-
         size_t offsetUnsafe(size_t buck, size_t cell_offset) const
         {
             chassert(computed);
@@ -99,7 +90,6 @@ private:
 
     private:
         std::vector<size_t> prefix;
-        std::once_flag compute_once;
         bool computed = false;
     };
 
@@ -124,14 +114,11 @@ private:
             prefix_sums.compute(numBuckets(), [this](UInt32 i) -> const Impl & { return buckets[i]; });
         }
 
+        /// Requires `computeBucketPrefix` to have run; `HashJoin` freezes the maps before any
+        /// probe, and `offsetUnsafe` chasserts it.
         size_t offsetInternal(typename Impl::ConstLookupResult ptr, size_t buck) const
         {
-            if (ptr->isZero(buckets[buck]))
-                return 0;
-            if constexpr (numBuckets() == 1)
-                return static_cast<size_t>(ptr - buckets[0].buf) + 1;
-            const auto bucket_at = [this](UInt32 i) -> const Impl & { return buckets[i]; };
-            return prefix_sums.offset(numBuckets(), bucket_at, buck, static_cast<size_t>(ptr - buckets[buck].buf) + 1);
+            return offsetInternalUnsafe(ptr, buck);
         }
 
         size_t offsetInternalUnsafe(typename Impl::ConstLookupResult ptr, size_t buck) const
