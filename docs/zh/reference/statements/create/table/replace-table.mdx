@@ -1,0 +1,180 @@
+---
+description: 'REPLACE TABLE 语句参考'
+keywords: ['replace table', 'DDL']
+sidebarTitle: 'REPLACE TABLE'
+slug: /sql-reference/statements/create/table/replace-table
+title: 'REPLACE TABLE'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概述
+</div>
+
+`REPLACE` 语句可用于[原子性地](/zh/concepts/core-concepts/glossary#atomicity)更新表。
+
+<Note>
+  此语句支持 [`Atomic`](/zh/reference/engines/database-engines/atomic) 和 [`Replicated`](/zh/reference/engines/database-engines/replicated) 数据库引擎，
+  它们分别是 ClickHouse 和 ClickHouse Cloud 的默认数据库引擎。
+</Note>
+
+通常，如需从表中删除部分数据，
+可以创建一个新表，并通过不查询所需删除数据的 `SELECT` 语句向其中填充数据，
+然后删除旧表并重命名新表。
+以下示例演示了这种方法：
+
+```sql
+CREATE TABLE myNewTable AS myOldTable;
+
+INSERT INTO myNewTable
+SELECT * FROM myOldTable 
+WHERE CounterID <12345;
+
+DROP TABLE myOldTable;
+
+RENAME TABLE myNewTable TO myOldTable;
+```
+
+除上述方法外，如果您使用的是默认数据库引擎，也可以使用 `REPLACE` 达到相同效果：
+
+```sql
+REPLACE TABLE myOldTable
+ENGINE = MergeTree()
+ORDER BY CounterID 
+AS
+SELECT * FROM myOldTable
+WHERE CounterID <12345;
+```
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
+```
+
+<Note>
+  [`CREATE`](/zh/reference/statements/create/table) 语句的所有语法形式同样适用于此语句。对不存在的表执行 `REPLACE` 会导致错误。
+</Note>
+
+<div id="examples">
+  ## 示例
+</div>
+
+<Tabs>
+  <Tab title="本地">
+    以下是一个表：
+
+    ```sql
+    CREATE DATABASE base 
+    ENGINE = Atomic;
+
+    CREATE OR REPLACE TABLE base.t1
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s────┐
+    │ 1 │ test │
+    └───┴──────┘
+    ```
+
+    可以使用 `REPLACE` 语句清空所有数据：
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┬─s──┐
+    │ 2 │ \N │
+    └───┴────┘
+    ```
+
+    也可以使用 `REPLACE` 语句修改表结构：
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    ┌─n─┐
+    │ 3 │
+    └───┘
+    ```
+  </Tab>
+
+  <Tab title="Cloud">
+    以下是在 ClickHouse Cloud 上创建的表：
+
+    ```sql
+    CREATE DATABASE base;
+
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64,
+        s String
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (1, 'test');
+
+    SELECT * FROM base.t1;
+
+    1    test
+    ```
+
+    可以使用 `REPLACE` 语句清空所有数据：
+
+    ```sql
+    CREATE OR REPLACE TABLE base.t1 
+    (
+        n UInt64, 
+        s Nullable(String)
+    )
+    ENGINE = MergeTree
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (2, null);
+
+    SELECT * FROM base.t1;
+
+    2    
+    ```
+
+    也可以使用 `REPLACE` 语句修改表结构：
+
+    ```sql
+    REPLACE TABLE base.t1 (n UInt64) 
+    ENGINE = MergeTree 
+    ORDER BY n;
+
+    INSERT INTO base.t1 VALUES (3);
+
+    SELECT * FROM base.t1;
+
+    3
+    ```
+  </Tab>
+</Tabs>

@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
 
+#include <atomic>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -10,6 +11,7 @@
 namespace ProfileEvents
 {
     extern const Event Query;
+    extern const Event SelectQuery;
 }
 
 /// Drive the real `Thread` -> `User` -> `global_counters` chain: every thread increments its own
@@ -85,4 +87,38 @@ TEST(ProfileEvents, ChainAccountsWithPerCPUDisabled)
 
     EXPECT_EQ(user[ProfileEvents::Query], num_threads * increments_per_thread);
     EXPECT_EQ(global[ProfileEvents::Query], num_threads * increments_per_thread);
+}
+
+TEST(ProfileEvents, TraceProfileEventPublishedWhileIncrementing)
+{
+    ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
+
+    std::thread setter([&] { counters.setTraceProfileEvent(ProfileEvents::SelectQuery); });
+    std::thread incrementer([&] { counters.increment(ProfileEvents::Query); });
+
+    setter.join();
+    incrementer.join();
+
+    EXPECT_EQ(counters[ProfileEvents::Query], 1);
+}
+
+TEST(ProfileEvents, ParentAttachedConcurrentlyWithIncrement)
+{
+    ProfileEvents::Counters counters(VariableContext::Thread, nullptr);
+    std::atomic<bool> attached = false;
+
+    std::thread incrementer([&]
+    {
+        while (!attached.load(std::memory_order_relaxed))
+            ;
+        counters.increment(ProfileEvents::Query);
+    });
+
+    auto parent = std::make_unique<ProfileEvents::Counters>(VariableContext::User, nullptr);
+    counters.setParent(parent.get());
+    attached.store(true, std::memory_order_release);
+
+    incrementer.join();
+
+    EXPECT_EQ((*parent)[ProfileEvents::Query], 1);
 }

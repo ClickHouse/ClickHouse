@@ -193,8 +193,7 @@ docker exec -it pg_clickhouse psql -U postgres
 CREATE EXTENSION pg_clickhouse;
 ```
 
-使用主机名、端口和 ClickHouse 数据库的数据库名称来创建
-foreign server。
+使用主机名、端口和 ClickHouse 数据库创建 foreign server。
 
 ```sql
 CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
@@ -203,6 +202,14 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
 
 这里我们选择使用二进制驱动，它使用 ClickHouse 二进制
 协议。你也可以使用 &quot;http&quot; 驱动，它使用 HTTP 接口。
+
+<Note>
+  如果你使用 ClickHouse Cloud 控制台运行 SQL，请向控制台 admin 用户授予 foreign server 的访问权限：
+
+  ```sql
+  GRANT USAGE ON FOREIGN SERVER taxi_srv TO chpg_console_admin;
+  ```
+</Note>
 
 接下来，将 PostgreSQL 用户映射到 ClickHouse 用户。最简单的做法
 就是将当前 PostgreSQL 用户映射到 foreign
