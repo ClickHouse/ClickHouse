@@ -38,6 +38,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        KeyValuePairs,
 #if USE_JIEBA
         Chinese,
 #endif
@@ -354,6 +355,35 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
+/// Tokenizer for text indexes on a `Map(String, String)` column. A token is a whole `(key, value)` pair,
+/// encoded by `encodeToken` in the index aggregator, so every string-tokenization method here throws.
+///
+///     token = varint((key.size() << 1) | is_rest) ‖ key ‖ value
+///
+/// The length prefix keeps the key/value boundary unambiguous, so both may contain arbitrary bytes, and
+/// makes the tokens of one key a contiguous range of the sorted dictionary.
+/// `is_rest` is 0 for the first occurrence of a key in a row and 1 for later duplicates, because
+/// `m['key']` is the value of the first occurrence.
+struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
+{
+    KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
+
+    static const char * getName() { return "keyValuePairs"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return getName(); }
+
+    /// Writes the token into `out` (cleared first) so a hot loop can reuse one buffer.
+    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
+    static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
+
+    bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+};
+
 /// Parser extracting sparse grams (the same as function sparseGrams).
 /// See sparseGramsImpl.h for more details.
 struct SparseGramsTokenizer final : public ITokenizerHelper<SparseGramsTokenizer>
@@ -607,6 +637,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::KeyValuePairs:
+        {
+            /// Dispatch through the base virtual `nextInString`, which throws.
+            detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }
 #if USE_JIEBA

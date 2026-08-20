@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <IO/VarInt.h>
 
 #include <limits>
 
@@ -342,6 +343,57 @@ void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &,
 void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
+}
+
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out)
+{
+    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_rest ? 1ULL : 0ULL);
+
+    out.clear();
+    out.reserve(getLengthOfVarUInt(packed) + key.size() + value.size());
+
+    /// Keys shorter than 64 bytes pack into one varint byte: append it without the writeVarUInt buffer.
+    if (packed < 0x80)
+    {
+        out.push_back(static_cast<char>(packed));
+    }
+    else
+    {
+        char buf[10];
+        const size_t num_bytes = writeVarUInt(packed, buf) - buf;
+        out.append(buf, num_bytes);
+    }
+
+    out.append(key);
+    out.append(value);
+}
+
+String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest)
+{
+    String out;
+    encodeToken(key, value, is_rest, out);
+    return out;
+}
+
+bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "The `keyValuePairs` tokenizer does not tokenize strings: its tokens are (key, value) pairs of a Map column");
+}
+
+bool KeyValuePairsTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::nextInStringLike is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToBloomFilter is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
