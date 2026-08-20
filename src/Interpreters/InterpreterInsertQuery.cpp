@@ -108,6 +108,7 @@ namespace Setting
     extern const SettingsBool implicit_transaction;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsUInt64 async_insert_max_data_size;
+    extern const SettingsBool wait_for_async_insert;
     extern const SettingsSeconds wait_for_async_insert_timeout;
 }
 
@@ -581,7 +582,8 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
             return std::make_shared<AsyncInsertQueueTransform>(
                 in_header, context->tryGetAsynchronousInsertQueue(), context, query_ptr, insert_column_names,
                 settings[Setting::async_insert_max_data_size],
-                settings[Setting::wait_for_async_insert_timeout].totalMilliseconds());
+                settings[Setting::wait_for_async_insert_timeout].totalMilliseconds(),
+                settings[Setting::wait_for_async_insert]);
         });
     }
 
