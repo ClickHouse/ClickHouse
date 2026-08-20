@@ -1310,7 +1310,7 @@ void ActionsDAG::foldFilterPredicateThroughMaterialize(const std::string & filte
     /// A prior optimizer pass may already have folded this filter. Replacing an
     /// existing const output with another const output makes the pass report a
     /// change on every iteration, exhausting the query-plan optimization limit.
-    if (filter_node->type == ActionType::COLUMN && isColumnConst(*filter_node->column))
+    if (filter_node->type == ActionType::COLUMN && filter_node->column && isColumnConst(*filter_node->column))
         return;
 
     auto folded = tryFoldPredicate(filter_node);
