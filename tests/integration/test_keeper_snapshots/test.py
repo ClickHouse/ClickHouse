@@ -3,6 +3,7 @@
 import os
 import random
 import string
+import time
 
 import pytest
 
@@ -283,16 +284,26 @@ def test_snapshot_survives_restart(started_cluster, request, node_name):
         for i in range(100):
             node_zk.create("/node" + str(i), random_string(123).encode())
 
+        # 'csnp' refuses while an automatic snapshot is still in flight, and also whenever the
+        # committed index is already covered by the latest snapshot. Advance the log with a write
+        # before each retry, otherwise the second refusal repeats forever.
+        for _ in range(20):
+            snapshot_idx = keeper_utils.send_4lw_cmd(
+                started_cluster, keeper_node, "csnp"
+            ).strip()
+            if snapshot_idx.isdigit():
+                break
+            node_zk.set("/node0", random_string(123).encode())
+            time.sleep(1)
+        else:
+            assert False, f"csnp kept refusing to schedule: {snapshot_idx!r}"
+
         node_zk.stop()
         node_zk.close()
         node_zk = None
 
-        # 'csnp' only schedules the snapshot, so wait for the index it returns: the log already
+        # 'csnp' only schedules the snapshot, so wait for the index it returned: the log already
         # holds lines from the snapshots taken every snapshot_distance records.
-        snapshot_idx = keeper_utils.send_4lw_cmd(
-            started_cluster, keeper_node, "csnp"
-        ).strip()
-        assert snapshot_idx.isdigit(), f"csnp did not return a log index: {snapshot_idx!r}"
         keeper_node.wait_for_log_line(
             f"Created persistent snapshot {snapshot_idx} with path"
         )
@@ -301,7 +312,8 @@ def test_snapshot_survives_restart(started_cluster, request, node_name):
             [
                 "bash",
                 "-c",
-                "stat -c %s /var/lib/clickhouse/coordination/snapshots/snapshot_* || true",
+                "stat -c %s "
+                f"/var/lib/clickhouse/coordination/snapshots/snapshot_{snapshot_idx}_* || true",
             ]
         ).split()
         assert snapshot_sizes, "no snapshot file was written"
