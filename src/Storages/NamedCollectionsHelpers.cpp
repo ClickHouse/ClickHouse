@@ -83,19 +83,27 @@ namespace
         return std::pair{key, Field(value)};
     }
 
-    /// A TLS credential can be given either as a path to a file (`ssl_ca`) or as its contents
-    /// (`ssl_ca_pem`) - two spellings of one setting. Only the contents form is accepted from a query
-    /// (see `StorageMySQL::getSSLParams` and `StoragePostgreSQL::getSSLParams`), where it replaces the
-    /// path inherited from the collection.
+    /// A credential can be given either as a path to a file (`ssl_ca`, `nats_credential_file`) or as
+    /// the contents of that file (`ssl_ca_pem`, `nats_credentials`) - two spellings of one setting.
+    /// Only the contents form is accepted from a query (see `StorageMySQL::getSSLParams`,
+    /// `StoragePostgreSQL::getSSLParams` and `resolveCredentialSource` in `StorageNATS.cpp`), where it
+    /// replaces the path inherited from the collection.
     /// Returns the path key a contents key replaces, if the key is a contents key.
-    std::optional<std::string> tlsCredentialsPathKeyFor(const std::string & key)
+    std::optional<std::string> credentialsPathKeyFor(const std::string & key)
     {
-        static constexpr std::string_view tls_credentials_path_keys[]
-            = {"ssl_ca", "ssl_cert", "ssl_key", "sslrootcert", "sslcert", "sslkey"};
+        static constexpr std::pair<std::string_view, std::string_view> credentials_keys[] = {
+            {"ssl_ca_pem", "ssl_ca"},
+            {"ssl_cert_pem", "ssl_cert"},
+            {"ssl_key_pem", "ssl_key"},
+            {"sslrootcert_pem", "sslrootcert"},
+            {"sslcert_pem", "sslcert"},
+            {"sslkey_pem", "sslkey"},
+            {"nats_credentials", "nats_credential_file"},
+        };
 
-        for (const auto & path_key : tls_credentials_path_keys)
+        for (const auto & [contents_key, path_key] : credentials_keys)
         {
-            if (key == std::string(path_key) + "_pem")
+            if (key == contents_key)
                 return std::string(path_key);
         }
 
@@ -107,7 +115,7 @@ namespace
     ///
     /// A contents form (`ssl_ca_pem`) is not a brand-new key when the collection defines the
     /// corresponding path (`ssl_ca`): it replaces it, so the permission is taken from the key it
-    /// replaces. Passing the contents is the only way to supply a TLS credential from SQL at all - a
+    /// replaces. Passing the contents is the only way to supply such a credential from SQL at all - a
     /// path is refused there unconditionally - so the permission is the one the operator states
     /// explicitly with `<ssl_ca overridable="false">` rather than the value of
     /// `allow_named_collection_override_by_default`. `StorageMySQL::getSSLParams` re-checks the very
@@ -117,7 +125,7 @@ namespace
     {
         if (!collection.has(key))
         {
-            auto path_key = tlsCredentialsPathKeyFor(key);
+            auto path_key = credentialsPathKeyFor(key);
             if (path_key && collection.has(*path_key))
             {
                 /// The locked key is the path, so name it rather than the contents form the query used.

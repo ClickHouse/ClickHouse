@@ -124,6 +124,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 * `oneline` – クエリを1行で表示します。デフォルト: `0`。
 * `run_query_tree_passes` – クエリツリーをダンプする前にクエリツリーパスを実行します。デフォルト: `0`。
 * `query_tree_passes` – `run_query_tree_passes` が設定されている場合、実行するパス数を指定します。`query_tree_passes` を指定しない場合は、すべてのパスが実行されます。
+* `single_record` – 整形されたクエリを、行ごとに1レコードではなく単一の複数行レコードとして返します。デフォルト: `1` (`explain_syntax_single_record` 設定で制御) 。従来の1行1レコード出力に戻すには、`0` を設定するか、`explain_syntax_single_record = 0` を設定します (グローバルまたはクエリごとの `SETTINGS` 内) 。または、`compatibility` を `26.8` より前の任意のバージョンに設定します。
 
 例:
 

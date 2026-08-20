@@ -8,9 +8,14 @@ does not contain the new tests.
 
 Instead, this job builds a "before" binary from the merge-base sources with ONLY the
 PR's unit-test file changes overlaid on top (the test, but not the fix), and then
-runs the touched test suites on it — at least one must FAIL or crash (or the "before"
-binary must fail to build, which is the strongest possible proof that the test depends
-on the fix).
+runs the touched test suites on it — at least one must FAIL or crash. When the
+"before" binary fails to compile and every compiler error lies inside the overlaid
+test files, the changed test code depends on the interface the fix introduces (the
+typical case is a call site adapted to a changed function signature); the unit side
+then has nothing it can judge at runtime, the PR author cannot avoid the adaptation,
+and the job reports the build failure as expected (XFAIL, nothing to validate)
+instead of staying red forever. Any other build failure is an infrastructure or
+attribution problem and stays an ERROR (inconclusive).
 
 Like the functional/integration validators, this job only checks the "before" side.
 The complementary "the touched tests PASS on the PR binary" side is delegated to the
@@ -452,6 +457,42 @@ def compile_before_binary():
     return compile_result
 
 
+# A clang/gcc diagnostic line: "path:line[:col]: [fatal] error: ...". Notes and
+# warnings deliberately do not match — only hard errors attribute the build failure.
+_COMPILE_ERROR_LINE_RE = re.compile(
+    r"^(?P<path>[^\s:]+):\d+(?::\d+)?:\s*(?:fatal\s+)?error:", re.MULTILINE
+)
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def attribute_compile_errors(compile_result, test_files):
+    """Split the before-build's compile-error paths into the PR's overlaid test files
+    vs everything else.
+
+    Returns `(overlaid, other)` — sorted lists of error-carrying paths, repo-relative
+    for paths under the before-worktree. Both empty means the ninja failure produced
+    no parsable compiler diagnostic (compiler killed, link failure, ninja internal
+    error) — not attributable either way, so the caller must fail close.
+    """
+    test_file_set = set(test_files)
+    marker = f"{BEFORE_SRC}/"
+    overlaid = set()
+    other = set()
+    for log in compile_result.files or []:
+        try:
+            with open(log, "r", errors="replace") as f:
+                content = _ANSI_ESCAPE_RE.sub("", f.read())
+        except OSError as e:
+            print(f"WARNING: could not read compile log {log}: {e}")
+            continue
+        for m in _COMPILE_ERROR_LINE_RE.finditer(content):
+            path = m.group("path")
+            idx = path.find(marker)
+            rel = path[idx + len(marker) :] if idx != -1 else path
+            (overlaid if rel in test_file_set else other).add(rel)
+    return sorted(overlaid), sorted(other)
+
+
 def run_gtests(binary_path, gtest_filter, name):
     # ASan+UBSan build: do not wrap with gdb (LSan is incompatible with the debugger),
     # and disable the uninstrumented FIPS provider to avoid sanitizer false positives.
@@ -664,26 +705,60 @@ def main():
         return
 
     # 4b. Compile. A compile failure is NOT accepted as a reproduction: it only proves
-    # the overlaid test references *some* code the PR adds (a new header, helper, or
-    # symbol — even in a no-op test), not that it depends on the bug fix or reproduces
-    # the old behavior at runtime. We cannot attribute the failure to the touched
-    # regression case, so report it as inconclusive (fail close) rather than a pass. A
-    # genuine regression test should build against the merge-base and fail at runtime.
+    # the overlaid test references *some* code the PR adds, not that it catches the bug
+    # at runtime. Attribute the failure instead:
+    #  * every compiler error inside the overlaid test files → the changed test code
+    #    depends on the fix's interface (typically a call site adapted to a changed
+    #    signature). The PR author cannot avoid that adaptation and the unit side has
+    #    nothing left to judge, so report the step as an expected failure (XFAIL) with
+    #    nothing to validate — NOT as a reproduction. When the PR also carries
+    #    functional/integration tests, new_tests_check.py still demands a real
+    #    validation from those jobs; for a unit-only PR the merge gate already treats
+    #    inconclusive as non-blocking, so this changes report truthfulness, not gating.
+    #  * any error elsewhere (fix sources, contrib, the linker, no parsable diagnostic)
+    #    → cannot be attributed to the touched test changes; fail close (ERROR).
     compile_result = compile_before_binary()
     if not compile_result.is_ok():
+        overlaid_errors, other_errors = attribute_compile_errors(
+            compile_result, test_files
+        )
+        if overlaid_errors and not other_errors:
+            compile_result.set_label(Result.Label.XFAIL)
+            compile_result.set_status(Result.Status.XFAIL)
+            compile_result.set_info(
+                "The before-binary cannot compile the overlaid unit-test changes: every "
+                "compile error is inside the PR's changed test files ("
+                + ", ".join(overlaid_errors)
+                + "). The changed test code depends on the interface this PR introduces "
+                "(e.g. a call site adapted to a changed signature), so there is nothing "
+                "the unit side can validate on the merge base. This is expected, not an "
+                "error — and it is not counted as a reproduction either. "
+                + (compile_result.info or "")
+            )
+            results.append(compile_result)
+            finalize(
+                results,
+                "Nothing to validate on the unit side: the changed unit-test files do "
+                "not compile against the merge base because they depend on the fix's "
+                "interface. Regression coverage is judged by the functional/integration "
+                "Bugfix validation jobs (enforced by new_tests_check.py when such tests "
+                "exist).",
+            )
+            return
         compile_result.set_status(Result.Status.ERROR)
         compile_result.set_info(
-            "The before-binary FAILED TO COMPILE the overlaid test. This does not prove "
-            "the test reproduces the bug — it only shows the test depends on code this PR "
-            "adds (a new header/helper/symbol would fail to compile here too). Write a "
-            "regression test that builds against the merge-base and fails at runtime "
-            "without the fix. " + (compile_result.info or "")
+            "The before-binary FAILED TO COMPILE, and the errors cannot be attributed "
+            "to the overlaid test files alone"
+            + (f" (errors outside them: {', '.join(other_errors)})" if other_errors else "")
+            + ". This does not prove the test reproduces the bug. Write a regression "
+            "test that builds against the merge-base and fails at runtime without the "
+            "fix. " + (compile_result.info or "")
         )
         results.append(compile_result)
         finalize(
             results,
-            "Bugfix validation inconclusive: the before-binary failed to COMPILE the "
-            "overlaid test, which cannot be attributed to the touched regression case.",
+            "Bugfix validation inconclusive: the before-binary failed to COMPILE and "
+            "the failure cannot be attributed to the touched regression case.",
         )
         return
     build_result = compile_result

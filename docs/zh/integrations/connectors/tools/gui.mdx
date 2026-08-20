@@ -37,7 +37,7 @@ doc_type: 'reference'
 
   * Schema 可视化：可立即导入并可视化你的 ClickHouse schema，包括含有 materialized view 和标准视图的 ER 图，并显示对表的引用关系。
   * AI 驱动的 DDL 导出：轻松生成 DDL 脚本，更好地管理 schema 并编写文档。
-  * 支持多种 SQL dialect：兼容多种 SQL dialect，适用于各种数据库环境。
+  * 支持多种 SQL 方言：兼容多种 SQL 方言，适用于各种数据库环境。
   * 无需注册或凭据：所有功能都可直接在浏览器中使用，兼顾便捷性与安全性。
 
   [ChartDB 源代码](https://github.com/chartdb/chartdb)。
@@ -60,6 +60,20 @@ doc_type: 'reference'
   * 可部署为单个独立二进制文件、通过 Docker 部署，或从源代码构建。
 
   [CHOps 源代码](https://github.com/Quantrail-Data/CH-Ops)。
+</Accordion>
+
+<Accordion title="LibreDB Studio">
+  [LibreDB Studio](https://github.com/libredb/libredb-studio) 是一款自托管、采用 MIT 许可证的数据库 IDE，可在浏览器中运行并部署在数据库旁边：可作为容器、Helm Chart、OLM Operator，或嵌入其他产品的 npm 包。ClickHouse 提供商通过 `8123`/`8443` 上有文档说明的 HTTP 接口进行通信，不依赖任何驱动程序。
+
+  功能：
+
+  * 基于 Monaco 构建的 SQL 编辑器，支持 schema 感知的自动补全、多选项卡执行，以及以计划树形式呈现的 `EXPLAIN`。
+  * 支持虚拟化结果网格、筛选和 CSV/JSON 导出的 schema 浏览器。
+  * 基于 `system` 表的监控：通过 `system.metrics`、`system.parts` 和 `system.disks` 查看服务器概览和分片大小，通过 `system.query_log` 查看已完成语句，通过 `system.processes` 查看正在执行的语句，并提供终止控制。
+  * 在同一界面中使用 ClickHouse、PostgreSQL、MySQL、Oracle、SQL Server、SQLite、MongoDB、Redis、Couchbase 和 Apache Druid，因此分析型存储与为其提供数据的 OLTP 数据库位于同一个浏览器选项卡中。
+  * MIT 构建中包含 OIDC 单点登录、基于角色的访问控制和查询审计跟踪。
+
+  [LibreDB Studio ClickHouse 提供商参考](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md)。
 </Accordion>
 
 <Accordion title="DataStoria">
@@ -86,9 +100,9 @@ doc_type: 'reference'
 
   * AI 驱动的 SQL 查询辅助和智能建议
   * 原生支持 ClickHouse 连接，并安全处理凭据
-  * 美观且无障碍的界面，提供多种主题 (浅色、深色和彩色变体) 
+  * 美观且无障碍的界面，提供多种主题 (浅色、深色和彩色变体)
   * 高级查询结果筛选和探索
-  * 跨平台支持 (macOS、Windows、Linux) 
+  * 跨平台支持 (macOS、Windows、Linux)
   * 性能快速、响应灵敏
   * 开源并采用 MIT 许可证
 </Accordion>
@@ -147,10 +161,10 @@ doc_type: 'reference'
 
   功能：
 
-  * 带语法高亮的查询构建器。可在表格或 JSON 视图中查看结果。
+  * 支持语法高亮的查询构建器。可在表格或 JSON 视图中查看响应结果。
   * 将查询结果导出为 CSV 或 JSON。
-  * 显示说明信息的进程列表。支持写入模式及停止 (`KILL`) 进程。
-  * 数据库关系图。显示所有表及其列以及其他相关信息。
+  * 显示附带说明的进程列表。支持写入模式。可停止 (`KILL`) 进程。
+  * 数据库图，显示所有表及其列以及其他信息。
   * 快速查看列大小。
   * 服务器配置。
 
@@ -161,15 +175,15 @@ doc_type: 'reference'
   * 实时数据分析。
   * 集群监控。
   * 集群管理。
-  * 监控复制表和 Kafka 表。
+  * 监控 replicated 和 Kafka 表。
 </Accordion>
 
 <Accordion title="LightHouse">
-  [LightHouse](https://github.com/VKCOM/lighthouse) 是一个轻量级的 ClickHouse Web 界面。
+  [LightHouse](https://github.com/VKCOM/lighthouse) 是一款轻量级 ClickHouse Web 界面。
 
   功能：
 
-  * 包含筛选和元数据的表列表。
+  * 支持筛选和查看元数据的表列表。
   * 支持筛选和排序的表预览。
   * 只读查询执行。
 </Accordion>
@@ -177,7 +191,7 @@ doc_type: 'reference'
 <Accordion title="Redash">
   [Redash](https://github.com/getredash/redash) 是一个数据可视化平台。
 
-  支持包括 ClickHouse 在内的多种数据源。Redash 可以将来自不同数据源的查询结果联接为一个最终数据集。
+  Redash 支持包括 ClickHouse 在内的多个数据源，可将来自不同数据源的查询结果联接为一个最终数据集。
 
   功能：
 
@@ -189,7 +203,7 @@ doc_type: 'reference'
 <Accordion title="Grafana">
   [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) 是一个监控和可视化平台。
 
-  “无论您的指标存储在何处，Grafana 都可以让您查询、可视化、告警并深入了解这些指标。您可以与团队一起创建、探索和共享仪表板，培养数据驱动的文化。深受社区信赖和喜爱。” — grafana.com。
+  “无论指标存储在何处，Grafana 都可让您查询、可视化、设置警报并了解这些指标。与团队一起创建、探索和共享仪表板，培养数据驱动的文化。深受社区信赖和喜爱” — grafana.com。
 
   ClickHouse 数据源插件支持将 ClickHouse 用作后端数据库。
 </Accordion>
@@ -239,31 +253,31 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickHouse 表关系图">
-  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) 是一款简单的命令行工具，用于可视化 ClickHouse 表之间的依赖关系。该工具从 `system.tables` 表中获取表之间的关联关系，并以 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 格式生成依赖关系流程图。借助此工具，您可以轻松直观地查看表依赖关系，并了解 ClickHouse 数据库中的数据流。得益于 mermaid，生成的流程图美观且易于添加到 Markdown 文档中。
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph) 是一个用于可视化 ClickHouse 表之间依赖关系的简单 CLI 工具。该工具从 `system.tables` 表中获取表之间的关系，并以 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 格式构建依赖关系流程图。借助此工具，您可以轻松可视化表依赖关系并了解 ClickHouse 数据库中的数据流。得益于 mermaid，生成的流程图美观且可轻松添加到您的 markdown 文档中。
 </Accordion>
 
 <Accordion title="xeus-clickhouse">
-  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) 是 ClickHouse 的 Jupyter 内核，支持在 Jupyter 中使用 SQL 查询 CH 数据。
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse) 是一个适用于 ClickHouse 的 Jupyter 内核，支持在 Jupyter 中使用 SQL 查询 CH 数据。
 </Accordion>
 
 <Accordion title="MindsDB Studio">
-  [MindsDB](https://mindsdb.com/) 是面向包括 ClickHouse 在内的数据库的开源 AI 层，可让您轻松开发、训练和部署先进的机器学习模型。MindsDB Studio (GUI) 可让您基于数据库训练新模型、解读模型预测、识别潜在数据偏差，并使用可解释 AI 函数评估和可视化模型准确性，从而更快地调整和优化机器学习模型。
+  [MindsDB](https://mindsdb.com/) 是一个适用于包括 ClickHouse 在内的数据库的开源 AI 层，可让您轻松开发、训练和部署先进的机器学习模型。MindsDB Studio(GUI) 可让您从数据库训练新模型、解读模型作出的预测、识别潜在的数据偏差，并使用可解释 AI 功能评估和可视化模型准确性，以便更快地调整和优化机器学习模型。
 </Accordion>
 
 <Accordion title="DBM">
-  [DBM](https://github.com/devlive-community/dbm) DBM 是 ClickHouse 的可视化管理工具！
+  [DBM](https://github.com/devlive-community/dbm) DBM 是一款 ClickHouse 可视化管理工具！
 
   功能：
 
-  * 支持查询历史记录 (分页、全部清除等) 
-  * 支持查询选定的 SQL 子句
+  * 支持查询历史 (分页、全部清除等) 
+  * 支持对选定 SQL 子句进行查询
   * 支持终止查询
   * 支持表管理 (元数据、删除、预览) 
   * 支持数据库管理 (删除、创建) 
   * 支持自定义查询
-  * 支持管理多个数据源 (连接测试、监控) 
+  * 支持多数据源管理 (连接测试、监控) 
   * 支持监控 (处理器、连接、查询) 
-  * 支持数据迁移
+  * 支持迁移数据
 </Accordion>
 
 <Accordion title="Bytebase">
@@ -335,36 +349,36 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="clickhouse-monitoring">
-  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) 是一个简单的 Next.js 仪表板，依赖 `system.*` 表帮助监控并概览 ClickHouse 集群。
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring) 是一个简单的 Next.js 仪表盘，依赖 `system.*` 表来帮助监控并概览您的 ClickHouse 集群。
 
   功能：
 
-  * 查询监控：当前查询、查询历史、查询资源 (内存、读取的 parts、file&#95;open 等) 、资源消耗最高的查询、使用最多的表或列等。
-  * 集群监控：总内存/CPU 使用情况、分布式队列、全局设置、MergeTree 设置、指标等。
-  * 表和 parts 信息：提供列级详情，包括大小、行数、压缩、分片大小等。
-  * 实用工具：ZooKeeper 数据探索、查询 EXPLAIN、终止查询等。
-  * 指标可视化图表：查询和资源使用情况、合并/变更数量、合并性能、查询性能等。
+  * 查询监控：当前查询、查询历史记录、查询资源 (内存、读取的 parts、file&#95;open 等) 、资源消耗最高的查询、最常使用的表或列等。
+  * 集群监控：总内存/CPU 使用情况、分布式队列、全局设置、mergetree 设置、指标等。
+  * 表和 parts 信息：提供列级别的大小、行数、压缩率、part 大小等详细信息。
+  * 实用工具：Zookeeper 数据探索、查询 EXPLAIN、终止查询等。
+  * 指标可视化图表：查询和资源使用情况、merge/mutation 数量、merge 性能、查询性能等。
 </Accordion>
 
 <Accordion title="CKibana">
-  [CKibana](https://github.com/TongchengOpenSource/ckibana) 是一项轻量级服务，可让你通过原生 Kibana UI 轻松搜索、探索和可视化 ClickHouse 数据。
+  [CKibana](https://github.com/TongchengOpenSource/ckibana) 是一项轻量级服务，可让您使用原生 Kibana UI 轻松搜索、探索和可视化 ClickHouse 数据。
 
   功能：
 
-  * 将原生 Kibana UI 中的图表请求转换为 ClickHouse 查询语法。
+  * 将原生 Kibana UI 的图表请求转换为 ClickHouse 查询语法。
   * 支持采样和缓存等高级功能，以提升查询性能。
-  * 降低用户从 ElasticSearch 迁移到 ClickHouse 后的学习成本。
+  * 最大限度降低用户从 ElasticSearch 迁移到 ClickHouse 后的学习成本。
 </Accordion>
 
 <Accordion title="Telescope">
-  [Telescope](https://iamtelescope.net/) 是一个现代化 Web 界面，用于探索存储在 ClickHouse 中的日志。它提供易用的 UI，可通过细粒度访问控制查询、可视化和管理日志数据。
+  [Telescope](https://iamtelescope.net/) 是一款现代化 Web 界面，用于探索存储在 ClickHouse 中的日志。它提供用户友好的 UI，可借助细粒度访问控制查询、可视化和管理日志数据。
 
   功能：
 
-  * 简洁的响应式 UI，提供强大的过滤器和可自定义的字段选择。
-  * 使用直观且富有表达力的 FlyQL 语法筛选日志。
-  * 支持按时间绘制图表和分组，包括嵌套 JSON、Map 和 Array 字段。
-  * 支持可选的原始 SQL `WHERE` 查询，以进行高级筛选 (包含权限检查) 。
+  * 简洁、响应式的 UI，提供强大的过滤器和可自定义的字段选择。
+  * FlyQL 语法，支持直观且富有表现力的日志筛选。
+  * 支持按时间绘制图表和分组，包括嵌套的 JSON、Map 和 Array 字段。
+  * 可选支持原始 SQL `WHERE` 查询，用于高级筛选 (包含权限检查) 。
   * 已保存视图：保存并共享查询和布局的自定义 UI 配置。
   * 基于角色的访问控制 (RBAC) 和 GitHub 身份验证集成。
   * ClickHouse 端无需额外的代理或组件。
@@ -373,14 +387,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickLens">
-  [ClickLens](https://ntk148v.github.io/clicklens/) 是一个现代、强大且易用的 Web 界面，用于管理和监控 ClickHouse 数据库。它为开发者、分析师和管理员提供了一套全面的工具，帮助他们高效地与 ClickHouse 集群交互。ClickHouse 是一款出色的分析型数据库，但通过 CLI 或基础工具进行管理可能颇具挑战。ClickLens 通过提供以下功能弥补了这一不足：
+  [ClickLens](https://ntk148v.github.io/clicklens/) 是一个现代化、功能强大且用户友好的 Web 界面，用于管理和监控 ClickHouse 数据库。它为开发人员、分析师和管理员提供了一套全面的工具，使其能够高效地与 ClickHouse 集群交互。ClickHouse 是一款出色的分析型数据库，但通过 CLI 或基础工具管理它可能颇具挑战。ClickLens 通过提供以下功能弥合了这一差距：
 
-  * Discover - 为任意表提供灵活的类 Kibana 数据探索能力
-  * SQL 控制台 - 编写、执行和分析查询，并支持语法高亮和流式结果
-  * 实时监控 - 随时掌握集群健康状态、查询性能和资源使用情况
-  * Schema Explorer - 浏览数据库、表、列、parts 等
-  * 访问控制 - 直接在 UI 中管理用户和角色
-  * 原生 RBAC - 你的 UI 权限直接继承自 ClickHouse 授权
+  * Discover - 灵活、类似 Kibana 的任意表数据探索
+  * SQL Console - 使用语法高亮和流式结果编写、执行和分析查询
+  * 实时监控 - 密切关注集群运行状况、查询性能和资源使用情况
+  * schema 浏览器 - 浏览数据库、表、列、parts 等
+  * 访问控制 - 直接通过 UI 管理用户和角色
+  * 原生 RBAC - UI 权限直接源自 ClickHouse 授权
 
   [ClickLens 源代码](https://github.com/ntk148v/clicklens)
 </Accordion>
@@ -407,7 +421,7 @@ doc_type: 'reference'
 
   功能：
 
-  * 根据 ClickHouse metadata 自动构建 schema 图。
+  * 根据 ClickHouse 元数据 自动构建 schema 图。
   * 可视化通过 materialized view 传递的数据流。
   * 用于探索 schema 结构的交互式 UI。
   * 将图表导出为 PDF 或 SVG，以用于文档和共享。
