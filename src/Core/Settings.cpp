@@ -2307,13 +2307,15 @@ That setting has three possible values:
 )", 0) \
 \
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
-Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
-The setting overrids `insert_deduplicate` and `deduplicate_insert` for `INSERT SELECT` queries.
-That setting has four possible values:
-- disable — Deduplication is disabled for `INSERT SELECT` query.
-- force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
-- enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
-- enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
+Controls block deduplication for `INSERT ... SELECT` queries (for Replicated\* tables).
+
+Possible values:
+- `disable` — Deduplication is disabled.
+- `force_enable` — Deduplication is enabled even if `deduplicate_insert` is `disable`. If the `SELECT` result is not stable and no `insert_deduplication_token` is provided, the `DEDUPLICATION_IS_NOT_POSSIBLE` exception is thrown.
+- `enable_when_possible` — Deduplication is enabled when `deduplicate_insert` enables it and the `SELECT` result is stable or an `insert_deduplication_token` is provided. Otherwise, deduplication is disabled.
+- `enable_even_for_bad_queries` — Deduplication is enabled when `deduplicate_insert` enables it, even if the `SELECT` result is not stable. A warning is logged for an unstable result when no `insert_deduplication_token` is provided. This option is kept for backward compatibility and may lead to unexpected results.
+
+When `deduplicate_insert` is `backward_compatible_choice`, `insert_deduplicate` makes the final decision for `enable_when_possible` and `enable_even_for_bad_queries`.
 )", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
