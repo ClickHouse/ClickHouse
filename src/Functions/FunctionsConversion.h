@@ -2374,9 +2374,17 @@ struct ConvertImpl
                 {
                     ToFieldType result;
                     if (can_convert_exactly(vec_from[i]) && tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                    {
                         vec_to[i] = result;
+                    }
                     else
+                    {
+                        /// The value under a NULL must still be initialized: the nested column is
+                        /// read as a whole (serialization, further conversions), so leaving the
+                        /// element untouched would use uninitialized memory.
+                        vec_to[i] = static_cast<ToFieldType>(0);
                         vec_null_map_to[i] = true;
+                    }
                 }
                 return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
             }
