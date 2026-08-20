@@ -545,6 +545,22 @@ FROM
 )
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
 
+-- Set-backed membership must validate reconstructed values on both sides.
+WITH
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
+SELECT malformed IN (valid); -- { serverError BAD_ARGUMENTS }
+
+WITH
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
+SELECT valid IN (malformed); -- { serverError BAD_ARGUMENTS }
+
+WITH
+    _CAST((1., 0., 20.), 'ExponentialTimeDecayingFloat64(10)') AS malformed,
+    _CAST((1., 0., 10.), 'ExponentialTimeDecayingFloat64(10)') AS valid
+SELECT malformed NOT IN (valid); -- { serverError BAD_ARGUMENTS }
+
 -- MergeTree set indexes sort internal blocks and must preserve their data types.
 DROP TABLE IF EXISTS time_decay_set_index_sort;
 CREATE TABLE time_decay_set_index_sort (key Int8) ENGINE = MergeTree ORDER BY key;

@@ -11,6 +11,7 @@
 #include <Columns/ColumnDecimal.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -241,6 +242,12 @@ bool Set::insertFromColumns(const Columns & columns, SetKeyColumns & holder)
     {
         holder.materialized_columns.emplace_back(recursiveRemoveLowCardinality(columns.at(i)->convertToFullIfWrapped()));
         holder.key_columns.emplace_back(holder.materialized_columns.back().get());
+
+        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeNullable(recursiveRemoveLowCardinality(data_types[i])));
+        if (decay_length)
+            validateExponentialTimeDecayingFloat64Column(
+                *holder.materialized_columns.back(), *decay_length, "IN set construction");
     }
 
     size_t rows = columns.at(0)->size();
@@ -508,6 +515,11 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         {
             processDateTime64Column(column_to_cast, result, null_map_holder, null_map);
         }
+
+        const auto decay_length = tryGetExponentialTimeDecayingFloat64DecayLength(
+            removeNullable(recursiveRemoveLowCardinality(data_types[i])));
+        if (decay_length)
+            validateExponentialTimeDecayingFloat64Column(*result, *decay_length, "IN set probe");
 
         // Append the result to materialized columns
         materialized_columns.emplace_back(std::move(result));
