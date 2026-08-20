@@ -529,7 +529,17 @@ class ReleaseInfo:
                     Shell.check(
                         commit_version_upd, strict=True, dry_run=dry_run, verbose=True
                     )
+                    Git.push(
+                        GITHUB_REPOSITORY,
+                        "HEAD:refs/heads/master",
+                        dry_run=dry_run,
+                        strict=True,
+                        retries=3,  # transient workflow-scope timeout (see push_release_tag)
+                        rebase_retries=5,  # heal a non-fast-forward when the tip moves
+                        git_prefix=GIT_PREFIX,
+                    )
                     if dry_run:
+                        # Nothing was committed, so revert the working-tree edits after previewing them.
                         Shell.check(
                             f"{GIT_PREFIX} diff '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
                             verbose=True,
@@ -537,15 +547,6 @@ class ReleaseInfo:
                         Shell.check(
                             f"{GIT_PREFIX} checkout '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}'",
                             verbose=True,
-                        )
-                    else:
-                        Git.push(
-                            GITHUB_REPOSITORY,
-                            "HEAD:refs/heads/master",
-                            strict=True,
-                            retries=3,  # transient workflow-scope timeout (see push_release_tag)
-                            rebase_retries=5,  # heal a non-fast-forward when the tip moves
-                            git_prefix=GIT_PREFIX,
                         )
 
             print("Create Release PR")
