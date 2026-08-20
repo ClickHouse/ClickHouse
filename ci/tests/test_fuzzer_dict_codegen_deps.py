@@ -44,6 +44,12 @@ _GENERATOR = os.path.join(_REPO, "tests/fuzz/generate_source_dict.sh")
 # The CMake variable holding the generated dictionary's source dependencies.
 _DEPS_VAR = "CODEGEN_DICT_SCANNED_SOURCES"
 
+# The chain from the scanned sources to the grammar the fuzzer embeds: each of
+# these is produced by an add_custom_command that depends on the previous one.
+_DICT = "codegen.dict"
+_GRAMMAR = "clickhouse.g"
+_GENERATED_SOURCE = "out.cpp"
+
 # A tracked file under a scanned tree whose suffix is neither .h nor .cpp, and
 # which carries a token the generator extracts. It stands in for the whole class
 # a suffix-filtered glob drops.
@@ -153,6 +159,43 @@ def _relative(paths):
     return sorted(os.path.relpath(p, _REPO) for p in paths)
 
 
+# The keywords that end one argument section of add_custom_command and begin
+# the next.
+_SECTION_KEYWORDS = (
+    "OUTPUT",
+    "COMMAND",
+    "DEPENDS",
+    "COMMENT",
+    "VERBATIM",
+    "WORKING_DIRECTORY",
+    "MAIN_DEPENDENCY",
+    "IMPLICIT_DEPENDS",
+    "BYPRODUCTS",
+)
+
+
+def _section(statement, keyword):
+    """The arguments of one section, so OUTPUT is not read as far as COMMAND."""
+    found = re.search(r"\b%s\b(.*)$" % keyword, statement, re.S)
+    if not found:
+        return []
+    others = "|".join(k for k in _SECTION_KEYWORDS if k != keyword)
+    tail = re.split(r"\b(?:%s)\b" % others, found.group(1))[0]
+    return [token for token in tail.replace(")", " ").split() if token]
+
+
+def _custom_command(cmake_text, output):
+    """The add_custom_command statement producing `output`."""
+    matching = [
+        s
+        for s in _cmake_statements(cmake_text)
+        if s.startswith("add_custom_command(")
+        and any(output in arg for arg in _section(s, "OUTPUT"))
+    ]
+    assert len(matching) == 1, f"expected one command producing {output}: {matching}"
+    return matching[0]
+
+
 class TestScannedSourcesMatchTheGeneratorsScanSet:
     def test_the_two_sets_are_equal(self):
         scanned = _resolve_scanned(_read(_GENERATOR))
@@ -194,13 +237,67 @@ class TestScannedSourcesMatchTheGeneratorsScanSet:
             }
         )
         assert outside, "no reads outside the scanned trees; this arm is vacuous"
-        command = next(
-            s
-            for s in _cmake_statements(_read(_CODEGEN_CMAKE))
-            if s.startswith("add_custom_command(") and "generate_source_dict.sh" in s
+        # From the DEPENDS section, so naming a file in COMMAND does not count:
+        # only DEPENDS makes a file trigger a rebuild.
+        depends = " ".join(
+            _section(_custom_command(_read(_CODEGEN_CMAKE), _DICT), "DEPENDS")
         )
-        named = set(re.findall(r"ClickHouse_SOURCE_DIR\}/([A-Za-z0-9_./-]+)", command))
+        named = set(re.findall(r"ClickHouse_SOURCE_DIR\}/([A-Za-z0-9_./-]+)", depends))
         assert [ref for ref in outside if ref not in named] == []
+
+
+class TestTheDependencySetReachesTheGrammar:
+    """A correct dependency set is inert unless the rebuild chain consumes it.
+
+    Populating the variable and wiring it up are separate: the assertions above
+    hold with the variable never referenced by any command, which is a state
+    where an edited carrier regenerates nothing.
+    """
+
+    # Each output and the dependency that must reach it, in order.
+    _EDGES = (
+        (_DICT, "${%s}" % _DEPS_VAR),
+        (_GRAMMAR, _DICT),
+        (_GENERATED_SOURCE, _GRAMMAR),
+    )
+
+    @pytest.mark.parametrize("output,dependency", _EDGES, ids=lambda v: v.strip("${}"))
+    def test_the_edge_is_declared(self, output, dependency):
+        depends = _section(_custom_command(_read(_CODEGEN_CMAKE), output), "DEPENDS")
+        assert any(dependency in argument for argument in depends), (
+            f"the command producing {output} does not depend on {dependency}, so "
+            "an incremental build reuses a stale one"
+        )
+
+    @pytest.mark.parametrize("output,dependency", _EDGES, ids=lambda v: v.strip("${}"))
+    def test_removing_the_edge_is_detected(self, output, dependency):
+        # Mutation arm, one per edge: the assertion above must be able to fail.
+        text = _read(_CODEGEN_CMAKE)
+        statement = _custom_command(text, output)
+        stripped = "\n".join(
+            line for line in statement.splitlines() if dependency not in line
+        )
+        assert stripped != statement, f"{dependency} is not on a line of its own"
+        mutated = text.replace(statement, stripped)
+        depends = _section(_custom_command(mutated, output), "DEPENDS")
+        assert not any(dependency in argument for argument in depends)
+
+    def test_the_generator_is_a_dependency_of_the_dictionary(self):
+        # The script is an input like the sources it reads: editing an
+        # extraction pass must regenerate the dictionary too.
+        depends = " ".join(
+            _section(_custom_command(_read(_CODEGEN_CMAKE), _DICT), "DEPENDS")
+        )
+        assert os.path.relpath(_GENERATOR, _REPO) in depends
+
+    def test_the_grammar_is_built_from_the_generated_dictionary(self):
+        # The command has to consume the generated dictionary, not the
+        # binary-derived all.dict, which does not exist at build time.
+        command = " ".join(
+            _section(_custom_command(_read(_CODEGEN_CMAKE), _GRAMMAR), "COMMAND")
+        )
+        assert _DICT in command
+        assert "all.dict" not in command
 
 
 class TestNarrowingTheDependencySetIsDetected:
