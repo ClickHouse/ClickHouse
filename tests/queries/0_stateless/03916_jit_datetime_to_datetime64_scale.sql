@@ -6,6 +6,7 @@
 -- the scale multiplier was not applied, causing the value to be
 -- reinterpreted instead of converted (e.g., seconds treated as milliseconds).
 
+DROP TABLE IF EXISTS t;
 SET compile_expressions = 1, min_count_to_compile_expression = 0;
 
 SELECT '--- DateTime to DateTime64 via multiIf ---';
@@ -39,3 +40,16 @@ SELECT
 FROM t;
 
 DROP TABLE t;
+
+SELECT '--- Time to Time64 via if ---';
+
+SELECT if(number % 2 = 0, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM numbers(2);
+
+SELECT '--- Time64 scale lift via multiIf ---';
+
+SELECT multiIf(
+    number = 0, toTime64('01:00:00', 0),
+    number = 1, toTime64('02:00:00.5', 1),
+    toTime64('12:00:00.250', 3)
+) FROM numbers(3);
+DROP TABLE IF EXISTS t;
