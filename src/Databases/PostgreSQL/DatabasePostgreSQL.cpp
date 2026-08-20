@@ -558,7 +558,7 @@ void registerDatabasePostgreSQL(DatabaseFactory & factory)
         PostgreSQLSettings postgresql_settings;
         postgresql_settings.loadFromQueryContext(*args.context);
 
-        const StorageID database_id{args.database_name, ""};
+        const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, true, nullptr, &database_id))
         {
             configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, &postgresql_settings, args.context, /*require_table=*/ false);

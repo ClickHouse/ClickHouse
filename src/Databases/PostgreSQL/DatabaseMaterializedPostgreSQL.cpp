@@ -745,7 +745,7 @@ void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory)
         if (!engine->arguments)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", engine_name);
 
-        const StorageID database_id{args.database_name, ""};
+        const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, true, nullptr, &database_id))
         {
             /// The `PostgreSQLSettings` are not passed: this engine does not use a connection pool,

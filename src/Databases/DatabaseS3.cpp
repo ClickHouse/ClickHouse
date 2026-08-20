@@ -209,7 +209,7 @@ DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPt
 {
     Configuration result;
 
-    const StorageID database_id{database_name_, ""};
+    const StorageID database_id = StorageID::createDatabaseOnly(database_name_);
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, &database_id))
     {
         auto & collection = *named_collection;

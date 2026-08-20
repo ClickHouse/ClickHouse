@@ -606,7 +606,7 @@ void registerDatabaseMySQL(DatabaseFactory & factory)
         ASTs & arguments = engine->arguments->children;
         auto mysql_settings = std::make_unique<MySQLSettings>();
 
-        const StorageID database_id{args.database_name, ""};
+        const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(arguments, args.context, true, nullptr, &database_id))
         {
             configuration = StorageMySQL::processNamedCollectionResult(*named_collection, *mysql_settings, args.context, false);

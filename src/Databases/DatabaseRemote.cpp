@@ -1041,7 +1041,7 @@ void registerDatabaseRemote(DatabaseFactory & factory)
         String username = "default";
         String password;
 
-        const StorageID database_id{args.database_name, ""};
+        const StorageID database_id = StorageID::createDatabaseOnly(args.database_name);
         if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, args.context, true, nullptr, &database_id))
         {
             validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
