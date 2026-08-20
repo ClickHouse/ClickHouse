@@ -399,13 +399,20 @@ class Result(MetaClasses.Serializable):
         The bound sits above the widest shape ``from_commands_run`` produces
         (300 retained lines, about 26 KB), so an ordinary step log is named
         whole and only a step with pathologically long single lines is cut.
+        Such a step can carry its error marker anywhere, including inside the
+        span that would otherwise be dropped, so the kept tail is anchored on
+        the first marker when there is one.
         """
         MAX_STEP_INFO_LEN = 32768
         if len(line) <= MAX_STEP_INFO_LEN:
             return line
         half = MAX_STEP_INFO_LEN // 2
-        dropped = len(line) - 2 * half
-        return line[:half] + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + line[-half:]
+        head, tail = line[:half], line[-half:]
+        marker = line.find(": error:", half)
+        if marker != -1 and marker < len(line) - half:
+            tail = line[marker - min(marker - half, 200) : marker + half]
+        dropped = len(line) - len(head) - len(tail)
+        return head + f"\n~~~~~ trimmed {dropped} characters, see log ~~~~~\n" + tail
 
     @classmethod
     def file_name_static(cls, name):

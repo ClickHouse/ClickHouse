@@ -339,3 +339,45 @@ def test_the_named_step_reaches_the_cidb_job_row():
     assert MARKER in rows[0]["test_context_raw"]
     # No pseudo test case, and the real child row is untouched.
     assert [r["test_name"] for r in rows] == ["", "00001_ok"]
+
+
+def test_trim_keeps_a_cause_that_sits_in_the_dropped_span():
+    """
+    `from_commands_run` bounds line count, not line length, so its error-centered
+    excerpt can put 50 long context lines ahead of the cause and push it past the kept
+    head. A two-ended trim alone would drop exactly the error this summary publishes.
+    """
+    context = [("c%03d: " % i) + "x" * 400 for i in range(50)]
+    after = [("a%03d: " % i) + "x" * 400 for i in range(249)]
+    payload = "\n".join(
+        ["~~~~~ truncated 900 lines at the beginning ~~~~~"]
+        + context
+        + ["src/Foo.cpp:12:3: error: THE_REAL_CAUSE"]
+        + after
+        + ["~~~~~ truncated 100 lines at the end ~~~~~"]
+    )
+    step = node("Start ClickHouse Server", Result.Status.FAIL, payload)
+    assert f"{step.name}: {payload}".find("THE_REAL_CAUSE") > 16_384, "cause must fall past the kept head"
+
+    result = job([step])
+    named = result.info.split("\n", 1)[1]
+    assert named.startswith("Start ClickHouse Server: ")
+    assert "THE_REAL_CAUSE" in named
+    assert "trimmed" in named
+
+
+def test_a_failing_selected_node_own_info_is_named():
+    """
+    CIDB publishes the selected node's CHILDREN, never the node itself, so a failing
+    `Tests` node's own command log reaches no row unless the summary names it.
+    """
+    result = job(
+        [
+            make_tests_stage(
+                Result.Status.FAIL,
+                "SELECTED_NODE_MARKER",
+                [node("00001_foo", Result.Status.FAIL, "assert")],
+            )
+        ]
+    )
+    assert result.info == "Failures: 1/1\nTests: SELECTED_NODE_MARKER"
