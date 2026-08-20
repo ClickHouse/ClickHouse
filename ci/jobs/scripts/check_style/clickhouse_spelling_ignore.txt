@@ -18,7 +18,6 @@ ci/jobs/scripts/check_style/clickhouse_spelling.py
 ci/tests/test_clickhouse_spelling_check.py
 ci/tests/test_pr_body_check.py
 ci/jobs/check_style.py	`Clickhouse`
-ci/jobs/check_style.py	`ClickhouseBuffer`
 ci/jobs/check_style.py	`click_house`
 docs/resources/develop-contribute/contribute/style.mdx	Not `Clickhouse`
 

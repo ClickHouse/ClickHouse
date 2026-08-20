@@ -6,8 +6,11 @@ import re
 # The conventional lowercase and uppercase forms are accepted in identifiers and tools.
 CLICKHOUSE_CORRECT_SPELLINGS = ("ClickHouse", "clickhouse", "CLICKHOUSE")
 
-# Keep the space-separated form word-anchored so that, for example, `click Household` is not
-# considered a product-name spelling. Other forms deliberately match inside identifiers.
+# Any rendering of the product name, in any case, with `Click` and `House` optionally separated:
+# `Clickhouse`, `clickHouse`, `click_house`, `CLICK_HOUSE`, `click-house`, `Click House`. Only the
+# space-separated form is anchored at word boundaries, so that an unrelated phrase - `click
+# Household` - is not taken for the product name. The other forms are left unanchored on purpose,
+# so that a misspelling inside a longer identifier (`ClickhouseBuffer`) is reported too.
 CLICKHOUSE_ANY_SPELLING = (
     r"[Cc][Ll][Ii][Cc][Kk][_-]?[Hh][Oo][Uu][Ss][Ee]"
     r"|(?<![A-Za-z])[Cc][Ll][Ii][Cc][Kk] [Hh][Oo][Uu][Ss][Ee](?![A-Za-z])"

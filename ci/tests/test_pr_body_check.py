@@ -13,7 +13,14 @@ from ci.jobs.scripts.workflow_hooks import pr_body_check
 
 @pytest.mark.parametrize(
     "misspelling",
-    ["Clickhouse", "click_house", "click-house", "CLICK_HOUSE", "Click House"],
+    [
+        "Clickhouse",
+        "clickHouse",
+        "click_house",
+        "click-house",
+        "CLICK_HOUSE",
+        "Click House",
+    ],
 )
 def test_check_changelog_entry_rejects_noncanonical_clickhouse_spelling(misspelling):
     body = """### Changelog entry:
@@ -26,7 +33,7 @@ def test_check_changelog_entry_rejects_noncanonical_clickhouse_spelling(misspell
     )
 
 
-def test_check_changelog_entry_allows_canonical_spelling_and_urls():
+def test_check_changelog_entry_resumes_checking_after_a_url():
     body = """### Changelog entry:
 
 - Add ClickHouse support; see https://example.test/Clickhouse; fix click-house support.
