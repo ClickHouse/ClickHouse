@@ -64,4 +64,4 @@ struct ALPUtils
     static UInt8 calculateBitWidth(const UInt64 value) { return static_cast<UInt8>(std::bit_width(value)); }
 };
 
-} // namespace DB
+}
