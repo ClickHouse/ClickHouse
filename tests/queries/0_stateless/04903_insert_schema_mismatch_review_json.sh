@@ -40,14 +40,18 @@ echo "-- JSONCompactColumns, an extra positional column is a mismatch"
 printf 'CREATE TABLE t (a UInt8, b UInt8) ENGINE = Memory; INSERT INTO t FORMAT JSONCompactColumns [[1],[2],["x"]]\n' \
     | $CLICKHOUSE_LOCAL 2>&1 | check
 
+# The destination is a nested type: casting the decoded `String` source column into it fails with
+# `CANNOT_READ_ARRAY_FROM_TEXT`, a genuine parse error, so the diagnostic runs. A `String` source going
+# into a numeric column cannot be used here: that cast fails with `CANNOT_PARSE_TEXT`, which is not
+# classified as a parse error, so no diagnostic is attached to it at all.
 for format in Parquet Arrow ORC; do
     data_file="$CLICKHOUSE_TMP/data_04903_${format}"
     setting="input_format_${format,,}_case_insensitive_column_matching"
-    $CLICKHOUSE_LOCAL -q "SELECT 'not_a_number' AS A FORMAT $format" > "$data_file"
+    $CLICKHOUSE_LOCAL -q "SELECT 'not_an_array' AS A FORMAT $format" > "$data_file"
 
     echo "-- $format, case-insensitive source name still attributes a type mismatch"
     {
-        echo "CREATE TABLE t (a UInt8) ENGINE = Memory; INSERT INTO t SETTINGS $setting = 1 FORMAT $format"
+        echo "CREATE TABLE t (a Array(UInt8)) ENGINE = Memory; INSERT INTO t SETTINGS $setting = 1 FORMAT $format"
         cat "$data_file"
     } | $CLICKHOUSE_LOCAL 2>&1 | check
 

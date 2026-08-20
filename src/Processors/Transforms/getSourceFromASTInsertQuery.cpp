@@ -6,6 +6,7 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/EmptyReadBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -190,6 +191,57 @@ bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledVal
                         return true;
                     const auto & pair = entry.safeGet<Tuple>();
                     return pair.size() != 2 || sampledValueIsArrayOfSize(pair[1], path, depth + 1, size);
+                });
+        }
+    }
+}
+
+/// Whether every `String` value reached by following `path` (starting at `depth`) inside the sampled
+/// value `value` holds numeric text (the content a cast into a numeric destination accepts). A value
+/// whose shape does not match its step, a `NULL`, and a non-`String` value carry no evidence and are
+/// not counted against the column.
+bool sampledStringValueIsNumericText(const Field & value, const std::vector<SampledValueStep> & path, size_t depth)
+{
+    if (depth == path.size())
+    {
+        if (value.getType() != Field::Types::String)
+            return true;
+        Float64 number;
+        return tryParse<Float64>(number, value.safeGet<String>());
+    }
+
+    const auto & step = path[depth];
+    switch (step.kind)
+    {
+        case SampledValueStep::Kind::ArrayElements:
+        {
+            if (value.getType() != Field::Types::Array)
+                return true;
+            return std::ranges::all_of(
+                value.safeGet<Array>(),
+                [&](const Field & element) { return sampledStringValueIsNumericText(element, path, depth + 1); });
+        }
+        case SampledValueStep::Kind::TupleElement:
+        {
+            if (value.getType() != Field::Types::Tuple)
+                return true;
+            const auto & tuple = value.safeGet<Tuple>();
+            if (step.index >= tuple.size())
+                return true;
+            return sampledStringValueIsNumericText(tuple[step.index], path, depth + 1);
+        }
+        case SampledValueStep::Kind::MapValues:
+        {
+            if (value.getType() != Field::Types::Map)
+                return true;
+            return std::ranges::all_of(
+                value.safeGet<Map>(),
+                [&](const Field & entry)
+                {
+                    if (entry.getType() != Field::Types::Tuple)
+                        return true;
+                    const auto & pair = entry.safeGet<Tuple>();
+                    return pair.size() != 2 || sampledStringValueIsNumericText(pair[1], path, depth + 1);
                 });
         }
     }
@@ -549,6 +601,27 @@ String getInsertDataSchemaMismatchDescription(
         const auto & column = *sample_columns[column_index];
         for (size_t row = 0; row < sample_rows; ++row)
             if (!sampledValueHoldsOnlyBoolLiterals(column[row], path, 0))
+                return false;
+        return true;
+    };
+
+    /// Whether every sampled `String` value reached by `path` holds numeric text. Used for the formats
+    /// that cast a decoded source `String` column to the destination type, where the numbers-from-strings
+    /// inference pass carries no evidence: it re-reads the same typed `String` column no matter how the
+    /// setting is set. `std::nullopt` when the sample is unavailable, in which case the caller stays on
+    /// the low-false-positive side and treats the column as compatible.
+    auto sampled_string_values_are_numeric_text
+        = [&](size_t column_index, const std::vector<SampledValueStep> & path) -> std::optional<bool>
+    {
+        /// Reuse the lazy sample parser above; the boolean result is irrelevant here.
+        static_cast<void>(sampled_values_hold_only_bool_literals(column_index, path));
+
+        if (!sample_rows || column_index >= sample_columns.size())
+            return std::nullopt;
+
+        const auto & column = *sample_columns[column_index];
+        for (size_t row = 0; row < sample_rows; ++row)
+            if (!sampledStringValueIsNumericText(column[row], path, 0))
                 return false;
         return true;
     };
@@ -1057,13 +1130,6 @@ String getInsertDataSchemaMismatchDescription(
         /// cannot be built from a single scalar string (except in the whole-text formats, see below).
         if (which_inferred.isString())
         {
-            /// Columnar formats that cast decoded source columns cannot determine compatibility of a
-            /// `String` source column from its schema alone: values such as `"1"` can cast cleanly
-            /// into scalar and nested destinations. Do not let a valid sibling column make an
-            /// unrelated parse error look like a structure mismatch.
-            if (format_casts_string_source_columns)
-                return true;
-
             /// `Bool` is backed by `UInt8` but is not a generic numeric destination: its deserializers
             /// accept only the bare literal tokens (`true` / `false` / `1` / `0`, ...), so a string
             /// value is a genuine structure mismatch even when it holds a quoted numeric (`"1"`) that a
@@ -1089,7 +1155,22 @@ String getInsertDataSchemaMismatchDescription(
                 return format_reads_string_values_as_whole_text;
 
             const bool expected_is_numeric = which_expected.isInt() || which_expected.isUInt() || which_expected.isFloat();
-            return !(expected_is_numeric && type_is_confirmed_text(evidence.numbers_inferred_type));
+            if (!expected_is_numeric)
+                return true;
+
+            /// The formats that cast a decoded source `String` column to the destination type (the
+            /// columnar formats and `Native`) accept a numeric string such as `"1"` into a numeric
+            /// column, exactly like the text formats do — but the second inference pass cannot tell
+            /// that string apart from genuine text, because it re-reads the same typed `String` column
+            /// whatever the numbers-from-strings settings say. Inspect the sampled values instead.
+            if (format_casts_string_source_columns)
+            {
+                if (!evidence.column_index)
+                    return true;
+                return sampled_string_values_are_numeric_text(*evidence.column_index, evidence.path).value_or(true);
+            }
+
+            return !type_is_confirmed_text(evidence.numbers_inferred_type);
         }
 
         /// A numeric value that schema inference widened to `Int64` / `UInt64` / `Float64` is accepted by
