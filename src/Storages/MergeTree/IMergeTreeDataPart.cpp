@@ -3233,32 +3233,57 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }
 
-bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
+namespace
 {
-    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasMaterializedSecondaryIndex");
 
-    const auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-
-    /// `checksums.txt` is the authoritative record of what the part owns, so it also rules out the
-    /// orphan files a `DROP INDEX` + re-`ADD INDEX` used to leave behind.
-    if (getStreamNameOrHash(file_name, ".idx", checksums) || getStreamNameOrHash(file_name, ".idx2", checksums))
+/// True when @part owns @path_prefix + @extension, i.e. it is listed in `checksums.txt` (possibly
+/// under the hashed name) or is a member of the part's `skp_idx.packed`. `checksums.txt` is the
+/// authoritative record of what the part owns, so this also rules out the orphan files a
+/// `DROP INDEX` + re-`ADD INDEX` used to leave behind. Deliberately no fallback to raw storage
+/// existence (unlike `getStreamNameOrHashResolved`): the read path does not use a file the part
+/// does not own, so neither may this predicate.
+bool partOwnsIndexFile(const IMergeTreeDataPart & part, const String & path_prefix, const String & extension)
+{
+    const auto hashed_prefix = sipHash128String(path_prefix);
+    if (part.checksums.files.contains(path_prefix + extension) || part.checksums.files.contains(hashed_prefix + extension))
         return true;
 
-    /// A packed index has no per-file entry of its own: its data is a member of the part's
+    /// A packed substream has no per-file entry of its own: its data is a member of the part's
     /// `skp_idx.packed`, and only the archive is listed in `checksums.txt`.
-    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
     if (!disk_storage)
         return false;
 
-    const auto hashed_file_name = sipHash128String(file_name);
-    for (const auto & extension : {".idx", ".idx2"})
+    return disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension)
+        || disk_storage->isFileInPackedSkipIndicesArchive(hashed_prefix + extension);
+}
+
+}
+
+bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasMaterializedSecondaryIndex");
+
+    const String file_name = skip_index.getFileName();
+
+    /// `getDeserializedFormat` is the read path's own oracle: it picks the on-disk layout that
+    /// `MergeTreeIndexReader` would use, and reports version 0 when there is nothing usable
+    /// (a missing base payload, or an invalidated system column the index is built on).
+    const auto format = skip_index.getDeserializedFormat(*this, file_name);
+    if (format.version == 0 || format.substreams.empty())
+        return false;
+
+    /// The reader opens *every* substream of that layout, so a multistream index (e.g. `text`,
+    /// stored as `.idx` plus `.dct.idx` / `.pst.idx` and optionally `.pos.idx`) counts as
+    /// materialized only when the part owns all of them - otherwise the first query using the
+    /// index would throw on the missing sibling stream.
+    for (const auto & substream : format.substreams)
     {
-        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + extension)
-            || disk_storage->isFileInPackedSkipIndicesArchive(hashed_file_name + extension))
-            return true;
+        if (!partOwnsIndexFile(*this, file_name + substream.suffix, substream.extension))
+            return false;
     }
 
-    return false;
+    return true;
 }
 
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const

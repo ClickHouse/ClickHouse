@@ -173,14 +173,17 @@ public:
     /// Returns true if there is materialized index with specified name in part.
     bool hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
 
-    /// Like `hasSecondaryIndex`, but counts only index data that the part actually owns: an
-    /// index file that is present in the part's directory yet absent from `checksums.txt` is an
-    /// orphan left behind by the released bug #109595 (see
-    /// `04427_mutate_some_columns_drop_index_corrupted_idx`), and the index still has to be
-    /// rebuilt by `ALTER TABLE ... MATERIALIZE INDEX`. `hasSecondaryIndex` falls back to raw
-    /// storage existence and would report such an orphan as materialized, which is fine for the
-    /// repair paths that must see the dead files, but wrong for reporting to the user.
-    bool hasMaterializedSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const;
+    /// Like `hasSecondaryIndex`, but answers what the read path can actually use, which is what
+    /// `system.parts.secondary_indices_materialized` reports:
+    /// - only index data that the part owns counts. An index file present in the part's directory
+    ///   yet absent from `checksums.txt` is an orphan left behind by the released bug #109595 (see
+    ///   `04427_mutate_some_columns_drop_index_corrupted_idx`) and the index still has to be
+    ///   rebuilt by `ALTER TABLE ... MATERIALIZE INDEX`, while `hasSecondaryIndex` falls back to
+    ///   raw storage existence - right for the repair paths that must see the dead files, wrong
+    ///   for reporting to the user;
+    /// - every substream of the layout the reader would choose must be present, so a multistream
+    ///   index (`text`) with a lost `.dct.idx` / `.pst.idx` is not reported as materialized.
+    bool hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const;
 
     /// True iff any of @index's substreams (base plus side streams like .dct/.pst for text indices)
     /// is stored inside this part's skp_idx.packed archive. Probing every substream, not just
