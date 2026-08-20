@@ -85,7 +85,7 @@ For tuple subtraction: [tupleMinus](/reference/functions/regular-functions/tuple
 ### notSimilarTo function {#notsimilarto-function}
 `a NOT SIMILAR TO b` – The `notSimilarTo(a, b)` function.
 
-`SIMILAR TO` is the SQL-standard pattern matching predicate. Its pattern combines the `LIKE` wildcards `%` (any number of arbitrary characters) and `_` (a single arbitrary character) with the regular expression metacharacters `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` and `]`. The metacharacters `^`, `$` and `.` are **not** part of the `SIMILAR TO` grammar and denote the corresponding literal characters. The pattern must match the whole left operand, not a substring of it. `\` escapes any of the metacharacters and itself.
+`SIMILAR TO` is the SQL-standard pattern matching predicate. Its pattern combines the `LIKE` wildcards `%` (any number of arbitrary characters) and `_` (a single arbitrary character) with the regular expression metacharacters `|`, `*`, `+`, `?`, `{`, `}`, `(`, `)`, `[` and `]`. The metacharacters `^`, `$` and `.` are **not** part of the `SIMILAR TO` grammar and denote the corresponding literal characters outside bracket expressions. Inside a bracket expression, a leading `^` keeps its usual meaning and negates the class, e.g. `[^aeiou]` matches a single character which is not a vowel. The pattern must match the whole left operand, not a substring of it. `\` escapes any of the metacharacters and itself.
 
 ```sql title="Query"
 SELECT

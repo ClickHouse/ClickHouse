@@ -28,7 +28,7 @@ notSimilarTo(haystack, pattern[, escape_character])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
-        {"pattern", "`SIMILAR TO` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), `\\` for escaping, and regular expression metacharacters except `^`, `$` and `.`.", {"String"}},
+        {"pattern", "`SIMILAR TO` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), `\\` for escaping, and regular expression metacharacters except `^`, `$` and `.`, which are literal outside bracket expressions (a leading `^` inside `[...]` still negates the class).", {"String"}},
         {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string does not match the `SIMILAR TO` pattern, otherwise `0`.", {"UInt8"}};

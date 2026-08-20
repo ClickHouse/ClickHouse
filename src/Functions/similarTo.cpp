@@ -26,8 +26,9 @@ A `SIMILAR TO` expression can contain normal characters and the following metasy
 - `\` is for escaping any of the above and itself.
 
 The regular expression metacharacters `^`, `$` and `.` are not part of the `SIMILAR TO` grammar and
-denote the corresponding literal characters. The pattern must match the whole `haystack`, not a
-substring of it.
+denote the corresponding literal characters outside bracket expressions. Inside a bracket expression,
+a leading `^` keeps its usual meaning and negates the class, e.g. `[^aeiou]` matches a single
+character which is not a vowel. The pattern must match the whole `haystack`, not a substring of it.
 
 ## ESCAPE clause
 
@@ -47,7 +48,7 @@ similarTo(haystack, pattern[, escape_character])
     )";
     FunctionDocumentation::Arguments arguments = {
         {"haystack", "String in which the search is performed.", {"String", "FixedString"}},
-        {"pattern", "`SIMILAR TO` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), `\\` for escaping, and regular expression metacharacters except `^`, `$` and `.`.", {"String"}},
+        {"pattern", "`SIMILAR TO` pattern to match against. Can contain `%` (matches any number of characters), `_` (matches single character), `\\` for escaping, and regular expression metacharacters except `^`, `$` and `.`, which are literal outside bracket expressions (a leading `^` inside `[...]` still negates the class).", {"String"}},
         {"escape_character", "Optional single-character string to use as the escape character instead of `\\`. Default: `\\`.", {"String"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string matches the `SIMILAR TO` pattern, otherwise `0`.", {"UInt8"}};
