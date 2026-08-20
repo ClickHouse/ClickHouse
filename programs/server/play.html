@@ -2825,8 +2825,21 @@ class QueryResultElement extends HTMLElement
                     top: -0.5rem;
                     padding: 0.25rem 0.5rem;
                     text-align: center;
+                    /* Top, not the middle a table cell aligns to by default: one column carrying a
+                       filter makes the whole header row taller, and centring would then push every
+                       other column's name down into the middle of it, away from the icons (which are
+                       positioned against the first line) and out of line with the names beside it. */
+                    vertical-align: top;
                     background-color: var(--table-header-color);
                     border: 1px solid var(--border-color);
+                    /* Where the header icons sit (they are absolutely positioned, and centred on this
+                       point): level with the column NAME's own line, not with the middle of the header
+                       cell. A header grows a second line when its column carries a filter, and centring
+                       in the cell would then drop the icons into that line instead of leaving them
+                       beside the name. The value is the top padding above plus half the line box the
+                       name occupies; it is in rem, so it tracks the header's inherited font size.
+                       No backticks in this comment: this style block lives inside a JS template literal. */
+                    --header-icon-top: 0.875rem;
                 }
 
                 th .name
@@ -2888,7 +2901,7 @@ class QueryResultElement extends HTMLElement
                 {
                     display: none;
                     position: absolute;
-                    top: 50%;
+                    top: var(--header-icon-top);
                     left: 1.8rem;
                     transform: translateY(-50%);
                     cursor: pointer;
@@ -2931,7 +2944,7 @@ class QueryResultElement extends HTMLElement
                 {
                     display: inline-block;
                     position: absolute;
-                    top: 50%;
+                    top: var(--header-icon-top);
                     left: 0.35rem;
                     transform: translateY(-50%);
                     cursor: pointer;
@@ -2999,7 +3012,7 @@ class QueryResultElement extends HTMLElement
                 {
                     display: inline-flex;
                     position: absolute;
-                    top: 50%;
+                    top: var(--header-icon-top);
                     right: 0.3rem;
                     transform: translateY(-50%);
                     gap: 0.1rem;
@@ -3146,7 +3159,7 @@ class QueryResultElement extends HTMLElement
                 .filter-toggle
                 {
                     position: absolute;
-                    top: 50%;
+                    top: var(--header-icon-top);
                     right: 1.8rem;
                     transform: translateY(-50%);
                     opacity: 0;
@@ -3304,26 +3317,6 @@ class QueryResultElement extends HTMLElement
                    _appendCellFilterButton) rather than for every cell, so a large result does not
                    carry a hundred thousand unused buttons. Sits above the cell, next to the copy icon.
                    No backticks in this comment: this style block lives inside a JS template literal. */
-                .cell-filter
-                {
-                    position: absolute;
-                    top: 100%;
-                    right: calc(1.5em + 0.25rem);
-                    padding: 0.25rem;
-                    width: fit-content;
-                    cursor: pointer;
-                    filter: invert(1);
-                    background-color: var(--element-background-color);
-                    z-index: 1;
-                }
-
-                .cell-filter svg
-                {
-                    display: block;
-                    width: 1em;
-                    height: 1em;
-                }
-
                 /* The comparisons offered for the selected cell's value, opened by the funnel above and
                    hanging under it. A row of small buttons rather than a dropdown: there are at most six
                    and every one is a single click away. It grows leftwards from the same edge, over
@@ -3332,7 +3325,8 @@ class QueryResultElement extends HTMLElement
                 {
                     display: flex;
                     position: absolute;
-                    top: calc(100% + 1.5em + 0.5rem);
+                    /* Directly under the chips: one chip height below them (see .cell-copy). */
+                    top: calc(var(--cell-controls-top, 100%) + 1em + 0.5rem);
                     right: -1px;
                     z-index: 2;
                     border: 1px solid var(--border-color-selected);
@@ -3461,12 +3455,16 @@ class QueryResultElement extends HTMLElement
                    lifting them over a header would mean lifting the selected cell over pinned columns.
                    Outside the cell rather than within it, so they never cover the value they act on -
                    which, in a right-aligned numeric column, is exactly where they would sit. */
-                .cell-copy
+                .cell-copy,
+                .cell-filter
                 {
-                    display: none;
                     position: absolute;
-                    top: 100%;
-                    right: -1px;
+                    /* Below the cell - or below its expanded content, which is taller. The expanded
+                       content is an absolutely positioned overlay, so the cell itself keeps the row
+                       height and a plain 100% would land the chips inside the overlay. CSS cannot see
+                       that height (the overlay is a sibling of these chips, not their container), so
+                       _positionCellControls measures it and hands it over here. */
+                    top: var(--cell-controls-top, 100%);
                     padding: 0.25rem;
                     width: fit-content;
                     cursor: pointer;
@@ -3475,11 +3473,30 @@ class QueryResultElement extends HTMLElement
                     z-index: 1;
                 }
 
-                .cell-copy svg
+                /* A block-level icon, so the chip is exactly its padding plus the icon: an inline one
+                   would add the leading of a line box on top, which is what used to make the copy chip
+                   taller than the filter chip beside it. */
+                .cell-copy svg,
+                .cell-filter svg
                 {
+                    display: block;
                     width: 1em;
                     height: 1em;
-                    vertical-align: middle;
+                }
+
+                /* The copy chip is flush with the cell's right edge and the filter chip abuts it, one
+                   chip further left. Both are the same size, so the same expression - the icon plus its
+                   padding on both sides - is both their width and that offset, and they stay touching
+                   whatever the font size is. */
+                .cell-copy
+                {
+                    display: none;
+                    right: -1px;
+                }
+
+                .cell-filter
+                {
+                    right: calc(1em + 0.5rem - 1px);
                 }
 
                 .td-selected .cell-copy
@@ -4127,6 +4144,8 @@ class QueryResultElement extends HTMLElement
         /// The filter funnel belongs to the selected cell only, so it is built here and taken away
         /// again above (and in `clearSelection`) when the selection moves on.
         this._appendCellFilterButton(td);
+        /// After the class above, so the measurement sees the cell in its expanded layout.
+        this._positionCellControls(td);
         (td.querySelector('.cell-content') || td).scrollIntoView({ block: 'nearest' });
         td.tabIndex = -1;
         td.focus({ preventScroll: true });
@@ -4141,9 +4160,35 @@ class QueryResultElement extends HTMLElement
             this._current_selected_cell.parentElement.classList.remove('tr-selected');
             this._current_selected_cell.removeAttribute('tabindex');
             this._removeCellFilterControls(this._current_selected_cell);
+            this._current_selected_cell.style.removeProperty('--cell-controls-top');
         }
         this._current_selected_cell = null;
         this._scheduleCategoricalEmphasis();
+    }
+
+    /// Put the selected cell's chips (copy, filter, and the filter menu under them) below whatever the
+    /// cell actually occupies on screen. Selecting a cell expands its content into an absolutely
+    /// positioned overlay that can be far taller than the row - a multi-line value, up to 50vh - while
+    /// the cell itself keeps the row height, so the CSS `top: 100%` fallback would put the chips inside
+    /// that overlay. The overlay's height is only knowable by measuring it, hence this pass; it is
+    /// handed to the CSS as a custom property rather than as a `top` on each chip, so the stylesheet
+    /// keeps deciding the layout and this only supplies the one number it cannot compute.
+    _positionCellControls(td)
+    {
+        const content = td.querySelector('.cell-content');
+        if (!content) { td.style.removeProperty('--cell-controls-top'); return; }
+        /// `offsetTop` is relative to the cell (its offset parent while selected) and is negative: the
+        /// overlay starts a border-width above the cell, to cover the collapsed border.
+        const bottom = content.offsetTop + content.offsetHeight;
+        td.style.setProperty('--cell-controls-top', Math.max(bottom, td.offsetHeight) + 'px');
+    }
+
+    /// Re-measure the selected cell's chip position (see `_positionCellControls`). Called when the
+    /// viewport changes, because an expanded value long enough to be clamped at 50vh changes height
+    /// with it.
+    refreshCellControls()
+    {
+        if (this._current_selected_cell) { this._positionCellControls(this._current_selected_cell); }
     }
 
     clearError()
@@ -8913,6 +8958,9 @@ function refreshPinnedLayout() {
         } else {
             el._updatePinAvailability();
         }
+        /// A selected cell's expanded content is clamped to a share of the viewport height, so the
+        /// chips hanging below it have to be re-measured when that changes too.
+        el.refreshCellControls();
     }
 }
 window.addEventListener('resize', refreshPinnedLayout);
