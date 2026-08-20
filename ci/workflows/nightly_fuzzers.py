@@ -48,6 +48,9 @@ workflow = Workflow.Config(
     # is part of the job digest, so a workflow whose docker graph differs from
     # MasterCI's cannot hit its cache entry for the shared release build.
     enable_dockers_manifest_merge=True,
+    # The merge job's own digest does not cover this flag, so the two workflows
+    # would share a cache entry while tagging `latest` differently.
+    set_latest_for_docker_merged_manifest=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,

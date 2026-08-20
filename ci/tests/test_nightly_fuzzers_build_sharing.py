@@ -138,6 +138,21 @@ class TestBuildIsSharedWithMasterCI:
             == _job(master, _SHARED_BUILD).run_after
         ), "the docker job graphs differ, so the release builds cannot share a cache entry"
 
+    def test_cache_sharing_workflows_agree_on_the_manifest_behaviour(self):
+        # The merge job's digest does not cover set_latest_for_docker_merged_
+        # manifest, so aligning the graph to share a cache entry also means
+        # whichever workflow runs the job first decides whether `latest` is
+        # tagged. Enumerated over the shared job so a third sharer is covered.
+        sharing = [
+            w
+            for w in (_mangled("MasterCI"), _mangled("NightlyFuzzers"))
+            if any(j.name == _SHARED_BUILD for j in w.jobs)
+        ]
+        assert len(sharing) == 2, [w.name for w in sharing]
+        assert (
+            len({w.set_latest_for_docker_merged_manifest for w in sharing}) == 1
+        ), "workflows sharing the manifest job must agree on tagging `latest`"
+
     def test_plain_release_variant_would_not_match(self):
         # Mutation arm: the variant NightlyFuzzers used to take. Without this,
         # the equality above could hold for reasons unrelated to the fix.

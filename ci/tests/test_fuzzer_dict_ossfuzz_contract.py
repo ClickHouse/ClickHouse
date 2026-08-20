@@ -66,6 +66,37 @@ def _generation_commands(block):
     return [l.strip() for l in block.splitlines() if "generate_source_dict.sh" in l]
 
 
+def _generation_statements(block):
+    """Whole CMake statements naming the generator, not just the matching line.
+
+    A statement spans lines, so the command that names the generator and the
+    `add_custom_command(... POST_BUILD` that introduces it are usually on
+    different ones. Matching per line cannot see the difference.
+    """
+    # Comments cannot open a statement and would otherwise be glued onto the
+    # front of the next one.
+    text = "\n".join(
+        line for line in block.splitlines() if not line.lstrip().startswith("#")
+    )
+    statements, depth, current = [], 0, []
+    for char in text:
+        if char == "(":
+            if depth == 0:
+                # The command name is the token immediately before the paren.
+                current = ["".join(current).split()[-1] if current else ""]
+            depth += 1
+        if depth:
+            current.append(char)
+        if char == ")":
+            depth -= 1
+            if depth == 0:
+                statements.append("".join(current))
+                current = []
+        elif depth == 0:
+            current.append(char)
+    return [s.strip() for s in statements if "generate_source_dict.sh" in s]
+
+
 class TestConfigureTimeGeneration:
     """The dictionary must be produced by configure, not by a build step."""
 
@@ -84,14 +115,39 @@ class TestConfigureTimeGeneration:
 
     def test_generation_is_not_attached_to_the_fuzzers_aggregate_target(self):
         # A POST_BUILD step of `fuzzers` never fires for `ninja <one>_fuzzer`,
-        # which is the only way OSS-Fuzz builds.
-        block = _fuzzer_block(_read(_ROOT_CMAKE))
-        for command in _generation_commands(block):
-            assert "add_custom_command" not in command, (
+        # which is the only way OSS-Fuzz builds. Checked per statement, and over
+        # all of them, so neither a multi-line form nor a build-step copy added
+        # beside the configure-time one passes.
+        statements = _generation_statements(_fuzzer_block(_read(_ROOT_CMAKE)))
+        assert len(statements) == 1, (
+            "the generator must be invoked exactly once in the `if (FUZZER)` "
+            f"block, at configure time: {statements}"
+        )
+        assert statements[0].startswith("execute_process("), statements[0]
+        for statement in statements:
+            assert "add_custom_command" not in statement, (
                 "the dictionary generation must not hang off the `fuzzers` target: "
                 "OSS-Fuzz builds targets individually and would never run it"
             )
-            assert "POST_BUILD" not in command
+            assert "POST_BUILD" not in statement
+
+    @pytest.mark.parametrize(
+        "form",
+        [
+            'add_custom_command(TARGET fuzzers POST_BUILD\n    COMMAND "$'
+            '{CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh" a b\n    VERBATIM)',
+            "add_custom_command(TARGET fuzzers POST_BUILD COMMAND "
+            "${CMAKE_SOURCE_DIR}/tests/fuzz/generate_source_dict.sh a b VERBATIM)",
+        ],
+        ids=["multi-line", "single-line"],
+    )
+    def test_a_build_step_generator_is_rejected(self, form):
+        # Mutation arm. The multi-line case is the one a per-line check misses:
+        # POST_BUILD and the generator name sit on different lines.
+        block = _fuzzer_block(_read(_ROOT_CMAKE)) + "\n" + form + "\n"
+        statements = _generation_statements(block)
+        assert len(statements) == 2, statements
+        assert any("POST_BUILD" in s for s in statements)
 
     def test_writes_into_the_source_tree(self):
         # OSS-Fuzz copies $SRC/ClickHouse/tests/fuzz/*.dict; a build-directory
