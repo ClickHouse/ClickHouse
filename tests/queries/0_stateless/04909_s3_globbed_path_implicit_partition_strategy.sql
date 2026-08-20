@@ -39,7 +39,10 @@ WHERE database = currentDatabase()
 
 DETACH TABLE test_04909_plain_wildcard;
 ATTACH TABLE test_04909_plain_wildcard;
-SELECT 6;
+SELECT empty(partition_key)
+FROM system.tables
+WHERE database = currentDatabase()
+    AND name = 'test_04909_plain_wildcard';
 
 DROP TABLE test_04909_glob_hive;
 DROP TABLE test_04909_glob_wildcard;

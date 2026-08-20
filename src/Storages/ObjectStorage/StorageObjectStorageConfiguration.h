@@ -335,6 +335,8 @@ public:
     String compression_method = "auto";
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.
+    bool partition_strategy_was_set = false;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;

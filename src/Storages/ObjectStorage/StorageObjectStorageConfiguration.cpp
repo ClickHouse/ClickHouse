@@ -140,7 +140,8 @@ void StorageObjectStorageConfiguration::initialize(
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "The `partition_strategy` argument is incompatible with data lakes");
         }
     }
-    else if (configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+    else if (!configuration_to_initialize.partition_strategy_was_set
+        && configuration_to_initialize.partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
         && configuration_to_initialize.getRawPath().hasPartitionWildcard()
         && local_context->getSettingsRef()[Setting::file_like_engine_default_partition_strategy].value
             == FileLikeEngineDefaultPartitionStrategy::WILDCARD)
@@ -201,7 +202,10 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
     /// Also skip when there is no `PARTITION BY` - there is no strategy to apply, but we still
     /// fall through to `PartitionStrategyFactory::get` so that consistency checks (e.g. explicit
     /// `partition_columns_in_data_file = 0` combined with strategy `none`) keep raising.
-    if (partition_by && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE && !isDataLakeConfiguration())
+    if (partition_by
+        && !partition_strategy_was_set
+        && partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !isDataLakeConfiguration())
     {
         partition_strategy_was_inferred = true;
         if (getRawPath().hasPartitionWildcard())
@@ -372,6 +376,7 @@ void StorageObjectStorageConfiguration::initializeFromParsedArguments(const Stor
     compression_method = parsed_arguments.compression_method;
     structure = parsed_arguments.structure;
     partition_strategy_type = parsed_arguments.partition_strategy_type;
+    partition_strategy_was_set = parsed_arguments.partition_strategy_was_set;
     partition_columns_in_data_file = parsed_arguments.partition_columns_in_data_file;
     partition_columns_in_data_file_was_set = parsed_arguments.partition_columns_in_data_file_was_set;
     partition_strategy = parsed_arguments.partition_strategy;

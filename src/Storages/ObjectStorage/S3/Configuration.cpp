@@ -270,6 +270,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -802,6 +803,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (auto partition_columns_in_data_file_value = getFromPositionOrKeyValue<bool>("partition_columns_in_data_file", args, engine_args_to_idx, key_value_args);
