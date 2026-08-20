@@ -217,6 +217,55 @@ class TestBuildShConsumesRatherThanRegenerates:
         assert self._dictionary_commands(mutated) != ["cp $SRC/tests/fuzz/*.dict $OUT/"]
 
 
+class TestGeneratorRejectsUnsupportedShellTooling:
+    """The generator is run by configure, so it must fail loudly, not quietly.
+
+    It needs `mapfile` and GNU `grep -z`; without them the extraction yields a
+    short dictionary, which is not a configure error and would only surface much
+    later as the nightly coverage check.
+    """
+
+    def test_shebang_resolves_bash_through_path(self):
+        # /bin/bash is 3.2 on macOS, so pinning it defeats an installed newer
+        # bash that is ahead on PATH.
+        assert _read(_GENERATOR).startswith("#!/usr/bin/env bash\n")
+
+    def test_both_prerequisites_are_checked_before_first_use(self):
+        lines = _read(_GENERATOR).splitlines()
+
+        def first(predicate):
+            return next(i for i, line in enumerate(lines) if predicate(line))
+
+        bash_guard = first(lambda l: "BASH_VERSINFO" in l)
+        grep_guard = first(lambda l: "grep -qzE" in l)
+        assert bash_guard < first(lambda l: l.startswith("mapfile "))
+        assert grep_guard < first(lambda l: "grep -rhoz" in l)
+
+    def test_a_shell_without_gnu_grep_is_rejected(self, tmp_path):
+        # Mutation arm, run rather than read: a grep rejecting -z stands in for
+        # BSD grep, and the generator must exit non-zero instead of proceeding.
+        fake_bin = tmp_path / "bin"
+        fake_bin.mkdir()
+        fake_grep = fake_bin / "grep"
+        fake_grep.write_text(
+            "#!/usr/bin/env bash\n"
+            'for a in "$@"; do case "$a" in -*z*) exit 2;; esac; done\n'
+            'exec /usr/bin/grep "$@"\n'
+        )
+        fake_grep.chmod(0o755)
+        env = dict(os.environ, PATH=f"{fake_bin}:{os.environ['PATH']}")
+        result = subprocess.run(
+            ["bash", _GENERATOR, _REPO, str(tmp_path / "out.dict")],
+            capture_output=True,
+            text=True,
+            env=env,
+            check=False,
+        )
+        assert result.returncode != 0
+        assert "GNU grep" in result.stderr
+        assert not (tmp_path / "out.dict").exists()
+
+
 class TestDictionaryIsGeneratedNotCommitted:
     def test_dict_is_ignored(self):
         assert f"/tests/fuzz/{_DICT_NAME}" in _read(_GITIGNORE), (

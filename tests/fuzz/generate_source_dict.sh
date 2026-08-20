@@ -1,6 +1,23 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -euo pipefail
+
+# The extraction needs `mapfile` (bash 4) and NUL-separated grep output (GNU
+# grep -z); stock macOS ships bash 3.2 and BSD grep. Check both up front, so an
+# unsupported environment fails here rather than emitting a short dictionary
+# whose gaps only surface later as a coverage failure.
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]
+then
+    echo "error: bash 4 or newer is required (found $BASH_VERSION)." \
+         "On macOS, install a newer bash and put it ahead of /bin/bash in PATH." >&2
+    exit 1
+fi
+if ! printf 'x' | grep -qzE 'x' 2>/dev/null
+then
+    echo "error: GNU grep is required (for its -z option)." \
+         "On macOS, install GNU grep and put it ahead of BSD grep in PATH." >&2
+    exit 1
+fi
 
 # Generate a libFuzzer dictionary from the ClickHouse *sources*, without running
 # a binary.
