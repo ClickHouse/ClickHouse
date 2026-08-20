@@ -426,7 +426,7 @@ The assistant needs a model backend. It picks one in this order:
 
 1. An AI provider configured in the client configuration file (see below).
 2. An `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` environment variable.
-3. The [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to (or of `clickhouse-local`), used when no client-side provider is available and the server has default credentials configured for it (the `ai_function_text_default_credentials` setting). This lets the assistant work without any client-side configuration when the server administrator has already set up AI functions.
+3. The [`aiGenerate`](/sql-reference/functions/ai-functions) function of the server you are connected to (or of `clickhouse-local`), used when no client-side provider is available and the server has AI functions enabled: default credentials configured for them (the `ai_function_text_default_credentials` setting) and the `allow_experimental_ai_functions` setting turned on. This lets the assistant work without any client-side configuration when the server administrator has already set up AI functions.
 
 If none of these is available, the assistant is disabled and tells you so.
 
@@ -447,7 +447,7 @@ If no AI provider is specified in the configuration file, ClickHouse Client auto
 
 1. First checks for the `OPENAI_API_KEY` environment variable.
 2. If not found, checks for the `ANTHROPIC_API_KEY` environment variable.
-3. If neither is found, it tries the server-side `aiGenerate` function.
+3. If neither is found, it tries the server-side `aiGenerate` function (available when the server has both `ai_function_text_default_credentials` and `allow_experimental_ai_functions` set).
 
 This allows a quick setup without a configuration file:
 ```bash
