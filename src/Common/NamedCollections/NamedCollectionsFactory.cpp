@@ -1,6 +1,7 @@
 #include <Core/Settings.h>
 #include <base/sleep.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/quoteString.h>
 #include <Common/NamedCollections/NamedCollectionConfiguration.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/NamedCollections/NamedCollectionsMetadataStorage.h>
@@ -450,10 +451,47 @@ void NamedCollectionFactory::updateFunc()
     LOG_TRACE(log, "Named collections background updating thread finished");
 }
 
+namespace
+{
+
+/// The entries registered for a table of an `Atomic` database. They are found by the UUID, which the
+/// table keeps across a `RENAME` while the name stored next to the entry goes stale. A UUID can also
+/// be reused by `CREATE TABLE ... UUID` after a failed create, which can leave an entry of a table
+/// that never came to exist under another name: the entries of the current name are preferred,
+/// because they certainly belong to this table. Only when the table has no entry under its current
+/// name can an entry of another name be its own - one registered before a rename.
+template <typename Index>
+std::vector<typename Index::iterator> findEntriesByUUID(Index & idx, const StorageID & table_id)
+{
+    std::vector<typename Index::iterator> entries_of_this_name;
+    std::vector<typename Index::iterator> all_entries;
+
+    auto range = idx.equal_range(table_id.uuid);
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        all_entries.push_back(it);
+        if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name)
+            entries_of_this_name.push_back(it);
+    }
+
+    return entries_of_this_name.empty() ? all_entries : entries_of_this_name;
+}
+
+/// A dependency of a database engine is recorded with an empty table name, and the accessors of
+/// `StorageID` reject such an identifier, so it cannot be formatted the usual way.
+String getDependencyNameForLogs(const StorageID & table_id)
+{
+    if (table_id.table_name.empty())
+        return fmt::format("database {}", backQuoteIfNeed(table_id.database_name));
+    return table_id.getNameForLogs();
+}
+
+}
+
 void NamedCollectionFactory::addDependency(const String & collection_name, const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
-    LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
+    LOG_TRACE(log, "Adding dependency: collection={}, dependent={}", collection_name, getDependencyNameForLogs(table_id));
 
     /// The same dependency can be registered more than once for one table - a lazily loaded table
     /// registers it from its metadata and again when its proxy is materialized - and a duplicate would
@@ -508,17 +546,8 @@ void NamedCollectionFactory::removeDependencies(const StorageID & table_id)
 
     if (table_id.hasUUID())
     {
-        /// UUID reuse is possible after a failed CREATE, so it is not sufficient by itself.
         auto & idx = dependencies.get<TableUUID>();
-        auto range = idx.equal_range(table_id.uuid);
-        std::vector<decltype(range.first)> to_erase;
-        for (auto it = range.first; it != range.second; ++it)
-        {
-            if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name)
-                to_erase.push_back(it);
-        }
-
-        for (auto it : to_erase)
+        for (auto it : findEntriesByUUID(idx, table_id))
             idx.erase(it);
     }
     else
@@ -624,19 +653,11 @@ void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, 
     if (from_table_id.hasUUID())
     {
         auto & uuid_idx = dependencies.get<TableUUID>();
-        auto range = uuid_idx.equal_range(from_table_id.uuid);
-        std::vector<decltype(range.first)> to_erase;
-        for (auto it = range.first; it != range.second; ++it)
+        for (auto it : findEntriesByUUID(uuid_idx, from_table_id))
         {
-            if (it->table_id.database_name == from_table_id.database_name && it->table_id.table_name == from_table_id.table_name)
-            {
-                collection_names.push_back(it->collection_name);
-                to_erase.push_back(it);
-            }
-        }
-
-        for (auto it : to_erase)
+            collection_names.push_back(it->collection_name);
             uuid_idx.erase(it);
+        }
     }
     else
     {
@@ -679,33 +700,18 @@ std::vector<StorageID> NamedCollectionFactory::getDependents(const String & coll
 void NamedCollectionFactory::markDependenciesDetached(const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
-    if (table_id.table_name.empty())
-    {
-        LOG_TRACE(log, "Marking dependencies of database {} as detached", table_id.database_name);
-    }
-    else
-    {
-        LOG_TRACE(log, "Marking dependencies of table {} as detached", table_id.getNameForLogs());
-    }
+    LOG_TRACE(log, "Marking dependencies of {} as detached", getDependencyNameForLogs(table_id));
 
     std::vector<String> collection_names;
 
     if (table_id.hasUUID())
     {
         auto & idx = dependencies.get<TableUUID>();
-        auto range = idx.equal_range(table_id.uuid);
-        std::vector<decltype(range.first)> to_erase;
-        for (auto it = range.first; it != range.second; ++it)
+        for (auto it : findEntriesByUUID(idx, table_id))
         {
-            if (it->table_id.database_name == table_id.database_name && it->table_id.table_name == table_id.table_name)
-            {
-                collection_names.push_back(it->collection_name);
-                to_erase.push_back(it);
-            }
-        }
-
-        for (auto it : to_erase)
+            collection_names.push_back(it->collection_name);
             idx.erase(it);
+        }
     }
     else
     {
@@ -744,7 +750,13 @@ std::vector<StorageID> NamedCollectionFactory::getDetachedDependents(const Strin
          it != detached_dependencies.end() && std::get<0>(*it) == collection_name;
          ++it)
     {
-        result.push_back(StorageID{std::get<1>(*it), std::get<2>(*it)});
+        const auto & database_name = std::get<1>(*it);
+        const auto & table_name = std::get<2>(*it);
+        /// An entry of a detached database engine has no table name.
+        if (table_name.empty())
+            result.push_back(StorageID::createDatabaseOnly(database_name));
+        else
+            result.push_back(StorageID{database_name, table_name});
     }
 
     return result;

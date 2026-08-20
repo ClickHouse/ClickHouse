@@ -16,6 +16,26 @@
 namespace DB
 {
 
+namespace
+{
+
+/// The table the dependency was registered for, looked up by its UUID. Only a table that is in the
+/// catalog is returned: while a `CREATE` is in flight, the UUID is already reserved, but no table
+/// belongs to it yet.
+StoragePtr tryGetLiveTableByUUID(const StorageID & dependency)
+{
+    if (!dependency.hasUUID())
+        return nullptr;
+
+    auto [database, table] = DatabaseCatalog::instance().tryGetByUUID(dependency.uuid);
+    if (!database || !table)
+        return nullptr;
+    return table;
+}
+
+}
+
+
 namespace Setting
 {
     extern const SettingsBool check_named_collection_dependencies;
@@ -77,6 +97,18 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                     continue;
                 }
 
+                /// A table of an `Atomic` database is identified by its UUID: `RENAME` and
+                /// `EXCHANGE` change its name but keep the UUID recorded in the dependency, so the
+                /// name of the entry goes stale while the table is still there and still uses the
+                /// collection. Resolve such an entry by its UUID, and fall back to the name only
+                /// when no table has that UUID any more (a failed `CREATE`, or a `DROP` of a table
+                /// whose name was taken by another one afterwards).
+                if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
+                {
+                    dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
+                    continue;
+                }
+
                 const auto table = DatabaseCatalog::instance().tryGetTable(
                     StorageID{dep.database_name, dep.table_name}, current_context);
                 if (table && (!dep.hasUUID() || table->getStorageID().uuid == dep.uuid))
@@ -98,6 +130,12 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
                 if (!dep.database_name.empty())
                 {
                     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(dep.database_name, dep.table_name, nullptr);
+                    if (const auto table_by_uuid = tryGetLiveTableByUUID(dep))
+                    {
+                        dependent_names.push_back(table_by_uuid->getStorageID().getFullTableName());
+                        continue;
+                    }
+
                     const auto updated_table = DatabaseCatalog::instance().tryGetTable(
                         StorageID{dep.database_name, dep.table_name}, current_context);
                     if (updated_table && (!dep.hasUUID() || updated_table->getStorageID().uuid == dep.uuid))
@@ -163,7 +201,13 @@ BlockIO InterpreterDropNamedCollectionQuery::execute()
             std::vector<String> detached_names;
             detached_names.reserve(detached_dependents.size());
             for (const auto & dep : detached_dependents)
-                detached_names.push_back(dep.getFullTableName());
+            {
+                /// An entry of a database engine has no table name.
+                if (dep.table_name.empty())
+                    detached_names.push_back(fmt::format("database `{}`", dep.database_name));
+                else
+                    detached_names.push_back(dep.getFullTableName());
+            }
 
             throw Exception(
                 ErrorCodes::NAMED_COLLECTION_IS_USED,
