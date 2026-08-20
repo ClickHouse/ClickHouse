@@ -226,7 +226,6 @@ DataTypePtr replaceNestedSimpleTypes(const DataTypePtr & type, const std::functi
                     replacement->setCustomization(std::make_unique<DataTypeCustomDesc>(
                         std::make_unique<DataTypeNestedCustomName>(new_tuple->getElements(), new_tuple->getElementNames())));
             }
-
         }
     }
     else if (const auto * type_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
