@@ -12839,7 +12839,8 @@ void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
 
 bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
 {
-    if (subscription_manager.isEmpty())
+    auto subscriptions = subscription_manager.takeAllSubscriptions();
+    if (subscriptions.empty())
         return false;
 
     LocalPartsByPartition local_parts;
@@ -12849,12 +12850,12 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     auto promoters = buildPromoters();
 
     bool any_enriched = false;
-    subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
+    for (auto & subscription : subscriptions)
     {
         auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
         any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
         bounds_subscription.onEnrichmentRound();
-    });
+    }
 
     if (any_enriched)
         assignee.trigger();
