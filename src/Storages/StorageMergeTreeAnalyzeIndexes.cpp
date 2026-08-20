@@ -45,9 +45,11 @@ public:
         SharedHeader header_,
         std::vector<UInt8> columns_mask_,
         const StoragePtr & storage_,
+        StorageMetadataPtr metadata_snapshot_,
         const SelectQueryInfo & query_info_,
         size_t num_streams_,
-        MergeTreeData::DataPartsVector data_parts_,
+        RangesInDataParts analysis_parts_,
+        String projection_name_,
         MergeTreeSettingsPtr table_settings_,
         const ASTPtr & predicate_,
         const OptionalVectorSearchParameters & vector_search_parameters_,
@@ -57,11 +59,13 @@ public:
         , header(std::move(header_))
         , columns_mask(std::move(columns_mask_))
         , storage(storage_)
+        , metadata_snapshot(std::move(metadata_snapshot_))
         , query_info(query_info_)
         , num_streams(num_streams_)
         , predicate(predicate_)
         , vector_search_parameters(vector_search_parameters_)
-        , data_parts(std::move(data_parts_))
+        , analysis_parts(std::move(analysis_parts_))
+        , projection_name(std::move(projection_name_))
         , table_settings(std::move(table_settings_))
     {
     }
@@ -74,7 +78,7 @@ protected:
         if (std::exchange(analyzed, true))
             return {};
 
-        if (data_parts.empty())
+        if (analysis_parts.empty())
             return {};
 
         auto component_guard = Coordination::setCurrentComponent("MergeTreeAnalyzeIndexSource::generate");
@@ -89,7 +93,7 @@ protected:
             size_t src_index = 0;
             size_t res_index = 0;
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(ranges_in_part.data_part->name);
+                res_columns[res_index++]->insert(ranges_in_part.getAnalysisPartName());
 
             /// ranges
             if (columns_mask[src_index++])
@@ -100,19 +104,20 @@ protected:
                 res_columns[res_index++]->insert(std::move(field));
             }
 
-            processed_parts.insert(ranges_in_part.data_part->name);
+            processed_parts.insert(ranges_in_part.getAnalysisPartName());
         }
 
         /// Add existing parts, but filtered out into the result.
-        for (const auto & part : data_parts)
+        for (const auto & part : analysis_parts)
         {
-            if (processed_parts.contains(part->name))
+            const auto & part_name = part.getAnalysisPartName();
+            if (processed_parts.contains(part_name))
                 continue;
 
             size_t src_index = 0;
             size_t res_index = 0;
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(part->name);
+                res_columns[res_index++]->insert(part_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insertDefault();
         }
@@ -127,10 +132,15 @@ protected:
 
         auto reader_settings = MergeTreeReaderSettings::createForQuery(context, *table_settings, query_info);
 
-        const auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
         const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(storage.get());
         if (!merge_tree_data)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", storage->getName());
+
+        /// Projection parts are analyzed with the projection's own metadata (columns, primary key,
+        /// skip indexes), the parent table provides only the parts and the settings.
+        StorageMetadataPtr analysis_metadata_snapshot = metadata_snapshot;
+        if (!projection_name.empty())
+            analysis_metadata_snapshot = metadata_snapshot->projections.get(projection_name).metadata;
 
         std::optional<ActionsDAG> filter_dag;
         if (predicate)
@@ -140,7 +150,7 @@ protected:
 
             auto expression = buildQueryTree(predicate, execution_context);
 
-            auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, metadata_snapshot->getColumns());
+            auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, analysis_metadata_snapshot->getColumns());
             auto fake_table_expression = std::make_shared<TableNode>(dummy_storage, execution_context);
 
             QueryAnalyzer analyzer(false);
@@ -180,22 +190,25 @@ protected:
             filter_dag.emplace(std::move(actions));
         }
 
-        const auto & parts_ranges = RangesInDataParts{data_parts};
-
         const StorageSnapshotPtr storage_snapshot = storage->getStorageSnapshot(metadata_snapshot, context);
         const auto & snapshot_data = assert_cast<const MergeTreeData::SnapshotData &>(*storage_snapshot->data);
+
+        /// The initiator analyzes projection parts with an empty mutations snapshot, do the same.
+        auto mutations_snapshot = snapshot_data.mutations_snapshot;
+        if (!projection_name.empty())
+            mutations_snapshot = mutations_snapshot->cloneEmpty();
 
         std::optional<ReadFromMergeTree::Indexes> indexes;
         ReadFromMergeTree::buildIndexes(
             indexes,
             filter_dag ? &filter_dag.value() : nullptr,
             *merge_tree_data,
-            parts_ranges,
+            analysis_parts,
             vector_search_parameters,
             /*top_k_filter_info=*/ std::nullopt,
             context,
             query_info,
-            metadata_snapshot);
+            analysis_metadata_snapshot);
 
         /// TODO: we may also want to support query condition cache here as well
 
@@ -204,8 +217,8 @@ protected:
         indexes->use_skip_indexes_if_final_exact_mode = false; /// not supported in distributed index analysis
         MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
         {
-            .metadata_snapshot = metadata_snapshot,
-            .mutations_snapshot = snapshot_data.mutations_snapshot,
+            .metadata_snapshot = analysis_metadata_snapshot,
+            .mutations_snapshot = mutations_snapshot,
             .query_info = query_info,
             .context = context,
             .indexes = *indexes,
@@ -219,18 +232,20 @@ protected:
             .check_row_limits = true,
             .result = analysis_result,
         };
-        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, parts_ranges, analysis_result.index_stats);
+        return MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, analysis_parts, analysis_result.index_stats);
     }
 
 private:
     SharedHeader header;
     std::vector<UInt8> columns_mask;
     const StoragePtr storage;
+    StorageMetadataPtr metadata_snapshot;
     SelectQueryInfo query_info;
     size_t num_streams;
     ASTPtr predicate;
     OptionalVectorSearchParameters vector_search_parameters;
-    MergeTreeData::DataPartsVector data_parts;
+    RangesInDataParts analysis_parts;
+    String projection_name;
     MergeTreeSettingsPtr table_settings;
 
     bool analyzed = false;
@@ -277,16 +292,18 @@ private:
 void ReadFromMergeTreeAnalyzeIndexes::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
     LOG_DEBUG(log, "Analyzing index from {} parts of table {}",
-        storage->data_parts.size(),
+        storage->analysis_parts.size(),
         storage->source_table->getStorageID().getNameForLogs());
 
     pipeline.init(Pipe(std::make_shared<MergeTreeAnalyzeIndexSource>(
         getOutputHeader(),
         columns_mask,
         storage->source_table,
+        storage->source_metadata_snapshot,
         getQueryInfo(),
         num_streams,
-        storage->data_parts,
+        storage->analysis_parts,
+        storage->projection_name,
         storage->table_settings,
         storage->predicate,
         storage->vector_search_parameters,
@@ -302,10 +319,14 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     const StoragePtr & source_table_,
     const ColumnsDescription & columns,
     std::vector<String> parts_,
+    String projection_name_,
     const ASTPtr & predicate_,
-    const OptionalVectorSearchParameters & vector_search_parameters_)
+    const OptionalVectorSearchParameters & vector_search_parameters_,
+    ContextPtr context)
     : StorageWithCommonVirtualColumns(table_id_)
     , source_table(source_table_)
+    , source_metadata_snapshot(source_table->getInMemoryMetadataPtr(context, false))
+    , projection_name(std::move(projection_name_))
     , predicate(predicate_)
     , vector_search_parameters(vector_search_parameters_)
 {
@@ -313,12 +334,42 @@ StorageMergeTreeAnalyzeIndexes::StorageMergeTreeAnalyzeIndexes(
     if (!merge_tree_data)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeAnalyzeIndexes expected MergeTree table, got: {}", source_table->getName());
 
-    data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
+    auto data_parts = merge_tree_data->getDataPartsVectorForInternalUsage();
     std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
     if (!parts_.empty())
     {
         std::unordered_set<String> parts_set(std::make_move_iterator(parts_.begin()), std::make_move_iterator(parts_.end()));
         std::erase_if(data_parts, [&](const MergeTreeData::DataPartPtr & part) { return !parts_set.contains(part->name); });
+    }
+
+    if (projection_name.empty())
+    {
+        analysis_parts = RangesInDataParts{data_parts};
+    }
+    else
+    {
+        if (!source_metadata_snapshot->projections.has(projection_name))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no projection {} in table {}",
+                projection_name, source_table->getStorageID().getNameForLogs());
+
+        analysis_parts.reserve(data_parts.size());
+        size_t starting_offset = 0;
+        for (const auto & parent_part : data_parts)
+        {
+            const auto & created_projections = parent_part->getProjectionParts();
+            auto it = created_projections.find(projection_name);
+            if (it != created_projections.end() && !it->second->is_broken)
+            {
+                analysis_parts.emplace_back(
+                    /*data_part*/ it->second,
+                    /*parent_part*/ parent_part,
+                    /*part_index_in_query*/ analysis_parts.size(),
+                    /*part_starting_offset_in_query*/ starting_offset);
+            }
+            /// Projection reads keep the parent numbering, so must the analysis
+            /// (the projection may not preserve the row count of the parent).
+            starting_offset += parent_part->rows_count;
+        }
     }
 
     table_settings = merge_tree_data->getSettings();

@@ -1,0 +1,43 @@
+-- { echo }
+-- Filters over part offsets are applied on the initiator (remote replicas cannot evaluate them),
+-- so the marks stay pruned under the distributed analysis - see `SelectedMarks` below, and the
+-- rows limit that does not fit a full scan
+select count(), sum(key) from test_dia_offset where _part_offset >= 90000 settings max_rows_to_read=60000, distributed_index_analysis=0;
+30000	5849985000
+select count(), sum(key) from test_dia_offset where _part_offset >= 90000 settings max_rows_to_read=60000, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+30000	5849985000
+select count(), sum(key) from test_dia_offset where _part_offset >= 90000 settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+30000	5849985000
+select count(), sum(key) from test_dia_offset where _part_offset + _part_starting_offset >= 250000 settings max_rows_to_read=60000, distributed_index_analysis=0;
+50000	13749975000
+select count(), sum(key) from test_dia_offset where _part_offset + _part_starting_offset >= 250000 settings max_rows_to_read=60000, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+50000	13749975000
+select count(), sum(key) from test_dia_offset where _part_offset + _part_starting_offset >= 250000 settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+50000	13749975000
+-- Control query, to prove that the check below can see the distributed analysis when it happens
+select count(), sum(key) from test_dia_offset where key >= 0 settings cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+300000	44999850000
+-- { echo }
+-- Total offsets from a subquery: the set is applied on the initiator (`SelectedMarks` below
+-- cover both the inner and the outer reading)
+select count() from test_dia_offset_in where _part_starting_offset + _part_offset in (select _part_starting_offset + _part_offset from test_dia_offset_in where user_id = 42) settings enable_shared_storage_snapshot_in_query=1, distributed_index_analysis=0;
+5
+select count() from test_dia_offset_in where _part_starting_offset + _part_offset in (select _part_starting_offset + _part_offset from test_dia_offset_in where user_id = 42) settings enable_shared_storage_snapshot_in_query=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+5
+-- The same with a projection over `_part_offset`: the subquery reads it (3 marks of the total 8),
+-- the outer query still reads the table (the projection cannot serve the total offsets filter better)
+select count() from test_dia_offset_prj where _part_starting_offset + _part_offset in (select _part_starting_offset + _part_offset from test_dia_offset_prj where user_id = 42) settings enable_shared_storage_snapshot_in_query=1, distributed_index_analysis=0;
+5
+select count() from test_dia_offset_prj where _part_starting_offset + _part_offset in (select _part_starting_offset + _part_offset from test_dia_offset_prj where user_id = 42) settings enable_shared_storage_snapshot_in_query=1, cluster_for_parallel_replicas='parallel_replicas', distributed_index_analysis=1;
+5
+distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, SelectedMarks=6
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=6
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=6
+distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, SelectedMarks=6
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=6
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=6
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=36
+distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, SelectedMarks=41
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=41
+distributed_index_analysis=0, DistributedIndexAnalysisMicroseconds>0=0, SelectedMarks=8
+distributed_index_analysis=1, DistributedIndexAnalysisMicroseconds>0=1, SelectedMarks=8

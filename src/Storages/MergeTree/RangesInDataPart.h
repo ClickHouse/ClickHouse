@@ -138,6 +138,10 @@ struct RangesInDataPart
 
     RangesInDataPartDescription getDescription() const;
 
+    /// Part identity for index analysis: a projection part is identified by its parent part name,
+    /// since all projection parts of one projection share the same name.
+    const String & getAnalysisPartName() const;
+
     size_t getMarksCount() const;
     size_t getRowsCount() const;
 };

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <optional>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
@@ -1923,6 +1924,55 @@ size_t MergeTreeDataSelectExecutor::minMarksForConcurrentRead(
     return std::max(marks, min_marks);
 }
 
+BoolMask MergeTreeDataSelectExecutor::checkOffsetConditionsInRange(
+    const RangesInDataPart & part_with_ranges,
+    const MarkRange & range,
+    const KeyCondition * part_offset_condition,
+    const KeyCondition * total_offset_condition,
+    BoolMask initial_mask)
+{
+    const auto & part = part_with_ranges.data_part;
+
+    auto begin = part->index_granularity->getMarkStartingRow(range.begin);
+    auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
+    if (begin > end)
+    {
+        /// Empty mark (final mark)
+        return {false, true};
+    }
+
+    /// For _part_offset and _part virtual columns
+    static const DataTypes part_offset_types
+        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
+
+    std::array<FieldRef, 2> left;
+    std::array<FieldRef, 2> right;
+
+    BoolMask result(true, false);
+
+    if (part_offset_condition)
+    {
+        left[0] = begin;
+        right[0] = end;
+
+        /// The user-visible _part of a projection read resolves to the parent part name.
+        left[1] = part_with_ranges.getAnalysisPartName();
+        right[1] = left[1];
+
+        result = result & part_offset_condition->checkInRange(2, left.data(), right.data(), part_offset_types, initial_mask);
+    }
+
+    if (total_offset_condition)
+    {
+        left[0] = begin + part_with_ranges.part_starting_offset_in_query;
+        right[0] = end + part_with_ranges.part_starting_offset_in_query;
+
+        result = result & total_offset_condition->checkInRange(1, left.data(), right.data(), part_offset_types, initial_mask);
+    }
+
+    return result;
+}
+
 /// Calculates a set of mark ranges, that could possibly contain keys, required by condition.
 /// In other words, it removes subranges from whole range, that definitely could not contain required keys.
 /// If @exact_ranges is not null, fill it with ranges containing marks of fully matched records.
@@ -1964,7 +2014,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const KeyOrder & key_order = key_condition.getKeyOrder();
     chassert(key_order.matchesPrefix(metadata_snapshot->getSortingKey().reverse_flags, primary_key.column_names.size()));
 
-    const auto index = part->getIndex();
+    /// The offset conditions are pure arithmetic over the granularity, they need no index.
+    const IMergeTreeDataPart::IndexPtr index = key_condition_useful ? part->getIndex() : nullptr;
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 
@@ -1980,13 +2031,13 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// index cannot distinguish may still contain rows the filter rejects. The exact-range invariant below
     /// therefore only holds when the index resolves the whole used prefix.
     /// Only consulted by the debug-only consistency check on the exact ranges.
-    [[maybe_unused]] const bool used_key_prefix_loaded_in_memory = used_key_prefix_size <= index->size();
+    [[maybe_unused]] const bool used_key_prefix_loaded_in_memory = !key_condition_useful || used_key_prefix_size <= index->size();
 
     /// Do not touch the part's minmax index unless some key column the filter uses has a partition-minmax
     /// bound to consume: `getMinMaxIndex` may lazy-load `minmax_*.idx` from disk, and a bound at a key
     /// position the filter never references cannot affect the analysis. The minmax index may also be
     /// absent or uninitialized (e.g. for projection parts); such a part has no usable bounds either.
-    const bool partition_bound_usable = pk_to_minmax_slot
+    const bool partition_bound_usable = key_condition_useful && pk_to_minmax_slot
         && std::any_of(pk_to_minmax_slot->begin(),
                        pk_to_minmax_slot->begin() + std::min(pk_to_minmax_slot->size(), used_key_prefix_size),
                        [](const auto & slot) { return slot.has_value(); });
@@ -2024,7 +2075,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     DataTypes sparse_key_types;
     std::vector<UInt8> equal_boundaries_mask;
 
-    if (use_sparse_pk_representation)
+    if (key_condition_useful && use_sparse_pk_representation)
     {
         /// If earlier columns have high cardinality, then later columns may not be loaded
         const size_t num_index_columns_loaded = index->size();
@@ -2100,7 +2151,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
         equal_boundaries_mask.resize(num_used_prefix_key_columns_loaded_in_memory);
     }
-    else
+    else if (key_condition_useful)
     {
         num_analyzed_key_columns = key_condition.getNumKeyColumns();
         if (num_analyzed_key_columns > 0)
@@ -2170,12 +2221,6 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 index_bounds[i] = hyperrectangle[*slot];
         }
     }
-
-    /// For _part_offset and _part virtual columns
-    DataTypes part_offset_types
-        = {std::make_shared<DataTypeUInt64>(), std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>())};
-    std::vector<FieldRef> part_offset_left(2);
-    std::vector<FieldRef> part_offset_right(2);
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
@@ -2284,52 +2329,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
-        auto check_part_offset_condition = [&]()
-        {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
-            if (begin > end)
-            {
-                /// Empty mark (final mark)
-                return BoolMask(false, true);
-            }
-
-            part_offset_left[0] = begin;
-            part_offset_right[0] = end;
-
-            part_offset_left[1] = part->name;
-            part_offset_right[1] = part->name;
-
-            return part_offset_condition->checkInRange(
-                2, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-        };
-
-        auto check_total_offset_condition = [&]()
-        {
-            auto begin = part->index_granularity->getMarkStartingRow(range.begin);
-            auto end = part->index_granularity->getMarkStartingRow(range.end) - 1;
-            if (begin > end)
-            {
-                /// Empty mark (final mark)
-                return BoolMask(false, true);
-            }
-
-            part_offset_left[0] = begin + part_with_ranges.part_starting_offset_in_query;
-            part_offset_right[0] = end + part_with_ranges.part_starting_offset_in_query;
-            return total_offset_condition->checkInRange(
-                1, part_offset_left.data(), part_offset_right.data(), part_offset_types, initial_mask);
-        };
-
         BoolMask result(true, false);
 
         if (key_condition_useful)
             result = result & check_key_condition();
 
-        if (part_offset_condition_useful)
-            result = result & check_part_offset_condition();
-
-        if (total_offset_condition_useful)
-            result = result & check_total_offset_condition();
+        if (part_offset_condition_useful || total_offset_condition_useful)
+        {
+            result = result & checkOffsetConditionsInRange(
+                part_with_ranges,
+                range,
+                part_offset_condition_useful ? part_offset_condition : nullptr,
+                total_offset_condition_useful ? total_offset_condition : nullptr,
+                initial_mask);
+        }
 
         return result;
     };

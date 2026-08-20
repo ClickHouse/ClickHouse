@@ -96,6 +96,15 @@ public:
         const Settings & settings,
         LoggerPtr log);
 
+    /// Whether the conditions over part offsets can be true / false for the rows of the mark range.
+    /// Pure arithmetic over the index granularity and the query-wide part numbering.
+    static BoolMask checkOffsetConditionsInRange(
+        const RangesInDataPart & part_with_ranges,
+        const MarkRange & range,
+        const KeyCondition * part_offset_condition,
+        const KeyCondition * total_offset_condition,
+        BoolMask initial_mask = {});
+
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,

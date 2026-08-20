@@ -141,6 +141,12 @@ RangesInDataPartDescription RangesInDataPart::getDescription() const
     };
 }
 
+const String & RangesInDataPart::getAnalysisPartName() const
+{
+    chassert(!data_part->isProjectionPart() || parent_part);
+    return data_part->isProjectionPart() ? parent_part->name : data_part->name;
+}
+
 size_t RangesInDataPart::getMarksCount() const
 {
     return ranges.getNumberOfMarks();
