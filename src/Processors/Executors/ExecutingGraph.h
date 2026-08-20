@@ -140,6 +140,7 @@ public:
     explicit ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_);
 
     const Processors & getProcessors() const { return *processors; }
+    String dump() const;
 
     /// Traverse graph the first time to update all the childless nodes.
     void initializeExecution(Queue & queue, Queue & async_queue);

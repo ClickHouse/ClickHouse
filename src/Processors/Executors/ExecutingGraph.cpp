@@ -286,6 +286,42 @@ ExecutingGraph::UpdatePipelineResult ExecutingGraph::updatePipeline(boost::conta
     return result;
 }
 
+String ExecutingGraph::dump() const
+{
+    for (const auto & node : nodes)
+    {
+        {
+            WriteBufferFromOwnString buffer;
+            buffer << "(" << node.num_executed_jobs << " jobs";
+
+#ifndef NDEBUG
+            buffer << ", execution time: " << static_cast<double>(node.execution_time_ns) / 1e9 << " sec.";
+            buffer << ", preparation time: " << static_cast<double>(node.preparation_time_ns) / 1e9 << " sec.";
+#endif
+
+            buffer << ")";
+            node.processor()->setDescription(buffer.str());
+        }
+    }
+
+    std::vector<std::optional<IProcessor::Status>> statuses;
+    std::vector<IProcessor *> proc_list;
+    statuses.reserve(nodes.size());
+    proc_list.reserve(nodes.size());
+
+    for (const auto & node : nodes)
+    {
+        proc_list.emplace_back(node.processor());
+        statuses.emplace_back(node.last_processor_status);
+    }
+
+    WriteBufferFromOwnString out;
+    printPipeline(getProcessors(), statuses, out);
+    out.finalize();
+
+    return out.str();
+}
+
 void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
 {
     std::stack<Node *> stack;
