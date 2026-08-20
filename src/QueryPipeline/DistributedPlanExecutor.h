@@ -185,9 +185,11 @@ struct DistributedQueryTaskDescription
 /// Executes a task locally. `distributed_query_id` is the node-independent identifier of the whole
 /// distributed query (the same value on every node); it keys the in-memory and streaming exchanges,
 /// while `object_storage_path` locates this node's persisted temporary files.
+/// `execute_locally` is true only when the whole query runs in-process on the initiator, false on a
+/// worker. It selects the exchange transport, so the caller must pass it (see `createExchangeLookup`).
 void doExecuteTask(const DistributedQueryTaskDescription & task, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
-    std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
+    bool execute_locally, std::function<bool()> is_cancelled = nullptr, ProgressCallback progress_callback = nullptr);
 
 /// Returns object storage and path for temporary files
 std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const String & unique_temp_file_path, ContextPtr context);
@@ -204,12 +206,16 @@ using ExchangeLookupPtr = std::shared_ptr<IExchangeLookup>;
 
 struct ExchangeDescription;
 
+/// `execute_locally` must be the value the plan was built with, not a fresh read of
+/// `distributed_plan_execute_locally`: an ambient read can disagree with the plan and pick a
+/// transport the plan holds no hosts for.
 ExchangeLookupPtr createExchangeLookup(
     const String & query_id,
     const ExchangeDescriptions & exchanges_,
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
-    ContextPtr context);
+    ContextPtr context,
+    bool execute_locally);
 
 class IProcessor;
 
