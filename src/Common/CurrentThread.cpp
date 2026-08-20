@@ -1,5 +1,6 @@
 #include <memory>
 
+#include <Common/CancellationChecksBlockerInThread.h>
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadStatus.h>
@@ -117,6 +118,9 @@ ContextPtr CurrentThread::tryGetQueryContext()
 void CurrentThread::checkIfNotCancelled()
 {
     if (unlikely(!current_thread))
+        return;
+
+    if (CancellationChecksBlockerInThread::isBlocked())
         return;
 
     current_thread->throwIfQueryCanceled();
