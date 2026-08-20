@@ -2068,9 +2068,7 @@ TEST_P(CoordinationTest, CreateSnapshotKeepsPreviousMetadataAndAllowsRetryAfterF
 {
     ChangelogDirTest snapshots("./snapshots");
 
-    auto settings = std::make_shared<DB::CoordinationSettings>();
-    auto ctx = std::make_shared<DB::KeeperContext>(true, settings);
-    ctx->setLocalLogsPreprocessed();
+    auto ctx = this->makeKeeperContext();
     auto throwing_disk = std::make_shared<ThrowingSnapshotDisk>(
         "SnapshotDisk", "./snapshots", "snapshot_2_", SnapshotDiskFailureMode::OpenFileAfterCreate);
     ctx->setSnapshotDisk(throwing_disk);
