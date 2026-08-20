@@ -177,6 +177,98 @@ void removeAliasesRecursive(QueryTreeNodePtr & node)
         removeAliasesRecursive(child);
 }
 
+/// Hides lambda argument names in the scopes they belong to and restores them on destruction.
+struct HiddenExpressionArguments
+{
+    HiddenExpressionArguments() = default;
+    HiddenExpressionArguments(const HiddenExpressionArguments &) = delete;
+    HiddenExpressionArguments & operator=(const HiddenExpressionArguments &) = delete;
+
+    void hide(IdentifierResolveScope & scope, const std::string & argument_name)
+    {
+        /// A name already hidden by an enclosing alias resolution must be restored by that
+        /// resolution, not by this one.
+        if (scope.hidden_expression_arguments.insert(argument_name).second)
+            hidden_arguments.emplace_back(&scope, argument_name);
+    }
+
+    ~HiddenExpressionArguments()
+    {
+        for (const auto & [scope, argument_name] : hidden_arguments)
+            scope->hidden_expression_arguments.erase(argument_name);
+    }
+
+    std::vector<std::pair<IdentifierResolveScope *, std::string>> hidden_arguments;
+};
+
+/// Returns true if `name` can be resolved in `scope` itself, without looking into parent scopes.
+bool canBindNameInScope(const std::string & name, IdentifierResolveScope & scope)
+{
+    IdentifierLookup lookup{Identifier{name}, IdentifierLookupContext::EXPRESSION};
+
+    return scope.expression_argument_name_to_node.contains(name)
+        || IdentifierResolver::tryBindIdentifierToAliases(lookup, scope)
+        || IdentifierResolver::tryBindIdentifierToTableExpressions(lookup, {} /*table_expression_node_to_ignore*/, scope)
+        || IdentifierResolver::tryBindIdentifierToArrayJoinExpressions(lookup, scope)
+        || IdentifierResolver::tryBindIdentifierToJoinUsingColumn(lookup, scope);
+}
+
+/** An expression bound to an alias is written in the scope that owns the alias, so it cannot reference
+  * arguments of lambdas nested inside that scope. It is nevertheless resolved in the scope where the
+  * alias is referenced, which is how an alias of an outer query picks up the table expressions of the
+  * inner one. When the alias is referenced from a lambda body, that makes the lambda arguments visible
+  * to an expression written outside of the lambda, and an argument captures an identifier of it:
+  *
+  * SELECT number + 1 AS n, arrayMap(number -> number + n, [1, 2]) FROM numbers(2);
+  *
+  * Here `number` inside `n` must be the table column, not the argument of the lambda that uses `n`.
+  *
+  * Hide the arguments of every lambda between the referencing scope and the scope owning the alias,
+  * but only those that can be resolved outside of the lambdas anyway. An argument that shadows nothing
+  * stays visible, because naming the lambda argument after a name that the aliased expression uses is
+  * the only way to write a predicate outside of the lambda it belongs to:
+  *
+  * WITH t LIKE '%_1%' AS issue SELECT arrayFilter((t, t2) -> NOT issue, col_1, col_2) FROM test;
+  */
+void hideLambdaArgumentsShadowingAliasExpression(
+    IdentifierResolveScope & referencing_scope,
+    IdentifierResolveScope & alias_scope,
+    HiddenExpressionArguments & hidden_arguments)
+{
+    /** An alias owned by a lambda scope is left alone: resolving it outside of a nested lambda with the
+      * same argument name would make the inner lambda capture the argument of the outer one, and the
+      * planner cannot tell the two apart, because both are named after the argument.
+      */
+    if (alias_scope.scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+        return;
+
+    std::vector<IdentifierResolveScope *> lambda_scopes;
+    for (auto * current_scope = &referencing_scope;
+         current_scope != nullptr && current_scope != &alias_scope;
+         current_scope = current_scope->parent_scope)
+    {
+        if (current_scope->scope_node->getNodeType() == QueryTreeNodeType::LAMBDA)
+            lambda_scopes.push_back(current_scope);
+    }
+
+    if (lambda_scopes.empty())
+        return;
+
+    /// The scope the aliased expression sees once all the lambdas in between are stepped over.
+    auto * outer_scope = lambda_scopes.back()->parent_scope;
+    if (!outer_scope)
+        return;
+
+    for (auto * lambda_scope : lambda_scopes)
+    {
+        for (const auto & [argument_name, _] : lambda_scope->expression_argument_name_to_node)
+        {
+            if (canBindNameInScope(argument_name, *outer_scope))
+                hidden_arguments.hide(*lambda_scope, argument_name);
+        }
+    }
+}
+
 }
 
 QueryAnalyzer::QueryAnalyzer(bool only_analyze_)
@@ -1185,9 +1277,11 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         return {};
 
     auto * scope_to_resolve_alias_expression = &scope;
+    HiddenExpressionArguments hidden_lambda_arguments;
     if (identifier_resolve_context.scope_to_resolve_alias_expression)
     {
         scope_to_resolve_alias_expression = identifier_resolve_context.scope_to_resolve_alias_expression;
+        hideLambdaArgumentsShadowingAliasExpression(*scope_to_resolve_alias_expression, scope, hidden_lambda_arguments);
     }
 
     QueryTreeNodePtr alias_node = *it;
