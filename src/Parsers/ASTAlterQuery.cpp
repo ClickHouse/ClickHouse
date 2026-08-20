@@ -425,6 +425,14 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "MATERIALIZE STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `IF EXISTS` and `IN PARTITION` are parsed only in the column-list branch, so the `ALL` form
+            /// (null declaration) never carries either, and `formatImpl` has nowhere to print them.
+            if (if_exists && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'if_exists' during AST JSON deserialization");
+            if (partition && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "MATERIALIZE STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::DROP_STATISTICS:
             /// `CLEAR STATISTICS ALL` (`clear_statistics`) is parser-produced with a null declaration; plain
@@ -435,6 +443,15 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (statistics_decl && statistics_decl->as<ASTStatisticsDeclaration &>().types)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "DROP/CLEAR STATISTICS must not carry a TYPE list ('statistics_decl' 'types') during AST JSON deserialization");
+            /// `IF EXISTS` and `IN PARTITION` are parsed only where a column-list declaration is also
+            /// required, so the `CLEAR STATISTICS ALL` form (null declaration) never carries either:
+            /// `IF EXISTS ALL` reparses as a column named `ALL`, `ALL IN PARTITION p` not at all.
+            if (if_exists && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'if_exists' during AST JSON deserialization");
+            if (partition && !statistics_decl)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
@@ -721,7 +738,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MATERIALIZE_INDEX)
     {
-        ostr << "MATERIALIZE INDEX ";
+        ostr << "MATERIALIZE INDEX " << (if_exists ? "IF EXISTS " : "");
         index->format(ostr, settings, state, frame);
         if (partition)
         {
@@ -762,6 +779,9 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "MATERIALIZE STATISTICS ";
         if (statistics_decl)
         {
+            /// Only the column-list form accepts `IF EXISTS`; on the `ALL` form the clause would
+            /// reparse as a column named `ALL`.
+            ostr << (if_exists ? "IF EXISTS " : "");
             statistics_decl->format(ostr, settings, state, frame);
             if (partition)
             {
@@ -827,7 +847,7 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     }
     else if (type == ASTAlterCommand::MATERIALIZE_PROJECTION)
     {
-        ostr << "MATERIALIZE PROJECTION ";
+        ostr << "MATERIALIZE PROJECTION " << (if_exists ? "IF EXISTS " : "");
         projection->format(ostr, settings, state, frame);
         if (partition)
         {
@@ -1193,9 +1213,11 @@ namespace
 
 /// True only for a pure comment-only `MODIFY COLUMN c COMMENT 'x'`, mirroring the
 /// resolved `AlterCommand::isCommentAlter` (Storages/AlterCommands.cpp) so DDL
-/// routing and the storage fast path agree. Placement (FIRST/AFTER) and
-/// per-column SETTINGS are excluded: they alter the replicated /columns and must
-/// take the full replicated path.
+/// routing and the storage fast path agree. Placement (FIRST/AFTER), per-column
+/// SETTINGS and STATISTICS are excluded: they alter the replicated /columns and
+/// must take the full replicated path. COLLATE and PRIMARY KEY are excluded too:
+/// they parse but are rejected by `AlterCommand::parse`, and the rejection must not
+/// happen after the query has already been routed as a comment-only alter.
 bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
 {
     if (command.type != ASTAlterCommand::MODIFY_COLUMN)
@@ -1211,6 +1233,9 @@ bool isCommentOnlyModifyColumn(const ASTAlterCommand & command)
         && col_decl->getDefaultExpression() == nullptr
         && col_decl->getTTL() == nullptr
         && col_decl->getSettings() == nullptr
+        && col_decl->getStatisticsDesc() == nullptr
+        && col_decl->getCollation() == nullptr
+        && !col_decl->primary_key_specifier
         && command.settings_changes == nullptr
         && command.settings_resets == nullptr
         && command.column == nullptr
