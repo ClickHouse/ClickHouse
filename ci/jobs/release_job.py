@@ -215,7 +215,9 @@ def main():
     # `.github/workflows` differ from master are not rejected by GitHub's
     # push-time workflow-scope check (which the App token, lacking that scope,
     # cannot pass on a repo this large).
-    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
+    # A dry run pushes nothing and runs on an untrusted PR runner with no SSM access, so skip the robot PAT; gh reads and `git push --dry-run` use the ambient `gh auth token` (Git.push falls back to it when GH_TOKEN is unset).
+    if not args.dry_run:
+        os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
 
     results = []
     ok = True
