@@ -55,8 +55,8 @@ SELECT (SELECT sum(cityHash64(elem, payload)) FROM (SELECT elem, payload FROM t_
 SELECT countIf(explain LIKE '%Element filter column%') > 0 FROM (EXPLAIN actions = 1 SELECT elem FROM t_fuse ARRAY JOIN arr AS elem WHERE elem = 'e2' SETTINGS query_plan_fuse_filter_into_array_join = 1);
 SELECT countIf(explain LIKE '%Element filter column%') FROM (EXPLAIN actions = 1 SELECT elem FROM t_fuse ARRAY JOIN arr AS elem WHERE elem = 'e2' SETTINGS query_plan_fuse_filter_into_array_join = 0);
 
--- Regression: the WHERE expression is also projected and its non-element part folds to a constant after
--- fusion; the residual FilterStep must keep a parent-compatible (materialized) header (here feeding a UNION).
+-- Regression: the WHERE expression is projected and its non-element part folds to a constant; a sibling
+-- conjunct stays above so the pass must not fuse (feeding a UNION). Result must match unfused.
 DROP TABLE IF EXISTS t_fuse5;
 CREATE TABLE t_fuse5 (id UInt64, arr Array(Int64)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_fuse5 SELECT number, [number, number + 1, 0] FROM numbers(20);
@@ -64,8 +64,18 @@ SELECT
     (SELECT groupArray((c, w)) FROM (SELECT elem AS c, (elem != 0 AND NULL) AS w FROM t_fuse5 ARRAY JOIN arr AS elem WHERE (elem != 0 AND NULL) UNION ALL SELECT id AS c, (id > 100) AS w FROM t_fuse5 ORDER BY c, w) SETTINGS query_plan_fuse_filter_into_array_join = 1)
   = (SELECT groupArray((c, w)) FROM (SELECT elem AS c, (elem != 0 AND NULL) AS w FROM t_fuse5 ARRAY JOIN arr AS elem WHERE (elem != 0 AND NULL) UNION ALL SELECT id AS c, (id > 100) AS w FROM t_fuse5 ORDER BY c, w) SETTINGS query_plan_fuse_filter_into_array_join = 0);
 
+-- Regression: a throwing element predicate ANDed with a non-fusible sibling. Fusing intDiv(1, elem) out
+-- would evaluate it on elem = 0 where the sibling short-circuits it away, so the pass must not fuse.
+DROP TABLE IF EXISTS t_fuse6;
+CREATE TABLE t_fuse6 (arr Array(Int64), payload String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_fuse6 VALUES ([0, 1, 2], 'p');
+SELECT
+    (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE (elem != 0 OR payload = 'zzz') AND (intDiv(1, elem) > 0) ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 1)
+  = (SELECT groupArray(elem) FROM (SELECT elem FROM t_fuse6 ARRAY JOIN arr AS elem WHERE (elem != 0 OR payload = 'zzz') AND (intDiv(1, elem) > 0) ORDER BY elem) SETTINGS query_plan_fuse_filter_into_array_join = 0);
+
 DROP TABLE t_fuse;
 DROP TABLE t_fuse2;
 DROP TABLE t_fuse3;
 DROP TABLE t_fuse4;
 DROP TABLE t_fuse5;
+DROP TABLE t_fuse6;

@@ -3,7 +3,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Columns/IColumn.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -48,10 +47,12 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     if (all_inputs.empty())
         return 0;
 
-    const bool was_filter_const_before = !filter->removesFilterColumn()
-        && filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column->isConst();
-
-    auto split = expression.splitActionsForFilterPushDown(
+    /// Only fuse when the WHOLE filter moves into the ARRAY JOIN. If any conjunct must stay above, lifting
+    /// an element conjunct out of the AND changes short-circuit evaluation - a throwing element predicate
+    /// (intDiv(1, elem)) could run where a sibling above would have skipped it, and ARRAY JOIN does not
+    /// support short-circuit. Split on a clone so bailing out leaves the real filter untouched.
+    auto residual = expression.clone();
+    auto split = residual.splitActionsForFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
         available_inputs,
@@ -60,34 +61,20 @@ size_t tryFuseFilterIntoArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Node
     if (!split)
         return 0;
 
+    /// Fully fused iff nothing is left to filter above: the residual filter column was removed, or it
+    /// collapsed to a constant. Otherwise a real sibling conjunct remains and we must not fuse.
+    const bool fully_fused = !residual.tryFindInOutputs(filter->getFilterColumnName()) || split->is_filter_const_after_push_down;
+    if (!fully_fused)
+        return 0;
+
     String element_filter_column = split->dag.getOutputs()[split->filter_pos]->result_name;
     array_join->setElementFilter(std::move(split->dag), element_filter_column, split->remove_filter);
 
-    /// ARRAY JOIN output columns are unchanged - the fused filter only drops rows
+    /// The whole filter is now the element filter; replace it with its residual (an all-columns pass-through).
     const auto & array_join_output = child_node->step->getOutputHeader();
-    const auto * filter_node = expression.tryFindInOutputs(filter->getFilterColumnName());
-    if (!filter_node || split->is_filter_const_after_push_down)
-    {
-        /// Every conjunct was fused - the filter above is now a no-op
-        auto expression_step = std::make_unique<ExpressionStep>(array_join_output, std::move(expression));
-        expression_step->setStepDescription(*filter);
-        parent = std::move(expression_step);
-    }
-    else
-    {
-        /// Removing the element conjuncts can leave the residual filter column constant (e.g. it was
-        /// ANDed with a NULL literal). Mirror filterPushDown and materialize it, so parent steps don't
-        /// see a stale non-const header.
-        if (!was_filter_const_before)
-        {
-            auto header_after = expression.updateHeader(*array_join_output);
-            const auto * filter_column_after = header_after.findByName(filter->getFilterColumnName());
-            if (filter_column_after && filter_column_after->column && filter_column_after->column->isConst())
-                expression.addOrReplaceInOutputs(
-                    expression.materializeNode(expression.findInOutputs(filter->getFilterColumnName()), false));
-        }
-        filter->updateInputHeader(array_join_output);
-    }
+    auto expression_step = std::make_unique<ExpressionStep>(array_join_output, std::move(residual));
+    expression_step->setStepDescription(*filter);
+    parent = std::move(expression_step);
 
     return 2;
 }
