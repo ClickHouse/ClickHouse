@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeString.h>
 #include <Parsers/StatementFactory.h>
 
+#include <boost/algorithm/string/trim.hpp>
+
 namespace DB
 {
 
@@ -33,7 +35,7 @@ void StorageSystemStatements::fillData(MutableColumns & res_columns, ContextPtr,
         size_t i = 0;
         res_columns[i++]->insert(name);
         res_columns[i++]->insert(documentation.syntaxAsString());
-        res_columns[i++]->insert(documentation.description);
+        res_columns[i++]->insert(boost::algorithm::trim_copy(documentation.description));
         res_columns[i++]->insert(documentation.parent);
 
         Array related;
