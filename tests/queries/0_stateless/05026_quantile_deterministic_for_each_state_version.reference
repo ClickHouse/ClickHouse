@@ -1,5 +1,5 @@
 AggregateFunction(1, quantileDeterministicForEach, Array(UInt64), Array(UInt64))
 [2]
-AggregateFunction(quantileDeterministicMerge, AggregateFunction(quantileDeterministic, UInt64, UInt64))
+AggregateFunction(1, quantileDeterministicMerge, AggregateFunction(quantileDeterministic, UInt64, UInt64))
 AggregateFunction(1, quantileDeterministic, UInt64, UInt64)
 AggregateFunction(1, quantileDeterministicMergeOrDefault, AggregateFunction(1, quantileDeterministic, UInt64, UInt64))
