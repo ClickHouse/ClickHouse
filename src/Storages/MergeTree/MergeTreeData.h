@@ -893,7 +893,8 @@ public:
     /// 'max_table_size_bytes_compressed', 'max_table_size_bytes_uncompressed' settings, throw an exception.
     /// The limit on the number of rows is checked against active data parts only, while the limits on the
     /// number of bytes are checked across all active and inactive data parts, because the purpose of these
-    /// settings is to limit disk usage.
+    /// settings is to limit disk usage. Parts that are already accepted into the working set by a concurrent
+    /// operation (in the 'PreActive' state) are counted as well.
     void throwIfTableSizeLimitsExceeded() const;
 
     /// Renames temporary part to a permanent part and adds it to the parts set.
@@ -2145,7 +2146,13 @@ private:
         bool check_table_size_limits);
 
     /// The same as the public throwIfTableSizeLimitsExceeded, but for the callers that already hold a lock on the parts set.
-    void throwIfTableSizeLimitsExceeded(const DataPartsAnyLock & parts_lock) const;
+    /// If 'added_part' is set, the limits are checked against the size of the table after this part is committed
+    /// and the 'covered_parts' are removed from the active set. In this case an operation that does not increase
+    /// the size of the table is always allowed, so that a table that has crossed a limit can get back under it.
+    void throwIfTableSizeLimitsExceeded(
+        const DataPartsAnyLock & parts_lock,
+        const IMergeTreeDataPart * added_part,
+        const DataPartsVector & covered_parts) const;
 
     /// RAII Wrapper for atomic work with currently moving parts
     /// Acquire them in constructor and remove them in destructor
