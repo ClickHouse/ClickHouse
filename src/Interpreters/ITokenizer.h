@@ -5,6 +5,7 @@
 #include <Common/assert_cast.h>
 #include <Common/StringUtils.h>
 #include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Functions/sparseGramsImpl.h>
 #include <Interpreters/BloomFilter.h>
@@ -357,11 +358,14 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
 
 /// Text index tokenizer for a `Map(String, String)` column. One token per `(key, value)` pair:
 ///
-///     token = varint((key.size() << 1) | is_rest) ‖ key ‖ value
+///     token = key ‖ value ‖ reversed-varint((key.size() << 1) | is_rest)
 ///
-/// The length prefix keeps the key/value boundary unambiguous (both may hold arbitrary bytes) and keeps
-/// the tokens of one key contiguous in the sorted dictionary. `is_rest` is 1 for a key's later duplicates
-/// in a row; `m['key']` is the first occurrence, so it matches `is_rest = 0`.
+/// Tokens sort by key, then value, so a key prefix selects a dictionary range. The range is a superset:
+/// it also admits tokens of a shorter key whose value continues the prefix, so a scan must decode and
+/// filter. The trailer carries the key length, which makes the key/value split recoverable and lets both
+/// hold arbitrary bytes; it is written reversed so a decoder scans backward from the token end.
+/// `is_rest` is 1 for a key's later duplicates in a row; `m['key']` is the first occurrence, so it
+/// matches `is_rest = 0`.
 /// The aggregator encodes the pairs, so the string-tokenization methods below all throw.
 struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
 {
@@ -371,8 +375,10 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
-    /// `out` is cleared first; lets a hot loop reuse one buffer.
+    /// `out` is cleared first; lets a hot loop reuse one buffer. The PaddedPODArray overload is for
+    /// callers that feed the token to StringHashTable, which reads past both ends.
     static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
+    static void encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out);
     static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
 
     bool nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const override;

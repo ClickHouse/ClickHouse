@@ -8,6 +8,7 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/PODArray.h>
 #include <IO/VarInt.h>
 
 #include <limits>
@@ -345,27 +346,52 @@ void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTra
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
 
-void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out)
+namespace
+{
+
+void appendToToken(String & out, std::string_view bytes) { out.append(bytes); }
+void appendToToken(PaddedPODArray<UInt8> & out, std::string_view bytes)
+{
+    const auto * data = reinterpret_cast<const UInt8 *>(bytes.data());
+    out.insert(data, data + bytes.size());
+}
+
+void appendToToken(String & out, UInt8 byte) { out.push_back(static_cast<char>(byte)); }
+void appendToToken(PaddedPODArray<UInt8> & out, UInt8 byte) { out.push_back(byte); }
+
+template <typename Out>
+void encodeTokenImpl(std::string_view key, std::string_view value, bool is_rest, Out & out)
 {
     const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_rest ? 1ULL : 0ULL);
 
     out.clear();
-    out.reserve(getLengthOfVarUInt(packed) + key.size() + value.size());
+    out.reserve(key.size() + value.size() + getLengthOfVarUInt(packed));
+    appendToToken(out, key);
+    appendToToken(out, value);
 
-    /// Keys under 64 bytes pack into one varint byte; skip the writeVarUInt buffer.
+    /// Keys under 64 bytes pack into one varint byte, which is its own reverse.
     if (packed < 0x80)
     {
-        out.push_back(static_cast<char>(packed));
-    }
-    else
-    {
-        char buf[10];
-        const size_t num_bytes = writeVarUInt(packed, buf) - buf;
-        out.append(buf, num_bytes);
+        appendToToken(out, static_cast<UInt8>(packed));
+        return;
     }
 
-    out.append(key);
-    out.append(value);
+    char buf[10];
+    const size_t num_bytes = writeVarUInt(packed, buf) - buf;
+    for (size_t i = num_bytes; i-- > 0;)
+        appendToToken(out, static_cast<UInt8>(buf[i]));
+}
+
+}
+
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out)
+{
+    encodeTokenImpl(key, value, is_rest, out);
+}
+
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest, PaddedPODArray<UInt8> & out)
+{
+    encodeTokenImpl(key, value, is_rest, out);
 }
 
 String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_rest)

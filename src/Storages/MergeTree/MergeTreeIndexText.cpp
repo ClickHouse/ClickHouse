@@ -1843,31 +1843,26 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     const auto & keys = tuple.getColumn(0);
     const auto & values = tuple.getColumn(1);
 
-    /// addToken hashes through StringHashTable, which reads 8 bytes at a time and so requires padded
-    /// memory: ColumnString is a PaddedPODArray, std::string is not.
-    auto tokens_column = ColumnString::create();
-    String token_buf;
+    /// addToken hashes through StringHashTable, which reads past both ends of the key, so the scratch
+    /// buffer must be padded: PaddedPODArray is, std::string is not.
+    PaddedPODArray<UInt8> token;
     /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
     absl::flat_hash_set<std::string_view> keys_in_row;
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
     {
-        tokens_column->popBack(tokens_column->size());
         keys_in_row.clear();
 
+        /// One position per map entry, in stored order, as the Array path does.
+        UInt32 token_position = 0;
         for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
             const bool is_rest = !keys_in_row.insert(key).second;
 
-            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token_buf);
-            tokens_column->insertData(token_buf.data(), token_buf.size());
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
+            granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++);
         }
-
-        /// One position per map entry, in stored order, as the Array path does.
-        UInt32 token_position = 0;
-        for (size_t j = 0; j < tokens_column->size(); ++j)
-            granule_builder.addToken(tokens_column->getDataAt(j), token_position++);
 
         granule_builder.incrementCurrentRow();
     }
