@@ -456,7 +456,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 導入バージョン: v25.10.0
 
-[`hasAnyTokens`](#hasAnyTokens) と同様ですが、`needle` 文字列またはArrayに含まれるすべてのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
+[`hasAnyTokens`](#hasAnyTokens) と同様ですが、`needle` 文字列または配列内のすべてのトークンが `input` 文字列と一致する場合は 1 を、それ以外の場合は 0 を返します。`input` が列の場合は、この条件を満たすすべての行を返します。
 
 <Note>
   カラム `input` には、最適なパフォーマンスを得るために [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
@@ -485,24 +485,24 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **構文**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **別名**: `hasAllToken`
 
 **引数**
 
-* `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array)
+* `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Nullable(String)`](/ja/reference/data-types/nullable) または [`Nullable(FixedString)`](/ja/reference/data-types/nullable) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array) または [`Array(Nullable(String))`](/ja/reference/data-types/array) または [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
 * `needles` — 検索するトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
 * `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-すべてのneedleが一致する場合は1、それ以外の場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
+すべてのneedleが一致する場合は1を返します。そうでない場合は0を返します。[`UInt8`](/ja/reference/data-types/int-uint)
 
 **例**
 
-**文字列のneedleを使った基本的な使い方**
+**文字列のニードルを使った基本的な使い方**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -524,7 +524,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Array内で検索するneedleをAS-IS (トークン化なし) で指定する**
+**配列内でトークン化せずそのまま一致を検索するneedleを指定する**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **構文**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **別名**: `hasAnyToken`
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**ArrayでAS-IS (トークン化なし) で検索するneedleを指定する**
+**ArrayでAS-IS (トークン化なし) として検索するneedleを指定する**
 
 ```sql title=Query
 CREATE TABLE doc (

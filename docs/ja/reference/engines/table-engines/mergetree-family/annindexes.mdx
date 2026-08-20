@@ -672,7 +672,7 @@ LIMIT 3;
 
 <ExperimentalBadge />
 
-`Quantized` コーデックを有効にするには、まず `SET allow_experimental_codecs = 1` を設定してください。
+`Quantized` コーデックを有効にするには、まず `SET enable_quantized_codec = 1` を実行してください。
 問題が発生した場合は、[ClickHouseリポジトリ](https://github.com/clickhouse/clickhouse/issues)で issue を作成してください。
 
 <div id="quantized-codecs-introduction">
@@ -709,7 +709,7 @@ LIMIT 3;
 `Array(Float32)` (または `Array(Float64)` / `Array(BFloat16)`) カラムに `Quantized(...)` コーデックを指定します。
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

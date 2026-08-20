@@ -24,7 +24,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
@@ -38,10 +38,10 @@ Peak memory usage: 239.50 MiB.
 
 تحتوي مجموعة البيانات الكاملة لهذه الحاوية على أكثر من 320 غيغابايت من ملفات Parquet. في الأمثلة أدناه، نستهدف عمدًا مجموعات فرعية باستخدام أنماط glob.
 
-نفترض أن المستخدم يستهلك تدفقًا من هذه البيانات، على سبيل المثال من Kafka أو التخزين الكائني، وذلك للبيانات اللاحقة لهذا التاريخ. يوضَّح مخطط هذه البيانات أدناه:
+نفترض أن المستخدم يستهلك تدفقًا من هذه البيانات، على سبيل المثال من Kafka أو تخزين الكائنات، وذلك للبيانات اللاحقة لهذا التاريخ. يوضَّح مخطط هذه البيانات أدناه:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -90,7 +90,7 @@ SETTINGS describe_compact_output = 1
   ## استخدام الجداول المكررة وطرق العرض
 </div>
 
-في جميع السيناريوهات، نعتمد على مفهوم &quot;الجداول والعروض المكررة&quot;. تمثّل هذه الجداول والعروض نسخًا من تلك المستخدمة لبيانات البث المباشر، وتتيح تنفيذ عملية الملء بصورة معزولة مع توفير وسيلة سهلة للاسترداد في حال وقوع أي فشل. على سبيل المثال، لدينا جدول `pypi` الرئيسي والعرض المُجسَّد التاليان، اللذان يحسبان عدد التنزيلات لكل مشروع بايثون:
+في جميع السيناريوهات، نعتمد على مفهوم &quot;الجداول والعروض المكررة&quot;. تمثّل هذه الجداول والعروض نسخًا من تلك المستخدمة لبيانات البث المباشر، وتتيح تنفيذ عملية استكمال البيانات التاريخية بصورة معزولة مع توفير وسيلة سهلة للاسترداد في حال وقوع أي فشل. على سبيل المثال، لدينا جدول `pypi` الرئيسي والعرض المادي التاليان، اللذان يحسبان عدد التنزيلات لكل مشروع بايثون:
 
 ```sql
 CREATE TABLE pypi
@@ -127,7 +127,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -161,9 +161,9 @@ FROM pypi_downloads
 Peak memory usage: 682.38 KiB.
 ```
 
-لنفترض أننا نريد تحميل مجموعة فرعية أخرى `{101..200}`. وبينما يمكننا الإدراج مباشرةً في `pypi`، يمكننا تنفيذ عملية الملء بالبيانات التاريخية هذه بصورة معزولة عبر إنشاء جداول مكررة.
+لنفترض أننا نريد تحميل مجموعة فرعية أخرى `{101..200}`. وبينما يمكننا الإدراج مباشرةً في `pypi`، يمكننا تنفيذ عملية استكمال البيانات التاريخية هذه بصورة معزولة عبر إنشاء جداول مكررة.
 
-في حال فشل عملية الإدراج التاريخي، لن تتأثر جداولنا الرئيسية، ويمكننا ببساطة [تطبيق TRUNCATE](/ar/concepts/features/operations/delete/truncate) على الجداول المكررة وإعادة المحاولة.
+في حال فشل عملية استكمال البيانات التاريخية، لن تتأثر جداولنا الرئيسية، ويمكننا ببساطة [تطبيق TRUNCATE](/ar/concepts/features/operations/delete/truncate) على الجداول المكررة وإعادة المحاولة.
 
 لإنشاء نسخ جديدة من طرق العرض هذه، يمكننا استخدام جملة `CREATE TABLE AS` مع اللاحقة `_v2`:
 
@@ -184,7 +184,7 @@ GROUP BY project
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -221,7 +221,7 @@ Peak memory usage: 688.77 KiB.
 
 إذا واجهنا عطلًا في أي مرحلة أثناء عملية التحميل الثانية هذه، فيمكننا ببساطة [truncate](/ar/concepts/features/operations/delete/truncate) جدولَي `pypi_v2` و`pypi_downloads_v2` ثم إعادة تحميل البيانات.
 
-بعد اكتمال تحميل البيانات، يمكننا نقل البيانات من الجداول المنسوخة مؤقتًا إلى الجداول الرئيسية باستخدام عبارة [`ALTER TABLE MOVE PARTITION`](/ar/reference/statements/alter/partition#move-partition-to-table).
+بعد اكتمال تحميل البيانات، يمكننا نقل البيانات من الجداول المكررة إلى الجداول الرئيسية باستخدام عبارة [`ALTER TABLE MOVE PARTITION`](/ar/reference/statements/alter/partition#move-partition-to-table).
 
 ```sql
 ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
@@ -280,7 +280,7 @@ FROM pypi_v2
 
 ومن المهم أن تكون عملية `MOVE PARTITION` خفيفة الوزن (باستغلال الروابط الصلبة) وذرّية في الوقت نفسه، أي إنها إما أن تفشل أو تنجح من دون أي حالة وسيطة.
 
-نستفيد من هذه العملية كثيرًا في سيناريوهات التحميل الاستدراكي أدناه.
+نستفيد من هذه العملية كثيرًا في سيناريوهات استكمال البيانات التاريخية أدناه.
 
 لاحظ أن هذه العملية تتطلب من المستخدمين اختيار حجم كل عملية إدراج.
 
@@ -288,20 +288,20 @@ FROM pypi_v2
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
 --continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
-  يستخدم ClickPipes هذا النهج عند تحميل البيانات من تخزين الكائنات، إذ ينشئ تلقائيًا جداول مكررة للجدول الهدف ولعروضه المادية، ما يجنّب المستخدم الحاجة إلى تنفيذ الخطوات المذكورة أعلاه. ومع استخدام عدة خيوط عاملة، يتعامل كل منها مع مجموعات فرعية مختلفة (عبر glob patterns) وتمتلك جداولها المكررة الخاصة بها، يمكن تحميل البيانات بسرعة مع ضمانات exactly-once semantics. ويمكن للمهتمين الاطلاع على مزيد من التفاصيل [في هذه المدوّنة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+  يستخدم ClickPipes هذا النهج عند تحميل البيانات من تخزين الكائنات، إذ ينشئ تلقائيًا جداول مكررة للجدول الهدف ولعروضه المادية، ما يجنّب المستخدم الحاجة إلى تنفيذ الخطوات المذكورة أعلاه. ومع استخدام عدة خيوط عاملة، يتعامل كل منها مع مجموعات فرعية مختلفة (عبر نمط glob) وتمتلك جداولها المكررة الخاصة بها، يمكن تحميل البيانات بسرعة مع ضمانات exactly-once semantics. ويمكن للمهتمين الاطلاع على مزيد من التفاصيل [في هذه المدوّنة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
 </Note>
 
 <div id="scenario-1-backfilling-data-with-existing-data-ingestion">
-  ## السيناريو 1: استكمال البيانات التاريخية مع استمرار إدخال البيانات
+  ## السيناريو 1: استكمال البيانات التاريخية مع استمرار استيعاب البيانات
 </div>
 
 في هذا السيناريو، نفترض أن البيانات المطلوب استكمالها تاريخيًا ليست موجودة في bucket معزول، ولذلك يلزم تطبيق التصفية. تكون البيانات قيد الإدراج بالفعل، ويمكن تحديد طابع زمني أو عمود ذي قيم متزايدة باستمرار يلزم استكمال البيانات التاريخية انطلاقًا منه.
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 

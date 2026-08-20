@@ -454,9 +454,9 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   ## hasAllTokens
 </div>
 
-Добавленный в: v25.10.0
+Добавлено в: v25.10.0
 
-Аналогично [`hasAnyTokens`](#hasAnyTokens), но возвращает 1, если все токены строки или массива `needle` совпадают со строкой `input`, и 0 в противном случае. Если `input` является столбцом, возвращает все строки, удовлетворяющие этому условию.
+Аналогично [`hasAnyTokens`](#hasAnyTokens), но возвращает 1, если все токены в строке или массиве `needle` совпадают со строкой `input`, и 0 в противном случае. Если `input` — столбец, возвращаются все строки, удовлетворяющие этому условию.
 
 <Note>
   Для столбца `input` должен быть определён [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для достижения оптимальной производительности.
@@ -485,20 +485,20 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **Синтаксис**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Псевдонимы**: `hasAllToken`
 
 **Аргументы**
 
-* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array)
+* `input` — Входной столбец. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring) или [`Nullable(String)`](/ru/reference/data-types/nullable) или [`Nullable(FixedString)`](/ru/reference/data-types/nullable) или [`Array(String)`](/ru/reference/data-types/array) или [`Array(FixedString)`](/ru/reference/data-types/array) или [`Array(Nullable(String))`](/ru/reference/data-types/array) или [`Array(Nullable(FixedString))`](/ru/reference/data-types/array)
 * `needles` — Искомые токены. [`String`](/ru/reference/data-types/string) или [`Array(String)`](/ru/reference/data-types/array)
 * `tokenizer` — токенизатор, который следует использовать. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если он явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
-Возвращает 1, если все токены найдены, иначе 0. [`UInt8`](/ru/reference/data-types/int-uint)
+Возвращает 1, если все образцы совпадают. 0 в противном случае. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
@@ -715,7 +715,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **Синтаксис**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Псевдонимы**: `hasAnyToken`
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите токены в массиве как есть, без токенизации (AS-IS)**
+**Укажите искомые значения в массиве AS-IS (без токенизации)**
 
 ```sql title=Query
 CREATE TABLE doc (

@@ -149,7 +149,8 @@
                 "ko/concepts/features/configuration/server-config/workload-scheduling",
                 "ko/concepts/features/configuration/server-config/quotas",
                 "ko/concepts/features/configuration/server-config/composable-protocols",
-                "ko/concepts/features/configuration/server-config/startup-scripts"
+                "ko/concepts/features/configuration/server-config/startup-scripts",
+                "ko/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]

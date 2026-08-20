@@ -176,7 +176,7 @@ ALTER TABLE table DROP INDEX text_idx;
   如果提供了参数 `min_cutoff_length`，则只返回长度大于或等于 `min_cutoff_length` 的 n-grams。
   与 `ngrams(N)` 相比，`sparseGrams` 分词器会生成长度可变的 N-grams，因此能更灵活地表示原始文本。
   例如，`tokenizer = sparseGrams(3, 5, 4)` 会在内部从输入字符串生成 3-、4-、5-grams，但只返回 4- 和 5-grams。
-* `array` 不执行分词，也就是说，每行的值都是一个标记 (参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。
+* `array` 不执行分词，也就是说，每行的值都是一个标记 (参见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。为兼容其他系统，`keyword` 可作为 `array` 的别名使用。
 
 所有可用的分词器都列在 [system.tokenizers](/zh/reference/system-tables/tokenizers) 中。
 
@@ -1556,6 +1556,14 @@ Aggregating
 * 对包含大量标记的文本索引进行物化 (例如 100 亿个标记) 可能会消耗大量内存。文本索引的物化
   既可能直接发生 (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) ，也可能在 分片 merge 过程中间接发生。
 * 无法对包含超过 4,294,967,296 (= 2^32 = 约 42 亿) 行的 分片 进行文本索引物化。如果没有 materialized 文本索引，查询会回退为在该 分片 内进行缓慢的暴力搜索。作为最坏情况估算，假设一个 分片 只包含一个 String 类型的列，并且未修改 MergeTree 设置 `max_bytes_to_merge_at_max_space_in_pool` (默认值：150 GB) 。在这种情况下，如果该列平均每行包含的字符数少于 29.5，就会出现这种情况。在实际场景中，表通常还包含其他列，因此该阈值会比这小很多倍 (具体取决于其他列的数量、类型和大小) 。
+
+<div id="upgrade-notes">
+  ## 升级说明
+</div>
+
+文本索引的磁盘格式版本由表级设置 [`text_index_serialization_version`](/zh/reference/settings/merge-tree-settings/text-index) (默认值：`v2_with_positions`) 控制。
+该设置表示一种偏好，而非硬性约束：如果配置的版本无法表示某个索引，系统会自动选择能够表示该索引的较新版本，因此写入文本索引不会因该设置而失败。
+进行滚动升级时，请在已升级的服务器上通过 [`compatibility`](/zh/reference/settings/session-settings/compatibility#compatibility) 设置固定格式：如果该设置指定的版本早于引入相应格式的版本，`text_index_serialization_version` 会自动回退到较旧的值，较新服务器会继续写入较旧服务器仍可读取的格式。
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## 文本索引与基于布隆过滤器的索引对比

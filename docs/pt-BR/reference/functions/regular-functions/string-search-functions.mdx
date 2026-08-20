@@ -473,7 +473,7 @@ Antes de realizar a busca, a função tokeniza
   Se o índice de texto tiver uma expressão de [pós-processador](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) configurada, o pós-processador será aplicado aos tokens de needle e aos tokens de input (isto é, a ambos após a tokenização).
 
 Tokens duplicados são ignorados.
-Por exemplo, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] é considerado igual a [&#39;ClickHouse&#39;].
+Por exemplo, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] é tratado da mesma forma que [&#39;ClickHouse&#39;].
 
 <Note>
   Quando um índice de texto define um [pré-processador](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por exemplo, `lowerUTF8`), `hasAllTokens` o aplica a `input` e, quando `needles` é uma [String](/pt-BR/reference/data-types/string), a `needles` antes da tokenização. Quando `needles` é um [Array(String)](/pt-BR/reference/data-types/array), seus elementos são passados como estão, e o pré-processador não é aplicado a eles.
@@ -484,24 +484,24 @@ Por exemplo, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] é considera
 **Sintaxe**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAllToken`
 
 **Argumentos**
 
-* `input` — A coluna de entrada. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Array(String)`](/pt-BR/reference/data-types/array) ou [`Array(FixedString)`](/pt-BR/reference/data-types/array)
+* `input` — A coluna de entrada. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`Nullable(String)`](/pt-BR/reference/data-types/nullable) ou [`Nullable(FixedString)`](/pt-BR/reference/data-types/nullable) ou [`Array(String)`](/pt-BR/reference/data-types/array) ou [`Array(FixedString)`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(String))`](/pt-BR/reference/data-types/array) ou [`Array(Nullable(FixedString))`](/pt-BR/reference/data-types/array)
 * `needles` — tokens a serem buscados. [`String`](/pt-BR/reference/data-types/string) ou [`Array(String)`](/pt-BR/reference/data-types/array)
 * `tokenizer` — O tokenizador a ser usado. Os argumentos válidos são `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu('<locale>')`, `japanese`, `ngrams`, `sparseGrams` e `array`. Opcional; se não for definido explicitamente, o valor padrão é `splitByNonAlpha`. [`const String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
-Retorna 1 se todas as needles corresponderem; 0 caso contrário. [`UInt8`](/pt-BR/reference/data-types/int-uint)
+Retorna 1 se todas as needles corresponderem. 0 caso contrário. [`UInt8`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 
-**Uso básico com uma needle do tipo String**
+**Uso básico com uma string como agulha**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -523,7 +523,7 @@ SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Especifique needles a serem pesquisados exatamente como estão (sem tokenização) em um array**
+**Especifique os needles a serem pesquisados exatamente como estão (sem tokenização) em um array**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -714,7 +714,7 @@ Por exemplo, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] é tratado da mesma ma
 **Sintaxe**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **Aliases**: `hasAnyToken`

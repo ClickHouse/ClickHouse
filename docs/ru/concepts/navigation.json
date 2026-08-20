@@ -149,7 +149,8 @@
                 "ru/concepts/features/configuration/server-config/workload-scheduling",
                 "ru/concepts/features/configuration/server-config/quotas",
                 "ru/concepts/features/configuration/server-config/composable-protocols",
-                "ru/concepts/features/configuration/server-config/startup-scripts"
+                "ru/concepts/features/configuration/server-config/startup-scripts",
+                "ru/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]

@@ -74,7 +74,7 @@ ClickHouse는 JSON 데이터의 구조를 자동으로 파악할 수 있습니�
 [s3 함수](/ko/reference/functions/table-functions/s3)를 `DESCRIBE` 명령과 함께 사용하면 추론될 유형을 확인할 수 있습니다.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -124,7 +124,7 @@ SELECT
  toYear(update_date) AS year,
  authors,
     count() AS c
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 GROUP BY
     year,
  authors
@@ -156,7 +156,7 @@ LIMIT 1 BY year
 │ 2024 │ ATLAS Collaboration                        │ 120 │
 └──────┴────────────────────────────────────────────┴─────┘
 
-결과 18행. 경과 시간: 20.172초. 처리된 행: 252만 행, 1.39 GB (초당 124,720행, 68.76 MB/s.)
+18 rows in set. Elapsed: 20.172 sec. Processed 2.52 million rows, 1.39 GB (124.72 thousand rows/s., 68.76 MB/s.)
 ```
 
 스키마 추론을 사용하면 스키마를 지정하지 않고도 JSON 파일을 쿼리할 수 있어 애드혹 데이터 분석 작업을 더 빠르게 수행할 수 있습니다.
@@ -172,7 +172,7 @@ CREATE TABLE arxiv
 ENGINE = MergeTree
 ORDER BY update_date EMPTY
 AS SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 SETTINGS schema_inference_make_columns_nullable = 0
 ```
 
@@ -249,7 +249,7 @@ ORDER BY update_date
 
 ```sql
 INSERT INTO arxiv SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/arxiv/arxiv.json.gz', NOSIGN)
 ```
 
 ```response
@@ -337,7 +337,7 @@ JSON이 매우 동적이고 고유한 키가 많으며 동일한 키에 여러 �
 이 데이터의 샘플 일부는 줄바꿈으로 구분된 JSON 포맷으로 공개되어 있습니다. 이 파일에 대해 스키마 추론을 시도해 보면, 응답이 지나치게 장황하여 성능이 좋지 않다는 것을 확인할 수 있습니다:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN)
 
 -- result omitted for brevity
 ```
@@ -353,7 +353,7 @@ DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi
 `JSONAsObject`는 전체 입력을 하나의 JSON 객체로 간주하고 [`JSON`](/ko/reference/data-types/newjson) 유형의 단일 컬럼에 저장하므로, 동적으로 변하는 구조나 중첩된 JSON 페이로드에 더 적합합니다.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', 'JSONAsObject')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample_rows.json.gz', NOSIGN, 'JSONAsObject')
 SETTINGS describe_compact_output = 1
 ```
 
@@ -372,10 +372,10 @@ SETTINGS describe_compact_output = 1
 {"a":"22"}
 ```
 
-이 경우 ClickHouse는 유형 충돌을 강제로 변환하고 컬럼 `a`를 `Nullable(String)`으로 해석할 수 있습니다.
+이 경우 ClickHouse는 유형 충돌을 조정하여 컬럼 `a`를 `Nullable(String)`으로 해석할 수 있습니다.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/sample.json', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -400,10 +400,10 @@ SETTINGS describe_compact_output = 1
 {"a":{"b":2}}
 ```
 
-이 경우 여기서는 어떤 형태의 형 변환도 불가능합니다. 따라서 `DESCRIBE` 명령이 실패합니다:
+이 경우에는 어떤 형태의 타입 변환도 불가능합니다. 따라서 `DESCRIBE` 명령이 실패합니다:
 
 ```sql
-DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json')
+DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN)
 ```
 
 ```response
@@ -419,7 +419,7 @@ Code: 53. DB::Exception: Automatically defined type Tuple(b Int64) for column 'a
 이 경우 `JSONAsObject`는 각 행을 단일 [`JSON`](/ko/reference/data-types/newjson) 유형으로 간주합니다(같은 컬럼이 여러 유형을 가질 수 있도록 지원함). 이 점이 핵심입니다:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', JSONAsObject)
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/json/conflict_sample.json', NOSIGN, JSONAsObject)
 SETTINGS enable_json_type = 1, describe_compact_output = 1
 ```
 

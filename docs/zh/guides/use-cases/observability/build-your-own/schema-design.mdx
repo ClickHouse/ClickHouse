@@ -955,11 +955,11 @@ CREATE TABLE regexp_device
 这些表可以通过 `url` 表函数，使用以下公开托管的 CSV 文件填充：
 
 ```sql
-INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 
-INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', NOSIGN, 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
 ```
 
 在内存表填充好数据后，我们就可以加载正则表达式字典了。请注意，我们需要将键值指定为列，这些列就是我们可以从 User-Agent 中提取的属性。

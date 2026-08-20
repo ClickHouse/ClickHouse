@@ -297,7 +297,7 @@ ClickHouse поддерживает путешествие во времени �
 Второй момент: при использовании путешествия во времени невозможно получить состояние таблицы на момент, когда в неё ещё не было записано никаких данных:
 
 ```sql
--- Создать таблицу
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number bigint, 
   product_code string
@@ -307,8 +307,8 @@ ClickHouse поддерживает путешествие во времени �
 
   ts = now();
 
--- Запросить таблицу на конкретную временную метку
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Завершается с ошибкой: Cannot find a snapshot older than ts.
+-- Query the table at a specific timestamp
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
 В ClickHouse поведение такое же, как в Spark. Можете мысленно заменить запросы SELECT в Spark на запросы SELECT в ClickHouse, и всё будет работать так же.

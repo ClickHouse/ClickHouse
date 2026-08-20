@@ -93,6 +93,7 @@ Sélection des 5 premières lignes de la table issue du fichier S3 `https://dat
 SELECT *
 FROM s3(
    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+   NOSIGN,
    'CSVWithNames'
 )
 LIMIT 5;
@@ -114,7 +115,8 @@ LIMIT 5;
   ```sql
   SELECT *
   FROM s3(
-     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv'
+     'https://datasets-documentation.s3.eu-west-3.amazonaws.com/aapl_stock.csv',
+     NOSIGN
   )
   LIMIT 5;
   ```
@@ -157,7 +159,7 @@ Compter le nombre de lignes dans les fichiers dont le nom se termine par un chif
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -170,7 +172,7 @@ Compter le nombre total de lignes dans tous les fichiers de ces deux répertoire
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/{some,another}_prefix/*', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32')
 ```
 
 ```text
@@ -183,11 +185,11 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucke
   Si votre liste de fichiers contient des plages de nombres avec des zéros non significatifs, utilisez la notation avec des accolades pour chaque chiffre séparément, ou utilisez `?`.
 </Tip>
 
-Compter le nombre total de lignes dans les fichiers nommés `file-000.csv`, `file-001.csv`, ... , `file-999.csv` :
+Compter le nombre total de lignes dans les fichiers nommés `file-1.csv`, ..., `file-4.csv` :
 
 ```sql
 SELECT count(*)
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{000..999}.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/big_prefix/file-{1..4}.csv', NOSIGN, 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 ```
 
 ```text
@@ -213,22 +215,22 @@ SELECT name, value FROM existing_table;
 Le glob ** peut être utilisé pour parcourir les répertoires de manière récursive. Prenons l&#39;exemple ci-dessous : il récupère tous les fichiers du répertoire `my-test-bucket-768` de façon récursive :
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Ce qui suit récupère les données de tous les fichiers `test-data.csv.gz` présents dans n&#39;importe quel dossier du répertoire `my-test-bucket`, de façon récursive :
 
 ```sql
-SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
 Note. Il est possible de spécifier des mappeurs d&#39;URL personnalisés dans le fichier de configuration du serveur. Exemple :
 
 ```sql
-SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', 'CSV', 'name String, value UInt32', 'gzip');
+SELECT * FROM s3('s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz', NOSIGN, 'CSV', 'name String, value UInt32', 'gzip');
 ```
 
-L&#39;URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` serait remplacée par `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
+L’URL `'s3://clickhouse-public-datasets/my-test-bucket-768/**/test-data.csv.gz'` serait remplacée par `'http://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/**/test-data.csv.gz'`
 
 Un mappeur personnalisé peut être ajouté au fichier `config.xml` :
 
@@ -368,7 +370,8 @@ Il est possible d’extraire des données de ces archives à l’aide de ::. Des
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 
@@ -441,7 +444,7 @@ Le paramètre s’applique également au moteur de table [S3](/fr/reference/engi
 
 ```sql
 SET s3_base = 's3://clickhouse-public-datasets/';
-SELECT count() FROM s3('hits_compatible/hits.csv');
+SELECT count() FROM s3('hits_compatible/hits.csv', NOSIGN);
 ```
 
 <div id="storage-settings">

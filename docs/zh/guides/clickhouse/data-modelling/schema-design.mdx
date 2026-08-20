@@ -37,7 +37,7 @@ Stack Overflow 数据集包含多个相互关联的表。在任何数据建模�
 ClickHouse 提供了 schema 推断能力，可自动识别数据集的类型。所有数据格式 (包括 Parquet) 都支持这一功能。我们可以利用这一特性，通过 `s3` 表函数和 [`DESCRIBE`](/zh/reference/statements/describe-table) 命令识别该数据的 ClickHouse 类型。请注意，下面我们使用通配符模式 `*.parquet` 读取 `stackoverflow/parquet/posts` 文件夹中的所有文件。
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -76,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 几点重要说明：
@@ -123,7 +123,7 @@ ORDER BY tuple()
 定义好初始 schema 后，我们就可以通过 `INSERT INTO SELECT` 并结合 S3 表函数读取数据来填充数据。以下操作会在一台 8 核的 ClickHouse Cloud 实例上，在大约 2 分钟内加载 `posts` 数据。
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response

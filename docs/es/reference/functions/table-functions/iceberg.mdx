@@ -297,7 +297,7 @@ Esto ocurre porque `ALTER TABLE` no crea una nueva instantánea, sino que, para 
 La segunda es que, al usar viaje en el tiempo, no puedes obtener el estado de la tabla antes de que se escribiera ningún dato en ella:
 
 ```sql
--- Crear una tabla
+-- Create a table
   CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
   order_number bigint, 
   product_code string
@@ -307,8 +307,8 @@ La segunda es que, al usar viaje en el tiempo, no puedes obtener el estado de la
 
   ts = now();
 
--- Consultar la tabla en una marca de tiempo específica
-  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finaliza con error: Cannot find a snapshot older than ts.
+-- Query the table at a specific timestamp
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
 ```
 
 En ClickHouse, el comportamiento es consistente con el de Spark. Puedes sustituir mentalmente las consultas Select de Spark por las de ClickHouse y funcionará igual.

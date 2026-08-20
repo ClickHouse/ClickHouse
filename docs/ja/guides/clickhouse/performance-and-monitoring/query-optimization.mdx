@@ -66,22 +66,22 @@ NYC のタクシー乗車データを含む NYC Taxi データセットを使っ
 以下は、テーブルを作成し、S3バケットからデータを挿入するコマンドです。なお、ここではあえてデータからスキーマを推定しており、最適化はされていません。
 
 ```sql
--- スキーマを推論してテーブルを作成する
+-- Create table with inferred schema
 CREATE TABLE trips_small_inferred
 ORDER BY () EMPTY
-AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet', NOSIGN);
 
--- 推論されたスキーマのテーブルにデータを挿入する
+-- Insert data into table with inferred schema
 INSERT INTO trips_small_inferred
 SELECT *
 FROM s3Cluster
 ('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
 ```
 
-データから自動的に推論されたテーブルスキーマを見てみましょう。
+データから自動的に推論されたデータスキーマを見てみましょう。
 
 ```sql
---- 推論されたテーブルスキーマを表示する
+--- Display inferred table schema
 SHOW CREATE TABLE trips_small_inferred
 ```
 

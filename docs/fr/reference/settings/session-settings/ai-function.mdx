@@ -58,7 +58,7 @@ Nombre maximal de textes pouvant être inclus dans une seule requête HTTP envoy
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1000"},{"label": "Limite par défaut le nombre d’appels HTTP sortants des fonctions d’IA par requête (auparavant 0 – illimité)."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au cours d’une requête. Définissez cette valeur sur 0 pour désactiver.
+Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au cours d’une requête. Cette limite est appliquée indépendamment par chaque serveur et fragment de requête : dans un même contexte d’exécution, elle constitue un plafond strict partagé par toutes les fonctions d’IA, tous les blocs et tous les threads concernés. Toutefois, une requête distribuée (sur plusieurs segments ou fragments de répliques parallèles) peut émettre jusqu’à ce nombre de requêtes par segment ou fragment. Elle doit être définie dans la requête de niveau supérieur ; une surcharge `SETTINGS` dans une sous-requête est ignorée. Définissez cette valeur sur 0 pour désactiver.
 
 <div id="ai_function_max_input_tokens_per_query">
   ## ai_function_max_input_tokens_per_query
@@ -70,7 +70,7 @@ Nombre maximal de requêtes HTTP que les fonctions d’IA peuvent émettre au co
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nouveau paramètre"}]}]} />
 
-Nombre total maximal de tokens d’entrée (`prompt`) sur l’ensemble des appels à l’API de la fonction d’IA dans une seule requête. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée à hauteur des tokens d’entrée d’un appel, car le nombre de tokens d’entrée d’un appel n’est pas connu à l’avance. Définissez-la sur 0 pour la désactiver.
+Nombre total maximal de tokens d’entrée (`prompt`) sur l’ensemble des appels à l’API des fonctions d’IA dans une seule requête. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée à hauteur des tokens d’entrée d’un appel pour chaque requête en cours, car les tokens d’entrée d’un appel ne sont connus qu’à l’arrivée de sa réponse. Comme les autres quotas d’IA, elle est appliquée par serveur / fragment de requête, et non cumulée sur une requête distribuée, et doit être définie dans la requête de niveau supérieur : une surcharge `SETTINGS` dans une sous-requête est ignorée. Définissez-la sur 0 pour la désactiver.
 
 Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `usage` dans leur réponse (OpenAI, Anthropic, vLLM). Les fournisseurs qui n’indiquent pas l’usage des tokens (notamment HuggingFace TEI) laissent le compteur à 0 — utilisez plutôt `ai_function_max_api_calls_per_query` pour plafonner ces appels.
 
@@ -84,7 +84,7 @@ Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `us
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "Nouveau paramètre"}]}]} />
 
-Nombre total maximal de tokens de sortie (complétion) pour l’ensemble des appels à l’API des fonctions d’IA au sein d’une même requête. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée de l’équivalent des tokens de sortie d’un appel, car leur nombre n’est pas connu à l’avance. Définissez-la sur 0 pour la désactiver.
+Nombre total maximal de tokens de sortie (complétion) pour l’ensemble des appels à l’API des fonctions d’IA au sein d’une même requête. Comptabilisé de façon cumulative à partir des réponses du fournisseur. Notez que cette limite peut être dépassée jusqu’à l’équivalent des tokens de sortie d’un appel pour chaque requête en cours, car les tokens de sortie d’un appel ne sont connus qu’à l’arrivée de sa réponse. Comme les autres quotas d’IA, elle est appliquée par serveur / fragment de requête, et non cumulée sur une requête distribuée, et doit être définie dans la requête de niveau supérieur : une surcharge `SETTINGS` dans une sous-requête est ignorée. Définissez-la sur 0 pour la désactiver.
 
 Cette limite n’est appliquée qu’aux fournisseurs qui renvoient un objet `usage` dans leur réponse (OpenAI, Anthropic, vLLM). Elle ne s’applique pas aux fonctions d’embedding (`aiEmbed`, `aiSimilarity`), qui ne produisent jamais de tokens de sortie.
 
@@ -156,6 +156,6 @@ Si true (par défaut), un appel à une fonction d’IA qui échoue de façon dé
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
-Si true (par défaut), le dépassement d’une limite de quota d’une fonction d’IA (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query` ou `ai_function_max_api_calls_per_query`) interrompt la requête en levant une exception. Si false, les lignes restantes reçoivent la valeur par défaut du type de colonne (chaîne vide pour String).
+Si true (par défaut), le dépassement d’une limite de quota d’une fonction d’IA (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query` ou `ai_function_max_api_calls_per_query`) interrompt la requête en levant une exception. Si false, les lignes restantes reçoivent la valeur par défaut du type de colonne (chaîne vide pour String). Comme pour les limites de quota, ce paramètre doit être défini dans la requête de niveau supérieur ; une surcharge `SETTINGS` dans une sous-requête est ignorée.
 
 {/*AUTOGENERATED_END*/}

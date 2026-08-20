@@ -24,7 +24,7 @@ Ce jeu de données contient plus de 150 M d’avis clients sur des produits Amaz
 
 ```sql
 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN)
 LIMIT 3
 ```
 
@@ -123,7 +123,7 @@ ORDER BY (review_date, product_category)
 ```sql
 INSERT INTO amazon.amazon_reviews SELECT *
 FROM s3Cluster('default', 
-'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet')
+'https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_*.snappy.parquet', NOSIGN)
 ```
 
 <Tip>

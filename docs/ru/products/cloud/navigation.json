@@ -282,6 +282,7 @@
                     "ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup",
                     "ru/products/cloud/guides/security/cloud-access-management/scim-setup",
                     "ru/products/cloud/guides/security/cloud-access-management/scim-setup-entra",
+                    "ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
                     "ru/products/cloud/guides/security/cloud-access-management/common-access-management-queries",
                     "ru/products/cloud/guides/security/cloud-access-management/manage-database-service-accounts",
                     "ru/products/cloud/guides/security/saml-sso-removal"

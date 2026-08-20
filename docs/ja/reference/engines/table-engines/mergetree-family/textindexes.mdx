@@ -177,7 +177,7 @@ ALTER TABLE table DROP INDEX text_idx;
   パラメータ `min_cutoff_length` を指定した場合、長さが `min_cutoff_length` 以上の n-gram のみが返されます。
   `ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。
   たとえば、`tokenizer = sparseGrams(3, 5, 4)` では、内部的には入力文字列から 3-gram、4-gram、5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
-* `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。
+* `array` はトークン化を行いません。つまり、各行の値がトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) を参照) 。他のシステムとの互換性のため、`keyword` は `array` のエイリアスとして使用できます。
 
 使用可能なすべてのトークナイザーは [system.tokenizers](/ja/reference/system-tables/tokenizers) に一覧表示されています。
 
@@ -1558,6 +1558,14 @@ cache を設定するには、以下のサーバー設定を参照してくだ�
 * トークン数が非常に多いテキスト索引 (例: 100 億トークン) のマテリアライズでは、大量のメモリを消費する可能性があります。テキスト
   索引のマテリアライズは、直接 (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) 行われる場合と、パーツのマージで間接的に行われる場合があります。
 * 4,294,967,296 (= 2^32 = 約 42 億) 行を超えるパーツでは、テキスト索引をマテリアライズできません。テキスト索引がマテリアライズされていない場合、クエリはそのパーツ内での低速な総当たり検索にフォールバックします。最悪ケースの見積もりとして、パーツには String 型のカラムが 1 つだけ含まれ、MergeTree setting `max_bytes_to_merge_at_max_space_in_pool` (デフォルト: 150 GB) が変更されていないと仮定してください。この場合、そのカラムの 1 行あたりの平均文字数が 29.5 文字未満であれば、この状況が発生します。実際には、テーブルにはほかのカラムも含まれるため、しきい値はこれより何倍も小さくなります (ほかのカラムの数、型、サイズに依存します) 。
+
+<div id="upgrade-notes">
+  ## アップグレードに関する注意
+</div>
+
+テキスト索引のオンディスクフォーマットのバージョンは、テーブルレベルの設定 [`text_index_serialization_version`](/ja/reference/settings/merge-tree-settings/text-index) (デフォルト: `v2_with_positions`) で制御されます。
+この設定は厳密な制約ではなく優先指定です。設定されたバージョンで索引を表現できない場合は、表現可能なより新しいバージョンが自動的に選択されるため、この設定が原因でテキスト索引の書き込みに失敗することはありません。
+ローリングアップグレード中は、すでにアップグレード済みのサーバーで [`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 設定を使用してフォーマットを固定します。この設定を対応するフォーマットが導入されたバージョンより古いバージョンにすると、`text_index_serialization_version` は自動的に古い値に戻り、新しいサーバーでも古いサーバーが引き続き読み取れるフォーマットで書き込まれます。
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## テキスト索引とブルームフィルタベースの索引の違い

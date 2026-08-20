@@ -176,7 +176,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Si se proporciona el parámetro `min_cutoff_length`, solo se devuelven n-grams con una longitud mayor o igual que `min_cutoff_length`.
   En comparación con `ngrams(N)`, el tokenizador `sparseGrams` produce N-grams de longitud variable, lo que permite una representación más flexible del texto original.
   Por ejemplo, `tokenizer = sparseGrams(3, 5, 4)` genera internamente 3-, 4- y 5-grams a partir de la cadena de entrada, pero solo se devuelven los 4- y 5-grams.
-* `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte la función [array](/es/reference/functions/regular-functions/array-functions#array)).
+* `array` no realiza tokenización; es decir, cada valor de fila es un token (consulte la función [array](/es/reference/functions/regular-functions/array-functions#array)). Para garantizar la compatibilidad con otros sistemas, `keyword` está disponible como alias de `array`.
 
 Todos los tokenizadores disponibles se enumeran en [system.tokenizers](/es/reference/system-tables/tokenizers).
 
@@ -1557,6 +1557,14 @@ El índice de texto presenta actualmente las siguientes limitaciones:
 * La materialización de índices de texto con un número elevado de tokens (p. ej., 10 mil millones de tokens) puede consumir cantidades significativas de memoria. La
   materialización de índices de texto puede producirse directamente (`ALTER TABLE <table> MATERIALIZE INDEX <index>`) o indirectamente durante las fusiones de partes.
 * No es posible materializar índices de texto en partes con más de 4.294.967.296 (= 2^32 = aprox. 4,2 mil millones) filas. Sin un índice de texto materializado, las consultas recurren a una búsqueda exhaustiva lenta dentro de la parte. Como estimación del peor caso, suponga que una parte contiene una única columna de tipo String y que la configuración de MergeTree `max_bytes_to_merge_at_max_space_in_pool` (valor predeterminado: 150 GB) no se ha modificado. En este caso, esto ocurre si la columna contiene, de media, menos de 29,5 caracteres por fila. En la práctica, las tablas también contienen otras columnas y el umbral es varias veces menor (según el número, el tipo y el tamaño de las demás columnas).
+
+<div id="upgrade-notes">
+  ## Notas de actualización
+</div>
+
+La versión del formato en disco de los índices de texto se controla mediante la configuración de tabla [`text_index_serialization_version`](/es/reference/settings/merge-tree-settings/text-index) (valor predeterminado: `v2_with_positions`).
+La configuración es una preferencia, no una restricción estricta: si la versión configurada no puede representar un índice, se elige automáticamente una versión más reciente que pueda hacerlo, por lo que la escritura de un índice de texto nunca falla debido a esta configuración.
+Durante una actualización progresiva, fije el formato mediante la configuración [`compatibility`](/es/reference/settings/session-settings/compatibility#compatibility) en los servidores que ya se hayan actualizado: cuando se establece en una versión anterior a la que introdujo el formato correspondiente, `text_index_serialization_version` vuelve automáticamente a un valor anterior y los servidores más recientes siguen escribiendo en un formato que los servidores más antiguos aún pueden leer.
 
 <div id="text-index-vs-bloom-filter-indexes">
   ## Índices de texto frente a índices basados en filtros Bloom

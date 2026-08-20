@@ -149,7 +149,8 @@
                 "ja/concepts/features/configuration/server-config/workload-scheduling",
                 "ja/concepts/features/configuration/server-config/quotas",
                 "ja/concepts/features/configuration/server-config/composable-protocols",
-                "ja/concepts/features/configuration/server-config/startup-scripts"
+                "ja/concepts/features/configuration/server-config/startup-scripts",
+                "ja/concepts/features/configuration/server-config/introspection-port"
               ]
             }
           ]

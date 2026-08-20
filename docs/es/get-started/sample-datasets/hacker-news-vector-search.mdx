@@ -65,7 +65,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     Para cargar los datos desde el archivo `Parquet`, ejecute la siguiente sentencia SQL:
 
     ```sql
-    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet', NOSIGN);
     ```
 
     Insertar 28,74 millones de filas en la tabla llevará unos minutos.
@@ -103,13 +103,13 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
   </Step>
 
   <Step title="Generar embeddings para la consulta de búsqueda" id="generating-embeddings-for-search-query">
-    [Sentence Transformers](https://www.sbert.net/) ofrece modelos de embedding locales y fáciles de usar para capturar el significado semántico de oraciones y párrafos.
+    [Sentence Transformers](https://www.sbert.net/) ofrece modelos de embeddings locales y fáciles de usar para capturar el significado semántico de oraciones y párrafos.
 
     El conjunto de datos de HackerNews contiene embeddings vectoriales generados con el modelo
     [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
 
     A continuación se incluye un script de Python de ejemplo para mostrar cómo generar
-    vectores de embedding de forma programática usando el paquete de Python `sentence_transformers`. El vector de embedding de búsqueda se pasa luego como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta &#96;SELECT&#96;.
+    vectores de incrustación de forma programática usando el paquete de Python `sentence_transformers`. El vector de incrustación de búsqueda se pasa luego como argumento a la función [`cosineDistance()`](/es/reference/functions/regular-functions/distance-functions#cosineDistance) en la consulta `SELECT`.
 
     ```python
     from sentence_transformers import SentenceTransformer
@@ -143,8 +143,8 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
 
     ```
 
-    A continuación se muestra un ejemplo de la ejecución del script de Python anterior junto con los resultados de búsqueda por similitud
-    (solo se imprimen 100 caracteres de cada uno de los 20 posts principales):
+    A continuación se muestra un ejemplo de la ejecución del script de Python anterior junto con los resultados de la búsqueda por similitud
+    (solo se imprimen 100 caracteres de cada una de las 20 publicaciones principales):
 
     ```text
     Initializing...
@@ -212,7 +212,7 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
     ---------
     ```
 
-    ## Aplicación demo de resumen
+    ## Aplicación de demostración de resumen
 
     El ejemplo anterior ilustró la búsqueda semántica y la recuperación de documentos con ClickHouse.
 
@@ -227,11 +227,11 @@ Recomendamos a los usuarios realizar primero un ejercicio de dimensionamiento pa
        Las publicaciones y los comentarios recuperados en el paso n.º 3 se pasan como *contexto* a la API de Chat y son el nexo clave en Generative AI.
 
     A continuación se muestra primero un ejemplo de la ejecución de la aplicación de resumen, seguido del código
-    de dicha aplicación. Para ejecutar la aplicación es necesario establecer una API key de OpenAI en la variable
-    de entorno `OPENAI_API_KEY`. La API key de OpenAI se puede obtener tras registrarse en https://platform.openai.com.
+    de dicha aplicación. Para ejecutar la aplicación es necesario establecer una clave API de OpenAI en la variable
+    de entorno `OPENAI_API_KEY`. La clave API de OpenAI se puede obtener tras registrarse en https://platform.openai.com.
 
-    Esta aplicación demuestra un caso de uso de Generative AI aplicable a múltiples dominios empresariales como:
-    análisis de sentimiento de clientes, automatización del soporte técnico, extracción de información de conversaciones de usuarios, documentos legales, registros médicos,
+    Esta aplicación demuestra un caso de uso de IA generativa aplicable a múltiples dominios empresariales, como:
+    análisis de sentimiento del cliente, automatización del soporte técnico, extracción de información de conversaciones de usuarios, documentos legales, registros médicos,
     transcripciones de reuniones, estados financieros, etc.
 
     ```shell

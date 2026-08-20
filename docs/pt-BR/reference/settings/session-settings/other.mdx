@@ -535,6 +535,20 @@ Especificar explicitamente as opções `actions`, `compact` ou `pretty` na instr
 
 `EXPLAIN PLAN` com `json = 1` ou `distributed = 1` mantém os padrões legados (anteriores à 26.7) independentemente dessa configuração, a menos que `actions`, `compact` ou `pretty` sejam definidos explicitamente. A saída Pretty não consegue representar resultados JSON nem planos distribuídos por shard, portanto esses modos só são renderizados corretamente no formato legado.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "A partir da versão 26.8, `EXPLAIN SYNTAX` retorna a consulta reformatada como um único registro (com quebras de linha embutidas), em vez de um registro por linha. Defina como `false` para restaurar a saída anterior à versão 26.8, com um registro por linha."}]}]} />
+
+Retorna a saída de `EXPLAIN SYNTAX` como um único registro (com quebras de linha embutidas), em vez de um registro por linha, de modo que o resultado seja uma única linha recuperável (por exemplo, `SELECT count() FROM (EXPLAIN SYNTAX ...)` retorna `1`).
+
+Especificar explicitamente a opção `single_record` na instrução `EXPLAIN SYNTAX` (por exemplo, `EXPLAIN SYNTAX single_record = 0 SELECT ...`) sempre substitui esta configuração.
+
+Defina como `false` para restaurar a saída anterior à versão 26.8, com um registro por linha, ou defina `compatibility` como qualquer versão anterior à `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -1496,6 +1510,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração experimental para habilitar a retomada de `BACKUP FROM SNAPSHOT`."}]}]} />
+
+Habilita a retomada de `BACKUP FROM SNAPSHOT`: uma tentativa que falhou pode ser executada novamente sem copiar outra vez as
+entradas dos lotes já concluídos. Disponível apenas no ClickHouse Cloud, para destinos
+`S3` e `AzureBlobStorage` no formato de diretório. Habilitá-la em compilações de código aberto do ClickHouse, nas quais
+o próprio `BACKUP FROM SNAPSHOT` não está disponível, faz com que `BACKUP` falhe com `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1505,6 +1534,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Fornece o valor exato da estatística rows_before_aggregation, que representa o número de linhas lidas antes da agregação"}]}]} />
 
 Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#95;before&#95;aggregation, que representa o número de linhas lidas antes da agregaçã
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para executar uma consulta em segundo plano, desvinculada da conexão que a enviou e descartando o resultado."}]}]} />
+
+Se habilitada, o servidor agenda a consulta em segundo plano, retorna imediatamente um resultado vazio e bem-sucedido e executa a consulta até a conclusão, independentemente do que aconteça com a conexão.
+
+Uma consulta em segundo plano não sobrevive à reinicialização do servidor. Durante o encerramento, ela segue as mesmas configurações do servidor que uma consulta em primeiro plano: `shutdown_wait_unfinished_queries` define se ela será cancelada ou se o servidor aguardará sua conclusão (as entradas enfileiradas são descartadas em ambos os casos, sem uma entrada em `system.query_log`), e `shutdown_wait_unfinished` limita por quanto tempo o servidor espera.
+
+Acompanhe a consulta pelo `query_id`: em `system.processes` enquanto estiver em execução e em `system.query_log` depois que for concluída e a entrada no log de consultas for gravada.
+
+Aplica-se a consultas recebidas pelos protocolos TCP nativo e HTTP. Em HTTP, passe a configuração como parâmetro de URL. Ela não pode ser alterada com `SET`; habilite-a por consulta ou no nível de usuário ou perfil.
+
+O principal caso de uso é um `INSERT ... SELECT` demorado que não pode ser perdido caso a conexão do cliente seja interrompida.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering

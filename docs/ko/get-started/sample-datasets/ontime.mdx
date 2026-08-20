@@ -154,7 +154,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 또는 다음 쿼리로 저장된 사본의 데이터를 가져올 수 있습니다:
 
 ```sql
-INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
+INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', NOSIGN, CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 
 스냅샷은 2022-05-29에 생성되었습니다.

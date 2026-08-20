@@ -154,7 +154,7 @@ ls -1 *.zip | xargs -I{} -P $(nproc) bash -c "echo {}; unzip -cq {} '*.csv' | se
 Vous pouvez également importer des données depuis une copie enregistrée à l’aide de la requête suivante :
 
 ```sql
-INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', CSVWithNames) SETTINGS max_insert_threads = 40;
+INSERT INTO ontime SELECT * FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/ontime/csv_by_year/*.csv.gz', NOSIGN, CSVWithNames) SETTINGS max_insert_threads = 40;
 ```
 
 L’instantané a été créé le 2022-05-29.

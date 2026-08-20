@@ -458,7 +458,8 @@ S3에 다음 URI를 가진 여러 아카이브 파일이 있다고 가정합니�
 ```sql
 SELECT *
 FROM s3(
-   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv'
+   'https://s3-us-west-1.amazonaws.com/umbrella-static/top-1m-2018-01-1{0..2}.csv.zip :: *.csv',
+   NOSIGN
 );
 ```
 

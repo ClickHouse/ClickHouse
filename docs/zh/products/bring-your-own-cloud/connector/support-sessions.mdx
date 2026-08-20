@@ -1,0 +1,154 @@
+---
+title: '支持会话'
+sidebarTitle: '支持会话'
+description: '通过 ClickHouse 连接器启用、限定范围、审计和撤销 ClickHouse 支持团队的访问权限'
+keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+支持会话用于通过 ClickHouse 连接器向 ClickHouse 授予临时诊断访问权限。本页介绍会话的定义、如何启用和禁用会话、会话生效期间 ClickHouse 运维人员可执行的操作，以及如何审计期间发生的所有活动。
+
+<div id="what-a-support-session-is">
+  ## 什么是支持会话
+</div>
+
+支持会话是一个有时限的窗口，在此期间，故障排查工具会接受 ClickHouse 支持工程师发出的命令。没有活动会话时，故障排查工具会拒绝所有命令，即使其出站 WebSocket 已连接也是如此。不存在其他执行途径：没有会话，任何操作都不会执行，ClickHouse 也无法替您开启会话。ClickHouse 的控制平面绝不会连接到您的环境；它只会接收故障排查工具通过出站通道发送的内容，并且仅当您的会话状态允许时，该通道才会传输命令。
+
+<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse 连接器支持会话信任流程" />
+
+您可通过以下两种方式控制会话：
+
+* **会话网关**：嵌入故障排查工具、经过身份验证的 API，提供 `enable`、`disable` 和 `status` 端点。每次调用网关都需要短期有效的 OIDC ID 标记，其电子邮件地址必须在您的操作员允许列表中。
+* Linux VM 安装中的**本地会话文件**：可使用 root 权限直接写入主机。
+
+网关的传输方式取决于目标环境。VM 网关提供由每位操作员通过指纹固定的自签名 TLS。Kubernetes 网关通过 HTTP 在 pod (容器组) 本地监听，可通过 `kubectl port-forward` 访问 (隧道使用 API server 的 TLS) ，也可通过使用 CA 签发的证书终止 TLS 的入口访问。
+
+您可在执行 `clicklink clctl init` 时选择会话策略，包括操作员允许列表。
+
+<div id="enabling-and-disabling-sessions">
+  ## 启用和禁用会话
+</div>
+
+<Tabs>
+  <Tab title="Kubernetes">
+    网关 监听 故障排查工具 pod (容器组) 的 8443 端口。如果你有集群访问权限，可通过端口转发访问它；该隧道使用 Kubernetes API server 的 TLS：
+
+    ```bash
+    CONNECTOR_NAMESPACE='clicklink'   # 初始化时选择的连接器命名空间
+    kubectl -n "${CONNECTOR_NAMESPACE}" port-forward statefulset/clicklink-connector-troubleshooter 8443:8443
+    ```
+
+    然后，在另一个终端中启用会话：
+
+    ```bash
+    clicklink clctl troubleshoot session enable \
+      --gateway-url http://localhost:8443 \
+      --duration 4h \
+      --reason "<ticket reference>"
+    ```
+
+    同样可以检查或结束会话：
+
+    ```bash
+    clicklink clctl troubleshoot session status --gateway-url http://localhost:8443
+    clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
+    ```
+
+    调用方的 OIDC 身份必须在 操作员 允许列表中；未经身份验证或不在允许列表中的调用方将收到 401 或 403，且此次尝试会被记录到日志中。如果不想要求集群凭据，chart 可通过选择性启用的入口公开 网关，并使用 CA 签发的证书终止 TLS；请参阅[配置](/zh/products/bring-your-own-cloud/connector/configuration)。
+  </Tab>
+
+  <Tab title="Linux VM">
+    如果拥有主机的 root 访问权限，可直接管理会话。状态会持久化到 `/var/lib/clicklink/session.json`，守护进程和命令行客户端会以原子方式读写该文件：
+
+    ```bash
+    sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
+    sudo clicklink clctl troubleshoot session status
+    sudo clicklink clctl troubleshoot session disable
+    ```
+
+    VM 上的 网关 也可供没有 root 访问权限的调用方使用。它提供自签名 TLS，因此每位会话用户只需固定一次 网关 的证书指纹：
+
+    ```bash
+    clicklink clctl troubleshoot gateway trust \
+      --gateway-url https://<vm-host>:8443 \
+      --gateway-fingerprint <sha256-fingerprint>
+    ```
+
+    固定的指纹存储在 `~/.clicklink/clctl.yaml` 中；如果提供的证书与其不匹配，连接将被安全地拒绝。
+  </Tab>
+</Tabs>
+
+<div id="session-expiry">
+  ## 会话过期
+</div>
+
+会话会自动过期。默认时长为 4 小时；可通过 `session enable --duration` 设置最长 24 小时的任意时长。会话过期后，或运行 `session disable` 后，故障排查工具将不再接受命令。禁用会话可立即撤销访问权限：无需重启，也无需与 ClickHouse 协调。
+
+<div id="operator-allowlist">
+  ## 操作员允许列表
+</div>
+
+每次网关调用都会依据操作员电子邮件允许列表进行授权，并将其与经验证的 OIDC 标记中验证的电子邮件进行匹配，绝不采信客户端对自身提出的任何声明。
+
+* **Kubernetes：**在配置值覆盖中设置 `clctl.gateway.allowedOperators`。该列表会渲染为 ConfigMap，网关每 30 秒重新读取一次，因此修改配置值后执行 `helm upgrade` 即可轮换允许列表，无需重启 pod (容器组) 。
+* **Linux VM：**允许列表位于 `/etc/clicklink/allowed-operators.txt`，由 `clicklink clctl init` 根据您提供的操作员电子邮件写入。
+
+<div id="what-operators-can-do">
+  ## 操作员在会话期间可以执行的操作
+</div>
+
+会话处于活动状态时，ClickHouse 支持工程师可以执行以下操作：
+
+* 以 `pcm_troubleshooter` 用户身份对您的集群执行**只读 SQL**，且仅限访问明确指定的表允许列表。默认允许列表涵盖 ClickHouse `system` 表，例如 `system.parts`、`system.merges`、`system.replicas`、`system.metrics` 和 `system.settings`；`system.query_log` 和 `system.text_log` 始终被拒绝访问，因此查询历史记录不会离开您的环境。默认允许列表还包含 `system.processes`，其 `query` 列会显示当时正在运行的语句文本；如果会话中绝不能显示实时查询文本，请将其从会话表允许列表中移除 (Helm 覆盖配置中的 `troubleshooter.allowedTables`，或 VM 配置文件中的 `troubleshooter.allowed_tables`) 。该用户仅拥有按表授予的 `SELECT` 权限，不具备写入、DDL 或管理特权。
+* 对每个已预配的部署拥有**只读 Kubernetes 视图** (两个安装目标的访问包均绑定到 Kubernetes ServiceAccount) ：可在获授权的命名空间中，对 pod (容器组) 、pod 日志、服务、configmap、事件、PersistentVolumeClaim、部署、statefulset 和 replicaset 执行 `get`、`list` 和 `watch` 操作。若未预配访问包，故障排查工具会直接拒绝 kubectl 类型的命令。
+
+故障排查工具的 RBAC 不包含 `exec`、`delete` 或 `patch` 权限，因此操作员无法在您的 pod (容器组) 中打开 shell，也无法通过连接器更改任何内容。完整的授权和 RBAC 列表请参阅[特权模型](/zh/products/bring-your-own-cloud/connector/reference/privilege-model)参考文档。
+
+<div id="audit-log">
+  ## 审计日志
+</div>
+
+每次网关调用以及会话期间执行的每条命令，都会以每行一个 JSON 对象 (NDJSON) 的形式追加到 `/var/log/clicklink/troubleshoot-audit.log`。`submitted_by` 字段记录每个条目对应的身份，具体取决于条目的来源：网关调用记录经验证标记认证的电子邮件地址，绝不使用客户端提供的值；在 VM 上本地更改会话时，记录执行操作的主机用户；会话期间执行的命令则记录经身份验证的命令通道中携带的组织身份。网关会话启用条目如下所示：
+
+```json
+{
+  "timestamp": "2026-06-22T22:30:00.123456789Z",
+  "command_id": "11111111-2222-4333-8444-555555555555",
+  "submitted_by": "operator@clickhouse.com",
+  "command_type": "clctl.session.enable",
+  "command_text": "ticket #1234",
+  "instance_id": "",
+  "status": "ok",
+  "duration_ms": 42,
+  "output_lines": 0,
+  "remote_addr": "10.20.30.40"
+}
+```
+
+会话生命周期条目使用 `clctl.session.enable`、`clctl.session.disable` 和 `clctl.session.status` 命令类型。启用时传入的 `--reason` 会记录为 `command_text`；会话期间执行的命令也会以相同的 schema 记录。`status` 可区分成功调用与 `unauthorized`、`forbidden` 和 `rate_limited` 的尝试，因此被拒绝的访问也会记录在日志中。
+
+在 VM 上，可使用 `clicklink clctl troubleshoot audit tail` 直接读取该文件。在 Kubernetes 上，日志位于 故障排查工具 pod (容器组) 中，且容器镜像不包含 shell，因此请通过 `kubectl exec` 调用该二进制文件自带的读取器：
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-troubleshooter -- \
+  /clicklink clctl troubleshoot audit tail
+```
+
+该日志是您环境中的普通文件；可像处理其他主机或容器日志一样，将其发送到您自己的 SIEM。
+
+<div id="redaction">
+  ## 脱敏
+</div>
+
+故障排查工具返回的所有内容在离开您的环境前都会经过脱敏处理。内置模式可识别 IPv4 和 IPv6 地址、Bearer 令牌、AWS 访问密钥、电子邮件地址、JWT、SSH 私钥，以及嵌入连接字符串中的凭据。您可以在 `/etc/clicklink/redaction-patterns.yaml` 中扩展或覆盖这些模式；与内置模式同名的条目会将其替换。模式文件无效时，守护进程会拒绝启动，`clicklink clctl preflight` 也会验证该文件，因此脱敏配置损坏时会明确报错，而不会悄无声息地让数据通过。
+
+<div id="related-pages">
+  ## 相关页面
+</div>
+
+* [Architecture](/zh/products/bring-your-own-cloud/connector/architecture)：连接器 建立的所有连接，以及会话相关的数据流。
+* [Configuration](/zh/products/bring-your-own-cloud/connector/configuration)：gateway、允许列表和脱敏设置。
+* [FAQ](/zh/products/bring-your-own-cloud/connector/reference/faq)：简要解答有关吊销、审计和数据出站的问题。

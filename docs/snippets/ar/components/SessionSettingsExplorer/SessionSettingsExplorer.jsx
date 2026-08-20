@@ -1255,7 +1255,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
       label: "join_*",
       count: 7,
       settings: [
-        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash" },
+        { name: "join_algorithm", path: "/join#join_algorithm", default: "direct,parallel_hash,hash,ie_join" },
         { name: "join_any_take_last_row", path: "/join#join_any_take_last_row", default: "0" },
         { name: "join_default_strictness", path: "/join#join_default_strictness", default: "ALL" },
         { name: "join_on_disk_max_files_to_merge", path: "/join#join_on_disk_max_files_to_merge", default: "64" },
@@ -3010,7 +3010,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "أخرى",
-      count: 131,
+      count: 134,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "add_http_cors_header", path: "/other#add_http_cors_header", default: "0" },
@@ -3047,6 +3047,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "exclude_materialize_skip_indexes_on_insert", path: "/other#exclude_materialize_skip_indexes_on_insert", default: '""' },
         { name: "execute_exists_as_scalar_subquery", path: "/other#execute_exists_as_scalar_subquery", default: "1" },
         { name: "explain_query_plan_default", path: "/other#explain_query_plan_default", default: "pretty" },
+        { name: "explain_syntax_single_record", path: "/other#explain_syntax_single_record", default: "1" },
         { name: "extract_key_value_pairs_max_pairs_per_row", path: "/other#extract_key_value_pairs_max_pairs_per_row", default: "1000" },
         { name: "extremes", path: "/other#extremes", default: "0" },
         { name: "fallback_to_stale_replicas_for_distributed_queries", path: "/other#fallback_to_stale_replicas_for_distributed_queries", default: "1" },
@@ -3115,7 +3116,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "reserve_memory", path: "/other#reserve_memory", default: "0" },
         { name: "restore_replicated_merge_tree_to_shared_merge_tree", path: "/other#restore_replicated_merge_tree_to_shared_merge_tree", default: "0" },
         { name: "result_overflow_mode", path: "/other#result_overflow_mode", default: "throw" },
+        { name: "resumable_backup_from_snapshot", path: "/other#resumable_backup_from_snapshot", default: "0" },
         { name: "rows_before_aggregation", path: "/other#rows_before_aggregation", default: "0" },
+        { name: "run_query_in_background", path: "/other#run_query_in_background", default: "0" },
         { name: "secondary_indices_enable_bulk_filtering", path: "/other#secondary_indices_enable_bulk_filtering", default: "1" },
         { name: "select", path: "/other#select", default: '""' },
         { name: "select_sequential_consistency", path: "/other#select_sequential_consistency", default: "0" },
@@ -3195,11 +3198,11 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   }
 
   const filterEntry = (entry) => {
-    const إعدادات = entry.إعدادات.filter((setting) => matchesSearch(setting.name))
+    const settings = entry.settings.filter((setting) => matchesSearch(setting.name))
     const children = entry.children.map(filterEntry).filter(Boolean)
-    const count = إعدادات.length + children.reduce((total, child) => total + child.count, 0)
+    const count = settings.length + children.reduce((total, child) => total + child.count, 0)
     if (!count) return null
-    return { ...entry, count, إعدادات, children }
+    return { ...entry, count, settings, children }
   }
 
   const filteredEntries = isSearching ? entries.map(filterEntry).filter(Boolean) : entries
@@ -3236,8 +3239,8 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
   const renderGroup = (entry, continuations = [], isLast = false, path = []) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
-    const items = [...entry.إعدادات.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "إعدادات"}`
+    const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
+    const countLabel = `${entry.count} ${entry.count === 1 ? "إعداد" : "إعدادات"}`
 
     return (
       <div key={key} className="min-w-max">

@@ -24,12 +24,12 @@ Por exemplo, o subconjunto abrange um único dia — `2024-12-17` — e está di
 
 ```sql
 SELECT count()
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 ```
 
 ```response
 ┌────count()─┐
-│ 2039988137 │ -- 2,04 bilhões
+│ 2039988137 │ -- 2.04 billion
 └────────────┘
 
 1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
@@ -41,7 +41,7 @@ O conjunto de dados completo deste bucket contém mais de 320 GB de arquivos Par
 Presumimos que o usuário esteja consumindo um fluxo desses dados, por exemplo, do Kafka ou do armazenamento de objetos, para os dados posteriores a esta data. O esquema desses dados é mostrado abaixo:
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet', NOSIGN)
 FORMAT PrettyCompactNoEscapesMonoBlock
 SETTINGS describe_compact_output = 1
 ```
@@ -127,7 +127,7 @@ Populamos a tabela principal e a VIEW associada com um subconjunto dos dados:
 
 ```sql
 INSERT INTO pypi SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet', NOSIGN)
 ```
 
 ```response
@@ -141,7 +141,7 @@ SELECT count() FROM pypi
 
 ```response
 ┌──count()─┐
-│ 20612750 │ -- 20,61 milhões
+│ 20612750 │ -- 20.61 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -154,7 +154,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   20612750 │ -- 20,61 milhões
+│   20612750 │ -- 20.61 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
@@ -180,11 +180,11 @@ FROM pypi_v2
 GROUP BY project
 ```
 
-Populamos isso com nosso 2º subconjunto de tamanho aproximadamente igual e confirmamos o carregamento bem-sucedido.
+Populamos a tabela com nosso 2º subconjunto de tamanho aproximadamente igual e confirmamos que o carregamento foi bem-sucedido.
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 ```
 
 ```response
@@ -199,7 +199,7 @@ FROM pypi_v2
 
 ```response
 ┌──count()─┐
-│ 20400020 │ -- 20,40 milhões
+│ 20400020 │ -- 20.40 million
 └──────────┘
 
 1 row in set. Elapsed: 0.004 sec.
@@ -212,14 +212,14 @@ FROM pypi_downloads_v2
 
 ```response
 ┌─sum(count)─┐
-│   20400020 │ -- 20,40 milhões
+│   20400020 │ -- 20.40 million
 └────────────┘
 
 1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
 Peak memory usage: 688.77 KiB.
 ```
 
-Se tivéssemos enfrentado uma falha em qualquer momento durante esta segunda carga, poderíamos simplesmente aplicar [TRUNCATE](/pt-BR/concepts/features/operations/delete/truncate) às nossas tabelas `pypi_v2` e `pypi_downloads_v2` e repetir a carga de dados.
+Se tivéssemos enfrentado uma falha em qualquer momento durante esta segunda carga, poderíamos simplesmente [truncar](/pt-BR/concepts/features/operations/delete/truncate) as nossas tabelas `pypi_v2` e `pypi_downloads_v2` e repetir a carga de dados.
 
 Com a carga de dados concluída, podemos mover os dados das nossas tabelas duplicadas para as tabelas principais usando a cláusula [`ALTER TABLE MOVE PARTITION`](/pt-BR/reference/statements/alter/partition#move-partition-to-table).
 
@@ -254,7 +254,7 @@ FROM pypi
 
 ```response
 ┌──count()─┐
-│ 41012770 │ -- 41,01 milhões
+│ 41012770 │ -- 41.01 million
 └──────────┘
 
 1 row in set. Elapsed: 0.003 sec.
@@ -267,7 +267,7 @@ FROM pypi_downloads
 
 ```response
 ┌─sum(count)─┐
-│   41012770 │ -- 41,01 milhões
+│   41012770 │ -- 41.01 million
 └────────────┘
 
 1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
@@ -288,12 +288,12 @@ Inserções maiores, ou seja, mais linhas, significam que serão necessárias me
 
 ```sql
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet', NOSIGN)
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
---continua até que todos os arquivos sejam carregados OU a chamada MOVE PARTITION seja realizada
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet', NOSIGN)
+--continued to all files loaded OR MOVE PARTITION call is performed
 ```
 
 <Note>
@@ -343,7 +343,7 @@ FROM pypi_v2
 GROUP BY project
 
 INSERT INTO pypi_v2 SELECT *
-FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet', NOSIGN)
 WHERE timestamp < '2024-12-17 09:00:00'
 ```
 

@@ -672,7 +672,7 @@ Autres jeux de données d’exemple pour la recherche vectorielle approximative�
 
 <ExperimentalBadge />
 
-Pour activer le codec `Quantized`, activez d&#39;abord `SET allow_experimental_codecs = 1`.
+Pour activer le codec `Quantized`, exécutez d&#39;abord `SET enable_quantized_codec = 1`.
 Si vous rencontrez des problèmes, veuillez ouvrir une issue sur le [dépôt ClickHouse](https://github.com/clickhouse/clickhouse/issues).
 
 <div id="quantized-codecs-introduction">
@@ -709,7 +709,7 @@ Ce codec convient bien à ClickHouse, car la partie coûteuse — le parcours �
 Spécifiez le codec `Quantized(...)` pour la colonne `Array(Float32)` (ou `Array(Float64)` / `Array(BFloat16)`).
 
 ```sql
-SET allow_experimental_codecs = 1;
+SET enable_quantized_codec = 1;
 
 CREATE TABLE vectors
 (

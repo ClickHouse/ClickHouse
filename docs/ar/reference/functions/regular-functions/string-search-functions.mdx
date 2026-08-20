@@ -456,7 +456,7 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 أُضيف في: v25.10.0
 
-مثل [`hasAnyTokens`](#hasAnyTokens)، لكنه يعيد 1 إذا كانت جميع الرموز في السلسلة أو المصفوفة `needle` تطابق السلسلة `input`، ويعيد 0 خلاف ذلك. وإذا كانت `input` عمودًا، فإنه يعيد جميع الصفوف التي تستوفي هذا الشرط.
+مثل [`hasAnyTokens`](#hasAnyTokens)، لكنه يعيد 1 إذا كانت جميع الرموز في السلسلة أو المصفوفة `needle` تطابق السلسلة `input`، ويعيد 0 خلاف ذلك. إذا كانت `input` عمودًا، فإنه يرجع جميع الصفوف التي تستوفي هذا الشرط.
 
 <Note>
   يجب أن يكون للعمود `input` [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) معرّف لضمان أفضل أداء.
@@ -485,24 +485,24 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 **البنية**
 
 ```sql
-hasAllTokens(input, needles)
+hasAllTokens(input, needles[, tokenizer])
 ```
 
-**اسم مستعار**: `hasAllToken`
+**الأسماء المستعارة**: `hasAllToken`
 
-**الوسيطات**
+**الوسائط**
 
-* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array)
+* `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
 * `tokenizer` — مُجزِّئ الرموز المميزّة المراد استخدامه. الوسيطات الصالحة هي `splitByNonAlpha` و`splitByString` و`asciiCJK` و`chinese` و`icu('<locale>')` و`japanese` و`ngrams` و`sparseGrams` و`array`. وهو اختياري، وإذا لم يُحدَّد صراحةً، فستكون القيمة الافتراضية `splitByNonAlpha`. [`const String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
 
-تُعيد 1 إذا تطابقت جميع الرموز المراد البحث عنها، وإلا فتُعيد 0. [`UInt8`](/ar/reference/data-types/int-uint)
+تُعيد 1 إذا تطابقت جميع الرموز المراد البحث عنها. وإلا فتُعيد 0. [`UInt8`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
-**استخدام أساسي مع سلسلة بحث من نوع String**
+**استخدام أساسي مع سلسلة البحث**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -690,7 +690,7 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 <Note>
   يجب تعريف [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) على العمود `input` لتحقيق أفضل أداء.
-  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث باستخدام فهرس.
+  وإذا لم يكن هناك فهرس نصي معرّف، فستُجري الدالة مسحًا كاملًا للعمود بالقوة الغاشمة، وهو أبطأ بعدة مراتب من البحث عبر الفهرس.
 </Note>
 
 قبل البحث، تُجزِّئ الدالة إلى رموز:
@@ -715,12 +715,12 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 **البنية**
 
 ```sql
-hasAnyTokens(input, needles)
+hasAnyTokens(input, needles[, tokenizer])
 ```
 
 **الأسماء المستعارة**: `hasAnyToken`
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `input` — عمود الإدخال. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`Nullable(String)`](/ar/reference/data-types/nullable) أو [`Nullable(FixedString)`](/ar/reference/data-types/nullable) أو [`Array(String)`](/ar/reference/data-types/array) أو [`Array(FixedString)`](/ar/reference/data-types/array) أو [`Array(Nullable(String))`](/ar/reference/data-types/array) أو [`Array(Nullable(FixedString))`](/ar/reference/data-types/array)
 * `needles` — الرموز المراد البحث عنها. [`String`](/ar/reference/data-types/string) أو [`Array(String)`](/ar/reference/data-types/array)
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**حدِّد سلاسل البحث المراد البحث عنها كما هي (من دون تجزئة إلى رموز) في مصفوفة**
+**حدِّد سلاسل البحث للبحث عنها كما هي (من دون تجزئة إلى رموز) في مصفوفة**
 
 ```sql title=Query
 CREATE TABLE doc (

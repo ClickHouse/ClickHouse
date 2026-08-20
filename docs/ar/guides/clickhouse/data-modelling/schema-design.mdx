@@ -37,7 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوفّر ClickHouse إمكانية استدلال المخطط لتحديد الأنواع تلقائيًا لمجموعة بيانات. وهذا مدعوم لجميع تنسيقات البيانات، بما في ذلك Parquet. ويمكننا الاستفادة من هذه الميزة لتحديد أنواع ClickHouse للبيانات عبر دالة الجدول S3 والأمر [`DESCRIBE`](/ar/reference/statements/describe-table). لاحظ أدناه أننا نستخدم نمط glob ‏`*.parquet` لقراءة جميع الملفات في المجلد `stackoverflow/parquet/posts`.
 
 ```sql
-DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 SETTINGS describe_compact_output = 1
 ```
 
@@ -76,7 +76,7 @@ SETTINGS describe_compact_output = 1
 CREATE TABLE posts
 ENGINE = MergeTree
 ORDER BY () EMPTY AS
-SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 بضع نقاط مهمة:
@@ -123,7 +123,7 @@ ORDER BY tuple()
 بعد تعريف المخطط الأوّلي، يمكننا تعبئة البيانات باستخدام `INSERT INTO SELECT`، مع قراءة البيانات عبر دالة الجدول S3. يحمّل المثال التالي بيانات `posts` في نحو دقيقتين على مثيل ClickHouse Cloud مزوّد بثماني نوى.
 
 ```sql
-INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet', NOSIGN)
 ```
 
 ```response

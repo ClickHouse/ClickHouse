@@ -1,0 +1,226 @@
+---
+title: 'Operaciones'
+sidebarTitle: 'Operaciones'
+description: 'Operaciones del día 2 de ClickHouse Connector: actualizaciones, estado, certificados, rotación de credenciales, recuperación y desinstalación'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'operations']
+doc_type: 'guide'
+---
+
+Esta página abarca las operaciones del día 2 de ClickHouse Connector en ambos destinos de instalación. Para la instalación y la inscripción, consulta [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding).
+
+<div id="upgrades">
+  ## Actualizaciones
+</div>
+
+<div id="upgrades-kubernetes">
+  ### Kubernetes
+</div>
+
+<Note>
+  Las operaciones de Kubernetes posteriores a la implementación usan la CLI de `helm` en tu estación de trabajo. Solo `init` incluye un cliente de Helm integrado, así que instala `helm` antes de realizar tu primera actualización.
+</Note>
+
+Actualiza la versión desde el repositorio público de charts reutilizando la superposición de values que preparó `init`:
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+helm upgrade --install clicklink-connector clicklink-connector \
+  --repo https://releases.clicklink.clickhouse.com/charts \
+  --version <version> \
+  -n "${CONNECTOR_NAMESPACE}" \
+  -f clicklink-values.yaml
+```
+
+Las versiones del chart son las etiquetas de versión sin la `v` inicial (el chart `0.9.0` corresponde a la etiqueta `v0.9.0`). El chart publicado ya apunta a la imagen de contenedor pública, por lo que las instalaciones y actualizaciones normales no requieren valores de imagen. Para inspeccionar los valores predeterminados del chart, ejecute `helm show values clicklink-connector --repo https://releases.clicklink.clickhouse.com/charts`.
+
+Una instalación desde una referencia directa al chart (`oci://`, una URL o un archivo o directorio local) no tiene ningún repositorio frente al que resolverla: en su lugar, vuelva a ejecutar `helm upgrade clicklink-connector <same-chart-reference>` con la nueva versión. Volver a ejecutar `init` con una CLI más reciente también permite alcanzar el estado deseado, pero `init` siempre requiere uno de sus puntos de entrada: `--handoff` si conservó el paquete, o un token de inscripción nuevo con `--force` tras la limpieza documentada; el `helm upgrade` anterior es el procedimiento habitual (consulte [repeticiones y recuperación](#re-runs-and-recovery)).
+
+<div id="upgrades-linux-vm">
+  ### Máquina virtual Linux
+</div>
+
+Vuelva a ejecutar el instalador en el host; descargará y verificará la nueva versión del mismo modo que durante la [configuración inicial](/es/products/bring-your-own-cloud/connector/onboarding), hará una copia de seguridad del binario anterior y conservará los patrones activos de redacción y el archivo de entorno. A continuación, reinicie los demonios:
+
+```bash
+curl -fsSL https://releases.clicklink.clickhouse.com/install.sh | sudo bash -s -- --host
+sudo systemctl restart clicklink-scraper clicklink-troubleshooter
+```
+
+Para cambiar a una versión específica en lugar de la más reciente, añada `--version vX.Y.Z` al comando de instalación.
+
+<div id="health">
+  ## Estado de salud
+</div>
+
+Cada demonio expone un endpoint `/livez` en su puerto de estado de salud. El campo JSON `status` del cuerpo de la respuesta indica el estado de salud, no el código de estado HTTP; por tanto, compruebe el cuerpo en lugar de basarse en un `200`. Las métricas de Prometheus se exponen en el puerto de métricas de cada componente. Puertos predeterminados en ambos destinos:
+
+| Componente                | Puerto de estado de salud | Puerto de métricas |
+| ------------------------- | ------------------------- | ------------------ |
+| Predeterminado global     | 8080                      | 9090               |
+| Scraper                   | 8082                      | 9092               |
+| Solucionador de problemas | 8084                      | 9094               |
+
+Cuando las sesiones de soporte están habilitadas, el gateway también escucha en el puerto 8443: TLS autofirmado en una VM, HTTP local al pod mediante `kubectl port-forward` o un Ingreso de Kubernetes con terminación TLS.
+
+En una VM, puede ejecutar el conjunto completo de comprobaciones en cualquier momento:
+
+```bash
+sudo clicklink clctl preflight
+```
+
+Comprueba la configuración, los archivos, los conflictos de puertos, la accesibilidad de la red (el endpoint de la API y cada instancia de ClickHouse), la conectividad con ClickHouse, el estado de la unidad de systemd, el acceso por componente, el disco y los patrones de redacción, y sale con `2` si falla alguna comprobación.
+
+<div id="certificates">
+  ## Certificados
+</div>
+
+El conector renueva su propio certificado de Client: cada demonio comprueba el certificado de hoja cada 12 horas y lo renueva cuando le quedan 10 días de validez; recibe un certificado de hoja con una validez de 30 días a través del canal existente autenticado mediante mTLS y HMAC. No se requiere ninguna intervención del operador. En Kubernetes, el certificado de hoja renovado se vuelve a escribir en el secreto `clicklink-mtls`; en una VM, se escribe en `/etc/clicklink/tls/`.
+
+Para consultar la fecha de caducidad actual:
+
+```bash
+# Linux VM
+sudo openssl x509 -in /etc/clicklink/tls/client.crt -noout -enddate
+
+# Kubernetes
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+kubectl get secret clicklink-mtls -n "${CONNECTOR_NAMESPACE}" -o jsonpath='{.data.tls\.crt}' \
+  | base64 -d | openssl x509 -noout -enddate
+```
+
+<div id="credential-rotation">
+  ## Rotación de credenciales
+</div>
+
+<div id="rotate-api-credentials">
+  ### Credenciales de API (HMAC)
+</div>
+
+Solicite un token de inscripción nuevo a su equipo de cuentas de ClickHouse y vuelva a ejecutar el comando `init` original con `--enroll` y `--force`. Conserve todos los indicadores específicos del destino de la primera instalación (`--target-namespace`, `--values` y cualquier indicador de mirror como `--chart`, `--chart-repo` o `--chart-version`), ya que `--force` vuelve a preparar la configuración conservada. En una instalación predeterminada:
+
+```bash
+# Kubernetes, from your workstation
+clicklink clctl init --enroll https://<subdomain>.<connector-domain> --target helm --force
+
+# Linux VM, on the host
+sudo clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force
+```
+
+<Note>
+  Para la rotación desatendida en la que el aprovisionamiento mediante SQL requiere una contraseña, stdin recibe ambos secretos en este orden: el token en la primera línea y la contraseña en la segunda. La lectura del token consume exactamente una línea.
+
+  ```bash
+  printf '%s\n' "$ENROLLMENT_TOKEN" "$CH_ADMIN_PASSWORD" | \
+    clicklink clctl init --enroll https://<subdomain>.<connector-domain> --force --ch-admin-password-stdin
+  ```
+</Note>
+
+<div id="rotate-clickhouse-users">
+  ### Usuarios de ClickHouse
+</div>
+
+Vuelva a aprovisionar los usuarios de solo lectura del connector en cada instancia. En Kubernetes, ejecute lo siguiente desde su estación de trabajo: `--apply-ch-grants` vuelve a aplicar los grants regenerados dentro del pod para que las nuevas credenciales lleguen a ClickHouse (si el usuario admin tiene una password, añada `--ch-admin-password-stdin` y canalícela):
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+clicklink clctl scraper access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+clicklink clctl troubleshoot access provision --target helm \
+  --target-namespace "${CONNECTOR_NAMESPACE}" \
+  --instance <instance-name> --instance-namespace <clickhouse-namespace> \
+  --server <kubernetes-api-server-url> \
+  --apply-ch-grants --ch-pod <clickhouse-pod-or-label-selector> --ch-pod-namespace <clickhouse-namespace> \
+  --force
+```
+
+En una VM, en el host:
+
+```bash
+sudo clicklink clctl scraper access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+sudo clicklink clctl troubleshoot access provision --provider local \
+  --instance <instance-name> --server <kubernetes-api-server-url> --force
+```
+
+Para las instancias administradas por un operador, añada `--ch-user-via cr` y los indicadores de selección de pods a cualquiera de las dos formas; consulte la [referencia de la CLI](/es/products/bring-your-own-cloud/connector/reference/cli).
+
+<div id="rotate-client-certificate">
+  ### Certificado de Client
+</div>
+
+La renovación es automática (consulta [certificados](#certificates)). Para sustituir inmediatamente un certificado que aún no ha caducado, vuelve a ejecutar `init` con `--force`.
+
+<div id="re-runs-and-recovery">
+  ## Reejecuciones y recuperación
+</div>
+
+Las reejecuciones de `init` son convergentes, por lo que volver a ejecutar el mismo comando siempre es el primer paso. Sin `--force`, se conserva el archivo `/etc/clicklink/config.yaml` (VM) o la superposición `clicklink-values.yaml` (Kubernetes) existentes, y se reutiliza una clave de Client existente; las credenciales y la cadena de la CA se sobrescriben de forma atómica. Los comandos de recuperación que imprime la CLI tras un error parcial se pueden repetir sin problemas.
+
+`--force` sobrescribe la configuración o superposición conservada, regenera la clave de Client y reemplaza un certificado de Client no expirado. Nunca genera un UUID de cluster nuevo: la identidad del connector se conserva incluso con `--force`.
+
+Si la firma del certificado falló después de la preparación, o el endpoint de firma devolvió `409` porque ya existe un certificado no expirado, no necesita un token nuevo ni una segunda emisión. Complete la instalación con los materiales firmados que ya están en disco:
+
+```bash
+sudo clicklink clctl init --signed-cert client.crt --chain ca-chain.crt
+```
+
+Esa es la variante para VM (root reescribe `/etc/clicklink` y administra los servicios). En Kubernetes, la CLI imprime el formulario completo, incluidos `--target helm`, `--target-namespace` y `--values`; use el comando impreso tal cual.
+
+<div id="uninstall">
+  ## Desinstalar
+</div>
+
+<div id="uninstall-linux-vm">
+  ### Linux VM
+</div>
+
+`uninstall.sh` se incluye en el archivo tar de la versión. Si no queda ningún archivo tar extraído en el host, descargue y extraiga uno como se muestra en la [descarga y verificación manuales](/es/products/bring-your-own-cloud/connector/onboarding#manual-download-and-verification) y ejecútelo desde el directorio extraído:
+
+```bash
+sudo ./uninstall.sh
+```
+
+Esto detiene y deshabilita los servicios, y elimina las unidades de systemd y el binario, pero conserva `/etc/clicklink`, `/var/lib/clicklink`, `/var/log/clicklink` y el usuario `clicklink`, de modo que una reinstalación posterior recupera la configuración existente. Para eliminar también estos elementos:
+
+```bash
+sudo ./uninstall.sh --purge
+```
+
+<div id="upgrades-kubernetes">
+  ### Kubernetes
+</div>
+
+```bash
+CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
+helm uninstall clicklink-connector -n "${CONNECTOR_NAMESPACE}"
+```
+
+Los secretos creados por `init` no pertenecen al chart y se conservan tras la desinstalación. Elimínelos explícitamente, incluidos los secretos de acceso específicos de cada instancia que haya configurado:
+
+```bash
+kubectl delete secret clicklink-hmac clicklink-mtls -n "${CONNECTOR_NAMESPACE}"
+kubectl delete secret -n "${CONNECTOR_NAMESPACE}" \
+  clicklink-connector-scraper-access-<instance> \
+  clicklink-connector-troubleshooter-access-<instance>
+kubectl delete serviceaccount -n "${CONNECTOR_NAMESPACE}" \
+  pcm-scraper-<instance> pcm-troubleshooter-<instance>
+# Repeat for every ClickHouse namespace that holds a provisioned instance.
+for ns in <clickhouse-namespace-1> <clickhouse-namespace-2>; do
+  kubectl delete serviceaccount,role,rolebinding -n "${ns}" \
+    pcm-scraper pcm-troubleshooter
+done
+```
+
+<div id="rotate-clickhouse-users">
+  ### Usuarios de ClickHouse
+</div>
+
+Al desinstalar cualquiera de los destinos, los usuarios de solo lectura aprovisionados permanecen. Elimínelos como administrador en cada instancia (agregue su `--ch-user-suffix` a los nombres si configuró uno):
+
+```sql
+DROP USER IF EXISTS pcm_scraper, pcm_troubleshooter;
+```
