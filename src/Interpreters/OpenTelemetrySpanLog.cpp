@@ -29,6 +29,15 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         }
     );
 
+    auto status_code_type = std::make_shared<DataTypeEnum8>(
+        DataTypeEnum8::Values
+        {
+            {"UNSET",   static_cast<Int8>(OpenTelemetry::SpanStatus::UNSET)},
+            {"OK",      static_cast<Int8>(OpenTelemetry::SpanStatus::OK)},
+            {"ERROR",   static_cast<Int8>(OpenTelemetry::SpanStatus::ERROR)}
+        }
+    );
+
     auto low_cardinality_string = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
 
     return ColumnsDescription
@@ -57,6 +66,8 @@ ColumnsDescription OpenTelemetrySpanLogElement::getColumnsDescription()
         {"start_time_us", std::make_shared<DataTypeUInt64>(), "The start time of the trace span (in microseconds)."},
         {"finish_time_us", std::make_shared<DataTypeUInt64>(), "The finish time of the trace span (in microseconds)."},
         {"finish_date", std::make_shared<DataTypeDate>(), "The finish date of the trace span."},
+        {"status_code", std::move(status_code_type), "The status code of the span."},
+        {"status_message", low_cardinality_string, "Error message."},
         {"attribute", std::make_shared<DataTypeMap>(low_cardinality_string, std::make_shared<DataTypeString>()), "Attribute depending on the trace span. They are filled in according to the recommendations in the OpenTelemetry standard."},
     };
 }
@@ -77,18 +88,22 @@ void OpenTelemetrySpanLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(trace_id);
-    columns[i++]->insert(span_id);
-    columns[i++]->insert(parent_span_id);
-    columns[i++]->insert(operation_name);
-    columns[i++]->insert(kind);
-    columns[i++]->insert(start_time_us);
-    columns[i++]->insert(finish_time_us);
-    columns[i++]->insert(DateLUT::instance().toDayNum(finish_time_us / 1000000).toUnderType());
-    // The user might add some ints values, and we will have Int Field, and the
-    // insert will fail because the column requires Strings. Convert the fields
-    // here, because it's hard to remember to convert them in all other places.
-    columns[i++]->insert(attributes);
+    columns[i++]->insert(span.trace_id);
+    columns[i++]->insert(span.span_id);
+    columns[i++]->insert(span.parent_span_id);
+    columns[i++]->insert(span.operation_name);
+    columns[i++]->insert(span.kind);
+    columns[i++]->insert(span.start_time_us);
+    columns[i++]->insert(span.finish_time_us);
+    columns[i++]->insert(DateLUT::instance().toDayNum(span.finish_time_us / 1000000).toUnderType());
+    columns[i++]->insert(static_cast<Int8>(span.status_code));
+    columns[i++]->insert(span.status_message);
+
+    Map attributes_map;
+    attributes_map.reserve(span.attributes.size());
+    for (const auto & attribute : span.attributes)
+        attributes_map.push_back(Tuple{attribute.getKey(), attribute.getValue()});
+    columns[i++]->insert(std::move(attributes_map));
 }
 
 }

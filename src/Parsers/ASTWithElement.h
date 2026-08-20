@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -14,10 +15,15 @@ public:
     ASTPtr subquery;
     ASTPtr aliases;
 
+    bool is_materialized = false; /// WITH t AS MATERIALIZED (subquery)
+
     /** Get the text that identifies this element. */
     String getID(char) const override { return "WithElement"; }
 
     ASTPtr clone() const override;
+
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };

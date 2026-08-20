@@ -1,0 +1,130 @@
+---
+description: 'Documentação do upgrade'
+sidebar_title: 'Upgrade autogerenciado'
+slug: /operations/update
+title: 'Upgrade autogerenciado'
+doc_type: 'guide'
+---
+
+<div id="clickhouse-upgrade-overview">
+  ## Visão geral da atualização do ClickHouse
+</div>
+
+Este documento contém:
+
+* diretrizes gerais
+* um plano recomendado
+* detalhes específicos para atualizar os binários em seus sistemas
+
+<div id="general-guidelines">
+  ## Diretrizes gerais
+</div>
+
+Estas notas devem ajudar você no planejamento e a entender por que fazemos as recomendações apresentadas mais adiante neste documento.
+
+<div id="upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper">
+  ### Atualize o servidor ClickHouse separadamente do ClickHouse Keeper ou ZooKeeper
+</div>
+
+A menos que seja necessária alguma correção de segurança no ClickHouse Keeper ou no Apache ZooKeeper, não é necessário atualizar o Keeper ao atualizar o servidor ClickHouse. A estabilidade do Keeper é essencial durante o processo de atualização; portanto, conclua as atualizações do servidor ClickHouse antes de considerar uma atualização do Keeper.
+
+<div id="minor-version-upgrades-should-be-adopted-often">
+  ### Atualizações de versões menores devem ser adotadas com frequência
+</div>
+
+É altamente recomendável sempre atualizar para a versão menor mais recente assim que ela for lançada. Os lançamentos menores não incluem mudanças incompatíveis, mas trazem correções de bugs importantes (e podem incluir correções de segurança).
+
+<div id="test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version">
+  ### Teste recursos experimentais em um servidor ClickHouse separado executando a versão de destino
+</div>
+
+A compatibilidade dos recursos experimentais pode ser perdida a qualquer momento e de várias maneiras. Se você estiver usando recursos experimentais, verifique os changelogs e considere configurar um servidor ClickHouse separado com a versão de destino instalada para testar ali o uso desses recursos experimentais.
+
+<div id="downgrades">
+  ### Downgrades
+</div>
+
+Se você fizer upgrade e depois perceber que a nova versão não é compatível com algum recurso de que você depende, talvez seja possível fazer downgrade para uma versão recente (com menos de um ano), desde que você ainda não tenha começado a usar nenhum dos novos recursos. Depois que esses novos recursos forem usados, o downgrade não funcionará.
+
+<div id="multiple-clickhouse-server-versions-in-a-cluster">
+  ### Múltiplas versões do servidor ClickHouse em um cluster
+</div>
+
+Nos esforçamos para manter uma janela de compatibilidade de um ano (que inclui 2 versões LTS). Isso significa que quaisquer duas versões devem conseguir funcionar juntas em um cluster se a diferença entre elas for inferior a um ano (ou se houver menos de duas versões LTS entre elas). No entanto, recomenda-se atualizar todos os membros de um cluster para a mesma versão o mais rápido possível, pois podem ocorrer alguns problemas menores (como lentidão em consultas distribuídas, erros passíveis de nova tentativa em algumas operações em segundo plano no ReplicatedMergeTree etc.).
+
+Nunca recomendamos executar versões diferentes no mesmo cluster quando as datas de lançamento tiverem mais de um ano de diferença. Embora não esperemos perda de dados, o cluster pode se tornar inutilizável. Os problemas que você deve esperar caso haja mais de um ano de diferença entre as versões incluem:
+
+* o cluster pode não funcionar
+* algumas (ou até mesmo todas) consultas podem falhar com erros aleatórios
+* erros/avisos aleatórios podem aparecer nos logs
+* pode ser impossível fazer downgrade
+
+<div id="incremental-upgrades">
+  ### Atualizações incrementais
+</div>
+
+Se a diferença entre a versão atual e a versão de destino for superior a um ano, recomenda-se:
+
+* Atualizar com indisponibilidade (parar todos os servidores, atualizar todos os servidores, iniciar todos os servidores).
+* Ou atualizar por meio de uma versão intermediária (uma versão com menos de um ano de diferença em relação à versão atual).
+
+<div id="recommended-plan">
+  ## Plano recomendado
+</div>
+
+Estas são as etapas recomendadas para uma atualização do ClickHouse sem indisponibilidade:
+
+1. Certifique-se de que suas alterações de configuração não estejam no arquivo padrão `/etc/clickhouse-server/config.xml` e, em vez disso, estejam em `/etc/clickhouse-server/config.d/`, pois `/etc/clickhouse-server/config.xml` pode ser sobrescrito durante uma atualização.
+2. Leia os [changelogs](/pt-BR/resources/changelogs/oss/2026) para verificar alterações incompatíveis (do lançamento de destino até o lançamento que você está usando atualmente, retrocedendo entre as versões).
+3. Faça, antes da atualização, todas as alterações identificadas nas mudanças incompatíveis que puderem ser aplicadas e liste as alterações que precisarão ser feitas após a atualização.
+4. Identifique uma ou mais réplicas de cada shard para mantê-las em funcionamento enquanto as demais réplicas de cada shard são atualizadas.
+5. Nas réplicas que serão atualizadas, uma de cada vez:
+
+* desligue o servidor ClickHouse
+* atualize o servidor para a versão de destino
+* inicie o servidor ClickHouse novamente
+* aguarde até que as mensagens do Keeper indiquem que o sistema está estável
+* prossiga para a próxima réplica6. Verifique se há erros no log do Keeper e no log do ClickHouse
+
+7. Atualize as réplicas identificadas na etapa 4 para a nova versão
+8. Consulte a lista de alterações das etapas 1 a 3 e faça as alterações que precisam ser aplicadas após a atualização.
+
+<Note>
+  Essa mensagem de erro é esperada quando há várias versões do ClickHouse em execução em um ambiente replicado. Você deixará de vê-la quando todas as réplicas forem atualizadas para a mesma versão.
+
+  ```text
+  MergeFromLogEntryTask: Code: 40. DB::Exception: Checksums of parts don't match:
+  hash of uncompressed files doesn't match. (CHECKSUM_DOESNT_MATCH)  Data after merge is not
+  byte-identical to data on another replicas.
+  ```
+</Note>
+
+<div id="clickhouse-server-binary-upgrade-process">
+  ## Processo de atualização do binário do servidor ClickHouse
+</div>
+
+Se o ClickHouse foi instalado a partir de pacotes `deb`, execute os seguintes comandos no servidor:
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-client clickhouse-server
+$ sudo service clickhouse-server restart
+```
+
+Se você instalou o ClickHouse por um método diferente dos pacotes `deb` recomendados, use o método de atualização apropriado.
+
+<Note>
+  Você pode atualizar vários servidores ao mesmo tempo, desde que não haja nenhum momento em que todas as réplicas de um shard fiquem offline.
+</Note>
+
+A atualização de uma versão mais antiga do ClickHouse para uma versão específica:
+
+Por exemplo:
+
+`xx.yy.a.b` é uma versão estável atual. A versão estável mais recente pode ser encontrada [aqui](https://github.com/ClickHouse/ClickHouse/releases)
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
+$ sudo service clickhouse-server restart
+```

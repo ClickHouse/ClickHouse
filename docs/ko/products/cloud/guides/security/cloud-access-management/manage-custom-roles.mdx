@@ -1,0 +1,156 @@
+---
+sidebarTitle: '사용자 지정 역할 관리'
+slug: /cloud/guides/security/manage-custom-roles
+title: '사용자 지정 역할 관리'
+description: '이 페이지에서는 관리자가 사용자 지정 역할을 추가, 수정 및 삭제하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['사용자 지정 역할', '보안', '권한']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+이 가이드는 ClickHouse Cloud에서 관리자 역할을 가진 사용자를 대상으로 합니다.
+
+ClickHouse Cloud 고객은 미리 정의된 시스템 역할을 선택하거나 사용자에게 할당할 사용자 지정 역할을 만들 수 있습니다. 시스템 역할과 여기에 연결된 권한에 대한 자세한 내용은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오. 이 가이드에서는 사용자 지정 역할을 관리하는 방법을 설명합니다.
+
+<div id="create-custom-role">
+  ## 사용자 지정 역할 만들기
+</div>
+
+사용자 지정 역할에는 조직, 서비스, 데이터베이스 권한을 조합하여 포함할 수 있습니다. 권한은 모든 서비스와 데이터베이스 또는 그 부분 집합에 적용할 수 있습니다.
+
+<Steps>
+  <Step title="조직 설정으로 이동하여 Users and roles를 선택합니다" id="users-and-roles-1">
+    서비스 페이지에서 조직 이름을 선택합니다. 팝업 메뉴에서 `Users and roles` 메뉴 항목을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step title={<>`Roles` 탭을 선택합니다</>} id="roles-tab">
+    화면 상단 중앙에서 `Roles` 탭을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step title={<>오른쪽 상단에서 <code>Create new role</code>을 선택합니다</>} id="create-new-role">
+    화면 오른쪽 상단에서 `Create new role` 버튼을 선택합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step title="역할 이름을 지정합니다" id="name-the-role">
+    설명을 잘 나타내는 역할 이름을 입력합니다. 이 이름은 사용자와 API Key에 역할을 할당할 때 표시됩니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+  </Step>
+
+  <Step title={<>`Allow`를 클릭하고 권한 범위를 선택합니다</>} id="scope-permissions">
+    `Allow` 버튼을 클릭한 다음 조직, 서비스 및/또는 Database 권한 중에서 선택합니다. 모든 권한에 대한 설명은 [Console roles and permissions](/ko/products/cloud/reference/security/console-roles)를 참조하십시오.
+
+    <Tip>
+      콘솔에 로그인할 사용자는 최소한 조직 &gt; Access 조직 권한이 있어야 합니다.
+    </Tip>
+
+    <Info>
+      **Data Sources 탭 액세스**
+
+      **Data Sources** 탭에 액세스하려면 현재 역할에 `Manage selected services` 권한이 필요합니다.
+    </Info>
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+  </Step>
+
+  <Step title="새 역할을 검토합니다" id="review-role">
+    최종 생성 전에 새 역할에 할당된 권한을 검토합니다. 완료되면 `Create role`을 클릭합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+  </Step>
+</Steps>
+
+<div id="manage-database-roles">
+  ## 데이터베이스 역할 관리(베타)
+</div>
+
+<BetaBadge />
+
+콘솔 권한 외에도 사용자 지정 역할에 선택한 서비스의 데이터베이스 접근을 제어하는 데이터 권한을 포함할 수 있습니다. 따라서 각 데이터베이스에서 역할을 별도로 관리하지 않고 한곳에서 콘솔 및 데이터베이스 접근을 관리할 수 있습니다.
+
+<Note>
+  이 기능은 베타이며 ClickHouse 버전 26.4 이상을 실행하는 서비스에서 사용할 수 있습니다.
+</Note>
+
+사용자 지정 역할에 데이터 권한을 추가하면 ClickHouse Cloud는 선택한 각 서비스에 `cloud:` 접두사가 붙은 동일한 역할을 생성합니다. 예를 들어 `readonly`라는 사용자 지정 역할은 데이터베이스에서 `cloud:readonly`로 표시됩니다. 사용자 지정 역할의 구성원은 SQL 콘솔의 비밀번호 없는 인증을 통해 서비스에 연결할 때 이러한 데이터베이스 권한을 부여받습니다.
+
+<Info>
+  [`sql-console-role:<email>` 명명 규칙](/ko/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles)을 사용해 데이터베이스에서 수동으로 할당한 역할은 콘솔을 통해 할당한 역할보다 우선합니다.
+</Info>
+
+<Steps>
+  <Step title="역할에 데이터 권한 추가" id="add-data-permissions">
+    [사용자 지정 역할을 생성](#create-custom-role)하거나 기존 역할을 편집합니다. 역할 대화 상자에서 `Allow permissions` 버튼을 클릭한 후 `Data`를 선택합니다.
+  </Step>
+
+  <Step title="서비스 선택" id="select-data-permissions-service">
+    권한을 적용할 서비스를 선택합니다. 여러 서비스에 권한을 적용하려면 서비스를 추가합니다.
+  </Step>
+
+  <Step title="액세스 수준 선택" id="choose-data-access-level">
+    `Read-only`, `관리자` 또는 `Custom` 액세스를 선택합니다. `Custom` 액세스에서는 ClickHouse [`GRANT` 문](/ko/reference/statements/grant)을 사용하여 특정 데이터 접근 권한을 정의합니다.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="사용자 지정 GRANT 문으로 데이터 권한을 정의한 새 역할 생성 대화 상자" size="md" />
+  </Step>
+
+  <Step title="역할 생성" id="create-role-with-data-permissions">
+    `Create role`을 클릭합니다. 선택한 서비스에 데이터베이스 역할이 생성됩니다.
+  </Step>
+</Steps>
+
+<div id="verify-database-roles">
+  ### 데이터베이스 역할 확인
+</div>
+
+Console을 통해 관리되는 역할은 데이터베이스에 `cloud:` 접두사와 `cloud` 저장소 유형으로 생성됩니다. 이러한 역할을 나열하려면 서비스에서 `system.roles` 테이블을 쿼리합니다:
+
+```sql
+SELECT * FROM system.roles;
+```
+
+```response
+┌─name───────────┬─id───────────────────────────────────┬─storage─┐
+│ cloud:readonly │ 9a4910f4-abcf-4904-466a-717c8c75ac42 │ cloud   │
+└────────────────┴──────────────────────────────────────┴─────────┘
+```
+
+<div id="update-custom-role">
+  ## 사용자 지정 역할 업데이트
+</div>
+
+사용자 지정 역할은 생성된 후에도 업데이트할 수 있습니다. 역할에서 제거된 권한은 사용자에게서 사라지고, 추가된 권한은 사용자에게 부여됩니다.
+
+<Tip>
+  사용자 권한은 누적됩니다. 사용자가 여러 역할을 통해 작업을 수행할 권한을 가지고 있는 경우, 한 역할에서만 해당 권한이 제거되면 즉시 액세스 권한을 잃지 않을 수 있습니다.
+</Tip>
+
+1. 조직 설정으로 이동한 다음 `Users and roles`를 선택합니다
+2. `Roles` 탭을 선택합니다
+3. 업데이트하려는 역할 옆의 점 3개를 선택합니다
+4. `Edit`를 선택합니다
+5. 권한을 수정합니다
+6. `Edit role`을 선택합니다
+
+<div id="delete-custom-role">
+  ## 사용자 지정 역할 삭제
+</div>
+
+사용자 지정 역할은 언제든지 삭제할 수 있습니다.
+
+<Warning>
+  조직에는 관리자 권한이 있는 사용자가 최소 1명 이상 있어야 합니다. 역할을 삭제했을 때 마지막 사용자의 관리자 권한까지 제거되는 경우에는 해당 역할을 삭제할 수 없습니다. 이 문제를 해결하려면 사용자 지정 역할을 삭제하기 전에 최소 1명의 사용자에게 관리자 시스템 역할을 할당하십시오.
+</Warning>
+
+1. 조직 설정으로 이동하여 `Users and roles`를 선택합니다
+2. `Roles` 탭을 선택합니다
+3. 삭제하려는 역할 옆의 점 3개 메뉴를 선택합니다
+4. 역할이 제거되면 액세스 권한을 잃게 되는 사용자와 API Key를 검토합니다. 필요에 따라 할당을 조정합니다.
+5. 프로세스를 완료하려면 `Delete role`을 선택합니다

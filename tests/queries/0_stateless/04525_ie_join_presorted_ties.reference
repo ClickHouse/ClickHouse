@@ -1,0 +1,12 @@
+plan	1
+plan self	1
+<  >=	1	342320
+<= >	1	547520
+>  <=	1	206000
+>= <	1	274880
+self	1	205485
+plan const	1
+const <=	1	263956
+const <	0
+const >=	1	188244
+const >	0

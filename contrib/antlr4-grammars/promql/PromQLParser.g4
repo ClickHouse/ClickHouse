@@ -44,8 +44,8 @@ expression
 // Unary operations have the same precedence as multiplications
 
 vectorOperation
-    : <assoc = right> vectorOperation powOp vectorOperation
-    | <assoc = right> vectorOperation subqueryOp
+    : <assoc = right> vectorOperation subqueryOp
+    | <assoc = right> vectorOperation powOp vectorOperation
     | unaryOp vectorOperation
     | vectorOperation multOp vectorOperation
     | vectorOperation addOp vectorOperation
@@ -66,7 +66,7 @@ powOp
     ;
 
 multOp
-    : (MULT | DIV | MOD) grouping?
+    : (MULT | DIV | MOD | ATAN2) grouping?
     ;
 
 addOp
@@ -90,22 +90,38 @@ subqueryOp
     ;
 
 offsetOp
-    : AT NUMBER (OFFSET (ADD|SUB)? NUMBER)?
-    | OFFSET (ADD|SUB)? NUMBER (AT NUMBER)?
+    : AT timestamp (OFFSET offsetValue)?
+    | OFFSET offsetValue (AT timestamp)?
     ;
 
 vector
     : function_
     | aggregation
     | instantSelector
-    | matrixSelector
-    | offset
+    | rangeSelector
+    | selectorWithOffset
     | literal
     | parens
     ;
 
 parens
     : LEFT_PAREN vectorOperation RIGHT_PAREN
+    ;
+
+// Timestamps and durations
+
+timestamp
+    : NUMBER
+    | START LEFT_PAREN RIGHT_PAREN
+    | END LEFT_PAREN RIGHT_PAREN
+    ;
+
+duration
+    : NUMBER
+    ;
+
+offsetValue
+    : (ADD | SUB)? NUMBER
     ;
 
 // Selectors
@@ -116,7 +132,13 @@ instantSelector
     ;
 
 labelMatcher
-    : labelName labelMatcherOperator STRING
+    : selectorIdentifier labelMatcherOperator STRING
+    | STRING
+    ;
+
+selectorIdentifier
+    : labelName
+    | STRING
     ;
 
 labelMatcherOperator
@@ -130,13 +152,13 @@ labelMatcherList
     : labelMatcher (COMMA labelMatcher)* COMMA?
     ;
 
-matrixSelector
-    : instantSelector TIME_RANGE
+rangeSelector
+    : instantSelector SELECTOR_RANGE
     ;
 
-offset
+selectorWithOffset
     : instantSelector offsetOp
-    | matrixSelector offsetOp
+    | rangeSelector offsetOp
     ;
 
 // Functions
@@ -201,7 +223,7 @@ labelName
     ;
 
 labelNameList
-    : LEFT_PAREN (labelName (COMMA labelName)*)? RIGHT_PAREN
+    : LEFT_PAREN (labelName (COMMA labelName)* COMMA?)? RIGHT_PAREN
     ;
 
 metricName
@@ -213,6 +235,7 @@ keyword
     : AND
     | OR
     | UNLESS
+    | ATAN2
     | BY
     | WITHOUT
     | ON
@@ -221,6 +244,8 @@ keyword
     | GROUP_RIGHT
     | OFFSET
     | BOOL
+    | START
+    | END
     | AGGREGATION_OPERATOR
     | FUNCTION
     ;

@@ -1,8 +1,9 @@
 import copy
 import dataclasses
 import json
+import time
 import urllib
-from typing import Optional
+from typing import List, Optional
 
 from ._environment import _Environment
 from .info import Info
@@ -24,6 +25,31 @@ from .utils import Utils
 
 
 class CIDB:
+    _STATUS_TO_CIDB = {
+        Result.Status.OK: "success",
+        Result.Status.FAIL: "failure",
+        Result.Status.ERROR: "error",
+        Result.Status.SKIPPED: "skipped",
+        Result.Status.PENDING: "pending",
+        Result.Status.RUNNING: "running",
+        Result.Status.DROPPED: "dropped",
+        Result.Status.UNKNOWN: "failure",
+        Result.Status.XFAIL: "success",
+        Result.Status.XPASS: "failure",
+    }
+
+    @classmethod
+    def convert_status(cls, status: str) -> str:
+        """Map Result.Status value to legacy CIDB check_status string."""
+        legacy = cls._STATUS_TO_CIDB.get(status)
+        if legacy is not None:
+            return legacy
+        # Already a legacy string — pass through for idempotency
+        assert (
+            status in cls._STATUS_TO_CIDB.values()
+        ), f"Invalid status [{status}] for CIDB check_status"
+        return status
+
     @dataclasses.dataclass
     class TableRecord:
         pull_request_number: int
@@ -47,6 +73,10 @@ class CIDB:
         test_duration_ms: Optional[int]
         test_context_raw: str
 
+        def __post_init__(self):
+            # Transparently convert Result.Status values to legacy CIDB strings
+            self.check_status = CIDB.convert_status(self.check_status)
+
     def __init__(self, url, user, passwd):
         self.url = url
         self.auth = {
@@ -55,18 +85,76 @@ class CIDB:
         }
 
     def get_link_to_test_case_statistics(
-        self, test_name: str, job_name: Optional[str] = None, url="", user=""
+        self,
+        test_name: str,
+        job_name: Optional[str] = None,
+        failure_patterns=None,
+        test_output="",
+        url="",
+        user="",
+        pr_base_branches: Optional[List[str]] = None,
     ) -> str:
         """
         Build a link to query CI DB statistics for a specific test case.
-        The link format follows the Play-style URL: <self.url>[?user=<user>]#<base64(sql)>.
-        Groups by day and shows recent failures for the test. Optionally filters by job_name.
+
+        The generated link includes a SQL query that filters historical failures by the same pattern
+        found in the current test output. This helps narrow down similar failures and check their history.
+
+        Args:
+            test_name: Name of the test case
+            job_name: Optional job name for filtering
+            failure_patterns: List of substring patterns configured in CI settings (Settings.TEST_FAILURE_PATTERNS)
+            test_output: The current test failure output to match against patterns
+            url: Optional base URL (defaults to self.url)
+            user: Optional username for ClickHouse Play authentication
+            pr_base_branches: Optional list of base branches to include PR runs. If provided, includes PRs targeting any of these branches. If omitted, only main branch runs are included.
+
+        Pattern Matching Logic:
+            - Scans test_output for first matching pattern from failure_patterns list
+            - If match found: adds "AND test_context_raw LIKE '%pattern%'" filter to SQL query
+            - If no match: adds commented placeholder for manual editing
+            - This ensures the CIDB link in PR comments and CI reports shows only relevant historical failures
+
+        Returns:
+            URL with base64-encoded SQL query for viewing test failure history
         """
         # Basic sanitization for SQL string literals
         tn = (test_name or "").replace("'", "''")
         jn = (job_name or "").replace("'", "''") if job_name else None
         # Prefer configured table name if available, fall back to default
         table = Settings.CI_DB_TABLE_NAME or "checks"
+
+        # Find first matching failure pattern in test output
+        matched_pattern = None
+        if failure_patterns and test_output:
+            for pattern in failure_patterns:
+                if pattern in test_output:
+                    # Sanitize pattern for SQL and use first match
+                    matched_pattern = pattern.replace("'", "''")
+                    break
+
+        # Build failure pattern filter line
+        if matched_pattern:
+            failure_filter = f"    AND test_context_raw LIKE '%{matched_pattern}%'"
+        else:
+            # Add commented placeholder for manual editing
+            failure_filter = "    -- AND test_context_raw LIKE '%pattern%'  -- uncomment and edit to filter by failure pattern"
+
+        # Build PR filter based on pr_base_branches parameter
+        if pr_base_branches:
+            pr_base_branches = list(set(pr_base_branches))
+            # Sanitize branch names and build IN clause
+            sanitized_branches = [
+                branch.replace("'", "''") for branch in pr_base_branches
+            ]
+            branches_list = ", ".join(f"'{branch}'" for branch in sanitized_branches)
+            # Include both main branch runs and PRs targeting any of the specified base branches
+            pr_filter = (
+                f"    AND (pull_request_number = 0 OR base_ref IN ({branches_list}))"
+            )
+        else:
+            # Only include main branch runs
+            pr_filter = "    AND pull_request_number = 0"
 
         query = f"""\
 WITH
@@ -79,9 +167,10 @@ SELECT
 FROM {table}
 WHERE (now() - toIntervalDay(interval_days)) <= check_start_time
     AND test_name = '{tn}'
-    -- AND check_name = '{job_name}'
+    -- AND check_name = '{jn}'
     AND test_status IN ('FAIL', 'ERROR')
-    AND ((head_ref = 'master' AND pull_request_number = 0) OR pull_request_number != 0)
+{pr_filter}
+{failure_filter}
 GROUP BY day
 ORDER BY day DESC
 """
@@ -124,7 +213,7 @@ ORDER BY day DESC
             base_repo=env.REPOSITORY,
             head_ref=env.BRANCH,
             head_repo=env.FORK_NAME,
-            task_url="",
+            task_url=Info().get_job_url(),
             instance_type=",".join(
                 filter(None, [env.INSTANCE_TYPE, env.INSTANCE_LIFE_CYCLE])
             ),
@@ -155,7 +244,32 @@ ORDER BY day DESC
                 record.test_context_raw = result_.info
                 yield json.dumps(dataclasses.asdict(record))
 
-    def query(self, query: str, retries: int = 1):
+    def _post_with_retries(self, params, data, timeout, retries, what):
+        """POST to CI DB, backing off progressively on transport errors and on
+        non-OK responses alike: `requests` does not raise for 4xx/5xx."""
+        retry = 0
+        while True:
+            retry += 1
+            try:
+                response = requests.post(
+                    url=self.url,
+                    params=params,
+                    data=data,
+                    headers=self.auth,
+                    timeout=timeout,
+                )
+                if response.ok:
+                    return response
+                error = f"{what} failed, response code [{response.status_code}], body [{response.text}]"
+            except Exception as ex:
+                error = f"{what} failed, exception [{ex}]"
+
+            print(f"WARNING: CIDB {error} - attempt {retry}/{retries}")
+            if retry >= retries:
+                raise RuntimeError(f"CIDB {error}")
+            time.sleep(2**retry)
+
+    def query(self, query: str, retries: int = 5, log_level="warning"):
         """
         Executes a SELECT query on CI DB with retry support.
 
@@ -165,65 +279,47 @@ ORDER BY day DESC
         """
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": query,
-            "send_logs_level": "warning",
         }
 
-        for attempt in range(1, retries + 1):
-            try:
-                response = requests.post(
-                    url=self.url,
-                    params=params,
-                    headers=self.auth,
-                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                )
+        if log_level:
+            params["send_logs_level"] = log_level
 
-                if response.ok:
-                    return response.text
-                else:
-                    print(
-                        f"WARNING: CIDB query failed (status {response.status_code}) - Attempt {attempt}"
-                    )
-                    if attempt == retries:
-                        raise RuntimeError(
-                            f"Failed to query CI DB. Response code: {response.status_code}, Body: {response.text}"
-                        )
+        return self._post_with_retries(
+            params=params,
+            data=query.encode(),
+            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+            retries=retries,
+            what="query",
+        ).text
 
-            except Exception as ex:
-                print(f"ERROR: Exception during CI DB query attempt {attempt}: {ex}")
-                if attempt == retries:
-                    raise ex
+    @staticmethod
+    def _prepare_request_body(data):
+        if isinstance(data, str):
+            return data.encode("utf-8")
+        return data
 
-    def insert_rows(self, jsons, retries=3):
+    def insert_rows(self, jsons, retries=3, table=""):
+        """Insert JSONEachRow records into `table`, by default the main results
+        table. Jobs that keep their own table in the CI database pass it here,
+        e.g. the `Revert CI regressions` job and `checks_investigated`."""
+        table = table or Settings.CI_DB_TABLE_NAME
+        assert table
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": f"INSERT INTO {Settings.CI_DB_TABLE_NAME} FORMAT JSONEachRow",
+            "query": f"INSERT INTO {table} FORMAT JSONEachRow",
             "date_time_input_format": "best_effort",
             "send_logs_level": "warning",
         }
-        assert Settings.CI_DB_TABLE_NAME
 
-        for retry in range(retries):
-            try:
-                response = requests.post(
-                    url=self.url,
-                    params=params,
-                    data=",".join(jsons),
-                    headers=self.auth,
-                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                )
-                print(response.text)
-                if response.ok:
-                    print(f"INFO: {len(jsons)} rows inserted into CIDB")
-                    break
-                else:
-                    if retry == retries - 1:
-                        raise RuntimeError(
-                            f"Failed to write to CI DB, response code [{response.status_code}]"
-                        )
-            except Exception as ex:
-                if retry == retries - 1:
-                    raise ex
+        response = self._post_with_retries(
+            params=params,
+            data=self._prepare_request_body("\n".join(jsons)),
+            timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+            retries=retries,
+            what="insert",
+        )
+        print(response.text)
+        print(f"INFO: {len(jsons)} rows inserted into CIDB")
 
     def insert(self, result: Result, result_name_for_cidb=""):
         jsons = []
@@ -240,7 +336,7 @@ ORDER BY day DESC
             commit_sha=info.sha,
             commit_url=info.commit_url,
             check_name="Usage Storage",
-            check_status=Result.Status.SUCCESS,
+            check_status=Result.Status.OK,
             check_duration_ms=storage_usage.uploaded,
             check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
             report_url=info.get_report_url(),
@@ -280,7 +376,7 @@ ORDER BY day DESC
                 commit_sha=info.sha,
                 commit_url=info.commit_url,
                 check_name="Usage Compute",
-                check_status=Result.Status.SUCCESS,
+                check_status=Result.Status.OK,
                 check_duration_ms=int(usage * 1000),
                 check_start_time=Utils.timestamp_to_str(Utils.timestamp()),
                 report_url=info.get_report_url(),
@@ -307,28 +403,29 @@ ORDER BY day DESC
         # Create a session object
         params = {
             "database": Settings.CI_DB_DB_NAME,
-            "query": f"SELECT 1",
+            "query": "SELECT 1",
         }
-        error = ""
-        for retry in range(2):
-            try:
-                response = requests.post(
-                    url=self.url,
-                    params=params,
-                    data="",
-                    headers=self.auth,
-                    timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
-                )
-                if not response.ok:
-                    error = f"ERROR: No connection to CI DB [{response.status_code}/{response.reason}]"
-                elif not response.json() == 1:
-                    print("ERROR: CI DB smoke test failed select 1 == 1")
-                    error = f"ERROR: CI DB smoke test failed [select 1 ==> {response.json()}]"
-                else:
-                    return True, ""
+        try:
+            response = self._post_with_retries(
+                params=params,
+                data="",
+                timeout=Settings.CI_DB_INSERT_TIMEOUT_SEC,
+                retries=3,
+                what="smoke test",
+            )
+        except Exception as ex:
+            return False, f"CIDB: ERROR: no connection to CI DB [{ex}]"
 
-            except Exception as ex:
-                print(f"ERROR: Exception [{ex}]")
-                error = f"CIDB: ERROR: Exception [{ex}]"
+        # A 200 with a non-JSON body (proxy or login page) stays a failed
+        # precheck instead of aborting workflow generation
+        try:
+            payload = response.json()
+        except ValueError as ex:
+            return (
+                False,
+                f"ERROR: CI DB smoke test got a non-JSON body [{ex}]: {response.text[:200]}",
+            )
 
-        return False, error
+        if not payload == 1:
+            return False, f"ERROR: CI DB smoke test failed [select 1 ==> {payload}]"
+        return True, ""

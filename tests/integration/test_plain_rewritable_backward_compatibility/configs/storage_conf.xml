@@ -1,0 +1,12 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain_rewritable>
+                <type>s3_plain_rewritable</type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+            </s3_plain_rewritable>
+        </disks>
+    </storage_configuration>
+</clickhouse>

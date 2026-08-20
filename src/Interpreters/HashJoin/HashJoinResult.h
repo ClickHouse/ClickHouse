@@ -14,15 +14,18 @@ public:
         const Block & required_right_keys;
         const std::vector<String> & required_right_keys_sources;
 
-        size_t max_joined_block_rows;
-        size_t max_joined_block_bytes;
+        size_t max_joined_block_rows = 0;
+        size_t max_joined_block_bytes = 0;
 
-        size_t avg_joined_bytes_per_row;
+        size_t avg_joined_bytes_per_row = 0;
 
-        bool need_filter;
-        bool is_join_get;
+        bool need_filter = false;
+        bool is_join_get = false;
 
         bool joined_block_split_single_row = false;
+
+        bool enable_lazy_columns_replication = false;
+        bool enable_lazy_columns_indexing = false;
     };
 
     HashJoinResult(
@@ -36,12 +39,16 @@ public:
 
     JoinResultBlock next() override;
 
+    void setNextBlock(ScatteredBlock && block);
+
     ~HashJoinResult() override;
 private:
     const LazyOutput lazy_output;
     const Properties properties;
 
     std::optional<ScatteredBlock> scattered_block;
+    /// Next unprocessed block
+    std::optional<ScatteredBlock> next_scattered_block;
 
     MutableColumns columns;
     IColumn::Offsets offsets;
@@ -70,6 +77,9 @@ private:
 
         /// If non-zero, limits the number of rows outputted from the block.
         size_t state_row_limit;
+        /// If non-zero, limits the number of bytes outputted from the block.
+        /// Works only when state_row_limit is also non-zero.
+        size_t state_bytes_limit;
 
         /// Rows already outputted from the block, which are skipped on next call to generateBlock.
         size_t state_row_offset = 0;

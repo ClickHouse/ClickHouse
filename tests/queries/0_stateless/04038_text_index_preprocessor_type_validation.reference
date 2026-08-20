@@ -1,0 +1,77 @@
+CAST(val, String) on non-Nullable scalar types
+-- String
+1
+0
+-- FixedString
+1
+0
+-- LowCardinality(String)
+1
+0
+-- LowCardinality(FixedString)
+1
+0
+CAST(val, String) on Array types
+-- Array(String)
+1
+0
+-- Array(FixedString)
+1
+0
+-- Array(LowCardinality(String))
+1
+0
+CAST on Nullable types
+-- Nullable(String) + CAST to String (non-NULL data)
+1
+0
+-- Nullable(FixedString) + CAST to Nullable(String)
+1
+0
+-- LowCardinality(Nullable(String)) + CAST to String (non-NULL data)
+1
+0
+-- Array(Nullable(String)) + CAST to Nullable(String)
+1
+0
+Other CAST directions
+-- String + CAST to FixedString
+1
+0
+-- String + CAST to LowCardinality(String)
+1
+0
+-- String + CAST to Nullable(String)
+1
+0
+-- String + CAST to LowCardinality(Nullable(FixedString))
+1
+0
+-- LowCardinality(String) + CAST to Nullable(FixedString)
+1
+0
+Type-preserving preprocessor (lower)
+-- Nullable(String) + lower
+1
+0
+-- LowCardinality(String) + lower
+1
+0
+-- LowCardinality(Nullable(String)) + lower
+1
+0
+-- Array(String) + lower
+1
+0
+-- Array(Nullable(String)) + lower
+1
+0
+-- Array(LowCardinality(String)) + lower
+1
+0
+Negative tests
+-- Preprocessor returning UInt64 should fail
+-- Preprocessor returning Array(UInt64) should fail
+-- Preprocessor wrapping scalar String in Array should fail
+-- Preprocessor wrapping scalar LowCardinality(String) in Array should fail
+-- Preprocessor adding extra array dimension to Array(String) should fail

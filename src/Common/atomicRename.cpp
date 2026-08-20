@@ -1,5 +1,6 @@
 #include <Common/atomicRename.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/VersionNumber.h>
 #include <Poco/Environment.h>
 #include <filesystem>
@@ -48,6 +49,8 @@ namespace ErrorCodes
         #define __NR_renameat2 276
     #elif defined(__loongarch64)
         #define __NR_renameat2 276
+    #elif defined(__e2k__)
+        #define __NR_renameat2 384
     #else
         #error "Unsupported architecture"
     #endif
@@ -180,8 +183,13 @@ bool supportsAtomicRename(std::string * out_message)
 
 #else
 
+/// Emscripten's libc declares these even though it cannot honour them, so do not redefine.
+#ifndef RENAME_NOREPLACE
 #define RENAME_NOREPLACE -1
+#endif
+#ifndef RENAME_EXCHANGE
 #define RENAME_EXCHANGE -1
+#endif
 
 namespace DB
 {

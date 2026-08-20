@@ -1,5 +1,6 @@
 create table t (number UInt64) engine MergeTree order by number;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT 1
 FROM
 (

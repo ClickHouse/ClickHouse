@@ -1,0 +1,51 @@
+---
+date: 2025-07-20
+title: ¿Cuál es la diferencia entre OPTIMIZE FINAL y FINAL?
+tags: ['Conceptos fundamentales de los datos']
+keywords: ['OPTIMIZE FINAL', 'FINAL']
+description: 'Explica las diferencias entre OPTIMIZE FINAL y FINAL, y cuándo conviene usarlos o evitarlos.'
+---
+
+`OPTIMIZE FINAL` es un comando DDL que reorganiza
+y optimiza de forma física y permanente los datos en disco. Fusiona físicamente las partes de datos en las tablas `MergeTree`,
+realizando la deduplicación de datos durante el proceso al eliminar las filas duplicadas del almacenamiento.
+
+`FINAL` es un modificador **en tiempo de consulta** que proporciona resultados deduplicados sin
+cambiar la estructura de los datos almacenados. Funciona aplicando la lógica de fusión en
+tiempo de lectura. Es temporal y solo afecta al resultado de la consulta actual.
+
+A menudo se recomienda a los usuarios evitar `OPTIMIZE FINAL`, ya que supone una
+sobrecarga de rendimiento considerable; sin embargo, no deben confundir ambos. A menudo es necesario
+usar `FINAL` para obtener resultados sin duplicados, especialmente al usar motores de tabla
+como `ReplacingMergeTree`, que pueden contener filas duplicadas que aún no
+se han reemplazado durante el proceso de fusión eventual en segundo plano.
+
+La siguiente tabla resume las diferencias clave:
+
+| Aspecto               | `OPTIMIZE FINAL`                                           | `FINAL`                                                   |
+| --------------------- | ---------------------------------------------------------- | --------------------------------------------------------- |
+| Tipo                  | Comando DDL                                                | Modificador de consulta                                   |
+| Efecto                | Optimización permanente del almacenamiento                 | Deduplicación temporal en tiempo de consulta              |
+| Rendimiento           | Impacto	Alto coste una vez; después, consultas más rápidas | Menor coste por consulta, pero se repite en cada consulta |
+| Modificación de datos | Sí - cambia físicamente el almacenamiento                  | No - operación de solo lectura                            |
+| Caso de uso           | Mantenimiento u optimización periódicos                    | Consultas deduplicadas en tiempo real                     |
+
+<div id="when-to-use-each">
+  ## Cuándo usar cada uno
+</div>
+
+Usa `OPTIMIZE FINAL` cuando:
+
+* Quieres mejorar de forma permanente el rendimiento de las consultas
+* Puedes asumir el costo puntual de la optimización
+* Estás realizando un mantenimiento periódico de la tabla
+* Quieres limpiar físicamente los datos duplicados
+
+Usa `FINAL` cuando:
+
+* Necesitas resultados deduplicados de inmediato
+* No puedes esperar a la optimización permanente o no la quieres
+* Solo necesitas datos deduplicados de vez en cuando
+* Estás trabajando con datos que cambian con frecuencia
+
+Ambas son herramientas valiosas, pero cumplen funciones distintas dentro de la estrategia de deduplicación de ClickHouse.

@@ -28,6 +28,8 @@ public:
 
     String getName() const override { return "TabSeparatedRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
+
 protected:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() final;

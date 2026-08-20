@@ -6,8 +6,9 @@
                 <object_storage_type>azure</object_storage_type>
                 <skip_access_check>false</skip_access_check>
                 <max_single_part_upload_size>33554432</max_single_part_upload_size>
-                <container_name>openbucketforpublicci</container_name>
-                <connection_string from_env="AZURE_CONNECTION_STRING"/>
+                <container_name>clickhouse-tests</container_name>
+                <connection_string>DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;</connection_string>
+                <persistent_removal_log>true</persistent_removal_log>
             </azure>
             <cached_azure>
                 <type>cache</type>

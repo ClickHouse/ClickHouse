@@ -1,5 +1,6 @@
 set enable_analyzer = 1;
 set distributed_product_mode = 'local';
+set optimize_skip_unused_shards = 0;
 
 drop table if exists shard1;
 drop table if exists shard2;

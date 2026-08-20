@@ -1,0 +1,4 @@
+first non-exempt EXPLAIN ANALYZE:
+non-exempt query exit code: 0
+second non-exempt EXPLAIN ANALYZE:
+QUOTA_EXCEEDED

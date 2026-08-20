@@ -11,13 +11,16 @@
 #include <Storages/ObjectStorage/DataLakes/Paimon/Types.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/Utils.h>
 #include <base/Decimal_fwd.h>
+#include <base/arithmeticOverflow.h>
 #include <base/types.h>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <Poco/Logger.h>
+#include <Common/DateLUT.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Core/Types.h>
 
 namespace DB
 {
@@ -25,6 +28,7 @@ namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
 extern const int BAD_ARGUMENTS;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 }
 namespace Paimon
@@ -93,17 +97,167 @@ String formatDecimal(const Decimal<T> & x, UInt32 scale)
     return wb.str();
 }
 
-String formatDateTime(const DateTime64 & x, UInt32 scale, const DateLUTImpl & time_zone)
+/// Reproduces Java's `LocalDateTime.toString`, which is how Paimon names a partition directory:
+/// `InternalRowPartitionComputer.generatePartValues` calls `Timestamp.toString` - the option
+/// `partition.legacy-name` that selects this defaults to true - and that is
+/// `toLocalDateTime().toString()`. `HH:mm` is always printed, `:ss` only when the second or the
+/// fraction is non-zero, and the fraction with 3, 6 or 9 digits, whichever is the shortest that is
+/// not lossy.
+///
+/// Paimon applies no time zone here: `Timestamp.toLocalDateTime` splits the raw epoch millisecond
+/// arithmetically, so the name is rendered as if in UTC. That holds for
+/// `TIMESTAMP WITH LOCAL TIME ZONE` as well, which is why the time zone of the column must not be
+/// used - it is the server time zone for that type, and would name a directory Paimon never wrote.
+static String formatTimestampAsPartitionName(const Paimon::Timestamp & timestamp)
 {
+    Int64 whole_seconds = timestamp.millisecond / 1000;
+    Int64 milli_of_second = timestamp.millisecond % 1000;
+    /// Division truncates towards zero, while `nano_of_millisecond` counts forward from
+    /// `millisecond`, so a negative remainder belongs to the preceding second.
+    if (milli_of_second < 0)
+    {
+        --whole_seconds;
+        milli_of_second += 1000;
+    }
+    const Int64 nano_of_second = milli_of_second * 1'000'000 + timestamp.nano_of_millisecond;
+
     WriteBufferFromOwnString wb;
-    writeDateTimeText<'-', ':', 'T', '.', true>(x, scale, wb, time_zone);
-    auto res = wb.str();
-    if (res.ends_with(":00"))
-        res = res.substr(0, res.length() - 3);
-    return res;
+    static const DateLUTImpl & utc_time_zone = DateLUT::instance("UTC");
+    writeDateTimeText<'-', ':', 'T'>(static_cast<time_t>(whole_seconds), wb, utc_time_zone);
+    String res = wb.str();
+
+    if (nano_of_second == 0)
+    {
+        /// The text is `YYYY-MM-DDTHH:MM:SS`, so this tests the second alone. Java omits `:ss` only
+        /// when the second and the fraction are both zero.
+        if (res.ends_with(":00"))
+            res.resize(res.length() - 3);
+        return res;
+    }
+
+    if (nano_of_second % 1'000'000 == 0)
+        return res + fmt::format(".{:03}", nano_of_second / 1'000'000);
+    if (nano_of_second % 1'000 == 0)
+        return res + fmt::format(".{:06}", nano_of_second / 1'000);
+    return res + fmt::format(".{:09}", nano_of_second);
 }
 
-String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
+/// The value of a timestamp partition key, at a scale that represents it without loss.
+static DecimalField<DateTime64> toDateTime64Field(const Paimon::Timestamp & timestamp, UInt32 precision)
+{
+    chassert(precision <= 9);
+
+    /// The compact encoding holds a number of milliseconds whatever the declared precision is, so
+    /// the value is reported with scale 3 rather than with the precision of the column: scaling down
+    /// to a precision below 3 here would lose information, and reporting a scale that differs from
+    /// the one of the column is harmless because `KeyCondition` converts the field to the type of
+    /// the column and that conversion accounts for both scales.
+    if (precision <= 3)
+        return DecimalField<DateTime64>(DateTime64(timestamp.millisecond), 3);
+
+    static constexpr Int64 POWERS_OF_TEN[] = {1, 10, 100, 1'000, 10'000, 100'000, 1'000'000};
+    const Int64 millisecond_multiplier = POWERS_OF_TEN[precision - 3];
+    const Int64 nanosecond_divisor = POWERS_OF_TEN[9 - precision];
+
+    /// `nano_of_millisecond` counts forward from `millisecond` also when the latter is negative, so
+    /// the two parts add up over the whole range.
+    Int64 value = 0;
+    if (common::mulOverflow(timestamp.millisecond, millisecond_multiplier, value)
+        || common::addOverflow(value, static_cast<Int64>(timestamp.nano_of_millisecond / nanosecond_divisor), value))
+        throw Exception(
+            ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Paimon timestamp of {} ms and {} ns does not fit into DateTime64({})",
+            timestamp.millisecond,
+            timestamp.nano_of_millisecond,
+            precision);
+
+    return DecimalField<DateTime64>(DateTime64(value), precision);
+}
+
+DB::Row getPartitionFields(const String & partition_string, const PaimonTableSchema & table_schema)
+{
+    Paimon::BinaryRow partition(partition_string);
+    auto get_partition_value = [&partition](Int32 i, Paimon::DataType & data_type) -> Field
+    {
+        if (data_type.clickhouse_data_type->isNullable() && partition.isNullAt(i))
+        {
+            return Null();
+        }
+
+        switch (data_type.root_type)
+        {
+            case RootDataType::CHAR:
+            case RootDataType::VARCHAR:
+                return Field(partition.getString(i));
+            case RootDataType::BOOLEAN: {
+                return Field(partition.getBoolean(i));
+            }
+            case RootDataType::DECIMAL: {
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal32 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal32>(
+                        partition.getDecimal<Int32>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal64 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal64>(
+                        partition.getDecimal<Int64>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal128 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal128>(
+                        partition.getDecimal<Int128>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                if (const auto * decimal_type
+                    = typeid_cast<const DataTypeDecimal256 *>(removeNullable(data_type.clickhouse_data_type).get()))
+                    return DecimalField<Decimal256>(
+                        partition.getDecimal<Int256>(i, decimal_type->getPrecision(), decimal_type->getScale()), decimal_type->getScale());
+                else
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown type {}", data_type.clickhouse_data_type->getName());
+            }
+            case RootDataType::TINYINT:
+                return Field(partition.getByte(i));
+            case RootDataType::SMALLINT:
+                return Field(partition.getShort(i));
+            case RootDataType::INTEGER:
+            case RootDataType::DATE:
+            case RootDataType::TIME_WITHOUT_TIME_ZONE:
+                return Field(partition.getInt(i));
+            case RootDataType::BIGINT:
+                return Field(partition.getLong(i));
+            case RootDataType::FLOAT:
+                return Field(partition.getFloat(i));
+            case RootDataType::DOUBLE:
+                return Field(partition.getDouble(i));
+            case RootDataType::TIMESTAMP_WITHOUT_TIME_ZONE:
+            case RootDataType::TIMESTAMP_WITH_LOCAL_TIME_ZONE: {
+                const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
+                LOG_TEST(
+                    &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
+                return toDateTime64Field(
+                    partition.getTimestamp(i, static_cast<Int32>(type->getScale())), type->getScale());
+            }
+            default:
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in partition", data_type.root_type);
+        }
+    };
+
+    DB::Row partition_key_value;
+    for (size_t i = 0; i < table_schema.partition_keys.size(); ++i)
+    {
+        auto it = table_schema.fields_by_name_indexes.find(table_schema.partition_keys[i]);
+        if (it == table_schema.fields_by_name_indexes.end() || it->second >= table_schema.fields.size())
+        {
+            throw DB::Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "{} is not found in table schema fields: [{}]",
+                table_schema.partition_keys[i],
+                fmt::join(table_schema.fields_by_name_indexes, ","));
+        }
+        auto field = table_schema.fields[it->second];
+        partition_key_value.emplace_back(get_partition_value(static_cast<Int32>(i), field.type));
+    }
+    return partition_key_value;
+};
+
+static String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     auto get_partition_value = [&partition, &partition_default_name](Int32 i, Paimon::DataType & data_type) -> String
     {
@@ -160,7 +314,7 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
                 const auto * type = typeid_cast<const DataTypeDateTime64 *>(removeNullable(data_type.clickhouse_data_type).get());
                 LOG_TEST(
                     &Poco::Logger::get("getPartitionString"), "getPrecision: {}, getScale: {}", type->getPrecision(), type->getScale());
-                return formatDateTime(partition.getTimestamp(i, type->getScale()), 3, type->getTimeZone());
+                return formatTimestampAsPartitionName(partition.getTimestamp(i, static_cast<Int32>(type->getScale())));
             }
             default:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported type {} in partition", data_type.root_type);
@@ -199,11 +353,12 @@ String getPartitionString(Paimon::BinaryRow & partition, const PaimonTableSchema
         writeString(Paimon::PathEscape::escapePathName(entry.second), path_writer);
         ++i;
     }
-    writeString("/", path_writer);
+    if (!partition_entries.empty())
+        writeString("/", path_writer);
     return path_writer.str();
 };
 
-String getBucketPath(String partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name)
+String getBucketPath(const String & partition, Int32 bucket, const PaimonTableSchema & table_schema, const String & partition_default_name)
 {
     Paimon::BinaryRow binary_row(partition);
     String partition_string = getPartitionString(binary_row, table_schema, partition_default_name);

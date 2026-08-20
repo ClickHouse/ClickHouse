@@ -47,6 +47,42 @@ def started_cluster():
         cluster.shutdown()
 
 
+def test_executable_function_echo_arguments_bash(started_cluster):
+    skip_test_msan(node)
+    assert node.query_and_get_error(
+            "SELECT * FROM executable('', 'LineAsString', 'value String')"
+    )
+    error = node.query_and_get_error(
+            r"""SELECT * FROM executable('echo_arguments.sh test\1', 'LineAsString', 'value String')"""
+    )
+    assert "BAD_ARGUMENTS" in error
+    assert "Failed to parse script name and arguments" in error
+    assert (
+        node.query(
+            r"""SELECT * FROM executable('echo_arguments.sh \'Key 1\' \'Key 2\'', 'LineAsString', 'value String')"""
+        )
+        == "Key 1\nKey 2\n"
+    )
+    assert (
+        node.query(
+            r"""SELECT * FROM executable('echo_arguments.sh ''Key 1'' ''Key 2''', 'LineAsString', 'value String')"""
+        )
+        == "Key 1\nKey 2\n"
+    )
+    assert (
+        node.query(
+            r"""SELECT * FROM executable('echo_arguments.sh "Key 1" "Key 2"', 'LineAsString', 'value String')"""
+        )
+        == "Key 1\nKey 2\n"
+    )
+    assert (
+        node.query(
+            r"""SELECT * FROM executable('echo_arguments.sh Key 1 Key 2 Key 3', 'LineAsString', 'value String')"""
+        )
+        == "Key\n1\nKey\n2\nKey\n3\n"
+    )
+
+
 def test_executable_function_no_input_bash(started_cluster):
     skip_test_msan(node)
     assert (
@@ -325,7 +361,7 @@ def test_executable_storage_input_slow_python(started_cluster):
     node.query("DROP TABLE test_table")
 
 
-def test_executable_function_input_multiple_pipes_python(started_cluster):
+def test_executable_storage_input_multiple_pipes_python(started_cluster):
     skip_test_msan(node)
 
     query = "CREATE TABLE test_table (value String) ENGINE=Executable('input_multiple_pipes.py', 'TabSeparated', {source})"

@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/Serializations/SerializationIPv4andIPv6.h>
 #include <IO/WriteHelpers.h>
@@ -182,6 +183,20 @@ void SerializationIP<IPv>::deserializeBinaryBulk(DB::IColumn & column, DB::ReadB
     istr.ignore(sizeof(IPv) * rows_offset);
     size_t size = istr.readBig(reinterpret_cast<char*>(&x[initial_size]), sizeof(IPv) * limit);
     x.resize(initial_size + size / sizeof(IPv));
+}
+
+template <typename IPv>
+UInt128 SerializationIP<IPv>::getHash()
+{
+    SipHash hash;
+    hash.update(TypeName<IPv>);
+    return hash.get128();
+}
+
+template <typename IPv>
+SerializationPtr SerializationIP<IPv>::create()
+{
+    return ISerialization::pooled(getHash(), [] { return new SerializationIP<IPv>(); });
 }
 
 template class SerializationIP<IPv4>;

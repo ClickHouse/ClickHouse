@@ -1,0 +1,97 @@
+---
+description: 'flipCoordinates 文档'
+sidebarTitle: '翻转坐标'
+slug: /sql-reference/functions/geo/flipCoordinates
+title: '翻转坐标'
+doc_type: 'reference'
+---
+
+<div id="flipcoordinates">
+  ## flipCoordinates
+</div>
+
+`flipCoordinates` 函数会交换点、Ring、Polygon 或 MultiPolygon 的坐标。例如，在纬度和经度顺序不同的坐标系之间转换时，这一功能非常有用。
+
+```sql
+flipCoordinates(coordinates)
+```
+
+<div id="input-parameters">
+  ### 输入参数
+</div>
+
+* `coordinates` — 表示点 `(x, y)` 的 Tuple，或由此类 Tuple 组成的数组，用于表示 Ring、Polygon 或 Multipolygon。支持的输入类型包括：
+  * [**Point**](/zh/reference/data-types/geo#point)：Tuple `(x, y)`，其中 `x` 和 `y` 是 [Float64](/zh/reference/data-types/float) 类型的值。
+  * [**Ring**](/zh/reference/data-types/geo#ring)：点数组 `[(x1, y1), (x2, y2), ...]`。
+  * [**Polygon**](/zh/reference/data-types/geo#polygon)：Ring 数组 `[ring1, ring2, ...]`，其中每个 Ring 都是点数组。
+  * [**Multipolygon**](/zh/reference/data-types/geo#multipolygon)：Polygon 数组 `[polygon1, polygon2, ...]`。
+
+<div id="returned-value">
+  ### 返回值
+</div>
+
+该函数返回将坐标顺序翻转后的输入。例如：
+
+* 点 `(x, y)` 会变为 `(y, x)`。
+* Ring `[(x1, y1), (x2, y2)]` 会变为 `[(y1, x1), (y2, x2)]`。
+* Polygon 和 MultiPolygon 等嵌套结构会被递归处理。
+
+<div id="examples">
+  ### 示例
+</div>
+
+<div id="example-1">
+  #### 示例 1：翻转单个点
+</div>
+
+```sql
+SELECT flipCoordinates((10, 20)) AS flipped_point
+```
+
+```text
+┌─flipped_point─┐
+│ (20,10)       │
+└───────────────┘
+```
+
+<div id="example-2">
+  #### 示例 2：翻转点数组 (Ring)
+</div>
+
+```sql
+SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+```
+
+```text
+┌─flipped_ring──────────────┐
+│ [(20,10),(40,30)]         │
+└───────────────────────────┘
+```
+
+<div id="example-3">
+  #### 示例 3：翻转 Polygon
+</div>
+
+```sql
+SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+```
+
+```text
+┌─flipped_polygon──────────────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
+└──────────────────────────────────────────────┘
+```
+
+<div id="example-4">
+  #### 示例 4：翻转 MultiPolygon
+</div>
+
+```sql
+SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+```
+
+```text
+┌─flipped_multipolygon──────────────────────────────┐
+│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
+└───────────────────────────────────────────────────┘
+```

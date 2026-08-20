@@ -8,11 +8,13 @@ class TableFunctionFactory;
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);
 void registerTableFunctionNumbers(TableFunctionFactory & factory);
+void registerTableFunctionPrimes(TableFunctionFactory & factory);
 void registerTableFunctionLoop(TableFunctionFactory & factory);
 void registerTableFunctionGenerateSeries(TableFunctionFactory & factory);
 void registerTableFunctionNull(TableFunctionFactory & factory);
 void registerTableFunctionZeros(TableFunctionFactory & factory);
 void registerTableFunctionExecutable(TableFunctionFactory & factory);
+void registerTableFunctionEval(TableFunctionFactory & factory);
 void registerTableFunctionFile(TableFunctionFactory & factory);
 void registerTableFunctionFileCluster(TableFunctionFactory & factory);
 void registerTableFunctionURL(TableFunctionFactory & factory);
@@ -20,6 +22,7 @@ void registerTableFunctionURLCluster(TableFunctionFactory & factory);
 void registerTableFunctionValues(TableFunctionFactory & factory);
 void registerTableFunctionInput(TableFunctionFactory & factory);
 void registerTableFunctionGenerate(TableFunctionFactory & factory);
+void registerTableFunctionFilesystem(TableFunctionFactory & factory);
 #if USE_MONGODB
 void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 #endif
@@ -27,13 +30,17 @@ void registerTableFunctionMongoDB(TableFunctionFactory & factory);
 void registerTableFunctionYTsaurus(TableFunctionFactory & factory);
 #endif
 void registerTableFunctionRedis(TableFunctionFactory & factory);
+void registerTableFunctionBigQuery(TableFunctionFactory & factory);
 
 #if USE_ARROWFLIGHT
 void registerTableFunctionArrowFlight(TableFunctionFactory & factory);
 #endif
 
 void registerTableFunctionMergeTreeIndex(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeAnalyzeIndexes(TableFunctionFactory & factory);
 void registerTableFunctionMergeTreeProjection(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeTextIndex(TableFunctionFactory & factory);
+void registerTableFunctionMergeTreeCodecBlockCounts(TableFunctionFactory & factory);
 void registerTableFunctionFuzzQuery(TableFunctionFactory & factory);
 #if USE_RAPIDJSON || USE_SIMDJSON
 void registerTableFunctionFuzzJSON(TableFunctionFactory & factory);

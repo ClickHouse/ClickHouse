@@ -1,1 +1,5 @@
-1
+Row 1:
+──────
+flush_has_samples:  1
+cached_has_samples: 1
+out_of_range:       0

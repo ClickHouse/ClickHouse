@@ -17,6 +17,7 @@ af	text
 106	x Alick a06 y
 111	x Alick b01 y
 116	x Alick b06 y
+1
 101	x Alick a01 y
 106	x Alick a06 y
 1
@@ -30,11 +31,11 @@ Test text(tokenizer = ngrams(2)) on UTF-8 data
 af	text
 102	clickhouse你好
 1
-Test text(tokenizer = sparseGrams(2, 100)) on UTF-8 data
+Test text(tokenizer = sparseGrams(3, 100)) on UTF-8 data
 af	text
 102	clickhouse你好
 1
-Test text(tokenizer = sparseGrams(2, 100, 3)) on UTF-8 data
+Test text(tokenizer = sparseGrams(3, 100, 4)) on UTF-8 data
 af	text
 102	clickhouse你好
 1

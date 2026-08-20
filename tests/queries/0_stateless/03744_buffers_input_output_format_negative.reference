@@ -1,0 +1,6 @@
+Buffers: prepare base files for negative tests
+Buffers: Schema missing
+Buffers: fewer columns in header than in file
+Buffers: more columns in header than in file
+Buffers: row count mismatch because of type mismatch
+Buffers: complex schema column-count mismatch

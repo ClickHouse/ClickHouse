@@ -1,3 +1,6 @@
+#include "config.h"
+
+#include <Access/AuthenticationData.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterCreateUserQuery.h>
 
@@ -41,7 +44,8 @@ namespace
         User & user,
         const ASTCreateUserQuery & query,
         const std::vector<AuthenticationData> authentication_methods,
-        const std::shared_ptr<ASTUserNameWithHost> & override_name,
+        const boost::intrusive_ptr<ASTUserNameWithHost> & override_name,
+        const std::optional<RolesOrUsersSet> & override_roles,
         const std::optional<RolesOrUsersSet> & override_default_roles,
         const std::optional<AlterSettingsProfileElements> & override_settings,
         const std::optional<RolesOrUsersSet> & override_grantees,
@@ -92,7 +96,23 @@ namespace
         {
             // we only check if user exceeds the allowed quantity of authentication methods in case the create/alter query includes
             // authentication information. Otherwise, we can bypass this check to avoid blocking non-authentication related alters.
-            auto number_of_authentication_methods = user.authentication_methods.size() + authentication_methods.size();
+
+            // Count each SSH key individually toward the limit, so the same set of keys counts equally whether
+            // written as one `ssh_key` method with several keys (`ssh_key BY KEY k1 TYPE t1, KEY k2 TYPE t2`)
+            // or as several `ssh_key` methods (`ssh_key BY KEY k1 TYPE t1, ssh_key BY KEY k2 TYPE t2`).
+            auto count_methods = [](const std::vector<AuthenticationData> & methods)
+            {
+#if USE_SSH
+                size_t count = 0;
+                for (const auto & method : methods)
+                    count += method.getType() == AuthenticationType::SSH_KEY ? method.getSSHKeys().size() : 1;
+                return count;
+#else
+                return methods.size();
+#endif
+            };
+
+            auto number_of_authentication_methods = count_methods(user.authentication_methods) + count_methods(authentication_methods);
             if (number_of_authentication_methods > max_number_of_authentication_methods)
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -155,12 +175,26 @@ namespace
         if (query.add_hosts)
             user.allowed_client_hosts.add(*query.add_hosts);
 
-        auto set_default_roles = [&](const RolesOrUsersSet & default_roles_)
+        auto grant_roles = [&](const RolesOrUsersSet & roles_, bool as_default_role_)
         {
-            if (!query.alter && !default_roles_.all)
-                user.granted_roles.grant(default_roles_.getMatchingIDs());
+            if (as_default_role_ && (query.alter || roles_.all))
+                return;
+            chassert(!query.alter && !roles_.all);
+            user.granted_roles.grant(roles_.getMatchingIDs());
+        };
 
-            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, default_roles_);
+        if (override_roles)
+            grant_roles(*override_roles, /* as_default_role = */ false);
+        else if (query.roles)
+            grant_roles(*query.roles, /* as_default_role = */ false);
+        else if (override_default_roles)
+            grant_roles(*override_default_roles, /* as_default_role = */ true);
+        else if (query.default_roles)
+            grant_roles(*query.default_roles, /* as_default_role = */ true);
+
+        auto set_default_roles = [&](const RolesOrUsersSet & roles_)
+        {
+            InterpreterSetRoleQuery::updateUserSetDefaultRoles(user, roles_);
         };
 
         if (override_default_roles)
@@ -216,6 +250,15 @@ BlockIO InterpreterCreateUserQuery::execute()
     if (query.global_valid_until)
         global_valid_until = getValidUntilFromAST(query.global_valid_until, getContext());
 
+    std::optional<RolesOrUsersSet> roles_from_query;
+    if (query.roles)
+    {
+        roles_from_query = RolesOrUsersSet{*query.roles, access_control};
+        chassert(!query.alter && !roles_from_query->all);
+        for (const UUID & role : roles_from_query->getMatchingIDs())
+            access->checkAdminOption(role);
+    }
+
     std::optional<RolesOrUsersSet> default_roles_from_query;
     if (query.default_roles)
     {
@@ -259,7 +302,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         {
             auto updated_user = typeid_cast<std::shared_ptr<User>>(entity->clone());
             updateUserFromQueryImpl(
-                *updated_user, query, authentication_methods, {}, default_roles_from_query, settings_from_query, grantees_from_query,
+                *updated_user, query, authentication_methods, {}, roles_from_query, default_roles_from_query, settings_from_query, grantees_from_query,
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -280,9 +323,9 @@ BlockIO InterpreterCreateUserQuery::execute()
         for (const auto & name : *query.names)
         {
             auto new_user = std::make_shared<User>();
-            const auto & name_with_host = typeid_cast<std::shared_ptr<ASTUserNameWithHost>>(name);
+            const auto & name_with_host = boost::static_pointer_cast<ASTUserNameWithHost>(name);
             updateUserFromQueryImpl(
-                *new_user, query, authentication_methods, name_with_host, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
+                *new_user, query, authentication_methods, name_with_host, roles_from_query, default_roles_from_query, settings_from_query, RolesOrUsersSet::AllTag{},
                 global_valid_until, query.reset_authentication_methods_to_new, query.replace_authentication_methods,
                 implicit_no_password_allowed, no_password_allowed,
                 plaintext_password_allowed, getContext()->getServerSettings()[ServerSetting::max_authentication_methods_per_user]);
@@ -350,6 +393,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         {},
         {},
         {},
+        {},
         global_valid_until,
         query.reset_authentication_methods_to_new,
         query.replace_authentication_methods,
@@ -359,6 +403,7 @@ void InterpreterCreateUserQuery::updateUserFromQuery(
         max_number_of_authentication_methods);
 }
 
+void registerInterpreterCreateUserQuery(InterpreterFactory & factory);
 void registerInterpreterCreateUserQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

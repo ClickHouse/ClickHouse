@@ -1,3 +1,5 @@
+SET use_variant_as_common_type = 0;
+
 -- Map(String, String)
 drop table if exists table_map;
 create table table_map (a Map(String, String), b String, c Array(String), d Array(String)) engine = Memory;

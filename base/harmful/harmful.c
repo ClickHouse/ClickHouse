@@ -3,8 +3,10 @@
   * (by terminating the program immediately).
   */
 
-/// It is only enabled in debug build (its intended use is for CI checks).
-#if !defined(NDEBUG)
+#include <base/sanitizer_defs.h>
+
+/// We check for "harmful" functions if it's a debug build or with a sanitizer.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
@@ -119,7 +121,9 @@ TRAP(mblen)
 TRAP(mbrlen)
 TRAP(mbrtowc)
 TRAP(mbsnrtowcs)
-TRAP(mbsrtowcs)
+#if !defined(USE_MUSL)
+TRAP(mbsrtowcs) // musl libc uses it internally in getaddrinfo()
+#endif
 //TRAP(mbtowc) // Used by Standard C++ library
 TRAP(mcheck)
 TRAP(mprobe)
@@ -155,7 +159,9 @@ TRAP(siginterrupt)
 TRAP(sigpause)
 //TRAP(sigprocmask)
 TRAP(sigsuspend)
-TRAP(sleep)
+#if !USE_FUZZING_MODE
+TRAP(sleep) // Used by libFuzzer
+#endif
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.

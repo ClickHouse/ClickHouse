@@ -5,8 +5,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsTextClassification.h>
 
-#include <memory>
-
 
 namespace DB
 {
@@ -35,10 +33,11 @@ namespace
             const auto * it = standard.find(el.getKey());
             if (it != standard.end())
             {
-                res += el.getMapped() * log(it->getMapped());
-            } else
+                res += static_cast<Float64>(el.getMapped()) * log(it->getMapped());
+            }
+            else
             {
-                res += el.getMapped() * log(zero_frequency);
+                res += static_cast<Float64>(el.getMapped()) * log(zero_frequency);
             }
             /// If at some step the result has become less than the current maximum, then it makes no sense to count it fully.
             if (res < max_result)
@@ -106,7 +105,7 @@ struct CharsetClassificationImpl
             std::string_view result_value;
 
             /// Go through the dictionary and find the charset with the highest weight
-            Float64 max_result = zero_frequency_log * (max_string_size);
+            Float64 max_result = zero_frequency_log * max_string_size;
             for (const auto & item : encodings_freq)
             {
                 Float64 score = naiveBayes(item.map, model, max_result);
@@ -123,7 +122,9 @@ struct CharsetClassificationImpl
 
             size_t result_value_size = result_value.size();
             res_data.resize(current_result_offset + result_value_size);
-            memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
+            /// result_value can be empty with null data(); memcpy(null, 0) is UB (nonnull argument).
+            if (result_value_size)
+                memcpy(&res_data[current_result_offset], result_value.data(), result_value_size);
             current_result_offset += result_value_size;
             res_offsets[i] = current_result_offset;
         }
@@ -148,6 +149,14 @@ using FunctionDetectLanguageUnknown = FunctionTextClassificationString<CharsetCl
 REGISTER_FUNCTION(DetectCharset)
 {
     FunctionDocumentation::Description description_charset = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
+
 Detects the character set of a non-UTF8-encoded input string.
 )";
     FunctionDocumentation::Syntax syntax_charset = "detectCharset(s)";
@@ -160,11 +169,19 @@ Detects the character set of a non-UTF8-encoded input string.
     };
     FunctionDocumentation::IntroducedIn introduced_in_charset = {22, 2};
     FunctionDocumentation::Category category_charset = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
+    FunctionDocumentation documentation_charset = {description_charset, syntax_charset, arguments_charset, {}, returned_value_charset, examples_charset, introduced_in_charset, category_charset};
 
     factory.registerFunction<FunctionDetectCharset>(documentation_charset);
 
     FunctionDocumentation::Description description_unknown = R"(
+<ExperimentalBadge/>
+<CloudNotSupportedBadge/>
+
+:::warning
+This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
+Set `allow_experimental_nlp_functions = 1` to enable it.
+:::
+
 Similar to the [`detectLanguage`](#detectLanguage) function, except the detectLanguageUnknown function works with non-UTF8-encoded strings.
 Prefer this version when your character set is UTF-16 or UTF-32.
 )";
@@ -178,7 +195,7 @@ Prefer this version when your character set is UTF-16 or UTF-32.
     };
     FunctionDocumentation::IntroducedIn introduced_in_unknown = {22, 2};
     FunctionDocumentation::Category category_unknown = FunctionDocumentation::Category::NLP;
-    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
+    FunctionDocumentation documentation_unknown = {description_unknown, syntax_unknown, arguments_unknown, {}, returned_value_unknown, examples_unknown, introduced_in_unknown, category_unknown};
 
     factory.registerFunction<FunctionDetectLanguageUnknown>(documentation_unknown);
 }

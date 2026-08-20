@@ -1,0 +1,97 @@
+---
+slug: /use-cases/AI_ML/AIChat
+sidebarTitle: 'Use ClickHouse Assistant chat in ClickHouse Cloud'
+title: 'Use ClickHouse Assistant chat in ClickHouse Cloud'
+description: 'Guide to enabling and using the AI Chat feature in ClickHouse Cloud Console'
+keywords: ['AI', 'ClickHouse Cloud', 'Chat', 'SQL Console', 'Agent', 'Docs AI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+> This guide explains how to enable and use the AI Chat feature in the ClickHouse Cloud Console.
+
+<Steps>
+<Step title="Prerequisites" id="prerequisites">
+
+1. You must have access to a ClickHouse Cloud organization with AI features enabled (contact your org admin or support if unavailable).
+</Step>
+<Step title="Open the AI Chat panel" id="open-panel">
+
+1. Navigate to a ClickHouse Cloud service.
+2. In the left sidebar, click the sparkle icon labeled “ClickHouse Assistant”.
+3. (Shortcut) Press <kbd>⌘</kbd> + <kbd>'</kbd> (macOS) or <kbd>Ctrl</kbd> + <kbd>'</kbd> (Linux/Windows) to toggle open.
+
+<Image img="/images/use-cases/AI_ML/AIChat/1_open_chat.webp" alt="Open AI Chat flyout" size="md"/>
+</Step>
+<Step title="Accept the data usage consent (first run)" id="consent">
+
+1. On first use you're prompted with a consent dialog describing data handling and third‑party LLM sub-processors.
+2. Review and accept to proceed. If you decline, the panel won't open.
+
+<Image img="/images/use-cases/AI_ML/AIChat/2_consent.webp" alt="Consent dialog" size="md"/>
+</Step>
+<Step title="Choose a chat mode" id="modes">
+
+AI Chat currently supports:
+
+- **Agent**: Multi‑step reasoning over schema + metadata (service must be awake).
+- **Docs AI (Ask)**: Focused Q&A grounded in official ClickHouse documentation and best‑practice references.
+
+Use the mode selector at the bottom-left of the flyout to switch.
+
+<Image img="/images/use-cases/AI_ML/AIChat/3_modes.webp" alt="Mode selection" size="sm"/>
+</Step>
+<Step title="Compose and send a message" id="compose">
+
+1. Type your question (e.g. “Create a materialized view to aggregate daily events by user”).  
+2. Press <kbd>Enter</kbd> to send (use <kbd>Shift</kbd> + <kbd>Enter</kbd> for a newline).  
+3. While the model is processing you can click “Stop” to interrupt.
+</Step>
+<Step title="Understanding “Agent” thinking steps" id="thinking-steps">
+
+In Agent mode you may see expandable intermediate “thinking” or planning steps. These provide transparency into how the assistant forms its answer. Collapse or expand as needed.
+
+<Image img="/images/use-cases/AI_ML/AIChat/4_thinking.webp" alt="Thinking steps" size="md"/>
+</Step>
+<Step title="Starting new chats" id="new-chats">
+
+Click the “New Chat” button to clear context and begin a fresh session.
+</Step>
+<Step title="Viewing chat history" id="history">
+
+1. The lower section lists your recent chats.
+2. Select a previous chat to load its messages.
+3. Delete a conversation using the trash icon.
+
+<Image img="/images/use-cases/AI_ML/AIChat/5_history.webp" alt="Chat history list" size="md"/>
+</Step>
+<Step title="Working with generated SQL" id="sql-actions">
+
+When the assistant returns SQL:
+
+- Review for correctness.
+- Click “Open in editor” to load the query into a new SQL tab.
+- Modify and execute within the Console.
+
+<Image img="/images/use-cases/AI_ML/AIChat/6_result_actions.webp" alt="Result actions" size="md"/>
+
+<Image img="/images/use-cases/AI_ML/AIChat/7_open_in_editor.webp" alt="Open generated query in editor" size="md"/>
+</Step>
+<Step title="Stopping or interrupting a response" id="interrupt">
+
+If a response is taking too long or diverging:
+
+1. Click the “Stop” button (visible while processing).
+2. The message is marked as interrupted; you can refine your prompt and resend.
+</Step>
+<Step title="Keyboard shortcuts" id="shortcuts">
+
+| Action | Shortcut |
+| ------ | -------- |
+| Open AI Chat | `⌘ + '` / `Ctrl + '` |
+| Send message | `Enter` |
+| New line | `Shift + Enter` |
+</Step>
+</Steps>

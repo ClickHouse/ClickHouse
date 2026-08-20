@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: パーツ XXXXX が前のパーツ YYYYY と交差しています。これはバグか、ZooKeeper データへの手動介入の結果です。"
+date: 2023-05-02
+description: "この記事では、ClickHouse で交差するパーツに関連する DB::Exception エラーを解決する方法を説明します。この問題は、多くの場合、競合状態または ZooKeeper データへの手動介入によって発生します。"
+tags: ['エラーと例外', 'システムテーブル']
+keywords: ['パーツの交差', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## 発生する理由
+</div>
+
+このエラーが発生すると、テーブルは読み取り専用として表示され、エラーメッセージに「交差するパーツ」と表示されます。
+
+ログで、または次の方法でこのエラーを確認できます
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+エラーメッセージは次のようになります。
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## エラーの原因
+</div>
+
+このエラーは、`mergeSelectingTask` とキューの再初期化の間で発生する競合状態によって引き起こされることがあります。
+
+<div id="solution">
+  ## 対処法
+</div>
+
+すべてのレプリカで、次のクエリを実行します。
+
+```sql
+DETACH TABLE table_name;  -- DROP REPLICA に必要
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- /table_path_in_zk 内のすべてを削除します
+
+ATTACH TABLE table_name;  -- ZK にメタデータが存在しないため、テーブルは読み取り専用モードになります
+```
+
+次に、すべてのレプリカで以下を実行します。
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- すべてのパーティションをデタッチし、ZK 内のメタデータを再作成（新しい空のテーブルとして扱われます）した後、すべてのパーティションを再アタッチします
+
+SYSTEM SYNC REPLICA table_name; -- レプリカがパーツを同期するまで待機します。また、リカバリ完了後はすべてのレプリカで `system.detached_parts` を確認することを推奨します。
+```
+
+<Tip>
+  ClickHouse は最新バージョンにアップグレードすることをおすすめします
+</Tip>
+
+<div id="additional-resources">
+  ## 追加リソース
+</div>
+
+関連するPRとGitHub Issue:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## 影響を受けるバージョン:
+</div>
+
+ClickHouse v 22.12 以前のバージョン

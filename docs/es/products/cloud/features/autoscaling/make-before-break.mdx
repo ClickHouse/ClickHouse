@@ -1,0 +1,40 @@
+---
+sidebarTitle: 'Make before break (MBB)'
+slug: /cloud/features/mbb
+description: 'Página que describe las operaciones de Make before break (MBB) en ClickHouse Cloud'
+keywords: ['Make before break', 'MBB', 'escalado', 'ClickHouse Cloud']
+title: 'Operaciones de Make before break (MBB) en ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickHouse Cloud realiza actualizaciones y escalado de clústeres mediante un enfoque de **Make Before Break** (MBB).
+En este enfoque, se añaden nuevas réplicas al clúster antes de eliminar las antiguas.
+Esto contrasta con el enfoque break-first, en el que primero se eliminarían las réplicas antiguas antes de añadir las nuevas.
+
+El enfoque MBB tiene varias ventajas:
+
+* Como se añade capacidad al clúster antes de retirarla, la **capacidad total del clúster no disminuye**, a diferencia de lo que ocurre con el enfoque break-first. Por supuesto, en un entorno en la nube pueden seguir produciéndose imprevistos, como fallos de nodos o discos.
+* Este enfoque es especialmente útil cuando el clúster está sometido a una carga elevada, ya que **evita que las réplicas existentes se sobrecarguen**, como ocurriría con un enfoque break-first.
+* Como las réplicas pueden añadirse rápidamente sin tener que esperar primero a eliminar otras, este enfoque ofrece una experiencia de escalado **más rápida y ágil**.
+
+La imagen siguiente muestra cómo podría producirse esto en un clúster con 3 réplicas en el que el servicio se escala verticalmente:
+
+<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Diagrama de ejemplo de un clúster con 3 réplicas que se escala verticalmente" />
+
+En general, MBB proporciona una experiencia de escalado y actualización fluida y menos disruptiva en comparación con el enfoque break-first que se utilizaba anteriormente.
+
+Con MBB, hay algunos comportamientos clave que debe tener en cuenta:
+
+1. Las operaciones MBB esperan a que las cargas de trabajo existentes finalicen en las réplicas actuales antes de terminarlas.
+   Actualmente, este período está fijado en 1 hora, lo que significa que el escalado o las actualizaciones pueden esperar hasta una hora a que finalice una consulta de larga duración en una réplica antes de eliminarla.
+   Además, si hay un proceso de copia de seguridad en ejecución en una réplica, se deja que termine antes de finalizar la réplica.
+2. Como hay un tiempo de espera antes de que se finalice una réplica, puede haber situaciones en las que un clúster tenga más réplicas que el número máximo configurado para él.
+   Por ejemplo, podría tener un servicio con 6 réplicas en total, pero con una operación MBB en curso, podrían añadirse 3 réplicas más al clúster, lo que daría un total de 9 réplicas, mientras las réplicas antiguas siguen atendiendo consultas.
+   Esto significa que, durante un tiempo, el clúster tendrá más réplicas de las deseadas.
+   Además, varias operaciones MBB pueden solaparse, lo que provoca una acumulación de réplicas. Esto puede ocurrir, por ejemplo, en escenarios en los que se envían varias solicitudes de escalado vertical al clúster a través de la API.
+   ClickHouse Cloud dispone de mecanismos de control para limitar el número de réplicas que puede llegar a acumular un clúster.
+3. Con las operaciones MBB, los datos de las tablas del sistema se conservan durante 30 días. Esto significa que cada vez que se produce una operación MBB en un clúster, se replican 30 días de datos de las tablas del sistema desde las réplicas antiguas a las nuevas.
+
+Si le interesa saber más sobre la mecánica de las operaciones MBB, consulte esta [entrada de blog](https://clickhouse.com/blog/make-before-break-faster-scaling-mechanics-for-clickhouse-cloud) del equipo de ingeniería de ClickHouse.

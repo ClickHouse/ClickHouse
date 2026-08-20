@@ -1,0 +1,47 @@
+---
+description: 'Install ClickHouse'
+keywords: ['clickhouse', 'install', 'getting started', 'quick start']
+sidebarTitle: 'Install'
+slug: /install
+title: 'Installation instructions'
+doc_type: 'guide'
+---
+
+import {galaxyOnClick} from "/snippets/lib/galaxy.jsx";
+
+<Card title="ClickHouse Cloud" icon="cloud" href="/get-started/setup/cloud" cta="View guide">
+  Start building instantly without having to size and scale your cluster. ClickHouse Cloud takes care of sizing, scaling
+    , security, reliability and upgrades.
+</Card>
+<br/>
+
+If you prefer to self-manage, select one of the open-source ClickHouse options below.
+Use the quick install script or the `clickhousectl` CLI for a local setup, or install
+ClickHouse Server from packages or binaries for a production deployment.
+
+<h3 className="install-group-heading">Local development</h3>
+<p className="install-group-description">
+    Run ClickHouse on your own machine to build, test, and experiment.
+    Quick install gets you a single binary fast, or use clickhousectl
+    to install and manage local versions and servers.
+</p>
+
+<Columns cols={4}>
+  <Card title="Quick install" icon="/images/install/linux.svg" href="/get-started/setup/self-managed/quick-install" />
+  <Card title="clickhousectl (CLI)" icon="terminal" href="/get-started/setup/self-managed/clickhousectl" />
+  <Card title="Docker" icon="/images/install/docker.svg" href="/get-started/setup/self-managed/docker" />
+  <Card title="Source build" icon="code" href="/get-started/setup/self-managed/advanced" />
+</Columns>
+
+<h3 className="install-group-heading">Production server</h3>
+<p className="install-group-description">
+    Install ClickHouse Server from packages or binaries for a
+    long-running deployment on your own infrastructure.
+</p>
+
+<Columns cols={4}>
+  <Card title="Debian/Ubuntu" icon="/images/install/DebianUbuntu.svg" href="/get-started/setup/self-managed/debian-ubuntu" />
+  <Card title="Redhat" icon="/images/install/redhat.svg" href="/get-started/setup/self-managed/redhat" />
+  <Card title="NixOS" icon="/images/install/nixos.svg" href="/get-started/setup/self-managed/nixos" />
+  <Card title="Other Linux" icon="/images/install/linux.svg" href="/get-started/setup/self-managed/other-linux" />
+</Columns>

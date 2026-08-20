@@ -2,11 +2,7 @@
 
 #include <Parsers/IAST.h>
 
-
-namespace re2
-{
-    class RE2;
-}
+namespace Poco::JSON { class Object; }
 
 namespace DB
 {
@@ -18,20 +14,21 @@ public:
     String getID(char) const override { return "ColumnsTransformerList"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsTransformerList>(*this);
+        auto clone = make_intrusive<ASTColumnsTransformerList>(*this);
         clone->cloneChildren();
         return clone;
     }
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+/// A `COLUMNS(...)` transformer is pure syntax: applying it needs the expanded column list, which
+/// only exists during analysis. See `Interpreters/applyColumnsTransformer.h`.
 class IASTColumnsTransformer : public IAST
 {
-public:
-    virtual void transform(ASTs & nodes) const = 0;
-    static void transform(const ASTPtr & transformer, ASTs & nodes);
 };
 
 class ASTColumnsApplyTransformer : public IASTColumnsTransformer
@@ -40,16 +37,17 @@ public:
     String getID(char) const override { return "ColumnsApplyTransformer"; }
     ASTPtr clone() const override
     {
-        auto res = std::make_shared<ASTColumnsApplyTransformer>(*this);
+        auto res = make_intrusive<ASTColumnsApplyTransformer>(*this);
         if (parameters)
             res->parameters = parameters->clone();
         if (lambda)
             res->lambda = lambda->clone();
         return res;
     }
-    void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
     // Case 1  APPLY (quantile(0.9))
     String func_name;
@@ -72,15 +70,16 @@ public:
     String getID(char) const override { return "ColumnsExceptTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsExceptTransformer>(*this);
+        auto clone = make_intrusive<ASTColumnsExceptTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
     void setPattern(String pattern_);
-    std::shared_ptr<re2::RE2> getMatcher() const;
+    const std::optional<String> & getPattern() const { return pattern; }
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -96,13 +95,15 @@ public:
         String getID(char) const override { return "ColumnsReplaceTransformer::Replacement"; }
         ASTPtr clone() const override
         {
-            auto replacement = std::make_shared<Replacement>(*this);
+            auto replacement = make_intrusive<Replacement>(*this);
             replacement->cloneChildren();
             return replacement;
         }
 
         void appendColumnName(WriteBuffer & ostr) const override;
         void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+        void writeJSON(WriteBuffer & out) const override;
+        void readJSON(const Poco::JSON::Object & json) override;
 
         String name;
 
@@ -114,19 +115,17 @@ public:
     String getID(char) const override { return "ColumnsReplaceTransformer"; }
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTColumnsReplaceTransformer>(*this);
+        auto clone = make_intrusive<ASTColumnsReplaceTransformer>(*this);
         clone->cloneChildren();
         return clone;
     }
-    void transform(ASTs & nodes) const override;
     void appendColumnName(WriteBuffer & ostr) const override;
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
-
-private:
-    static void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name);
 };
 
 }

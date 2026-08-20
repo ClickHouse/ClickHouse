@@ -1,0 +1,12 @@
+services:
+  wasmbuilder:
+    image: clickhouse/wasm-builder:${DOCKER_WASM_BUILDER_TAG:-latest}
+    # The build reads the ClickHouse tree and writes nothing to it.
+    volumes:
+      - ${WASM_BUILDER_SOURCE_DIR}:/ClickHouse:ro
+    # to keep container running
+    command: sleep infinity
+    stop_grace_period: 5s
+    # No `cpus` cap on purpose: Docker rejects a quota above the number of CPUs the host has, so
+    # any number here is a bet on the runner. The test is scheduled sequentially instead, and the
+    # build gets whatever the runner has.

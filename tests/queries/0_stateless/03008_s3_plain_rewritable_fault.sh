@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-shared-merge-tree, no-parallel
+# Tags: no-fasttest, no-shared-merge-tree, no-parallel, no-replicated-database
 # Tag no-fasttest: requires S3
 # Tag no-shared-merge-tree: does not support replication
 # Tag no-parallel: uses failpoints
+# Tag no-replicated-database: plain rewritable should not be shared between replicas
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -64,7 +65,7 @@ SETTINGS
         endpoint = 'http://localhost:11111/test/03008_test_s3_mt_fault/',
         access_key_id = clickhouse,
         secret_access_key = clickhouse),
-    old_parts_lifetime = 1;
+    old_parts_lifetime = 1, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0;
 "
 
 ${CLICKHOUSE_CLIENT} --query "

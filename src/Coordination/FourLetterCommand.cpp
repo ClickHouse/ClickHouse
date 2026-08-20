@@ -8,6 +8,7 @@
 #include <Common/logger_useful.h>
 #include <Poco/Environment.h>
 #include <Poco/Path.h>
+#include <Poco/JSON/Parser.h>
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
 #include <Common/StringUtils.h>
@@ -36,6 +37,8 @@ String formatZxid(int64_t zxid)
     String hex = getHexUIntLowercase(zxid);
     /// without leading zeros
     trimLeft(hex, '0');
+    if (hex.empty())
+        hex = "0";
     return "0x" + hex;
 }
 
@@ -53,6 +56,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 IFourLetterCommand::IFourLetterCommand(KeeperDispatcher & keeper_dispatcher_)
@@ -65,15 +69,21 @@ int32_t IFourLetterCommand::code()
     return toCode(name());
 }
 
+String IFourLetterCommand::runWithArgument(const std::string &)
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Four letter command {} does not support argument", name());
+}
+
 String IFourLetterCommand::toName(int32_t code)
 {
     int reverted_code = std::byteswap(code);
     return String(reinterpret_cast<char *>(&reverted_code), 4);
 }
 
-int32_t IFourLetterCommand::toCode(const String & name)
+int32_t IFourLetterCommand::toCode(std::string_view name)
 {
-    int32_t res = *reinterpret_cast<const int32_t *>(name.data());
+    int32_t res = 0;
+    std::memcpy(&res, name.data(), sizeof(int32_t));
     /// keep consistent with Coordination::read method by changing big endian to little endian.
     return std::byteswap(res);
 }
@@ -92,7 +102,7 @@ void FourLetterCommandFactory::checkInitialization() const
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Four letter command not initialized");
 }
 
-bool FourLetterCommandFactory::isKnown(int32_t code)
+bool FourLetterCommandFactory::isKnown(int32_t code) const
 {
     checkInitialization();
     return commands.contains(code);
@@ -209,12 +219,15 @@ void FourLetterCommandFactory::registerCommands(KeeperDispatcher & keeper_dispat
         FourLetterCommandPtr toggle_request_logging = std::make_shared<ToggleRequestLogging>(keeper_dispatcher);
         factory.registerCommand(toggle_request_logging);
 
+        FourLetterCommandPtr reconfigure_command = std::make_shared<ReconfigureCommand>(keeper_dispatcher);
+        factory.registerCommand(reconfigure_command);
+
         factory.initializeAllowList(keeper_dispatcher);
         factory.setInitialize(true);
     }
 }
 
-bool FourLetterCommandFactory::isEnabled(int32_t code)
+bool FourLetterCommandFactory::isEnabled(int32_t code) const
 {
     checkInitialization();
     if (!allow_list.empty() && *allow_list.cbegin() == ALLOW_LIST_ALL)
@@ -223,15 +236,24 @@ bool FourLetterCommandFactory::isEnabled(int32_t code)
     return std::find(allow_list.begin(), allow_list.end(), code) != allow_list.end();
 }
 
+bool FourLetterCommandFactory::supportArguments(int32_t code) const
+{
+    checkInitialization();
+
+    if (IFourLetterCommand::toName(code) == "rcfg")
+        return true;
+    return false;
+}
+
 void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dispatcher)
 {
-    const auto & keeper_settings = keeper_dispatcher.getKeeperConfigurationAndSettings();
-
-    String list_str = keeper_settings->four_letter_word_allow_list;
-    Strings tokens;
+    const auto & server_config = keeper_dispatcher.getKeeperConfiguration();
+    auto log = getLogger("FourLetterCommandFactory");
+    String list_str = server_config->four_letter_word_allow_list;
+    std::vector<std::string_view> tokens;
     splitInto<','>(tokens, list_str);
 
-    for (String token: tokens)
+    for (auto token : tokens)
     {
         trim(token);
 
@@ -242,15 +264,10 @@ void FourLetterCommandFactory::initializeAllowList(KeeperDispatcher & keeper_dis
             return;
         }
 
-        if (commands.contains(IFourLetterCommand::toCode(token)))
-        {
-            allow_list.push_back(IFourLetterCommand::toCode(token));
-        }
+        if (auto code = IFourLetterCommand::toCode(token); commands.contains(code))
+            allow_list.push_back(code);
         else
-        {
-            auto log = getLogger("FourLetterCommandFactory");
             LOG_WARNING(log, "Find invalid keeper 4lw command {} when initializing, ignore it.", token);
-        }
     }
 }
 
@@ -306,28 +323,40 @@ String MonitorCommand::run()
 
     print(ret, "server_state", keeper_info.getRole());
 
-    const auto & storage_stats = state_machine.getStorageStats();
+    const auto storage_stats = state_machine.getStorageStats();
 
-    print(ret, "znode_count", storage_stats.nodes_count.load(std::memory_order_relaxed));
-    print(ret, "watch_count", storage_stats.total_watches_count.load(std::memory_order_relaxed));
-    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count.load(std::memory_order_relaxed));
-    print(ret, "approximate_data_size", storage_stats.approximate_data_size.load(std::memory_order_relaxed));
+    print(ret, "znode_count", storage_stats.nodes_count);
+    print(ret, "watch_count", storage_stats.total_watches_count);
+    print(ret, "ephemerals_count", storage_stats.total_emphemeral_nodes_count);
+    print(ret, "approximate_data_size", storage_stats.approximate_data_size);
     print(ret, "key_arena_size", 0);
     print(ret, "latest_snapshot_size", state_machine.getLatestSnapshotSize());
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
-    print(ret, "open_file_descriptor_count", getCurrentProcessFDCount());
-    auto max_file_descriptor_count = getMaxFileDescriptorCount();
-    if (max_file_descriptor_count.has_value())
-        print(ret, "max_file_descriptor_count", *max_file_descriptor_count);
-    else
-        print(ret, "max_file_descriptor_count", -1);
+    /// An undetermined value is reported as the textual `-1`, as ZooKeeper does.
+    /// It must not go through the `uint64_t` overload of `print`: `-1` would wrap around
+    /// to 2^64 - 1, which is indistinguishable from an unlimited `RLIMIT_NOFILE` (`RLIM_INFINITY`).
+    const Int64 open_file_descriptor_count = getCurrentProcessFDCount();
+    print(ret, "open_file_descriptor_count", toString(open_file_descriptor_count));
+
+    const auto max_file_descriptor_count = getMaxFileDescriptorCount();
+    print(ret, "max_file_descriptor_count", max_file_descriptor_count.has_value() ? toString(*max_file_descriptor_count) : String("-1"));
 #endif
 
     if (keeper_info.is_leader)
     {
+        if (keeper_info.leader_uptime_ms)
+            print(ret, "leader_uptime", *keeper_info.leader_uptime_ms);
+
+        print(ret, "sum_leader_unavailable_time", keeper_info.sum_leader_unavailable_time_ms);
+        print(ret, "cnt_leader_unavailable_time", keeper_info.cnt_leader_unavailable_time);
+        print(ret, "sum_election_time", keeper_info.sum_election_time_ms);
+        print(ret, "cnt_election_time", keeper_info.cnt_election_time);
+
+        print(ret, "learners", keeper_info.learner_count);
         print(ret, "followers", keeper_info.follower_count);
         print(ret, "synced_followers", keeper_info.synced_follower_count);
+        print(ret, "synced_non_voting_followers", keeper_info.synced_non_voting_follower_count);
     }
 
     return ret.str();
@@ -338,7 +367,7 @@ String StatResetCommand::run()
     if (!keeper_dispatcher.isServerActive())
         return SERVER_NOT_ACTIVE_MSG;
 
-    keeper_dispatcher.resetConnectionStats();
+    keeper_dispatcher.resetServerStats();
     return "Server stats reset.\n";
 }
 
@@ -353,7 +382,7 @@ String ConfCommand::run()
         return SERVER_NOT_ACTIVE_MSG;
 
     StringBuffer buf;
-    keeper_dispatcher.getKeeperConfigurationAndSettings()->dump(buf);
+    keeper_dispatcher.getKeeperConfiguration()->dump(buf);
     keeper_dispatcher.getKeeperContext()->dumpConfiguration(buf);
     return buf.str();
 }
@@ -394,7 +423,7 @@ String ServerStatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -406,9 +435,9 @@ String ServerStatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
+    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
+    write("Node count", toString(storage_stats.nodes_count));
 
     return buf.str();
 }
@@ -424,7 +453,7 @@ String StatCommand::run()
 
     auto & stats = keeper_dispatcher.getKeeperConnectionStats();
     Keeper4LWInfo keeper_info = keeper_dispatcher.getKeeper4LWInfo();
-    const auto & storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
+    const auto storage_stats = keeper_dispatcher.getStateMachine().getStorageStats();
 
     write("ClickHouse Keeper version", String(VERSION_DESCRIBE) + "-" + VERSION_GITHASH);
 
@@ -440,9 +469,9 @@ String StatCommand::run()
     write("Sent", toString(stats.getPacketsSent()));
     write("Connections", toString(keeper_info.alive_connections_count));
     write("Outstanding", toString(keeper_info.outstanding_requests_count));
-    write("Zxid", formatZxid(storage_stats.last_zxid.load(std::memory_order_relaxed)));
+    write("Zxid", formatZxid(storage_stats.last_committed_zxid));
     write("Mode", keeper_info.getRole());
-    write("Node count", toString(storage_stats.nodes_count.load(std::memory_order_relaxed)));
+    write("Node count", toString(storage_stats.nodes_count));
 
     return buf.str();
 }
@@ -454,9 +483,10 @@ String BriefWatchCommand::run()
 
     StringBuffer buf;
     const auto & state_machine = keeper_dispatcher.getStateMachine();
-    buf << state_machine.getSessionsWithWatchesCount() << " connections watching "
-        << state_machine.getWatchedPathsCount() << " paths\n";
-    buf << "Total watches:" << state_machine.getTotalWatchesCount() << "\n";
+    const auto storage_stats = state_machine.getStorageStats();
+    buf << storage_stats.sessions_with_watches_count << " connections watching "
+        << storage_stats.watched_paths_count << " paths\n";
+    buf << "Total watches:" << storage_stats.total_watches_count << "\n";
     return buf.str();
 }
 
@@ -521,7 +551,7 @@ String EnviCommand::run()
 
     String os_user;
     os_user.resize(256, '\0');
-    if (0 == getlogin_r(os_user.data(), os_user.size() - 1))
+    if (0 == getlogin_r(os_user.data(), static_cast<int>(os_user.size() - 1)))
         os_user.resize(strlen(os_user.c_str()));
     else
         os_user.clear();    /// Don't mind if we cannot determine user login.
@@ -637,7 +667,7 @@ String YieldLeadershipCommand::run()
 
 #if USE_JEMALLOC
 
-void printToString(void * output, const char * data)
+static void printToString(void * output, const char * data)
 {
     std::string * output_data = reinterpret_cast<std::string *>(output);
     *output_data += std::string(data);
@@ -646,7 +676,7 @@ void printToString(void * output, const char * data)
 String JemallocDumpStats::run()
 {
     std::string output;
-    malloc_stats_print(printToString, &output, nullptr);
+    je_malloc_stats_print(printToString, &output, nullptr);
     return output;
 }
 
@@ -683,7 +713,7 @@ String ProfileEventsCommand::run()
 
     for (auto i : ProfileEvents::keeper_profile_events)
     {
-        const auto counter = ProfileEvents::global_counters[i].load(std::memory_order_relaxed);
+        const auto counter = ProfileEvents::global_counters[i];
         std::string metric_name{ProfileEvents::getName(static_cast<ProfileEvents::Event>(i))};
         std::string metric_doc{ProfileEvents::getDocumentation(static_cast<ProfileEvents::Event>(i))};
         append(metric_name, counter, metric_doc);
@@ -699,6 +729,26 @@ String ToggleRequestLogging::run()
     auto old_value = keeper_context->shouldLogRequests();
     keeper_context->setLogRequests(!old_value);
     return old_value ? "disabled" : "enabled";
+}
+
+
+String ReconfigureCommand::run()
+{
+    return "Reconfiguration command require single JSON argument";
+}
+
+String ReconfigureCommand::runWithArgument(const std::string & argument)
+{
+    Poco::JSON::Parser parser;
+    auto json = parser.parse(argument).extract<Poco::JSON::Object::Ptr>();
+
+    if (!keeper_dispatcher.reconfigEnabled())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Reconfiguration is not enabled on this keeper server");
+
+    auto result = keeper_dispatcher.reconfigureClusterFromReconfigureCommand(json);
+    std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    Poco::JSON::Stringifier::stringify(result, oss, 4);
+    return oss.str();
 }
 
 }

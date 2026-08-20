@@ -1,0 +1,368 @@
+---
+sidebarTitle: 'SAML 单点登录设置'
+slug: /cloud/security/saml-setup
+title: 'SAML 单点登录设置'
+description: '如何为 ClickHouse Cloud 配置 SAML 单点登录'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'SAML', 'SSO', '单点登录', 'IdP', 'Okta', 'Google']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<EnterprisePlanFeatureBadge feature="SAML 单点登录" />
+
+ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 (SSO) 。这使您能够通过身份提供商 (IdP) 完成身份验证，从而安全地登录到您的 ClickHouse Cloud 组织。
+
+我们支持服务提供商发起的单点登录、通过独立连接支持多个组织，以及即时预配。我们还支持通过 [Okta](/zh/products/cloud/guides/security/cloud-access-management/scim-setup) 和 [Microsoft Entra ID](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 进行 SCIM provisioning。暂不支持属性映射。
+
+启用 SAML 集成后，客户还可以指定分配给新用户的默认角色，并调整会话超时设置。
+
+<div id="before-you-begin">
+  ## 开始之前
+</div>
+
+你需要在 IdP 中拥有管理员权限，能够在你的域名 DNS 设置中添加 TXT 记录，并在 ClickHouse Cloud 组织中拥有 **Admin** 角色。我们建议除了配置 SAML 连接外，再设置一个**指向你组织的直接链接**，以简化登录流程。不同的 IdP 处理方式各不相同。请继续阅读，了解如何为你的 IdP 完成此操作。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+配置好 SAML 单点登录后，用户会通过服务提供商发起的登录流程进行登录：
+
+1. 用户访问 `https://console.clickhouse.cloud` 并输入其电子邮件地址 (或使用贵组织的直接登录链接) 。
+2. ClickHouse Cloud 会将用户重定向到你的身份提供商进行身份验证。
+3. 验证成功后，身份提供商会将用户重定向回 ClickHouse Cloud。
+4. ClickHouse Cloud 会让用户登录，并在首次登录时按需预配账户，同时分配你配置的默认角色。
+
+本指南的其余部分将介绍一次性配置。
+
+<div id="how-to-configure-your-idp">
+  ## 如何配置您的 IdP
+</div>
+
+<Steps>
+  <Step title="访问组织设置" id="access-organization-settings">
+    点击左下角的组织名称，然后选择“组织详情”。
+  </Step>
+
+  <Step title="启用 SAML 单点登录" id="enable-saml-sso">
+    点击 `Enable SAML single sign-on` 旁边的开关。请保持此页面处于打开状态，因为在设置过程中你需要多次返回查看这里的信息。
+
+    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="开始设置 SAML" force />
+  </Step>
+
+  <Step title="在身份提供商中创建应用程序" id="create-idp-application">
+    在您的身份提供商中创建一个应用程序，然后将 `Enable SAML single sign-on` 页面上的值复制到身份提供商配置中。有关此步骤的更多信息，请参阅下方对应的身份提供商说明。
+
+    * [Okta](#okta)
+    * [Google](#google)
+    * [Azure (Microsoft)](#azure)
+    * [Duo](#duo)
+
+    <Tip>
+      ClickHouse 不支持由身份提供商发起的登录。为了方便用户访问 ClickHouse Cloud，请按以下登录 URL 格式为用户创建书签：`https://console.clickhouse.cloud/?connection={orgId}`，其中 `{orgID}` 是“Organization details”页面中的 Organization ID。
+    </Tip>
+
+    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="创建身份提供商应用程序" force />
+  </Step>
+
+  <Step title="将元数据 URL 添加到您的 SAML 配置" id="add-metadata-url">
+    从您的 SAML 提供商处获取 `Metadata URL`。返回 ClickHouse Cloud，点击 `Next: Provide metadata URL`，然后将该 URL 粘贴到文本框中。
+
+    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="添加元数据 URL" force />
+  </Step>
+
+  <Step title="获取域验证代码" id="get-domain-verification-code">
+    点击 `Next: Verify your domains`。在文本框中输入你的域名，然后点击 `Check domain`。系统会生成一个随机验证码，你需要将其添加为 DNS 提供商中的一条 TXT 记录。
+
+    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="添加要验证的域名" force />
+  </Step>
+
+  <Step title="验证您的域名" id="verify-your-domain">
+    在您的 DNS 提供商处创建一条 TXT 记录。将 `TXT record name` 复制到 DNS 提供商的 TXT 记录 Name 字段中。将 `Value` 复制到 DNS 提供商的 Content 字段中。点击 `Verify and Finish` 完成该过程。
+
+    <Note>
+      DNS 记录更新并完成验证可能需要几分钟。您可以先离开设置页面，稍后再回来继续完成该过程，无需重新开始。该验证值自首次生成起 48 小时内有效。
+    </Note>
+
+    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="验证您的域名" force />
+  </Step>
+
+  <Step title="更新默认角色和会话超时" id="update-defaults">
+    完成 SAML 设置后，您可以设置用户登录时默认分配的角色，并调整会话超时设置。有关可分配系统角色的列表，请参阅 [控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
+  </Step>
+
+  <Step title="配置您的管理员用户" id="configure-your-admin-user">
+    <Note>
+      使用其他身份验证方法配置的用户会被保留，直到由您组织中的管理员将其移除。
+    </Note>
+
+    要通过 SAML 指定您的第一个管理员用户：
+
+    1. 退出 [ClickHouse Cloud](https://console.clickhouse.cloud)。
+    2. 在您的身份提供商中，将管理员用户分配到 ClickHouse 应用。
+    3. 让该用户通过 https://console.clickhouse.cloud/?connection={orgId} (快捷 URL) 登录。这可以通过您在前面步骤中创建的书签完成。该用户在首次登录之前不会出现在 ClickHouse Cloud 中。
+    4. 如果默认 SAML 角色不是 `Admin`，该用户可能需要先退出登录，再使用其原始身份验证方法重新登录，以更新新 SAML 用户的角色。
+       * 对于电子邮件 + 密码账户，请使用 `https://console.clickhouse.cloud/?with=email`。
+       * 对于社交登录，请点击相应按钮 (**继续使用 Google** 或 **继续使用 Microsoft**)
+
+    <Note>
+      上述 `?with=email` 中的 `email` 是字面参数值，不是占位符。
+    </Note>
+
+    5. 再退出一次，然后通过快捷 URL 重新登录，以完成下面的最后一步。
+
+    <Tip>
+      为减少步骤，您可以先将 SAML 默认角色设置为 `Admin`。当管理员在您的身份提供商中被分配并首次登录后，他们可以将默认角色更改为其他值。
+    </Tip>
+  </Step>
+
+  <Step title="移除其他身份验证方法" id="remove-other-auth-methods">
+    移除所有使用非 SAML 身份验证方法的用户，以完成集成，并将访问权限仅限于来自你的身份提供商连接的用户。
+  </Step>
+</Steps>
+
+<div id="configure-idp">
+  ### 配置您的身份提供商
+</div>
+
+<Tabs>
+  <Tab title="Okta" id="okta">
+    你需要在 Okta 中为每个 ClickHouse 组织配置两个 App Integration：一个 SAML 应用，以及一个用于承载直达链接的书签应用。
+
+    #### 创建一个用于管理访问权限的组
+
+    1. 以 **Administrator** 身份登录你的 Okta 实例。
+    2. 在左侧选择 **Groups**。
+    3. 点击 **Add group**。
+    4. 输入组名称和描述。该组将用于在 SAML 应用及其关联的书签应用之间保持用户分配一致。
+    5. 点击 **Save**。
+    6. 点击你创建的组名称。
+    7. 点击 **Assign people**，为你希望有权访问此 ClickHouse 组织的用户分配该组。
+
+    #### 创建一个书签应用，让用户能够无缝登录
+
+    1. 在左侧选择 **Applications**，然后选择 **Applications** 子标题。
+    2. 点击 **Browse App Catalog**。
+    3. 搜索并选择 **Bookmark App**。
+    4. 点击 **Add integration**。
+    5. 为应用选择一个标签。
+    6. 输入 URL：`https://console.clickhouse.cloud/?connection={organizationid}`
+    7. 前往 **Assignments** 选项卡，并添加你在上面创建的组。
+
+    #### 创建一个 SAML 应用以启用连接
+
+    1. 在左侧选择 **Applications**，然后选择 **Applications** 子标题。
+
+    2. 点击 **Create App Integration**。
+
+    3. 选择 SAML 2.0，然后点击 **Next**。
+
+    4. 输入应用名称，勾选 **Don&#39;t display application icon to users** 旁边的复选框，然后点击 **Next**。
+
+    5. 使用以下值填写 SAML 设置页面。
+
+       | 字段                             | 值                                 |
+       | ------------------------------ | --------------------------------- |
+       | Single Sign-On URL             | 从控制台复制 Single Sign-On URL         |
+       | Audience URI (SP Entity ID)    | 从控制台复制 Service Provider Entity ID |
+       | Default RelayState             | 留空                                |
+       | Name ID format                 | 未指定                               |
+       | Application username           | Email                             |
+       | Update application username on | 创建和更新                             |
+
+    6. 输入以下 Attribute Statement。
+
+       | Name  | Name format | Value      |
+       | ----- | ----------- | ---------- |
+       | email | Basic       | user.email |
+
+    7. 点击 **Next**。
+
+    8. 在 Feedback 页面输入所需信息，然后点击 **Finish**。
+
+    9. 前往 **Assignments** 选项卡，并添加你在上面创建的组。
+
+    10. 在新应用的 **Sign On** 选项卡中，点击 **Copy metadata URL** 按钮。
+
+    11. 返回 [将元数据 URL 添加到你的 SAML 配置中](#add-metadata-url) 继续完成此过程。
+  </Tab>
+
+  <Tab title="谷歌" id="google">
+    如果使用多组织 SSO，你需要在 Google 中为每个 organization 配置一个 SAML 应用，并向用户提供可收藏为书签的直达链接 (`https://console.clickhouse.cloud/?connection={organizationId}`) 。
+
+    #### 创建 Google Web 应用
+
+    1. 前往 Google 管理控制台 (admin.google.com) 。
+
+       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML 应用" force />
+
+    2. 点击 **Apps**，然后点击左侧的 **Web and mobile apps**。
+
+    3. 点击顶部菜单中的 **Add app**，然后选择 **Add custom SAML app**。
+
+    4. 输入应用名称，然后点击 **Continue**。
+
+    5. 复制元数据 URL，并将其保存到其他地方。
+
+    6. 输入以下 ACS URL 和 Entity ID。
+
+       | Field     | Value                             |
+       | --------- | --------------------------------- |
+       | ACS URL   | 从控制台复制 Single Sign-On URL         |
+       | Entity ID | 从控制台复制 Service Provider Entity ID |
+
+    7. 勾选 **Signed response** 复选框。
+
+    8. 在 Name ID Format 中选择 **EMAIL**，并将 Name ID 保持为 **Basic Information &gt; Primary email.**
+
+    9. 点击 **Continue**。
+
+    10. 输入以下属性映射：
+
+        | Field             | Value         |
+        | ----------------- | ------------- |
+        | Basic information | Primary email |
+        | App attributes    | email         |
+
+    11. 点击 **Finish**。
+
+    12. 要启用该应用，请点击面向所有人的 **OFF**，然后将其更改为面向所有人的 **ON**。你也可以通过选择屏幕左侧的选项，将访问权限限制为特定群组或组织单位。
+
+    13. 返回[将元数据 URL 添加到你的 SAML 配置](#add-metadata-url)以继续后续流程。
+  </Tab>
+
+  <Tab title="Azure（微软）" id="azure">
+    Azure (Microsoft) SAML 也可能称为 Azure Active Directory (AD) 或 Microsoft Entra。
+
+    #### 创建 Azure Enterprise 应用程序
+
+    您需要为每个组织设置一个应用程序集成，并为每个组织使用单独的登录 URL。
+
+    1. 登录 Microsoft Entra 管理中心。
+
+    2. 在左侧导航到 **Applications &gt; Enterprise applications**。
+
+    3. 点击顶部菜单中的 **New application**。
+
+    4. 点击顶部菜单中的 **Create your own application**。
+
+    5. 输入名称，选择 **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**，然后点击 **Create**。
+
+       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure 非库应用" force />
+
+    6. 点击左侧的 **Users and groups**，然后分配用户。
+
+    7. 点击左侧的 **Single sign-on**。
+
+    8. 点击 **SAML**。
+
+    9. 使用以下设置填写 **Basic SAML Configuration** 页面。
+
+       | Field                                      | Value                                                           |
+       | ------------------------------------------ | --------------------------------------------------------------- |
+       | Identifier (Entity ID)                     | 从控制台复制 Service Provider Entity ID                               |
+       | Reply URL (Assertion Consumer Service URL) | 从控制台复制 Single Sign-On URL                                       |
+       | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
+       | Relay State                                | 留空                                                              |
+       | Logout URL                                 | 留空                                                              |
+
+    10. 在 **Attributes &amp; Claims** 下添加 (A) 或更新 (U) 以下内容：
+
+        | Claim name                           | Format        | Source attribute |
+        | ------------------------------------ | ------------- | ---------------- |
+        | (U) Unique User Identifier (Name ID) | Email address | user.mail        |
+        | (A) email                            | Basic         | user.mail        |
+        | (U) /identity/claims/name            | Omitted       | user.mail        |
+
+        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="属性和声明" force />
+
+    11. 复制元数据 URL，然后返回[将元数据 URL 添加到您的 SAML 配置中](#add-metadata-url)，继续后续流程。
+  </Tab>
+
+  <Tab title="Duo" id="duo">
+    #### 为 Duo 创建通用 SAML 服务提供商
+
+    1. 按照 [Duo Single Sign-On for Generic SAML Service Providers](https://duo.com/docs/sso-generic) 中的说明进行操作。
+
+    2. 使用以下 Bridge Attribute 映射：
+
+       | Bridge Attribute | ClickHouse Attribute |
+       | :--------------- | :------------------- |
+       | Email Address    | email                |
+
+    3. 使用以下值更新您在 Duo 中的 Cloud Application：
+
+       | Field                                | Value                                                           |
+       | :----------------------------------- | :-------------------------------------------------------------- |
+       | Entity ID                            | 从控制台复制 Service Provider Entity ID                               |
+       | Assertion Consumer Service (ACS) URL | 从控制台复制 Single Sign-On URL                                       |
+       | Service Provider Login URL           | `https://console.clickhouse.cloud/?connection={organizationid}` |
+
+    4. 复制元数据 URL，然后返回[将元数据 URL 添加到您的 SAML 配置](#add-metadata-url)，继续完成此流程。
+  </Tab>
+</Tabs>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<AccordionGroup>
+  <Accordion title="系统可能存在配置错误，或服务发生中断">
+    **原因：**使用了不受支持的由身份提供商发起的登录方式。
+
+    **解决方法：**使用直接链接 `https://console.clickhouse.cloud/?connection={organizationid}`。按照上方对应身份提供商的说明，将其设置为用户的默认登录方式。
+  </Accordion>
+
+  <Accordion title="你会先被重定向到身份提供商，然后又返回登录页面">
+    **原因：**身份提供商未配置电子邮件属性映射。
+
+    **解决方法：**按照上方对应身份提供商的说明，配置用户的电子邮件属性，然后重新登录。
+  </Accordion>
+
+  <Accordion title="用户未分配到此应用">
+    **原因：**该用户尚未在身份提供商中分配到 ClickHouse 应用。
+
+    **解决方法：**在身份提供商中将该用户分配到该应用，然后重新登录。
+  </Accordion>
+
+  <Accordion title="存在多个 SAML 组织时，你总是进入同一个组织">
+    **原因：**你仍登录在第一个组织中。
+
+    **解决方法：**先退出登录，再登录另一个组织。
+  </Accordion>
+
+  <Accordion title="URL 会短暂显示“访问被拒绝”">
+    **原因：**你的电子邮件域名与已配置的域名不匹配。
+
+    **解决方法：**请联系支持团队，协助解决此错误。
+  </Accordion>
+</AccordionGroup>
+
+<div id="faq">
+  ## 常见问题
+</div>
+
+<AccordionGroup>
+  <Accordion title="ClickHouse Cloud 是否支持由身份提供商发起的登录？">
+    不支持——仅支持由服务提供商发起的流程。用户需要访问 `https://console.clickhouse.cloud` 并输入其电子邮件地址，然后会被重定向到您的身份提供商。请设置书签或直接链接 (`https://console.clickhouse.cloud/?connection={organizationid}`) ，这样用户就不必记住这个 URL。
+  </Accordion>
+
+  <Accordion title="如何在多个组织中使用 SAML 单点登录？">
+    ClickHouse Cloud 支持多组织 SSO，每个组织对应一个单独的连接。使用直接链接 (`https://console.clickhouse.cloud/?connection={organizationid}`) 分别登录各个组织，并在登录另一个组织之前先退出当前组织。如果您不希望您域名下的用户在 `https://console.clickhouse.cloud` 输入电子邮件地址时被自动定向到某个组织，请提交支持工单以取消此行为。
+  </Accordion>
+
+  <Accordion title="为什么同一用户会显示多个账户？">
+    ClickHouse Cloud 不会自动关联 SSO 账户和非 SSO 账户，因此即使使用相同的电子邮件地址，同时通过这两种方式登录过的用户，也可能会在您的用户列表中出现多次。
+  </Accordion>
+</AccordionGroup>
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [Manage cloud users](/zh/products/cloud/guides/security/cloud-access-management/manage-cloud-users) — 管理权限并将访问限制为仅允许 SAML 连接。
+* SCIM provisioning — 通过 [Okta](/zh/products/cloud/guides/security/cloud-access-management/scim-setup) 或 [Microsoft Entra ID](/zh/products/cloud/guides/security/cloud-access-management/scim-setup-entra) 自动执行用户和组预配。
+* [控制台角色和权限](/zh/products/cloud/reference/security/console-roles) — 可指定为默认 SAML 角色的角色。

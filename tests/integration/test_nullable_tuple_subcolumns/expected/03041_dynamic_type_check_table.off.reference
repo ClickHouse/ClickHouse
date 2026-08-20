@@ -1,0 +1,56 @@
+MergeTree compact
+initial insert
+alter add column
+3	None
+0	0	\N	\N	\N	0
+1	1	\N	\N	\N	0
+2	2	\N	\N	\N	0
+insert after alter add column
+4	String
+4	UInt64
+7	None
+0	0	\N	\N	\N	\N	0
+1	1	\N	\N	\N	\N	0
+2	2	\N	\N	\N	\N	0
+3	3	3	\N	3	\N	0
+4	4	4	\N	4	\N	0
+5	5	5	\N	5	\N	0
+6	6	str_6	str_6	\N	\N	0
+7	7	str_7	str_7	\N	\N	0
+8	8	str_8	str_8	\N	\N	0
+9	9	\N	\N	\N	\N	0
+10	10	\N	\N	\N	\N	0
+11	11	\N	\N	\N	\N	0
+12	12	12	\N	12	\N	0
+13	13	str_13	str_13	\N	\N	0
+14	14	\N	\N	\N	\N	0
+check table
+1
+MergeTree wide
+initial insert
+alter add column
+3	None
+0	0	\N	\N	\N	0
+1	1	\N	\N	\N	0
+2	2	\N	\N	\N	0
+insert after alter add column
+4	String
+4	UInt64
+7	None
+0	0	\N	\N	\N	\N	0
+1	1	\N	\N	\N	\N	0
+2	2	\N	\N	\N	\N	0
+3	3	3	\N	3	\N	0
+4	4	4	\N	4	\N	0
+5	5	5	\N	5	\N	0
+6	6	str_6	str_6	\N	\N	0
+7	7	str_7	str_7	\N	\N	0
+8	8	str_8	str_8	\N	\N	0
+9	9	\N	\N	\N	\N	0
+10	10	\N	\N	\N	\N	0
+11	11	\N	\N	\N	\N	0
+12	12	12	\N	12	\N	0
+13	13	str_13	str_13	\N	\N	0
+14	14	\N	\N	\N	\N	0
+check table
+1

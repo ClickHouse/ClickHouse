@@ -26,13 +26,9 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_live_view;
     extern const SettingsBool allow_experimental_window_view;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
-    extern const SettingsUInt64 max_result_bytes;
-    extern const SettingsUInt64 max_result_rows;
-    extern const SettingsOverflowMode result_overflow_mode;
 }
 
 
@@ -53,12 +49,9 @@ BlockIO InterpreterWatchQuery::execute()
     {
         const Settings & settings = getContext()->getSettingsRef();
 
-        StreamLocalLimits limits;
-        limits.mode = LimitsMode::LIMITS_CURRENT;
-        limits.size_limits.max_rows = settings[Setting::max_result_rows];
-        limits.size_limits.max_bytes = settings[Setting::max_result_bytes];
-        limits.size_limits.overflow_mode = settings[Setting::result_overflow_mode];
+        StreamLocalLimits limits = StreamLocalLimits::forQueryResult(settings);
 
+        res.pipeline.setNormalizedQueryHash(getContext()->getNormalizedQueryHash());
         res.pipeline.setLimitsAndQuota(limits, getContext()->getQuota());
     }
 
@@ -77,15 +70,13 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist.", table_id.getNameForLogs());
 
     auto storage_name = storage->getName();
-    if (storage_name == "LiveView" && !getContext()->getSettingsRef()[Setting::allow_experimental_live_view])
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Experimental LIVE VIEW feature is not enabled (the setting 'allow_experimental_live_view')");
     if (storage_name == "WindowView" && !getContext()->getSettingsRef()[Setting::allow_experimental_window_view])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "Experimental WINDOW VIEW feature is not enabled (the setting 'allow_experimental_window_view')");
 
     /// List of columns to read to execute the query.
-    Names required_columns = storage->getInMemoryMetadataPtr()->getColumns().getNamesOfPhysical();
+    auto metadata_snapshot = storage->getInMemoryMetadataPtr(getContext(), false);
+    Names required_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
     getContext()->checkAccess(AccessType::SELECT, table_id, required_columns);
 
     /// Get context settings for this query
@@ -118,6 +109,7 @@ QueryPipelineBuilder InterpreterWatchQuery::buildQueryPipeline()
     return pipeline;
 }
 
+void registerInterpreterWatchQuery(InterpreterFactory & factory);
 void registerInterpreterWatchQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

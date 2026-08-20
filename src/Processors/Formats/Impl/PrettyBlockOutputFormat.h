@@ -5,6 +5,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Common/PODArray.h>
+#include <Common/ThreadPool.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ class Context;
 
 /** Prints the result in the form of beautiful tables.
   */
-class PrettyBlockOutputFormat : public IOutputFormat
+class PrettyBlockOutputFormat final : public IOutputFormat
 {
 public:
     enum class Style
@@ -42,42 +43,32 @@ protected:
     size_t prev_row_number_width = 7;
     size_t row_number_width = 7; // "10000. "
 
-    const FormatSettings format_settings;
+    FormatSettings format_settings;
     Serializations serializations;
 
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
-    using StringsPerCol = std::vector<Strings>;
-    using WidthsPerSubcolumn = std::vector<WidthsPerColumn>;
-    using EnclosureLevelContainer = std::vector<int64_t>;
-    using LeavesPerColumn = std::vector<EnclosureLevelContainer>;
 
     void write(Chunk chunk, PortKind port_kind);
-    virtual void writeChunk(const Chunk & chunk, PortKind port_kind);
+    void writeChunk(const Chunk & chunk, PortKind port_kind);
     void writeMonoChunkIfNeeded();
     void writeSuffix() override;
-    virtual void writeSuffixImpl();
+    void writeSuffixImpl();
 
-    void onRowsReadBeforeUpdate() override { total_rows = getRowsReadBefore(); }
-
-    void findWidth(
-        size_t & width, size_t & max_padded_width, String & serialized_value, bool split_by_lines, bool & out_has_newlines, size_t prefix);
-
-    size_t returnNeededEnclosureLvl(
-        DataTypePtr column_type, int32_t subcolumn_lvl, EnclosureLevelContainer & needed_enclosure_lvl,
-        size_t column_ind, int64_t subcolumn_ind, int32_t & max_enc_lvl, int32_t cur_lvl);
+    void onRowsReadBeforeUpdate() override;
 
     void calculateWidths(
         const Block & header, const Chunk & chunk, bool split_by_lines, bool & out_has_newlines,
-        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names,
-        StringsPerCol & subcolumn_names, WidthsPerSubcolumn & subcolumn_widths, WidthsPerColumn & max_subcolumn_widths,
-        WidthsPerColumn & subcolumn_name_widths, LeavesPerColumn & column_leaves, std::vector<int32_t> & max_enc_lvl);
+        WidthsPerColumn & widths, Widths & max_padded_widths, Widths & name_widths, Strings & names);
 
     void writeValueWithPadding(
         const IColumn & column, const ISerialization & serialization, size_t row_num,
         bool split_by_lines, std::optional<String> & serialized_value, size_t & start_from_offset,
         size_t value_width, size_t pad_to_width, size_t cut_to_width, bool align_right, bool is_number);
-    
+
+    /// Writes one cell-padding character: `U+00A0` when `use_nbsp_for_padding` is on, ASCII space otherwise.
+    void writePaddingSpace();
+    void writePaddingSpaces(size_t count);
 
     void resetFormatterImpl() override
     {
@@ -99,6 +90,9 @@ private:
     /// Fallback to Vertical format for wide but short tables.
     std::unique_ptr<IRowOutputFormat> vertical_format_fallback;
     bool use_vertical_format = false;
+
+    /// True iff `format_settings.pretty.use_nbsp_for_padding` AND charset is `UTF-8`.
+    bool use_nbsp_for_padding = false;
 
     /// For mono_block == true only
     Chunk mono_chunk;

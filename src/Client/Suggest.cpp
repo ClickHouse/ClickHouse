@@ -1,9 +1,11 @@
+#include <Core/ProtocolDefines.h>
 #include <Client/Suggest.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/QueryScope.h>
 #include <Common/setThreadName.h>
 #include <Common/typeid_cast.h>
 #include <Common/Macros.h>
@@ -150,12 +152,12 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
     {
         /// Creates new QueryScope/ThreadStatus to avoid sharing global context, which settings can be modified by the client in another thread.
         ThreadStatus thread_status;
-        std::optional<CurrentThread::QueryScope> query_scope;
+        QueryScope query_scope;
         /// LocalConnection creates QueryScope for each query
         if constexpr (!std::is_same_v<ConnectionType, LocalConnection>)
-            query_scope.emplace(my_context);
+            query_scope = QueryScope::create(my_context);
 
-        setThreadName("Suggest");
+        setThreadName(ThreadName::SUGGEST);
 
         for (size_t retry = 0; retry < 10; ++retry)
         {
@@ -207,16 +209,18 @@ void Suggest::load(ContextPtr context, const ConnectionParameters & connection_p
 void Suggest::load(IServerConnection & connection,
                    const ConnectionTimeouts & timeouts,
                    Int32 suggestion_limit,
-                   const ClientInfo & client_info)
+                   const ClientInfo & client_info,
+                   std::ostream & error_stream)
 {
     try
     {
+        last_exchange_ended_in_sync = false;
         auto suggestion_query = getLoadSuggestionQuery(connection, suggestion_limit, true, timeouts);
         fetch(connection, timeouts, suggestion_query, client_info);
     }
     catch (...)
     {
-        std::cerr << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
+        error_stream << "Suggestions loading exception: " << getCurrentExceptionMessage(false, true) << std::endl;
         last_error = getCurrentExceptionCode();
     }
 }
@@ -245,10 +249,16 @@ void Suggest::fetch(IServerConnection & connection, const ConnectionTimeouts & t
                 continue;
 
             case Protocol::Server::Exception:
+                /// A server exception is the terminal packet of a protocol-consistent exchange:
+                /// the query was sent with the terminating empty block (`with_pending_data` is
+                /// false), and the server drains what it has not read yet and preserves the
+                /// connection. Unlike a transport failure, it leaves the connection in sync.
+                last_exchange_ended_in_sync = true;
                 packet.exception->rethrow();
                 return;
 
             case Protocol::Server::EndOfStream:
+                last_exchange_ended_in_sync = true;
                 last_error = ErrorCodes::OK;
                 return;
 

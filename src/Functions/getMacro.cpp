@@ -23,7 +23,7 @@ namespace
   * For example, it may be used as a sophisticated replacement for the function 'hostName' if servers have complicated hostnames
   *  but you still need to distinguish them by some convenient names.
   */
-class FunctionGetMacro : public IFunction
+class FunctionGetMacro final : public IFunction
 {
 private:
     MultiVersion<Macros>::Version macros;
@@ -75,7 +75,7 @@ public:
         if (!arg_string)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "The argument of function {} must be constant String", getName());
 
-        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0).toString()));
+        return result_type->createColumnConst(input_rows_count, macros->getValue(arg_string->getDataAt(0)));
     }
 };
 
@@ -85,7 +85,7 @@ REGISTER_FUNCTION(GetMacro)
 {
     FunctionDocumentation::Description description = R"(
 Returns the value of a macro from the server configuration file.
-Macros are defined in the [`<macros>`](/operations/server-configuration-parameters/settings#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
+Macros are defined in the [`<macros>`](/reference/settings/server-settings/settings/other#macros) section of the configuration file and can be used to distinguish servers by convenient names even if they have complicated hostnames.
 If the function is executed in the context of a distributed table, it generates a normal column with values relevant to each shard.
 )";
     FunctionDocumentation::Syntax syntax = "getMacro(name)";
@@ -108,7 +108,7 @@ SELECT getMacro('test');
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionGetMacro>(documentation);
 }

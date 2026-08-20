@@ -16,6 +16,7 @@
 #include <Dictionaries/readInvalidateQuery.h>
 #include <Interpreters/Context.h>
 #include <QueryPipeline/QueryPipeline.h>
+#include <Storages/StoragePostgreSQL.h>
 #include <Common/logger_useful.h>
 #endif
 
@@ -39,7 +40,31 @@ namespace ErrorCodes
 
 static const ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> dictionary_allowed_keys = {
     "host", "port", "user", "password", "db", "database", "table", "schema", "background_reconnect",
-    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority"};
+    "update_field", "update_lag", "invalidate_query", "query", "where", "name", "priority",
+    "sslmode", "sslrootcert", "sslcert", "sslkey", "sslrootcert_pem", "sslcert_pem", "sslkey_pem"};
+
+#if USE_LIBPQXX
+/// The source configuration of a dictionary created with a DDL query comes from the query itself, so
+/// it may not name files for the server to open: the server reads them with its own privileges, and a
+/// user who cannot read a certificate and key must not be able to authenticate with them. The
+/// contents can be passed in `sslrootcert_pem`, `sslcert_pem` and `sslkey_pem` instead.
+/// Dictionaries defined in server configuration files are written by an operator and keep using paths.
+static void checkNoSSLPaths(const Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+{
+    static const std::initializer_list<std::pair<std::string_view, std::string_view>> keys
+        = {{"sslrootcert", "sslrootcert_pem"}, {"sslcert", "sslcert_pem"}, {"sslkey", "sslkey_pem"}};
+
+    for (const auto & [key, contents_key] : keys)
+    {
+        if (config.has(prefix + "." + std::string(key)))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`{}` cannot be specified in a dictionary created with a DDL query. "
+                "Pass the contents of the file in `{}` instead",
+                key, contents_key);
+    }
+}
+#endif
 
 #if USE_LIBPQXX
 
@@ -91,31 +116,39 @@ PostgreSQLDictionarySource::PostgreSQLDictionarySource(const PostgreSQLDictionar
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadAll()
+BlockIO PostgreSQLDictionarySource::loadAll()
 {
     LOG_TRACE(log, fmt::runtime(load_all_query));
-    return loadBase(load_all_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_all_query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadUpdatedAll()
+BlockIO PostgreSQLDictionarySource::loadUpdatedAll()
 {
     auto load_update_query = getUpdateFieldAndDate();
     LOG_TRACE(log, fmt::runtime(load_update_query));
-    return loadBase(load_update_query);
+    BlockIO io;
+    io.pipeline = loadBase(load_update_query);
+    return io;
 }
 
-QueryPipeline PostgreSQLDictionarySource::loadIds(const std::vector<UInt64> & ids)
+BlockIO PostgreSQLDictionarySource::loadIds(const VectorWithMemoryTracking<UInt64> & ids)
 {
     const auto query = query_builder.composeLoadIdsQuery(ids);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
-QueryPipeline PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const std::vector<size_t> & requested_rows)
+BlockIO PostgreSQLDictionarySource::loadKeys(const Columns & key_columns, const VectorWithMemoryTracking<size_t> & requested_rows)
 {
     const auto query = query_builder.composeLoadKeysQuery(key_columns, requested_rows, ExternalQueryBuilder::AND_OR_CHAIN);
-    return loadBase(query);
+    BlockIO io;
+    io.pipeline = loadBase(query);
+    return io;
 }
 
 
@@ -130,9 +163,7 @@ bool PostgreSQLDictionarySource::isModified() const
     if (!configuration.invalidate_query.empty())
     {
         auto response = doInvalidateQuery(configuration.invalidate_query);
-        if (response == invalidate_query_response)
-            return false;
-        invalidate_query_response = response;
+        return invalidate_query_response.updateAndCheckModified(response);
     }
     return true;
 }
@@ -143,7 +174,9 @@ std::string PostgreSQLDictionarySource::doInvalidateQuery(const std::string & re
     Block invalidate_sample_block;
     ColumnPtr column(ColumnString::create());
     invalidate_sample_block.insert(ColumnWithTypeAndName(column, std::make_shared<DataTypeString>(), "Sample Block"));
-    return readInvalidateQuery(QueryPipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1)));
+
+    QueryPipeline pipeline(std::make_unique<PostgreSQLSource<>>(pool->get(), request, std::make_shared<const Block>(std::move(invalidate_sample_block)), 1));
+    return readInvalidateQuery(pipeline);
 }
 
 
@@ -201,6 +234,7 @@ static void validateConfigKeys(
 
 #endif
 
+void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory);
 void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 {
     auto create_table_source = [=](const String & /*name*/,
@@ -221,6 +255,11 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
         bool bg_reconnect = false;
 
+        /// Every key here comes from the `CREATE DICTIONARY` query, including the keys that override a
+        /// named collection, so this covers both of the branches below.
+        if (created_from_ddl)
+            checkNoSSLPaths(config, settings_config_prefix);
+
         auto named_collection = created_from_ddl ? tryGetNamedCollectionWithOverrides(config, settings_config_prefix, context) : nullptr;
         if (named_collection)
         {
@@ -228,17 +267,18 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = named_collection->getOrDefault<String>("host", "");
-            common_configuration.port = named_collection->getOrDefault<UInt64>("port", 0);
+            common_configuration.port = static_cast<UInt16>(named_collection->getOrDefault<UInt64>("port", 0));
             common_configuration.username = named_collection->getOrDefault<String>("user", "");
             common_configuration.password = named_collection->getOrDefault<String>("password", "");
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
             common_configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            common_configuration.table = named_collection->getOrDefault<String>("table", "");
+            common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection->getOrDefault<String>("table", ""));
+            common_configuration.ssl = StoragePostgreSQL::getSSLParams(*named_collection);
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
                 .db = common_configuration.database,
                 .schema = common_configuration.schema,
-                .table = common_configuration.table,
+                .table = common_configuration.table_or_query.getTableName(),
                 .query = named_collection->getOrDefault<String>("query", ""),
                 .where = named_collection->getOrDefault<String>("where", ""),
                 .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
@@ -256,18 +296,25 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
             StoragePostgreSQL::Configuration common_configuration;
             common_configuration.host = config.getString(settings_config_prefix + ".host", "");
-            common_configuration.port = config.getUInt(settings_config_prefix + ".port", 0);
+            common_configuration.port = static_cast<UInt16>(config.getUInt(settings_config_prefix + ".port", 0));
             common_configuration.username = config.getString(settings_config_prefix + ".user", "");
             common_configuration.password = config.getString(settings_config_prefix + ".password", "");
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
             common_configuration.schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
-            common_configuration.table = config.getString(fmt::format("{}.table", settings_config_prefix), "");
+            common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, config.getString(fmt::format("{}.table", settings_config_prefix), ""));
+            common_configuration.ssl.ssl_mode = config.getString(fmt::format("{}.sslmode", settings_config_prefix), "");
+            common_configuration.ssl.ssl_root_cert = config.getString(fmt::format("{}.sslrootcert", settings_config_prefix), "");
+            common_configuration.ssl.ssl_cert = config.getString(fmt::format("{}.sslcert", settings_config_prefix), "");
+            common_configuration.ssl.ssl_key = config.getString(fmt::format("{}.sslkey", settings_config_prefix), "");
+            common_configuration.ssl.ssl_root_cert_pem = config.getString(fmt::format("{}.sslrootcert_pem", settings_config_prefix), "");
+            common_configuration.ssl.ssl_cert_pem = config.getString(fmt::format("{}.sslcert_pem", settings_config_prefix), "");
+            common_configuration.ssl.ssl_key_pem = config.getString(fmt::format("{}.sslkey_pem", settings_config_prefix), "");
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration
             {
                 .db = common_configuration.database,
                 .schema = common_configuration.schema,
-                .table = common_configuration.table,
+                .table = common_configuration.table_or_query.getTableName(),
                 .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
                 .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
                 .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
@@ -291,7 +338,7 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 
                         size_t priority = config.getInt(replica_name + ".priority", 0);
                         replica_configuration.host = config.getString(replica_name + ".host", common_configuration.host);
-                        replica_configuration.port = config.getUInt(replica_name + ".port", common_configuration.port);
+                        replica_configuration.port = static_cast<UInt16>(config.getUInt(replica_name + ".port", common_configuration.port));
                         replica_configuration.username = config.getString(replica_name + ".user", common_configuration.username);
                         replica_configuration.password = config.getString(replica_name + ".password", common_configuration.password);
 
@@ -342,7 +389,14 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source);
+    factory.registerSource("postgresql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a PostgreSQL server."
+#if !USE_LIBPQXX
+            " Currently unavailable, because this ClickHouse build does not include PostgreSQL support."
+#endif
+        ,
+        .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",
+        .related = {"mysql", "clickhouse"}});
 }
 
 }

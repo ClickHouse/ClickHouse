@@ -105,7 +105,9 @@ $CLICKHOUSE_CLIENT --config $CONFIG --connection test_hostname_invalid --host $T
 $CLICKHOUSE_CLIENT --config $CONFIG -q 'select currentDatabase()'
 $CLICKHOUSE_CLIENT --config $CONFIG --host $TEST_HOST -q 'select currentDatabase()'
 echo 'port'
-$CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()' |& grep -F -o 'Connection refused (localhost:0).'
+# The errno text differs per OS (e.g. "Connection refused" on Linux, "Cannot assign requested address"
+# on macOS); match only the (host:port) suffix ClickHouse always appends.
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_port -q 'select tcpPort()' |& grep -F -o '(localhost:0)'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_port --port $TEST_PORT -q 'select tcpPort()'
 echo 'secure'
 
@@ -117,7 +119,7 @@ echo 'user'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user -q 'select currentUser()' |& grep -F -o 'MySQL: Authentication failed'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_user --user default -q 'select currentUser()'
 echo 'password'
-$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG --connection test_password -q 'select currentUser()' |& grep -F -o 'default: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG --connection test_password --password "" -q 'select currentUser()'
 echo 'history_file'
 $CLICKHOUSE_CLIENT --progress off --interactive --config $CONFIG --connection test_history_file -q 'select 1' </dev/null |& grep -F -o 'Cannot create file: /no/such/dir/.history'
@@ -127,9 +129,9 @@ unset CLICKHOUSE_USER
 unset CLICKHOUSE_PASSWORD
 unset CLICKHOUSE_HOST
 echo 'root overrides'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection incorrect_auth --user "default" --password "" -q 'select currentUser()'
 $CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default -q 'select currentUser()'
-$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name.'
+$CLICKHOUSE_CLIENT --config $CONFIG_ROOT_OVERRIDES --connection default --user foo -q 'select currentUser()' |& grep -F -o 'foo: Authentication failed: password is incorrect, or there is no user with such name'
 
 rm -f "${CONFIG:?}"

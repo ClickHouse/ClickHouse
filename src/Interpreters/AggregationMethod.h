@@ -6,6 +6,31 @@
 namespace DB
 {
 class IColumn;
+
+/// The aggregation "data" is a map (real `mapped_type`, e.g. `AggregateDataPtr`) for normal `GROUP BY`,
+/// and a set (cell reports `VoidMapped`) for `GROUP BY` without aggregate functions. Collapse `VoidMapped`
+/// to `void` so that the shared `ColumnsHashing` `HashMethod`s run in set mode (`has_mapped == false`) over
+/// the set data, while map data is unaffected. Mirrors `SetMethodMapped` in SetVariants.h.
+template <typename TData>
+using AggregationMethodMapped
+    = std::conditional_t<std::is_same_v<typename TData::mapped_type, VoidMapped>, void, typename TData::mapped_type>;
+
+/// A set method holds keys only - no `AggregateDataPtr` per cell - so it has no aggregate state to build,
+/// merge or convert. The halves of `Aggregator` that maintain per-key state are constrained on
+/// `MapAggregationMethod`/`MapAggregationState` and get a `SetAggregation*` overload instead, so that the
+/// state-maintaining code is never instantiated for a set method. That is deliberate rather than incidental:
+/// it will not compile for one (there is no mapped value to take), and it must not silently no-op either.
+template <typename Method>
+concept SetAggregationMethod = std::is_void_v<typename Method::Mapped>;
+template <typename Method>
+concept MapAggregationMethod = !SetAggregationMethod<Method>;
+
+/// The same distinction seen through a `ColumnsHashing` `HashMethod` state, which spells it `has_mapped`.
+template <typename State>
+concept SetAggregationState = !State::has_mapped;
+template <typename State>
+concept MapAggregationState = State::has_mapped;
+
 /// For the case where there is one numeric key.
 /// FieldType is UInt8/16/32/64 for any type with corresponding bit width.
 template <typename FieldType, typename TData,
@@ -14,7 +39,7 @@ struct AggregationMethodOneNumber
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -48,7 +73,7 @@ struct AggregationMethodOneNumber
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
     // Insert the key from the hash table into columns.
-    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/);
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & /*key_sizes*/, const IColumn::SerializationSettings * settings);
 };
 
 /// For the case where there is one string key.
@@ -57,7 +82,7 @@ struct AggregationMethodString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -81,9 +106,9 @@ struct AggregationMethodString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &)
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
     {
-        static_cast<ColumnString *>(key_columns[0])->insertData(key.data, key.size);
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data(), key.size());
     }
 };
 
@@ -93,7 +118,7 @@ struct AggregationMethodStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -117,7 +142,44 @@ struct AggregationMethodStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
+};
+
+/// For the case where there is one string key, stored as `PackedStringRef`.
+template <typename TData>
+struct AggregationMethodPackedString
+{
+    using Data = TData;
+    using Key = typename Data::key_type;
+    using Mapped = typename Data::mapped_type;
+
+    Data data;
+
+    AggregationMethodPackedString() = default;
+
+    template <typename Other>
+    explicit AggregationMethodPackedString(const Other & other) : data(other.data)
+    {
+    }
+
+    explicit AggregationMethodPackedString(size_t size_hint) : data(size_hint) { }
+
+    template <bool use_cache>
+    using StateImpl = ColumnsHashing::HashMethodPackedString<typename Data::value_type, Mapped, use_cache>;
+
+    using State = StateImpl<true>;
+    using StateNoCache = StateImpl<false>;
+
+    static const bool low_cardinality_optimization = false;
+    static const bool one_key_nullable_optimization = false;
+
+    std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
+
+    static void
+    insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings *)
+    {
+        static_cast<ColumnString *>(key_columns[0])->insertData(key.data(), key.size());
+    }
 };
 
 /// For the case where there is one fixed-length string key.
@@ -126,7 +188,7 @@ struct AggregationMethodFixedString
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -150,7 +212,7 @@ struct AggregationMethodFixedString
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
 /// Same as above but without cache
@@ -159,7 +221,7 @@ struct AggregationMethodFixedStringNoCache
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -183,7 +245,8 @@ struct AggregationMethodFixedStringNoCache
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
+    static void insertKeyIntoColumns(
+        std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
 /// Single low cardinality column.
@@ -214,8 +277,11 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(const Key & key,
-         std::vector<IColumn *> & key_columns_low_cardinality, const Sizes & /*key_sizes*/);
+    static void insertKeyIntoColumns(
+        const Key & key,
+        std::vector<IColumn *> & key_columns_low_cardinality,
+        const Sizes & /*key_sizes*/,
+        const IColumn::SerializationSettings * settings);
 };
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
@@ -224,7 +290,7 @@ struct AggregationMethodKeysFixed
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
     static constexpr bool has_nullable_keys = has_nullable_keys_;
     static constexpr bool has_low_cardinality = has_low_cardinality_;
 
@@ -259,7 +325,8 @@ struct AggregationMethodKeysFixed
         return State::shuffleKeyColumns(key_columns, key_sizes);
     }
 
-    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes);
+    static void insertKeyIntoColumns(
+        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const IColumn::SerializationSettings * settings);
 };
 
 /** Aggregates by concatenating serialized key values.
@@ -272,7 +339,7 @@ struct AggregationMethodSerialized
 {
     using Data = TData;
     using Key = typename Data::key_type;
-    using Mapped = typename Data::mapped_type;
+    using Mapped = AggregationMethodMapped<Data>;
 
     Data data;
 
@@ -298,7 +365,7 @@ struct AggregationMethodSerialized
 
     std::optional<Sizes> shuffleKeyColumns(std::vector<IColumn *> &, const Sizes &) { return {}; }
 
-    static void insertKeyIntoColumns(StringRef key, std::vector<IColumn *> & key_columns, const Sizes &);
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &, const IColumn::SerializationSettings * settings);
 };
 
 template <typename TData>

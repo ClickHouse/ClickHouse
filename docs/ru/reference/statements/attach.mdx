@@ -1,0 +1,147 @@
+---
+description: 'Документация по оператору ATTACH'
+sidebarTitle: 'ATTACH'
+slug: /sql-reference/statements/attach
+title: 'Оператор ATTACH'
+doc_type: 'reference'
+---
+
+Присоединяет таблицу или словарь, например при переносе базы данных на другой сервер.
+
+**Синтаксис**
+
+```sql
+ATTACH TABLE|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
+```
+
+Этот запрос не создает данные на диске, а предполагает, что данные уже находятся в соответствующих местах, и лишь добавляет на сервер информацию об указанной таблице, словаре или базе данных. После выполнения запроса `ATTACH` сервер будет знать о существовании таблицы, словаря или базы данных.
+
+Если таблица ранее была отсоединена (запрос [DETACH](/ru/reference/statements/detach)), то есть ее структура известна, вы можете использовать сокращенную форму без определения структуры.
+
+<div id="attach-existing-table">
+  ## Присоединение существующей таблицы
+</div>
+
+**Синтаксис**
+
+```sql
+ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+Этот запрос используется при запуске сервера. Сервер хранит метаданные таблиц в виде файлов с запросами `ATTACH`, которые он просто выполняет при запуске (за исключением некоторых системных таблиц, которые явно создаются на сервере).
+
+Если таблица была отсоединена навсегда, при запуске сервера она не будет присоединена снова, поэтому нужно явно выполнить запрос `ATTACH`.
+
+<div id="create-new-table-and-attach-data">
+  ## Создать новую таблицу и присоединить данные
+</div>
+
+<div id="with-specified-path-to-table-data">
+  ### С указанием пути к данным таблицы
+</div>
+
+Этот запрос создает новую таблицу с указанной структурой и присоединяет данные таблицы из указанного каталога в `user_files`.
+
+**Синтаксис**
+
+```sql
+ATTACH TABLE name FROM 'path/to/data/' (col1 Type1, ...)
+```
+
+**Пример**
+
+```sql title="Query"
+DROP TABLE IF EXISTS test;
+INSERT INTO TABLE FUNCTION file('01188_attach/test/data.TSV', 'TSV', 's String, n UInt8') VALUES ('test', 42);
+ATTACH TABLE test FROM '01188_attach/test' (s String, n UInt8) ENGINE = File(TSV);
+SELECT * FROM test;
+```
+
+```sql title="Response"
+┌─s────┬──n─┐
+│ test │ 42 │
+└──────┴────┘
+```
+
+<div id="with-specified-table-uuid">
+  ### С указанием UUID таблицы
+</div>
+
+Этот запрос создаёт новую таблицу с указанной структурой и присоединяет данные из таблицы с указанным UUID.
+Поддерживается движком базы данных [Atomic](/ru/reference/engines/database-engines/atomic).
+
+**Синтаксис**
+
+```sql
+ATTACH TABLE name UUID '<uuid>' (col1 Type1, ...)
+```
+
+<div id="attach-mergetree-table-as-replicatedmergetree">
+  ## Присоединение таблицы MergeTree как ReplicatedMergeTree
+</div>
+
+Позволяет присоединить нереплицируемую таблицу MergeTree как ReplicatedMergeTree. Таблица ReplicatedMergeTree будет создана со значениями настроек `default_replica_path` и `default_replica_name`. Также можно присоединить реплицируемую таблицу как обычную MergeTree.
+
+Обратите внимание, что данные таблицы в ZooKeeper этим запросом не затрагиваются. Это означает, что после присоединения вам нужно добавить метаданные в ZooKeeper с помощью `SYSTEM RESTORE REPLICA` или удалить их с помощью `SYSTEM DROP REPLICA ... FROM ZKPATH ...`.
+
+Если вы пытаетесь добавить реплику в существующую таблицу ReplicatedMergeTree, имейте в виду, что все локальные данные в преобразованной таблице MergeTree будут переведены в состояние detached.
+
+**Синтаксис**
+
+```sql
+ATTACH TABLE [db.]name AS [NOT] REPLICATED
+```
+
+**Преобразовать таблицу в реплицируемую**
+
+```sql
+DETACH TABLE test;
+ATTACH TABLE test AS REPLICATED;
+SYSTEM RESTORE REPLICA test;
+```
+
+**Преобразовать таблицу в нереплицируемую**
+
+Получите путь в ZooKeeper и имя реплики таблицы:
+
+```sql title="Query"
+SELECT replica_name, zookeeper_path FROM system.replicas WHERE table='test';
+```
+
+```sql title="Response"
+┌─replica_name─┬─zookeeper_path─────────────────────────────────────────────┐
+│ r1           │ /clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1 │
+└──────────────┴────────────────────────────────────────────────────────────┘
+```
+
+Подключите таблицу как нереплицируемую и удалите данные реплики из ZooKeeper:
+
+```sql title="Query"
+DETACH TABLE test;
+ATTACH TABLE test AS NOT REPLICATED;
+SYSTEM DROP REPLICA 'r1' FROM ZKPATH '/clickhouse/tables/401e6a1f-9bf2-41a3-a900-abb7e94dff98/s1';
+```
+
+<div id="attach-existing-dictionary">
+  ## Присоединить существующий словарь
+</div>
+
+Присоединяет ранее отключённый словарь.
+
+**Синтаксис**
+
+```sql
+ATTACH DICTIONARY [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
+```
+
+<div id="attach-existing-database">
+  ## Присоединение существующей базы данных
+</div>
+
+Присоединяет ранее отсоединённую базу данных.
+
+**Синтаксис**
+
+```sql
+ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
+```

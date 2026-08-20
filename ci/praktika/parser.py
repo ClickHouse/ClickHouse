@@ -21,7 +21,10 @@ class WorkflowYaml:
         addons: List["WorkflowYaml.JobAddonYaml"]
         gh_app_auth: bool
         run_unless_cancelled: bool
+        run_on_upstream_failure: bool
         parameter: Any
+        secret_names_gh: List[str] = dataclasses.field(default_factory=list)
+        variable_names_gh: List[str] = dataclasses.field(default_factory=list)
 
         def __repr__(self):
             return self.name
@@ -134,6 +137,7 @@ class WorkflowConfigParser:
                 runs_on=[],
                 gh_app_auth=False,
                 run_unless_cancelled=job.run_unless_cancelled,
+                run_on_upstream_failure=job.run_on_upstream_failure,
                 parameter=None,
             )
             self.workflow_yaml_config.jobs.append(job_yaml_config)
@@ -185,6 +189,14 @@ class WorkflowConfigParser:
                     ].provided_by, f"Artifact [{artifact_name}] has no job providing it, required by job [{job.name}], workflow [{self.workflow_name}]"
                     self.workflow_yaml_config.artifact_to_config[
                         artifact_name
+                    ].required_by.append(job.name)
+            if job.run_after:
+                for dep_name in job.run_after:
+                    assert (
+                        dep_name in self.workflow_yaml_config.job_to_config
+                    ), f"run_after dependency [{dep_name}] is not a job name, job [{job.name}], workflow [{self.workflow_name}]"
+                    self.workflow_yaml_config.artifact_to_config[
+                        dep_name
                     ].required_by.append(job.name)
 
         # populate JobYaml.addons
@@ -249,6 +261,19 @@ class WorkflowConfigParser:
                 self.workflow_yaml_config.secret_names_gh.append(secret_config.name)
             elif secret_config.is_gh_var():
                 self.workflow_yaml_config.variable_names_gh.append(secret_config.name)
+
+        # populate per-job secrets
+        for job in self.config.jobs:
+            for secret_config in job.secrets:
+                if secret_config.is_gh_secret():
+                    self.workflow_yaml_config.job_to_config[
+                        job.name
+                    ].secret_names_gh.append(secret_config.name)
+                elif secret_config.is_gh_var():
+                    self.workflow_yaml_config.job_to_config[
+                        job.name
+                    ].variable_names_gh.append(secret_config.name)
+
         return self
 
 

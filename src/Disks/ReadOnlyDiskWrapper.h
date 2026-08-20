@@ -37,6 +37,10 @@ public:
 
     DirectoryIteratorPtr iterateDirectory(const String & path) const override { return delegate->iterateDirectory(path); }
 
+    /// Forward refresh() so a read-only replica re-reads object-storage metadata (e.g. `plain_rewritable`) and sees
+    /// files written by another server.
+    void refresh(UInt64 not_sooner_than_milliseconds) override { delegate->refresh(not_sooner_than_milliseconds); }
+
     void copyDirectoryContent(
         const String & from_dir,
         const std::shared_ptr<IDisk> & to_disk,
@@ -50,10 +54,11 @@ public:
 
     void listFiles(const String & path, std::vector<String> & file_names) const override { delegate->listFiles(path, file_names); }
 
-    std::unique_ptr<ReadBufferFromFileBase> readFile(
+    void prepareRead(
         const String & path,
         const ReadSettings & settings,
-        std::optional<size_t> read_hint) const override { return delegate->readFile(path, settings, read_hint); }
+        std::optional<size_t> read_hint,
+        ReadPipeline & pipeline) const override { delegate->prepareRead(path, settings, read_hint, pipeline); }
 
     time_t getLastChanged(const String & path) const override { return delegate->getLastChanged(path); }
     Poco::Timestamp getLastModified(const String & path) const override { return delegate->getLastModified(path); }
@@ -80,7 +85,6 @@ public:
 
     StoredObjects getStorageObjects(const String & path) const override { return delegate->getStorageObjects(path); }
 
-    DiskObjectStoragePtr createDiskObjectStorage() override { return delegate->createDiskObjectStorage(); }
     ObjectStoragePtr getObjectStorage() override { return delegate->getObjectStorage(); }
     NameSet getCacheLayersNames() const override { return delegate->getCacheLayersNames(); }
 
@@ -107,6 +111,7 @@ public:
     void removeFile(const String &) override { throwNotAllowed(); }
     void removeFileIfExists(const String &) override { throwNotAllowed(); }
     ReservationPtr reserve(UInt64 /*bytes*/) override { throwNotAllowed(); }
+    ReservationPtr reserve(UInt64 /*bytes*/, const ReservationConstraints & /*constraints*/) override { throwNotAllowed(); }
     void removeRecursive(const String &) override { throwNotAllowed(); }
     void removeSharedFile(const String &, bool) override { throwNotAllowed(); }
     void removeSharedFileIfExists(const String &, bool) override { throwNotAllowed(); }
