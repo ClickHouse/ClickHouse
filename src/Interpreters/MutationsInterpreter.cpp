@@ -1660,8 +1660,9 @@ void MutationsInterpreter::prepare(bool dry_run)
                     /// expression (or the type default when no expression exists)
                     /// instead of the original value from the source part.
                     auto col_decl = metadata_snapshot->getColumns().getPhysical(column);
-                    ASTPtr cleared_value = col_decl.default_desc.expression
-                        ? col_decl.default_desc.expression->clone()
+                    auto column_default = metadata_snapshot->getColumns().getDefault(column);
+                    ASTPtr cleared_value = column_default && column_default->expression
+                        ? column_default->expression->clone()
                         : make_intrusive<ASTLiteral>(col_decl.type->getDefault());
                     stages.back().column_to_updated.emplace(
                         column,
