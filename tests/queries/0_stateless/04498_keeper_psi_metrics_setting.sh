@@ -49,6 +49,7 @@ cat > "$CONFIG" <<EOF
         <server_id>1</server_id>
         <log_storage_path>${TMP_DIR}/coordination/log</log_storage_path>
         <snapshot_storage_path>${TMP_DIR}/coordination/snapshots</snapshot_storage_path>
+        <data_storage_path>${TMP_DIR}/coordination/data</data_storage_path>
         <cgroups_memory_observer_wait_time>0</cgroups_memory_observer_wait_time>
 
         <coordination_settings>
