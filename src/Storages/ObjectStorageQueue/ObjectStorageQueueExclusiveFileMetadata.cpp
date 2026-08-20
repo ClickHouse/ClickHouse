@@ -44,10 +44,17 @@ void ObjectStorageQueueExclusiveFileMetadata::prepareFailedRequestsImpl(Coordina
 {
     if (retriable)
     {
-        file_status->retries.fetch_add(1, std::memory_order_relaxed);
+        auto tries = file_status->retries.fetch_add(1, std::memory_order_relaxed);
+        LOG_TRACE(log, "File {} failed at try {}/{}", path, tries + 1, max_loading_retries);
+
+        if (tries + 1 < max_loading_retries)
+        {
+            metadata.releaseExclusiveProcessing(path);
+            return;
+        }
     }
     // Nothing is changed in zookeeper.
-    LOG_TRACE(log, "Prepare {} failed request", path);
+    LOG_TRACE(log, "File {} failed to process and will not be retried.", path);
 }
 
 std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorageQueueExclusiveFileMetadata::setProcessingImpl()
@@ -64,6 +71,8 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
 
 void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
 {
+    metadata.releaseExclusiveProcessing(path);
+
     // Nothing is changed in zookeeper.
     LOG_TRACE(log, "Prepare {} reset processed request", path);
 }

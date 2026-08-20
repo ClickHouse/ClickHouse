@@ -432,6 +432,16 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         is_attach,
         log);
 
+    if (table_metadata.getMode() == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        if (commit_on_select)
+            LOG_WARNING(log, "The setting `commit_on_select` makes no sense with mode='exclusive'.\n"
+              "Exclusive mode relies on `metadata_cache_size_elements` and `metadata_cache_size_bytes` for tracking file state.");
+
+        // Always track file state in metadata cache.
+        commit_on_select = true;
+    }
+
     ObjectStorageType storage_type = engine_name == "S3Queue" ? ObjectStorageType::S3 : ObjectStorageType::Azure;
 
     temp_metadata = std::make_unique<ObjectStorageQueueMetadata>(
@@ -1184,7 +1194,6 @@ void StorageObjectStorageQueue::commit(
     else
         chassert(last_processed_file_per_partition.empty());
 
-    // Nothing is changed in zookeeper.
     const auto mode = getTableMetadata().getMode();
 
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty())
@@ -1203,6 +1212,7 @@ void StorageObjectStorageQueue::commit(
 
     if (mode == ObjectStorageQueueMode::EXCLUSIVE)
     {
+        // Nothing is changed in zookeeper.
         commitExclusive(successful_objects, processed_objects, sources, transaction_start_time);
     }
     else

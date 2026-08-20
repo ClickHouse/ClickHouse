@@ -13,7 +13,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)

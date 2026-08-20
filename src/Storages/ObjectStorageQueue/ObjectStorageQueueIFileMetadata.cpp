@@ -168,7 +168,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
                 current_exception = getCurrentExceptionMessage(true);
                 file_status->onFailed(current_exception);
             }
-            else
+            else if (!processing_node_path.empty())
                 file_status->onFailed("Unprocessed exception");
         }
         else
@@ -177,9 +177,7 @@ ObjectStorageQueueIFileMetadata::~ObjectStorageQueueIFileMetadata()
         }
 
         if (processing_node_path.empty())
-        {
             return;
-        }
 
         LOG_TEST(log, "Removing processing node in destructor for file: {} "
                  "(state: {}, exception: {})",

@@ -12,7 +12,7 @@ from helpers.s3_queue_common import (
     generate_random_string,
 )
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -111,7 +111,7 @@ def get_unprocessed_files(node, table_name):
     )
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 def test_processing_threads(started_cluster, mode):
     node = started_cluster.instances["instance"]
     table_name = f"processing_threads_{mode}"
@@ -178,6 +178,8 @@ def test_processing_threads(started_cluster, mode):
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
         pytest.param("ordered", 8),
+        pytest.param("exclusive", 1),
+        pytest.param("exclusive", 8),
     ],
 )
 def test_shards(started_cluster, mode, processing_threads):
@@ -328,6 +330,8 @@ where zookeeper_path ilike '%{table_name}%' and status = 'Processed' and rows_pr
         pytest.param("unordered", 8),
         pytest.param("ordered", 1),
         pytest.param("ordered", 2),
+        pytest.param("exclusive", 1),
+        pytest.param("exclusive", 2),
     ],
 )
 def test_shards_distributed(started_cluster, mode, processing_threads):
@@ -345,18 +349,20 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
 
     i = 0
     for instance in [node, node_2]:
+        files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
         create_table(
             started_cluster,
             instance,
             table_name,
             mode,
-            files_path,
+            files_path_node,
             additional_settings={
                 "keeper_path": keeper_path,
                 "s3queue_processing_threads_num": processing_threads,
                 "s3queue_buckets": shards_num,
                 "polling_max_timeout_ms": 1000,
                 "polling_backoff_ms": 0,
+                "after_processing": "delete" if mode == "exclusive" else "keep",
             },
         )
         i += 1
@@ -365,9 +371,16 @@ def test_shards_distributed(started_cluster, mode, processing_threads):
         create_mv(instance, table_name, dst_table_name)
 
     time.sleep(2)
-    total_values = generate_random_files(
-        started_cluster, files_path, files_to_generate, row_num=row_num
-    )
+    if mode == "exclusive":
+        total_values = []
+        for i in range(2):
+            files_path_node = f"{files_path}{i}" if mode == "exclusive" else files_path
+            chunk = files_to_generate//2
+            total_values += generate_random_files(
+                started_cluster, files_path_node, chunk, row_num=row_num, start_ind=i*chunk,
+            )
+    else:
+        total_values = generate_random_files(started_cluster, files_path, files_to_generate, row_num=row_num)
 
     def get_count(node, table_name):
         return int(run_query(node, f"SELECT count() FROM {table_name}"))
@@ -446,7 +459,11 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
     count1 = get_count(node, dst_table_name)
     count2 = get_count(node_2, dst_table_name)
     if (count1 + count2) != total_rows:
-        expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
+        if mode == "exclusive":
+            expected_files = [f"{files_path}0/test_{x}.csv" for x in range(files_to_generate//2)]
+            expected_files += [f"{files_path}1/test_{x}.csv" for x in range(files_to_generate//2, files_to_generate)]
+        else:
+            expected_files = [f"{files_path}/test_{x}.csv" for x in range(files_to_generate)]
         node.query("SYSTEM FLUSH LOGS")
         node_2.query("SYSTEM FLUSH LOGS")
         processed_files = (
@@ -460,6 +477,8 @@ select splitByChar('/', file_name)[-1] as file from system.s3queue_metadata_cach
         logging.debug(f"Processed files: {processed_files}")
         missing_files = [file for file in expected_files if file not in processed_files]
         missing_files.sort()
+
+        assert len([file for file in processed_files if file not in expected_files]) == 0
 
         assert (
             False

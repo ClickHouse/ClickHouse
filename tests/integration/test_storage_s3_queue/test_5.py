@@ -17,7 +17,7 @@ from helpers.s3_queue_common import (
 from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
-AVAILABLE_MODES = ["unordered", "ordered"]
+AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
 
 
 @pytest.fixture(autouse=True)
@@ -140,7 +140,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 def test_filtering_files(started_cluster, mode):
     node1 = started_cluster.instances["instance"]
     node2 = started_cluster.instances["instance2"]
@@ -161,30 +161,34 @@ def test_filtering_files(started_cluster, mode):
         f"CREATE DATABASE r ENGINE=Replicated('/clickhouse/databases/{table_name}', 'shard1', 'node2')"
     )
 
-    create_table(
-        started_cluster,
-        node1,
-        table_name,
-        mode,
-        files_path,
-        additional_settings={
-            "keeper_path": keeper_path,
-            "polling_min_timeout_ms": 100,
-            "polling_max_timeout_ms": 100,
-            "polling_backoff_ms": 0,
-        },
-        database_name="r",
-    )
+    for node in [node1, node2]:
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            mode,
+            files_path if mode != "exclusive" else f"{files_path}{{replica}}",
+            additional_settings={
+                "keeper_path": keeper_path,
+                "polling_min_timeout_ms": 100,
+                "polling_max_timeout_ms": 100,
+                "polling_backoff_ms": 0,
+            },
+            database_name="r",
+        )
 
-    files = [(f"{files_path}/test_{i}.csv", i) for i in range(0, files_to_generate)]
-    generate_random_files(
-        started_cluster,
-        files_path,
-        files_to_generate,
-        start_ind=0,
-        row_num=1,
-        files=files,
-    )
+    chunk = files_to_generate//2
+    for nodei in range(2):
+        files_path_node = files_path if mode != "exclusive" else f"{files_path}node{nodei+1}"
+        files = [(f"{files_path_node}/test_{i}.csv", i) for i in range(nodei*chunk, nodei*chunk + chunk)]
+        generate_random_files(
+            started_cluster,
+            files_path_node,
+            files_to_generate,
+            start_ind=0,
+            row_num=1,
+            files=files,
+        )
     incorrect_values = [
         ["failed", 1, 1],
     ]
@@ -192,13 +196,20 @@ def test_filtering_files(started_cluster, mode):
         "\n".join((",".join(map(str, row)) for row in incorrect_values)) + "\n"
     ).encode()
 
-    failed_file = f"{files_path}/testz_fff.csv"
-    put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+    if mode == "exclusive":
+        failed_files = [f"{files_path}node1/testz_fff.csv", f"{files_path}node2/testz_fff.csv"]
+    else:
+        failed_files = [f"{files_path}/testz_fff.csv"]
 
-    create_mv(node1, f"r.{table_name}", dst_table_name)
+    for failed_file in failed_files:
+        put_s3_file_content(started_cluster, failed_file, incorrect_values_csv)
+
+    for node in [node1, node2]:
+        create_mv(node, f"r.{table_name}", dst_table_name)
 
     def get_count():
-        return int(node1.query(f"SELECT count() FROM default.{dst_table_name}"))
+        query = f"SELECT count() FROM default.{dst_table_name}"
+        return int(node1.query(query)) + int(node2.query(query))
 
     expected_rows = files_to_generate
     for _ in range(20):
@@ -216,10 +227,6 @@ def test_filtering_files(started_cluster, mode):
 
     found_1_global = False
     found_2_global = False
-    if mode == "unordered":
-        is_unordered = True
-    else:
-        is_unordered = False
 
     for file in files:
         found_1 = node2.contains_in_log(
@@ -227,7 +234,7 @@ def test_filtering_files(started_cluster, mode):
         )
         found_1_global = found_1_global or found_1
 
-        if is_unordered:
+        if mode == "unordered":
             found_2 = node2.contains_in_log(
                 f"Will skip file {file[0]}: it should be processed by"
             )
@@ -238,15 +245,20 @@ def test_filtering_files(started_cluster, mode):
             # Ordered mode with StartAfter does not re-list processed keys,
             # so "Skipping ... Processed" may never appear; no per-file assertion.
 
-    assert found_1_global or not is_unordered  # unordered must see at least one skip-by-processed
-    if is_unordered:
+    if mode == "unordered":
+        assert found_1_global  # unordered must see at least one skip-by-processed
         assert found_2_global
 
-    assert node2.contains_in_log(
-        f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
-    ) or node1.contains_in_log(
-        f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
-    )
+    def log_line(failed_file):
+        return f"StorageS3Queue (r.{table_name}): Skipping file {failed_file}: Failed"
+
+    if mode == "exclusive":
+        log_line = lambda line: f"StorageObjectStorageQueue({keeper_path}): File {line} has non-processable state"
+        assert node1.contains_in_log(log_line(failed_files[0]))
+        assert node2.contains_in_log(log_line(failed_files[1]))
+    else:
+        line = f"StorageS3Queue (r.{table_name}): Skipping file {failed_files[0]}: Failed"
+        assert node2.contains_in_log(line) or node1.contains_in_log(line)
 
 
 def test_ordered_start_after_avoids_deep_relisting(started_cluster):
@@ -516,6 +528,8 @@ def test_failure_in_the_middle(started_cluster):
     processed = False
     for _ in range(50):
         node.query("SYSTEM FLUSH LOGS")
+        z = node.query(f"SELECT * FROM system.s3queue_log WHERE table = '{table_name}'")
+        logging.debug(f"S3 queue log: {z}")
         processed = int(
             node.query(
                 f"SELECT count() FROM system.s3queue_log WHERE table = '{table_name}' and status = 'Processed'"
@@ -1099,7 +1113,7 @@ def test_shutdown_dedup_off_no_duplicates(started_cluster):
     node.query(f"DROP TABLE {dst_table_name} SYNC")
 
 
-@pytest.mark.parametrize("mode", ["unordered", "ordered"])
+@pytest.mark.parametrize("mode", ["unordered", "ordered", "exclusive"])
 @pytest.mark.parametrize("limit", [1, 9999999999])
 def test_mv_settings(started_cluster, mode, limit):
     node = started_cluster.instances["instance"]

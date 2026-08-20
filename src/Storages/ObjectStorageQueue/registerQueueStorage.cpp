@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Databases/DatabaseReplicatedHelpers.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -40,6 +41,7 @@ namespace Setting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
@@ -129,6 +131,25 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
                             "Experimental 'use_hive_partitioning' setting is not enabled "
                             "(the setting 'allow_experimental_object_storage_queue_hive_partitioning')");
         }
+    }
+
+    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        Macros::MacroExpansionInfo info;
+        info.expand_special_macros_only = true;
+
+        const auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = is_on_cluster && database->getEngineName() == "Replicated";
+
+        if (is_replicated_database)
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        else
+            info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+
+        auto path = configuration->getPathForRead();
+        path.path = args.getContext()->getMacros()->expand(path.path, info);
+        configuration->setPathForRead(path);
     }
 
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
@@ -268,6 +289,8 @@ Possible values:
 - exclusive - With exclusive mode, nothing is tracked in Zookeeper. Your S3 url (first parameter in `S3Queue()`) *must* resolve to a unique host or path. This mode is only useful for high-throughput and/or self-hosted scenarios.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+
+When using `exclusive` mode, using the `{replica}` macro in the S3 url is supported.
 
 ### `after_processing` {#after_processing}
 
