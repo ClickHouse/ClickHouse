@@ -58,31 +58,44 @@ SELECT multiIf(
     toTime64('12:00:00.250', 3)
 ) FROM numbers(3);
 
-SELECT '--- Time-family if is compiled, not interpreted ---';
+SELECT '--- Time-family if/multiIf is compiled, not interpreted ---';
 
--- The condition is a comparison of two stored columns: it is compilable but has no
--- compilable child, and a node with no compilable children is never compiled on its own.
--- So the outer if is the only node that can raise CompiledFunctionExecute in both queries.
+-- Every condition is a comparison of two stored columns: compilable, but with no compilable
+-- child, and a node with no compilable children is never compiled on its own. The branches
+-- are constants or plain columns, so the outer if/multiIf is the only node that can raise
+-- CompiledFunctionExecute in any of the four queries below.
 DROP TABLE IF EXISTS t_cond;
 CREATE TABLE t_cond (c1 UInt8, c2 UInt8, n1 UInt32, n2 UInt32) ENGINE = Memory;
 INSERT INTO t_cond VALUES (0, 0, 1, 2), (1, 0, 3, 4);
 
 SELECT if(c1 = c2, toTime('01:00:00'), toTime64('12:00:00.250', 3)) FROM t_cond
-    SETTINGS log_comment = '03916_time_shape' FORMAT Null;
+    SETTINGS log_comment = '03916_time_if_shape' FORMAT Null;
 
--- Control: compiles in any build that has the embedded compiler, so the comparison below
--- pins that the Time shape is compiled wherever anything is, without a no-msan tag.
+SELECT multiIf(c1 = c2, toTime('01:00:00'), c1 > c2, toTime64('02:00:00.5', 1), toTime64('12:00:00.250', 3)) FROM t_cond
+    SETTINGS log_comment = '03916_time_multiif_shape' FORMAT Null;
+
+-- Controls: the same shapes over UInt32 compile in any build that has the embedded compiler,
+-- so the comparisons below pin that the Time shapes are compiled wherever anything is,
+-- without a no-msan tag.
 SELECT if(c1 = c2, n1, n2) FROM t_cond
-    SETTINGS log_comment = '03916_control_shape' FORMAT Null;
+    SETTINGS log_comment = '03916_control_if_shape' FORMAT Null;
+
+SELECT multiIf(c1 = c2, n1, c1 > c2, n2, n1) FROM t_cond
+    SETTINGS log_comment = '03916_control_multiif_shape' FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
+WITH shapes AS
+(
+    SELECT log_comment, argMax(ProfileEvents['CompiledFunctionExecute'] > 0, event_time_microseconds) AS compiled
+    FROM system.query_log
+    WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '03916_%_shape'
+    GROUP BY log_comment
+)
 SELECT
-    (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
-        WHERE current_database = currentDatabase() AND log_comment = '03916_time_shape' AND type = 'QueryFinish'
-        ORDER BY event_time_microseconds DESC LIMIT 1)
-    = (SELECT ProfileEvents['CompiledFunctionExecute'] > 0 FROM system.query_log
-        WHERE current_database = currentDatabase() AND log_comment = '03916_control_shape' AND type = 'QueryFinish'
-        ORDER BY event_time_microseconds DESC LIMIT 1);
+    (SELECT compiled FROM shapes WHERE log_comment = '03916_time_if_shape')
+        = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_if_shape'),
+    (SELECT compiled FROM shapes WHERE log_comment = '03916_time_multiif_shape')
+        = (SELECT compiled FROM shapes WHERE log_comment = '03916_control_multiif_shape');
 
 DROP TABLE t_cond;
