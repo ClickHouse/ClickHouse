@@ -37,3 +37,22 @@ SELECT count() FROM dst_cast_type;
 
 DROP TABLE dst_cast_type;
 DROP TABLE src_cast_type;
+
+-- The whole type-conversion family stores the target type as a string literal, so accurateCast and
+-- its siblings must be canonicalized too, not only CAST.
+
+DROP TABLE IF EXISTS dst_acc_cast;
+DROP TABLE IF EXISTS src_acc_cast;
+
+CREATE TABLE dst_acc_cast (x String, INDEX i accurateCast(x, 'Int32') TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY accurateCast(x, 'Int32') PARTITION BY tuple();
+CREATE TABLE src_acc_cast (x String, INDEX i accurateCast(x, 'INT') TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree ORDER BY accurateCast(x, 'INT') PARTITION BY tuple();
+
+INSERT INTO src_acc_cast VALUES ('1'), ('2');
+
+ALTER TABLE dst_acc_cast REPLACE PARTITION tuple() FROM src_acc_cast;
+SELECT count() FROM dst_acc_cast;
+
+DROP TABLE dst_acc_cast;
+DROP TABLE src_acc_cast;

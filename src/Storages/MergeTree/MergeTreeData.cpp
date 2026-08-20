@@ -10864,19 +10864,25 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     }
 }
 
-/// Canonicalize data type names spelled inside CAST(expr, 'Type') so that logically-equal
-/// definitions compare equal as text. The type name is stored as a plain string literal, so e.g.
-/// CAST(x, 'INT') and CAST(x, 'Int32') would otherwise be seen as different keys/indices in
-/// checkStructureAndGetMergeTreeData (REPLACE/ATTACH PARTITION FROM). Names that DataTypeFactory
-/// cannot parse are left untouched.
+/// Canonicalize data type names spelled inside type-conversion functions so that logically-equal
+/// definitions compare equal as text. These functions take the target type as a plain string
+/// literal in their second argument, so e.g. CAST(x, 'INT') and CAST(x, 'Int32'), or
+/// accurateCast(x, 'INT') and accurateCast(x, 'Int32'), would otherwise be seen as different
+/// keys/indices in checkStructureAndGetMergeTreeData (REPLACE/ATTACH PARTITION FROM). Names that
+/// DataTypeFactory cannot parse are left untouched.
 static void canonicalizeCastTypeNames(IAST * ast)
 {
     if (!ast)
         return;
 
-    if (auto * func = ast->as<ASTFunction>(); func && (func->name == "CAST" || func->name == "_CAST"))
+    /// All take (value, 'Type'[, ...]); the type is always the second argument. accurateCastOrDefault
+    /// may carry a third (default value) argument, so match on the type slot, not the arity.
+    static const std::unordered_set<std::string> type_conversion_functions
+        = {"CAST", "_CAST", "accurateCast", "accurateCastOrNull", "accurateCastOrDefault", "reinterpret"};
+
+    if (auto * func = ast->as<ASTFunction>(); func && type_conversion_functions.contains(func->name))
     {
-        if (func->arguments && func->arguments->children.size() == 2)
+        if (func->arguments && func->arguments->children.size() >= 2)
         {
             if (auto * type_literal = func->arguments->children[1]->as<ASTLiteral>();
                 type_literal && type_literal->value.getType() == Field::Types::String)
