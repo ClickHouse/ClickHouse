@@ -923,18 +923,8 @@ void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 
 void KeeperServer::stopLeaderMetricsPolling()
 {
-    nuraft::ptr<nuraft::delayed_task> polling_task;
-    {
-        std::lock_guard lock(leader_unavailable_metrics_mutex);
-        if (!leader_unavailable_polling_task)
-            return;
-
-        polling_task = *leader_unavailable_polling_task;
-        leader_unavailable_polling_task.reset();
-    }
-
-    if (asio_service)
-        asio_service->cancel(polling_task);
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_polling_task.reset();
 }
 
 void KeeperServer::collectLeaderMetrics()
