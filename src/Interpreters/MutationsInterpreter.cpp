@@ -776,17 +776,27 @@ void MutationsInterpreter::prepare(bool dry_run)
         !updated_columns.empty() || !patch_updated_columns.empty() || has_clear_column;
     if (need_materialized_analysis)
     {
-        /// Every column of the table, not only the ones this task reads: deciding whether a MATERIALIZED
-        /// column has to be recalculated must not require reading its dependencies. An on-fly read narrows
-        /// `available_columns`, so a column that keeps its stored value has dependencies that are
-        /// legitimately absent and would fail to resolve. A materialising mutation already covers the part.
-        NamesAndTypesList all_columns_with_ephemeral = storage_snapshot->getColumns(options);
+        /// Every column of the table, not only the ones this task reads: a column that keeps its stored
+        /// value has dependencies that are legitimately outside the read set, and deciding that it keeps
+        /// it must not require reading them.
+        ///
+        /// Built on first use: the copy costs a node per column, most tables have no MATERIALIZED column
+        /// to analyse, and an on-fly read arrives here per part.
         std::unordered_set<String> ephemeral_columns;
-        for (const auto & col : columns_desc.getEphemeral())
+        std::optional<NamesAndTypesList> analysis_columns;
+        auto get_analysis_columns = [&]() -> const NamesAndTypesList &
         {
-            ephemeral_columns.insert(col.name);
-            all_columns_with_ephemeral.push_back(col);
-        }
+            if (!analysis_columns)
+            {
+                analysis_columns = storage_snapshot->getColumns(options);
+                for (const auto & col : columns_desc.getEphemeral())
+                {
+                    ephemeral_columns.insert(col.name);
+                    analysis_columns->push_back(col);
+                }
+            }
+            return *analysis_columns;
+        };
 
         for (const auto & column : columns_desc)
         {
@@ -794,6 +804,7 @@ void MutationsInterpreter::prepare(bool dry_run)
                 && available_columns_set.contains(column.name)
                 && column.default_desc.expression)
             {
+                const auto & all_columns_with_ephemeral = get_analysis_columns();
                 auto query = column.default_desc.expression->clone();
                 replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns_with_ephemeral);
                 auto syntax_result = TreeRewriter(context).analyze(query, all_columns_with_ephemeral);
