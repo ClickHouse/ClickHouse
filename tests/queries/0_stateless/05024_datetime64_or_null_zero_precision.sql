@@ -1,4 +1,7 @@
-SET session_timezone = 'UTC';
+SET session_timezone = 'Europe/Berlin';
+
+SELECT toTypeName(toDateTime64OrNull('1789-07-14', 0));
+SELECT toDateTime64OrNull('1789-07-14', 0);
 
 SELECT toTypeName(toDateTime64OrNull('1789-07-14', 0, 'UTC'));
 SELECT toDateTime64OrNull('1789-07-14', 0, 'UTC');

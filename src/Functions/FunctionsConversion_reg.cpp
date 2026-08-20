@@ -2475,9 +2475,12 @@ See also:
 - [toDateTime64OrNull](#toDateTime64OrNull).
 - [toDateTime64OrDefault](#toDateTime64OrDefault).
     )";
-    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x)";
-    FunctionDocumentation::Arguments arguments_toDateTime64OrZero = {
+    FunctionDocumentation::Syntax syntax_toDateTime64OrZero = "toDateTime64OrZero(x[, precision[, timezone]])";
+    FunctionDocumentation::Arguments arguments_toDateTime64OrZero =
+    {
         {"x", "A string representation of a date with time and subsecond precision.", {"String"}},
+        {"precision", "Optional. The subsecond precision of the returned value.", {"UInt8"}},
+        {"timezone", "Optional. Time zone of the returned value.", {"String"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_toDateTime64OrZero = {"Returns a DateTime64 value if successful, otherwise the lower boundary of DateTime64 (`1970-01-01 00:00:00.000`).", {"DateTime64"}};
     FunctionDocumentation::Examples examples_toDateTime64OrZero = {
