@@ -277,8 +277,8 @@ SELECT *
 FROM (SELECT 1 AS a) t1
 RIGHT SEMI JOIN
 (
-    (SELECT 1 AS b) t2
-    LEFT SEMI JOIN (SELECT 1 AS c) t3 ON t1.a = t2.b
+    (SELECT 1 AS b) AS t2
+    LEFT SEMI JOIN (SELECT 1 AS c) AS t3 ON t1.a = t2.b
 ) AS s
 ON true; -- { serverError SEMI_ANTI_JOIN_COLUMN_ACCESS_DENIED }
 
