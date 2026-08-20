@@ -135,7 +135,7 @@ static std::pair<size_t, size_t> estimateCompressedColumnSize(const ColumnWithTy
 /// window, and not at all once it outgrows it, so the repetitions have to be measured rather than scaled -
 /// scaling the one-copy figures would pin the repeated payload's compression ratio to one copy's, which is
 /// exactly wrong for a payload that is incompressible on its own. Serialize the sample enough times to
-/// observe the marginal cost of one more copy and extrapolate the remaining copies from it, the same way
+/// fill one compressed block and extrapolate the remaining copies from it, the same way
 /// `ColumnAggregateFunction::sampledStateSizes` measures the repetitions of a constant state.
 static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const ColumnWithTypeAndName & column, size_t repetitions)
 {
@@ -182,13 +182,15 @@ static std::pair<size_t, size_t> estimateRepeatedCompressedColumnSize(const Colu
         compressed_bytes = measured_compressed_bytes;
         if (measured_repetitions != repetitions)
         {
-            /// The per-block framing of both measurements cancels out in the difference, so the marginal figure
-            /// is the copies' own compressed size.
-            const double marginal_compressed_bytes_per_copy = measured_compressed_bytes > one_copy_compressed_bytes
-                ? static_cast<double>(measured_compressed_bytes - one_copy_compressed_bytes) / static_cast<double>(measured_repetitions - 1)
-                : 0.0;
-            compressed_bytes
-                = one_copy_compressed_bytes + static_cast<size_t>(marginal_compressed_bytes_per_copy * static_cast<double>(repetitions - 1));
+            /// The compressed stream starts a new block - and with it a new match window - every
+            /// `DBMS_DEFAULT_BUFFER_SIZE` of uncompressed data, which is the measurement budget above, so the
+            /// copies beyond the measured ones cannot compress against them: the wire repeats a block of the
+            /// measured shape. Scale the measured figure by the ratio of the uncompressed sizes rather than
+            /// extrapolating the marginal cost of one more copy within the block, which would assume a window
+            /// spanning the whole output.
+            compressed_bytes = static_cast<size_t>(
+                static_cast<double>(measured_compressed_bytes) * static_cast<double>(repetitions)
+                / static_cast<double>(measured_repetitions));
         }
     }
 

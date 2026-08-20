@@ -407,8 +407,17 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantSparseStateSamplesRepeatedP
     auto sparse = ColumnSparse::create(std::move(values), std::move(offsets), /*size_=*/1);
     ColumnPtr constant = ColumnConst::create(std::move(sparse), rows);
 
+    /// `NativeWriter` cannot put a `ColumnConst` over a `ColumnSparse` on the wire at all - materializing
+    /// the constant keeps the sparse layout, which the state's serialization does not accept - so the wire
+    /// ground truth is the equivalent materialized column: the constant's single non-default state, once
+    /// per row.
+    auto materialized = ColumnAggregateFunction::create(function);
+    for (size_t row = 0; row < rows; ++row)
+        materialized->insertFrom(*source_state, 0);
+
     const size_t cache_key = 0x111985 + 10;
-    const auto exact_compressed_bytes = compressedColumnSize({constant, state_type, "constant_sparse_state"});
+    const auto exact_compressed_bytes
+        = compressedColumnSize({std::move(materialized), state_type, "constant_sparse_state"});
     {
         RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
         Block header;
@@ -708,11 +717,10 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantStateCompressesAcrossRepeti
 /// block: its copies compress against each other even when one copy is incompressible on its own, and
 /// scaling one copy's `sample_bytes` and `compressed_bytes` by the row count keeps the one-copy ratio,
 /// overstating `output_bytes` by the repeated payload's real compression ratio.
-TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcrossRepetitions)
+static void checkConstantNestedPayloadCompression(size_t rows, size_t cache_key)
 {
     tryRegisterAggregateFunctions();
 
-    constexpr size_t rows = 32;
     /// The stored row is an array of this many `(state, string)` tuples. The states stay empty - one varint
     /// each on the wire - so the strings dominate the carrier.
     constexpr size_t elements_in_array = 4;
@@ -756,8 +764,6 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcro
     /// uncompressed payload, far above the 2x margin asserted below.
     ASSERT_LT(exact_compressed_bytes * 8, rows * elements_in_array * string_size);
 
-    const size_t cache_key = 0x111985 + 7;
-
     {
         RuntimeDataflowStatisticsCacheUpdater updater(cache_key, rows);
 
@@ -772,4 +778,18 @@ TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcro
     ASSERT_TRUE(stats.has_value());
     EXPECT_GE(stats->output_bytes, exact_compressed_bytes / 2);
     EXPECT_LE(stats->output_bytes, exact_compressed_bytes * 2);
+}
+
+TEST(RuntimeDataflowStatisticsStateSampling, ConstantNestedPayloadCompressesAcrossRepetitions)
+{
+    checkConstantNestedPayloadCompression(/*rows=*/32, /*cache_key=*/0x111985 + 7);
+}
+
+/// With enough repetitions the copies outgrow the measurement budget, which is also the size of one
+/// compressed block. Every further block of the wire repeats the measured block's shape - the compressed
+/// stream cannot match across a block boundary - so the measured figure scales with the uncompressed size.
+TEST(RuntimeDataflowStatisticsStateSampling, ManyConstantNestedRepetitionsScaleByCompressedBlock)
+{
+    /// 16 KiB of strings per copy, so the copies pass the 1 MiB measurement budget well before the last one.
+    checkConstantNestedPayloadCompression(/*rows=*/256, /*cache_key=*/0x111985 + 12);
 }
