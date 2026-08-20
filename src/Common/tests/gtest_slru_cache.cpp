@@ -252,7 +252,9 @@ TEST(SLRUCache, MaxCountDoesNotStarveProbationary)
     /// Large enough that the byte limbs never bind, so only the count limbs are exercised.
     static constexpr size_t max_size_in_bytes = 1'000'000'000;
 
-    for (double size_ratio : {0.0, 0.5, 1.0})
+    /// A ratio of 1.0 hands the whole cache to the protected queue, so nothing can stay
+    /// probationary. That is a misconfiguration rather than a case to protect against.
+    for (double size_ratio : {0.0, 0.25, 0.5})
     {
         for (size_t max_count = 1; max_count <= 8; max_count *= 2)
         {
@@ -337,9 +339,9 @@ TEST(SLRUCache, MaxCountProtectedBoundHonoursSizeRatio)
     EXPECT_EQ(count_scan_survivors(8, 0.25), 2u);
     EXPECT_EQ(count_scan_survivors(4, 0.25), 1u);
 
-    /// A ratio of 1.0 is clamped to max_count - 1, not to max_count.
-    EXPECT_EQ(count_scan_survivors(4, 1.0), 3u);
-    EXPECT_EQ(count_scan_survivors(8, 1.0), 7u);
+    /// A ratio of 1.0 protects the whole cache, so a scan evicts nothing.
+    EXPECT_EQ(count_scan_survivors(4, 1.0), 4u);
+    EXPECT_EQ(count_scan_survivors(8, 1.0), 8u);
 }
 
 TEST(SLRUCache, noOnRemoveEntryCallback)

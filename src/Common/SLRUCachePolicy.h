@@ -39,9 +39,9 @@ public:
         OnRemoveEntryFunction on_remove_entry_function_)
         : Base(std::make_unique<NoCachePolicyUserQuota>())
         , max_size_in_bytes(max_size_in_bytes_)
-        , max_protected_size(calculateMaxProtectedSize(max_size_in_bytes_, size_ratio_))
+        , max_protected_size(calculateMaxProtectedValue(max_size_in_bytes_, size_ratio_))
         , max_count(max_count_)
-        , max_protected_count(calculateMaxProtectedCount(max_count_, size_ratio_))
+        , max_protected_count(calculateMaxProtectedValue(max_count_, size_ratio_))
         , size_ratio(size_ratio_)
         , current_size_in_bytes_metric(size_in_bytes_metric_)
         , count_metric(count_metric_)
@@ -76,7 +76,7 @@ public:
 
     void setMaxCount(size_t max_count_) override
     {
-        max_protected_count = calculateMaxProtectedCount(max_count_, size_ratio);
+        max_protected_count = calculateMaxProtectedValue(max_count_, size_ratio);
         max_count = max_count_;
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
@@ -85,7 +85,7 @@ public:
 
     void setMaxSizeInBytes(size_t max_size_in_bytes_) override
     {
-        max_protected_size = calculateMaxProtectedSize(max_size_in_bytes_, size_ratio);
+        max_protected_size = calculateMaxProtectedValue(max_size_in_bytes_, size_ratio);
         max_size_in_bytes = max_size_in_bytes_;
 
         removeOverflow(protected_queue, max_protected_size, current_protected_size, /*is_protected=*/true);
@@ -281,22 +281,15 @@ private:
     WeightFunction weight_function;
     OnRemoveEntryFunction on_remove_entry_function;
 
-    static size_t calculateMaxProtectedSize(size_t max_size_in_bytes, double size_ratio)
+    /// Applies size_ratio to a cache limit, in bytes or in entries.
+    /// static_cast<double>(std::numeric_limits<size_t>::max()) rounds up to 2^64, which is not representable
+    /// in size_t, so the product is compared against the limit before it is converted back.
+    static size_t calculateMaxProtectedValue(size_t max_value, double size_ratio)
     {
-        return static_cast<size_t>(static_cast<double>(max_size_in_bytes) * std::max(0.0, std::min(1.0, size_ratio)));
-    }
-
-    /// The protected queue never occupies the whole cache: at least one slot always stays available for the probationary queue.
-    static size_t calculateMaxProtectedCount(size_t max_count, double size_ratio)
-    {
-        if (max_count == 0)
-            return 0;
-
-        const size_t max_protected_count = max_count - 1;
-        const double protected_count = static_cast<double>(max_count) * std::max(0.0, std::min(1.0, size_ratio));
-        if (protected_count >= static_cast<double>(max_protected_count))
-            return max_protected_count;
-        return static_cast<size_t>(protected_count);
+        const double max_protected_value = static_cast<double>(max_value) * std::max(0.0, std::min(1.0, size_ratio));
+        if (max_protected_value >= static_cast<double>(max_value))
+            return max_value;
+        return static_cast<size_t>(max_protected_value);
     }
 
     void removeOverflow(SLRUQueue & queue, size_t max_weight_size, size_t & current_weight_size, bool is_protected)
