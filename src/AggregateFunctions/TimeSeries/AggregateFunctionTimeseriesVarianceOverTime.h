@@ -64,6 +64,12 @@ struct AggregateFunctionTimeseriesVarianceOverTimeTraits
             m2 += delta * (x - mean);
         }
 
+        void addMany(const TimestampType * timestamps, const ValueType * values, size_t batch_size)
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+                add(timestamps[i], values[i]);
+        }
+
         /// Chan et al.'s parallel merge of two centered-moment aggregates (same formula as
         /// `AggregateFunctionTimeseriesLinearRegression::Summary::merge`).
         void merge(const Summary & other)
