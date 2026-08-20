@@ -22,12 +22,12 @@ ALTER TABLE arraymap_tuple_04839
     MODIFY COLUMN arr2 Array(JSON(max_dynamic_paths=5));
 
 ALTER TABLE arraymap_tuple_04839
-    ADD PROJECTION p (SELECT id, arrayMap((x, y) -> tuple(x, y), arr1, arr2) AS z WHERE id > 0 ORDER BY id);
+    ADD PROJECTION p (SELECT id, arrayMap((x, y) -> tuple(x, y), arr1, arr2) WHERE id > 0 ORDER BY id);
 ALTER TABLE arraymap_tuple_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=1;
 
 SELECT 'slots carry their own policies',
        countIf(position(type, '^a_') > 0 AND position(type, '^b_') > 0 AND position(type, '^a_') < position(type, '^b_'))
 FROM system.projection_parts_columns
-WHERE database=currentDatabase() AND table='arraymap_tuple_04839' AND name = 'p' AND column = 'z' AND active;
+WHERE database=currentDatabase() AND table='arraymap_tuple_04839' AND name = 'p' AND column LIKE 'arrayMap%' AND active;
 
 DROP TABLE arraymap_tuple_04839;
