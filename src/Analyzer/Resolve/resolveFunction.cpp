@@ -377,7 +377,7 @@ bool isTableIdentifierShadowedInScope(const IdentifierNode & identifier_node, co
     return false;
 }
 
-bool isViewBackedOrRemoteSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
+bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const IdentifierResolveScope & scope)
 {
     QueryTreeNodePtr resolved_table = join_tree;
     if (const auto * identifier = join_tree->as<IdentifierNode>())
@@ -391,9 +391,13 @@ bool isViewBackedOrRemoteSource(const QueryTreeNodePtr & join_tree, const Identi
     if (!table || !table->getStorage())
         return true;
 
+    const auto & storage = table->getStorage();
     /// Remote storages can attach policies and filters on shard-local tables that are not
     /// visible in initiator-side metadata, so they cannot be proven safe speculatively.
-    return table->getStorage()->isView() || table->getStorage()->isRemote();
+    /// Alias forwards reads to another storage but does not forward isView(), and policies are
+    /// evaluated against its target instead of the alias name. Reject it rather than proving a
+    /// target that can change independently during analysis.
+    return storage->isView() || storage->isRemote() || storage->getName() == "Alias";
 }
 
 bool hasLateAttachedTableFilter(
@@ -424,9 +428,17 @@ bool hasLateAttachedTableFilter(
     if (!storage_id.hasDatabase())
         return true;
 
-    const auto row_policy_filter = scope.context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
+    {
+        const auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    };
+
+    /// A scalar query can have its own context. Check both contexts even though they normally
+    /// share access rights, because an inherited setting/profile can change the effective policy.
+    return has_nontrivial_row_policy(scope.context)
+        || (query_context != scope.context && has_nontrivial_row_policy(query_context));
 }
 
 bool isSafeCountScalarSubqueryForEarlyShortCircuit(
@@ -439,7 +451,7 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
             && join_tree->getNodeType() != QueryTreeNodeType::IDENTIFIER)
         || (join_tree->getNodeType() == QueryTreeNodeType::IDENTIFIER
             && isTableIdentifierShadowedInScope(join_tree->as<IdentifierNode &>(), scope))
-        || isViewBackedOrRemoteSource(join_tree, scope)
+        || isUnsafeCountScalarSource(join_tree, scope)
         || hasLateAttachedTableFilter(join_tree, query.getContext(), scope)
         || hasNestedQueryOrUnion(query)
         || query.hasWith()

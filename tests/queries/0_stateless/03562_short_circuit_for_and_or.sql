@@ -105,9 +105,13 @@ SELECT 'Test comparison non-placeholder expressions stay eager';
 SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)) AS non_literal_comparison;
 
 SELECT 'Test view-backed count subqueries fall back to normal analysis';
+DROP TABLE IF EXISTS test_03562_view_alias;
 DROP VIEW IF EXISTS test_03562_view;
 CREATE VIEW test_03562_view AS SELECT number FROM numbers(1) WHERE throwIf(1) = 0;
 SELECT 1 OR ((SELECT count() FROM test_03562_view) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+CREATE TABLE test_03562_view_alias ENGINE = Alias('test_03562_view');
+SELECT 1 OR ((SELECT count() FROM test_03562_view_alias) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+DROP TABLE test_03562_view_alias;
 DROP VIEW test_03562_view;
 
 SELECT 'Test disabled short-circuit evaluation is respected';
