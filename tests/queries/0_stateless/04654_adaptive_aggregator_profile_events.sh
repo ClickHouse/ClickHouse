@@ -6,6 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Runs one query per adaptive control path and then asserts the path's ProfileEvents fired.
+# Each outer query consumes the inner aggregate on purpose: with `SELECT count() FROM (...)` the analyzer
+# prunes the unused aggregate, and a `GROUP BY` left with none uses a set method, which does not take the
+# adaptive path.
 # Everything runs in a single clickhouse-local process, so the counters in `system.events`
 # belong to these queries alone.
 $CLICKHOUSE_LOCAL --query "
@@ -19,16 +22,16 @@ SET enable_adaptive_aggregator = 1;
 
 -- High-cardinality stream: freezes, stages, coalesces, bypasses the local probe (the frozen
 -- table holds almost none of the keys), and drains at the merge.
-SELECT count() FROM (SELECT number AS g, count() AS c FROM numbers_mt(400000) GROUP BY g) FORMAT Null;
+SELECT sum(c) FROM (SELECT number AS g, count() AS c FROM numbers_mt(400000) GROUP BY g) FORMAT Null;
 
 -- Repeat-dominated stream past the freeze: the thaw sampler fires and the tables thaw.
-SELECT count() FROM (SELECT toUInt64(number % 20000) AS g, count() AS c FROM numbers_mt(3000000) GROUP BY g) FORMAT Null;
+SELECT sum(c) FROM (SELECT toUInt64(number % 20000) AS g, count() AS c FROM numbers_mt(3000000) GROUP BY g) FORMAT Null;
 
 -- Too few distinct keys: the producers give up on freezing.
-SELECT count() FROM (SELECT toUInt64(number % 50) AS g, sum(number) AS s FROM numbers_mt(400000) GROUP BY g) FORMAT Null;
+SELECT sum(s) FROM (SELECT toUInt64(number % 50) AS g, sum(number) AS s FROM numbers_mt(400000) GROUP BY g) FORMAT Null;
 
 -- Constant memory pressure: the sweeps drain the backlogs early.
-SELECT count() FROM (SELECT number % 100000 AS g, count() AS c FROM numbers_mt(400000) GROUP BY g SETTINGS max_bytes_before_external_group_by = 1) FORMAT Null;
+SELECT sum(c) FROM (SELECT number % 100000 AS g, count() AS c FROM numbers_mt(400000) GROUP BY g SETTINGS max_bytes_before_external_group_by = 1) FORMAT Null;
 
 SELECT 'freezes', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationLocalFreezes';
 SELECT 'staged records', coalesce(sum(value), 0) > 0 FROM system.events WHERE event = 'AdaptiveAggregationStagedRecords';

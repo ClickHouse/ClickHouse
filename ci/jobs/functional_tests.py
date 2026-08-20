@@ -180,6 +180,41 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "targeted": "--flaky-check --no-self-parallel",
 }
 
+# Job option that replaces the full test suite with the subset of tests selected
+# for the change under test (see `Targeting`): the tests the pull request changes,
+# the tests that already failed in this pull request, and the tests that cover the
+# changed lines according to the coverage database.
+#
+# Unlike the `targeted` check - which reruns that same selection many times to hunt
+# for flakiness - a `selected tests` run is an ordinary functional test run with a
+# shorter list of tests. The pull request workflow uses it for the sanitizer
+# flavors, where the builds with sanitizers are still exercised by the stress tests
+# and the whole suite still runs in the master workflow.
+SELECTED_TESTS_OPTION = "selected tests"
+
+
+def filter_selected_tests_by_flavor(tests, keep_sequential):
+    """Keep the selected tests that a `parallel`/`sequential` job flavor runs.
+
+    `--no-sequential`/`--no-parallel` split the suite into two independently
+    scheduled job flavors, so a test tagged `no-parallel`/`sequential` never runs
+    under the `parallel` flavor and vice versa. Dropping the tests the flavor
+    would not select anyway keeps the reported selection honest and lets the job
+    skip early when nothing is left for it.
+
+    Tests that cannot be resolved to a file in `tests/queries/0_stateless` (a
+    stateful test, or one removed or renamed since the selection data was
+    collected) are kept: `clickhouse-test` filters them out on its own.
+    """
+    res = []
+    for test in tests:
+        source_file = Targeting.functional_test_source_file(test)
+        if source_file is None or (
+            Targeting.is_sequential_functional_test(source_file) == keep_sequential
+        ):
+            res.append(test)
+    return res
+
 
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
@@ -364,6 +399,7 @@ def main():
     config_installs_args = ""
     is_flaky_check = False
     is_targeted_check = False
+    is_selected_tests_run = False
     is_bugfix_validation = False
     is_s3_storage = False
     is_azure_storage = False
@@ -390,6 +426,8 @@ def main():
             pass
         elif to == "per_test_coverage":
             pass
+        elif to == SELECTED_TESTS_OPTION:
+            pass
         else:
             assert False, f"Unknown option [{to}]"
 
@@ -407,7 +445,9 @@ def main():
                     f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
                 )
 
-        if "targeted" in to:
+        if to == SELECTED_TESTS_OPTION:
+            is_selected_tests_run = True
+        elif "targeted" in to:
             is_targeted_check = True
         elif "flaky" in to:
             is_flaky_check = True
@@ -448,9 +488,12 @@ def main():
     # "parallel"/"sequential" job flavors need no batch number of their own
     # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
     # not be gated on batching being active.
+    # A `selected tests` run is excluded too: it picks its own test list and
+    # applies the same flavor-applicability check to it below.
     if (
         not is_flaky_check
         and not is_targeted_check
+        and not is_selected_tests_run
         and not is_bugfix_validation
         and not is_llvm_coverage
         and not is_excluded_from_llvm
@@ -577,9 +620,15 @@ def main():
     diagnostics_dir = f"{temp_dir}/random-settings-diagnostics"
     runner_options += f" --random-settings-diagnostics-dir {diagnostics_dir}"
 
+    # `--repeat-newly-modified-tests` ranks the tests it is given by name and
+    # repeats the highest-numbered ones, which identifies the newly added tests
+    # only when the runner is given the whole suite. For a `selected tests` run
+    # the top of that ranking is just the newest test of the selection, so the
+    # option would multiply the run time without repeating anything new.
     if (
         not is_flaky_check
         and not is_targeted_check
+        and not is_selected_tests_run
         and not is_llvm_coverage
         and not is_bugfix_validation
         and not args.test
@@ -665,7 +714,7 @@ def main():
                 break
         else:
             raise FileNotFoundError(
-                "Clickhouse binary not found in any of the paths: "
+                "ClickHouse binary not found in any of the paths: "
                 + ", ".join(paths_to_check)
                 + ". You can also specify path to binary via --path argument"
             )
@@ -769,6 +818,38 @@ def main():
             Result.create_from(
                 status=Result.Status.SKIPPED,
                 info="No failed tests found from previous runs",
+            ).complete_job()
+
+    if is_selected_tests_run:
+        assert not args.test, "--test not supposed to be used for a selected tests run"
+        try:
+            tests, results_with_info = targeter.get_all_relevant_tests_with_info(
+                include_changed_tests=True
+            )
+            results.append(results_with_info)
+        except Exception as e:
+            # Selecting the tests needs the pull request diff and the coverage
+            # database. Do not silently run a weaker, unbatched version of the
+            # former sanitizer configuration: its original shards and repeated
+            # newly modified tests cannot be reconstructed from this job. Fail
+            # the check so the selection service problem is visible and retried.
+            Result.create_from(
+                status=Result.Status.ERROR,
+                info=f"Failed to select tests: {e}",
+            ).complete_job()
+
+    if is_selected_tests_run:
+        if "parallel" in test_options or "sequential" in test_options:
+            tests = filter_selected_tests_by_flavor(
+                tests, keep_sequential="sequential" in test_options
+            )
+        print(f"[selected tests] {len(tests)} tests to run: {tests}")
+
+        if not tests:
+            # early exit
+            Result.create_from(
+                status=Result.Status.SKIPPED,
+                info="No tests selected for this change",
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -1028,9 +1109,13 @@ def main():
                 build_type=build_types[0] if is_bugfix_validation else None,
             )
 
+        # These checks run an explicit list of tests, and `clickhouse-test` can
+        # filter all of them out (e.g. every selected test is tagged `no-tsan` in
+        # a TSan job) - that is a skip, not a failure.
         test_result = ft_res_processor.run(
             runner_exit_code=runner_exit_code,
             is_bugfix_validation=is_labeled_bugfix_validation,
+            allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
         )
 
         # Run additional build types for bugfix validation.
