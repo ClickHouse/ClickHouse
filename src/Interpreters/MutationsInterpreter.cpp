@@ -806,10 +806,10 @@ void MutationsInterpreter::prepare(bool dry_run)
                     [&](const auto & dep) { return ephemeral_columns.contains(dep); }))
                 {
                     /// Warn if the mutation also updates a non-ephemeral dependency
-                    /// of this MATERIALIZED column — the on-disk value will become stale. Only when
-                    /// this interpreter writes the part: an on-fly read builds one per read task per
-                    /// part and writes nothing, so warning there is both untrue and per-read noise.
-                    if (settings.recalculate_dependencies_of_updated_columns
+                    /// of this MATERIALIZED column — the on-disk value will become stale. Not on an
+                    /// on-fly read, which builds an interpreter per read task per part and writes
+                    /// nothing, so the warning is untrue there and repeats on every read.
+                    if (!settings.apply_on_fly_for_read
                         && std::ranges::any_of(required_columns, [&](const auto & dep)
                         { return !ephemeral_columns.contains(dep) && updated_columns.contains(dep); }))
                         LOG_WARNING(logger,
