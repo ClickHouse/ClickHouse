@@ -17,7 +17,9 @@ set enable_analyzer = 1, enable_parallel_replicas = 1, max_parallel_replicas = 3
 -- with automatic_parallel_replicas_mode=2 only statistics are collected and parallel replicas are not
 -- actually used (so ReadFromRemoteParallelReplicas disappears from the plan), and
 -- parallel_replicas_local_plan affects whether ReadFromRemoteParallelReplicas appears at all.
-set automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1;
+-- `serialize_query_plan` is turned on by the `distributed plan` checks; with a serialized plan the
+-- subquery probes below do not spawn secondary queries at all, which would make their control run vacuous.
+set automatic_parallel_replicas_mode = 0, parallel_replicas_local_plan = 1, serialize_query_plan = 0;
 
 set parallel_replicas_for_queries_with_multiple_tables=1;
 select count() from (explain select X.*, Y.* from X inner join Y on X.id = Y.id) where explain ilike '%ReadFromRemoteParallelReplicas%';
@@ -98,6 +100,31 @@ select count() from system.query_log
     where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
         and (current_database = currentDatabase() or has(databases, currentDatabase()))
         and log_comment = '03354_in_subquery_kill_switch_off';
+
+-- A materialized CTE is planned by yet another independent `Planner`, built from the CTE subquery's own
+-- context in `addBuildSubqueriesForMaterializedCTEsIfNeeded` after the join kill switch has run, so the
+-- switch must reach that context as well. The CTE is referenced twice, otherwise it is inlined and becomes
+-- an ordinary subquery table expression. `EXPLAIN` does not print the CTE materialization plan either, so
+-- the check is again on the secondary queries, counted the same way as for the `IN` subquery above.
+set enable_materialized_cte = 1;
+set parallel_replicas_for_queries_with_multiple_tables=1;
+with a as materialized (select id from Y)
+    select count() from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
+    settings log_comment='03354_materialized_cte_kill_switch_on' format Null;
+set parallel_replicas_for_queries_with_multiple_tables=0;
+with a as materialized (select id from Y)
+    select count() from X as s inner join a as l on s.id = l.id inner join a as r on s.id = r.id
+    settings log_comment='03354_materialized_cte_kill_switch_off' format Null;
+system flush logs query_log;
+select count() > 0 from system.query_log
+    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and (current_database = currentDatabase() or has(databases, currentDatabase()))
+        and log_comment = '03354_materialized_cte_kill_switch_on';
+select count() from system.query_log
+    where type = 'QueryStart' and not is_initial_query and event_date >= yesterday()
+        and (current_database = currentDatabase() or has(databases, currentDatabase()))
+        and log_comment = '03354_materialized_cte_kill_switch_off';
+set enable_materialized_cte = 0;
 
 -- The legacy (pre-analyzer) interpreter must respect the setting as well: with
 -- parallel_replicas_only_with_analyzer = 0 task-based parallel replicas are allowed on that path,
