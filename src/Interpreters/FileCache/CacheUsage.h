@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -41,9 +42,13 @@ struct CacheUsageStatGuard : private boost::noncopyable
 struct CacheUsage
 {
     /// priority is a non-owning pointer; the pointed-to object is owned by CacheUsagePerUser::CacheUserData.
-    CacheUsage(const FileCacheOriginInfo & origin_info_, IFileCachePriority * priority_);
+    /// Creating the entry counts as the client's first access, unless it is created by the
+    /// startup load from the filesystem: then the last access is not known.
+    CacheUsage(const FileCacheOriginInfo & origin_info_, IFileCachePriority * priority_, bool is_initial_load = false);
 
-    using Clock = std::chrono::steady_clock;
+    /// The wall clock, so that the last access can be reported as is in system tables.
+    /// The value does not survive a restart anyway, so monotonicity buys nothing here.
+    using Clock = std::chrono::system_clock;
     using TimePoint = Clock::time_point;
 
     const FileCacheOriginInfo origin_info;
@@ -60,9 +65,20 @@ struct CacheUsage
 
     /// Last cache access by this client, for the idle-client TTL.
     void touch(TimePoint now) { last_access.store(now, std::memory_order_relaxed); }
+    /// Empty for a client whose entries were only loaded from the filesystem on startup:
+    /// its last access happened before the restart and is not known.
+    std::optional<TimePoint> getLastAccess() const
+    {
+        const auto value = last_access.load(std::memory_order_relaxed);
+        if (value == TimePoint{})
+            return {};
+        return value;
+    }
+    /// While the last access is unknown, the TTL counts from the moment the client's
+    /// entries appeared, so a client loaded from disk and never used still expires.
     bool idleFor(std::chrono::seconds ttl, TimePoint now) const
     {
-        return now - last_access.load(std::memory_order_relaxed) >= ttl;
+        return now - getLastAccess().value_or(created_at) >= ttl;
     }
 
     bool operator <(const CacheUsage & other) const;
@@ -71,6 +87,8 @@ struct CacheUsage
     bool lessWithAssumption(const CacheUsage & other, size_t released_size_assumption, size_t other_released_size_assumption) const;
 
 private:
+    const TimePoint created_at;
+    /// `TimePoint{}` means the last access is not known (loaded from the filesystem).
     std::atomic<TimePoint> last_access;
 };
 using CacheUsagePtr = std::shared_ptr<CacheUsage>;

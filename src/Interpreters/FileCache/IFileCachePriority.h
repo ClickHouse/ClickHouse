@@ -393,6 +393,9 @@ public:
         size_t elements = 0;
         /// Client weight for proportional cache sharing (0 if not set).
         UInt64 weight = 0;
+        /// Approximate wall-clock time of the client's last cache access (converted from the
+        /// steady-clock timestamp of the idle-client TTL). Empty if there was no access yet.
+        std::optional<time_t> last_access_time;
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 

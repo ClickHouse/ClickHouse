@@ -2021,7 +2021,7 @@ void FileCache::evictIdleClients()
 
     /// Purge clients in parallel: `removeAllKeys` scans all metadata buckets, so a
     /// large idle set would otherwise serialize behind one another.
-    const auto check_now = std::chrono::steady_clock::now();
+    const auto check_now = CacheUsage::Clock::now();
     std::atomic<size_t> next_index = 0;
     auto purge_worker = [&]
     {

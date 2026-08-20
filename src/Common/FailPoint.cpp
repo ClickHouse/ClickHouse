@@ -92,12 +92,12 @@ static struct InitFiu
     ONCE(distributed_cache_fail_continue_read_request) \
     ONCE(distributed_cache_fail_choose_server) \
     ONCE(distributed_cache_fail_simple_request) \
+    REGULAR(distributed_cache_write_simulate_mid_segment_failover) \
     ONCE(distributed_cache_server_fail_read_request) \
     ONCE(distributed_cache_server_fail_metrics_request) \
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
-    REGULAR(distributed_cache_cancel_query_in_response_wait) \
     REGULAR(distributed_cache_assume_gap_buffered_on_seek) \
     REGULAR(distributed_cache_simulate_undrained_leftovers) \
     REGULAR(distributed_cache_wait_gap_buffered_on_seek) \

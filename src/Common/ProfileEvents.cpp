@@ -880,6 +880,8 @@ The server successfully detected this situation and will download merged part fr
     M(CachedWriteBufferCacheWriteBytes, "Bytes written from source (remote fs, etc) to filesystem cache", ValueType::Bytes) \
     M(CachedWriteBufferCacheWriteMicroseconds, "Time spent writing data into filesystem cache", ValueType::Microseconds) \
     M(CachedWriteBufferCacheWriteStopped, "Number of times write-through caching was stopped (space reservation or the cache write failed, or a covering segment was being evicted), after which the write continues without populating the cache", ValueType::Number) \
+    M(CachedWriteBufferCoveringSegmentShrunk, "Number of times write-through caching shrunk a covering file segment which stayed behind the offset being written at (the ranges in between went to another distributed cache server), in order to continue caching in a new file segment", ValueType::Number) \
+    M(CachedWriteBufferCoveringSegmentShrinkFailed, "Number of times write-through caching had to stop because a covering file segment which stayed behind the offset being written at could not be shrunk (it is held by someone else, so the hole in it cannot be resolved) or was concurrently evicted", ValueType::Number) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
@@ -1270,6 +1272,15 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheUnsuccessfulRegistryUpdates, "Distributed Cache registry event. The number of unsuccessful server registry updates", ValueType::Number) \
     \
     M(DistrCacheReadBytesFromFallbackBuffer, "Distributed Cache read buffer event. Bytes read from fallback buffer", ValueType::Number) \
+    M(DistrCacheReadBytesSkippedOnSeek, "Distributed Cache read buffer event. In-flight bytes discarded on a forward seek to reuse the open stream", ValueType::Bytes) \
+    M(DistrCacheSeekReRequests, "Distributed Cache read buffer event. The number of times a seek requested a new read range on the same connection", ValueType::Number) \
+    M(DistrCacheSeekCancelledRequests, "Distributed Cache read buffer event. The number of times a seek cancelled the open request instead of reusing the stream", ValueType::Number) \
+    M(DistrCacheSeekSkips, "Distributed Cache read buffer event. The number of forward seeks which skipped the gap on the open stream", ValueType::Number) \
+    M(DistrCacheSeekSkipDeclinedGapNotBuffered, "Distributed Cache read buffer event. The number of forward seeks which could not skip because the gap was not buffered locally", ValueType::Number) \
+    M(DistrCacheSeekBufferedBytesShortfall, "Distributed Cache read buffer event. The number of bytes the locally buffered data fell short of the gap when a skip was declined", ValueType::Bytes) \
+    M(DistrCacheSeekReRequestFirstPacketMicroseconds, "Distributed Cache read buffer event. Time between requesting a new read range on the open stream because of a seek and receiving its first packet", ValueType::Microseconds) \
+    M(DistrCacheEstimatedInflightBytesOnSeek, "Distributed Cache read buffer event. The estimated in-flight bytes at the seeks which considered discarding the connection (compare with DistrCacheUnusedDataPacketsBytesReadRangeIdChanged)", ValueType::Bytes) \
+    M(DistrCacheReadBytesUnconsumedOnEndRequest, "Distributed Cache read buffer event. Bytes of the requested read range left unconsumed when the request was ended early", ValueType::Bytes) \
     \
     M(DistrCacheOpenedConnections, "Distributed Cache connection event. The number of open connections to distributed cache", ValueType::Number) \
     M(DistrCacheReusedConnections, "Distributed Cache connection event. The number of reused connections to distributed cache", ValueType::Number) \
