@@ -318,7 +318,7 @@ ObjectStorageQueueSource::FileIterator::next()
 
                 Coordination::Responses responses;
                 Coordination::Error code = {};
-                zk_retry.retryLoop([&]
+                auto set_processing_batch = [&]
                 {
                     auto zk_client = metadata->getZooKeeper();
                     if (zk_retry.isRetry())
@@ -381,7 +381,22 @@ ObjectStorageQueueSource::FileIterator::next()
                         }
                     }
                     code = zk_client->tryMulti(requests, responses);
-                });
+                };
+
+                try
+                {
+                    zk_retry.retryLoop(set_processing_batch);
+                }
+                catch (const zkutil::KeeperException & e)
+                {
+                    /// Retries were exhausted on a hardware error: the exception escapes the
+                    /// retry loop before `code` is set, so the `else` branch below (which
+                    /// records this metric for non-throwing failures) is never reached.
+                    DimensionalMetrics::add(
+                        DimensionalMetrics::ObjectStorageQueueFailures,
+                        {storage_id.getDatabaseName(), storage_id.getTableName(), "set_processing", String(magic_enum::enum_name(e.code))});
+                    throw;
+                }
 
                 if (code == Coordination::Error::ZOK)
                 {
@@ -1866,6 +1881,12 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
         DimensionalMetrics::add(
             DimensionalMetrics::ObjectStorageQueueFailures,
             {storage_id.getDatabaseName(), storage_id.getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+
+        /// A tryMulti attempt may have succeeded in Keeper before the connection dropped -
+        /// the commit outcome is unknown, so destructors must check ownership before
+        /// removing processing nodes (see the analogous handling in
+        /// StorageObjectStorageQueue::commit()).
+        setUncertainCommit();
         throw;
     }
 

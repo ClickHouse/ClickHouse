@@ -1246,6 +1246,13 @@ void StorageObjectStorageQueue::commit(
         DimensionalMetrics::add(
             DimensionalMetrics::ObjectStorageQueueFailures,
             {getStorageID().getDatabaseName(), getStorageID().getTableName(), "commit", String(magic_enum::enum_name(e.code))});
+
+        /// A tryMulti attempt may have succeeded in Keeper before the connection dropped
+        /// ("failed after operation") - we never received its response, so the commit outcome
+        /// is unknown. Mark all metadata objects so their destructors check ownership before
+        /// removing the processing node, same as the replay-error branch below.
+        for (auto & source : sources)
+            source->setUncertainCommit();
         throw;
     }
 
