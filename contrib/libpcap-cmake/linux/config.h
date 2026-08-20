@@ -24,8 +24,9 @@
 #define HAVE_FSEEKO 1
 #define HAVE_UNISTD_H 1
 
-/* glibc uses a GNU-style strerror_r. */
-#define HAVE_GNU_STRERROR_R 1
+/* The flavour of `strerror_r` differs between glibc (GNU-style) and musl (POSIX-style),
+ * so `HAVE_GNU_STRERROR_R` / `HAVE_POSIX_STRERROR_R` is defined by CMake instead.
+ */
 
 /* socklen_t is available. */
 #define HAVE_SOCKLEN_T 1

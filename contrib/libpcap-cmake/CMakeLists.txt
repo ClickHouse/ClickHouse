@@ -55,3 +55,12 @@ target_include_directories(_pcap SYSTEM BEFORE PUBLIC "${LIBRARY_DIR}")
 
 # Build as a static, self-contained archive; no live-capture / remote defines.
 target_compile_definitions(_pcap PRIVATE HAVE_CONFIG_H BUILDING_PCAP pcap_EXPORTS)
+
+# glibc provides the GNU-style `strerror_r` returning `char *`, while musl provides
+# the POSIX one returning `int`. Getting this wrong makes `pcap_strerror` interpret
+# an integer as a pointer.
+if (USE_MUSL)
+    target_compile_definitions(_pcap PRIVATE HAVE_POSIX_STRERROR_R=1)
+else()
+    target_compile_definitions(_pcap PRIVATE HAVE_GNU_STRERROR_R=1)
+endif()

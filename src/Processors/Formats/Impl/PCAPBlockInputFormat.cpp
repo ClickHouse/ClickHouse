@@ -192,6 +192,11 @@ void PCAPBlockInputFormat::initializeIfNeeded()
         copyData(*in, buf, is_stopped);
     }
 
+    /// The stream was only partially copied if the query has been cancelled;
+    /// do not open a sniffer over a truncated buffer.
+    if (is_stopped)
+        return;
+
     mem_file = fmemopen(file_contents.data(), file_contents.size(), "rb");
     if (mem_file == nullptr)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Failed to open in-memory PCAP buffer");
@@ -304,6 +309,9 @@ Chunk PCAPBlockInputFormat::read()
     auto col_payload = ColumnString::create();
     auto col_raw = ColumnString::create();
 
+    if (sniffer == nullptr)
+        return {};
+
     pcap_t * handle = sniffer->get_pcap_handle();
     const int dlt = sniffer->link_type();
 
@@ -312,6 +320,9 @@ Chunk PCAPBlockInputFormat::read()
 
     while (num_rows < max_rows_per_chunk)
     {
+        if (is_stopped)
+            break;
+
         /// Read the raw packet with its original pcap header (caplen, len, ts).
         pcap_pkthdr * pkthdr = nullptr;
         const u_char * data = nullptr;

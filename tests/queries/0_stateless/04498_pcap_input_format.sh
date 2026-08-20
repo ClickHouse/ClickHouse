@@ -40,8 +40,26 @@ SELECT
     countIf(ip_protocol = 'TCP') AS tcp
 FROM file('$DATA_DIR/packets.pcap', PCAP) FORMAT TSV"
 
+echo "--- pcapng reads identically to the classic pcap ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, link_type, protocols, ip_version, src_addr, dst_addr, ip_protocol, src_port, dst_port, tcp_flags
+FROM file('$DATA_DIR/packets.pcapng', PCAP)
+ORDER BY number FORMAT TSV"
+
+echo "--- pcapng and pcap agree on every column ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT
+    (SELECT groupArray(tuple(*)) FROM (SELECT * FROM file('$DATA_DIR/packets.pcap', PCAP) ORDER BY number))
+    = (SELECT groupArray(tuple(*)) FROM (SELECT * FROM file('$DATA_DIR/packets.pcapng', PCAP) ORDER BY number)) FORMAT TSV"
+
+echo "--- truncated capture (snaplen 34: original_length > capture_length) ---"
+$CLICKHOUSE_LOCAL -q "
+SELECT number, capture_length, original_length, protocols, ip_protocol, length(raw)
+FROM file('$DATA_DIR/truncated.pcap', PCAP)
+ORDER BY number FORMAT TSV"
+
 echo "--- length invariants hold across all fixtures ---"
-for f in packets.pcap; do
+for f in packets.pcap packets.pcapng truncated.pcap; do
     $CLICKHOUSE_LOCAL -q "
     SELECT
         '$f',
