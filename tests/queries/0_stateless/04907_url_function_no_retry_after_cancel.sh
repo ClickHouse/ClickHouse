@@ -62,7 +62,8 @@ for _ in {1..300}; do
 done
 
 START_MS=$(date +%s%3N)
-$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC"
+# `KILL QUERY ... SYNC` reports the killed queries in its result, which is not what this test checks.
+$CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID' SYNC FORMAT Null"
 wait $CLIENT_PID
 CLIENT_STATUS=$?
 ELAPSED_MS=$(( $(date +%s%3N) - START_MS ))
