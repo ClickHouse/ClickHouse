@@ -396,6 +396,15 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
             timeout=4 * 3600,
         ),
+        # Separate binary for the BuzzHouse lane only: ENABLE_BUZZHOUSE changes
+        # the whole-program ThinLTO graph, and the other WeeklyCFI jobs must
+        # test the release-profile CFI binary unchanged.
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_CFI_BUZZHOUSE,
+            provides=[ArtifactNames.CH_AMD_CFI_BUZZHOUSE],
+            runs_on=RunnerLabels.ARM_LARGE,
+            timeout=4 * 3600,
+        ),
     )
     cfi_integration_jobs = common_integration_test_job_config.parametrize(
         *[
@@ -1433,9 +1442,9 @@ class JobConfigs:
     )
     cfi_buzz_fuzzer_job = _common_buzz_fuzzer_job_config.parametrize(
         Job.ParamSet(
-            parameter="amd_cfi",
+            parameter="amd_cfi_buzzhouse",
             runs_on=RunnerLabels.AMD_MEDIUM,
-            requires=[ArtifactNames.CH_AMD_CFI],
+            requires=[ArtifactNames.CH_AMD_CFI_BUZZHOUSE],
         ),
     )
     performance_comparison_with_master_head_jobs = Job.Config(
