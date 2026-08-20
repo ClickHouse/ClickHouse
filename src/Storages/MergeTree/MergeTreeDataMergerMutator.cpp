@@ -465,18 +465,22 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     /// Maximum window size: if max_parts == 0, consider all parts; otherwise at most max_parts.
     const size_t window_max = (max_parts == 0) ? n : std::min(max_parts, n);
 
-    /// Sliding window: find the contiguous subrange [best_start, best_start+best_len) of length
-    /// in [2, window_max] with minimum total size that is <= max_total_bytes.
+    /// Prefer merging as many parts as possible: try lengths from window_max down to 2 and stop
+    /// at the first length that has any fitting window (longer windows always sum to more bytes).
     size_t best_start = 0;
     size_t best_len = 0;
     UInt64 best_total = std::numeric_limits<UInt64>::max();
 
-    for (size_t len = 2; len <= window_max; ++len)
+    for (size_t len = window_max; len >= 2; --len)
     {
         /// Compute total size of the first window of this length.
         UInt64 window_total = 0;
         for (size_t i = 0; i < len; ++i)
             window_total += all_parts[i].size;
+
+        bool found_at_this_len = false;
+        UInt64 len_best_total = std::numeric_limits<UInt64>::max();
+        size_t len_best_start = 0;
 
         for (size_t start = 0; start + len <= n; ++start)
         {
@@ -487,12 +491,20 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
                 window_total += all_parts[start + len - 1].size;
             }
 
-            if (window_total <= max_total_bytes && window_total < best_total)
+            if (window_total <= max_total_bytes && window_total < len_best_total)
             {
-                best_total = window_total;
-                best_start = start;
-                best_len = len;
+                len_best_total = window_total;
+                len_best_start = start;
+                found_at_this_len = true;
             }
+        }
+
+        if (found_at_this_len)
+        {
+            best_total = len_best_total;
+            best_start = len_best_start;
+            best_len = len;
+            break;
         }
     }
 
