@@ -15,8 +15,10 @@ printf 'INSERT INTO test_resolved_format FORMAT CSV\n1\tbad\n' \
     | $CLICKHOUSE_CLIENT --input-format TSV 2>&1 | grep -F -q "$phrase" && echo 'explanation present' || echo 'explanation missing'
 
 echo '-- async INSERT SETTINGS input_format override'
-printf "%s\n" $'CREATE TABLE test_resolved_format_async (a UInt8, b UInt8) ENGINE = Memory; INSERT INTO test_resolved_format_async SETTINGS input_format = \'TSV\' FORMAT CSV\n1\tbad' \
+$CLICKHOUSE_CLIENT -q 'CREATE TABLE test_resolved_format_async (a UInt8, b UInt8) ENGINE = Memory'
+printf "%s\n" $'INSERT INTO test_resolved_format_async SETTINGS input_format = \'TSV\' FORMAT CSV\n1\tbad' \
     | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=1" --data-binary @- 2>&1 \
     | grep -F -q "$phrase" && echo 'explanation present' || echo 'explanation missing'
 
 $CLICKHOUSE_CLIENT -q 'DROP TABLE test_resolved_format'
+$CLICKHOUSE_CLIENT -q 'DROP TABLE test_resolved_format_async'
