@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-asan
+# no-asan: the many small index-on/index-off query pairs are slow enough under ASan+UBSan to exceed the
+# per-test runtime limit; the consistency logic is architecture-independent, so covering it on other builds
+# is sufficient.
 # Randomized COMPOUND-predicate consistency check for the keyValuePairs text index. 04928 covers single
 # predicates; this covers the RPN combination logic - AND / OR / NOT chains over the in-scope atoms
 # (m['key'] = value and m['key'] IN (...)). Using the index (granule pruning + RPN combine) must never
