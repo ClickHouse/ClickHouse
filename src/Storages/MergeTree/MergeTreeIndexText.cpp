@@ -2,9 +2,11 @@
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnTuple.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
@@ -15,6 +17,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
@@ -1760,7 +1763,12 @@ void MergeTreeIndexAggregatorText::update(const Block & block, size_t * pos, siz
     const auto & index_column = block.getByName(index_column_name);
     auto [preprocessed_column, offset] = preprocessor->processColumn(index_column, *pos, rows_read);
 
-    if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        /// The only tokenizer allowed on a Map column, and it allows no pre- or postprocessor.
+        addDocumentsFromMap(preprocessed_column, offset, rows_read);
+    }
+    else if (postprocessor->hasActions() && !use_postprocessor_drop_fast_path)
     {
         ColumnPtr tokenized = tokenizeToArray(*tokenizer, *preprocessed_column, offset, rows_read);
         ColumnPtr postprocessed = postprocessor->processTokensArrayBatch(assert_cast<const ColumnArray *>(tokenized.get()));
@@ -1815,6 +1823,44 @@ void MergeTreeIndexAggregatorText::addDocumentsFromArray(ColumnPtr column, size_
             else
                 granule_builder.addToken(ref, token_position++);
         }
+        granule_builder.incrementCurrentRow();
+    }
+}
+
+void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read)
+{
+    const auto & column_map = assert_cast<const ColumnMap &>(*column);
+    const auto & column_offsets = column_map.getNestedColumn().getOffsets();
+    const auto & tuple = column_map.getNestedData();
+    const auto & keys = tuple.getColumn(0);
+    const auto & values = tuple.getColumn(1);
+
+    /// addToken hashes the token with StringHashTable, which reads 8 bytes at a time and needs padded
+    /// memory, so tokens go through a ColumnString (PaddedPODArray) instead of a std::string.
+    auto tokens_column = ColumnString::create();
+    String token_buf;
+    /// Keys already seen in this row, to set `is_rest`. See ITokenizer.h.
+    absl::flat_hash_set<std::string_view> keys_in_row;
+
+    for (size_t i = start_row; i < start_row + rows_read; ++i)
+    {
+        tokens_column->popBack(tokens_column->size());
+        keys_in_row.clear();
+
+        for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
+        {
+            const std::string_view key = keys.getDataAt(element_idx);
+            const bool is_rest = !keys_in_row.insert(key).second;
+
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token_buf);
+            tokens_column->insertData(token_buf.data(), token_buf.size());
+        }
+
+        /// One position per map entry, in stored order (mirrors the Array path).
+        UInt32 token_position = 0;
+        for (size_t j = 0; j < tokens_column->size(); ++j)
+            granule_builder.addToken(tokens_column->getDataAt(j), token_position++);
+
         granule_builder.incrementCurrentRow();
     }
 }
@@ -2048,6 +2094,34 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
+/// The `keyValuePairs` tokenizer indexes a `Map` column as whole `(key, value)` pairs; every other
+/// tokenizer splits a string.
+void validateTextIndexColumnType(const ITokenizer & tokenizer, const DataTypePtr & index_data_type)
+{
+    if (tokenizer.getType() == ITokenizer::Type::KeyValuePairs)
+    {
+        /// FixedString is rejected because the column stores the padding bytes while a searched constant
+        /// does not, so lookups would silently miss rows. Nullable has no representation in the token.
+        const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
+        if (!map_type
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
+            || !WhichDataType(recursiveRemoveLowCardinality(map_type->getValueType())).isString())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Text index with the `{}` tokenizer must be created on a Map column with String or "
+                "LowCardinality(String) keys and values, got: {}",
+                KeyValuePairsTokenizer::getExternalName(), index_data_type->getName());
+        return;
+    }
+
+    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
+    if (!which_data_type.isString() && !which_data_type.isFixedString())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
+            index_data_type->getName());
+}
+
 }
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)
@@ -2097,7 +2171,8 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     auto tokenizer_ast = extractASTOption(options, ARGUMENT_TOKENIZER, true);
     auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
     auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-    TokenizerFactory::instance().get(tokenizer_ast);
+    auto tokenizer = TokenizerFactory::instance().get(tokenizer_ast);
+    const bool is_key_value_pairs_tokenizer = tokenizer->getType() == ITokenizer::Type::KeyValuePairs;
 
     UInt64 dictionary_block_size = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_size]);
@@ -2126,6 +2201,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
+    /// There is no string tokenization step for `preprocessor` / `postprocessor` to transform, and a
+    /// postprocessor would corrupt the encoded tokens. A position is the ordinal of a map entry, not a
+    /// word position, so phrase search is meaningless too.
+    if (is_key_value_pairs_tokenizer)
+    {
+        auto reject_argument = [](const String & argument)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `{}` tokenizer",
+                argument, KeyValuePairsTokenizer::getExternalName());
+        };
+
+        if (preprocessor_ast)
+            reject_argument(ARGUMENT_PREPROCESSOR);
+        if (postprocessor_ast)
+            reject_argument(ARGUMENT_POSTPROCESSOR);
+        if (positions)
+            reject_argument(ARGUMENT_POSITIONS);
+    }
+
     String posting_list_codec_name = extractFieldOption<String>(options, ARGUMENT_POSTING_LIST_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_codec].toString());
     PostingListCodecFactory::createPostingListCodec(posting_list_codec_name, index.name);
@@ -2137,16 +2231,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     if (index.column_names.size() != 1 || index.data_types.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS, "Text index must be created on a single column");
 
-    DataTypePtr index_data_type = index.data_types[0];
-    WhichDataType which_data_type(MergeTreeIndexText::getNestedDataType(index_data_type));
-
-    if (!which_data_type.isString() && !which_data_type.isFixedString())
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Text index must be created on columns of type with base type of String or FixedString, got: {}",
-            index_data_type->getName());
-    }
+    validateTextIndexColumnType(*tokenizer, index.data_types[0]);
 
     /// Create the preprocessor for validation.
     /// For very strict validation of the expression we fully parse it here.
