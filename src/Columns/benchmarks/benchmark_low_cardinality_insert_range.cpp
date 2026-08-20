@@ -115,6 +115,8 @@ void MapSparseOnly(benchmark::State & state)
     const size_t distinct_indexes = elements_per_operation / repetitions;
     auto source = makeSource(source_dictionary_size, elements_per_operation, distinct_indexes, source_index_begin);
     const auto & low_cardinality_source = assert_cast<const ColumnLowCardinality &>(*source);
+    LowCardinalityHashMapSizeCache hash_map_size_cache;
+    LowCardinalityHashMapSizeCache::Scope hash_map_size_cache_scope(hash_map_size_cache);
 
     for (auto _ : state)
     {
@@ -130,6 +132,8 @@ void EmptyDestinationDifferentDictionary(benchmark::State & state)
     const size_t repetitions = static_cast<size_t>(state.range(0));
     auto columns = makeBenchmarkColumns(repetitions, DestinationKeys::Disjoint);
     auto low_cardinality_type = std::make_shared<DataTypeLowCardinality>(columns.nested_type);
+    LowCardinalityHashMapSizeCache hash_map_size_cache;
+    LowCardinalityHashMapSizeCache::Scope hash_map_size_cache_scope(hash_map_size_cache);
 
     for (auto _ : state)
     {
@@ -202,6 +206,8 @@ void benchmarkNonEmptyDestination(benchmark::State & state, DestinationKeys dest
 {
     const size_t repetitions = static_cast<size_t>(state.range(0));
     auto columns = makeBenchmarkColumns(repetitions, destination_kind);
+    LowCardinalityHashMapSizeCache hash_map_size_cache;
+    LowCardinalityHashMapSizeCache::Scope hash_map_size_cache_scope(hash_map_size_cache);
 
     for (auto _ : state)
     {

@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnsCommon.h>
@@ -146,7 +147,12 @@ static void updateMaxLength(ColumnUInt64 & max_length, const IColumn & length)
 }
 
 ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_join_, Block block_, bool enable_lazy_columns_replication_)
-    : array_join(array_join_), block(std::move(block_)), enable_lazy_columns_replication(enable_lazy_columns_replication_), total_rows(block.rows()), current_row(0)
+    : array_join(array_join_)
+    , block(std::move(block_))
+    , enable_lazy_columns_replication(enable_lazy_columns_replication_)
+    , low_cardinality_hash_map_size_cache(std::make_unique<LowCardinalityHashMapSizeCache>())
+    , total_rows(block.rows())
+    , current_row(0)
 {
     const auto & columns = array_join->columns;
     bool is_unaligned = array_join->is_unaligned;
@@ -212,6 +218,8 @@ ArrayJoinResultIterator::ArrayJoinResultIterator(const ArrayJoinAction * array_j
     }
 }
 
+ArrayJoinResultIterator::~ArrayJoinResultIterator() = default;
+
 bool ArrayJoinResultIterator::hasNext() const
 {
     return total_rows != 0 && current_row < total_rows;
@@ -222,6 +230,8 @@ Block ArrayJoinResultIterator::next()
 {
     if (!hasNext())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "No more elements in ArrayJoinResultIterator.");
+
+    LowCardinalityHashMapSizeCache::Scope hash_map_size_cache_scope(*low_cardinality_hash_map_size_cache);
 
     if (array_join->element_filter)
         return nextWithElementFilter();
