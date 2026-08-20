@@ -267,6 +267,10 @@ private:
     void markPerOffsetUsed(size_t offset)
     {
         auto & flag = per_offset_flags[offset];
+        /// fast check to avoid a dirtying RMW on every re-match of the same key
+        if (flag.load(std::memory_order_relaxed))
+            return;
+        /// the exchange (not a plain store) keeps `unset_offset_flags` decremented exactly once
         if (!flag.exchange(true, std::memory_order_relaxed))
             unset_offset_flags.fetch_sub(1, std::memory_order_relaxed);
     }
