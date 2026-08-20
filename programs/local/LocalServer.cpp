@@ -1947,6 +1947,21 @@ void LocalServer::makeFormatOptionsPrivateToTheClient()
     for (std::string_view name : {"format", "input_format", "output_format"})
         if (cmd_settings->isChanged(name))
             global_context->setSetting(name, String{});
+
+    /// The inverse holds for the `default_format` setting: `applyCmdOptions` seeds it on
+    /// `global_context` as the fallback format of the sessions of the embedded protocol listeners,
+    /// where it must match a real `clickhouse-server` (`TabSeparated`). `client_context` inherited
+    /// the seed when it was copied from `global_context`, but this client renders results from its
+    /// own `ClientBase::default_output_format` (`PrettyCompact` on a terminal), and a non-empty
+    /// `default_format` setting overrides that display default in the per-query format resolution.
+    /// Reset the seed back to the default (an empty value with the `changed` flag clear - the
+    /// session must not look like the user chose this format, e.g. in `system.settings`), or
+    /// interactive `clickhouse-local` prints `TSV` instead of `PrettyCompact`. An explicit
+    /// `--default_format` on the command line is left in place, and a later
+    /// `SET default_format = ...` (or an in-query `SETTINGS` clause) lands on `client_context`
+    /// and keeps working.
+    if (!cmd_settings->isChanged("default_format"))
+        client_context->resetSettingsToDefaultValue({"default_format"});
 }
 
 
