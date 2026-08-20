@@ -204,7 +204,9 @@ private:
             bool cleanup,
             const MergeTreeTransactionPtr & txn,
             PreformattedMessage & out_disable_reason,
-            bool optimize_skip_merged_partitions = false);
+            bool optimize_skip_merged_partitions = false,
+            bool merge_smallparts = false,
+            UInt64 merge_smallparts_limit = 0);
 
     void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
 
@@ -258,7 +260,9 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false);
+        bool optimize_skip_merged_partitions = false,
+        bool merge_smallparts = false,
+        UInt64 merge_smallparts_limit = 0);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,

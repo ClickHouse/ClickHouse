@@ -70,6 +70,19 @@ public:
         bool final,
         bool optimize_skip_merged_partitions);
 
+    /** Selects the smallest contiguous run of parts in the partition that fits within
+      * max_total_bytes. If max_parts > 0, the run has at most max_parts parts.
+      * Uses a sliding window to find the minimum-size contiguous subrange.
+      * Fails with an error if no fitting window exists.
+      */
+    std::expected<MergeSelectorChoices, SelectMergeFailure> selectSmallPartsToMergeWithinPartition(
+        const StorageMetadataPtr & metadata_snapshot,
+        const PartsCollectorPtr & parts_collector,
+        const MergePredicatePtr & merge_predicate,
+        const String & partition_id,
+        size_t max_parts,
+        UInt64 max_total_bytes);
+
     /** Creates a task to merge parts.
       * If `reservation != nullptr`, now and then reduces the size of the reserved space
       *  is approximately proportional to the amount of data already written.
