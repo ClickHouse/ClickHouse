@@ -87,7 +87,10 @@ CREATE TABLE test_string_null_set (k String) ENGINE = MergeTree
 ORDER BY k
 SETTINGS index_granularity = 1;
 
-INSERT INTO test_string_null_set VALUES ('a'), ('b');
+-- The empty string is the default value of the key type. Without such a row the pure-NULL
+-- assertions below cannot fail: a NULL that decayed into the default would match no row either,
+-- so the correct and the decayed answers would coincide.
+INSERT INTO test_string_null_set VALUES (''), ('a'), ('b');
 
 SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)')], k);
 SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'Nullable(String)')], k) SETTINGS use_primary_key = 0;
@@ -109,9 +112,13 @@ SELECT count() FROM test_string_null_set WHERE has(['z', CAST(NULL, 'Nullable(St
 SELECT count() FROM test_string_null_set WHERE has([CAST(NULL, 'LowCardinality(Nullable(String))')], k);
 SELECT count() FROM test_string_null_set WHERE has([CAST('a', 'Nullable(String)')], k);
 SELECT count() FROM test_string_null_set WHERE has(['a'], k);
+-- An explicit empty string is a real element and matches its row, which is the answer the pure-NULL
+-- forms above must not produce.
+SELECT count() FROM test_string_null_set WHERE has([''], k);
+SELECT count() FROM test_string_null_set WHERE has([''], k) SETTINGS use_primary_key = 0;
 
--- Dropping the NULL leaves the surviving element usable for pruning, so the mixed set still selects
--- one granule instead of falling back to a full scan.
+-- Dropping the NULL leaves the surviving element usable for pruning, so the mixed set still reads
+-- fewer granules than the three a full scan of this table would.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_string_null_set WHERE has(['a', CAST(NULL, 'Nullable(String)')], k)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 
 DROP TABLE test_string_null_set;
