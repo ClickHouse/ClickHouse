@@ -56,3 +56,40 @@ SELECT count() FROM dst_acc_cast;
 
 DROP TABLE dst_acc_cast;
 DROP TABLE src_acc_cast;
+
+-- defaultValueOfTypeName also resolves its only argument - a string literal - through
+-- DataTypeFactory, so its type spelling must be canonicalized too.
+
+DROP TABLE IF EXISTS dst_dvton;
+DROP TABLE IF EXISTS src_dvton;
+
+CREATE TABLE dst_dvton (x Int32)
+    ENGINE = MergeTree ORDER BY x + defaultValueOfTypeName('Int32') PARTITION BY tuple();
+CREATE TABLE src_dvton (x Int32)
+    ENGINE = MergeTree ORDER BY x + defaultValueOfTypeName('INT') PARTITION BY tuple();
+
+INSERT INTO src_dvton VALUES (1), (2);
+
+ALTER TABLE dst_dvton REPLACE PARTITION tuple() FROM src_dvton;
+SELECT count() FROM dst_dvton;
+
+DROP TABLE dst_dvton;
+DROP TABLE src_dvton;
+
+-- JSONExtract takes the type as its last, variadic argument, JSONExtractKeysAndValues likewise.
+
+DROP TABLE IF EXISTS dst_json;
+DROP TABLE IF EXISTS src_json;
+
+CREATE TABLE dst_json (j String)
+    ENGINE = MergeTree ORDER BY length(JSONExtractKeysAndValues(j, 'Int32')) PARTITION BY tuple();
+CREATE TABLE src_json (j String)
+    ENGINE = MergeTree ORDER BY length(JSONExtractKeysAndValues(j, 'INT')) PARTITION BY tuple();
+
+INSERT INTO src_json VALUES ('{"a": 1}'), ('{"a": 2}');
+
+ALTER TABLE dst_json REPLACE PARTITION tuple() FROM src_json;
+SELECT count() FROM dst_json;
+
+DROP TABLE dst_json;
+DROP TABLE src_json;
