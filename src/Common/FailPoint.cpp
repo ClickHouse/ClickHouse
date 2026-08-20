@@ -230,7 +230,18 @@ static struct InitFiu
     REGULAR(iceberg_slow_manifest_read) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
+    ONCE(backup_from_snapshot_fail_after_batch) \
+    ONCE(backup_from_snapshot_fail_after_lock_file_creation) \
+    ONCE(backup_from_snapshot_fail_before_batch_checkpoint) \
+    ONCE(backup_from_snapshot_fail_before_manifest_init) \
+    ONCE(backup_from_snapshot_fail_before_progress_cleanup) \
     ONCE(backup_fail_before_writing_metadata) \
+    ONCE(backup_fail_lock_file_removal) \
+    PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
+    PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
+    PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
+    PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
+    PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
     PAUSEABLE(sc_state_application_pause) \
