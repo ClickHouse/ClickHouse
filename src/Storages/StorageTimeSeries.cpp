@@ -873,7 +873,7 @@ The _histograms_ table must have columns:
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
 | `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
-| `flags` | [x] | `UInt8` | `UInt8` | Bit 0: float histogram; bits 1-2: counter reset hint (unknown/yes/no/gauge); bit 3: gauge histogram; bit 4: stale marker |
+| `flags` | [x] | `UInt8` | `UInt8` | Bit 0: float histogram; bits 1-2: counter reset hint (unknown/yes/no/gauge); bit 4: stale marker |
 | `schema` | [x] | `Int8` | `Int8` | The bucket schema (-4..8 exponential, -53 for custom bucket boundaries) |
 | `zero_threshold` | [x] | `Float64` | `Float64` | Breadth of the zero bucket |
 | `count` | [x] | `Float64` | `Float64` | Total count of observations |

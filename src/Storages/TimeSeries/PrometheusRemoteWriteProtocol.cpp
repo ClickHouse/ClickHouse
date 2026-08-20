@@ -122,7 +122,11 @@ void appendHistogramBuckets(
         Int64 running = 0;
         for (Int64 delta : deltas)
         {
-            running += delta;
+            Int64 new_running;
+            if (__builtin_add_overflow(running, delta, &new_running))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has an overflowing {} bucket count during delta decoding", what);
+            running = new_running;
             if (running < 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "Native histogram has a negative {} bucket count after delta decoding: {}", what, running);
@@ -177,9 +181,24 @@ ColumnPtr makeHistogramsColumn(
     {
         for (const auto & histogram : element.histograms())
         {
-            bool is_float = (histogram.count_case() == prometheus::Histogram::kCountFloat)
-                || (histogram.zero_count_case() == prometheus::Histogram::kZeroCountFloat)
-                || !histogram.positive_counts().empty() || !histogram.negative_counts().empty();
+            /// Float-ness is decided solely by the `count` oneof, matching upstream Prometheus
+            /// (prompb/codec.go `IsFloatHistogram`). The two oneofs (`count`, `zero_count`) are independent
+            /// and the bucket lists are plain repeated fields, so a spec-invalid mix is wire-representable;
+            /// reject it rather than silently reading the unset arm (which would store zeroes).
+            bool is_float = histogram.count_case() == prometheus::Histogram::kCountFloat;
+            bool zero_count_is_float = histogram.zero_count_case() == prometheus::Histogram::kZeroCountFloat;
+            if (is_float != zero_count_is_float)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram mixes an {} count with an {} zero count",
+                    is_float ? "float" : "int", zero_count_is_float ? "float" : "int");
+            if (is_float
+                && (!histogram.positive_deltas().empty() || !histogram.negative_deltas().empty()))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram is a float histogram but carries integer bucket deltas");
+            if (!is_float
+                && (!histogram.positive_counts().empty() || !histogram.negative_counts().empty()))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram is an integer histogram but carries float bucket counts");
 
             insertTimestamp(histogram.timestamp(), timestamp_scale, *timestamps);
 
@@ -187,12 +206,17 @@ ColumnPtr makeHistogramsColumn(
             Float64 zero_count = is_float ? histogram.zero_count_float() : static_cast<Float64>(histogram.zero_count_int());
             Float64 sum = histogram.sum();
 
+            if (histogram.reset_hint() < prometheus::Histogram::UNKNOWN || histogram.reset_hint() > prometheus::Histogram::GAUGE)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has an unknown counter reset hint: {}", static_cast<int>(histogram.reset_hint()));
+            if (histogram.schema() < -53 || histogram.schema() > 8)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Native histogram has an out-of-range bucket schema: {}", histogram.schema());
+
             UInt8 histogram_flags = 0;
             if (is_float)
                 histogram_flags |= TimeSeriesHistogramFlags::IsFloat;
             histogram_flags |= static_cast<UInt8>(histogram.reset_hint()) << TimeSeriesHistogramFlags::CounterResetHintShift;
-            if (histogram.reset_hint() == prometheus::Histogram::GAUGE)
-                histogram_flags |= TimeSeriesHistogramFlags::IsGauge;
             if (isPrometheusStaleMarker(sum))
                 histogram_flags |= TimeSeriesHistogramFlags::StaleMarker;
 
@@ -494,7 +518,7 @@ void PrometheusRemoteWriteProtocol::write(
     bool with_histograms = metadata->columns.has(TimeSeriesColumnNames::Histograms)
         && time_series_storage->hasTarget(ViewTarget::Histograms);
     if (num_histograms && !with_histograms)
-        LOG_WARNING(log,
+        LOG_WARNING(LogFrequencyLimiter(log, 60),
             "{}: Dropping {} native histogram samples: the table has no \"histograms\" target table. "
             "Recreate the TimeSeries table with SETTINGS store_native_histograms = 1 to store them",
             storage_id.getNameForLogs(), num_histograms);

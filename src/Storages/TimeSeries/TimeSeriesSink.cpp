@@ -700,10 +700,14 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         if (!hist_arrays)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the {} column, got {}",
                 TimeSeriesColumnNames::Histograms, histograms_col.column->getName());
+        const auto & histograms_tuple_type = assert_cast<const DataTypeTuple &>(
+            *assert_cast<const DataTypeArray &>(*histograms_col.type).getNestedType());
         hist_tuples = typeid_cast<const ColumnTuple *>(&hist_arrays->getData());
-        if (!hist_tuples || hist_tuples->tupleSize() != TimeSeriesHistogramsTupleIndex::Size)
+        /// Compare against the declared element count of the block's type (not a hardcoded constant),
+        /// so tables created with an older, shorter histogram tuple keep working after an upgrade.
+        if (!hist_tuples || hist_tuples->tupleSize() != histograms_tuple_type.getElements().size())
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with {} elements for the {} column data, got {}",
-                TimeSeriesHistogramsTupleIndex::Size, TimeSeriesColumnNames::Histograms, hist_arrays->getData().getName());
+                histograms_tuple_type.getElements().size(), TimeSeriesColumnNames::Histograms, hist_arrays->getData().getName());
         total_histograms = getTotalSamples(hist_arrays->getOffsets());
     }
 

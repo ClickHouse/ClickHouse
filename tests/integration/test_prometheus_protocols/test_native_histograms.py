@@ -171,12 +171,12 @@ def test_float_histogram_and_nhcb():
         )
     )
 
-    # Float histogram flags: is_float(1) | gauge hint GAUGE(3)<<1 | is_gauge(8) = 15.
+    # Float histogram flags: is_float(1) | counter_reset_hint GAUGE(3)<<1 = 7.
     assert query_histograms() == TSV(
         [
             [
                 "2024-01-01 00:00:02.000",
-                "15",
+                "7",
                 "3",
                 "0.001",
                 "6.5",
@@ -306,5 +306,64 @@ def test_invalid_histograms_rejected():
             positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
             positive_deltas=[3, -5],
             timestamp=1704067210000,
+        )
+    )
+    # An int count with a float zero count (inconsistent oneof arms).
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=5,
+            sum=1.5,
+            zero_count_float=1.0,
+            timestamp=1704067211000,
+        )
+    )
+    # A float histogram carrying integer bucket deltas.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_float=5.0,
+            sum=1.5,
+            zero_count_float=1.0,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_deltas=[3],
+            timestamp=1704067212000,
+        )
+    )
+    # An int histogram carrying float bucket counts.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=5,
+            sum=1.5,
+            zero_count_int=1,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=1)],
+            positive_counts=[3.0],
+            timestamp=1704067213000,
+        )
+    )
+    # Delta decoding overflows int64.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            positive_spans=[types_pb2.BucketSpan(offset=0, length=2)],
+            positive_deltas=[9223372036854775807, 1],
+            timestamp=1704067214000,
+        )
+    )
+    # An out-of-range counter reset hint (proto3 enums are open).
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            reset_hint=7,
+            timestamp=1704067215000,
+        )
+    )
+    # An out-of-range bucket schema.
+    assert_rejected(
+        types_pb2.Histogram(
+            count_int=1,
+            sum=0.0,
+            schema=42,
+            timestamp=1704067216000,
         )
     )
