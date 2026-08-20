@@ -295,6 +295,58 @@ TEST(AIAgent, QueryThatNeedsNoConfirmationRunsThroughTheReadOnlyPath)
     EXPECT_TRUE(*ran_as_read_only);
 }
 
+TEST(AIAgent, OversizedToolResultIsTruncatedInHistory)
+{
+    /// A single huge tool result (a query log read, a long documentation article) is cut before
+    /// it is stored, so it cannot displace the rest of the conversation or overflow the context
+    /// window of the provider on the next model call.
+    AIAgentHooks hooks;
+    hooks.check_query = [](const String &)
+    {
+        AIQueryRunDecision decision;
+        decision.needs_confirmation = false;
+        return decision;
+    };
+    hooks.run_visible = [](const String &, bool, bool) { return String(100 * 1024, 'x'); };
+
+    AgentWithMock harness({toolCallStep("run_query", ai::JsonValue{{"query", "SELECT 1"}}), textStep("done")}, hooks);
+    harness.agent->chat("read a lot");
+
+    ASSERT_EQ(harness.transport->conversations.size(), 2u);
+    const auto & messages = harness.transport->conversations[1];
+    ASSERT_TRUE(messages.back().has_tool_results());
+    const auto results = messages.back().get_tool_results();
+    ASSERT_EQ(results.size(), 1u);
+    const String stored = results[0].result.dump();
+    EXPECT_LT(stored.size(), 40 * 1024);
+    EXPECT_NE(stored.find("truncated"), String::npos);
+}
+
+TEST(AIAgent, HistoryIsTrimmedToTheByteBudget)
+{
+    /// Old turns are dropped once the history is over the byte budget, and what remains still
+    /// starts at a plain user message. The newest question survives even though the total of all
+    /// turns is far over the budget.
+    AgentWithMock harness({textStep("ok")});
+
+    for (size_t turn = 0; turn < 10; ++turn)
+        harness.agent->chat("turn " + std::to_string(turn) + " " + String(100 * 1024, 'x'));
+
+    const auto & messages = harness.transport->conversations.back();
+    size_t total_bytes = 0;
+    for (const auto & message : messages)
+        total_bytes += message.get_text().size();
+    /// The budget plus one turn of slack (the trim never drops the current question).
+    EXPECT_LT(total_bytes, 512 * 1024);
+
+    ASSERT_FALSE(messages.empty());
+    EXPECT_EQ(messages.front().role, ai::kMessageRoleUser);
+    EXPECT_FALSE(messages.front().has_tool_results());
+    /// The earliest turns are gone, the current one is present.
+    EXPECT_EQ(firstUserText(messages).find("turn 0 "), String::npos);
+    EXPECT_NE(messages.back().get_text().find("turn 9 "), String::npos);
+}
+
 TEST(AIAgent, DisplaySanitizesControlCharacters)
 {
     EXPECT_EQ(

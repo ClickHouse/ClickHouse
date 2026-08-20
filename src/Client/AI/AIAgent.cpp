@@ -86,6 +86,30 @@ String summarizeToolResult(const ai::ToolResult & result)
     return result.result.dump();
 }
 
+/// Cut the string at the given byte size without splitting a UTF-8 sequence (the history is
+/// serialized as JSON later, and an invalid UTF-8 string would fail that serialization).
+void truncateToUTF8Boundary(String & text, size_t size)
+{
+    if (text.size() <= size)
+        return;
+    /// Step back over the continuation bytes of the sequence the cut lands in, then over its
+    /// leading byte.
+    while (size > 0 && (static_cast<unsigned char>(text[size]) & 0xC0) == 0x80)
+        --size;
+    text.resize(size);
+}
+
+/// The approximate byte contribution of one message to the prompt.
+size_t messageBytes(const ai::Message & message)
+{
+    size_t bytes = message.get_text().size();
+    for (const auto & call : message.get_tool_calls())
+        bytes += call.tool_name.size() + call.arguments.dump().size();
+    for (const auto & result : message.get_tool_results())
+        bytes += result.result.dump().size();
+    return bytes;
+}
+
 }
 
 AIAgent::AIAgent(
@@ -226,7 +250,7 @@ void AIAgent::chat(const String & user_text)
             display.showToolResult(toolSucceeded(result), summarizeToolResult(result));
 
             if (result.is_success())
-                result_parts.emplace_back(call.id, result.result, false);
+                result_parts.emplace_back(call.id, truncateOversizedToolResult(std::move(result.result)), false);
             else
                 result_parts.emplace_back(call.id, ai::JsonValue{{"error", result.error_message()}}, true);
         }
@@ -256,18 +280,70 @@ ai::ToolResult AIAgent::executeToolCall(const ai::ToolCall & call)
     return ai::ToolExecutor::execute_tool(call, tools, messages);
 }
 
+ai::JsonValue AIAgent::truncateOversizedToolResult(ai::JsonValue value)
+{
+    /// Our tools return objects with the payload in a `result` string; truncate the payload
+    /// itself so the object stays well-formed for the model.
+    if (value.is_object() && value.contains("result") && value["result"].is_string())
+    {
+        auto text = value["result"].get<std::string>();
+        if (text.size() <= max_tool_result_bytes)
+            return value;
+        const size_t original_size = text.size();
+        truncateToUTF8Boundary(text, max_tool_result_bytes);
+        value["result"] = std::move(text);
+        value["truncated"] = fmt::format(
+            "The result was cut to the first {} of its {} bytes to fit the conversation. "
+            "Re-run with a stricter filter or a smaller limit to see the rest.",
+            value["result"].get_ref<const std::string &>().size(), original_size);
+        return value;
+    }
+
+    String dumped = value.dump();
+    if (dumped.size() <= max_tool_result_bytes)
+        return value;
+    const size_t original_size = dumped.size();
+    truncateToUTF8Boundary(dumped, max_tool_result_bytes);
+    return ai::JsonValue{
+        {"result", std::move(dumped)},
+        {"truncated", fmt::format(
+            "The result was cut to its first {} bytes (of {}) to fit the conversation. "
+            "Re-run with a stricter filter or a smaller limit to see the rest.",
+            max_tool_result_bytes, original_size)}};
+}
+
 void AIAgent::trimHistory()
 {
-    if (messages.size() <= max_history_messages)
-        return;
+    /// The history must keep starting at a plain user message: tool results without the
+    /// assistant message that requested them are rejected by the providers.
+    auto next_turn_start = [&](size_t pos)
+    {
+        while (pos < messages.size()
+               && (messages[pos].role != ai::kMessageRoleUser || messages[pos].has_tool_results()))
+            ++pos;
+        return pos;
+    };
 
-    /// Drop the oldest turns. The history must keep starting at a plain user message:
-    /// tool results without the assistant message that requested them are rejected
-    /// by the providers.
-    size_t drop = messages.size() - max_history_messages;
-    while (drop < messages.size()
-           && (messages[drop].role != ai::kMessageRoleUser || messages[drop].has_tool_results()))
-        ++drop;
+    /// Drop the oldest turns over the message-count cap.
+    size_t drop = 0;
+    if (messages.size() > max_history_messages)
+        drop = next_turn_start(messages.size() - max_history_messages);
+
+    /// Then keep dropping whole turns while the prompt is over the byte budget, but never the
+    /// last user message - the question of the current turn.
+    size_t total_bytes = 0;
+    for (size_t i = drop; i < messages.size(); ++i)
+        total_bytes += messageBytes(messages[i]);
+
+    while (total_bytes > max_history_bytes)
+    {
+        const size_t next = next_turn_start(drop + 1);
+        if (next >= messages.size())
+            break;
+        for (size_t i = drop; i < next; ++i)
+            total_bytes -= messageBytes(messages[i]);
+        drop = next;
+    }
 
     messages.erase(messages.begin(), messages.begin() + drop);
 }
