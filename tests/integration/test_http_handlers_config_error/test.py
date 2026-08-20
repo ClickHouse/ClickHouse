@@ -1,6 +1,8 @@
 import os
+import time
 
 import pytest
+import requests
 
 from helpers.cluster import ClickHouseCluster
 
@@ -31,6 +33,23 @@ GOOD_PROMETHEUS_CONFIG_IN_CONTAINER = (
 )
 
 ERR_LOG = "clickhouse-server.err.log"
+
+
+PROMETHEUS_PORT = 9363
+
+
+def _prometheus_metrics_status(retries=30):
+    # The listener binds after the server answers queries, so the first attempts can be refused.
+    while True:
+        try:
+            return requests.get(
+                f"http://{node.ip_address}:{PROMETHEUS_PORT}/metrics", timeout=5
+            ).status_code
+        except requests.exceptions.RequestException:
+            if retries <= 0:
+                raise
+            retries -= 1
+            time.sleep(0.5)
 
 
 @pytest.fixture(scope="module")
@@ -375,7 +394,10 @@ def test_prometheus_handler_config_error_on_reload_is_reported_to_the_client(
     )
     node.start_clickhouse()
     try:
-        assert node.query("SELECT 1").strip() == "1"
+        # The standalone listener has to be serving before the reload, otherwise the case would
+        # pass against a build that never brought it up and would no longer reach the early return
+        # for an already-running listener that the reload has to get past.
+        assert _prometheus_metrics_status() == 200
 
         # Same file, so this replaces the valid section rather than adding a second one.
         node.copy_file_to_container(
