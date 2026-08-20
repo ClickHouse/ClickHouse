@@ -1466,8 +1466,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
             const bool is_qualified_expr = identifier_lookup.isExpressionLookup()
                 && identifier_lookup.identifier.getPartsSize() > 1;
-            if ((is_table_lookup || is_qualified_expr)
-                && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false))
+            /// A fully qualified `db.table.column` reference names the skipped table just as well as
+            /// an alias or a bare table name does, so it must be attributed to the skipped side too.
+            /// Otherwise the reference degrades to `UNKNOWN_IDENTIFIER`, which a statically-dead
+            /// `if(false, ...)` branch silently folds away instead of reporting the access violation.
+            const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
+                || (identifier_lookup.identifier.getPartsSize() > 2
+                    && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
+            if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
                 denied_qualified_access = side;
             return QueryTreeNodePtr{};
         }
