@@ -50,6 +50,15 @@ class AsyncTaskExecutor
 {
 public:
     explicit AsyncTaskExecutor(std::unique_ptr<AsyncTask> task_);
+    AsyncTaskExecutor(String name, SpanAttributes initial_attrs = {});
+
+    // Thread-safe dynamic attribute buffering
+    void addSpanAttribute(String name, AttributeValue val) 
+    {
+        std::lock_guard<FiberLock> lock(fiber_lock);
+        buffered_attributes.emplace_back(std::move(name), std::move(val));
+    }
+
 
     /// Resume task execution. This method returns when task is completed or suspended.
     void resume();
