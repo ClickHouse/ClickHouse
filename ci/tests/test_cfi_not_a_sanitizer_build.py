@@ -118,12 +118,13 @@ def test_named_checks_distinguish_between_sanitizers(name):
         assert classify(flags).is_built_with_sanitizer(name) == expected, profile
 
 
-def run_installer_predicate(tmp_path, flags):
-    """Run the installer's own is_sanitizer_build against a stub `clickhouse`.
+def symbolization_is_disabled_by_installer(tmp_path, flags):
+    """Run the installer's own classification block against a stub `clickhouse`.
 
-    The function shells out to a bare `clickhouse local --query`, so a stub earlier
-    on PATH answers the query. Returns its exit status: 0 means the installer would
-    install trace_log_no_symbolize.xml and disable symbolization.
+    Executes `is_sanitizer_build` together with the `if` that consumes it, so both
+    the classification and its wiring to the symlink are covered, and reports
+    whether `trace_log_no_symbolize.xml` was installed. The function shells out to
+    a bare `clickhouse local --query`, so a stub earlier on PATH answers it.
     """
     stub = tmp_path / "clickhouse"
     stub.write_text(
@@ -137,30 +138,36 @@ def run_installer_predicate(tmp_path, flags):
     )
     stub.chmod(0o755)
 
+    dest = tmp_path / "dest"
+    (dest / "config.d").mkdir(parents=True)
     script = (
         "set -e\n"
-        "source_lines=$(sed -n '/^function is_sanitizer_build()/,/^}/p' "
-        '"$1"' + ")\n"
-        'eval "$source_lines"\n'
-        "is_sanitizer_build\n"
+        "block=$(sed -n '/^function is_sanitizer_build()/,/^fi$/p' \"$1\")\n"
+        'test -n "$block"\n'
+        'eval "$block"\n'
     )
-    env = dict(os.environ, PATH="{}:{}".format(tmp_path, os.environ["PATH"]))
-    return subprocess.run(
+    env = dict(
+        os.environ,
+        PATH="{}:{}".format(tmp_path, os.environ["PATH"]),
+        SRC_PATH=os.path.dirname(INSTALLER),
+        DEST_SERVER_PATH=str(dest),
+    )
+    run = subprocess.run(
         ["bash", "-c", script, "bash", INSTALLER], env=env, capture_output=True
-    ).returncode
+    )
+    assert run.returncode == 0, run.stderr.decode()
+    return (dest / "config.d" / "trace_log_no_symbolize.xml").is_symlink()
 
 
 @pytest.mark.parametrize("profile", sorted(NON_SANITIZER_FLAGS))
 def test_installer_keeps_symbolization_without_a_sanitizer(tmp_path, profile):
-    """CFI, debug, release and coverage builds must keep query-profiler symbols.
-
-    Runs the installer's own predicate, so it fails if that function stops
-    depending on the build flags at all, not only if its text changes.
-    """
-    assert run_installer_predicate(tmp_path, NON_SANITIZER_FLAGS[profile]) != 0
+    """CFI, debug, release and coverage builds must keep query-profiler symbols."""
+    assert not symbolization_is_disabled_by_installer(
+        tmp_path, NON_SANITIZER_FLAGS[profile]
+    )
 
 
 @pytest.mark.parametrize("profile", sorted(SANITIZER_FLAGS))
 def test_installer_disables_symbolization_under_a_sanitizer(tmp_path, profile):
     """In-flush symbolization is too slow under a sanitizer runtime."""
-    assert run_installer_predicate(tmp_path, SANITIZER_FLAGS[profile]) == 0
+    assert symbolization_is_disabled_by_installer(tmp_path, SANITIZER_FLAGS[profile])
