@@ -1,0 +1,66 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/clickhouse
+title: 'ClickHouse 딕셔너리 소스'
+sidebarTitle: 'ClickHouse'
+description: 'ClickHouse 테이블을 딕셔너리 소스로 구성합니다.'
+doc_type: 'reference'
+---
+
+설정 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(CLICKHOUSE(
+        host 'example01-01-1'
+        port 9000
+        user 'default'
+        password ''
+        db 'default'
+        table 'ids'
+        where 'id=10'
+        secure 1
+        query 'SELECT id, value_1, value_2 FROM default.ids'
+    ));
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <source>
+        <clickhouse>
+            <host>example01-01-1</host>
+            <port>9000</port>
+            <user>default</user>
+            <password></password>
+            <db>default</db>
+            <table>ids</table>
+            <where>id=10</where>
+            <secure>1</secure>
+            <query>SELECT id, value_1, value_2 FROM default.ids</query>
+        </clickhouse>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+설정 필드:
+
+| 설정                 | 설명                                                                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`             | ClickHouse 호스트입니다. 로컬 호스트인 경우 네트워크 통신 없이 쿼리가 처리됩니다. 장애 허용을 높이려면 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블을 생성한 뒤 후속 구성에서 지정할 수 있습니다. |
+| `port`             | ClickHouse 서버의 포트입니다.                                                                                                                                     |
+| `user`             | ClickHouse 사용자 이름입니다.                                                                                                                                     |
+| `password`         | ClickHouse 사용자 비밀번호입니다.                                                                                                                                   |
+| `db`               | 데이터베이스 이름입니다.                                                                                                                                             |
+| `table`            | 테이블 이름입니다.                                                                                                                                                |
+| `where`            | 선택 조건입니다. 선택 사항입니다.                                                                                                                                       |
+| `invalidate_query` | 딕셔너리 상태를 확인하는 쿼리입니다. 선택 사항입니다. 자세한 내용은 [LIFETIME을 사용한 딕셔너리 데이터 갱신](/ko/reference/statements/create/dictionary/lifetime) 섹션을 참조하십시오.                          |
+| `secure`           | 연결에 SSL을 사용합니다.                                                                                                                                           |
+| `query`            | 사용자 지정 쿼리입니다. 선택 사항입니다.                                                                                                                                   |
+
+<Note>
+  `table` 또는 `where` 필드는 `query` 필드와 함께 사용할 수 없습니다. 또한 `table` 또는 `query` 필드 중 하나는 반드시 지정해야 합니다.
+</Note>

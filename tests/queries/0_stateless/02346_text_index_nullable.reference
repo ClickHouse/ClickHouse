@@ -108,6 +108,21 @@ Array(Nullable(String)) with preprocessor = lower(arr)
 0
 0
 0
+Array(Nullable(String)) with postprocessor = lower(arr)
+-- Array postprocessor + Nullable: row 1 has "hello" (postprocessor matches case-insensitively)
+1
+-- Array postprocessor + Nullable: row 2 has "foo" (NULL element still skipped after lower)
+2
+-- Array postprocessor + Nullable: hasAnyTokens rows 2 ("foo") and 4 ("bar") match, so count is 2
+2
+-- Array postprocessor + Nullable: hasAllTokens only row 1 has both "hello" and "world"
+1
+-- Array postprocessor + Nullable: row 3 (all NULLs) must not match
+0
+-- has[Any|All]Token on NULL should not match anything
+0
+0
+0
 Map(String, Nullable(String))
 -- Map values: row 1 has "hello"
 1

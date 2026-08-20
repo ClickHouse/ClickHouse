@@ -1,0 +1,129 @@
+---
+slug: /use-cases/observability/clickstack/architecture
+description: 'ClickStack 아키텍처 - ClickHouse 관측성 스택'
+title: '아키텍처'
+toc_max_heading_level: 2
+doc_type: '참고'
+keywords: ['ClickStack 아키텍처', '관측성 아키텍처', 'HyperDX', 'OpenTelemetry collector', 'MongoDB', '시스템 설계']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구성 요소를 자가 관리하는 **ClickStack Open Source**와 ClickHouse 및 HyperDX UI를 ClickHouse Cloud에서 호스팅하고 운영하는 **Managed ClickStack** 사이에는 중요한 아키텍처상 차이가 있습니다. 두 모델 모두 핵심 구성 요소는 동일하지만, 각 구성 요소의 호스팅, 스케일링, 보안에 대한 책임은 다릅니다.
+
+<div id="architecture-overview">
+  ## 아키텍처 개요
+</div>
+
+다음에서는 관리형 및 오픈 소스 ClickStack 아키텍처를 개괄적으로 설명합니다.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    Managed ClickStack는 **ClickHouse Cloud** 내에서 전적으로 실행되며, 동일한 ClickStack 데이터 모델과 사용자 경험을 유지하면서 완전 관리형 관측성 백엔드를 제공합니다.
+
+    이 모델에서는 **ClickHouse 및 ClickStack UI (HyperDX)** 가 ClickHouse Cloud에서 호스팅되고, 운영되며, 보호됩니다. 사용자는 텔레메트리 데이터를 관리형 서비스로 전송하기 위해 **OpenTelemetry (OTel) collector**만 실행하면 됩니다.
+
+    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="관리형 아키텍처" size="lg" />
+
+    ### ClickHouse Cloud: 엔진
+
+    Managed ClickStack의 핵심은 ClickHouse Cloud입니다. ClickHouse Cloud는 ClickHouse의 서버리스 버전으로, ClickHouse는 대규모 실시간 분석을 위해 설계된 컬럼 지향 데이터베이스입니다. 이를 통해 관측성 데이터의 수집과 쿼리를 처리하며, 다음이 가능합니다.
+
+    * 테라바이트 규모의 이벤트 전반에서 1초 미만으로 검색
+    * 하루 수십억 건의 고카디널리티 레코드 수집
+    * 관측성 데이터에서 최소 10배 이상의 높은 압축률
+    * 반정형 JSON 데이터를 네이티브로 지원하여 스키마를 동적으로 확장 가능
+    * 수백 개의 내장 분석 함수를 갖춘 강력한 SQL 엔진
+
+    ClickHouse Cloud는 관측성 데이터를 wide event로 처리하므로, 로그, 메트릭, 트레이스를 단일한 통합 구조에서 깊이 있게 연관 분석할 수 있습니다.
+
+    또한 ClickHouse Open Source와 비교할 때, 관측성 측면에서 다음과 같은 여러 이점을 제공합니다.
+
+    * 스토리지와 독립적으로 컴퓨트를 자동 스케일링
+    * 객체 스토리지를 기반으로 한 저비용의 사실상 무제한 보존
+    * Warehouses를 통해 읽기 및 쓰기 워크로드를 각각 독립적으로 격리하는 기능
+    * 통합 인증
+    * 자동화된 백업
+    * 보안 및 컴플라이언스 기능
+    * 원활한 업그레이드
+
+    ### OpenTelemetry collector: 데이터 수집
+
+    ClickStack Managed에는 개방적이고 표준화된 방식으로 텔레메트리 데이터를 수집할 수 있도록 미리 구성된 OpenTelemetry (OTel) collector가 포함되어 있습니다. 다음을 통해 OTLP 프로토콜로 데이터를 전송할 수 있습니다.
+
+    * gRPC (포트 `4317`)
+    * HTTP (포트 `4318`)
+
+    collector는 텔레메트리 데이터를 효율적인 배치로 ClickHouse Cloud에 내보냅니다. 또한 데이터 소스별로 최적화된 테이블 스키마를 지원하여 모든 시그널 유형에서 확장 가능한 성능을 보장합니다.
+
+    **이 아키텍처 구성 요소는 사용자가 관리합니다**
+
+    ### ClickStack UI (HyperDX): 인터페이스
+
+    ClickStack UI (HyperDX)는 ClickStack의 사용자 인터페이스로, 다음 기능을 제공합니다.
+
+    * 자연어 및 Lucene 스타일 검색
+    * 실시간 디버깅을 위한 라이브 테일링
+    * 로그, 메트릭, 트레이스의 통합 보기
+    * 프런트엔드 관측성을 위한 세션 리플레이
+    * 대시보드 생성 및 알림 구성
+    * 고급 분석을 위한 SQL 쿼리 인터페이스
+
+    ClickHouse에 맞게 특별히 설계된 HyperDX는 강력한 검색 기능과 직관적인 워크플로를 결합하여, 이상 징후를 빠르게 포착하고 문제를 조사하며 인사이트를 신속하게 얻을 수 있도록 합니다.
+
+    Managed ClickStack에서는 UI가 ClickHouse Cloud 콘솔 인증 시스템에 통합되어 있습니다.
+  </Tab>
+
+  <Tab title="오픈 소스 ClickStack">
+    ClickStack Open Source 아키텍처는 **ClickHouse**, **HyperDX**, **OpenTelemetry (OTel) collector**의 세 가지 핵심 구성 요소를 중심으로 설계되었습니다. **MongoDB** 인스턴스는 애플리케이션 상태를 저장합니다. 이 구성 요소들이 함께 로그, 메트릭, 트레이스에 최적화된 고성능 오픈 소스 관측성 스택을 제공합니다.
+
+    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="아키텍처" size="lg" />
+
+    ### ClickHouse: 데이터베이스 엔진
+
+    ClickStack의 핵심에는 대규모 실시간 분석을 위해 설계된 컬럼 지향 데이터베이스인 ClickHouse가 있습니다. ClickHouse는 관측성 데이터의 수집과 쿼리를 담당하며, 다음을 가능하게 합니다:
+
+    * 테라바이트 규모의 이벤트를 1초 이내에 검색
+    * 하루 수십억 건의 고카디널리티 레코드 수집
+    * 관측성 데이터에서 최소 10배 이상의 높은 압축률
+    * 반정형 JSON 데이터에 대한 네이티브 지원으로 동적인 스키마 진화 허용
+    * 수백 개의 내장 분석 함수를 갖춘 강력한 SQL 엔진
+
+    ClickHouse는 관측성 데이터를 와이드 이벤트로 처리하므로, 로그, 메트릭, 트레이스를 단일한 통합 구조에서 심층적으로 연관 분석할 수 있습니다.
+
+    ### OpenTelemetry collector: 데이터 수집
+
+    ClickStack에는 개방적이고 표준화된 방식으로 telemetry를 수집할 수 있도록 미리 구성된 OpenTelemetry (OTel) collector가 포함되어 있습니다. 다음을 통해 OTLP 프로토콜로 데이터를 전송할 수 있습니다:
+
+    * gRPC (포트 `4317`)
+    * HTTP (포트 `4318`)
+
+    collector는 telemetry를 효율적인 배치 단위로 ClickHouse에 내보냅니다. 또한 데이터 소스별로 최적화된 테이블 스키마를 지원하여 모든 신호 유형에서 확장 가능한 성능을 보장합니다.
+
+    ### ClickStack UI (HyperDX): 인터페이스
+
+    ClickStack UI (HyperDX)는 ClickStack의 사용자 인터페이스입니다. 다음 기능을 제공합니다:
+
+    * 자연어 및 Lucene 스타일 검색
+    * 실시간 디버깅을 위한 라이브 테일링
+    * 로그, 메트릭, 트레이스 통합 뷰
+    * 프런트엔드 관측성을 위한 세션 리플레이
+    * 대시보드 생성 및 알림 구성
+    * 고급 분석을 위한 SQL 쿼리 인터페이스
+
+    ClickHouse에 맞춰 특별히 설계된 HyperDX는 강력한 검색 기능과 직관적인 워크플로를 결합하여 이상 징후를 빠르게 발견하고, 문제를 조사하며, 인사이트를 신속하게 얻을 수 있도록 지원합니다.
+
+    ### MongoDB: 애플리케이션 상태
+
+    ClickStack은 MongoDB를 사용하여 다음을 포함한 애플리케이션 수준의 상태를 저장합니다:
+
+    * 대시보드
+    * 알림
+    * 사용자 프로필
+    * 저장된 시각화
+
+    이처럼 상태를 이벤트 데이터와 분리하면 성능과 확장성을 확보하는 동시에 Backup과 구성을 단순화할 수 있습니다.
+
+    이 모듈식 아키텍처를 통해 ClickStack은 빠르고 유연한 오픈 소스 관측성 플랫폼을 즉시 사용할 수 있는 형태로 제공합니다.
+  </Tab>
+</Tabs>

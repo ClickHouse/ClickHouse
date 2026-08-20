@@ -16,41 +16,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int MALFORMED_AI_PROVIDER_RESPONSE;
 }
-
-namespace
-{
-String extractProviderError(const String & response_body, int status_code)
-{
-    try
-    {
-        Poco::JSON::Parser err_parser;
-        auto err_json = err_parser.parse(response_body);
-        auto err_obj = err_json.extract<Poco::JSON::Object::Ptr>();
-        if (err_obj && err_obj->has("error"))
-        {
-            auto err = err_obj->getObject("error");
-            if (err)
-            {
-                String msg = err->optValue<String>("message", "");
-                String type = err->optValue<String>("type", "");
-                if (!msg.empty())
-                    return fmt::format("HTTP {} [{}]: {}", status_code, type, msg);
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
-    size_t max_len = 256;
-    return fmt::format("HTTP {} (response truncated to {} chars): {}", status_code, max_len,
-        response_body.substr(0, std::min(response_body.size(), max_len)));
-}
-}
-
 
 OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_)
     : endpoint(endpoint_)
@@ -96,6 +63,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -114,9 +83,9 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;
@@ -179,6 +148,8 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     http_request.setContentType("application/json");
     if (!api_key.empty()) /// not all providers need API key
         http_request.set("Authorization", "Bearer " + api_key);
+    chassert(!ai_embedding_request.function_name.empty());
+    http_request.set("X-ClickHouse-AI-Function", ai_embedding_request.function_name);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
@@ -197,9 +168,9 @@ AIEmbeddingResponse OpenAIProvider::embed(const AIEmbeddingRequest & ai_embeddin
     auto status = http_response.getStatus();
     if (status != Poco::Net::HTTPResponse::HTTP_OK)
     {
-        throw Exception(
-            ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-            "AI provider error: {}", extractProviderError(response_body, static_cast<int>(status)));
+        throw AIProviderHTTPException(
+            status,
+            PreformattedMessage::create("AI provider error: {}", formatProviderError(static_cast<int>(status), response_body)));
     }
 
     Poco::JSON::Parser parser;

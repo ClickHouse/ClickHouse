@@ -1,6 +1,5 @@
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
-#include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteSettings.h>
@@ -17,7 +16,9 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     CompressionCodecPtr default_codec,
     MergeTreeIndexGranularityPtr index_granularity_ptr,
     size_t part_uncompressed_bytes,
-    WrittenOffsetSubstreams * written_offset_substreams)
+    WrittenOffsetSubstreams * written_offset_substreams,
+    bool try_adaptive_codec,
+    PackedFilesWriter * external_packed_skip_indices_writer)
     : IMergedBlockOutputStream(
           std::move(data_settings),
           data_part->getDataPartStoragePtr(),
@@ -41,11 +42,14 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         /*rewrite_primary_key=*/ false,
         save_marks_in_cache,
         save_primary_index_in_memory,
-        /*blocks_are_granules_size=*/ false);
+        /*blocks_are_granules_size=*/ false,
+        try_adaptive_codec);
+
+    writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
-        data_part->name, data_part->storage.getLogName(), data_part->getSerializations(),
+        data_part->name, data_part->storage.getLogName(), data_part->getSerializations().toSerializationByName(),
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,

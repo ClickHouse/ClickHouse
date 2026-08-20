@@ -1,0 +1,122 @@
+---
+title: '표준 온보딩'
+slug: /cloud/reference/byoc/onboarding/standard
+sidebarTitle: '표준 절차'
+keywords: ['BYOC', '클라우드', 'bring your own cloud', '온보딩']
+description: '자체 클라우드 인프라에 ClickHouse를 배포합니다'
+doc_type: '참고'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="what-is-standard-onboarding">
+  ## 표준 온보딩이란 무엇입니까?
+</div>
+
+**표준 온보딩**은 BYOC를 사용해 자체 클라우드 계정에 ClickHouse를 배포할 때 사용하는 기본 안내형 워크플로입니다. 이 방식에서는 ClickHouse Cloud가 배포에 필요한 핵심 클라우드 리소스(VPC/VNet, 서브넷, 보안 그룹, Kubernetes(EKS/GKE/AKS) 클러스터, 관련 IAM 역할/서비스 계정/서비스 주체 등)를 AWS 계정, GCP 프로젝트 또는 Azure subscription 내에 프로비저닝합니다. 이를 통해 일관되고 안전한 구성을 보장하고, 팀이 수동으로 수행해야 하는 작업을 최소화합니다.
+
+표준 온보딩에서는 전용 AWS 계정, GCP 프로젝트 또는 Azure subscription만 준비한 뒤, 초기 스택(CloudFormation 또는 Terraform 사용)을 실행하여 ClickHouse Cloud가 이후 설정을 오케스트레이션하는 데 필요한 최소한의 권한과 신뢰 관계를 생성하면 됩니다. 이후 단계(인프라 프로비저닝 및 서비스 시작 포함)는 모두 ClickHouse Cloud 웹 콘솔을 통해 관리됩니다.
+
+권한과 리소스 측면에서 더 나은 격리를 위해 ClickHouse BYOC 배포를 호스팅할 **전용** AWS 계정, GCP 프로젝트 또는 Azure subscription을 준비할 것을 강력히 권장합니다. ClickHouse는 계정 내에 전용 클라우드 리소스 세트(VPC/VNet, Kubernetes 클러스터, IAM 역할/서비스 계정/서비스 주체, 객체 스토리지 버킷 등)를 배포합니다.
+
+더 맞춤화된 설정이 필요한 경우(예: 기존 VPC에 배포) [Customized Onboarding](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 문서를 참조하십시오.
+
+<Note>
+  표준 BYOC 온보딩은 CloudFormation 또는 Terraform 단계를 시작한 시점부터 첫 번째 ClickHouse 서비스에 연결할 수 있게 될 때까지 전체적으로 약 45~90분이 소요됩니다.
+</Note>
+
+<div id="request-access">
+  ## 액세스 요청
+</div>
+
+온보딩 절차를 시작하려면 [문의해 주세요](https://clickhouse.com/cloud/bring-your-own-cloud). 당사 팀이 BYOC 요구 사항을 안내하고, 가장 적합한 배포 옵션을 선택할 수 있도록 지원하며, 계정을 허용 목록에 추가해 드립니다.
+
+<div id="onboarding-process">
+  ## 온보딩
+</div>
+
+<div id="prepare-an-aws-account">
+  ### AWS 계정/GCP 프로젝트/Azure subscription 준비
+</div>
+
+조직 아래에 새로운 AWS 계정, GCP 프로젝트 또는 Azure subscription을 준비합니다.
+
+<Steps>
+  <Step title="클라우드 제공업체 선택" id="choose-cloud-provider">
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC CSP 선택" background="black" />
+  </Step>
+
+  <Step title="계정/프로젝트/subscription 준비" id="account-setup">
+    초기 BYOC 설정은 [CloudFormation 템플릿(AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml), [Terraform 모듈(GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 또는 [Terraform 모듈(Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)을 사용하여 수행할 수 있습니다. 이 과정에서 높은 권한을 가진 아이덴티티(IAM role/service account/service principal)가 생성되며, ClickHouse Cloud의 BYOC 컨트롤러가 인프라를 관리할 수 있게 됩니다.
+
+    <Warning>
+      **온보딩 아티팩트는 제공된 그대로 적용하십시오.** ClickHouse의 명시적 승인 없이 리소스 이름을 변경하거나 `PermissionsBoundary`와 같은 매개변수를 추가하는 것을 포함해 CloudFormation 템플릿 또는 Terraform 모듈의 어떤 내용도 변경하지 마십시오. ClickHouse 자동화는 이러한 아티팩트가 생성하는 정확한 리소스에 의존하며, 지원되는 사용자 지정 옵션은 매개변수로 제공됩니다. 특히 AWS에서는 ClickHouse가 사전에 다른 이름을 명시적으로 승인하지 않는 한 IAM role은 접두사나 접미사 없이 기본 이름인 `ClickHouseManagementRole`을 유지해야 합니다. Terraform 모듈은 기술적으로 `role_name` 입력을 제공하지만, 이에 맞게 ClickHouse 자동화도 구성해야 합니다. 따라서 조율 없이 이를 변경하거나(또는 이러한 매개변수가 없는 CloudFormation 템플릿에서 role 이름을 변경하면) 스택은 성공적으로 적용되지만, ClickHouse가 예상된 role을 assume할 수 없어 인프라 프로비저닝에 실패합니다.
+    </Warning>
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC 계정 초기화" background="black" />
+
+    <Note>
+      ClickHouse 실행에 필요한 스토리지 버킷, VPC/VNet, Kubernetes 클러스터 및 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 다음 단계에서 프로비저닝됩니다.
+    </Note>
+
+    #### AWS용 Terraform 모듈
+
+    AWS 배포에서 CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    `<version>`을 모듈의 [릴리스 페이지](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 확인할 수 있는 최신 태그로 바꾸십시오. 항상 최신 릴리스를 사용하십시오.
+
+    모듈은 `clickhouse_management_role_arn`을 출력합니다. 표준 절차에서는 별도로 처리할 필요가 없으며 온보딩은 ClickHouse Cloud 콘솔에서 계속 진행됩니다. 다만 기본 설정과 다른 구성을 사용하는 경우(예: 조율된 사용자 지정 역할 이름) ClickHouse에서 이를 요청하므로 보관해 두십시오.
+
+    <Note>
+      이 모듈은 이전에 `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`에서 tarball 형태로 배포되었습니다. 해당 URL은 계속 사용할 수 있지만 더 이상 사용되지 않으므로 위의 GitHub 모듈을 사용하십시오.
+    </Note>
+
+    #### AWS 외부 ID
+
+    AWS에서는 설정 중 생성된 IAM 역할이 혼동된 대리인 공격을 방지하기 위해 [외부 ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)(`sts:ExternalId`)를 통해 ClickHouse Cloud를 신뢰하도록 구성됩니다. ClickHouse Cloud 콘솔은 온보딩을 시작할 때 AWS 계정용 외부 ID를 생성하여 CloudFormation 링크에 미리 입력합니다. Terraform을 사용하는 경우 동일한 값을 `external_id`로 전달하십시오. 동일한 AWS 계정의 모든 BYOC 인프라는 같은 외부 ID를 공유합니다.
+
+    <Note>
+      외부 ID가 도입되기 전에 온보딩된 BYOC 인프라는 이전 버전과의 호환성을 위해 자리 표시자 값 `emptyid`를 사용합니다. 기존 legacy 배포가 있는 AWS 계정에 인프라를 추가하면 콘솔에 이 값이 표시되므로, 계정의 모든 인프라가 일관된 신뢰 구성을 유지할 수 있습니다. 고유한 외부 ID로 전환하려면 ClickHouse 지원팀에 문의하십시오.
+    </Note>
+  </Step>
+
+  <Step title="BYOC 인프라 구성" id="setup-byoc-infrastructure">
+    ClickHouse Cloud 콘솔에서 객체 스토리지 버킷, VPC/VNet, Kubernetes 클러스터를 포함한 인프라를 설정하라는 안내가 표시됩니다. 이 단계에서 결정해야 하며 이후에는 변경할 수 없는 구성도 있습니다. 구체적으로 다음과 같습니다.
+
+    * **리전**: [지원 리전](/ko/products/cloud/reference/supported-regions) 문서에 나열된 모든 **퍼블릭 리전**에서 BYOC를 배포할 수 있습니다. 현재 프라이빗 리전은 지원되지 않습니다.
+
+    * **VPC/VNet CIDR 범위**: 기본적으로 BYOC VPC(AWS/GCP) 또는 VNet(Azure)의 CIDR 범위로 `10.0.0.0/16`을 사용합니다. 다른 계정과 VPC/VNet 피어링을 사용할 계획이라면 CIDR 범위가 겹치지 않도록 하십시오. 최소 크기는 Cloud마다 다릅니다:
+
+      * **AWS**: `/23`
+      * **Azure**: `/23`
+      * **GCP**: `/20`
+
+      이는 권장 사항이 아닌 최소 기준입니다. 레플리카마다 IP 주소를 사용하므로 규모가 큰 배포에는 더 큰 범위가 필요합니다.
+
+    * **가용 영역**: VPC 피어링을 사용할 계획이라면 소스 계정과 BYOC 계정의 가용 영역을 일치시키면 AZ 간 트래픽 비용을 줄이는 데 도움이 될 수 있습니다. 예를 들어 AWS에서는 가용 영역 접미사(`a`, `b`, `c`)가 계정마다 서로 다른 물리적 영역 ID를 나타낼 수 있습니다. 자세한 내용은 [AWS 가이드](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)를 참조하십시오.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC 인프라 설정" background="black" />
+  </Step>
+</Steps>
+
+<div id="create-clickhouse-service">
+  ### 첫 번째 BYOC ClickHouse 서비스 생성
+</div>
+
+BYOC 인프라가 프로비저닝되면 첫 번째 ClickHouse 서비스를 생성할 준비가 됩니다. ClickHouse Cloud 콘솔을 열고 BYOC 환경을 선택한 다음, 안내에 따라 새 서비스를 생성하십시오.
+
+<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC 새 서비스 생성" />
+
+서비스를 생성하는 동안 다음 옵션을 구성합니다:
+
+* **서비스 이름**: ClickHouse 서비스에 사용할 명확하고 알아보기 쉬운 이름을 입력하십시오.
+* **BYOC 인프라**: 서비스가 실행될 클라우드 계정과 리전을 포함한 BYOC 환경을 선택하십시오.
+* **리소스 구성**: ClickHouse 레플리카에 할당할 CPU 및 메모리 용량을 선택하십시오.
+* **레플리카 수**: 고가용성을 높이기 위해 레플리카 수를 설정하십시오.

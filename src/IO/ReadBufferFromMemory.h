@@ -31,6 +31,8 @@ public:
     explicit ReadBufferFromMemory(std::string_view str)
         : SeekableReadBuffer(const_cast<char *>(str.data()), str.size(), 0) {}
 
+    bool isMemoryBuffer() const override { return true; }
+
     off_t seek(off_t off, int whence) override
     {
         return seekImpl(off, whence);
@@ -66,6 +68,13 @@ protected:
     {
         return getPositionImpl();
     }
+
+    /// Memory-backed file buffers expose the whole content in `working_buffer` at construction;
+    /// there is no producer behind `nextImpl` to honor an external buffer pointer. Reporting true
+    /// (the `ReadBuffer` default) would make `ReaderExecutor::readIntoBlock` call set(dest, n) +
+    /// next() and see an immediate EOF, losing the bytes. Opt out like the MMap buffers so callers
+    /// fall back to `read(dest, n)`.
+    bool supportsExternalBufferMode() const override { return false; }
 
 private:
     friend class ReadBufferFromMemoryHelper<ReadBufferFromMemoryFileBase>;

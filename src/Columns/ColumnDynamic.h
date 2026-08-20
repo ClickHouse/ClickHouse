@@ -258,6 +258,12 @@ public:
     int doCompareAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const override;
 #endif
 
+    /// Compare two shared-variant-serialized Dynamic values ([binary encoded type][value], NULL as
+    /// Nothing) without materializing ColumnDynamic: byte-equality, then NULL/type-name order, then a
+    /// concrete-type column for equal type names. Used by doCompareAt's both-shared branch and by
+    /// ColumnObject's both-shared-data path comparison.
+    static int compareSerializedValues(std::string_view lhs, std::string_view rhs, int nan_direction_hint);
+
     bool hasEqualValues() const override
     {
         return variant_column_ptr->hasEqualValues();
@@ -332,12 +338,6 @@ public:
 
     void forEachSubcolumn(ColumnCallback callback) const override { callback(variant_column); }
 
-    /// Dynamic columns manage their own variant_info type metadata.
-    /// The default convertToFullIfNeeded recurses into subcolumns and strips LowCardinality
-    /// from variant columns, but cannot update variant_info, creating column/type mismatches.
-    /// Override to skip recursion — Dynamic is a self-contained typed container.
-    [[nodiscard]] IColumn::Ptr convertToFullIfNeeded() const override { return getPtr(); }
-
     void forEachMutableSubcolumnRecursively(RecursiveMutableColumnCallback callback) override
     {
         callback(*variant_column);
@@ -387,7 +387,9 @@ public:
 
     /// Apply null map to a nested Variant column.
     void applyNullMap(const ColumnVector<UInt8>::Container & null_map);
-    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map);
+    /// When `offset` is given, `null_map` covers the suffix `[offset, size())`: the affected range must end
+    /// at the last row. Otherwise `null_map` must cover the whole column.
+    void applyNegatedNullMap(const ColumnVector<UInt8>::Container & null_map, size_t offset = 0);
 
     const VariantInfo & getVariantInfo() const { return variant_info; }
 

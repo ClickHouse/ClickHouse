@@ -1,0 +1,66 @@
+---
+description: 'Documentación sobre los tipos de datos en ClickHouse'
+sidebarTitle: 'Lista de tipos de datos'
+slug: /sql-reference/data-types/
+title: 'Tipos de datos en ClickHouse'
+doc_type: 'reference'
+mode: wide
+---
+
+Esta sección describe los tipos de datos admitidos por ClickHouse, por ejemplo [enteros](/es/reference/data-types/int-uint), [números de coma flotante](/es/reference/data-types/float) y [cadenas](/es/reference/data-types/string).
+
+Los distintos tipos de datos pueden beneficiarse de diferentes [códecs de compresión](/es/reference/statements/create/table/codec).
+
+La tabla del sistema [system.data&#95;type&#95;families](/es/reference/system-tables/data_type_families) ofrece una
+visión general de todos los tipos de datos disponibles.
+También muestra si un tipo de dato es un alias de otro y si su nombre distingue entre mayúsculas y minúsculas (por ejemplo, `bool` frente a `BOOL`).
+
+<div id="data-type-categories">
+  ## Categorías de tipos de datos
+</div>
+
+<CardGroup cols={2}>
+  <Card title="Tipos numéricos">
+    Almacenan [enteros](/es/reference/data-types/int-uint), [valores de coma flotante](/es/reference/data-types/float), valores [`Decimal` de precisión fija](/es/reference/data-types/decimal) e [indicadores `Bool`](/es/reference/data-types/boolean).
+  </Card>
+
+  <Card title="Tipos String">
+    Almacenan valores [`String` de longitud variable](/es/reference/data-types/string) o valores [`FixedString` de longitud fija](/es/reference/data-types/fixedstring).
+  </Card>
+
+  <Card title="Tipos de fecha y hora">
+    Representan fechas con [`Date`](/es/reference/data-types/date) y [`Date32`](/es/reference/data-types/date32), marcas de tiempo con [`DateTime`](/es/reference/data-types/datetime) y [`DateTime64`](/es/reference/data-types/datetime64), o valores de hora con [`Time`](/es/reference/data-types/time) y [`Time64`](/es/reference/data-types/time64).
+  </Card>
+
+  <Card title="Tipos de red">
+    Almacenan direcciones [`IPv4`](/es/reference/data-types/ipv4) e [`IPv6`](/es/reference/data-types/ipv6) en formato binario compacto.
+  </Card>
+
+  <Card title="Tipos compuestos">
+    Combinan valores en estructuras [`Array`](/es/reference/data-types/array), [`Tuple`](/es/reference/data-types/tuple), [`Map`](/es/reference/data-types/map) y [`Nested`](/es/reference/data-types/nested-data-structures/index).
+  </Card>
+
+  <Card title="Tipos semiestructurados">
+    Almacenan datos heterogéneos o en evolución con [`JSON`](/es/reference/data-types/newjson), [`Dynamic`](/es/reference/data-types/dynamic) y [`Variant`](/es/reference/data-types/variant).
+  </Card>
+
+  <Card title="Tipos Nullable y opcionales">
+    Representan valores ausentes con [`Nullable`](/es/reference/data-types/nullable) o reducen el almacenamiento de valores repetidos con [`LowCardinality`](/es/reference/data-types/lowcardinality).
+  </Card>
+
+  <Card title="Tipos especializados">
+    Modelan valores [`UUID`](/es/reference/data-types/uuid), valores [`Enum`](/es/reference/data-types/enum), [objetos geográficos](/es/reference/data-types/geo), [vectores para búsquedas aproximadas](/es/reference/data-types/qbit) y [dominios](/es/reference/data-types/domains/index).
+  </Card>
+
+  <Card title="Tipos de funciones de agregación">
+    Almacenan estados de agregación intermedios con [`AggregateFunction`](/es/reference/data-types/aggregatefunction) y [`SimpleAggregateFunction`](/es/reference/data-types/simpleaggregatefunction).
+  </Card>
+
+  <Card title="Tipos de datos especiales">
+    Consulte [`Expression`](/es/reference/data-types/special-data-types/expression), [`Interval`](/es/reference/data-types/special-data-types/interval), [`Nothing`](/es/reference/data-types/special-data-types/nothing) y [`Set`](/es/reference/data-types/special-data-types/set), que se utilizan para resultados de consultas intermedios.
+  </Card>
+
+  <Card title="Codificación binaria">
+    Consulte la [especificación de codificación binaria](/es/reference/data-types/data-types-binary-encoding) para conocer la representación serializada de cada tipo de datos.
+  </Card>
+</CardGroup>

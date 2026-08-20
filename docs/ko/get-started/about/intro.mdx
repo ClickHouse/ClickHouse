@@ -1,0 +1,207 @@
+---
+slug: /intro
+sidebarTitle: 'ClickHouse란 무엇입니까?'
+description: 'ClickHouse®는 온라인 분석 처리(OLAP)를 위한 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. 오픈소스 소프트웨어와 클라우드 형태로 모두 제공됩니다.'
+title: 'ClickHouse란 무엇입니까?'
+keywords: ['ClickHouse', '컬럼형 데이터베이스', 'OLAP 데이터베이스', '분석용 데이터베이스', '고성능 데이터베이스']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse®는 온라인 분석 처리(OLAP)를 위한 고성능 컬럼 지향 SQL 데이터베이스 관리 시스템(DBMS)입니다. [오픈소스 소프트웨어](https://github.com/ClickHouse/ClickHouse)와 [Cloud 서비스](https://clickhouse.com/cloud) 형태로 제공됩니다.
+
+<div id="what-are-analytics">
+  ## 분석이란 무엇입니까?
+</div>
+
+분석은 OLAP(Online Analytical Processing)이라고도 하며, 방대한 데이터셋에 대해 복잡한 계산(예: 집계, 문자열 처리, 산술 연산)을 수행하는 SQL 쿼리를 의미합니다.
+
+쿼리당 몇 개의 행만 읽고 쓰기 때문에 밀리초 단위로 완료되는 트랜잭션 쿼리(또는 OLTP, Online Transaction Processing)와 달리, 분석 쿼리는 일반적으로 수십억에서 수조 개의 행을 처리합니다.
+
+많은 사용 사례에서 [분석 쿼리는 &quot;실시간&quot;이어야 합니다](https://clickhouse.com/engineering-resources/what-is-real-time-analytics). 즉, 1초 이내에 결과를 반환해야 합니다.
+
+<div id="row-oriented-vs-column-oriented-storage">
+  ## 행 지향 저장과 컬럼 지향 저장 비교
+</div>
+
+이와 같은 수준의 성능은 데이터의 올바른 &quot;지향성&quot;이 있어야만 달성할 수 있습니다.
+
+데이터베이스는 데이터를 [행 지향 또는 컬럼 지향](https://clickhouse.com/engineering-resources/what-is-columnar-database) 방식으로 저장합니다.
+
+행 지향 데이터베이스에서는 테이블의 연속된 행이 차례대로 순차 저장됩니다. 이 방식에서는 각 행의 컬럼 값이 함께 저장되므로 행을 빠르게 조회할 수 있습니다.
+
+ClickHouse는 컬럼 지향 데이터베이스입니다. 이러한 시스템에서는 테이블이 컬럼들의 집합으로 저장되며, 즉 각 컬럼의 값이 차례대로 순차 저장됩니다. 이 방식에서는 단일 행을 복원하기가 더 어려워지지만(이제 행 값 사이에 간격이 생기기 때문입니다), filter나 집계와 같은 컬럼 연산은 행 지향 데이터베이스보다 훨씬 빨라집니다.
+
+이 차이는 [실제 익명화된 웹 분석 데이터](/ko/get-started/sample-datasets/anon-web-analytics-metrica) 1억 행에 대해 실행한 다음 예시 쿼리로 가장 잘 설명할 수 있습니다:
+
+```sql
+SELECT MobilePhoneModel, COUNT() AS c
+FROM metrica.hits
+WHERE
+      RegionID = 229
+  AND EventDate >= '2013-07-01'
+  AND EventDate <= '2013-07-31'
+  AND MobilePhone != 0
+  AND MobilePhoneModel not in ['', 'iPad']
+GROUP BY MobilePhoneModel
+ORDER BY c DESC
+LIMIT 8;
+```
+
+[ClickHouse SQL Playground에서 이 쿼리를 실행](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)하여 기존 [100개가 넘는 컬럼 중 일부만](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) 선택하고 필터링한 다음, 결과를 밀리초 단위로 받아볼 수 있습니다:
+
+<Image img="/images/column-oriented-example-query.webp" alt="컬럼 지향 데이터베이스의 예시 쿼리" size="lg" />
+
+위 그림의 통계 섹션에서 볼 수 있듯이, 이 쿼리는 1억 행을 92밀리초 만에 처리했으며, 처리량은 초당 약 10억 행 이상, 또는 초당 7 GB에 약간 못 미치는 데이터 전송량에 해당합니다.
+
+**행 지향 DBMS**
+
+행 지향 데이터베이스에서는 위 쿼리가 기존 컬럼 중 일부만 처리하더라도, 시스템은 여전히 다른 컬럼의 데이터도 디스크에서 메모리로 로드해야 합니다. 이는 데이터가 디스크에 [블록](https://en.wikipedia.org/wiki/Block_\(data_storage\))이라고 하는 청크 단위로 저장되기 때문입니다(보통 4 KB 또는 8 KB 같은 고정 크기). 블록은 디스크에서 메모리로 읽어 오는 데이터의 가장 작은 단위입니다. 애플리케이션이나 데이터베이스가 데이터를 요청하면 운영 체제의 디스크 I/O 하위 시스템이 디스크에서 필요한 블록을 읽습니다. 블록의 일부만 필요하더라도 전체 블록이 메모리로 읽혀집니다(이는 디스크 및 파일 시스템 설계에 따른 것입니다):
+
+<Image img="/images/row-oriented.webp" alt="행 지향 데이터베이스 구조" size="lg" />
+
+**컬럼 지향 DBMS**
+
+각 컬럼의 값이 디스크에 순차적으로 저장되므로, 위 쿼리를 실행할 때 불필요한 데이터는 로드되지 않습니다.
+디스크에서 메모리로의 block 단위 저장 및 전송이 분석 쿼리의 데이터 접근 패턴과 일치하므로, 쿼리에 필요한 컬럼만 디스크에서 읽어 사용되지 않는 데이터에 대한 불필요한 I/O를 피할 수 있습니다. 이는 전체 행(관련 없는 컬럼 포함)을 읽는 행 기반 저장 방식과 비교하면 [훨씬 더 빠릅니다](https://benchmark.clickhouse.com/):
+
+<Image img="/images/column-oriented.webp" alt="컬럼 지향 데이터베이스 구조" size="lg" />
+
+<div id="data-replication-and-integrity">
+  ## 데이터 복제 및 무결성
+</div>
+
+ClickHouse는 여러 노드에 데이터를 중복 저장할 수 있도록 비동기 멀티 마스터 복제 방식을 사용합니다. 사용 가능한 아무 레플리카에 데이터를 쓰면, 나머지 모든 레플리카는 백그라운드에서 해당 데이터의 사본을 가져옵니다. 시스템은 서로 다른 레플리카에 동일한 데이터가 유지되도록 합니다. 대부분의 장애는 자동으로 복구되며, 복잡한 경우에는 반자동으로 복구됩니다.
+
+<div id="role-based-access-control">
+  ## 역할 기반 접근 제어
+</div>
+
+ClickHouse는 SQL 쿼리를 사용해 사용자 계정을 관리하며, ANSI SQL 표준과 널리 사용되는 관계형 데이터베이스 관리 시스템과 유사한 역할 기반 접근 제어 구성을 지원합니다.
+
+<div id="sql-support">
+  ## SQL 지원
+</div>
+
+ClickHouse는 많은 경우 ANSI SQL 표준과 동일한 [SQL 기반의 선언형 쿼리 언어](/ko/reference/home)를 지원합니다. 지원되는 쿼리 절에는 [GROUP BY](/ko/reference/statements/select/group-by), [ORDER BY](/ko/reference/statements/select/order-by), [FROM](/ko/reference/statements/select/from)의 서브쿼리, [JOIN](/ko/reference/statements/select/join) 절, [IN](/ko/reference/statements/in) 연산자, [윈도우 함수](/ko/reference/functions/window-functions/index), 그리고 스칼라 서브쿼리가 포함됩니다.
+
+<div id="approximate-calculation">
+  ## 근사 계산
+</div>
+
+ClickHouse는 정확도와 성능을 절충할 수 있는 방법을 제공합니다. 예를 들어 일부 집계 함수는 고유값 개수, 중앙값, 분위수를 근사적으로 계산합니다. 또한 데이터의 일부 샘플에 대해 쿼리를 실행해 근사 결과를 빠르게 계산할 수 있습니다. 마지막으로 모든 키에 대해 집계를 수행하는 대신, 제한된 수의 키에 대해서만 집계를 수행할 수 있습니다. 키 분포가 얼마나 치우쳐 있는지에 따라, 이 방식은 정확 계산보다 훨씬 적은 리소스를 사용하면서도 상당히 정확한 결과를 제공할 수 있습니다.
+
+<div id="adaptive-join-algorithms">
+  ## 적응형 조인 알고리즘
+</div>
+
+ClickHouse는 조인 알고리즘을 상황에 맞게 선택합니다. 먼저 빠른 해시 조인을 사용하고, 큰 테이블이 2개 이상이면 머지 조인으로 전환합니다.
+
+<div id="superior-query-performance">
+  ## 뛰어난 쿼리 성능
+</div>
+
+ClickHouse는 매우 빠른 쿼리 성능을 제공하는 것으로 잘 알려져 있습니다.
+ClickHouse가 왜 이렇게 빠른지 알아보려면 [Why is ClickHouse fast?](/ko/get-started/about/why-clickhouse-is-so-fast) 가이드를 참조하십시오.
+
+{/*
+  ## OLAP란 무엇인가? {#what-is-olap}
+  OLAP 시나리오는 다음과 같은 특성을 가진 복잡한 분석 쿼리에 대해 대규모 데이터셋에서 실시간 응답을 요구합니다:
+  - 데이터셋은 수십억 또는 수조 개의 행에 달할 수 있습니다
+  - 데이터는 수많은 컬럼을 포함하는 테이블로 구성됩니다
+  - 특정 쿼리에 응답하기 위해 소수의 컬럼만 선택됩니다
+  - 결과는 밀리초 또는 초 단위로 반환되어야 합니다
+
+  ## 컬럼 지향 데이터베이스와 행 지향 데이터베이스 {#column-oriented-vs-row-oriented-databases}
+  행 지향 DBMS에서는 데이터가 행 단위로 저장되며, 한 행에 속하는 모든 값이 물리적으로 인접하게 저장됩니다.
+
+  컬럼 지향 DBMS에서는 데이터가 컬럼 단위로 저장되며, 동일한 컬럼의 값들이 함께 저장됩니다.
+
+  ## 컬럼 지향 데이터베이스가 OLAP 시나리오에 더 적합한 이유 {#why-column-oriented-databases-work-better-in-the-olap-scenario}
+
+  컬럼 지향 데이터베이스는 OLAP 시나리오에 더 적합합니다. 대부분의 쿼리를 처리할 때 최소 100배 이상 빠릅니다. 그 이유는 아래에서 자세히 설명하지만, 시각적으로 확인하는 편이 더 직관적입니다:
+
+  차이가 보이시나요?
+
+  이 문서의 나머지 부분에서는 컬럼 지향 데이터베이스가 이러한 시나리오에 적합한 이유와, 특히 ClickHouse가 이 범주에서 다른 제품들을 [능가하는](/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-and-selects-are-isolated) 이유를 설명합니다.
+
+  ## ClickHouse는 왜 이렇게 빠른가? {#why-is-clickhouse-so-fast}
+
+  ClickHouse는 각 분석 쿼리를 최대한 빠르게 처리하기 위해 사용 가능한 모든 시스템 리소스를 최대한 활용합니다. 이는 분석 기능의 독자적인 조합과, 가장 빠른 OLAP 데이터베이스를 구현하는 데 필요한 저수준 세부 사항에 대한 철저한 고려 덕분에 가능합니다.
+
+  이 주제를 더 깊이 이해하는 데 도움이 되는 문서:
+  - [ClickHouse 성능](/get-started/about/why-clickhouse-is-so-fast)
+  - [ClickHouse의 특징](/get-started/about/distinctive-features)
+  - [FAQ: ClickHouse는 왜 이렇게 빠른가?](/get-started/about/why-clickhouse-is-so-fast)
+
+  ## 실시간 분석 쿼리 처리 {#processing-analytical-queries-in-real-time}
+
+  행 지향 DBMS에서는 데이터가 다음과 같은 순서로 저장됩니다:
+
+  | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
+  |-----|-------------|------------|--------------------|-----------|---------------------|
+  | #0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
+  | #1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
+  | #2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
+  | #N | ...           | ...          | ...                  | ...         | ...                   |
+
+  즉, 한 행에 속하는 모든 값이 물리적으로 인접하게 저장됩니다.
+
+  행 지향 DBMS의 예로는 MySQL, Postgres, MS SQL Server가 있습니다.
+
+  컬럼 지향 DBMS에서는 데이터가 다음과 같이 저장됩니다:
+
+  | Row:        | #0                 | #1                 | #2                 | #N |
+  |-------------|---------------------|---------------------|---------------------|-----|
+  | WatchID:    | 89354350662         | 90329509958         | 89953706054         | ...   |
+  | JavaEnable: | 1                   | 0                   | 1                   | ...   |
+  | Title:      | Investor Relations  | Contact us          | Mission             | ...   |
+  | GoodEvent:  | 1                   | 1                   | 1                   | ...   |
+  | EventTime:  | 2016-05-18 05:19:20 | 2016-05-18 08:10:20 | 2016-05-18 07:38:00 | ...   |
+
+  이 예시들은 데이터가 배열되는 순서만을 보여줍니다. 서로 다른 컬럼의 값은 별도로 저장되고, 동일한 컬럼의 데이터는 함께 저장됩니다.
+
+  컬럼 지향 DBMS의 예: Vertica, Paraccel (Actian Matrix 및 Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise 및 Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, kdb+.
+
+  데이터 저장 방식은 시나리오에 따라 더 적합한 형태가 다릅니다. 데이터 접근 시나리오란 어떤 쿼리가 얼마나 자주, 어떤 비율로 실행되는지, 각 쿼리 유형에서 얼마나 많은 데이터(행, 컬럼, 바이트)가 읽히는지, 데이터 읽기와 업데이트 간의 관계, 데이터의 작업 크기와 로컬 활용 방식, 트랜잭션 사용 여부 및 격리 수준, 데이터 복제 및 논리적 무결성 요구 사항, 각 쿼리 유형에 대한 지연 시간 및 처리량 요구 사항 등을 의미합니다.
+
+  시스템 부하가 높을수록 사용 시나리오의 요구 사항에 맞게 시스템을 세밀하게 조정하는 것이 더욱 중요해집니다. 서로 크게 다른 시나리오에 동등하게 적합한 시스템은 존재하지 않습니다. 다양한 시나리오에 대응 가능한 시스템이라도 높은 부하 하에서는 모든 시나리오를 고르게 처리하지 못하거나, 가능한 시나리오 중 하나 또는 소수에서만 제대로 작동합니다.
+
+  ### OLAP 시나리오의 주요 특성 {#key-properties-of-olap-scenario}
+
+  - 테이블은 "넓은(wide)" 형태로, 많은 수의 컬럼을 포함합니다.
+  - 데이터셋이 크고, 단일 쿼리 처리 시 고처리량이 요구됩니다(서버당 초당 수십억 행까지).
+  - 컬럼 값은 비교적 작습니다: 숫자 및 짧은 문자열(예: URL당 60바이트).
+  - 쿼리는 많은 수의 행을 추출하지만, 소수의 컬럼만 사용합니다.
+  - 단순 쿼리의 경우 약 50ms의 지연 시간이 허용됩니다.
+  - 쿼리당 하나의 대형 테이블이 존재하며, 나머지 테이블은 모두 작습니다.
+  - 쿼리 결과는 원본 데이터보다 훨씬 작습니다. 즉, 데이터가 필터링되거나 집계되어 결과가 단일 서버의 RAM에 수용됩니다.
+  - 쿼리는 비교적 드물게 실행됩니다(보통 서버당 초당 수백 건 이하).
+  - 삽입은 단일 행이 아닌 상당히 큰 배치(\> 1000행) 단위로 발생합니다.
+  - 트랜잭션은 필요하지 않습니다.
+
+  OLAP 시나리오는 OLTP나 키-값(Key-Value) 접근 방식과 같은 다른 일반적인 시나리오와 매우 다릅니다. 따라서 적절한 성능을 원한다면 분석 쿼리 처리에 OLTP나 키-값 DB를 사용하는 것은 적합하지 않습니다. 예를 들어, 분석 목적으로 MongoDB나 Redis를 사용하면 OLAP 데이터베이스에 비해 매우 낮은 성능을 경험하게 됩니다.
+
+  ### 입출력 {#inputoutput}
+
+  1.  분석 쿼리는 테이블 컬럼 중 소수만 읽으면 됩니다. 컬럼 지향 데이터베이스에서는 필요한 데이터만 읽을 수 있습니다. 예를 들어, 100개의 컬럼 중 5개만 필요하다면 I/O를 20배 줄일 수 있습니다.
+  2.  데이터가 패킷 단위로 읽히기 때문에 압축이 더 용이합니다. 컬럼 단위 데이터 역시 압축하기 더 쉽습니다. 이는 I/O 용량을 더욱 줄여줍니다.
+  3.  I/O가 줄어들면 더 많은 데이터를 시스템 캐시에 수용할 수 있습니다.
+
+  예를 들어, "각 광고 플랫폼별 레코드 수를 집계"하는 쿼리는 "광고 플랫폼 ID" 컬럼 하나만 읽으면 되며, 이는 비압축 상태에서 1바이트를 차지합니다. 대부분의 트래픽이 광고 플랫폼에서 발생하지 않는다면, 이 컬럼에서 최소 10배의 압축을 기대할 수 있습니다. 빠른 압축 알고리즘을 사용하면 초당 수 기가바이트의 비압축 데이터를 압축 해제할 수 있습니다. 즉, 이 쿼리는 단일 서버에서 초당 약 수십억 행의 속도로 처리될 수 있으며, 이 속도는 실제로도 달성됩니다.
+
+  ### CPU {#cpu}
+
+  쿼리 실행 시 많은 수의 행을 처리해야 하므로, 개별 행이 아닌 전체 벡터 단위로 연산을 처리하거나, 디스패칭 비용이 거의 발생하지 않도록 쿼리 엔진을 구현하는 것이 효과적입니다. 이를 적용하지 않으면 어느 정도 성능을 갖춘 디스크 서브시스템에서도 쿼리 인터프리터가 CPU 병목을 유발하게 됩니다. 데이터를 컬럼 단위로 저장하고, 가능한 경우 컬럼 단위로 처리하는 것이 합리적입니다.
+
+  이를 위한 두 가지 방법이 있습니다:
+
+  1.  벡터 엔진. 모든 연산이 개별 값이 아닌 벡터 단위로 작성됩니다. 따라서 연산을 자주 호출할 필요가 없고 디스패칭 비용이 무시할 수 있을 정도로 작습니다. 연산 코드에는 최적화된 내부 사이클이 포함됩니다.
+
+  2.  코드 생성. 쿼리를 위해 생성된 코드에 모든 간접 호출이 포함됩니다.
+
+  이는 행 지향 데이터베이스에서는 적용되지 않는데, 단순 쿼리 실행 시에는 효과가 없기 때문입니다. 그러나 예외도 있습니다. 예를 들어, MemSQL은 SQL 쿼리 처리 시 지연 시간을 줄이기 위해 코드 생성을 사용합니다. (반면, 분석용 DBMS는 지연 시간이 아닌 처리량 최적화가 필요합니다.)
+
+  CPU 효율성을 위해 쿼리 언어는 선언적(SQL 또는 MDX)이거나 최소한 벡터 방식(J, K)이어야 합니다. 쿼리에는 최적화가 가능한 암묵적 루프만 포함되어야 합니다.
+  */}

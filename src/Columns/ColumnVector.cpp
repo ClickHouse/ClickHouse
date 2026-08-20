@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 
+#include <base/defines.h>
 #include <base/bit_cast.h>
 #include <base/scope_guard.h>
 #include <base/sort.h>
@@ -9,6 +10,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/RadixSortHelper.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <IO/WriteHelpers.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
@@ -19,6 +21,7 @@
 #include <Common/RadixSort.h>
 #include <Common/SipHash.h>
 #include <Common/TargetSpecific.h>
+#include <Common/transformEndianness.h>
 #include <Common/assert_cast.h>
 #include <Common/findExtreme.h>
 #include <Common/iota.h>
@@ -26,6 +29,7 @@
 #include <IO/ReadHelpers.h>
 
 #include <bit>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
@@ -343,6 +347,137 @@ void ColumnVector<T>::compareColumn(
     compareColumnImpl<T>(data, value, compare_results, direction, nan_direction_hint);
 }
 
+MULTITARGET_FUNCTION_X86_V4(
+MULTITARGET_FUNCTION_HEADER(
+template <typename T>
+size_t), findFirstNotEqualImpl, MULTITARGET_FUNCTION_BODY((
+    const T * data,
+    size_t begin,
+    size_t end,
+    T ref,
+    int nan_direction_hint)
+{
+    size_t i = begin;
+
+    /// Scan fixed-size blocks without an early exit so the comparison vectorizes; only when a block
+    /// contains the boundary do we locate it with a scalar pass (at most once, at the run end).
+    static constexpr size_t block = 16;
+    for (; i + block <= end; i += block)
+    {
+        UInt8 any_not_equal = 0;
+        for (size_t k = 0; k < block; ++k)
+            any_not_equal |= static_cast<UInt8>(!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint));
+        if (any_not_equal)
+        {
+            for (size_t k = 0; k < block; ++k)
+                if (!CompareHelper<T>::equals(data[i + k], ref, nan_direction_hint))
+                    return i + k;
+        }
+    }
+
+    /// The tail of the array that doesn't fit into a full block.
+    for (; i < end; ++i)
+        if (!CompareHelper<T>::equals(data[i], ref, nan_direction_hint))
+            return i;
+    return end;
+})
+)
+
+template <typename T>
+static size_t getEqualRangeEndAssumeSortedImpl(const T * d, size_t begin, size_t end, int nan_direction_hint)
+{
+    /// An empty range contains no run, so its end is `begin`.
+    if (begin >= end)
+        return begin;
+
+    const T ref = d[begin];
+
+    /// Resolve a run of length one with a single comparison. This is the common case for
+    /// high-cardinality keys, where it avoids the fixed cost of the vectorized block scan below.
+    if (begin + 1 < end && !CompareHelper<T>::equals(d[begin + 1], ref, nan_direction_hint))
+        return begin + 1;
+
+    /// First scan a window linearly, which resolves short runs cheaply. The scan compares whole blocks
+    /// without an early exit so it vectorizes, making the per-row cost so small that the window can be
+    /// much longer than the linear probes of the scalar overloads.
+    static constexpr size_t window = 256;
+    size_t window_end = std::min(begin + window, end);
+
+    size_t hit = 0;
+#if USE_MULTITARGET_CODE
+    if (isArchSupported(TargetArch::x86_64_v4))
+        hit = findFirstNotEqualImpl_x86_64_v4<T>(d, begin, window_end, ref, nan_direction_hint);
+    else
+#endif
+        hit = findFirstNotEqualImpl<T>(d, begin, window_end, ref, nan_direction_hint);
+
+    if (hit < window_end)
+        return hit;
+    if (window_end == end)
+        return end;
+
+    /// Gallop forward with an exponentially growing step to bracket the run end between `lo` (still
+    /// equal, as established by the earlier linear scan) and `hi` (the first probe past it).
+    size_t lo = window_end; /// rows in [begin, lo) all equal the value at `begin`
+    size_t hi = end;
+    size_t step = window;
+    while (lo < end)
+    {
+        size_t probe = std::min(lo + step, end);
+        if (CompareHelper<T>::equals(d[probe - 1], ref, nan_direction_hint))
+        {
+            lo = probe;
+            if (probe == end)
+                return end;
+            step <<= 1;
+        }
+        else
+        {
+            hi = probe;
+            break;
+        }
+    }
+
+    /// Binary-search the bracketed range `[lo, hi)` for the first position that is not equal; that is the run end.
+    /// `lo` is known from the gallop to equal the value at `begin`.
+    while (lo < hi)
+    {
+        size_t mid = lo + (hi - lo) / 2;
+        if (CompareHelper<T>::equals(d[mid], ref, nan_direction_hint))
+            lo = mid + 1;
+        else
+            hi = mid;
+    }
+    return lo;
+}
+
+template <typename T>
+size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const
+{
+    const T * d = data.data();
+    const size_t run_end = getEqualRangeEndAssumeSortedImpl<T>(d, begin, end, nan_direction_hint);
+    checkEqualRangeEndAssumeSorted(
+        begin, end, run_end, [&](size_t i) { return CompareHelper<T>::equals(d[i], d[begin], nan_direction_hint); });
+    return run_end;
+}
+
+template <typename T>
+Int64 ColumnVector<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    const auto & rhs = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = rhs.data.data();
+    const T lhs_value = lhs_data[n];
+    const T rhs_value = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        CompareHelper<T>::compare(lhs_value, rhs_value, nan_direction_hint),
+        n, m, data.size(), rhs.data.size(), linear_probe,
+        [&](size_t row) { return CompareHelper<T>::less(lhs_data[row], rhs_value, nan_direction_hint); },
+        [&](size_t row) { return CompareHelper<T>::greater(lhs_value, rhs_data[row], nan_direction_hint); });
+}
+
 template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
@@ -358,7 +493,7 @@ void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction
 
     iota(res.data(), data_size, IColumn::Permutation::value_type(0));
 
-    if constexpr (has_find_extreme_implementation<T>)
+    if constexpr (has_find_extreme_index_implementation<T>)
     {
         /// For floating point, findExtremeMinIndex/MaxIndex skip NaN (NaN is always last).
         /// This matches the standard nan_direction_hint convention: ASC with hint >= 0, DESC with hint <= 0.
@@ -1057,6 +1192,23 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
+    if constexpr (has_find_extreme_implementation<T> && is_floating_point<T>)
+    {
+        auto cur_min = findExtremeMin(data.data(), start, end);
+        auto cur_max = findExtremeMax(data.data(), start, end);
+
+        if (!cur_min || !cur_max)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+
+        min = NearestFieldType<T>(*cur_min);
+        max = NearestFieldType<T>(*cur_max);
+        return;
+    }
+
     size_t i = start;
     if constexpr (is_floating_point<T>)
     {
@@ -1300,6 +1452,89 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
 }
 
+template <typename T>
+void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
+{
+    if constexpr (std::is_integral_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (std::is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (is_big_int_v<T>)
+    {
+        auto value = data[n];
+        transformEndianness<std::endian::big>(value);
+        if constexpr (is_signed_v<T>)
+        {
+            char * bytes = reinterpret_cast<char *>(&value);
+            bytes[0] ^= 0x80;
+        }
+        out.append(reinterpret_cast<const char *>(&value), sizeof(T));
+    }
+    else if constexpr (std::is_same_v<T, Float32>)
+    {
+        UInt32 bits = std::bit_cast<UInt32>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFU;
+        else
+        {
+            if (bits == 0x80000000U)
+                bits = 0;
+            if (bits & 0x80000000U)
+                bits = ~bits;
+            else
+                bits ^= 0x80000000U;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt32));
+    }
+    else if constexpr (std::is_same_v<T, Float64>)
+    {
+        UInt64 bits = std::bit_cast<UInt64>(data[n]);
+        if (std::isnan(data[n]))
+            bits = 0xFFFFFFFFFFFFFFFFULL;
+        else
+        {
+            if (bits == 0x8000000000000000ULL)
+                bits = 0;
+            if (bits & 0x8000000000000000ULL)
+                bits = ~bits;
+            else
+                bits ^= 0x8000000000000000ULL;
+        }
+        transformEndianness<std::endian::big>(bits);
+        out.append(reinterpret_cast<const char *>(&bits), sizeof(UInt64));
+    }
+    else if constexpr (std::is_same_v<T, UUID>)
+    {
+        auto value = data[n].toUnderType();
+        transformEndianness<std::endian::big>(value);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(UInt128));
+    }
+    else
+    {
+        IColumn::serializeAsComparable(n, out);
+    }
+}
+
+template <typename T>
+void ColumnVector<T>::batchSerializeAsComparable(
+    size_t num_rows,
+    VectorWithMemoryTracking<String> & out,
+    const IColumn::Permutation * permutation,
+    const UInt8 * null_map) const
+{
+    batchSerializeAsComparableImpl(
+        num_rows, out, permutation, null_map,
+        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
+}
+
 /// Explicit template instantiations - to avoid code bloat in headers.
 template class ColumnVector<UInt8>;
 template class ColumnVector<UInt16>;
@@ -1329,7 +1564,8 @@ template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt8>(const PaddedPODArray<U
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt16>(const PaddedPODArray<UInt16> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<UInt32>(const PaddedPODArray<UInt32> & indexes, size_t limit) const;
 
-#if defined(OS_DARWIN)
+/// `size_t` is not covered by the instantiations above where it is a type of its own.
+#if defined(SIZE_T_IS_A_DISTINCT_TYPE)
 template ColumnPtr ColumnVector<UInt8>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 template ColumnPtr ColumnVector<UInt64>::indexImpl<size_t>(const PaddedPODArray<size_t> & indexes, size_t limit) const;
 #endif

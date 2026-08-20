@@ -6,7 +6,12 @@ from helpers.config_cluster import arrowflight_user, arrowflight_pass
 from helpers.test_tools import TSV
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance("node", with_arrowflight=True, stay_alive=True)
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/remote_host_filter.xml"],
+    with_arrowflight=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -19,7 +24,7 @@ def start_cluster():
 
 
 def test_table_function():
-    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')")
+    result = node.query("SELECT * FROM arrowFlight('arrowflight1:5005', 'ABC')")
     assert result == TSV(
         [
             ["test_value_1", "data1"],
@@ -29,7 +34,7 @@ def test_table_function():
     )
     
     # test that dataset_name is being sent correctly to the arrowflight server
-    result = node.query(f"SELECT * FROM arrowFlight('arrowflight1:5005', 'XYZ')")
+    result = node.query("SELECT * FROM arrowFlight('arrowflight1:5005', 'XYZ')")
     assert result == TSV(
         [
             ["1", "4"],
@@ -41,7 +46,7 @@ def test_table_function():
 
 def test_table_function_old_name():
     # "arrowflight" is an obsolete name.
-    result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
+    result = node.query("SELECT * FROM arrowflight('arrowflight1:5005', 'ABC')")
     assert result == TSV(
         [
             ["test_value_1", "data1"],
@@ -50,7 +55,7 @@ def test_table_function_old_name():
         ]
     )
     
-    result = node.query(f"SELECT * FROM arrowflight('arrowflight1:5005', 'XYZ')")
+    result = node.query("SELECT * FROM arrowflight('arrowflight1:5005', 'XYZ')")
     assert result == TSV(
         [
             ["1", "4"],
@@ -73,10 +78,10 @@ def test_table_function_with_auth():
     )
 
     assert "No credentials supplied" in node.query_and_get_error(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC')"
+        "SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC')"
     )
     assert "Unknown user" in node.query_and_get_error(
-        f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'default', '')"
+        "SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', 'default', '')"
     )
     assert "Wrong password" in node.query_and_get_error(
         f"SELECT * FROM arrowFlight('arrowflight1:5006', 'ABC', '{arrowflight_user}', 'qwe123')"
@@ -95,13 +100,13 @@ def test_arrowflight_storage():
         """
     )
 
-    assert node.query(f"SELECT * FROM arrow_test") == ""
+    assert node.query("SELECT * FROM arrow_test") == ""
 
     node.query(
         "INSERT INTO arrow_test VALUES ('a','data_a'), ('b','data_b'), ('c','data_c')"
     )
 
-    result = node.query(f"SELECT * FROM arrow_test ORDER BY column1")
+    result = node.query("SELECT * FROM arrow_test ORDER BY column1")
     assert result == TSV(
         [
             ["a", "data_a"],
@@ -112,7 +117,7 @@ def test_arrowflight_storage():
 
     node.query("INSERT INTO arrow_test VALUES ('x','data_x'), ('y','data_y')")
 
-    new_result = node.query(f"SELECT * FROM arrow_test ORDER BY column1")
+    new_result = node.query("SELECT * FROM arrow_test ORDER BY column1")
     assert new_result == TSV(
         [
             ["a", "data_a"],
@@ -343,3 +348,39 @@ def test_arrowflight_storage_with_named_collection():
     node.query("DROP TABLE arrow_test_named")
     node.query("DROP TABLE arrow_test_named_2")
     node.query("DROP NAMED COLLECTION arrowflight_storage_collection")
+
+
+def test_remote_host_filter():
+    # Only "arrowflight1" is allow-listed in configs/remote_host_filter.xml,
+    # so a connection to any other host must be rejected before it is opened.
+    error = node.query_and_get_error(
+        "SELECT * FROM arrowFlight('127.0.0.1:5005', 'ABC')"
+    )
+    assert "not allowed in configuration file" in error
+
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE arrow_blocked (column1 String, column2 String)
+        ENGINE=ArrowFlight('127.0.0.1:5005', 'ABC')
+        """
+    )
+    assert "not allowed in configuration file" in error
+
+    # The named-collection branch of getConfiguration is also guarded: creating
+    # the collection is harmless (no connection), but using it must be rejected.
+    node.query(
+        """
+        CREATE NAMED COLLECTION arrowflight_blocked_collection AS
+        host = '127.0.0.1',
+        port = 5005,
+        dataset = 'ABC',
+        use_basic_authentication = False
+        """
+    )
+    try:
+        error = node.query_and_get_error(
+            "SELECT * FROM arrowFlight(arrowflight_blocked_collection)"
+        )
+        assert "not allowed in configuration file" in error
+    finally:
+        node.query("DROP NAMED COLLECTION arrowflight_blocked_collection")

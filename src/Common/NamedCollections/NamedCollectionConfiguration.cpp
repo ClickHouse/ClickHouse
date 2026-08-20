@@ -162,7 +162,7 @@ ConfigurationPtr createConfiguration(
     namespace Configuration = NamedCollectionConfiguration;
 
     auto config = Configuration::createEmptyConfiguration(root_name);
-    for (const auto & [name, value] : settings)
+    for (const auto & [name, value, _] : settings)
     {
         Configuration::setConfigValue<String>(*config, name, convertFieldToString(value));
         auto ovalue = overridability.find(name);

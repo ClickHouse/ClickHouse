@@ -1,4 +1,5 @@
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <DataTypes/DataTypeString.h>
 #include <Core/NamesAndTypes.h>
@@ -40,7 +41,7 @@ ColumnsDescription StorageSystemGraphite::getColumnsDescription()
  */
 static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 {
-    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const Databases databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     StorageSystemGraphite::Configs graphite_configs;
 
     for (const auto & db : databases)
@@ -151,3 +152,6 @@ void StorageSystemGraphite::fillData(MutableColumns & res_columns, ContextPtr co
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemGraphite) }

@@ -407,18 +407,18 @@ MutableSerializationInfoPtr DataTypeTuple::createSerializationInfo(const Seriali
     return std::make_shared<SerializationInfoTuple>(std::move(infos), names);
 }
 
-SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column) const
+SerializationInfoPtr DataTypeTuple::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn());
-    return getSerializationInfoImpl(column);
+        return getSerializationInfo(column_const->getDataColumn(), settings);
+    return getSerializationInfoImpl(column, settings);
 }
 
-SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column) const
+SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColumn & column, const SerializationInfoSettings & settings) const
 {
     if (const auto * column_replicated = checkAndGetColumn<ColumnReplicated>(&column))
     {
-        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn());
+        auto info = getSerializationInfoImpl(*column_replicated->getNestedColumn(), settings);
         info->appendToKindStack(ISerialization::Kind::REPLICATED);
         return info;
     }
@@ -431,7 +431,7 @@ SerializationInfoMutablePtr DataTypeTuple::getSerializationInfoImpl(const IColum
 
     for (size_t i = 0; i < elems.size(); ++i)
     {
-        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i));
+        auto element_info = elems[i]->getSerializationInfo(column_tuple.getColumn(i), settings);
         infos.push_back(const_pointer_cast<SerializationInfo>(element_info));
     }
 
@@ -498,9 +498,9 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 {
     factory.registerDataType("Tuple", create, DataTypeFactory::Case::Sensitive, Documentation{
             .description = R"DOCS_MD(
-A tuple of elements, each having an individual [type](/sql-reference/data-types). Tuple must contain at least one element.
+A tuple of elements, each having an individual [type](/reference/data-types). Tuple must contain at least one element.
 
-Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](../../sql-reference/operators/in.md) and [Higher order functions](/sql-reference/functions/overview#higher-order-functions).
+Tuples are used for temporary column grouping. Columns can be grouped when an IN expression is used in a query, and for specifying certain formal parameters of lambda functions. For more information, see the sections [IN operators](/reference/statements/in) and [Higher order functions](/reference/functions/regular-functions/overview#higher-order-functions).
 
 Tuples can be the result of a query. In this case, for text formats other than JSON, values are comma-separated in `()`. In JSON formats, tuples are output as arrays (in `[]`).
 
@@ -554,7 +554,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/operations/settings/formats#input_format_null_as_default), the interfered type is [Nullable](../../sql-reference/data-types/nullable.md).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/reference/settings/formats/input-format#input_format_null_as_default), the interfered type is [Nullable](/reference/data-types/nullable).
 
 Example of automatic data type detection:
 
@@ -672,9 +672,9 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::warning Experimental Feature
-Requires `SET allow_experimental_nullable_tuple_type = 1`
-This is an experimental feature and may change in future versions.
+:::note Beta Feature
+Requires `SET enable_nullable_tuple_type = 1`
+This is a Beta feature.
 :::
 
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
@@ -687,7 +687,7 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET allow_experimental_nullable_tuple_type = 1;
+SET enable_nullable_tuple_type = 1;
 
 CREATE TABLE test (
     id UInt32,

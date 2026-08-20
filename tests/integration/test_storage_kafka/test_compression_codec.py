@@ -5,7 +5,6 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.kafka.common_direct import *
 import helpers.kafka.common as k
 from helpers.test_tools import TSV
 from contextlib import contextmanager
@@ -212,7 +211,7 @@ def test_settings_precedence(kafka_cluster, create_query_generator):
 """
     config_file_path = "/etc/clickhouse-server/config.d/compression_codec.xml"
 
-    # Clickhouse has to be restarted to apply the default config
+    # ClickHouse has to be restarted to apply the default config
     with restart_clickhouse_after():
         # The topic doesn't need to be created, because we only check the applied compression codec in producer creation logs
         with instance.with_replace_config(config_file_path, producer_specific_config):

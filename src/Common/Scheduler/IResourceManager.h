@@ -23,7 +23,7 @@ struct ClassifierSettings
 
 /*
  * Instance of derived class holds everything required for resource consumption,
- * including resources currently registered at `SchedulerRoot`. This is required to avoid
+ * including resources currently registered at the scheduler. This is required to avoid
  * problems during configuration update. Do not hold instances longer than required.
  * Should be created on query start and destructed when query is done.
  */
@@ -53,9 +53,6 @@ class IResourceManager : private boost::noncopyable
 {
 public:
     virtual ~IResourceManager() = default;
-
-    /// Initialize or reconfigure manager.
-    virtual void updateConfiguration(const Poco::Util::AbstractConfiguration & config) = 0;
 
     /// Returns true iff given resource is controlled through this manager.
     virtual bool hasResource(const String & resource_name) const = 0;

@@ -1,0 +1,87 @@
+{
+  "groups": [
+    {
+      "group": "시작하기",
+      "pages": [
+        "ko/chdb/index",
+        "ko/chdb/getting-started"
+      ]
+    },
+    {
+      "group": "언어별 통합",
+      "pages": [
+        "ko/chdb/install/index",
+        "ko/chdb/install/python",
+        "ko/chdb/install/nodejs",
+        "ko/chdb/install/go",
+        "ko/chdb/install/rust",
+        "ko/chdb/install/bun",
+        "ko/chdb/install/c",
+        "ko/chdb/install/adbc"
+      ]
+    },
+    {
+      "group": "DataStore",
+      "pages": [
+        "ko/chdb/datastore/index",
+        "ko/chdb/datastore/quickstart",
+        "ko/chdb/datastore/factory-methods",
+        "ko/chdb/datastore/query-building",
+        "ko/chdb/datastore/aggregation",
+        "ko/chdb/datastore/accessors",
+        "ko/chdb/datastore/io",
+        "ko/chdb/datastore/execution-model",
+        "ko/chdb/datastore/pandas-compat",
+        "ko/chdb/datastore/class-reference"
+      ]
+    },
+    {
+      "group": "구성",
+      "pages": [
+        "ko/chdb/configuration/index",
+        "ko/chdb/configuration/execution-engine",
+        "ko/chdb/configuration/function-config",
+        "ko/chdb/configuration/performance-mode"
+      ]
+    },
+    {
+      "group": "디버깅",
+      "pages": [
+        "ko/chdb/debugging/index",
+        "ko/chdb/debugging/explain",
+        "ko/chdb/debugging/logging",
+        "ko/chdb/debugging/profiling"
+      ]
+    },
+    {
+      "group": "개발자 가이드",
+      "pages": [
+        "ko/chdb/guides/index",
+        "ko/chdb/guides/jupysql",
+        "ko/chdb/guides/querying-pandas",
+        "ko/chdb/guides/querying-apache-arrow",
+        "ko/chdb/guides/querying-s3-bucket",
+        "ko/chdb/guides/querying-parquet",
+        "ko/chdb/guides/query-remote-clickhouse",
+        "ko/chdb/guides/clickhouse-local",
+        "ko/chdb/guides/migration-from-pandas",
+        "ko/chdb/guides/pandas-cookbook",
+        "ko/chdb/guides/pandas-differences",
+        "ko/chdb/guides/pandas-performance",
+        "ko/chdb/guides/pandas-to-sql",
+        "ko/chdb/guides/python-udf"
+      ]
+    },
+    {
+      "group": "기술 참조",
+      "pages": [
+        "ko/chdb/reference/index",
+        "ko/chdb/reference/data-formats",
+        "ko/chdb/reference/sql-reference",
+        "ko/chdb/api/python"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-chdb.svg",
+  "item": "chDB"
+}

@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int AMBIGUOUS_COLUMN_NAME;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
@@ -133,6 +134,20 @@ void validateSupportedColumns(
     }
 }
 
+void validateLakeSchemaColumnNames(const NamesAndTypesList & schema, std::string_view lake_name)
+{
+    size_t position = 0;
+    for (const auto & column : schema)
+    {
+        if (column.name.empty())
+            throw Exception(
+                ErrorCodes::AMBIGUOUS_COLUMN_NAME,
+                "Column name in {} table schema cannot be empty (field at position {})",
+                lake_name, position);
+        ++position;
+    }
+}
+
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
 {
     ASTs::iterator first_key_value_arg_it = args.end();
@@ -185,7 +200,7 @@ std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & funct
 
         auto inserted = key_value_args.emplace(arg_name, arg_value).second;
         if (!inserted)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Duplicate key value argument: {}", arg_name);
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate key value argument: {}", arg_name);
     }
     return key_value_args;
 }

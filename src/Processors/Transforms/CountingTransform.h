@@ -18,9 +18,11 @@ class CountingTransform final : public ExceptionKeepingTransform
 public:
     explicit CountingTransform(
         SharedHeader header,
-        std::shared_ptr<const EnabledQuota> quota_ = nullptr)
+        std::shared_ptr<const EnabledQuota> quota_ = nullptr,
+        UInt64 normalized_query_hash_ = 0)
         : ExceptionKeepingTransform(header, header)
-        , quota(std::move(quota_)) {}
+        , quota(std::move(quota_))
+        , normalized_query_hash(normalized_query_hash_) {}
 
     String getName() const override { return "CountingTransform"; }
 
@@ -48,6 +50,7 @@ protected:
 
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
+    UInt64 normalized_query_hash = 0;
     Chunk cur_chunk;
 };
 

@@ -16,7 +16,7 @@ CREATE TABLE tab (
 )
 ENGINE = MergeTree()
 ORDER BY tuple()
-SETTINGS auto_statistics_types = 'minmax';
+SETTINGS auto_statistics_types = 'basic';
 
 -- Insert a bunch of negative values
 INSERT INTO tab VALUES (-100, -100, -100, -100, -100, -100, -100.0, -100.0, -100.0), (-50, -50, -50, -50, -50, -50, -50.0, -50.0, -50.0), (-1, -1, -1, -1, -1, -1, -1.0, -1.0, -1.0);

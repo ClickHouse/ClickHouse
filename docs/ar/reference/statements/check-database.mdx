@@ -1,0 +1,60 @@
+---
+description: 'توثيق CHECK DATABASE'
+sidebarTitle: 'CHECK DATABASE'
+slug: /sql-reference/statements/check-database
+title: 'تعليمة CHECK DATABASE'
+doc_type: 'reference'
+---
+
+يتحقق استعلام `CHECK DATABASE` من سلامة قاعدة البيانات.
+
+يُستخدم هذا الاستعلام أساسًا مع محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، إذ يتحقق من إمكانية الوصول إلى الكتالوج الخارجي الذي تستند إليه قاعدة البيانات، ومن إمكانية استرجاع قائمة الجداول فيه. وهذا فحص خفيف: فهو يؤكد الاتصال والمصادقة من دون قراءة أي بيانات من الجداول.
+
+<div id="syntax">
+  ## الصياغة
+</div>
+
+الصياغة الأساسية للاستعلام كما يلي:
+
+```sql
+CHECK DATABASE database_name
+```
+
+* `database_name`: يحدّد اسم قاعدة البيانات التي تريد التحقّق منها.
+
+لا يُرجع الاستعلام مجموعة نتائج. إذا نجح الفحص، يكتمل الاستعلام من دون إرجاع أي صفوف. وإذا فشل الفحص — على سبيل المثال، إذا تعذّر الوصول إلى الكتالوج أو لم تعد بيانات الاعتماد صالحة — فإن الاستعلام يطرح استثناءً يوضّح سبب الفشل.
+
+<div id="behavior">
+  ## السلوك
+</div>
+
+بالنسبة إلى قاعدة بيانات تستخدم المحرك [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، فإن `CHECK DATABASE`:
+
+* يتصل بالكتالوج الخارجي (على سبيل المثال، AWS Glue أو Databricks Unity أو Hive Metastore أو Iceberg REST catalog) ويسترجع قائمة الجداول منه.
+* يشير إلى النجاح إذا كان الكتالوج متاحًا وكانت المصادقة صالحة.
+* لا يشترط أن يحتوي الكتالوج على أي جداول: فحتى الكتالوج الفارغ، ما دام يمكن الوصول إليه، يُعد سليمًا.
+
+بالنسبة إلى محركات قواعد البيانات التي لا تنفّذ فحص سلامة مخصصًا، يكتمل `CHECK DATABASE` بنجاح من دون تنفيذ أي إجراء.
+
+يتطلب تنفيذ `CHECK DATABASE` امتياز `CHECK` على قاعدة البيانات (راجع [`GRANT`](/ar/reference/statements/grant)).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+تحقق من قاعدة بيانات `DataLakeCatalog` المسماة `datalake`:
+
+```sql title="Query"
+CHECK DATABASE datalake;
+```
+
+إذا كان بالإمكان الوصول إلى الكتالوج وكانت بيانات الاعتماد صالحة، فسيكتمل الاستعلام بنجاح ولن يُرجع أي صفوف.
+
+أما إذا تعذر الوصول إلى الكتالوج، فسينتهي الاستعلام بطرح استثناء بدلًا من ذلك. وتعتمد الرسالة الدقيقة على نوع الكتالوج وسبب الفشل الأساسي (على سبيل المثال، خطأ في الاتصال، أو حالة HTTP مثل `401 Unauthorized`، أو فشل في حل أسماء DNS).
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`CHECK TABLE`](/ar/reference/statements/check-table)
+* [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)

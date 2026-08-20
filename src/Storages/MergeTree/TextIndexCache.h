@@ -67,6 +67,23 @@ public:
             ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         return std::move(cache_entry);
     }
+
+    void setNotFound(UInt128 key)
+    {
+        set(key, notFoundEntry());
+    }
+
+    static bool isNotFound(const MappedPtr & entry)
+    {
+        return entry == notFoundEntry();
+    }
+
+private:
+    static const MappedPtr & notFoundEntry()
+    {
+        static const auto entry = std::make_shared<TokenPostingsInfo>();
+        return entry;
+    }
 };
 
 /// Estimate of the memory usage (bytes) of a text index header in cache
@@ -105,12 +122,13 @@ public:
     }
 };
 
-/// Discriminators mixed into the cache key so the three cell kinds occupy disjoint key spaces.
+/// Discriminators mixed into the cache key so the cell kinds occupy disjoint key spaces.
 enum class TextIndexPostingsCacheKind : UInt8
 {
     Roaring = 0,
     Segment = 1,
     Flat = 2,
+    Phrase = 3, /// phrase-search result, reusing the Flat (sorted doc-id) payload
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <array>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Columns/ColumnArray.h>
@@ -18,7 +17,8 @@ private:
     static constexpr int32_t MAX_ERROR_VALUE = static_cast<int32_t>(Error::MAX);
 
     static constexpr size_t ARRAY_SIZE = MAX_ERROR_VALUE - MIN_ERROR_VALUE + 1;
-    std::array<std::atomic<uint32_t>, ARRAY_SIZE> error_counts{};
+    /// Not atomic: all access is serialized by AggregatedZooKeeperLog::stats_mutex.
+    std::array<uint32_t, ARRAY_SIZE> error_counts{};
 
     static size_t errorToIndex(Coordination::Error error)
     {
@@ -35,7 +35,7 @@ private:
 public:
     void increment(Coordination::Error error)
     {
-        error_counts[errorToIndex(error)].fetch_add(1, std::memory_order_relaxed);
+        ++error_counts[errorToIndex(error)];
     }
 
     void dumpToMapColumn(DB::ColumnMap * column) const
@@ -48,7 +48,7 @@ public:
         size_t count = 0;
         for (size_t i = 0; i < ARRAY_SIZE; ++i)
         {
-            if (const uint32_t value = error_counts[i].load(std::memory_order_relaxed))
+            if (const uint32_t value = error_counts[i])
             {
                 key_column.insert(indexToError(i));
                 value_column.insert(value);

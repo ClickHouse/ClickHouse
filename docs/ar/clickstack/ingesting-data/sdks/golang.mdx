@@ -1,0 +1,263 @@
+---
+slug: /use-cases/observability/clickstack/sdks/golang
+description: 'حزمة SDK للغة Golang لـ ClickStack - ClickHouse Observability Stack'
+title: 'Golang'
+doc_type: 'guide'
+keywords: ['حزمة SDK لـ Golang وClickStack', 'تكامل Go مع OpenTelemetry', 'Observability في Golang', 'instrumentation للتتبّع في Go', 'حزمة SDK لـ ClickStack وGo']
+---
+
+يستخدم ClickStack معيار OpenTelemetry لجمع بيانات القياس عن بُعد (السجلات و
+التتبعات). وتُنشأ التتبعات تلقائيًا باستخدام automatic instrumentation، لذلك لا
+يلزم إجراء instrumentation يدوي للاستفادة من tracing.
+
+**يدمج هذا الدليل:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ السجلات</td>
+      <td className="pe-2">✅ المقاييس</td>
+      <td className="pe-2">✅ التتبعات</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## البدء
+</div>
+
+<div id="install-opentelemetry">
+  ### ثبّت حزم Instrumentation الخاصة بـ OpenTelemetry
+</div>
+
+لتثبيت حزم Go الخاصة بـ OpenTelemetry وHyperDX، استخدم الأمر أدناه. يُنصح بالاطلاع على [حزم Instrumentation الحالية](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages) وتثبيت الحزم اللازمة لضمان إرفاق معلومات التتبّع بشكل صحيح.
+
+```shell
+go get -u go.opentelemetry.io/otel
+go get -u github.com/hyperdxio/otel-config-go
+go get -u github.com/hyperdxio/opentelemetry-go
+go get -u github.com/hyperdxio/opentelemetry-logs-go
+```
+
+<div id="native-http-server-example">
+  ### مثال على خادم HTTP المدمج (net/http)
+</div>
+
+في هذا المثال، سنستخدم `net/http/otelhttp`.
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+```
+
+راجع الأقسام التي تحتوي على تعليقات لتتعرّف على كيفية إضافة أدوات الرصد إلى تطبيق Go الخاص بك.
+
+```go
+
+package main
+
+import (
+  "context"
+  "io"
+  "log"
+  "net/http"
+  "os"
+
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+  "go.opentelemetry.io/otel/sdk/resource"
+)
+
+// configure common attributes for all logs
+func newResource() *resource.Resource {
+  hostName, _ := os.Hostname()
+  return resource.NewWithAttributes(
+    semconv.SchemaURL,
+    semconv.ServiceVersion("1.0.0"),
+    semconv.HostName(hostName),
+  )
+}
+
+// attach trace id to the log
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx does not contain a valid span.
+    // There is no trace metadata to add.
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // Initialize otel config and use it across the entire app
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // configure opentelemetry logger provider
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+  // gracefully shutdown logger to flush accumulated signals before program finish
+  defer loggerProvider.Shutdown(ctx)
+
+  // create new logger with opentelemetry zap core and set it globally
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+  logger.Warn("hello world", zap.String("foo", "bar"))
+
+  http.Handle("/", otelhttp.NewHandler(wrapHandler(logger, ExampleHandler), "example-service"))
+
+  port := os.Getenv("PORT")
+  if port == "" {
+    port = "7777"
+  }
+
+  logger.Info("** Service Started on Port " + port + " **")
+  if err := http.ListenAndServe(":"+port, nil); err != nil {
+    logger.Fatal(err.Error())
+  }
+}
+
+// Use this to wrap all handlers to add trace metadata to the logger
+func wrapHandler(logger *zap.Logger, handler http.HandlerFunc) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    logger := WithTraceMetadata(r.Context(), logger)
+    logger.Info("request received", zap.String("url", r.URL.Path), zap.String("method", r.Method))
+    handler(w, r)
+    logger.Info("request completed", zap.String("path", r.URL.Path), zap.String("method", r.Method))
+  }
+}
+
+func ExampleHandler(w http.ResponseWriter, r *http.Request) {
+  w.Header().Add("Content-Type", "application/json")
+  io.WriteString(w, `{"status":"ok"}`)
+}
+```
+
+<div id="gin-application-example">
+  ### مثال لتطبيق Gin
+</div>
+
+في هذا المثال، سنستخدم `gin-gonic/gin`.
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin
+```
+
+راجع الأقسام المعلّق عليها بالتعليقات لمعرفة كيفية تهيئة تطبيق Go الخاص بك لإرسال بيانات الرصد.
+
+```go
+
+package main
+
+import (
+  "context"
+  "log"
+  "net/http"
+
+  "github.com/gin-gonic/gin"
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+)
+
+// attach trace id to the log
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx does not contain a valid span.
+    // There is no trace metadata to add.
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // Initialize otel config and use it across the entire app
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // configure opentelemetry logger provider
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+
+  // gracefully shutdown logger to flush accumulated signals before program finish
+  defer loggerProvider.Shutdown(ctx)
+
+  // create new logger with opentelemetry zap core and set it globally
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+
+  // Create a new Gin router
+  router := gin.Default()
+
+  router.Use(otelgin.Middleware("service-name"))
+
+  // Define a route that responds to GET requests on the root URL
+  router.GET("/", func(c *gin.Context) {
+    _logger := WithTraceMetadata(c.Request.Context(), logger)
+    _logger.Info("Hello World!")
+    c.String(http.StatusOK, "Hello World!")
+  })
+
+  // Run the server on port 7777
+  router.Run(":7777")
+}
+```
+
+<div id="configure-environment-variables">
+  ### إعداد متغيرات البيئة
+</div>
+
+بعد ذلك، ستحتاج إلى إعداد متغيرات البيئة التالية في الصدفة لديك لإرسال بيانات القياس عن بُعد إلى ClickStack عبر مجمّع OpenTelemetry:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+  </Tab>
+</Tabs>
+
+يحتوي متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS` على مفتاح API المتاح عبر تطبيق HyperDX ضمن `Team Settings → API Keys`.

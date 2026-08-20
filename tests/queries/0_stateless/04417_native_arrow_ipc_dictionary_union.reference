@@ -1,0 +1,20 @@
+--- ArrowStream: decode dictionary<dense_union> column ---
+1	Variant(Int32, String)	10
+2	Variant(Int32, String)	x
+3	Variant(Int32, String)	10
+4	Variant(Int32, String)	20
+--- ArrowStream: projecting another column skips the dictionary<union> column ---
+1
+2
+3
+4
+--- Arrow: decode dictionary<dense_union> column ---
+1	Variant(Int32, String)	10
+2	Variant(Int32, String)	x
+3	Variant(Int32, String)	10
+4	Variant(Int32, String)	20
+--- Arrow: projecting another column skips the dictionary<union> column ---
+1
+2
+3
+4

@@ -1,0 +1,51 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ssd-cache
+title: 'tipos de layout de diccionario ssd_cache'
+sidebarTitle: 'ssd_cache'
+description: 'Almacena los datos del diccionario en SSD con un índice en memoria: tipos ssd_cache o complex_key_ssd_cache'
+doc_type: 'reference'
+---
+
+<div id="ssd_cache">
+  ## ssd_cache
+</div>
+
+Es similar a `cache`, pero almacena los datos en SSD y el índice en RAM. Todas las opciones de los diccionarios `cache` relacionadas con la cola de actualización también se pueden aplicar a los diccionarios de caché SSD.
+
+La clave del diccionario es de tipo [UInt64](/es/reference/data-types/int-uint).
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+        PATH '/var/lib/clickhouse/user_files/test_dict'))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <layout>
+        <ssd_cache>
+            <!-- Tamaño del bloque básico de lectura en bytes. Se recomienda que sea igual al tamaño de página del SSD. -->
+            <block_size>4096</block_size>
+            <!-- Tamaño máximo del archivo de caché en bytes. -->
+            <file_size>16777216</file_size>
+            <!-- Tamaño del búfer en RAM en bytes para leer elementos desde SSD. -->
+            <read_buffer_size>131072</read_buffer_size>
+            <!-- Tamaño del búfer en RAM en bytes para acumular elementos antes de volcarlos al SSD. -->
+            <write_buffer_size>1048576</write_buffer_size>
+            <!-- Ruta donde se almacenará el archivo de caché. -->
+            <path>/var/lib/clickhouse/user_files/test_dict</path>
+        </ssd_cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_ssd_cache">
+  ## complex_key_ssd_cache
+</div>
+
+Este tipo de almacenamiento está diseñado para usarse con [claves](/es/reference/statements/create/dictionary/attributes#composite-key) compuestas. Similar a `ssd_cache`.

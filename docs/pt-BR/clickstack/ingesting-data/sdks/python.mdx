@@ -1,0 +1,161 @@
+---
+slug: /use-cases/observability/clickstack/sdks/python
+description: 'Python para ClickStack - a stack de observabilidade do ClickHouse'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'logging', 'integração', 'monitoramento de aplicações']
+---
+
+O ClickStack usa o padrão OpenTelemetry para coletar dados de telemetria (logs e
+traces). Os traces são gerados automaticamente com instrumentação automática, portanto
+não é necessário fazer instrumentação manual para aproveitar o tracing.
+
+Este guia integra:
+
+* **Logs**
+* **Metrics**
+* **Traces**
+
+<div id="getting-started">
+  ## Primeiros passos
+</div>
+
+<div id="install-clickstack-otel-instrumentation-package">
+  ### Instale o pacote de instrumentação OpenTelemetry do ClickStack
+</div>
+
+Use o comando abaixo para instalar o [pacote OpenTelemetry do ClickStack](https://pypi.org/project/hyperdx-opentelemetry/).
+
+```shell
+pip install hyperdx-opentelemetry
+```
+
+Instale as bibliotecas de instrumentação automática do OpenTelemetry para os pacotes usados pela sua aplicação Python. Recomendamos usar a ferramenta
+`opentelemetry-bootstrap`, incluída no SDK Python do OpenTelemetry, para analisar os pacotes da sua aplicação e gerar a lista de bibliotecas disponíveis.
+
+```shell
+opentelemetry-bootstrap -a install
+```
+
+<div id="configure-environment-variables">
+  ### Configure as variáveis de ambiente
+</div>
+
+Depois, você precisará configurar as seguintes variáveis de ambiente no shell para enviar telemetria ao ClickStack por meio do OpenTelemetry Collector:
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+</Tabs>
+
+*A variável de ambiente `OTEL_SERVICE_NAME` é usada para identificar seu serviço no HyperDX e pode ter qualquer nome que você quiser.*
+
+<div id="run-the-application-with-otel-python-agent">
+  ### Execute a aplicação com o agente Python do OpenTelemetry
+</div>
+
+Agora você pode executar a aplicação com o agente Python do OpenTelemetry (`opentelemetry-instrument`).
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+<div id="using-uvicorn-gunicorn-uwsgi">
+  #### Se você estiver usando `Gunicorn`, `uWSGI` ou `uvicorn`
+</div>
+
+Nesse caso, o agente Python do OpenTelemetry exigirá ajustes adicionais para funcionar.
+
+Para configurar o OpenTelemetry em servidores de aplicação que usam o modo pre-fork de servidor web, certifique-se de chamar o método `configure_opentelemetry` dentro do hook post-fork.
+
+<Tabs>
+  <Tab title="Gunicorn">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+
+    def post_fork(server, worker):
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uWSGI">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+    from uwsgidecorators import postfork
+
+    @postfork
+    def init_tracing():
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uvicorn">
+    No momento, o OpenTelemetry [não funciona](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/385) com o `uvicorn` executado com a flag `--reload`
+    ou com múltiplos workers (`--workers`). Recomendamos desabilitar essas flags durante os testes ou usar o Gunicorn.
+  </Tab>
+</Tabs>
+
+<div id="advanced-configuration">
+  ## Configuração avançada
+</div>
+
+<div id="network-capture">
+  #### Captura de rede
+</div>
+
+Ao habilitar os recursos de captura de rede, os desenvolvedores passam a conseguir depurar
+com eficiência os cabeçalhos HTTP e os payloads do corpo das requisições. Isso pode ser feito
+simplesmente definindo a flag `HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` como 1.
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="logs-not-appearing-due-to-log-level">
+  ### Logs não aparecem devido ao nível de log
+</div>
+
+Por padrão, o handler de logging do OpenTelemetry usa o nível `logging.NOTSET`,
+que equivale ao nível WARNING. Você pode especificar o nível de logging ao criar
+um logger:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+<div id="exporting-to-the-console">
+  ### Exportando para o console
+</div>
+
+O SDK Python do OpenTelemetry geralmente exibe erros no console quando eles
+ocorrem. No entanto, se você não encontrar nenhum erro, mas perceber que seus dados
+não estão aparecendo no HyperDX como esperado, é possível ativar o modo de depuração.
+Quando o modo de depuração é ativado, todos os dados de telemetria são exibidos no console,
+permitindo verificar se a sua aplicação está devidamente instrumentada com os
+dados esperados.
+
+```shell
+export DEBUG=true
+```
+
+Saiba mais sobre a instrumentação do OpenTelemetry para Python aqui:
+[https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)
