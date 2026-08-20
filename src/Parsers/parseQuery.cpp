@@ -1,8 +1,7 @@
 #include <Parsers/parseQuery.h>
 
-#include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ParserQuery.h>
-#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/CommonParsers.h>
@@ -320,52 +319,7 @@ ASTPtr tryParseQuery(
     /// to find the statement end. It also skips case 1's carve-out: raw text has no FORMAT clause.
     IParser::Pos lookahead(token_iterator);
     IParser::Pos set_lookahead(token_iterator);
-    /// Committed to SET once the input starts with a genuine SET statement structure:
-    /// 1. `SET PROFILE ...`, `SET ROLE ...`, `SET DEFAULT ROLE ...`, `SET TIME ZONE ...`
-    /// 2. `SET <setting> = ...` (assignment, even if the value is malformed)
-    /// 3. `SET <setting> [, ...]` or `SET <setting> ;` / end of stream, where <setting> is not a PromQL keyword/operator.
-    auto is_promql_keyword = [](std::string_view name) -> bool
-    {
-        static constexpr std::string_view keywords[]
-            = {"and", "or", "unless", "atan2", "by", "without", "on", "ignoring", "group_left", "group_right", "offset", "bool"};
-        for (const auto & kw : keywords)
-        {
-            if (equalsCaseInsensitive(name, kw))
-                return true;
-        }
-        return false;
-    };
-
-    auto is_committed_to_set = [&](IParser::Pos pos) -> bool
-    {
-        Expected probe_expected;
-        if (!ParserKeyword(Keyword::SET).ignore(pos, probe_expected))
-            return false;
-
-        if (ParserKeyword(Keyword::PROFILE).check(pos, probe_expected)
-            || ParserKeyword(Keyword::ROLE).check(pos, probe_expected)
-            || ParserKeyword(Keyword::DEFAULT).check(pos, probe_expected)
-            || ParserKeyword(Keyword::TIME_ZONE).check(pos, probe_expected))
-            return true;
-
-        ASTPtr identifier_node;
-        if (!ParserCompoundIdentifier().parse(pos, identifier_node, probe_expected))
-            return false;
-
-        String identifier_name;
-        tryGetIdentifierNameInto(identifier_node, identifier_name);
-
-        if (pos->type == TokenType::Equals)
-            return true;
-
-        if ((pos->type == TokenType::Comma || pos->type == TokenType::Semicolon || pos->type == TokenType::EndOfStream)
-            && !is_promql_keyword(identifier_name))
-            return true;
-
-        return false;
-    };
-
-    const bool committed_to_set = parser.consumesRawText() && is_committed_to_set(set_lookahead);
+    const bool committed_to_set = parser.consumesRawText() && isCommittedToSetQuery(set_lookahead);
     const bool consumes_raw_text = parser.consumesRawText() && !committed_to_set;
     if (consumes_raw_text || !ParserKeyword(Keyword::INSERT_INTO).ignore(lookahead))
     {
@@ -406,8 +360,9 @@ ASTPtr tryParseQuery(
 
     // More granular checks for queries other than INSERT w/inline data.
     /// Lexical error, unless the parser read the raw text itself and only used the tokens
-    /// to delimit the statement (see IParser::consumesRawText).
-    if (last_token.isError() && !parser.consumesRawText())
+    /// to delimit the statement (see IParser::consumesRawText). An input committed to SET
+    /// is ordinary SQL even under a raw-text dialect, so it keeps the lexical error.
+    if (last_token.isError() && !consumes_raw_text)
     {
         out_error_message = getLexicalErrorMessage(
             query_begin, current_statement_end(last_token.end), last_token, hilite, query_description);
@@ -417,7 +372,7 @@ ASTPtr tryParseQuery(
     /// Unmatched parentheses. Skipped for raw-text parsers: `TokenIterator::isValid()` stops at
     /// the first error token, so a lexer-rejected token before a later `)` reads as unmatched.
     UnmatchedParentheses unmatched_parens
-        = parser.consumesRawText() ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
+        = consumes_raw_text ? UnmatchedParentheses{} : checkUnmatchedParentheses(TokenIterator(tokens));
     if (!unmatched_parens.empty())
     {
         /// `checkUnmatchedParentheses` walks the entire remaining input, so it can

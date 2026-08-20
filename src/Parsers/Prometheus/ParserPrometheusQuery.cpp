@@ -28,10 +28,13 @@ ParserPrometheusQuery::ParserPrometheusQuery(const String & database_name_, cons
 
 bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserSetQuery set_p;
-
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// The `SET <setting>` shorthand would swallow PromQL queries over a metric named `set`
+    /// (e.g. `set or up`), so SET is parsed only when the input unambiguously starts one.
+    if (isCommittedToSetQuery(pos))
+    {
+        ParserSetQuery set_p;
+        return set_p.parse(pos, node, expected);
+    }
 
     if (table_name.empty())
     {

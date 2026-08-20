@@ -25,10 +25,14 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     /// SET queries are standard ClickHouse SQL and must be handled normally
     /// so that settings like `dialect` and `polyglot_dialect` can be changed.
     /// This is checked before the feature gate so users can recover from
-    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`).
-    ParserSetQuery set_p;
-    if (set_p.parse(pos, node, expected))
-        return true;
+    /// misconfigured profiles (e.g. `SET dialect = 'clickhouse'`). Only an input that
+    /// unambiguously starts a SET statement is taken from the foreign text, so that the
+    /// `SET <setting>` shorthand does not swallow statements merely starting with `set`.
+    if (isCommittedToSetQuery(pos))
+    {
+        ParserSetQuery set_p;
+        return set_p.parse(pos, node, expected);
+    }
 
     if (!feature_enabled)
         throw Exception(

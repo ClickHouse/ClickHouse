@@ -25,3 +25,5 @@
 OK
 -- a malformed SET still gets the ordinary SQL lexical error
 Unrecognized token
+-- a malformed SET without = still gets the ordinary SQL lexical error
+Unrecognized token
