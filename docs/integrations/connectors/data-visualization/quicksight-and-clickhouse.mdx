@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
 
@@ -82,7 +82,7 @@ QuickSight requires several additional settings in the MySQL user's profile.
 
 However, it is recommended to assign it to a different profile that can be used by your MySQL user instead of the default one.
 
-Finally, configure the Clickhouse Server to listen on the desired IP address(es).
+Finally, configure the ClickHouse Server to listen on the desired IP address(es).
 In `config.xml`, uncomment out the following to listen on all addresses:
 
 ```bash

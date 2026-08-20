@@ -37,6 +37,10 @@ doc_type: 'reference'
 
 입력 문자열 `s`의 각 비트를 확률 `p`에 따라 반전합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -80,6 +84,10 @@ FROM numbers(3)
 시스템에서 얻은 초기 상태를 사용하는 선형 합동 생성기를 사용하므로, 겉보기에는 무작위처럼 보이지만 실제로는 진정한 무작위가 아니며 초기 상태를 알고 있으면 예측할 수 있습니다.
 진정한 무작위성이 중요한 경우에는 시스템 수준 호출이나 외부 라이브러리 연동과 같은 다른 방법의 사용을 고려하십시오.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -119,6 +127,10 @@ SELECT rand();
 시스템에서 얻은 초기 상태를 사용하는 선형 합동 생성기를 사용합니다. 따라서 무작위처럼 보이지만, 실제로는 진정한 무작위는 아니며 초기 상태를 알면 예측할 수 있습니다.
 진정한 무작위성이 중요한 경우에는 시스템 수준 호출을 사용하거나 외부 라이브러리를 연동하는 등의 대체 방법을 고려하십시오.
 
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -149,9 +161,13 @@ SELECT rand64();
   ## randBernoulli
 </div>
 
-도입된 버전: v22.10.0
+도입 버전: v22.10.0
 
 [베르누이 분포](https://en.wikipedia.org/wiki/Bernoulli_distribution)에서 생성된 임의의 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -194,6 +210,10 @@ SELECT randBernoulli(.75) FROM numbers(5)
 
 [이항 분포](https://en.wikipedia.org/wiki/Binomial_distribution)에서 생성된 무작위 Float64 값을 반환합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -208,7 +228,7 @@ randBinomial(experiments, probability[, x])
 
 **반환 값**
 
-지정된 이항 분포에서 추출된 무작위 Float64 숫자를 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
+지정된 이항 분포에서 추출된 무작위 Float64 값을 반환합니다. [`UInt64`](/ko/reference/data-types/int-uint)
 
 **예시**
 
@@ -235,6 +255,10 @@ SELECT randBinomial(100, .75) FROM numbers(5)
 도입 버전: v22.11.0
 
 `0`(포함) 이상 `1`(미포함) 미만 범위에서 균등 분포를 따르는 무작위 `Float64` 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -269,6 +293,10 @@ SELECT randCanonical();
 도입 버전: v22.10.0
 
 [카이제곱 분포](https://en.wikipedia.org/wiki/Chi-squared_distribution)를 따르는 무작위 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -318,6 +346,10 @@ SELECT randChiSquared(10) FROM numbers(5)
 
 데이터셋의 모든 행에 일관된 랜덤 시드 또는 식별자를 적용할 때 유용합니다
 
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -366,6 +398,10 @@ SELECT randConstant(10) AS random_value;
 
 [지수 분포](https://en.wikipedia.org/wiki/Exponential_distribution)를 따르는 무작위 Float64 값을 반환합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -405,7 +441,11 @@ SELECT randExponential(1/10) FROM numbers(5)
 
 도입 버전: v22.10.0
 
-[F-분포](https://en.wikipedia.org/wiki/F-distribution)를 따르는 임의의 Float64 수를 반환합니다.
+[F-분포](https://en.wikipedia.org/wiki/F-distribution)를 따르는 임의의 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -421,7 +461,7 @@ randFisherF(d1, d2[, x])
 
 **반환 값**
 
-지정된 F-분포에서 추출된 임의의 Float64 숫자를 반환합니다. [`Float64`](/ko/reference/data-types/float)
+지정된 F-분포에서 추출된 임의의 Float64 값을 반환합니다. [`Float64`](/ko/reference/data-types/float)
 
 **예시**
 
@@ -448,6 +488,10 @@ SELECT randFisherF(10, 3) FROM numbers(5)
 도입 버전: v22.10.0
 
 [로그 정규 분포](https://en.wikipedia.org/wiki/Log-normal_distribution)를 따르는 임의의 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -491,6 +535,10 @@ SELECT randLogNormal(100, 5) FROM numbers(5)
 
 [음이항 분포](https://en.wikipedia.org/wiki/Negative_binomial_distribution)를 따르는 무작위 Float64 값을 반환합니다.
 
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -533,6 +581,10 @@ SELECT randNegativeBinomial(100, .75) FROM numbers(5)
 
 [정규 분포](https://en.wikipedia.org/wiki/Normal_distribution)를 따르는 무작위 `Float64` 값을 반환합니다.
 
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -573,7 +625,11 @@ SELECT randNormal(10, 2) FROM numbers(5)
 
 도입 버전: v22.10.0
 
-[포아송 분포](https://en.wikipedia.org/wiki/Poisson_distribution)를 따르는 임의의 Float64 숫자를 반환합니다.
+[포아송 분포](https://en.wikipedia.org/wiki/Poisson_distribution)를 따르는 임의의 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -616,6 +672,10 @@ SELECT randPoisson(10) FROM numbers(5)
 
 [Student&#39;s t-distribution](https://en.wikipedia.org/wiki/Student%27s_t-distribution)을 따르는 임의의 Float64 값을 반환합니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -656,6 +716,10 @@ SELECT randStudentT(10) FROM numbers(5)
 도입 버전: v22.10.0
 
 구간 $[\min, \max]$에서 균등하게 추출된 무작위 Float64 값을 반환합니다.
+
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -700,6 +764,10 @@ SELECT randUniform(5.5, 10) FROM numbers(5)
 지정된 문자 수의 고정 길이 무작위 문자열을 생성합니다.
 반환되는 문자가 반드시 ASCII 문자일 필요는 없으므로, 출력할 수 없는 문자일 수도 있습니다.
 
+<Note>
+  이 함수는 비결정적입니다. 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -723,9 +791,9 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 ```
 
 ```response title=Response
-┌─rnd──────┬─toTypeName(randomFixedString(13))─┐
-│ j▒h㋖HɨZ'▒ │ FixedString(13)                 │
-└──────────┴───────────────────────────────────┘
+┌─rnd────────┬─toTypeName(randomFixedString(13))─┐
+│ j▒h㋖HɨZ'▒ │ FixedString(13)                   │
+└────────────┴───────────────────────────────────┘
 ```
 
 <div id="randomPrintableASCII">
@@ -737,6 +805,10 @@ SELECT randomFixedString(13) AS rnd, toTypeName(rnd)
 지정한 길이의 임의 [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) 문자열을 생성합니다.
 
 `length < 0`을 전달하면 함수의 동작이 정의되지 않습니다.
+
+<Note>
+  이 함수는 비결정적입니다. 즉, 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
 
 **구문**
 
@@ -778,6 +850,10 @@ SELECT number, randomPrintableASCII(30) AS str, length(str) FROM system.numbers 
 지정한 개수의 문자로 이루어진 임의의 문자열을 생성합니다.
 반환되는 문자가 반드시 ASCII 문자는 아니므로, 출력할 수 없는 문자일 수 있습니다.
 
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -816,6 +892,10 @@ SELECT randomString(5) AS str FROM numbers(2)
 할당되지 않은 [평면](https://en.wikipedia.org/wiki/Plane_\(Unicode\))(4번부터 13번 평면까지)의 코드 포인트는 반환되지 않습니다.
 다만 ClickHouse 서버와 상호작용하는 클라이언트에서 생성된 UTF-8 문자열을 올바르게 표시하지 못할 수도 있습니다.
 
+<Note>
+  이 함수는 비결정적이므로 동일한 인수에 대해서도 서로 다른 결과를 반환할 수 있습니다.
+</Note>
+
 **구문**
 
 ```sql
@@ -840,7 +920,7 @@ SELECT randomStringUTF8(13)
 
 ```response title=Response
 ┌─randomStringUTF8(13)─┐
-│ 𘤗𙉝д兠庇󡅴󱱎󦐪􂕌𔊹𓰛       │
+│ 󶡕𲉗𩍄ԍ╃𑄅󦨁󷌁󬾣𹼫󤓆󺜘󩶧         │
 └──────────────────────┘
 ```
 

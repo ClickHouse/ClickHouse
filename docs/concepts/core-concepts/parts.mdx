@@ -38,13 +38,20 @@ A data part is created whenever a set of rows is inserted into the table. The fo
 
 When a ClickHouse server processes the example insert with 4 rows (e.g., via an [INSERT INTO statement](/reference/statements/insert-into)) sketched in the diagram above, it performs several steps:
 
-① **Sorting**: The rows are sorted by the table's sorting key `(town, street)`, and a [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the sorted rows.
-
-② **Splitting**: The sorted data is split into columns.
-
-③ **Compression**: Each column is [compressed](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
-
-④ **Writing to Disk**: The compressed columns are saved as binary column files within a new directory representing the insert's data part. The sparse primary index is also compressed and stored in the same directory.
+<Steps>
+<Step title="Sorting">
+The rows are sorted by the table's sorting key `(town, street)`, and a [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) is generated for the sorted rows.
+</Step>
+<Step title="Splitting">
+The sorted data is split into columns.
+</Step>
+<Step title="Compression">
+Each column is [compressed](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+</Step>
+<Step title="Writing to disk">
+The compressed columns are saved as binary column files within a new directory representing the insert's data part. The sparse primary index is also compressed and stored in the same directory.
+</Step>
+</Steps>
 
 Depending on the table's specific engine, additional transformations [may](/reference/settings/session-settings) take place alongside sorting.
 
@@ -52,7 +59,7 @@ Data parts are self-contained, including all metadata needed to interpret their 
 
 ## Part merges {#part-merges}
 
-To manage the number of parts per table, a [background merge](/concepts/core-concepts/merges) job periodically combines smaller parts into larger ones until they reach a [configurable](/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) compressed size (typically ~150 GB). Merged parts are marked as inactive and deleted after a [configurable](/reference/settings/merge-tree-settings#old_parts_lifetime) time interval. Over time, this process creates a hierarchical structure of merged parts, which is why it's called a MergeTree table:
+To manage the number of parts per table, a [background merge](/concepts/core-concepts/merges) job periodically combines smaller parts into larger ones until they reach a [configurable](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) compressed size (typically ~150 GB). Merged parts are marked as inactive and deleted after a [configurable](/reference/settings/merge-tree-settings/other#old_parts_lifetime) time interval. Over time, this process creates a hierarchical structure of merged parts, which is why it's called a MergeTree table:
 
 <Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
 

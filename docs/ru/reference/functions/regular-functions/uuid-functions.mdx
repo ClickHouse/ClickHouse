@@ -6,11 +6,7 @@ title: 'Функции для работы с UUID'
 doc_type: 'reference'
 ---
 
-import DeprecatedBadge from "/snippets/ru/components/DeprecatedBadge/DeprecatedBadge.jsx";
-
-<div id="functions-for-working-with-uuids">
-  # Функции для работы с UUID
-</div>
+import { DeprecatedBadge } from "/snippets/ru/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <div id="uuidv7-generation">
   ## Генерация UUIDv7
@@ -239,7 +235,7 @@ UUIDv7ToDateTime(uuid[, timezone])
 **Аргументы**
 
 * `uuid` — UUID версии 7. [`String`](/ru/reference/data-types/string)
-* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательный параметр. [Имя часового пояса](/ru/reference/settings/server-settings/settings/other#timezone) для возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -267,53 +263,8 @@ SELECT UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America
 
 ```response title=Response
 ┌─UUIDv7ToDateTime(toUUID('018f05c9-4ab8-7b86-b64e-c9f03fbd45d1'), 'America/New_York')─┐
-│                                                             2024-04-22 11:30:29.048 │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-```
-
-<div id="dateTime64ToSnowflake">
-  ## dateTime64ToSnowflake
-</div>
-
-Добавленный в: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Эта функция устарела и может использоваться только при включенной настройке [`allow_deprecated_snowflake_conversion_functions`](/ru/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions).
-  В будущем функция будет удалена.
-
-  Вместо нее используйте функцию [dateTime64ToSnowflakeID](#dateTime64ToSnowflakeID).
-</Warning>
-
-Преобразует [DateTime64](/ru/reference/data-types/datetime64) в первый [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) для указанного момента времени.
-
-**Синтаксис**
-
-```sql
-dateTime64ToSnowflake(value)
-```
-
-**Аргументы**
-
-* `value` — дата и время. [`DateTime64`](/ru/reference/data-types/datetime64)
-
-**Возвращаемое значение**
-
-Возвращает входное значение, преобразованное в первый Snowflake ID для этого момента времени. [`Int64`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-WITH toDateTime64('2021-08-15 18:57:56.492', 3, 'Asia/Shanghai') AS dt64 SELECT dateTime64ToSnowflake(dt64);
-```
-
-```response title=Response
-┌─dateTime64ToSnowflake(dt64)─┐
-│         1426860704886947840 │
-└─────────────────────────────┘
+│                                                              2024-04-22 08:30:29.048 │
+└──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="dateTime64ToSnowflakeID">
@@ -349,51 +300,6 @@ SELECT dateTime64ToSnowflakeID(toDateTime64('2021-08-15 18:57:56', 3, 'Asia/Shan
 
 ```response title=Response
 6832626394434895872
-```
-
-<div id="dateTimeToSnowflake">
-  ## dateTimeToSnowflake
-</div>
-
-Добавленный в: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Эта функция устарела и может использоваться только при включенном параметре [`allow_deprecated_snowflake_conversion_functions`](/ru/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions).
-  В будущем функция будет удалена.
-
-  Вместо нее используйте функцию [dateTimeToSnowflakeID](#dateTimeToSnowflakeID).
-</Warning>
-
-Преобразует значение [DateTime](/ru/reference/data-types/datetime) в первый [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) для указанного момента времени.
-
-**Синтаксис**
-
-```sql
-dateTimeToSnowflake(value)
-```
-
-**Аргументы**
-
-* `value` — Дата и время. [`DateTime`](/ru/reference/data-types/datetime)
-
-**Возвращаемое значение**
-
-Возвращает входное значение в виде первого Snowflake ID для данного момента времени. [`Int64`](/ru/reference/data-types/int-uint)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-WITH toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai') AS dt SELECT dateTimeToSnowflake(dt);
-```
-
-```response title=Response
-┌─dateTimeToSnowflake(dt)─┐
-│     1426860702823350272 │
-└─────────────────────────┘
 ```
 
 <div id="dateTimeToSnowflakeID">
@@ -437,12 +343,12 @@ SELECT dateTimeToSnowflakeID(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))
 
 Добавленный в: v25.8.0
 
-Преобразует значение [DateTime](/ru/reference/data-types/datetime) в [UUIDv7](https://en.wikipedia.org/wiki/UUID#Version_7) для указанного момента времени.
+Преобразует значение [DateTime](/ru/reference/data-types/datetime) в [UUIDv7](https://www.rfc-editor.org/rfc/rfc9562) для указанного момента времени в соответствии с [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Подробные сведения о структуре UUID, управлении счётчиком и гарантиях параллелизма см. в разделе [&quot;Генерация UUIDv7&quot;](#uuidv7-generation).
 
 <Note>
-  По состоянию на сентябрь 2025 года UUID версии 7 имеют статус черновика, и их структура может измениться в будущем.
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
 </Note>
 
 **Синтаксис**
@@ -469,8 +375,8 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'));
 
 ```response title=Response
 ┌─dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56', 'Asia/Shanghai'))─┐
-│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                   │
-└─────────────────────────────────────────────────────────────────────────┘
+│ 018f05af-f4a8-778f-beee-1bedbc95c93b                                 │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 **несколько UUID для одной и той же временной метки**
@@ -500,6 +406,10 @@ SELECT dateTimeToUUIDv7(toDateTime('2021-08-15 18:57:56'));
 Функция `generateSnowflakeID` гарантирует, что значение поля счётчика в пределах одной временной метки монотонно увеличивается при всех вызовах функции в параллельно выполняющихся потоках и запросах.
 
 Подробности реализации см. в разделе [&quot;Генерация Snowflake ID&quot;](#snowflake-id-generation).
+
+<Note>
+  Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
 
 **Синтаксис**
 
@@ -567,6 +477,10 @@ SELECT generateSnowflakeID('expr', 1);
 
 Генерирует [UUID версии 4](https://tools.ietf.org/html/rfc4122#section-4.4) [UUID](/ru/reference/data-types/uuid).
 
+<Note>
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+</Note>
+
 **Синтаксис**
 
 ```sql
@@ -615,12 +529,12 @@ SELECT generateUUIDv4(1), generateUUIDv4(1);
 
 Добавленный в: v24.5.0
 
-Генерирует [UUID версии 7](https://datatracker.ietf.org/doc/html/draft-peabody-dispatch-new-uuid-format-04) типа [UUID](/ru/reference/data-types/uuid).
+Генерирует [UUID версии 7](https://www.rfc-editor.org/rfc/rfc9562) типа [UUID](/ru/reference/data-types/uuid), определённый в [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562).
 
 Подробные сведения о структуре UUID, управлении счётчиком и гарантиях параллелизма см. в разделе [&quot;Генерация UUIDv7&quot;](#uuidv7-generation).
 
 <Note>
-  По состоянию на сентябрь 2025 года UUID версии 7 имеют статус черновика, и их структура в будущем может измениться.
+  Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
 </Note>
 
 **Синтаксис**
@@ -683,7 +597,7 @@ snowflakeIDToDateTime(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах, отсчитываемых с 1970-01-01. Значение по умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -721,7 +635,7 @@ snowflakeIDToDateTime64(value[, epoch[, time_zone]])
 
 * `value` — Snowflake ID. [`UInt64`](/ru/reference/data-types/int-uint)
 * `epoch` — Необязательно. Эпоха Snowflake ID в миллисекундах с 1970-01-01. По умолчанию — 0 (1970-01-01). Для эпохи Twitter/X (2015-01-01) укажите 1288834974657. [`UInt*`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
+* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings/other#timezone). Функция интерпретирует `time_string` в соответствии с часовым поясом. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -739,98 +653,6 @@ SELECT snowflakeIDToDateTime64(7204436857747984384) AS res
 ┌─────────────────res─┐
 │ 2024-06-06 10:59:58 │
 └─────────────────────┘
-```
-
-<div id="snowflakeToDateTime">
-  ## snowflakeToDateTime
-</div>
-
-Добавленный в: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Эта функция устарела и может использоваться только при включенной настройке [`allow_deprecated_snowflake_conversion_functions`](/ru/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions).
-  В будущем функция будет удалена.
-
-  Вместо нее используйте функцию [`snowflakeIDToDateTime`](#snowflakeIDToDateTime).
-</Warning>
-
-Извлекает компонент временной метки из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime](/ru/reference/data-types/datetime).
-
-**Синтаксис**
-
-```sql
-snowflakeToDateTime(value[, time_zone])
-```
-
-**Аргументы**
-
-* `value` — Snowflake ID. [`Int64`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция разбирает `time_string` с учетом часового пояса. [`String`](/ru/reference/data-types/string)
-
-**Возвращаемое значение**
-
-Возвращает компонент временной метки значения `value`. [`DateTime`](/ru/reference/data-types/datetime)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime(CAST('1426860702823350272', 'Int64'), 'UTC')─┐
-│                                              2021-08-15 10:57:56 │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-<div id="snowflakeToDateTime64">
-  ## snowflakeToDateTime64
-</div>
-
-Добавленный в: v21.10.0
-
-<DeprecatedBadge />
-
-<Warning>
-  Эта функция устарела и может использоваться только при включенной настройке [`allow_deprecated_snowflake_conversion_functions`](/ru/reference/settings/session-settings#allow_deprecated_snowflake_conversion_functions).
-  В будущем функция будет удалена.
-
-  Вместо нее используйте функцию [`snowflakeIDToDateTime64`](#snowflakeIDToDateTime64).
-</Warning>
-
-Извлекает компонент временной метки из [Snowflake ID](https://en.wikipedia.org/wiki/Snowflake_ID) в формате [DateTime64](/ru/reference/data-types/datetime64).
-
-**Синтаксис**
-
-```sql
-snowflakeToDateTime64(value[, time_zone])
-```
-
-**Аргументы**
-
-* `value` — Snowflake ID. [`Int64`](/ru/reference/data-types/int-uint)
-* `time_zone` — Необязательно. [Часовой пояс](/ru/reference/settings/server-settings/settings#timezone). Функция разбирает `time_string` с учётом часового пояса. [`String`](/ru/reference/data-types/string)
-
-**Возвращаемое значение**
-
-Возвращает компонент временной метки значения `value`. [`DateTime64(3)`](/ru/reference/data-types/datetime64)
-
-**Примеры**
-
-**Пример использования**
-
-```sql title=Query
-SELECT snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC');
-```
-
-```response title=Response
-┌─snowflakeToDateTime64(CAST('1426860802823350272', 'Int64'), 'UTC')─┐
-│                                            2021-08-15 10:58:19.841 │
-└────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrDefault">
@@ -868,8 +690,8 @@ SELECT toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-
 
 ```response title=Response
 ┌─toUUIDOrDefault('61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                     │
-└──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 61f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **В случае неудачного преобразования возвращается UUID по умолчанию**
@@ -880,8 +702,8 @@ SELECT toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0
 
 ```response title=Response
 ┌─toUUIDOrDefault('-----61f0c404-5cb3-11e7-907b-a6006ad3dba0', toUUID('59f0c404-5cb3-11e7-907b-a6006ad3dba0'))─┐
-│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                          │
-└───────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ 59f0c404-5cb3-11e7-907b-a6006ad3dba0                                                                         │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 <div id="toUUIDOrNull">

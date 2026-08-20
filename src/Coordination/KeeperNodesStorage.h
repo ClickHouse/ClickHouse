@@ -8,10 +8,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace DB
@@ -20,17 +20,21 @@ namespace DB
 class KeeperStorage;
 struct KeeperSnapshotReader;
 
-/// Iterator over nodes in KeeperStorage, frozen at the moment in time when
-/// KeeperNodeStreamForSnapshot was created. Creation locks storage_mutex but is relatively fast,
-/// then the long-running iteration can proceed after the mutex is unlocked.
-struct KeeperNodeStreamForSnapshot
-{
-    /// Total number of nodes that `next` will report. Storage must provide it in advance.
-    size_t node_count = 0;
+struct AsynchronousMetricValue;
+using AsynchronousMetricValues = std::unordered_map<std::string, AsynchronousMetricValue>;
 
+/// Iterator over nodes in KeeperStorage, frozen at the moment in time when the view was issued.
+/// Issuing locks storage_mutex but is relatively fast, then the long-running iteration can
+/// proceed after the mutex is unlocked. Keeps the storage alive. The destructor releases the
+/// view.
+struct KeeperNodesReadView
+{
+    std::shared_ptr<KeeperStorage> storage_holder;
+
+    virtual size_t getNodeCount() const = 0;
     virtual bool next(std::string_view & out_path, std::string_view & out_data, KeeperNodeStats & out_stats) = 0;
 
-    virtual ~KeeperNodeStreamForSnapshot() { chassert(node_count == 0); }
+    virtual ~KeeperNodesReadView() = default;
 };
 
 struct KeeperStorageStats
@@ -67,6 +71,10 @@ struct KeeperNodesStorage
     using Delta = KeeperDelta;
 
     KeeperContextPtr keeper_context;
+
+    /// Callers of all methods that operate on committed state must hold storage_mutex (in exclusive
+    /// mode for writes, shared or exclusive for reads), even if called from only one thread.
+    /// Because KeeperLSMTNodesStorage uses this same mutex for synchronizing with background threads.
     SharedMutex * storage_mutex = nullptr;
 
     KeeperNodesStorage(KeeperContextPtr keeper_context_, SharedMutex * storage_mutex_) : keeper_context(std::move(keeper_context_)), storage_mutex(storage_mutex_) {}
@@ -78,6 +86,9 @@ struct KeeperNodesStorage
     /// Assigns just the fields relevant to node storage. Other fields are set by KeeperStorage.
     /// Caller must hold storage_mutex (shared_lock is sufficient).
     virtual void getNodeStorageStats(KeeperStorageStats & out) = 0;
+
+    /// Populate implementation-specific asynchronous metrics. Locks storage_mutex itself.
+    virtual void fillAsynchronousMetrics(AsynchronousMetricValues & /*new_values*/) {}
 
     /// (A little slower than getCommittedNode/getUncommittedNode, so most request processing should
     ///  be a template and use getCommittedNode instead.)
@@ -94,15 +105,13 @@ struct KeeperNodesStorage
     virtual void updateCommittedNode(std::string_view path, std::optional<const KeeperNodeStats *> new_stats, std::optional<std::string_view> new_data, uint64_t * out_digest) = 0;
     virtual void removeCommittedNode(std::string_view path) = 0;
 
-    /// Caller must hold storage mutex.
-    /// At most one stream can exist at any given time.
-    /// Stream must be destroyed using finishWritingSnapshot (with storage mutex held), otherwise
-    /// destructor fails assert.
-    virtual std::unique_ptr<KeeperNodeStreamForSnapshot> beginWritingSnapshot() = 0;
-    /// Should set stream->node_count = 0 to tell destructor to be chill.
-    virtual void finishWritingSnapshot(std::unique_ptr<KeeperNodeStreamForSnapshot> stream) = 0;
+    /// Issue a consistent lock-free read view of committed nodes. Locks the storage mutex
+    /// internally; caller must not hold it. The returned view doesn't pin the storage yet;
+    /// issue views through KeeperStorage::issueReadView, which attaches the pin.
+    virtual std::unique_ptr<KeeperNodesReadView> issueReadView() = 0;
 
     /// Does only createStreams-finishStreams on `reader`, the caller does everything before and after that.
+    /// Caller must *not* hold storage_mutex.
     virtual void loadNodesFromSnapshot(KeeperSnapshotReader & reader, KeeperStorage * storage, uint64_t * out_digest) = 0;
 
     virtual void commitDelta(Delta & delta, uint64_t * digest) = 0;
@@ -111,6 +120,10 @@ struct KeeperNodesStorage
     virtual void cleanupAfterRollback(std::vector<uint64_t> /*rollbacked_zxids*/) {}
     /// Call to calculate digest after preparing all uncommitted changes for a given zxid.
     virtual void updateNodesDigest(uint64_t & /*current_digest*/, uint64_t /*zxid*/) const {}
+
+    /// May sleep for a short time if the storage's background work fell behind, to backpressure
+    /// writes. Call once per write transaction, without holding storage_mutex.
+    virtual void throttleWrite() const {}
 
     virtual void recalculateStats() {}
 
@@ -142,6 +155,7 @@ struct KeeperNodesStorage
     ///
     ///   /// Traverses subtree in pre-order (parent before children). Stops early and returns false
     ///   /// if callback returns false or if more than `limit` nodes are found.
+    ///   /// The root node counts toward `limit` (so `limit = 0` never visits an existing root).
     ///   /// Returns true if the whole subtree was visited (reported to check_node).
     ///   /// If the root node doesn't exist, returns true.
     ///   bool visitUncommittedRecursive(

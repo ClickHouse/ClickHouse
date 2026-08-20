@@ -55,31 +55,23 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### 创建新服务
-
+      <Step title="创建新服务" id="create-a-service">
         在 ClickHouse Cloud 首页中，选择 `New service` 以创建新服务。
 
         <Image img="/images/clickstack/getting-started/new_service.webp" size="lg" alt="服务 服务" border />
       </Step>
 
-      <Step>
-        ### 指定您的提供商、区域和资源
-
+      <Step title="指定您的提供商、区域和资源" id="specify-your-region-and-resources">
         <ProviderSelection />
       </Step>
 
-      <Step>
-        ### 配置摄取
-
+      <Step title="配置摄取" id="setup-ingestion-create-new">
         服务预配完成后，确保已选中该服务，然后在左侧菜单中点击 &quot;ClickStack&quot;。
 
         <SetupManagedIngestion />
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-cloud-create-new">
         <NavigateClickStackUI />
 
         <br />
@@ -91,9 +83,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
     <br />
 
     <Steps>
-      <Step>
-        ### 选择服务
-
+      <Step title="选择服务" id="select-service">
         在 ClickHouse Cloud 首页中，选择要为其启用托管 ClickStack 的服务。
 
         <Warning>
@@ -107,9 +97,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         <Image img="/images/clickstack/select_service.webp" alt="选择服务" size="lg" />
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-the-clickstack-ui-existing">
         在左侧导航菜单中选择 &#39;ClickStack&#39;。系统会将你重定向到 ClickStack UI，并根据你的 ClickHouse Cloud 权限自动完成身份验证。
 
         如果你的服务中已存在任何 OpenTelemetry 表，系统会自动检测到它们，并创建相应的数据源。
@@ -127,9 +115,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         如果这一步成功，那就大功告成了——你已经全部就绪 🎉；否则请继续设置摄取。
       </Step>
 
-      <Step>
-        ### 设置摄取
-
+      <Step title="配置摄取" id="setup-ingestion-existing-service">
         如果自动检测失败，或您没有现有的表，系统将提示您配置摄取。
 
         <Image img="/images/clickstack/clickstack-ui-setup-ingestion.webp" alt="在 ClickStack UI 中配置摄取" size="lg" />
@@ -153,7 +139,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
 
             ### 启动 collector
 
-            以下内容假定你采用推荐方式：使用 **ClickStack 发行版的 OpenTelemetry Collector**。它包含额外的处理能力，并专门针对 ClickHouse Cloud 进行了优化。如果你想使用自己的 OpenTelemetry Collector，请参阅[“配置现有 collector。”](#configure-existing-collectors)
+            以下内容假定你采用推荐方式：使用 **ClickStack 发行版的 OpenTelemetry Collector**。它包含额外的处理能力，并专门针对 ClickHouse Cloud 进行了优化。如果你想使用自己的 OpenTelemetry Collector，请参阅[“配置现有 collector。”](#configure-existing-collectors-existing)
 
             为了快速开始，请复制并运行下方所示的 Docker 命令。
 
@@ -260,9 +246,7 @@ import ProviderSelection from '/snippets/zh/clickstack/_select_provider.mdx';
         </Tabs>
       </Step>
 
-      <Step>
-        ### 前往 ClickStack UI
-
+      <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-existing-service">
         完成摄取设置并开始发送数据后，选择 &quot;Next&quot;。
 
         <Tabs>

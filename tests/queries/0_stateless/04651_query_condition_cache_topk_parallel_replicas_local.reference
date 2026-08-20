@@ -1,0 +1,14 @@
+--- The local parallel replicas plan returns the same rows as the plain read
+10000
+11000
+12000
+10000
+11000
+12000
+--- A TopK read of the local parallel replicas plan writes no QCC entry
+0
+--- A TopK read of the local parallel replicas plan must not reuse a plain entry
+04651_topk_pr_write	0
+04651_plain_prime	0
+04651_plain_reuse	1
+04651_topk_pr_after_prime	0

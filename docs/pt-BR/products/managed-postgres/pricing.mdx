@@ -2,20 +2,16 @@
 slug: /cloud/managed-postgres/pricing
 sidebarTitle: 'Preços'
 title: 'Preços'
-description: 'Modelo de preços, tiers, tipos de instância e detalhes de preços na versão Beta do Postgres gerenciado pelo ClickHouse'
+description: 'Modelo de preços, tiers, tipos de instância e detalhes de preços na versão Beta do ClickHouse Managed Postgres'
 keywords: ['preços do postgres', 'custo do managed postgres', 'preços do postgres na beta', 'calculadora de preços do postgres', 'preços de nvme', 'preços por tier do postgres']
 doc_type: 'reference'
 ---
 
-import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pricing-beta" />
 
-Postgres managed by ClickHouse é baseado em armazenamento NVMe local, o que permite oferecer desempenho pronto para produção e integração nativa com ClickHouse sem a sobrecarga de custos das arquiteturas tradicionais de armazenamento conectado à rede. Esta página aborda o modelo de preços, os tipos de instância disponíveis e a comparação entre os tiers do serviço.
-
-Postgres managed by ClickHouse já está disponível em Beta. O serviço permanece gratuito até o início da medição de uso em 15 de junho de 2026, dando às equipes tempo para dimensionar as instâncias adequadamente antes do início da cobrança.
-
-Durante o período beta, todos os planos incluem um desconto de 50%, refletindo nosso compromisso com nossos primeiros clientes. Os preços começam em aproximadamente **US$ 30/mês** para 1 vCPU, 8 GB de RAM e 59 GB de armazenamento NVMe.
+ClickHouse Managed Postgres é baseado em armazenamento NVMe local, o que permite oferecer desempenho pronto para produção e integração nativa com ClickHouse sem a sobrecarga de custos das arquiteturas tradicionais de armazenamento conectado à rede. Esta página aborda o modelo de preços, os tipos de instância disponíveis e a comparação entre os tiers do serviço, que está em beta.
 
 <Tip>
   **Calculadora de preços**
@@ -62,7 +58,7 @@ A tabela abaixo resume os recursos, as capacidades e os limites incluídos em ca
       <li><a href="/pt-BR/products/managed-postgres/extensions">Mais de 90 extensões do Postgres</a></li>
       <li><a href="/pt-BR/products/managed-postgres/clickhouse-integration">CDC nativo para ClickHouse</a></li>
       <li><a href="/pt-BR/products/managed-postgres/extensions">extensão <code>pg&#95;clickhouse</code></a></li>
-      <li><a href="/pt-BR/products/managed-postgres/migrations/clickhouse-cloud">Migração de dados totalmente gerenciada</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/migrations/clickpipes">Migração de dados totalmente gerenciada</a></li>
       <li>Suporte especializado com resposta em 1 dia útil</li>
       <li><a href="/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account">Autenticação de login único (SSO)</a> com login social do Google ou da Microsoft</li>
       <li><a href="/pt-BR/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa">Autenticação multifator</a></li>
@@ -95,8 +91,8 @@ A tabela abaixo resume os recursos, as capacidades e os limites incluídos em ca
       <li>Suporte Enterprise com tempo de resposta de 30 min para incidentes de Severidade 1</li>
       <li>Regiões privadas</li>
       <li>Engenheiro de Suporte principal designado</li>
-      <li><a href="/pt-BR/products/managed-postgres/extensions">Extensões personalizadas</a> (*sujeito à aprovação)</li>
-      <li><a href="/pt-BR/products/managed-postgres/migrations/clickhouse-cloud">Guias de migração consultiva</a></li>
+      <li><a href="/pt-BR/products/managed-postgres/extensions">Extensões personalizadas</a> (&#42;sujeito à aprovação)</li>
+      <li><a href="/pt-BR/products/managed-postgres/migrations/clickpipes">Guias de migração consultiva</a></li>
       <li><a href="/pt-BR/products/managed-postgres/upgrades">Atualizações agendadas</a></li>
     </ul>
   </div>
@@ -106,11 +102,11 @@ A tabela abaixo resume os recursos, as capacidades e os limites incluídos em ca
   ### Tipos de instância
 </div>
 
-As configurações de instância são agrupadas em três categorias para simplificar a seleção da infraestrutura com base nas características da carga de trabalho.
+As configurações de instância são agrupadas em três categorias para simplificar a seleção da infraestrutura com base nas características da carga de trabalho. Nem todos os tipos de instância estão disponíveis em todas as regiões da AWS.
 
-* **Otimizada para memória:** Projetada para cargas de trabalho com uso intensivo de memória, com proporções mais altas de memória por CPU (como 1:8 ou 1:4). Compatível com as famílias `r8gd`, `r6gd`, `m6gd` e `m8gd` baseadas em AWS Graviton. É mais adequada para grandes conjuntos de trabalho, altas taxas de acerto de cache e cargas de trabalho de banco de dados limitadas por memória.
-* **Otimizada para armazenamento:** Projetada para cargas de trabalho que exigem grandes volumes de armazenamento NVMe local sem ampliar a capacidade computacional na mesma proporção. Compatível com as famílias `i8g`, `i8ge`, `i7i` e `i7ie` baseadas em AWS Graviton, com configurações que oferecem até 60 TB de armazenamento NVMe local. É mais adequada para grandes conjuntos de dados, cargas de trabalho de séries temporais, armazenamento de logs e eventos e cargas de trabalho OLTP com uso intensivo de armazenamento.
-* **Otimizada para CPU:** Projetada para cargas de trabalho com uso intensivo de capacidade computacional, com proporções menores de memória por CPU (normalmente em torno de 1:2). Compatível com as famílias `c6gd` e é mais adequada para cargas de trabalho transacionais de alta concorrência e consultas limitadas pela CPU.
+* **Otimizada para memória:** Projetada para cargas de trabalho com uso intensivo de memória, com uma proporção de memória por CPU de 1:8. Compatível com as famílias `r8id` e `r6id` baseadas em x86 e as famílias `r8gd` e `r6gd` ARM64 (baseadas em AWS Graviton). É mais adequada para grandes conjuntos de trabalho, altas taxas de acerto de cache e cargas de trabalho de banco de dados limitadas por memória.
+* **Otimizada para armazenamento:** Projetada para cargas de trabalho que exigem grandes volumes de armazenamento NVMe local sem ampliar a capacidade computacional na mesma proporção. Compatível com as famílias `i8g` e `i8ge` ARM64 (baseadas em AWS Graviton) e as famílias `i7i` e `i7ie` baseadas em x86, com configurações que oferecem até 60 TB de armazenamento NVMe local. É mais adequada para grandes conjuntos de dados, cargas de trabalho de séries temporais, armazenamento de logs e eventos e cargas de trabalho OLTP com uso intensivo de armazenamento.
+* **Otimizada para CPU:** Projetada para cargas de trabalho com uso intensivo de computação, com uma proporção de memória por CPU de 1:4. Compatível com as famílias `m8id` e `m6id` baseadas em x86 e as famílias `m8gd` e `m6gd` ARM64 (baseadas em AWS Graviton). É mais adequada para cargas de trabalho transacionais de alta concorrência e consultas limitadas pela CPU.
 
 <div id="pricing-calculator">
   ## Calculadora de preços
