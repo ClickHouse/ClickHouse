@@ -1,6 +1,7 @@
--- Drives the sliding two-stack aggregation path. Only the linear-regression functions (`timeSeriesDerivToGrid`,
--- `timeSeriesPredictLinearToGrid`) ever use two-stacks; they switch to it once a window holds enough populated
--- buckets (`AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS`) or can hold at least `BPW_TO_FORCE_TWO_STACKS`. The other
+-- Drives the sliding two-stack aggregation path. The linear-regression functions (`timeSeriesDerivToGrid`,
+-- `timeSeriesPredictLinearToGrid`) and the extremum functions (`timeSeriesMaxToGrid`, `timeSeriesMinToGrid`)
+-- use two-stacks; they switch to it once a window holds enough populated buckets
+-- (`AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS`) or can hold at least `BPW_TO_FORCE_TWO_STACKS`. The other
 -- timeSeries*ToGrid functions always recompute. Both scenarios below span 50 and 51 buckets per window — above
 -- `BPW_TO_FORCE_TWO_STACKS` — so the two regression functions run on two-stacks while the rest recompute, and the
 -- window slides across the data so buckets both enter and leave.
@@ -25,6 +26,8 @@ SELECT timeSeriesInstantRateToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_tw
 SELECT timeSeriesInstantDeltaToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesDerivToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesPredictLinearToGrid(100, 120, 1, 50, 10)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesMinToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 
 -- step=2 over [100,120] -> 11 grid points. window=51 -> 51 buckets/window (>= threshold -> two-stacks); window % step == 1, so each step is split.
 SELECT 'two-stacks, window splits step (window=51, step=2):';
@@ -37,6 +40,8 @@ SELECT timeSeriesInstantRateToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_tw
 SELECT timeSeriesInstantDeltaToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesDerivToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesPredictLinearToGrid(100, 120, 2, 51, 10)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesMaxToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesMinToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 
 -- Cross-check the two-stack eviction logic: the sliding value at a grid point whose window has evicted buckets
 -- that entered at an earlier grid point must equal a single-grid-point aggregate over the same window, which
@@ -49,6 +54,13 @@ SELECT abs(timeSeriesDerivToGrid(100, 120, 1, 50)(timestamp, value)[21]
          - timeSeriesDerivToGrid(120, 120, 1, 50)(timestamp, value)[1]) < 1e-9 FROM ts_two_stacks;
 SELECT abs(timeSeriesPredictLinearToGrid(100, 120, 1, 50, 10)(timestamp, value)[21]
          - timeSeriesPredictLinearToGrid(120, 120, 1, 50, 10)(timestamp, value)[1]) < 1e-9 FROM ts_two_stacks;
+-- The extremum summary keeps exact values, so sliding two-stack results must equal the fresh aggregate exactly.
+SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value)[11]
+     = timeSeriesMaxToGrid(110, 110, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
+SELECT timeSeriesMaxToGrid(100, 120, 1, 50)(timestamp, value)[21]
+     = timeSeriesMaxToGrid(120, 120, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
+SELECT timeSeriesMinToGrid(100, 120, 1, 50)(timestamp, value)[21]
+     = timeSeriesMinToGrid(120, 120, 1, 50)(timestamp, value)[1] FROM ts_two_stacks;
 
 -- Serialization round-trip over the new step-split bucket layout (window=51, step=2 -> window % step != 0):
 -- merging two partial -State aggregates (built over disjoint row subsets) must reproduce the direct aggregate
@@ -61,6 +73,14 @@ SELECT timeSeriesChangesToGrid(100, 120, 2, 51)(timestamp, value)
 SELECT timeSeriesResetsToGrid(100, 120, 2, 51)(timestamp, value)
      = (SELECT timeSeriesResetsToGridMerge(100, 120, 2, 51)(s)
         FROM (SELECT timeSeriesResetsToGridState(100, 120, 2, 51)(timestamp, value) AS s
+              FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
+SELECT timeSeriesMaxToGrid(100, 120, 2, 51)(timestamp, value)
+     = (SELECT timeSeriesMaxToGridMerge(100, 120, 2, 51)(s)
+        FROM (SELECT timeSeriesMaxToGridState(100, 120, 2, 51)(timestamp, value) AS s
+              FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
+SELECT timeSeriesMinToGrid(100, 120, 2, 51)(timestamp, value)
+     = (SELECT timeSeriesMinToGridMerge(100, 120, 2, 51)(s)
+        FROM (SELECT timeSeriesMinToGridState(100, 120, 2, 51)(timestamp, value) AS s
               FROM ts_two_stacks GROUP BY toUnixTimestamp(timestamp) % 2)) FROM ts_two_stacks;
 
 DROP TABLE ts_two_stacks;
@@ -81,5 +101,9 @@ SELECT abs(timeSeriesDerivToGrid(200, 220, 1, 15)(timestamp, value)[21]
          - timeSeriesDerivToGrid(220, 220, 1, 15)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
 SELECT abs(timeSeriesPredictLinearToGrid(200, 220, 1, 15, 10)(timestamp, value)[21]
          - timeSeriesPredictLinearToGrid(220, 220, 1, 15, 10)(timestamp, value)[1]) < 1e-9 FROM ts_dense;
+SELECT timeSeriesMaxToGrid(200, 220, 1, 15)(timestamp, value)[21]
+     = timeSeriesMaxToGrid(220, 220, 1, 15)(timestamp, value)[1] FROM ts_dense;
+SELECT timeSeriesMinToGrid(200, 220, 1, 15)(timestamp, value)[21]
+     = timeSeriesMinToGrid(220, 220, 1, 15)(timestamp, value)[1] FROM ts_dense;
 
 DROP TABLE ts_dense;

@@ -67,6 +67,12 @@ struct AggregateFunctionTimeseriesExtremumOverTimeTraits
             }
         }
 
+        void addMany(const TimestampType * timestamps, const ValueType * values, size_t batch_size)
+        {
+            for (size_t i = 0; i < batch_size; ++i)
+                add(timestamps[i], values[i]);
+        }
+
         /// Commutative and associative: keeps whichever of the two summaries holds the "better" extremum. This
         /// is what makes max/min combinable in any order, unlike last_over_time's "most recent" which requires
         /// buckets to be combined in time order. Combining out of arrival order can change which of two *equal*
