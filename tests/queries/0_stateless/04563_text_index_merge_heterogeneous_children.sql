@@ -1,20 +1,29 @@
+-- Reads a Merge table whose children disagree on whether the Map has text indexes.
+
 SET enable_analyzer = 1;
--- Both settings are randomized by the test runner and are load-bearing here: with
--- either off, `'lit' IN map[...]` keeps no text-index virtual column, so the
--- heterogeneous-child header mismatch is never constructed.
 SET query_plan_direct_read_from_text_index = 1;
 SET query_plan_text_index_add_hint = 1;
 
 DROP TABLE IF EXISTS t_idx;
 DROP TABLE IF EXISTS t_plain;
 
-CREATE TABLE t_idx (id UInt64, map Map(String, String),
+CREATE TABLE t_idx (
+    id UInt64,
+    map Map(String, String),
     INDEX idx_map_keys mapKeys(map) TYPE text(tokenizer = 'array'),
-    INDEX idx_map_values mapValues(map) TYPE text(tokenizer = 'array'))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+    INDEX idx_map_values mapValues(map) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
 
-CREATE TABLE t_plain (id UInt64, map Map(String, String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+CREATE TABLE t_plain (
+    id UInt64,
+    map Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
 
 INSERT INTO t_idx VALUES (1, map('env', 'prod'));
 INSERT INTO t_plain VALUES (2, map('env', 'prod'));
@@ -37,10 +46,15 @@ SELECT count() FROM t_idx WHERE 'prod' IN map['env'];
 
 SELECT '-- all children indexed';
 DROP TABLE t_plain;
-CREATE TABLE t_plain (id UInt64, map Map(String, String),
+CREATE TABLE t_plain (
+    id UInt64,
+    map Map(String, String),
     INDEX idx_map_keys mapKeys(map) TYPE text(tokenizer = 'array'),
-    INDEX idx_map_values mapValues(map) TYPE text(tokenizer = 'array'))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+    INDEX idx_map_values mapValues(map) TYPE text(tokenizer = 'array')
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
 INSERT INTO t_plain VALUES (2, map('env', 'prod'));
 SELECT count() FROM merge(currentDatabase(), '^t_') WHERE 'prod' IN map['env'];
 

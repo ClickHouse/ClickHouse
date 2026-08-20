@@ -346,6 +346,7 @@ public:
         NodesReplacementMap replacements;
         Names original_inputs = actions_dag.getRequiredColumnsNames();
         const auto * filter_node = &actions_dag.findInOutputs(filter_column_name);
+        std::vector<std::pair<String, VirtualColumnDescription>> candidate_virtual_columns;
 
         /// Cache for added input nodes for each virtual column.
         std::unordered_map<String, const ActionsDAG::Node *> virtual_column_to_node;
@@ -371,7 +372,7 @@ public:
                 replacements[node] = replaced.node;
 
             for (auto & [index_name, virtual_column] : replaced.added_virtual_columns)
-                result.added_columns[index_name].add(std::move(virtual_column));
+                candidate_virtual_columns.emplace_back(index_name, std::move(virtual_column));
         }
 
         if (replacements.empty())
@@ -398,24 +399,12 @@ public:
                 result.removed_columns.push_back(column);
         }
 
-        /// `added_columns` must contain only virtual columns whose input survived
-        /// `removeUnusedActions`. A virtual recorded for a rewritten predicate can be left
-        /// unreferenced when a different index's virtual (or the original expression) is kept instead;
-        /// reading such a column into the output header serves no purpose.
-        for (auto it = result.added_columns.begin(); it != result.added_columns.end();)
+        /// A virtual column is read only if its input survived `removeUnusedActions`: the rewrite can
+        /// keep a different index's virtual (or the original expression) instead, leaving this one unused.
+        for (auto & [index_name, virtual_column] : candidate_virtual_columns)
         {
-            VirtualColumnsDescription used_virtual_columns;
-            for (const auto & virtual_column : it->second)
-                if (replaced_columns_set.contains(virtual_column.name))
-                    used_virtual_columns.add(virtual_column);
-
-            if (used_virtual_columns.empty())
-                it = result.added_columns.erase(it);
-            else
-            {
-                it->second = std::move(used_virtual_columns);
-                ++it;
-            }
+            if (replaced_columns_set.contains(virtual_column.name))
+                result.added_columns[index_name].add(std::move(virtual_column));
         }
 
         return result;
