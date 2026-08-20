@@ -711,15 +711,17 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
             nullable_group = true;
         }
     }
-    /// Case 2 without a hint, i.e. schema inference: only the type is named. The read receives that
-    /// type as its hint and re-derives nullable_group above, so the null-map machinery stays
-    /// hint-only. A Map key_value tuple is excluded: DataTypeMap requires Tuple(keys, values).
+    /// Case 2 in schema inference mode (sample_block is null only there), where only the type is
+    /// named: the read gets that type as its hint and re-derives nullable_group above. Excluded: a
+    /// Map key_value tuple (DataTypeMap requires Tuple(keys, values)) and a Map key (never Nullable).
     const bool infer_nullable_group =
-        !node.type_hint
+        !sample_block
+        && !node.type_hint
         && node.requested
         && group_is_optional
         && !has_optional_ancestor
         && node.schema_context != SchemaContext::MapTuple
+        && node.schema_context != SchemaContext::MapKey
         && options.format.schema_inference_allow_nullable_tuple_type
         && !options.schema_inference_force_not_nullable
         && tupleSubtreeIsAllRequired(file_metadata.schema, schema_idx - 1);
@@ -868,9 +870,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     else
     {
         output_type = std::make_shared<DataTypeTuple>(types, names);
-        /// A tuple with no surviving elements has no leaf to reconstruct the group null map from, so
-        /// the wrap would name a type the read cannot honour.
-        if (infer_nullable_group && !types.empty())
+        /// The group null map is reconstructed from a physical leaf's definition levels, so a group
+        /// with no leaf below it cannot be Nullable(Tuple(...)) and stays a plain Tuple.
+        if (infer_nullable_group && primitive_start != primitive_columns.size())
             output_type = makeNullable(output_type);
     }
 

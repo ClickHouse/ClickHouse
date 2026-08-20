@@ -46,3 +46,13 @@ Parquet	1
 p	Tuple(\n)					
 --- and without the skip setting it is still an error, not a silent empty tuple
 1
+--- optional group whose only child is a childless group
+p	Tuple(\n    q Tuple(\n))					
+0
+--- optional Map key group
+m	Map(Tuple(\n    kx Nullable(Int32)), Nullable(Int32))					
+{(1):5}
+--- JSON hint over a struct containing an optional all-required group
+{"a":1,"b":{"c":2}}
+--- JSON hint over a Map whose value is an optional all-required group
+{"k":{"z":1}}

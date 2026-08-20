@@ -135,3 +135,37 @@ echo '--- and without the skip setting it is still an error, not a silent empty 
 $CLICKHOUSE_LOCAL -q "
     DESC file('${T}_unsup.parquet', Parquet)
         SETTINGS input_format_parquet_skip_columns_with_unsupported_types_in_schema_inference = 0" 2>&1 | grep -c 'INCORRECT_DATA'
+
+# A childless group is an output column with no primitive below it, so nothing carries the
+# definition levels the group null map is reconstructed from.
+echo '--- optional group whose only child is a childless group'
+cp "$CUR_DIR"/data_parquet/parquet_optional_struct_leafless_child.parquet "${T}_leafless.parquet"
+$CLICKHOUSE_LOCAL -m -q "
+    SET $OPTS;
+    DESC file('${T}_leafless.parquet', Parquet);
+    SELECT count() FROM file('${T}_leafless.parquet', Parquet);"
+
+# DataTypeMap rejects a Nullable key, so a Map key group stays a plain Tuple whatever its
+# repetition type. The Parquet spec requires a REQUIRED key, so the fixture is non-compliant.
+echo '--- optional Map key group'
+cp "$CUR_DIR"/data_parquet/parquet_optional_map_key_group.parquet "${T}_mapkey.parquet"
+$CLICKHOUSE_LOCAL -m -q "
+    SET $OPTS;
+    DESC file('${T}_mapkey.parquet', Parquet);
+    SELECT m FROM file('${T}_mapkey.parquet', Parquet);"
+
+# In read mode a JSON hint on a struct leaves the element hints unset, so a hint-less node is not
+# evidence of inference. Nullable(Tuple) named there without the group null map armed reaches the
+# Map branch of the output assembly.
+echo '--- JSON hint over a struct containing an optional all-required group'
+$CLICKHOUSE_LOCAL -m -q "
+    SET $OPTS;
+    INSERT INTO FUNCTION file('${T}_json.parquet', Parquet, 'data Tuple(a UInt8, b Nullable(Tuple(c UInt8)))')
+        SELECT (1, tuple(2));
+    SELECT data FROM file('${T}_json.parquet', Parquet, 'data JSON');"
+echo '--- JSON hint over a Map whose value is an optional all-required group'
+$CLICKHOUSE_LOCAL -m -q "
+    SET $OPTS;
+    INSERT INTO FUNCTION file('${T}_jsonmap.parquet', Parquet, 'data Map(String, Nullable(Tuple(z UInt8)))')
+        SELECT map('k', tuple(1));
+    SELECT data FROM file('${T}_jsonmap.parquet', Parquet, 'data JSON');"

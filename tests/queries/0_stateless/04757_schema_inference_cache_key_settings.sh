@@ -115,6 +115,30 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_lt_b.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 0;
     DESC file('${T}_lt_b.parquet', 'Parquet') SETTINGS input_format_parquet_local_time_as_utc = 1;" | cut -f2
 
+# --- allow_experimental_nullable_tuple_type -----------------------------------------------
+# Decides whether an OPTIONAL group with an all-REQUIRED subtree is inferred as Nullable(Tuple(...))
+# or as a plain Tuple(...), so each pair must report the type its own query asks for, whichever ran
+# first. A stale entry also changes the value read back: the plain Tuple has nowhere to put a
+# struct-level NULL and returns a tuple of NULLs instead.
+$CLICKHOUSE_LOCAL -q "
+    SET allow_experimental_nullable_tuple_type = 1;
+    SELECT * FROM values('p Nullable(Tuple(a UInt8, b UInt8))', tuple(1, 2), NULL)
+    INTO OUTFILE '${T}_nt_a.parquet' TRUNCATE FORMAT Parquet"
+cp "${T}_nt_a.parquet" "${T}_nt_b.parquet"
+touch -d "$AGE" "${T}"_nt_*.parquet
+echo "-- Parquet nullable_tuple, nt=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 1;
+    DESC file('${T}_nt_a.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 0;" | cut -f2
+echo "-- Parquet nullable_tuple, nt=0 first"
+$CLICKHOUSE_LOCAL -m -q "
+    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 0;
+    DESC file('${T}_nt_b.parquet', 'Parquet') SETTINGS allow_experimental_nullable_tuple_type = 1;" | cut -f2
+echo "-- Parquet nullable_tuple value, nt=1 first"
+$CLICKHOUSE_LOCAL -m -q "
+    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS allow_experimental_nullable_tuple_type = 1;
+    SELECT isNull(p) FROM file('${T}_nt_a.parquet', 'Parquet') ORDER BY 1 SETTINGS allow_experimental_nullable_tuple_type = 0;"
+
 # --- input_format_parquet_allow_geoparquet_parser -----------------------------------------
 # Decides whether a GeoParquet geometry column is inferred as a geo type or as its raw String
 # representation, so each pair must report LineString for the =1 query and Nullable(String)
@@ -230,10 +254,10 @@ $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_exp_a.form', 'Form') FORMAT Null;
     SELECT additional_format_info != '' FROM system.schema_inference_cache;"
 
-echo "-- Parquet key carries max_parser_depth and all four new Parquet fields"
+echo "-- Parquet key carries max_parser_depth and all five new Parquet fields"
 $CLICKHOUSE_LOCAL -m -q "
     DESC file('${T}_deep_a.parquet', 'Parquet') SETTINGS max_parser_depth = 1000 FORMAT Null;
-    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+'), extract(additional_format_info, 'schema_inference_make_json_columns_nullable=\w+')
+    SELECT extract(additional_format_info, 'max_parser_depth=\d+'), extract(additional_format_info, 'local_time_as_utc=\w+'), extract(additional_format_info, 'allow_geoparquet_parser=\w+'), extract(additional_format_info, 'skip_columns_with_unsupported_types=\w+'), extract(additional_format_info, 'schema_inference_make_json_columns_nullable=\w+'), extract(additional_format_info, 'schema_inference_allow_nullable_tuple_type=\w+')
     FROM system.schema_inference_cache;"
 
 echo "-- JSON key carries the array_of_dynamic field, once per setting value"

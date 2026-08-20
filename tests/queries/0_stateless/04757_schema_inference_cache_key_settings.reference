@@ -45,6 +45,17 @@ Nullable(DateTime64(3))
 -- Parquet local_time_as_utc, utc=0 first
 Nullable(DateTime64(3))
 Nullable(DateTime64(3, \'UTC\'))
+-- Parquet nullable_tuple, nt=1 first
+Nullable(Tuple(a Nullable(UInt8), b Nullable(UInt8)))
+Tuple(\n    a Nullable(UInt8),\n    b Nullable(UInt8))
+-- Parquet nullable_tuple, nt=0 first
+Tuple(\n    a Nullable(UInt8),\n    b Nullable(UInt8))
+Nullable(Tuple(a Nullable(UInt8), b Nullable(UInt8)))
+-- Parquet nullable_tuple value, nt=1 first
+0
+1
+0
+0
 -- Parquet allow_geoparquet_parser, geo=1 first
 LineString
 Nullable(String)
@@ -86,8 +97,8 @@ input_format_try_infer_exponent_floats=true	max_parser_depth=1000
 input_format_try_infer_exponent_floats=true
 -- Form key is no longer empty
 1
--- Parquet key carries max_parser_depth and all four new Parquet fields
-max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false	schema_inference_make_json_columns_nullable=false
+-- Parquet key carries max_parser_depth and all five new Parquet fields
+max_parser_depth=1000	local_time_as_utc=true	allow_geoparquet_parser=true	skip_columns_with_unsupported_types=false	schema_inference_make_json_columns_nullable=false	schema_inference_allow_nullable_tuple_type=false
 -- JSON key carries the array_of_dynamic field, once per setting value
 infer_array_of_dynamic_from_array_of_different_values=false
 infer_array_of_dynamic_from_array_of_different_values=true
