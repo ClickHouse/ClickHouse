@@ -220,3 +220,19 @@ SELECT 'subcolumns=1', id FROM tab_partial WHERE m['level'] = 'error' ORDER BY i
 SELECT 'scan', id FROM tab_partial WHERE m['level'] = 'error' ORDER BY id SETTINGS use_skip_indexes = 0;
 
 DROP TABLE tab_partial;
+
+SELECT '-- rejected index definitions';
+
+DROP TABLE IF EXISTS tab_bad;
+
+CREATE TABLE tab_bad (id UInt32, s String, INDEX idx s TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, UInt64), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(FixedString(2), String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, FixedString(2)), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, Nullable(String)), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', preprocessor = lower(m))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', postprocessor = lower(m))) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE tab_bad (id UInt32, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', support_phrase_search = 1)) ENGINE = MergeTree ORDER BY id SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- the tokenizer does not tokenize strings';
+SELECT tokens('a b', 'keyValuePairs'); -- { serverError NOT_IMPLEMENTED }

@@ -87,3 +87,5 @@ subcolumns=1	1
 subcolumns=1	2
 scan	1
 scan	2
+-- rejected index definitions
+-- the tokenizer does not tokenize strings
