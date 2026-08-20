@@ -67,7 +67,8 @@ IcebergDataObjectInfo::IcebergDataObjectInfo(
           /* position_deletes_objects */ {},
           /* equality_deletes_objects */ {},
           data_manifest_file_entry_->parsed_entry->record_count,
-          data_manifest_file_entry_->parsed_entry->file_size_in_bytes}
+          data_manifest_file_entry_->parsed_entry->file_size_in_bytes,
+          data_manifest_file_entry_->first_row_id}
 {
 }
 
@@ -189,6 +190,18 @@ void IcebergObjectSerializableInfo::serializeForClusterFunctionProtocol(WriteBuf
             writeVarUInt(0, out);
         }
     }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING)
+    {
+        if (first_row_id.has_value())
+        {
+            writeVarUInt(1, out);
+            writeVarInt(*first_row_id, out);
+        }
+        else
+        {
+            writeVarUInt(0, out);
+        }
+    }
 }
 
 void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version)
@@ -274,6 +287,21 @@ void IcebergObjectSerializableInfo::deserializeForClusterFunctionProtocol(ReadBu
         else
         {
             file_size_in_bytes = std::nullopt;
+        }
+    }
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_CDC_READING)
+    {
+        size_t has_first_row_id = 0;
+        readVarUInt(has_first_row_id, in);
+        if (has_first_row_id)
+        {
+            Int64 value = 0;
+            readVarInt(value, in);
+            first_row_id = value;
+        }
+        else
+        {
+            first_row_id = std::nullopt;
         }
     }
 }

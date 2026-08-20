@@ -590,9 +590,16 @@ Chunk StorageObjectStorageSource::generate()
             }
 
             const String * iceberg_metadata_file_path = nullptr;
+            std::optional<UInt64> last_updated_sequence_number;
+            std::optional<UInt64> first_row_id;
 #if USE_AVRO
             if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(object_info.get()))
+            {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
+                first_row_id = iceberg_info->info.first_row_id;
+                if (first_row_id.has_value())
+                    last_updated_sequence_number = iceberg_info->info.sequence_number;
+            }
 #endif
 
             std::optional<size_t> object_size;
@@ -618,6 +625,8 @@ Chunk StorageObjectStorageSource::generate()
                     .tags = &(object_metadata->tags),
                     .data_lake_snapshot_version = file_iterator->getSnapshotVersion(),
                     .iceberg_metadata_file_path = iceberg_metadata_file_path,
+                    .last_updated_sequence_number = last_updated_sequence_number,
+                    .first_row_id = first_row_id,
                 },
                 read_context,
                 format_settings);

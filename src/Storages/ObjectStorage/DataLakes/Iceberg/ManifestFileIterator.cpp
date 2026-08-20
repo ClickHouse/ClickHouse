@@ -249,6 +249,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     std::shared_ptr<const ActionsDAG> filter_dag_,
     Int32 table_snapshot_schema_id_)
@@ -348,6 +349,7 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
         schema_processor,
         inherited_sequence_number_,
         inherited_snapshot_id_,
+        inherited_first_row_id_,
         context_,
         manifest_schema_id,
         std::make_shared<const PartitionSpecification>(std::move(partition_spec_vec)),
@@ -365,6 +367,7 @@ ManifestFileIterator::ManifestFileIterator(
     IcebergSchemaProcessor & schema_processor,
     Int64 inherited_sequence_number_,
     Int64 inherited_snapshot_id_,
+    std::optional<UInt64> inherited_first_row_id_,
     DB::ContextPtr context_,
     Int32 manifest_schema_id_,
     std::shared_ptr<const PartitionSpecification> common_partition_specification_,
@@ -378,6 +381,7 @@ ManifestFileIterator::ManifestFileIterator(
     , path_resolver(path_resolver_)
     , inherited_sequence_number(inherited_sequence_number_)
     , inherited_snapshot_id(inherited_snapshot_id_)
+    , inherited_first_row_id(inherited_first_row_id_)
     , context(context_)
     , manifest_schema_id(manifest_schema_id_)
     , common_partition_specification(std::move(common_partition_specification_))
@@ -390,6 +394,21 @@ ManifestFileIterator::ManifestFileIterator(
     , filter_dag(std::move(filter_dag_))
     , schema_processor_ptr(&schema_processor)
 {
+    if (!inherited_first_row_id.has_value())
+        return;
+
+    inherited_first_row_ids.resize(total_rows);
+    UInt64 next_row_id = *inherited_first_row_id;
+    for (size_t row_index = 0; row_index < total_rows; ++row_index)
+    {
+        const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
+        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
+            || parsed_entry->parsed_first_row_id.has_value())
+            continue;
+
+        inherited_first_row_ids[row_index] = next_row_id;
+        next_row_id += static_cast<UInt64>(parsed_entry->record_count);
+    }
 }
 
 ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
@@ -475,6 +494,11 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
+
+    if (parsed_entry->parsed_first_row_id.has_value())
+        entry->first_row_id = parsed_entry->parsed_first_row_id;
+    else if (!inherited_first_row_ids.empty())
+        entry->first_row_id = inherited_first_row_ids[row_index];
 
 
     PruningReturnStatus pruning_status = PruningReturnStatus::NOT_PRUNED;
