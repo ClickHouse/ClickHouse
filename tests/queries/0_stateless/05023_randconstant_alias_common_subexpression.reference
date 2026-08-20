@@ -17,4 +17,4 @@
 -- rand() agrees within one query, aliased or not
 1	1
 -- stateful functions do not share instances across scopes
-0	0
+1

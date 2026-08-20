@@ -37,6 +37,10 @@ SELECT '-- rand() agrees within one query, aliased or not';
 SELECT rand() = rand(), c FROM (SELECT rand() AS a, rand() AS b, a = b AS c);
 
 -- The cache spans query scopes, but stateful functions must not share an instance across them. The two
--- scalar subqueries must each start their own `blockNumber` sequence at zero.
+-- scalar subqueries must each run their own `blockNumber` counter, so they read the same number; a shared
+-- instance would keep counting and hand the second one a larger number. The aliases keep the two subquery
+-- trees apart, so the scalar cache cannot answer the second one from the first. Only the two numbers are
+-- compared, never printed: where the counter starts depends on how many blocks the server has already
+-- passed through this function, so the numbers themselves are not stable.
 SELECT '-- stateful functions do not share instances across scopes';
-SELECT (SELECT blockNumber() AS a FROM numbers(1)), (SELECT blockNumber() AS b FROM numbers(1));
+SELECT (SELECT blockNumber() AS a FROM numbers(1)) = (SELECT blockNumber() AS b FROM numbers(1));
