@@ -120,6 +120,11 @@ NameAndTypePair StorageSnapshot::getColumn(const GetColumnsOptions & options, co
     return *column;
 }
 
+Names StorageSnapshot::getColumnNamesInStorageForAccessCheck(const Names & column_names) const
+{
+    return metadata->getColumns().getColumnNamesInStorageForAccessCheck(column_names);
+}
+
 Block StorageSnapshot::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;

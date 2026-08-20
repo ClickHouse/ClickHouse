@@ -370,7 +370,16 @@ NameSet checkAccessRights(const StoragePtr & storage, const StorageID & storage_
     // `storage_id.hasDatabase()` can return false only on the initiator node.
     // Each shard will use the default database (in the case of cross-replication shards may have different defaults).
     if (storage_id.hasDatabase())
-        query_context->checkAccess(AccessType::SELECT, storage_id, column_names);
+    {
+        /// A query referencing a subcolumn (e.g. `t.a` for a `Tuple` column `t`) resolves to
+        /// the subcolumn name at the analyzer stage. Column-level grants, however, are stored
+        /// and checked against top-level storage column names only. Map each subcolumn name to
+        /// its parent storage column so that `GRANT SELECT(t)` implicitly covers `t.a`, `t.b`, etc.
+        query_context->checkAccess(
+            AccessType::SELECT,
+            storage_id,
+            storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
+    }
 
     return {};
 }

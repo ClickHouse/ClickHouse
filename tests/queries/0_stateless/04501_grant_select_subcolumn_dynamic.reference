@@ -1,0 +1,6 @@
+=== select json.a.b with SELECT(json) ===
+OK
+=== select id (denied) ===
+ACCESS_DENIED
+=== select json.a.b after revoke (denied) ===
+ACCESS_DENIED

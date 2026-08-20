@@ -1,0 +1,8 @@
+=== select t (parent column) ===
+(10,'hello')
+=== select t.a (subcolumn) ===
+10
+=== select t.b (subcolumn) ===
+hello
+=== select t.a after revoke (denied) ===
+ACCESS_DENIED

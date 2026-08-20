@@ -25,7 +25,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
 {
@@ -440,28 +439,25 @@ void StorageMergeTreeTextIndex::readImpl(
 {
     auto source_storage_id = source_table->getStorageID();
     auto required_columns = text_index->getColumnsRequiredForIndexCalc();
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
-    /// If the row policy filter references any column required for building the index,
-    /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
+    const auto & source_columns = source_metadata_snapshot->getColumns();
 
+    /// Column-level grants are tracked against top-level storage columns only, so map any subcolumns
+    /// required for the index (e.g. `json.a.b`) to their parent storage column (e.g. `json`).
+    auto required_storage_columns = source_columns.getColumnNamesInStorageForAccessCheck(required_columns);
+    context->checkAccess(AccessType::SELECT, source_storage_id, required_storage_columns);
+
+    /// The text index is derived from the source columns of every row, including rows a row policy is
+    /// supposed to hide, so reading its tokens could leak their contents. A column-overlap check is not
+    /// enough (e.g. `USING 0` hides rows without naming a column), so reject the read whenever the source
+    /// table has an effective (present and not always-true) row policy.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
-        NameSet row_policy_columns = columns_context.requiredColumns();
-
-        for (const auto & column_name : required_columns)
-        {
-            if (row_policy_columns.contains(column_name))
-            {
-                throw Exception(ErrorCodes::ACCESS_DENIED,
-                    "Cannot read from `mergeTreeTextIndex` because a row policy on column `{}` "
-                    "is applied on table {}. Reading text index tokens could violate the row policy",
-                    column_name, source_storage_id.getNameForLogs());
-            }
-        }
-    }
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeTextIndex` because a row policy is defined on table {}: it would "
+            "expose text index tokens for rows that the row policy hides",
+            source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());

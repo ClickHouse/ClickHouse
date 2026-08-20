@@ -56,13 +56,11 @@ StorageAlias::StorageAlias(
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
 {
+    /// Table-level access check only. Column-level checks that resolve subcolumns against the target
+    /// schema (in `read`) are done by the caller after locking the target for share, so that the
+    /// normalized columns and the actual read use the same, pinned schema (see `StorageAlias::read`).
     if (access_check)
-    {
-        if (access_check->column_names.empty())
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table);
-        else
-            access_check->context->checkAccess(access_check->access_type, target_database, target_table, access_check->column_names);
-    }
+        access_check->context->checkAccess(access_check->access_type, target_database, target_table);
 
     return DatabaseCatalog::instance().getTable(StorageID(target_database, target_table), getContext());
 }
@@ -208,12 +206,26 @@ void StorageAlias::read(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::SELECT, column_names});
+    auto target_storage = getTargetTable();
     auto lock = target_storage->lockForShare(
         local_context->getCurrentQueryId(),
         local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
+
+    /// Check access against the locked target schema, so that the columns authorized here are exactly
+    /// the ones the read below sees. Checking before the lock (e.g. inside getTargetTable) would open
+    /// a TOCTOU window: a concurrent ALTER could change how a subcolumn like `a.b` resolves (e.g. add
+    /// a real column `a.b` where it was a subcolumn of `a`) between the check and the locked read.
+    if (column_names.empty())
+        local_context->checkAccess(AccessType::SELECT, target_database, target_table);
+    else
+        local_context->checkAccess(
+            AccessType::SELECT,
+            target_database,
+            target_table,
+            target_metadata->getColumns().getColumnNamesInStorageForAccessCheck(column_names));
+
     auto target_snapshot = target_storage->getStorageSnapshot(target_metadata, local_context);
 
     target_storage->read(

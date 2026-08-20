@@ -17,6 +17,7 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -39,6 +40,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
@@ -410,7 +412,24 @@ void StorageMergeTreeIndex::readImpl(
         }
     }
 
-    context->checkAccess(AccessType::SELECT, source_table->getStorageID(), columns_from_storage);
+    auto source_storage_id = source_table->getStorageID();
+
+    /// Column-level grants are tracked against top-level storage columns only, so map any requested
+    /// subcolumns (e.g. `t.a`) to their parent storage column (e.g. `t`).
+    auto required_storage_columns = storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage);
+    context->checkAccess(AccessType::SELECT, source_storage_id, required_storage_columns);
+
+    /// `mergeTreeIndex` exposes granule-level primary key values (and, with marks, per-column mark
+    /// offsets) for every row, including rows a row policy is supposed to hide. A column-overlap check is
+    /// not enough (e.g. `USING 0` hides rows without naming a column), so reject the read whenever the
+    /// source table has an effective (present and not always-true) row policy.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeIndex` because a row policy is defined on table {}: it would "
+            "expose index metadata for rows that the row policy hides",
+            source_storage_id.getNameForLogs());
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
