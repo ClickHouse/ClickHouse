@@ -1,6 +1,6 @@
 -- Tags: no-random-settings, no-random-merge-tree-settings
--- `join_algorithm = 'grace_hash'` now goes through `SpillingHashJoin` in force-external mode, so
--- `max_bytes_before_external_join` drives its spill decision instead of being silently ignored.
+-- `join_algorithm = 'grace_hash'` now spills on `max_bytes_before_external_join` instead of
+-- silently ignoring it in favour of `max_rows_in_join` / `max_bytes_in_join`.
 -- The memory budget is tight, so random per-test settings could push the baseline over the cap.
 
 SET max_memory_usage = '160Mi';

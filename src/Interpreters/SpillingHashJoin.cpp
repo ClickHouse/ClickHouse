@@ -17,38 +17,6 @@ extern const Event JoinSpillingHashJoinSwitchedToGraceJoin;
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
-
-namespace
-{
-
-/// `max_rows_in_join` / `max_bytes_in_join` are hard caps: the join throws (or breaks, depending on
-/// `join_overflow_mode`) when the right side grows past them. A cap at or below the spill threshold is
-/// still honored, but it makes the spilling unreachable, which is rarely what the user meant - it is
-/// what `max_bytes_in_join` used to mean on the standalone `grace_hash` path. Warn rather than reject:
-/// a tight cap is a legitimate request, just a surprising one in this combination.
-///
-/// Only the explicit setting takes part in this check. A ratio-derived threshold depends on the memory
-/// available to the server, so including it would make the warning appear on large machines only.
-void warnIfHardCapMakesSpillingUnreachable(const TableJoin & table_join, const LoggerPtr & log)
-{
-    const size_t threshold = table_join.explicitMaxBytesBeforeExternalJoin();
-    const size_t hard_cap = table_join.sizeLimits().max_bytes;
-    if (threshold != 0 && hard_cap != 0 && hard_cap <= threshold)
-        LOG_WARNING(
-            log,
-            "max_bytes_in_join ({}) is not above max_bytes_before_external_join ({}). It is a hard cap on the right side "
-            "of the JOIN, not a spill trigger, so the query will fail before the join ever spills to disk. Raise "
-            "max_bytes_in_join above the spill threshold, or set it to 0 to rely on spilling alone",
-            hard_cap,
-            threshold);
-}
-
-}
-
 SpillingHashJoin::SpillingHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader left_sample_block_,
@@ -68,7 +36,6 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
     hash_join = std::make_shared<HashJoin>(
         table_join, right_sample_block_, any_take_last_row, /*reserve_num_=*/0, /*instance_id_=*/"",
         /*use_two_level_maps_=*/false, stats_collecting_params_);
@@ -94,7 +61,6 @@ SpillingHashJoin::SpillingHashJoin(
     , any_take_last_row(any_take_last_row_)
     , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
 {
-    warnIfHardCapMakesSpillingUnreachable(*table_join, log);
     concurrent_join = std::make_shared<ConcurrentHashJoin>(
         table_join,
         concurrent_slots_,
@@ -103,66 +69,6 @@ SpillingHashJoin::SpillingHashJoin(
         any_take_last_row,
         max_bytes_before_external_join);
     supports_parallel_non_joined_blocks_processing = concurrent_join->supportParallelNonJoinedBlocksProcessing();
-}
-
-SpillingHashJoin::SpillingHashJoin(
-    ForceExternalTag,
-    std::shared_ptr<TableJoin> table_join_,
-    SharedHeader left_sample_block_,
-    SharedHeader right_sample_block_,
-    TemporaryDataOnDiskScopePtr tmp_data_,
-    size_t initial_num_buckets_,
-    size_t max_num_buckets_,
-    bool any_take_last_row_)
-    : log(getLogger("SpillingHashJoin"))
-    , table_join(std::move(table_join_))
-    , left_sample_block(std::move(left_sample_block_))
-    , right_sample_block(right_sample_block_->cloneEmpty())
-    , tmp_data(std::move(tmp_data_))
-    , initial_num_buckets(initial_num_buckets_)
-    , max_num_buckets(max_num_buckets_)
-    , any_take_last_row(any_take_last_row_)
-    , max_bytes_before_external_join(table_join->maxBytesBeforeExternalJoin())
-    , force_external(true)
-{
-    if (table_join->legacyJoinSizeLimitsTriggerSpilling())
-    {
-        /// Legacy mode reproduces the standalone `grace_hash` path, where the size limits drive the
-        /// spilling and no threshold is required.
-        if (table_join->sizeLimits().max_bytes != 0 || table_join->sizeLimits().max_rows != 0)
-            LOG_WARNING(
-                log,
-                "join_algorithm = 'grace_hash' is spilling on max_rows_in_join / max_bytes_in_join because "
-                "legacy_join_size_limits_trigger_spilling is enabled (usually through the compatibility setting). Those two are "
-                "hard caps now; drive spilling with max_bytes_before_external_join / max_bytes_ratio_before_external_join "
-                "instead, and disable legacy_join_size_limits_trigger_spilling");
-    }
-    else
-    {
-        warnIfHardCapMakesSpillingUnreachable(*table_join, log);
-
-        /// Force-external mode has no in-memory phase to fall back on, so without a spill threshold
-        /// there would be nothing to bound the size of a bucket.
-        if (max_bytes_before_external_join == 0)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
-                "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
-                "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
-                "in-memory join");
-    }
-
-    grace_join = std::make_shared<GraceHashJoin>(
-        initial_num_buckets,
-        max_num_buckets,
-        table_join,
-        left_sample_block,
-        right_sample_block_,
-        tmp_data,
-        any_take_last_row,
-        max_bytes_before_external_join);
-    chosen_join = grace_join;
-    state.store(State::GRACE_HASH_JOIN, std::memory_order_release);
 }
 
 SpillingHashJoin::~SpillingHashJoin() = default;
@@ -196,11 +102,6 @@ void SpillingHashJoin::tryConvertSlots()
 std::string SpillingHashJoin::getName() const
 {
     static constexpr auto name_format = "SpillingHashJoin({})";
-
-    /// In force-external mode there is no in-memory phase to wrap, so report the plain grace name:
-    /// `EXPLAIN` output for `join_algorithm = 'grace_hash'` stays what it always was.
-    if (force_external)
-        return grace_join->getName();
 
     if (concurrent_join)
         return fmt::format(name_format, concurrent_join->getName());
@@ -458,9 +359,7 @@ void SpillingHashJoin::setEnableLazyColumnsIndexing(bool value)
 
 void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 {
-    if (force_external)
-        grace_join->checkTypesOfKeys(block);
-    else if (concurrent_join)
+    if (concurrent_join)
         concurrent_join->checkTypesOfKeys(block);
     else
         hash_join->checkTypesOfKeys(block);
@@ -469,9 +368,7 @@ void SpillingHashJoin::checkTypesOfKeys(const Block & block) const
 void SpillingHashJoin::initialize(const Block & sample_block)
 {
     left_sample_block = std::make_shared<const Block>(sample_block.cloneEmpty());
-    if (force_external)
-        grace_join->initialize(sample_block);
-    else if (!concurrent_join)
+    if (!concurrent_join)
         hash_join->initialize(sample_block);
 }
 

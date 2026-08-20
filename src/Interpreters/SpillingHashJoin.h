@@ -73,19 +73,6 @@ public:
         const StatsCollectingParams & stats_collecting_params_ = {},
         bool any_take_last_row_ = false);
 
-    /// Force-external mode (`join_algorithm = 'grace_hash'`): starts directly in the partitioned
-    /// GraceHashJoin state, skipping the in-memory collecting phase that the adaptive path uses.
-    struct ForceExternalTag {};
-    SpillingHashJoin(
-        ForceExternalTag,
-        std::shared_ptr<TableJoin> table_join_,
-        SharedHeader left_sample_block_,
-        SharedHeader right_sample_block_,
-        TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t initial_num_buckets_,
-        size_t max_num_buckets_,
-        bool any_take_last_row_ = false);
-
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
@@ -173,9 +160,6 @@ private:
     size_t max_num_buckets;
     bool any_take_last_row;
     size_t max_bytes_before_external_join;
-    /// Set for `join_algorithm = 'grace_hash'`: there is no in-memory collecting phase and no
-    /// inner `HashJoin` / `ConcurrentHashJoin`, only `grace_join`.
-    bool force_external = false;
 
     SharedMutex switch_mutex;
     std::atomic<size_t> next_slot_to_convert{0};

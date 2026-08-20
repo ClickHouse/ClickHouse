@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
     extern const int LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
@@ -318,9 +319,32 @@ GraceHashJoin::GraceHashJoin(
 {
     if (!GraceHashJoin::isSupported(table_join))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "GraceHashJoin is not supported for this join type");
-    /// `SpillingHashJoin` rejects a zero threshold before it gets here, except in legacy mode where the
-    /// size limits take over as the spill trigger.
-    chassert(external_join_threshold > 0 || table_join->legacyJoinSizeLimitsTriggerSpilling());
+
+    /// Legacy mode keeps the pre-unification trigger, where the size limits alone decide when to spill.
+    if (external_join_threshold == 0 && !table_join->legacyJoinSizeLimitsTriggerSpilling())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "join_algorithm = 'grace_hash' spills to disk and needs a spill threshold, but none resolved to a non-zero "
+            "value. Set max_bytes_before_external_join, or set max_bytes_ratio_before_external_join on a server that has "
+            "memory limits configured (the ratio is ignored without them). Use join_algorithm = 'hash' for a purely "
+            "in-memory join");
+
+    /// `max_rows_in_join` / `max_bytes_in_join` are hard caps, not spill triggers, so a cap at or below the
+    /// spill threshold fails the query instead of letting it spill. That is what `max_bytes_in_join` used to
+    /// mean on the standalone `grace_hash` path, so warn rather than reject: a tight cap is a legitimate
+    /// request, just a surprising one in this combination. Only the explicit setting takes part in the check;
+    /// a ratio-derived threshold depends on the memory of the machine, and the warning would then appear on
+    /// large servers only.
+    const size_t explicit_threshold = table_join->explicitMaxBytesBeforeExternalJoin();
+    const size_t hard_cap = table_join->sizeLimits().max_bytes;
+    if (explicit_threshold != 0 && hard_cap != 0 && hard_cap <= explicit_threshold)
+        LOG_WARNING(
+            log,
+            "max_bytes_in_join ({}) is not above max_bytes_before_external_join ({}). It is a hard cap on the right side "
+            "of the JOIN, not a spill trigger, so the query fails instead of spilling. Raise max_bytes_in_join above the "
+            "spill threshold, or set it to 0 to rely on spilling alone",
+            hard_cap,
+            explicit_threshold);
 }
 
 void GraceHashJoin::initBuckets()
@@ -384,12 +408,12 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
-    /// The spill decision is driven solely by the memory cap `SpillingHashJoin` passes as
-    /// `external_join_threshold`; `max_rows_in_join` / `max_bytes_in_join` are hard caps checked in
-    /// `addBlockToJoin`, not spill triggers. We use half the threshold for the same reason as the
-    /// owner: the in-memory hash table doubles its buffer in power-of-two steps, transiently holding
-    /// 3X the previous size, so rehashing buckets early prevents that doubling from exceeding the
-    /// cap.
+    /// The spill decision is driven solely by `external_join_threshold`, that is by
+    /// `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join`;
+    /// `max_rows_in_join` / `max_bytes_in_join` are hard caps checked in `addBlockToJoin`, not spill
+    /// triggers. We rehash at half of the threshold because the in-memory hash table doubles its buffer
+    /// in power-of-two steps, transiently holding 3X the previous size, so rehashing buckets early
+    /// prevents that doubling from exceeding the cap.
     bool has_overflow = external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold;
 
     /// Before unification the size limits were the spill trigger of the standalone `grace_hash` path,

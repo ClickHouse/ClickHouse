@@ -70,12 +70,13 @@ public:
     using BucketPtr = std::shared_ptr<FileBucket>;
     using Buckets = std::vector<BucketPtr>;
 
-    /// This is the on-disk engine of `SpillingHashJoin`, which is the only place that creates it -
-    /// it is not selectable as a top-level join algorithm.
-    /// `external_join_threshold_` is the auto-spill memory cap supplied by the owner. It triggers
-    /// in-bucket rehashing whenever the in-memory hash table approaches half of the cap, so the
-    /// configured spill ceiling is honored. A value of 0 disables the cap, leaving
-    /// `max_rows_in_join` / `max_bytes_in_join` as the only spill trigger.
+    /// Created either directly for `join_algorithm = 'grace_hash'`, or by `SpillingHashJoin` as its
+    /// on-disk engine once the adaptive path spills. Both pass the same
+    /// `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` threshold as
+    /// `external_join_threshold_`: it triggers in-bucket rehashing whenever the in-memory hash table
+    /// approaches half of the cap, so the configured spill ceiling is honored. Only legacy mode
+    /// (`legacy_join_size_limits_trigger_spilling`) may pass 0, leaving `max_rows_in_join` /
+    /// `max_bytes_in_join` as the spill trigger the way they were before unification.
     GraceHashJoin(
         size_t initial_num_buckets_,
         size_t max_num_buckets_,

@@ -1099,16 +1099,17 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         // Grace hash join requires that columns exist in left_sample_block.
         Block left_sample_block(left_sample_columns);
         if (sanitizeBlock(left_sample_block, false) && GraceHashJoin::isSupported(analyzed_join))
-            /// Under the unified model `grace_hash` means "force external hash join": the same
-            /// `SpillingHashJoin` as the adaptive path, but starting in the partitioned state.
-            return std::make_shared<SpillingHashJoin>(
-                SpillingHashJoin::ForceExternalTag{},
+            /// The spill threshold is the same one the adaptive path uses; `grace_hash` only differs in
+            /// that it starts partitioned instead of collecting in memory first.
+            return std::make_shared<GraceHashJoin>(
+                context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
+                context->getSettingsRef()[Setting::grace_hash_join_max_buckets],
                 analyzed_join,
                 std::make_shared<const Block>(std::move(left_sample_block)),
                 right_sample_block,
                 context->getTempDataOnDisk(),
-                context->getSettingsRef()[Setting::grace_hash_join_initial_buckets],
-                context->getSettingsRef()[Setting::grace_hash_join_max_buckets]);
+                /*any_take_last_row_=*/false,
+                analyzed_join->maxBytesBeforeExternalJoin());
     }
 
     if (algorithm == JoinAlgorithm::AUTO)
