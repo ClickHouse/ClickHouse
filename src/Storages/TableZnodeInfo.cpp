@@ -12,6 +12,8 @@
 #include <Core/UUID.h>
 #include <base/hex.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -24,32 +26,47 @@ namespace ErrorCodes
 namespace
 {
 
-/// The path and the replica name are separate engine arguments, so the remedy names the one that failed.
-std::string_view howToOverride(std::string_view what)
+/// The path and the replica name are separate engine arguments, so a message names the one that failed.
+enum class ZnodeString : UInt8
 {
-    return what == "replica name" ? "specify the replica name explicitly" : "specify the ZooKeeper path explicitly";
+    Path,
+    ReplicaName,
+};
+
+constexpr std::string_view toString(ZnodeString what)
+{
+    switch (what)
+    {
+        case ZnodeString::Path: return "ZooKeeper path";
+        case ZnodeString::ReplicaName: return "replica name";
+    }
+}
+
+constexpr std::string_view howToOverride(ZnodeString what)
+{
+    switch (what)
+    {
+        case ZnodeString::Path: return "specify the ZooKeeper path explicitly";
+        case ZnodeString::ReplicaName: return "specify the replica name explicitly";
+    }
 }
 
 /// A substituted {database}/{table} is spliced in verbatim, so the value itself must stay a single path
 /// component: '/' adds components, and a brace is expanded again by the next macro pass (which can mint
 /// components out of the value, or complete a brace opened by a configured macro).
-void checkSubstitutedValues(std::string_view what, const Macros::MacroExpansionInfo & info)
+void checkSubstitutedValues(ZnodeString what, const Macros::MacroExpansionInfo & info)
 {
     auto check = [what](std::string_view macro_name, const String & value)
     {
-        std::string_view bad;
-        if (value.contains('/'))
-            bad = "'/'";
-        else if (value.contains('{') || value.contains('}'))
-            bad = "'{' or '}'";
-        if (bad.empty())
+        const size_t bad_pos = value.find_first_of("/{}");
+        if (bad_pos == String::npos)
             return;
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Macro '{{{}}}' in the {} of a replicated table expands to {}, "
-            "which contains {} and so is not a single ZooKeeper path component. "
+            "which contains '{}' and so is not a single ZooKeeper path component. "
             "Rename the {} or {}",
-            macro_name, what, quoteString(value), bad, macro_name, howToOverride(what));
+            macro_name, toString(what), quoteString(value), value[bad_pos], macro_name, howToOverride(what));
     };
 
     if (info.expanded_database)
@@ -61,46 +78,55 @@ void checkSubstitutedValues(std::string_view what, const Macros::MacroExpansionI
 /// '.', '..' and control characters are not valid znode names. Unlike the check above, this one runs on
 /// the fully expanded string, because a legal component can be assembled from a substituted value plus
 /// the surrounding template, possibly only in a later macro pass.
-void checkPathComponents(std::string_view what, const String & str)
+void checkPathComponents(ZnodeString what, const String & str)
 {
-    for (size_t pos = 0, next = 0; next != String::npos; pos = next + 1)
+    std::string_view remaining = str;
+    while (true)
     {
-        next = str.find('/', pos);
-        std::string_view component(str.data() + pos, (next == String::npos ? str.size() : next) - pos);
+        const size_t slash_pos = remaining.find('/');
+        const std::string_view component = remaining.substr(0, slash_pos);
 
         if (component == "." || component == "..")
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The {} of a replicated table expands to {}, which has '{}' as a ZooKeeper path component. "
                 "Rename the table or the database, or {}",
-                what, quoteString(str), component, howToOverride(what));
+                toString(what), quoteString(str), component, howToOverride(what));
 
         for (size_t i = 0; i < component.size(); ++i)
         {
             const auto byte = static_cast<unsigned char>(component[i]);
             const auto next_byte = i + 1 < component.size() ? static_cast<unsigned char>(component[i + 1]) : 0;
-            Int32 code_point = -1;
+            std::optional<UInt16> code_point;
             if (byte < 0x20 || byte == 0x7F)
                 code_point = byte;
             /// UTF-8 encodes U+0080-U+009F only as C2 80..C2 9F, so the pair test cannot match a
             /// continuation byte of some other character.
             else if (byte == 0xC2 && next_byte >= 0x80 && next_byte <= 0x9F)
                 code_point = next_byte;
-            if (code_point < 0)
+            if (!code_point)
                 continue;
 
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "The {} of a replicated table expands to a string containing the control character U+{}, "
                 "which is not valid in a ZooKeeper path. Rename the table or the database, or {}",
-                what, getHexUIntUppercase(static_cast<UInt16>(code_point)), howToOverride(what));
+                toString(what), getHexUIntUppercase(*code_point), howToOverride(what));
         }
+
+        if (slash_pos == std::string_view::npos)
+            break;
+
+        remaining.remove_prefix(slash_pos + 1);
     }
 }
 
 }
 
-TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const String & requested_replica_name, const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode, const ContextPtr & context, bool validate_substitutions)
+TableZnodeInfo TableZnodeInfo::resolve(
+    const String & requested_path, const String & requested_replica_name,
+    const StorageID & table_id, const ASTCreateQuery & query, LoadingStrictnessLevel mode,
+    const ContextPtr & context, bool validate_substitutions)
 {
     bool is_on_cluster = context->isDDLOrOnClusterInternal();
     bool is_replicated_database = context->isDDLOrOnClusterInternal() &&
@@ -151,8 +177,8 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
 
         if (validate_substitutions)
         {
-            checkSubstitutedValues("ZooKeeper path", path_info);
-            checkSubstitutedValues("replica name", replica_info);
+            checkSubstitutedValues(ZnodeString::Path, path_info);
+            checkSubstitutedValues(ZnodeString::ReplicaName, replica_info);
         }
     }
 
@@ -182,12 +208,12 @@ TableZnodeInfo TableZnodeInfo::resolve(const String & requested_path, const Stri
 
     if (validate_substitutions)
     {
-        checkSubstitutedValues("ZooKeeper path", info);
-        checkSubstitutedValues("replica name", replica_info);
+        checkSubstitutedValues(ZnodeString::Path, info);
+        checkSubstitutedValues(ZnodeString::ReplicaName, replica_info);
         if (path_substituted)
-            checkPathComponents("ZooKeeper path", res.full_path);
+            checkPathComponents(ZnodeString::Path, res.full_path);
         if (replica_substituted)
-            checkPathComponents("replica name", res.replica_name);
+            checkPathComponents(ZnodeString::ReplicaName, res.replica_name);
     }
 
     /// We do not allow renaming table with these macros in metadata, because zookeeper_path will be broken after RENAME TABLE.

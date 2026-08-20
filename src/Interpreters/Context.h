@@ -580,9 +580,8 @@ protected:
     /// Unlike query_kind == SECONDARY_QUERY (which comes from the client and can be spoofed),
     /// this flag can only be set server-side and is safe to use for security-sensitive checks.
     bool is_ddl_or_on_cluster_internal = false;
-    /// Set for the CREATE queries a Replicated database replays from a definition it already stored,
-    /// to re-derive tables that exist. Such a definition describes the state of the world rather than
-    /// a change to it, so validation that may reject a freshly supplied definition must not run.
+    /// Set for CREATE queries a Replicated database replays from a definition it already stored.
+    /// Such a definition describes existing state, so validation that may reject a new one must not run.
     bool is_recovery_from_stored_metadata = false;
     /// True when this context belongs to the inner query of an expanded view.
     /// Positional arguments inside views must be resolved even on remote/secondary nodes where
