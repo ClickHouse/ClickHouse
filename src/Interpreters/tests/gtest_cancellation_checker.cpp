@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <limits>
 #include <thread>
 
 #include <base/scope_guard.h>
@@ -124,6 +125,33 @@ TEST(CancellationChecker, DeadlineIsNeverBeforeTheTimeout)
             }
         }
     }
+}
+
+/// A `max_execution_time` above one year used to be silently truncated to exactly one year, so a
+/// query with `timeout_overflow_mode = 'throw'` was cancelled long before the configured limit while
+/// the exception still reported the configured (much larger) value. Oversized deadlines must be
+/// saturated upwards instead, and only where the deadline is genuinely not representable at all.
+TEST(CancellationChecker, LargeTimeoutIsNotTruncated)
+{
+    static constexpr Int64 ONE_YEAR_US = 365LL * 24 * 60 * 60 * 1'000'000;
+
+    /// One second into the epoch, so that `now` is non-zero and rounding cannot be hidden by it.
+    const auto now = std::chrono::steady_clock::time_point{
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::seconds{1})};
+    const Int64 now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+    /// Representable deadlines keep the exact invariant.
+    for (const Int64 timeout_us : {ONE_YEAR_US, ONE_YEAR_US + 1'000, ONE_YEAR_US + 100'000, 100 * ONE_YEAR_US})
+    {
+        const UInt64 deadline_ms = CancellationChecker::taskDeadlineMs(now, timeout_us);
+        ASSERT_GE(static_cast<Int64>(deadline_ms), now_ms + (timeout_us + 999) / 1'000)
+            << "a timeout of " << timeout_us << " us was truncated";
+    }
+
+    /// `Int64::max()` microseconds is not representable as `now + timeout`; the deadline saturates
+    /// near the end of the representable range, which is still about 292 thousand years away.
+    const UInt64 saturated_ms = CancellationChecker::taskDeadlineMs(now, std::numeric_limits<Int64>::max());
+    ASSERT_GT(saturated_ms, static_cast<UInt64>(now_ms) + static_cast<UInt64>(100 * ONE_YEAR_US / 1'000));
 }
 
 TEST(ExecutionSpeedLimits, FormatsFractionalMaxExecutionTime)
