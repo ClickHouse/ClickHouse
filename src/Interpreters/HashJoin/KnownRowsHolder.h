@@ -90,9 +90,9 @@ public:
     }
 };
 
-template <typename Mapped, bool add_missing, bool flag_per_row, typename AddedColumns>
+template <typename Map, bool add_missing, bool flag_per_row, typename AddedColumns>
 void addFoundRowAll(
-    const Mapped & mapped,
+    const typename Map::mapped_type & mapped,
     AddedColumns & added,
     IColumn::Offset & current_offset,
     KnownRowsHolder<flag_per_row> & known_rows [[maybe_unused]],

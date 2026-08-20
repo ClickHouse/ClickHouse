@@ -1,10 +1,10 @@
 #pragma once
-#include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/KnownRowsHolder.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
+#include <Interpreters/HashJoin/KeyGetter.h>
+#include <Interpreters/HashJoin/KnownRowsHolder.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/castColumn.h>
@@ -213,10 +213,13 @@ private:
 
     /// Joins right table columns which indexes are present in right_indexes using specified map.
     /// Makes filter (1 if row presented in right table) and returns offsets to replicate (for ALL JOINS).
+    /// `fast_path` compiles out the per-row null-map and join-mask checks for the common case of
+    /// non-nullable keys and no ON-section condition (the checks are done at runtime otherwise).
     template <
         typename KeyGetter,
         typename Map,
         bool need_filter,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
@@ -230,6 +233,7 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
+        bool fast_path,
         typename AddedColumns,
         typename Selector>
     static size_t joinRightColumns(
