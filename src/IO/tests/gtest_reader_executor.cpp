@@ -234,6 +234,170 @@ private:
     bool bypass;
 };
 
+/// Shared state of `MockSegmentCacheProvider`: one append-only segment per `segment_size` bytes of the
+/// file, each committed up to its own frontier.
+struct MockSegmentState
+{
+    std::vector<char> store;
+    size_t file_size;
+    size_t segment_size;
+    /// Committed frontier per segment: bytes `[seg_start, seg_start + committed[i])` are cached.
+    std::vector<size_t> committed;
+    VectorWithMemoryTracking<ByteRange> writes;
+
+    MockSegmentState(size_t file_size_, size_t segment_size_)
+        : store(file_size_, 0), file_size(file_size_), segment_size(segment_size_)
+        , committed((file_size_ + segment_size_ - 1) / segment_size_, 0) {}
+
+    size_t segmentEnd(size_t seg) const { return std::min(file_size, (seg + 1) * segment_size); }
+
+    /// Commit a prefix of one segment, filling the store with the file's pattern.
+    void commitPrefix(size_t seg, size_t bytes)
+    {
+        const size_t seg_start = seg * segment_size;
+        const size_t n = std::min(bytes, segmentEnd(seg) - seg_start);
+        for (size_t i = 0; i < n; ++i)
+            store[seg_start + i] = static_cast<char>(patternByte(seg_start + i));
+        committed[seg] = std::max(committed[seg], n);
+    }
+};
+
+/// A cache tier shaped like the FILESYSTEM cache: segments fill APPEND-ONLY, so a segment can sit
+/// partially committed. A partial segment resolves as a prefix Hit plus a Miss over its WHOLE extent
+/// carrying an open writer - the shape `DiskCacheProvider::resolve` produces on the populating path -
+/// and the writer reports its committed prefix as `available` and appends at the live frontier. A
+/// whole-block (page-cache-style) mock cannot express this state.
+class MockSegmentCacheProvider : public ICacheProvider
+{
+public:
+    explicit MockSegmentCacheProvider(std::shared_ptr<MockSegmentState> state_) : state(std::move(state_)) {}
+
+    CacheTier tier() const override { return CacheTier::FilesystemCache; }
+    bool fillsWholeSegment() const override { return false; }   /// appends, like the filesystem cache
+    String name() const override { return "MockSegmentCache"; }
+
+    VectorWithMemoryTracking<CacheResolution> resolve(const StoredObject &, size_t, ByteRange range) override
+    {
+        VectorWithMemoryTracking<CacheResolution> out;
+        if (range.offset >= state->file_size)
+            return out;
+        const size_t ask_end = std::min(range.end(), state->file_size);
+        const size_t seg_size = state->segment_size;
+        for (size_t seg = range.offset / seg_size; seg * seg_size < ask_end; ++seg)
+        {
+            const size_t seg_start = seg * seg_size;
+            const size_t seg_end = state->segmentEnd(seg);
+            const size_t committed_end = seg_start + state->committed[seg];
+
+            if (committed_end > seg_start)
+            {
+                CacheResolution hit;
+                hit.kind = CacheResolution::Kind::Hit;
+                hit.range = ByteRange{seg_start, committed_end - seg_start};
+                hit.reader = std::make_unique<Reader>(hit.range, state);
+                out.push_back(std::move(hit));
+            }
+            if (committed_end < seg_end)
+            {
+                /// The miss spans the segment's WHOLE extent (its fill geometry), not just the tail.
+                CacheResolution miss;
+                miss.kind = CacheResolution::Kind::Miss;
+                miss.range = ByteRange{seg_start, seg_end - seg_start};
+                miss.writer = std::make_unique<Writer>(miss.range, seg, state);
+                out.push_back(std::move(miss));
+            }
+        }
+        return out;
+    }
+
+private:
+    class Reader : public CacheReader
+    {
+    public:
+        Reader(ByteRange r_, std::shared_ptr<MockSegmentState> s_) : r(r_), state(std::move(s_)) {}
+        ByteRange range() const override { return r; }
+        ChainedBuffers read(ByteRange sub) override
+        {
+            const size_t lo = std::max(sub.offset, r.offset);
+            const size_t hi = std::min(sub.end(), r.end());
+            ChainedBuffers out;
+            if (lo >= hi)
+                return out;
+            auto buf = std::make_shared<OwnedChainedBuffer>(hi - lo);
+            std::memcpy(buf->data(), state->store.data() + lo, hi - lo);
+            out.append(ChainedBufferNode{std::move(buf), 0, hi - lo, lo});
+            return out;
+        }
+    private:
+        ByteRange r;
+        std::shared_ptr<MockSegmentState> state;
+    };
+
+    class Writer : public CacheWriter
+    {
+    public:
+        Writer(ByteRange r_, size_t seg_, std::shared_ptr<MockSegmentState> s_)
+            : r(r_), seg(seg_), state(std::move(s_)) {}
+        ByteRange range() const override { return r; }
+        IntervalSet committed() const override
+        {
+            IntervalSet c;
+            if (state->committed[seg])
+                c.add(ByteRange{r.offset, state->committed[seg]});
+            return c;
+        }
+        ChainedBuffers read(ByteRange sub) override
+        {
+            return Reader{ByteRange{r.offset, state->committed[seg]}, state}.read(sub);
+        }
+
+        Lead claimLeadRole(ByteRange range) override
+        {
+            Lead lead;
+            const size_t lo = std::max(range.offset, r.offset);
+            const size_t hi = std::min(range.end(), r.end());
+            lead.available = ByteRange{lo, 0};
+            if (lo >= hi)
+                return lead;
+            const size_t committed_end = r.offset + state->committed[seg];
+            if (committed_end > lo)
+                lead.available = ByteRange{lo, std::min(committed_end, hi) - lo};
+            /// The role is held only while a tail remains to fill.
+            lead.claim = makeClaim(/*held=*/lead.available.end() < hi, /*release=*/nullptr);
+            return lead;
+        }
+
+        size_t write(ChainedBuffers data, const Claim & claim) override
+        {
+            chassert(claim);
+            /// Append-only at the live frontier; bytes below it are already committed.
+            const size_t write_offset = r.offset + state->committed[seg];
+            if (write_offset >= r.end())
+                return 0;
+            const ByteRange target{write_offset, r.end() - write_offset};
+            size_t contiguous = target.size;
+            if (auto data_gaps = data.gaps(target); !data_gaps.empty())
+            {
+                const size_t first_gap = data_gaps.front().offset;
+                contiguous = first_gap > write_offset ? first_gap - write_offset : 0;
+            }
+            if (!contiguous)
+                return 0;
+            const ByteRange write_range{write_offset, contiguous};
+            data.copyTo(state->store.data() + write_range.offset, write_range);
+            state->committed[seg] += contiguous;
+            state->writes.push_back(write_range);
+            return contiguous;
+        }
+    private:
+        ByteRange r;
+        size_t seg;
+        std::shared_ptr<MockSegmentState> state;
+    };
+
+    std::shared_ptr<MockSegmentState> state;
+};
+
 /// A source buffer that mimics object storage opened with `use_external_buffer=true`: it owns no
 /// read memory, and `nextImpl` fills the caller's externally `set()` buffer (`internal_buffer`).
 /// This is the path where a raw `read` would refill a stale external pointer; a local
@@ -631,6 +795,104 @@ TEST_F(ReaderExecutorTest, ServesBlockCommittedBetweenResolveAndClaimFromCache)
     /// Nothing filled block 0 - it was already committed (available, no claim).
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, block) << "wrote the already-committed block 0";
+}
+
+TEST_F(ReaderExecutorTest, PartiallyCommittedSegmentFetchesOnlyItsUncommittedTail)
+{
+    /// A segment committed only up to a mid-point: its prefix is served from cache and only the tail
+    /// `[available.end(), range.end())` is read from source, per the `Lead` contract. The segment's miss
+    /// spans its whole extent (that is its fill geometry), so a reader that ignores `available` would
+    /// re-read the cached prefix from the source.
+    const size_t seg_size = 1024;
+    const size_t committed = 400;
+    StoredObjects objects{makeFile("a.bin", seg_size)};
+
+    auto state = std::make_shared<MockSegmentState>(/*file_size=*/seg_size, seg_size);
+    state->commitPrefix(/*seg=*/0, committed);
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockSegmentCacheProvider>(state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = seg_size, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), seg_size);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), seg_size - committed)
+        << "the cached prefix [0, " << committed << ") was re-read from the source";
+
+    /// The populate completed the segment by appending exactly the tail - the fill must not stall.
+    EXPECT_EQ(state->committed[0], seg_size);
+    ASSERT_EQ(state->writes.size(), 1u);
+    EXPECT_EQ(state->writes[0].offset, committed);
+    EXPECT_EQ(state->writes[0].size, seg_size - committed);
+}
+
+TEST_F(ReaderExecutorTest, SeekIntoPartialSegmentBackfillsOnlyFromTheFrontier)
+{
+    /// Same partial segment, but the read starts INSIDE the uncommitted tail. The fill is append-only,
+    /// so populating from the seek position requires the bytes between the frontier and the seek too:
+    /// the fetch starts at the committed frontier - never below it, at the segment start.
+    const size_t seg_size = 1024;
+    const size_t committed = 400;
+    const size_t seek_to = 600;
+    StoredObjects objects{makeFile("a.bin", seg_size)};
+
+    auto state = std::make_shared<MockSegmentState>(/*file_size=*/seg_size, seg_size);
+    state->commitPrefix(/*seg=*/0, committed);
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockSegmentCacheProvider>(state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = seg_size, .cache_chain = std::move(chain)});
+    ex.seek(seek_to);
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), seg_size - seek_to);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(seek_to + i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), seg_size - committed)
+        << "fetched below the committed frontier " << committed;
+    /// The backfill completed the segment, so the bytes read are the ones that were missing.
+    EXPECT_EQ(state->committed[0], seg_size);
+    ASSERT_EQ(state->writes.size(), 1u);
+    EXPECT_EQ(state->writes[0].offset, committed);
+}
+
+TEST_F(ReaderExecutorTest, FullyCommittedTailAcrossSegmentsIsNotReFetched)
+{
+    /// Two segments: the first fully committed, the second partial. The fully committed one must not
+    /// drag the fetch back to its start, and only the second segment's tail is read from source.
+    const size_t seg_size = 512;
+    const size_t committed_second = 100;
+    StoredObjects objects{makeFile("a.bin", 2 * seg_size)};
+
+    auto state = std::make_shared<MockSegmentState>(/*file_size=*/2 * seg_size, seg_size);
+    state->commitPrefix(/*seg=*/0, seg_size);              // whole first segment cached
+    state->commitPrefix(/*seg=*/1, committed_second);      // second segment partial
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockSegmentCacheProvider>(state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 2 * seg_size, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 2 * seg_size);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), seg_size - committed_second)
+        << "re-read cached bytes: only [" << seg_size + committed_second << ", " << 2 * seg_size << ") is missing";
+    EXPECT_EQ(state->committed[1], seg_size);
 }
 
 TEST_F(ReaderExecutorTest, CoalescesConsecutiveMissesIntoOneSourceRead)
