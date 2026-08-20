@@ -1,0 +1,2 @@
+AggregateFunction(1, quantileDeterministicMergeIf, AggregateFunction(1, quantileDeterministic, UInt64, UInt64), UInt8)
+42
