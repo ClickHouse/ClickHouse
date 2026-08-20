@@ -63,7 +63,7 @@ PATH="$bin:$PATH" CONTINUE_ALL_PRS_PRS_FILE="$pr_file" CODEX_TEST_LOGIN_SLEEP=10
         --skip-submodules --no-status --worktree-base "$worktree_base" --color never > "$scratch/timeout.log" 2>&1
 
 grep -q 'TIMEOUT' "$scratch/timeout.log"
-[[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
+[[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home" ]]
 
 worker="${worktree_base}-0"
 submodule="$worker/contrib/FP16"
@@ -87,13 +87,17 @@ cleanup_wt="$scratch/cleanup-worktree"
 mkdir -p "$cleanup_wt/tmp/continue-all-prs/codex-home" \
     "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home"
 : > "$cleanup_wt/tmp/continue-all-prs/codex-home/auth.json"
+# The worker-local `CODEX_HOME` must not survive as a whole: `config.toml`,
+# plugin, and MCP state written by one pull request would otherwise become the
+# starting state of the next one on the same worker.
+: > "$cleanup_wt/tmp/continue-all-prs/codex-home/config.toml"
 : > "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json"
 AGENT=codex
 CUSTOM_KEY=1
 WT=("$cleanup_wt")
 cleanup_worker_codex_auth
-[[ ! -e "$cleanup_wt/tmp/continue-all-prs/codex-home/auth.json" ]]
-[[ ! -e "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home/auth.json" ]]
+[[ ! -e "$cleanup_wt/tmp/continue-all-prs/codex-home" ]]
+[[ ! -e "$cleanup_wt/tmp/continue-all-prs/triage-repository/.triage-codex-home" ]]
 
 # Load and exercise the sandbox-config helper directly. The mounted config
 # must not retain credentials embedded in remotes, URL-rewrite rules,
@@ -147,6 +151,42 @@ if env GIT_CONFIG_PARAMETERS="'credential.helper'='test-helper' 'http.https://gi
         echo 'Expected GIT_CONFIG_PARAMETERS HTTP header to be removed' >&2
         exit 1
     fi
+
+# The triage sandbox must replace the host `/proc` with a private one. With the
+# host procfs mounted, a triage turn can read `/proc/<pid>/environ` of the
+# orchestrator or of any other same-UID process and recover exactly the
+# credentials that were scrubbed from its own environment.
+triage_sandbox_flags=$(sed -n '/^            bwrap$/,/^        )$/p' "$repo/utils/continue-all-prs.sh")
+grep -q -- '--unshare-pid' <<< "$triage_sandbox_flags"
+grep -q -- '--proc /proc' <<< "$triage_sandbox_flags"
+
+if command -v bwrap >/dev/null 2>&1 && bwrap --ro-bind / / --unshare-pid --proc /proc --dev /dev true 2>/dev/null; then
+    env CONTINUE_ALL_PRS_TEST_SECRET=SECRET_ENVIRON_TOKEN sleep 30 &
+    secret_pid=$!
+    # Sanity check: without the sandbox the secret is readable from the host
+    # procfs, so the assertion below is not vacuous.
+    secret_visible=0
+    for _ in {1..200}; do
+        if tr '\0' '\n' < "/proc/$secret_pid/environ" 2>/dev/null | grep -q SECRET_ENVIRON_TOKEN; then
+            secret_visible=1
+            break
+        fi
+        sleep 0.05
+    done
+    if (( ! secret_visible )); then
+        echo 'Expected the host /proc to expose the secret outside the sandbox' >&2
+        kill "$secret_pid" 2>/dev/null || true
+        exit 1
+    fi
+    if bwrap --ro-bind / / --unshare-pid --proc /proc --die-with-parent --dev /dev \
+        sh -c "cat /proc/$secret_pid/environ 2>/dev/null" | grep -q SECRET_ENVIRON_TOKEN; then
+        echo 'Expected the triage sandbox to hide the host /proc' >&2
+        kill "$secret_pid" 2>/dev/null || true
+        exit 1
+    fi
+    kill "$secret_pid" 2>/dev/null || true
+    wait "$secret_pid" 2>/dev/null || true
+fi
 
 # Triage uses a private clone. After the PR head is checked out, it must still
 # initialize submodules so it can build and inspect the complete source tree.
@@ -244,4 +284,4 @@ kill -TERM "$runner_pid"
 wait "$runner_pid" || true
 runner_pid=""
 
-[[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home/auth.json" ]]
+[[ ! -e "${worktree_base}-0/tmp/continue-all-prs/codex-home" ]]

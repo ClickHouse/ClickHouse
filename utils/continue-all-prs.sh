@@ -902,7 +902,11 @@ cleanup_worker_codex_auth()
         # Remove it here too: `stop_workers` can run before `run_continue_pr`
         # reaches its normal cleanup path.
         rm -rf "$wt/tmp/continue-all-prs/triage-repository/.triage-codex-home" 2>/dev/null || true
-        [[ "$CUSTOM_KEY" != 1 ]] || rm -f "$wt/tmp/continue-all-prs/codex-home/auth.json" 2>/dev/null || true
+        # The worker-local `CODEX_HOME` is per-run state, not just credentials.
+        # `continue-pr-auto` keeps `tmp/continue-all-prs/` between pull requests,
+        # so leaving `config.toml`, plugin, or MCP state written by one run would
+        # silently become the starting state of the next, unrelated one.
+        [[ "$CUSTOM_KEY" != 1 ]] || rm -rf "$wt/tmp/continue-all-prs/codex-home" 2>/dev/null || true
     done
 }
 
@@ -1226,14 +1230,14 @@ run_continue_pr()
     if [[ "$AGENT" == "codex" && "$CUSTOM_KEY" == 1 ]]; then
         codex_home="$wt/tmp/continue-all-prs/codex-home"
         codex_env=("CODEX_HOME=$codex_home")
+        rm -rf "$codex_home"
         mkdir -p "$codex_home"
-        rm -f "$codex_home/auth.json"
         now=$(date +%s)
         remaining=$(( deadline - now ))
         (( remaining > 0 )) || return 124
         printf '%s\n' "$API_KEY" | timeout "$remaining" env CODEX_HOME="$codex_home" codex login --with-api-key >> "$log" 2>&1 || {
             ec=$?
-            rm -f "$codex_home/auth.json"
+            rm -rf "$codex_home"
             return "$ec"
         }
     fi
@@ -1245,9 +1249,17 @@ run_continue_pr()
         # The private clone prevents shared Git metadata from persisting. Use
         # an empty home and a sanitized, read-only clone config so the triage
         # model cannot discover host credentials or authenticate a push.
+        # A private PID namespace with its own procfs is part of that boundary:
+        # without it the host `/proc` stays visible and the triage model can
+        # read `/proc/<pid>/environ` of the orchestrator or of any other
+        # same-UID process and recover the credentials scrubbed from its own
+        # environment.
         triage_sandbox_args=(
             bwrap
             --ro-bind / /
+            --unshare-pid
+            --proc /proc
+            --die-with-parent
             --dev /dev
             --bind "$triage_wt" "$triage_wt"
             --ro-bind "$triage_sandbox_config" "$triage_wt/.git/config"
@@ -1534,7 +1546,7 @@ ${system_prompt}"
         (( ec != 0 )) && break
     done
 
-    [[ -z "$codex_home" ]] || rm -f "$codex_home/auth.json"
+    [[ -z "$codex_home" ]] || rm -rf "$codex_home"
     [[ -z "${triage_codex_home:-}" ]] || rm -rf "$triage_codex_home"
     return "$ec"
 }
