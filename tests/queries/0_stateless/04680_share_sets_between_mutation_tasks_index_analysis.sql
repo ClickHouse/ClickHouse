@@ -7,7 +7,8 @@
 -- The cache is per mutation and kept alive only by the part tasks holding it
 -- (`StorageMergeTree::getPreparedSetsCache` keeps a `weak_ptr`), so it is shared by part tasks that
 -- overlap in time. The subquery below deliberately holds its builder long enough for sibling tasks
--- to exercise that cache-hit path.
+-- to exercise that cache-hit path, but nothing asserted here requires them to actually overlap; see
+-- the `cache_hit_tasks_still_prune` comment below.
 
 DROP TABLE IF EXISTS t_share_sets;
 
@@ -72,9 +73,20 @@ SELECT
             GROUP BY set_key, query_id
         )
     ) AS no_part_task_materializes_a_key_twice,
-    -- The slowed builder makes at least one sibling use the cached speculative set. Such a sibling
-    -- must still use that set for primary-key pruning; parts 2 to 4 contain no matching id.
-    countIf(reused_the_set AND NOT holds_the_matching_rows) >= 1
+    -- A part task that took the set from the cache must still use it for primary-key pruning;
+    -- parts 2 to 4 contain no matching id, so such a task has to prune every granule.
+    --
+    -- The non-vacuity guard is `countIf(reused_the_set) >= 1`, over all part tasks rather than over
+    -- the siblings only. Whether a sibling reaches the cache while the slowed builder still holds it
+    -- depends on the background pool running the part tasks of one mutation concurrently, which is
+    -- not guaranteed: under load they can be fully serialized, each one starting only after the
+    -- previous one renamed its part, and then every part task builds the set for itself. That is how
+    -- this test failed once in fifty runs of the flaky check:
+    -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?PR=112941&sha=1e125acf0a03cc6f7dc4004acc1f934d914a253e&name_0=PR&name_1=Stateless%20tests%20%28amd_tsan%2C%20flaky%20check%29
+    -- The part task holding the matching rows always reuses the set, because its deferred runtime
+    -- build takes the set its own speculative pass put into the cache, so the guard stays honest
+    -- without depending on how the part tasks interleave.
+    countIf(reused_the_set) >= 1
         AND countIf(reused_the_set AND NOT holds_the_matching_rows AND pruned_everything)
             = countIf(reused_the_set AND NOT holds_the_matching_rows)
         AS cache_hit_tasks_still_prune
