@@ -27,7 +27,8 @@ public:
         ASTPtr query_ast_,
         Names insert_column_names_,
         UInt64 max_data_size_,
-        UInt64 wait_timeout_ms_);
+        UInt64 wait_timeout_ms_,
+        bool wait_for_flush_);
 
     String getName() const override { return "AsyncInsertQueueTransform"; }
 
@@ -45,6 +46,7 @@ private:
     Names insert_column_names;
     UInt64 max_data_size;
     UInt64 wait_timeout_ms;
+    bool wait_for_flush;
     LoggerPtr logger;
 
     /// The single block held while eligibility is still open, materialized and sized.

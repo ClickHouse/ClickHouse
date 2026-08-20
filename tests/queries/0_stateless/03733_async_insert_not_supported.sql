@@ -30,7 +30,7 @@ insert into table_join select 2 as id, toString(number) from numbers(10000);
 insert into table_join select 3 as id, toString(number) from numbers(10000);
 insert into table_join select 4 as id, toString(number) from numbers(10000);
 
-system flush async insert queue 03733_table_join;
+system flush async insert queue table_join;
 select 'chech table_join size';
 select count(*) from table_join;  -- Expecting 400000
 
