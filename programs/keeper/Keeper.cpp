@@ -544,27 +544,30 @@ try
 
         /// Prometheus (if defined and not setup yet with http_port)
         port_name = "prometheus.port";
-        createServer(
-            listen_host,
-            port_name,
-            listen_try,
-            [&, my_http_context = std::move(http_context)](UInt16 port) mutable
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socketBindListen(socket, listen_host, port);
-                socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
-                socket.setSendTimeout(my_http_context->getSendTimeout());
-                servers->emplace_back(
-                    listen_host,
-                    port_name,
-                    "Prometheus: http://" + address.toString(),
-                    std::make_unique<HTTPServer>(
-                        std::move(my_http_context),
-                        createKeeperPrometheusHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory"),
-                        server_pool,
-                        socket,
-                        http_params));
-            });
+        /// Handler configuration is parsed outside the callback: anything the callback throws is
+        /// reported as a listener bind failure, and only logged when `listen_try` is set. The port
+        /// check matches the early return in `createServer`.
+        if (config.has(port_name))
+        {
+            auto handler_factory = createKeeperPrometheusHandlerFactory(*this, config, async_metrics, "PrometheusHandler-factory");
+            createServer(
+                listen_host,
+                port_name,
+                listen_try,
+                [&, my_http_context = std::move(http_context)](UInt16 port) mutable
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(socket, listen_host, port);
+                    socket.setReceiveTimeout(my_http_context->getReceiveTimeout());
+                    socket.setSendTimeout(my_http_context->getSendTimeout());
+                    servers->emplace_back(
+                        listen_host,
+                        port_name,
+                        "Prometheus: http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::move(my_http_context), handler_factory, server_pool, socket, http_params));
+                });
+        }
 
         /// HTTP control endpoints
         port_name = "keeper_server.http_control.port";
