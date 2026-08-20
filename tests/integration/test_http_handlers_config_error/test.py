@@ -23,6 +23,9 @@ HTTPS_ONLY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/https_only.xml
 BAD_PROMETHEUS_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/bad_prometheus.xml"
 )
+BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_prometheus_no_port.xml"
+)
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -309,6 +312,45 @@ def test_handler_config_error_on_reload_is_reported_to_the_client(start_cluster)
                 "-c",
                 f"rm -f {BAD_CONFIG_IN_CONTAINER} {LISTEN_TRY_CONFIG_IN_CONTAINER}",
             ],
+            user="root",
+        )
+        node.restart_clickhouse()
+
+
+def test_prometheus_handler_config_is_not_read_without_a_prometheus_port(start_cluster):
+    # Without `prometheus.port` there is no standalone Prometheus listener to configure, so a
+    # broken rule in `<prometheus.handlers>` must not keep the server down. This is a lock on the
+    # port check that keeps the parse out of that path.
+    node.stop_clickhouse()
+
+    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search space
+    # would fail it for the wrong reason: `grep_in_log` globs every rotation and these instances
+    # set `<rotateOnOpen>`.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    node.copy_file_to_container(
+        os.path.join(
+            os.path.dirname(os.path.realpath(__file__)),
+            "configs/bad_prometheus_no_port.xml",
+        ),
+        BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER,
+    )
+    try:
+        node.start_clickhouse()
+
+        assert node.query("SELECT 1").strip() == "1"
+        assert (
+            node.grep_in_log(
+                substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+            )
+            == ""
+        )
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER}"],
             user="root",
         )
         node.restart_clickhouse()
