@@ -251,7 +251,8 @@ def main():
         "/reference/settings/server-settings/settings/other"
 
     with tempfile.TemporaryDirectory() as temp:
-        docs = Path(temp)
+        repo = Path(temp)
+        docs = repo / "docs"
         for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
             anchor = (
                 "unique_key_max_encoded_size"
@@ -263,36 +264,31 @@ def main():
                 if anchor == "unique_key_max_encoded_size"
                 else "/other"
             )
-            if family_name == "session-settings":
-                routes_path = mod._settings_legacy_routes_path(
-                    docs, family_name
-                )
-                routes_path.parent.mkdir(parents=True)
-                routes_path.write_text(
-                    mod._settings_legacy_routes_script(
-                        {anchor: target}, family
-                    ),
-                    encoding="utf-8",
-                )
-            else:
-                manifest_path = mod._settings_manifest_path(docs, family)
-                manifest_path.parent.mkdir(parents=True)
-                manifest_path.write_text(json.dumps({
-                    "routes": [{
-                        "prefix": anchor.rsplit("_", 1)[0],
-                        "mode": "raw",
-                        "target": target,
-                    }],
-                    "anchorRoutes": {anchor: target},
-                }), encoding="utf-8")
+            routes_path = mod._settings_legacy_routes_path(docs, family_name)
+            routes_path.parent.mkdir(parents=True, exist_ok=True)
+            routes_path.write_text(
+                mod._settings_legacy_routes_script(
+                    {anchor: target}, family
+                ),
+                encoding="utf-8",
+            )
+            contract_path = mod._settings_route_contract_path(
+                repo, family_name
+            )
+            contract_path.parent.mkdir(parents=True, exist_ok=True)
+            contract_path.write_text(mod._settings_route_contract([{
+                "prefix": anchor.rsplit("_", 1)[0],
+                "mode": "raw",
+                "target": target,
+            }]), encoding="utf-8")
 
         stale_link = (
             "[unique_key_max_encoded_size]"
             "(/reference/settings/session-settings/other"
             "#unique_key_max_encoded_size)"
         )
-        assert mod._rewrite_setting_links_from_manifests(
-            stale_link, docs
+        assert mod._rewrite_setting_links_from_routes(
+            stale_link, docs, repo_root=repo
         ) == (
             "[unique_key_max_encoded_size]"
             "(/reference/settings/session-settings/unique-key"
@@ -729,7 +725,7 @@ def main():
                 "brand_new_alpha",
                 "brand_new_beta",
             ]
-        ], previous_manifest=stable_manifest)
+        ], previous_routing=stable_manifest)
         stable_pages_by_route = {
             page.route: page for page in stable_pages
         }
@@ -760,7 +756,7 @@ def main():
         shrunk_pages = mod.group_session_settings([
             mod.SettingSection(
                 "stable_alpha", "stable_alpha", "stable_alpha")
-        ], previous_manifest=stable_manifest)
+        ], previous_routing=stable_manifest)
         assert len(shrunk_pages) == 1
         assert shrunk_pages[0].route == \
             "/reference/settings/session-settings/stable"
@@ -770,13 +766,25 @@ def main():
             stable_dest = (
                 stable_docs / "reference/settings/session-settings.mdx"
             )
-            stable_manifest_path = (
-                stable_docs
-                / "reference/settings/session-settings/manifest.json"
+            stable_routes_path = mod._settings_legacy_routes_path(
+                stable_docs, "session-settings"
             )
-            stable_manifest_path.parent.mkdir(parents=True)
-            stable_manifest_path.write_text(
-                json.dumps(stable_manifest), encoding="utf-8")
+            stable_routes_path.parent.mkdir(parents=True)
+            stable_routes_path.write_text(
+                mod._settings_legacy_routes_script(
+                    stable_manifest["anchorRoutes"],
+                    mod.SETTINGS_SPLIT_FAMILIES["session-settings"],
+                ),
+                encoding="utf-8",
+            )
+            stable_contract_path = mod._settings_route_contract_path(
+                stable_docs, "session-settings"
+            )
+            stable_contract_path.parent.mkdir(parents=True)
+            stable_contract_path.write_text(
+                mod._settings_route_contract(stable_manifest["routes"]),
+                encoding="utf-8",
+            )
             stable_artifacts = mod.split_session_settings_page(
                 stable_dest,
                 generated_page([
@@ -786,6 +794,7 @@ def main():
                     "sort_overflow_mode",
                 ]),
                 stable_docs,
+                stable_contract_path,
             )
             stable_artifacts_by_path = {
                 artifact.path: artifact.content
@@ -936,6 +945,13 @@ def main():
                 '"filesystem_cache_alpha":'
                 f'"{family["base_route"]}/filesystem-cache"'
             ) in routes_script
+            routes_script_path.parent.mkdir(parents=True, exist_ok=True)
+            routes_script_path.write_text(routes_script, encoding="utf-8")
+            assert lychee.collect_generated_setting_anchors(dest) == set(
+                mod._parse_settings_legacy_routes_script(
+                    routes_script, family_name
+                )
+            )
             if family_name == "server-settings":
                 assert '<a id="server-settings"></a>' in root
                 assert "# Server Settings" not in root
@@ -995,18 +1011,12 @@ def main():
                 assert base_route not in navigation["pages"]
 
             manifest_path = dest.with_suffix("") / "manifest.json"
-            if family_name == "session-settings":
-                assert manifest_path not in by_path
-                anchor_routes = mod._parse_settings_legacy_routes_script(
-                    routes_script, family_name
-                )
-                assert anchor_routes["filesystem_cache_alpha"] == \
-                    family["base_route"] + "/filesystem-cache"
-            else:
-                manifest = json.loads(by_path[manifest_path])
-                assert manifest["settings"] == len(family_names)
-                assert manifest["anchorRoutes"]["filesystem_cache_alpha"] == \
-                    family["base_route"] + "/filesystem-cache"
+            assert manifest_path not in by_path
+            anchor_routes = mod._parse_settings_legacy_routes_script(
+                routes_script, family_name
+            )
+            assert anchor_routes["filesystem_cache_alpha"] == \
+                family["base_route"] + "/filesystem-cache"
             generated_names = set()
             for path, page in by_path.items():
                 if path.suffix == ".mdx" and path != dest:
@@ -1048,7 +1058,8 @@ def main():
                 assert "import VersionHistory from " not in prefetch_page
 
     with tempfile.TemporaryDirectory() as temp:
-        docs = Path(temp)
+        repo = Path(temp)
+        docs = repo / "docs"
         current_manifests = {}
         for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
             anchor = (
@@ -1071,18 +1082,31 @@ def main():
             }
 
         for family_name, family in mod.SETTINGS_SPLIT_FAMILIES.items():
-            if family_name == "session-settings":
-                continue
-            manifest_path = mod._settings_manifest_path(docs, family)
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            manifest_path.write_text(
-                json.dumps(current_manifests[family_name]), encoding="utf-8")
+            routes_path = mod._settings_legacy_routes_path(docs, family_name)
+            routes_path.parent.mkdir(parents=True, exist_ok=True)
+            routes_path.write_text(
+                mod._settings_legacy_routes_script(
+                    current_manifests[family_name]["anchorRoutes"],
+                    family,
+                ),
+                encoding="utf-8",
+            )
+            contract_path = mod._settings_route_contract_path(
+                repo, family_name
+            )
+            contract_path.parent.mkdir(parents=True, exist_ok=True)
+            contract_path.write_text(
+                mod._settings_route_contract(
+                    current_manifests[family_name]["routes"]
+                ),
+                encoding="utf-8",
+            )
         stale_link = (
             "[unique_key_max_encoded_size]"
             "(/reference/settings/session-settings/other"
             "#unique_key_max_encoded_size)"
         )
-        assert mod._rewrite_setting_links_from_manifests(
+        assert mod._rewrite_setting_links_from_routes(
             stale_link, docs, current_manifests
         ) == (
             "[unique_key_max_encoded_size]"
@@ -1094,28 +1118,30 @@ def main():
 
         def fake_generate_artifacts(
                 gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
-                generated_manifests=None):
-            del binary, repo_root, migrate, lk, file_map, remap
+                generated_routes=None):
+            del binary, migrate, lk, file_map, remap
             if gen["name"] in mod.SETTINGS_SPLIT_FAMILIES:
                 family = mod.SETTINGS_SPLIT_FAMILIES[gen["name"]]
-                if gen["name"] == "session-settings":
-                    return [mod.GeneratedArtifact(
-                        mod._settings_legacy_routes_path(
-                            docs_dir, gen["name"]
-                        ),
-                        mod._settings_legacy_routes_script(
-                            current_manifests[gen["name"]]["anchorRoutes"],
-                            family,
-                        ),
-                    )]
                 return [mod.GeneratedArtifact(
-                    mod._settings_manifest_path(docs_dir, family),
-                    json.dumps(current_manifests[gen["name"]]),
+                    mod._settings_legacy_routes_path(
+                        docs_dir, gen["name"]
+                    ),
+                    mod._settings_legacy_routes_script(
+                        current_manifests[gen["name"]]["anchorRoutes"],
+                        family,
+                    ),
+                ), mod.GeneratedArtifact(
+                    mod._settings_route_contract_path(
+                        repo_root, gen["name"]
+                    ),
+                    mod._settings_route_contract(
+                        current_manifests[gen["name"]]["routes"]
+                    ),
                 )]
             if gen["name"] == "beta-and-experimental":
                 observed_beta_rewrite.append(
-                    mod._rewrite_setting_links_from_manifests(
-                        stale_link, docs_dir, generated_manifests)
+                    mod._rewrite_setting_links_from_routes(
+                        stale_link, docs_dir, generated_routes)
                 )
             return []
 

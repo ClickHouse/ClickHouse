@@ -131,17 +131,45 @@ def collect_generated_setting_anchors(page_path):
     """Expose client-side setting redirects as fragment aliases to lychee."""
     page_path = os.fspath(page_path)
     normalized_path = page_path.replace(os.sep, "/")
-    if normalized_path.endswith("/reference/settings/session-settings.mdx"):
-        # Session settings no longer publish a separate manifest. The generated
-        # legacy-routes script contains the same exact anchor-to-page map.
-        docs_root = os.path.dirname(os.path.dirname(os.path.dirname(page_path)))
+    settings_routes = {
+        "/reference/settings/session-settings.mdx": (
+            "session-settings",
+            "/reference/settings/session-settings",
+        ),
+        "/reference/settings/formats.mdx": (
+            "format-settings",
+            "/reference/settings/formats",
+        ),
+        "/reference/settings/server-settings/settings.mdx": (
+            "server-settings",
+            "/reference/settings/server-settings/settings",
+        ),
+        "/reference/settings/merge-tree-settings.mdx": (
+            "mergetree-settings",
+            "/reference/settings/merge-tree-settings",
+        ),
+    }
+    matched = next(
+        (
+            (suffix, route_info)
+            for suffix, route_info in settings_routes.items()
+            if normalized_path.endswith(suffix)
+        ),
+        None,
+    )
+    if matched:
+        suffix, route_info = matched
+        family_name, base_route = route_info
+        docs_root = normalized_path[:-len(suffix)].replace("/", os.sep)
         routes_path = os.path.join(
             docs_root,
-            "_site/customizations/settings-legacy-routes/session-settings.js",
+            "_site/customizations/settings-legacy-routes",
+            family_name + ".js",
         )
         assignment = (
             'window.clickhouseSettingsLegacyRoutes['
-            '"/reference/settings/session-settings"] = '
+            + json.dumps(base_route)
+            + '] = '
         )
         try:
             with open(routes_path, encoding="utf-8") as f:
@@ -157,16 +185,7 @@ def collect_generated_setting_anchors(page_path):
         except (OSError, ValueError, TypeError):
             return set()
         return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
-
-    manifest = os.path.splitext(page_path)[0] + "/manifest.json"
-    if not os.path.isfile(manifest):
-        return set()
-    try:
-        with open(manifest, encoding="utf-8") as f:
-            anchor_routes = json.load(f).get("anchorRoutes", {})
-    except (OSError, ValueError, TypeError):
-        return set()
-    return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+    return set()
 
 
 def dump_inputs(docs_root):

@@ -828,18 +828,18 @@ def _setting_page_for_route(base_route, route, route_definition=None):
 def group_session_settings(
         sections,
         base_route=SESSION_SETTINGS_BASE_ROUTE,
-        previous_manifest=None):
+        previous_routing=None):
     """Group settings without changing the page of an existing setting.
 
     The committed routing metadata is the routing contract. New settings first
     join a matching existing page; only the remaining new settings participate
     in the prefix-count heuristic which can create another page.
     """
-    if not previous_manifest or not previous_manifest.get("anchorRoutes"):
+    if not previous_routing or not previous_routing.get("anchorRoutes"):
         return _group_session_settings_fresh(sections, base_route)
 
-    previous_anchor_routes = previous_manifest["anchorRoutes"]
-    previous_routes = previous_manifest.get("routes", [])
+    previous_anchor_routes = previous_routing["anchorRoutes"]
+    previous_routes = previous_routing.get("routes", [])
     route_definitions = {
         route["target"]: route
         for route in previous_routes
@@ -1079,19 +1079,44 @@ def _rewrite_setting_links(markdown, routes, base_route, anchor_routes=None):
         r"\]\(#(?P<anchor>[A-Za-z0-9_.:-]+)\)", fragment_repl, markdown)
 
 
-def _settings_manifest_path(docs_dir, family):
-    return (
-        Path(docs_dir)
-        / family["base_route"].lstrip("/")
-        / "manifest.json"
-    )
-
-
 def _settings_legacy_routes_path(docs_dir, family_name):
     return (
         Path(docs_dir)
         / "_site/customizations/settings-legacy-routes"
         / f"{family_name}.js"
+    )
+
+
+def _settings_route_contract_path(repo_root, family_name):
+    return (
+        Path(repo_root)
+        / "ci/jobs/scripts/docs/autogenerate/settings-route-contracts"
+        / f"{family_name}.json"
+    )
+
+
+def _settings_route_contract(routes):
+    route_lines = [
+        "    " + json.dumps(route, separators=(",", ":"))
+        for route in routes
+    ]
+    return (
+        '{\n  "version": 1,\n  "routes": [\n'
+        + ",\n".join(route_lines)
+        + '\n  ]\n}\n'
+    )
+
+
+def _settings_routes_from_contract_content(content, source):
+    contract = json.loads(content)
+    if contract.get("version") != 1 or not isinstance(contract.get("routes"), list):
+        raise ValueError(f"invalid settings route contract: {source}")
+    return contract["routes"]
+
+
+def _settings_routes_from_contract(path):
+    return _settings_routes_from_contract_content(
+        Path(path).read_text(encoding="utf-8"), path
     )
 
 
@@ -1113,79 +1138,73 @@ def _parse_settings_legacy_routes_script(script, family_name):
     return json.loads(route_line[len(assignment):-1])
 
 
-def _settings_anchor_routes_from_legacy_script(docs_dir, family_name):
+def _settings_routing_from_disk(docs_dir, repo_root, family_name):
     script = _settings_legacy_routes_path(docs_dir, family_name).read_text(
         encoding="utf-8"
     )
-    return _parse_settings_legacy_routes_script(script, family_name)
+    return {
+        "routes": _settings_routes_from_contract(
+            _settings_route_contract_path(repo_root, family_name)
+        ),
+        "anchorRoutes": _parse_settings_legacy_routes_script(
+            script, family_name
+        ),
+    }
 
 
-def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
-    family = SETTINGS_SPLIT_FAMILIES[family_name]
-    if family_name == "session-settings":
-        # The session-settings manifest is intentionally not persisted. Its
-        # exact anchor map already exists in the generated legacy-routes script.
-        routes_path = _settings_legacy_routes_path(
-            docs_dir, family_name
-        ).resolve()
-        matches = [
-            artifact for artifact in artifacts
-            if artifact.path.resolve() == routes_path
-        ]
-        if len(matches) != 1:
-            raise ValueError(
-                f"expected one generated {family_name} legacy routes script, "
-                f"found {len(matches)}"
-            )
-        return {
-            "routes": [],
-            "anchorRoutes": _parse_settings_legacy_routes_script(
-                matches[0].content, family_name
-            ),
-        }
-
-    manifest_path = _settings_manifest_path(docs_dir, family).resolve()
-    matches = [
+def _settings_routing_from_artifacts(
+        family_name, artifacts, docs_dir, repo_root):
+    routes_path = _settings_legacy_routes_path(docs_dir, family_name).resolve()
+    route_matches = [
         artifact for artifact in artifacts
-        if artifact.path.resolve() == manifest_path
+        if artifact.path.resolve() == routes_path
     ]
-    if len(matches) != 1:
+    contract_path = _settings_route_contract_path(
+        repo_root, family_name
+    ).resolve()
+    contract_matches = [
+        artifact for artifact in artifacts
+        if artifact.path.resolve() == contract_path
+    ]
+    if len(route_matches) != 1 or len(contract_matches) != 1:
         raise ValueError(
-            f"expected one generated {family_name} manifest, found {len(matches)}"
+            f"expected generated {family_name} routing artifacts, found "
+            f"{len(route_matches)} legacy scripts and "
+            f"{len(contract_matches)} contracts"
         )
-    return json.loads(matches[0].content)
+    return {
+        "routes": _settings_routes_from_contract_content(
+            contract_matches[0].content, family_name
+        ),
+        "anchorRoutes": _parse_settings_legacy_routes_script(
+            route_matches[0].content, family_name
+        ),
+    }
 
 
-def _rewrite_setting_links_from_manifests(
-        markdown, docs_dir, generated_manifests=None):
+def _rewrite_setting_links_from_routes(
+        markdown, docs_dir, generated_routes=None, repo_root=None):
     """Resolve settings links against current generated routing metadata."""
-    if generated_manifests is not None:
-        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_manifests)
+    if generated_routes is not None:
+        missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_routes)
         if missing:
             raise ValueError(
-                "missing generated settings manifests: "
+                "missing generated settings routes: "
                 + ", ".join(sorted(missing))
             )
 
     for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
-        if generated_manifests is None:
-            if family_name == "session-settings":
-                manifest = {
-                    "routes": [],
-                    "anchorRoutes": _settings_anchor_routes_from_legacy_script(
-                        docs_dir, family_name
-                    ),
-                }
-            else:
-                manifest_path = _settings_manifest_path(docs_dir, family)
-                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if generated_routes is None:
+            route_metadata = _settings_routing_from_disk(
+                docs_dir, repo_root, family_name
+            )
         else:
-            manifest = generated_manifests[family_name]
+            route_metadata = generated_routes[family_name]
         markdown = _rewrite_setting_links(
             markdown,
-            manifest["routes"],
+            route_metadata["routes"],
             family["base_route"],
-            manifest["anchorRoutes"],
+            route_metadata["anchorRoutes"],
         )
     return markdown
 
@@ -1617,32 +1636,28 @@ export default __COMPONENT_NAME__;
     )
 
 
-def split_settings_page(dest, content, docs_dir, family_name):
+def split_settings_page(
+        dest, content, docs_dir, family_name, route_contract_path=None):
     family = SETTINGS_SPLIT_FAMILIES[family_name]
     root_frontmatter, preamble, sections = parse_settings_page(content)
-    manifest_path = _settings_manifest_path(docs_dir, family)
-    previous_manifest = None
-    if manifest_path.is_file():
-        previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    elif family_name == "session-settings":
-        legacy_routes_path = _settings_legacy_routes_path(docs_dir, family_name)
-        if legacy_routes_path.is_file():
-            previous_manifest = {
-                "anchorRoutes": _settings_anchor_routes_from_legacy_script(
-                    docs_dir, family_name
-                ),
-            }
+    previous_routing = None
+    legacy_routes_path = _settings_legacy_routes_path(docs_dir, family_name)
+    if legacy_routes_path.is_file() and route_contract_path \
+            and Path(route_contract_path).is_file():
+        previous_routing = {
+            "routes": _settings_routes_from_contract(route_contract_path),
+            "anchorRoutes": _parse_settings_legacy_routes_script(
+                legacy_routes_path.read_text(encoding="utf-8"), family_name
+            ),
+        }
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
-        previous_manifest=previous_manifest,
+        previous_routing=previous_routing,
     )
     routes = session_settings_routes(pages)
     anchor_routes = _settings_anchor_routes(pages, preamble, sections)
     shard_dir = Path(dest).with_suffix("")
-    current_routes = {
-        page.route for page in walk_setting_pages(pages) if page.sections
-    }
 
     preamble_without_imports = IMPORT_RE.sub("", preamble).strip()
     # Mintlify renders the frontmatter title as the page H1. Some generated
@@ -1670,6 +1685,10 @@ def split_settings_page(dest, content, docs_dir, family_name):
         _settings_legacy_routes_path(docs_dir, family_name),
         _settings_legacy_routes_script(anchor_routes, family),
     ))
+    if route_contract_path:
+        artifacts.append(GeneratedArtifact(
+            Path(route_contract_path), _settings_route_contract(routes)
+        ))
 
     for page in walk_setting_pages(pages):
         if not page.sections:
@@ -1716,29 +1735,19 @@ def split_settings_page(dest, content, docs_dir, family_name):
     artifacts.append(GeneratedArtifact(
         shard_dir / "navigation.json", json.dumps(navigation, indent=2, sort_keys=False) + "\n"))
 
-    manifest = {
-        "settings": len(sections),
-        "anchorRoutes": anchor_routes,
-        "routes": routes,
-        "pages": sorted(current_routes),
-    }
-    # Session settings persist this routing data only in the legacy-routes
-    # script. Other settings families continue to publish their manifests.
-    if family_name != "session-settings":
-        artifacts.append(GeneratedArtifact(
-            manifest_path,
-            json.dumps(manifest, indent=2, sort_keys=False) + "\n",
-        ))
     return artifacts
 
 
-def split_session_settings_page(dest, content, docs_dir):
-    return split_settings_page(dest, content, docs_dir, "session-settings")
+def split_session_settings_page(
+        dest, content, docs_dir, route_contract_path=None):
+    return split_settings_page(
+        dest, content, docs_dir, "session-settings", route_contract_path
+    )
 
 
 def generate(
         gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
-        generated_settings_manifests=None):
+        generated_settings_routes=None):
     scratch = tempfile.mkdtemp(prefix="autogen-")
     # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
     for staged, src in gen.get("deps", {}).items():
@@ -1765,8 +1774,12 @@ def generate(
         else:
             content = transform_body(migrate, content, gen["dest"], dest, lk)
         if gen["name"] == "beta-and-experimental":
-            content = _rewrite_setting_links_from_manifests(
-                content, docs_dir, generated_settings_manifests)
+            content = _rewrite_setting_links_from_routes(
+                content,
+                docs_dir,
+                generated_settings_routes,
+                repo_root,
+            )
 
     if gen["method"] == "markers":
         with open(dest, encoding="utf-8") as f:
@@ -1785,7 +1798,7 @@ def generate(
 
 def generate_artifacts(
         gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap,
-        generated_settings_manifests=None):
+        generated_settings_routes=None):
     dest, content = generate(
         gen,
         binary,
@@ -1795,12 +1808,18 @@ def generate_artifacts(
         lk,
         file_map,
         remap,
-        generated_settings_manifests,
+        generated_settings_routes,
     )
     if content is None:
         return []
     if gen["name"] in SETTINGS_SPLIT_FAMILIES and remap:
-        return split_settings_page(dest, content, docs_dir, gen["name"])
+        return split_settings_page(
+            dest,
+            content,
+            docs_dir,
+            gen["name"],
+            _settings_route_contract_path(repo_root, gen["name"]),
+        )
     return [GeneratedArtifact(Path(dest), content)]
 
 
@@ -1986,23 +2005,16 @@ def main(argv=None):
 
     drift = 0
     selected_generator_names = {gen["name"] for gen in generators}
-    generated_settings_manifests = {}
+    generated_settings_routes = {}
     if "beta-and-experimental" in selected_generator_names:
         for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
             if family_name in selected_generator_names:
                 continue
-            if family_name == "session-settings":
-                generated_settings_manifests[family_name] = {
-                    "routes": [],
-                    "anchorRoutes": _settings_anchor_routes_from_legacy_script(
-                        docs_dir, family_name
-                    ),
-                }
-            else:
-                manifest_path = _settings_manifest_path(docs_dir, family)
-                generated_settings_manifests[family_name] = json.loads(
-                    manifest_path.read_text(encoding="utf-8")
+            generated_settings_routes[family_name] = (
+                _settings_routing_from_disk(
+                    docs_dir, repo_root, family_name
                 )
+            )
     for gen in generators:
         artifacts = generate_artifacts(
             gen,
@@ -2013,13 +2025,13 @@ def main(argv=None):
             lk,
             file_map,
             args.remap,
-            generated_settings_manifests or None,
+            generated_settings_routes or None,
         )
         stale_paths = []
         if gen["name"] in SETTINGS_SPLIT_FAMILIES and args.remap:
-            generated_settings_manifests[gen["name"]] = (
-                _settings_manifest_from_artifacts(
-                    gen["name"], artifacts, docs_dir)
+            generated_settings_routes[gen["name"]] = (
+                _settings_routing_from_artifacts(
+                    gen["name"], artifacts, docs_dir, repo_root)
             )
             stale_paths = stale_settings_page_paths(
                 gen["name"], artifacts, docs_dir)
