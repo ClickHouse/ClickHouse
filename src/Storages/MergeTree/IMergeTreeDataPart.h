@@ -239,7 +239,11 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
-    Estimates getEstimates() const;
+    /// Returns column names that have statistics files in this part (packed or wide).
+    Names getColumnsWithStatistics() const;
+    /// Returns estimates for the requested columns, loading missing ones and caching them.
+    /// Empty `required_columns` means "don't load statistics" and returns an empty map.
+    Estimates getEstimates(const Names & required_columns) const;
     void setEstimates(const Estimates & new_estimates);
 
     /// Initialize columns (from columns.txt if exists, or create from column files if not).
@@ -881,10 +885,10 @@ private:
     /// inside are shared even when only some columns have the same kinds. Never null.
     PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
-    /// Small state of finalized statistics for suitable statistics types.
-    /// Lazily initialized on a first access.
+    /// Per-column entries: a value when statistics were loaded, or nullopt after a
+    /// deterministic miss, so the column is not re-probed on every query.
     mutable std::mutex estimates_mutex;
-    mutable std::optional<Estimates> estimates TSA_GUARDED_BY(estimates_mutex);
+    mutable std::unordered_map<String, std::optional<Estimate>> estimates TSA_GUARDED_BY(estimates_mutex);
 
     /// Reads part unique identifier (if exists) from uuid.txt
     void loadUUID();

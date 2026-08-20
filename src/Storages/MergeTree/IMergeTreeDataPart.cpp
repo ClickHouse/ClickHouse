@@ -102,6 +102,7 @@ namespace ProfileEvents
     extern const Event LoadedPrimaryIndexFiles;
     extern const Event LoadedPrimaryIndexRows;
     extern const Event LoadedPrimaryIndexBytes;
+    extern const Event LoadedStatisticsColumns;
 }
 
 namespace DimensionalMetrics
@@ -1357,7 +1358,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
 
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
+            {
                 result.emplace(column_desc->name, std::move(column_stat));
+                ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
+            }
         }
         catch (Exception & e)
         {
@@ -1399,7 +1403,10 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
 
             auto column_stat = ColumnStatistics::deserialize(compressed_buf, column_desc->type);
             if (column_stat)
+            {
                 result.emplace(column_desc->name, std::move(column_stat));
+                ProfileEvents::increment(ProfileEvents::LoadedStatisticsColumns);
+            }
         }
         catch (Exception & e)
         {
@@ -1436,33 +1443,107 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     return loadStatisticsWide(required_columns_set);
 }
 
-Estimates IMergeTreeDataPart::getEstimates() const
+Names IMergeTreeDataPart::getColumnsWithStatistics() const
 {
-    std::lock_guard lock(estimates_mutex);
+    Names result;
 
-    if (estimates.has_value())
-        return *estimates;
+    /// Packed parts store column statistics in a single `statistics.packed` file
+    /// (indexed by `PackedFilesReader`). `checksums.files` has only the
+    /// top-level archive entry, so iterate the reader's file list instead.
+    if (auto * reader = getStatisticsPackedReader())
+    {
+        for (const auto & filename : reader->getFileNames())
+        {
+            if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+            {
+                size_t prefix_len = STATS_FILE_PREFIX.size();
+                size_t suffix_len = STATS_FILE_SUFFIX.size();
+                String col_name = unescapeForFileName(filename.substr(prefix_len, filename.size() - prefix_len - suffix_len));
+                if (getColumnsDescription().has(col_name))
+                    result.push_back(std::move(col_name));
+            }
+        }
+        return result;
+    }
 
-    /// The raw statistics are transient, so load them in the default arena; only the cached
-    /// estimates map is long-lived (kept on the part until reload), so build it in the dedicated
-    /// arena, like the rest of the part's metadata.
-    auto statistics = loadStatistics();
+    /// Wide parts have one `statistics_<col>.stats` checksum entry per column.
+    for (const auto & [filename, _] : checksums.files)
+    {
+        if (filename.starts_with(STATS_FILE_PREFIX) && filename.ends_with(STATS_FILE_SUFFIX))
+        {
+            size_t prefix_len = STATS_FILE_PREFIX.size();
+            size_t suffix_len = STATS_FILE_SUFFIX.size();
+            String col_name = unescapeForFileName(filename.substr(prefix_len, filename.size() - prefix_len - suffix_len));
+            if (getColumnsDescription().has(col_name))
+                result.push_back(std::move(col_name));
+        }
+    }
+
+    return result;
+}
+
+Estimates IMergeTreeDataPart::getEstimates(const Names & required_columns) const
+{
+    /// Empty `required_columns` means "don't load statistics".
+    if (required_columns.empty())
+        return {};
+
+    auto collectResult = [&](const std::unordered_map<String, std::optional<Estimate>> & source) -> Estimates
+    {
+        Estimates result;
+        result.reserve(required_columns.size());
+        for (const auto & column_name : required_columns)
+            if (auto it = source.find(column_name); it != source.end() && it->second.has_value())
+                result.emplace(column_name, *it->second);
+        return result;
+    };
+
+    Names missing;
 
     {
-        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        Estimates new_estimates;
-        for (const auto & [column_name, stats] : statistics)
-            new_estimates.emplace(column_name, stats->getEstimate());
-        estimates = std::move(new_estimates);
+        std::lock_guard lock(estimates_mutex);
+
+        for (const auto & column_name : required_columns)
+            if (!estimates.contains(column_name))
+                missing.push_back(column_name);
+
+        if (missing.empty())
+            return collectResult(estimates);
     }
-    return *estimates;
+
+    /// Load off the lock, then commit under the lock.
+    ColumnsStatistics statistics;
+    try
+    {
+        statistics = loadStatistics(missing);
+    }
+    catch (const Exception &)
+    {
+        /// Record nullopt for every failed column so it is not re-read on every query.
+        tryLogCurrentException(storage.log, fmt::format("Failed to load statistics for part {}", name));
+    }
+
+    std::lock_guard lock(estimates_mutex);
+    {
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        for (const auto & column_name : missing)
+        {
+            if (auto it = statistics.find(column_name); it != statistics.end())
+                estimates.insert_or_assign(column_name, it->second->getEstimate());
+            else
+                estimates.insert_or_assign(column_name, std::nullopt);
+        }
+    }
+
+    return collectResult(estimates);
 }
 
 void IMergeTreeDataPart::setEstimates(const Estimates & new_estimates)
 {
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     std::lock_guard lock(estimates_mutex);
-    estimates = new_estimates;
+    for (const auto & [col_name, estimate] : new_estimates)
+        estimates.insert_or_assign(col_name, estimate);
 }
 
 void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency, bool load_metadata_version)
