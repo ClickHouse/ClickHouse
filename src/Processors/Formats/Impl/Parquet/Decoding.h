@@ -10,21 +10,12 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-<<<<<<< HEAD
 namespace DB
 {
 class ColumnLowCardinality;
 class IDataType;
 }
 
-||||||| adae6c4db928
-=======
-namespace DB
-{
-class IDataType;
-}
-
->>>>>>> origin/master
 namespace DB::Parquet
 {
 
