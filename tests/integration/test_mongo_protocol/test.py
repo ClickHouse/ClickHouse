@@ -11,6 +11,8 @@ import bson
 import pymongo
 import pytest
 
+from pymongo.write_concern import WriteConcern
+
 from helpers.cluster import ClickHouseCluster
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -371,7 +373,7 @@ def test_schemaful_json_id_shape_is_not_document_collection(started_cluster):
         password="123",
     )
     node.query(
-        'INSERT INTO db.schemaful_json_id FORMAT JSONEachRow\\n{"_id":"external", "json":{"field":1}}',
+        'INSERT INTO db.schemaful_json_id FORMAT JSONEachRow\n{"_id":"external", "json":{"field":1}}',
         password="123",
     )
 
@@ -507,12 +509,13 @@ def test_bulk_delete_executes_every_spec(started_cluster):
     collection.drop()
     collection.insert_many([{"id": 1}, {"id": 2}, {"id": 3}])
 
-    result = collection.bulk_write(
-        [pymongo.DeleteMany({"id": 1}), pymongo.DeleteMany({"id": 2})]
-    )
+    collection.bulk_write([pymongo.DeleteMany({"id": 1}), pymongo.DeleteMany({"id": 2})])
 
-    assert result.deleted_count == 2
-    assert collection.estimated_document_count() == 1
+    # A mutation is asynchronous, so the reply carries no count of its own -
+    # `test_mutation_replies_report_unknown_counts` is about that. What every spec did is what
+    # the collection holds afterwards.
+    assert wait_for(lambda: collection.estimated_document_count() == 1)
+    assert [document["id"] for document in collection.find({})] == [3]
 
 
 def test_mutation_replies_report_unknown_counts(started_cluster):
@@ -562,7 +565,8 @@ def test_ordered_bulk_mutation_reports_the_successful_prefix(started_cluster):
                 pymongo.UpdateMany({"id": 2}, {"$set": {"unknown_column": 1}}),
             ]
         )
-    assert error.value.details["nMatched"] == 1
+    # The count of a mutation is not known when it is acknowledged, so what says that the first
+    # spec ran is the value it wrote.
     assert error.value.details["writeErrors"][0]["index"] == 1
     assert wait_for(lambda: collection.find_one({"id": 1})["value"] == 2)
 
@@ -573,7 +577,6 @@ def test_ordered_bulk_mutation_reports_the_successful_prefix(started_cluster):
                 pymongo.DeleteMany({"unknown_column": 1}),
             ]
         )
-    assert error.value.details["nRemoved"] == 1
     assert error.value.details["writeErrors"][0]["index"] == 1
     assert wait_for(lambda: collection.estimated_document_count() == 1)
 
@@ -2047,3 +2050,178 @@ def test_dialect_over_a_document_collection_is_an_error(started_cluster):
     assert [document["id"] for document in collection.find({})] == [1]
 
     collection.drop()
+
+
+def test_a_column_named_like_the_document_alias_is_not_a_document(started_cluster):
+    """The reply of a read of a collection of whole documents is built out of the document of each
+    row, and what says that a result is of that shape is the rewrite of the query, not the name of
+    a column: a table of ClickHouse that has a column named like the internal alias keeps its own
+    columns."""
+    node = cluster.instances["node"]
+    client = make_client()
+    collection = client["db"]["alias_named_column"]
+
+    collection.drop()
+    node.query(
+        "CREATE TABLE db.alias_named_column (id Int64, __mongo_document String) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.alias_named_column VALUES (1, 'not a document')",
+        password="123",
+    )
+
+    assert list(collection.find({})) == [{"id": 1, "__mongo_document": "not a document"}]
+
+    collection.drop()
+
+
+def test_an_object_id_of_a_failed_document_stays_free(started_cluster):
+    """An object id addresses a document that exists, so an unordered insert whose document fails
+    leaves its id free: a later document of the same batch may use it."""
+    client = make_client()
+    collection = client["db"]["free_object_id"]
+
+    collection.drop()
+    # The first document fails to convert - `$bad` is no operator of a stored document - and the
+    # third one, which is valid, takes the very id the failed one named.
+    with pytest.raises(pymongo.errors.BulkWriteError):
+        collection.insert_many(
+            [
+                {"_id": "x", "$bad": 1},
+                {"_id": "y", "value": "second"},
+                {"_id": "x", "value": "third"},
+            ],
+            ordered=False,
+        )
+
+    assert sorted(
+        (document["_id"], document["value"]) for document in collection.find({})
+    ) == [("x", "third"), ("y", "second")]
+
+    collection.drop()
+
+
+def test_a_write_concern_that_cannot_be_honoured_is_an_error(started_cluster):
+    """A write goes to one table and is acknowledged when it is written. A write concern that asks
+    for more than that must be an error rather than an `ok` for a weaker write than the client
+    asked for."""
+    collection = make_client()["db"]["write_concern"]
+    collection.drop()
+
+    # What the endpoint does satisfy is accepted.
+    collection.with_options(
+        write_concern=WriteConcern(w=1)
+    ).insert_one({"id": 1})
+    collection.with_options(
+        write_concern=WriteConcern(w="majority")
+    ).insert_one({"id": 2})
+
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.with_options(
+            write_concern=WriteConcern(w=2)
+        ).insert_one({"id": 3})
+    with pytest.raises(pymongo.errors.PyMongoError):
+        collection.with_options(
+            write_concern=WriteConcern(j=True)
+        ).insert_one({"id": 4})
+
+    assert sorted(document["id"] for document in collection.find({})) == [1, 2]
+
+    collection.drop()
+
+
+def test_an_update_option_that_is_not_implemented_is_an_error(started_cluster):
+    """`arrayFilters` chooses which elements of an array a positional update writes and a
+    `collation` changes which documents a filter matches. Neither is translated, so a command that
+    asks for one is refused rather than answered with `ok` for a different write."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.update_options SYNC", password="123")
+    node.query(
+        "CREATE TABLE db.update_options (id Int64, value Int64) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query("INSERT INTO db.update_options VALUES (1, 1)", password="123")
+
+    database = make_client()["db"]
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command(
+            {
+                "update": "update_options",
+                "updates": [
+                    {
+                        "q": {"id": 1},
+                        "u": {"$set": {"value": 2}},
+                        "multi": True,
+                        "collation": {"locale": "en"},
+                    }
+                ],
+            }
+        )
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command(
+            {
+                "update": "update_options",
+                "updates": [
+                    {
+                        "q": {"id": 1},
+                        "u": {"$set": {"value": 2}},
+                        "multi": True,
+                        "arrayFilters": [{"element.value": 1}],
+                    }
+                ],
+            }
+        )
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command(
+            {
+                "delete": "update_options",
+                "deletes": [{"q": {"id": 1}, "limit": 0, "collation": {"locale": "en"}}],
+            }
+        )
+
+    # Nothing of the refused commands was written.
+    assert node.query("SELECT value FROM db.update_options", password="123").strip() == "1"
+
+    node.query("DROP TABLE db.update_options SYNC", password="123")
+
+
+def test_date_to_string_milliseconds(started_cluster):
+    """Mongo's `%L` is the milliseconds of a date, zero-padded to three digits. ClickHouse has no
+    format token for it - `%f` is always the six digits of the microseconds - so it is formatted
+    apart from the rest of the format."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query("DROP TABLE IF EXISTS db.date_format SYNC", password="123")
+    node.query(
+        "CREATE TABLE db.date_format (id Int64, at DateTime64(3, 'UTC')) ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query(
+        "INSERT INTO db.date_format VALUES (1, '2026-08-20 12:34:56.789')",
+        password="123",
+    )
+
+    collection = make_client()["db"]["date_format"]
+    result = list(
+        collection.aggregate(
+            [
+                {
+                    "$project": {
+                        "text": {
+                            "$dateToString": {
+                                "date": "$at",
+                                "format": "%H:%M:%S.%L",
+                                "timezone": "UTC",
+                            }
+                        }
+                    }
+                }
+            ]
+        )
+    )
+    assert without_ids(result) == [{"text": "12:34:56.789"}]
+
+    node.query("DROP TABLE db.date_format SYNC", password="123")

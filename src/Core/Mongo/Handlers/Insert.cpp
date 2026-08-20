@@ -299,6 +299,7 @@ void InsertHandler::createCollection(const CollectionRef & collection, std::shar
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     auto collection = getCollectionRef(documents[0].documents[0], "insert");
+    validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "insert");
     const bool ordered = isOrderedInsert(documents[0].documents[0]);
 
     /// The documents to insert are sent in the sections that follow the command itself.
@@ -348,11 +349,12 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
             const auto & document = to_insert[document_index]->getRapidJSONRepresentation();
 
             rapidjson::Value row(rapidjson::kObjectType);
+            String object_id;
             if (shape.stores_documents)
             {
                 /// The document as it arrived, next to the object id that addresses it.
-                auto object_id = extractObjectId(document);
-                if (!object_ids.insert(object_id).second)
+                object_id = extractObjectId(document);
+                if (object_ids.contains(object_id))
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
@@ -371,8 +373,11 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
             {
                 /// The columns of the table the document names. Unknown fields are rejected instead of
                 /// being silently dropped, and a column a document has no field for keeps its default.
+                /// The object id a client generates is one of them: it is written when the table has
+                /// an `_id` column of its own and dropped when it has none, because it names nothing
+                /// there - it is not a field the document was written with.
                 std::map<String, String> wrapper_types;
-                flattenDocument(document, "", row, allocator, wrapper_types, /* drop_object_id = */ false);
+                flattenDocument(document, "", row, allocator, wrapper_types, /* drop_object_id = */ !shape.has_object_id);
             }
 
             rapidjson::StringBuffer buffer;
@@ -395,6 +400,12 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
                     collection.getQualifiedName(),
                     buffer.GetString()));
             ++inserted;
+
+            /// An object id is taken only by a document that was written: an unordered batch goes
+            /// on after a document that failed, and the id of that document is free for a later
+            /// one - nothing addresses a document that does not exist.
+            if (shape.stores_documents)
+                object_ids.insert(std::move(object_id));
         }
         catch (const Exception & e)
         {

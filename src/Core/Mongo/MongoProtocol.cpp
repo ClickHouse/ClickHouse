@@ -1,4 +1,6 @@
 #include <cstdint>
+#include <Core/Defines.h>
+#include <Core/Settings.h>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/MongoProtocol.h>
 #include <IO/ReadBufferFromString.h>
@@ -8,9 +10,16 @@
 #include <Common/QueryScope.h>
 #include <Common/randomSeed.h>
 
+namespace DB::Setting
+{
+extern const SettingsUInt64 max_parser_backtracks;
+extern const SettingsUInt64 max_parser_depth;
+}
+
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::MongoProtocol
@@ -80,6 +89,59 @@ QueryExecutor::QueryExecutor(std::unique_ptr<Session> & session_, const Poco::Ne
 {
 }
 
+namespace
+{
+
+/** The output of a query is collected into a string and the reply is built out of it, so the whole
+  * text is held in memory at once. A cursor reply is one BSON document and can be no larger than
+  * `MAX_BSON_OBJECT_SIZE`, so a result whose text is already several times that size cannot become
+  * a reply that is sent, and it is refused while it is written instead of after it is whole. The
+  * JSON text of a value is longer than its BSON encoding - a date, a number and an escaped string
+  * all take more room as text - so the bound is a multiple of the reply size rather than equal to
+  * it, and it bounds the memory the endpoint spends rather than what a reply may hold: the exact
+  * size of the reply is checked by the cursor encoder, on the document it is going to send.
+  */
+constexpr size_t MAX_QUERY_OUTPUT_SIZE = 4 * size_t(MAX_BSON_OBJECT_SIZE);
+
+class BoundedStringWriteBuffer : public WriteBuffer
+{
+public:
+    explicit BoundedStringWriteBuffer(size_t max_bytes_)
+        : WriteBuffer(nullptr, 0), max_bytes(max_bytes_), chunk(DBMS_DEFAULT_BUFFER_SIZE)
+    {
+        set(chunk.data(), chunk.size());
+    }
+
+    String & str()
+    {
+        finalize();
+        return result;
+    }
+
+private:
+    void nextImpl() override
+    {
+        if (!offset())
+            return;
+
+        if (result.size() + offset() > max_bytes)
+            throw Exception(
+                ErrorCodes::LIMIT_EXCEEDED,
+                "The result is larger than the largest reply that can be sent ({} bytes). "
+                "Ask for less at a time, with a filter, a projection, 'limit' and 'skip'",
+                MAX_BSON_OBJECT_SIZE);
+
+        result.append(working_buffer.begin(), offset());
+        set(chunk.data(), chunk.size());
+    }
+
+    const size_t max_bytes;
+    std::vector<char> chunk;
+    String result;
+};
+
+}
+
 String QueryExecutor::execute(const String & query)
 {
     auto query_context = session->makeQueryContext();
@@ -117,10 +179,16 @@ String QueryExecutor::execute(const String & query)
     /// way the parsing expects rather than the way the user's profile asks.
     query_context->setSetting("date_time_output_format", String("simple"));
 
+    /// Everything the handlers run through this executor is ClickHouse SQL that they wrote
+    /// themselves - the Mongo request has already been translated by then. A profile that turns
+    /// the Mongo dialect on for the user would otherwise have those statements reparsed as Mongo
+    /// syntax, so the dialect is pinned rather than inherited.
+    query_context->setSetting("dialect", String("clickhouse"));
+
     auto query_scope = QueryScope::create(query_context);
     ReadBufferFromString read_buf(query);
 
-    WriteBufferFromOwnString out;
+    BoundedStringWriteBuffer out(MAX_QUERY_OUTPUT_SIZE);
     executeQuery(read_buf, out, query_context, {});
 
     return out.str();
@@ -129,6 +197,12 @@ String QueryExecutor::execute(const String & query)
 void QueryExecutor::authenticate(const String & username, const String & password)
 {
     session->authenticate(username, password, address);
+}
+
+ParserLimits QueryExecutor::getParserLimits() const
+{
+    const auto & settings = session->sessionOrGlobalContext()->getSettingsRef();
+    return {.max_parser_depth = settings[Setting::max_parser_depth], .max_parser_backtracks = settings[Setting::max_parser_backtracks]};
 }
 
 String QueryExecutor::getAuthenticatedUserName() const

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <optional>
+#include <unordered_set>
 #include <Core/Mongo/Document.h>
 #include <Core/Mongo/MongoProtocol.h>
 #include <Core/Mongo/Wire/OpMessage.h>
@@ -29,6 +30,22 @@ String serializePipeline(const rapidjson::Value & pipeline);
   * a bound the client never asked for. Returns nothing when the member is absent or null.
   */
 std::optional<Int64> getWholeNumberOption(const rapidjson::Value & json, const char * name, const char * command);
+
+/** Refuses a write concern the endpoint cannot honour. A write goes to one ClickHouse table and is
+  * acknowledged when it is written, which is what `{w: 1}` and, on a server that is not a replica
+  * set, `{w: "majority"}` ask for. Anything else - more than one acknowledgement, a tag set, or a
+  * commit to the journal - is refused rather than answered with `ok` for a weaker write than the
+  * client asked for.
+  */
+void validateWriteConcern(const rapidjson::Value & json, const char * command);
+
+/** Refuses the fields of a command, or of one of the write statements of a command, that this
+  * endpoint does not implement. A field that changes what a write does - `arrayFilters` and
+  * `collation` of an `update`, `collation` of a `delete` - would otherwise be dropped silently and
+  * the command would answer `ok` for a different write than the one it was asked for.
+  */
+void rejectUnsupportedFields(
+    const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * what, const char * command);
 
 /** The target of a Mongo command: the collection named by the command field itself and the
   * database taken from the `$db` field of the command document. Mongo databases are mapped
@@ -67,9 +84,17 @@ std::vector<std::pair<String, DataTypePtr>> extractResultColumns(const rapidjson
   * The `meta` of the result drives the conversion of each value (see `appendTypedValue`), and
   * the dotted name of a column - the way the dialect addresses a nested field - becomes the
   * nested document it names: the row `{"profile.name": "x"}` returns as `{"profile": {"name": "x"}}`.
+  *
+  * `holds_documents` says that the query was rewritten to return the documents of a collection as
+  * they are stored, so that each row is turned into a reply out of its document rather than out of
+  * the columns of the result. It is what `adaptQueryToCollectionShape` answered, rather than
+  * anything read off the result: a column name is part of no contract.
   */
-std::vector<Document>
-executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
+std::vector<Document> executeSelectIntoCursor(
+    const String & sql_query,
+    const CollectionRef & collection,
+    std::shared_ptr<QueryExecutor> executor,
+    bool holds_documents = false);
 
 /** The reply of a document-returning command whose result is empty: a cursor with no rows in
   * its first batch. Mongo reads a collection that does not exist as empty rather than raising

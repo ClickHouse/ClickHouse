@@ -403,22 +403,22 @@ void rewriteFieldsAsDocumentPaths(const ASTPtr & query)
     rewriteSelects(query);
 }
 
-void selectDocumentsOfCollection(const ASTPtr & query)
+bool selectDocumentsOfCollection(const ASTPtr & query)
 {
     auto * select = outermostSelect(query);
     if (!select)
-        return;
+        return false;
 
     const auto select_list = select->select();
     if (!select_list || select_list->children.empty())
-        return;
+        return false;
 
     /** Only a read of the documents as they are stored is answered with them: a projection and the
       * stages of a pipeline build documents of their own, whose fields are the columns of the
       * result and are turned into a reply the way the columns of any other table are.
       */
     if (select_list->children.size() != 1 || !select_list->children.front()->as<ASTAsterisk>())
-        return;
+        return false;
 
     ASTPtr document = make_intrusive<ASTIdentifier>(String(DOCUMENT_COLUMN));
 
@@ -437,6 +437,7 @@ void selectDocumentsOfCollection(const ASTPtr & query)
     new_select_list->children.push_back(std::move(types));
 
     select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(new_select_list));
+    return true;
 }
 
 }

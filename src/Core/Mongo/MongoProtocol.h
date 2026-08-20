@@ -153,6 +153,14 @@ public:
     Int32 getNextResponseId() { return ++response_counter; }
 };
 
+/// The limits the reparse of a request translated back into the Mongo dialect runs under. They are
+/// the settings of the session, so that the wire endpoint parses exactly what the dialect does.
+struct ParserLimits
+{
+    UInt64 max_parser_depth;
+    UInt64 max_parser_backtracks;
+};
+
 class QueryExecutor
 {
 public:
@@ -165,6 +173,9 @@ public:
     /// The name of the user this connection has authenticated as, or an empty string before a
     /// successful `saslStart`.
     String getAuthenticatedUserName() const;
+
+    /// The parser limits of the session, which the handlers parse the Mongo text under.
+    ParserLimits getParserLimits() const;
 
 private:
     std::unique_ptr<Session> & session;

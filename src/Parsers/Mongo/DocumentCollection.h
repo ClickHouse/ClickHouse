@@ -56,8 +56,11 @@ void rewriteFieldsAsDocumentPaths(const ASTPtr & query);
   * that projects fields or aggregates them builds documents of its own, and those are turned into a
   * reply out of the columns of the result, like the columns of any other table - so such a query is
   * left alone.
+  *
+  * Returns whether the read answers with the stored documents, which is how the reply encoder
+  * learns what the rows of the result hold - the name of the alias is not a signal of its own.
   */
-void selectDocumentsOfCollection(const ASTPtr & query);
+bool selectDocumentsOfCollection(const ASTPtr & query);
 
 }
 

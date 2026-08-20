@@ -85,14 +85,6 @@ void appendMembers(
 
 }
 
-bool resultHoldsDocuments(const std::vector<std::pair<String, DataTypePtr>> & columns)
-{
-    for (const auto & column : columns)
-        if (column.first == documentAlias())
-            return true;
-    return false;
-}
-
 void appendDocumentOfRow(bson_t * document, const rapidjson::Value & row)
 {
     /// Mongo writes the object id as the first field of a document, and a driver reads it back as

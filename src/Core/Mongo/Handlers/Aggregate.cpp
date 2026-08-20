@@ -62,6 +62,12 @@ void checkUnionCollectionShapes(
     if (!pipeline.IsArray())
         return;
 
+    /// A collection that does not exist is read as empty and has no shape to differ by: the
+    /// aggregated one is reported as missing by the handler, and a missing union collection
+    /// contributes no documents.
+    if (!shape.exists)
+        return;
+
     for (const auto & stage : pipeline.GetArray())
     {
         if (!stage.IsObject())
@@ -87,7 +93,7 @@ void checkUnionCollectionShapes(
         {
             CollectionRef union_ref{database, union_collection};
             const auto union_shape = getCollectionShape(union_ref, executor);
-            if (union_shape.stores_documents != shape.stores_documents)
+            if (union_shape.exists && union_shape.stores_documents != shape.stores_documents)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "An 'aggregate' with '$unionWith' collections of different storage shapes is not supported");
@@ -121,25 +127,29 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
     auto mongo_dialect_query = fmt::format("db.{}.aggregate({})", collection.collection, serialized_pipeline);
 
     const auto max_query_size = mongo_dialect_query.size();
-    auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
+    /// The reparse runs under the parser limits of the session, the same ones the Mongo dialect
+    /// parses under, so that the wire endpoint accepts exactly what the dialect accepts.
+    const auto limits = executor->getParserLimits();
+    auto parser = Mongo::ParserMongoQuery(max_query_size, limits.max_parser_depth, limits.max_parser_backtracks);
     auto ast = Mongo::parseMongoQuery(
         parser,
         mongo_dialect_query.data(),
         mongo_dialect_query.data() + mongo_dialect_query.size(),
         "",
         max_query_size,
-        10000,
-        10000,
+        limits.max_parser_depth,
+        limits.max_parser_backtracks,
         collection.database);
 
     /// A collection of documents addresses its fields as the paths of the document column, and a
     /// pipeline that ends without building documents of its own answers with the stored ones.
     const auto shape = getCollectionShape(collection, executor);
     checkUnionCollectionShapes(pipeline_it->value, shape, collection.database, executor);
+    bool holds_documents = false;
     if (shape.stores_documents)
     {
         Mongo::rewriteFieldsAsDocumentPaths(ast);
-        Mongo::selectDocumentsOfCollection(ast);
+        holds_documents = Mongo::selectDocumentsOfCollection(ast);
     }
 
     String sql_query;
@@ -172,7 +182,7 @@ std::vector<Document> AggregateHandler::handle(const std::vector<OpMessageSectio
         return makeEmptyCursorReply(collection);
     }
 
-    return executeSelectIntoCursor(sql_query, collection, executor);
+    return executeSelectIntoCursor(sql_query, collection, executor, holds_documents);
 }
 
 void registerAggregateHandler(HandlerRegitstry * registry)

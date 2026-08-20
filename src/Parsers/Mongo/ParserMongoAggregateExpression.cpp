@@ -44,14 +44,26 @@ ASTPtr makeNull()
     return makeLiteral(Field());
 }
 
+/** A piece of a translated Mongo format: either a ClickHouse format string, or Mongo's `%L` - the
+  * milliseconds of the value, zero-padded to three digits. `formatDateTime` has no token for it:
+  * its `%f` is always the six digits of the microseconds, whatever the scale of the value is, so
+  * the milliseconds are formatted apart from the rest and the pieces are concatenated.
+  */
+struct DateFormatSegment
+{
+    std::string format;
+    bool milliseconds = false;
+};
+
 /// Mongo format strings are not ClickHouse's MySQL format strings. Translate the supported,
 /// unambiguous subset and reject the rest instead of producing a query with different semantics.
-ASTPtr translateMongoDateFormat(const rapidjson::Value & value, std::string_view operator_name)
+std::vector<DateFormatSegment> translateMongoDateFormat(const rapidjson::Value & value, std::string_view operator_name)
 {
     if (!value.IsString())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The 'format' of '{}' must be a string literal", operator_name);
 
     const auto input = stringView(value);
+    std::vector<DateFormatSegment> segments;
     std::string output;
     output.reserve(input.size());
     for (size_t pos = 0; pos < input.size(); ++pos)
@@ -73,14 +85,31 @@ ASTPtr translateMongoDateFormat(const rapidjson::Value & value, std::string_view
             case 'H': output += "%H"; break;
             case 'M': output += "%i"; break;
             case 'S': output += "%s"; break;
-            case 'L': output += "%f"; break;
+            case 'L':
+                segments.push_back({.format = std::move(output), .milliseconds = false});
+                segments.push_back({.format = {}, .milliseconds = true});
+                output.clear();
+                break;
             case 'z': output += "%z"; break;
             default:
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED, "The Mongo date format token '%{}' of '{}' is not supported", input[pos], operator_name);
         }
     }
-    return makeLiteral(Field(std::move(output)));
+    if (!output.empty() || segments.empty())
+        segments.push_back({.format = std::move(output), .milliseconds = false});
+    return segments;
+}
+
+/** The format a translated Mongo format is parsed by. `parseDateTime64` reads the three digits of
+  * a millisecond with `%f` as well, so the milliseconds need nothing of their own here.
+  */
+ASTPtr makeDateFormatLiteral(const std::vector<DateFormatSegment> & segments)
+{
+    std::string format;
+    for (const auto & segment : segments)
+        format += segment.milliseconds ? "%f" : segment.format;
+    return makeLiteral(Field(std::move(format)));
 }
 
 ASTPtr makeFunction(const std::string & name, std::vector<ASTPtr> arguments)
@@ -89,6 +118,34 @@ ASTPtr makeFunction(const std::string & name, std::vector<ASTPtr> arguments)
     for (auto & argument : arguments)
         function->arguments->children.push_back(std::move(argument));
     return function;
+}
+
+/// The text of a date in a translated Mongo format, formatted piece by piece: see
+/// `DateFormatSegment` for why the milliseconds cannot be a token of one format string.
+ASTPtr makeFormattedDate(const ASTPtr & date, const std::vector<DateFormatSegment> & segments, const ASTPtr & timezone)
+{
+    auto formatted = [&](const std::string & format)
+    {
+        if (timezone)
+            return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)), timezone->clone());
+        return makeASTFunction("formatDateTime", date->clone(), makeLiteral(Field(format)));
+    };
+
+    std::vector<ASTPtr> parts;
+    for (const auto & segment : segments)
+    {
+        if (segment.milliseconds)
+            parts.push_back(
+                makeASTFunction("substring", formatted("%f"), makeLiteral(Field(UInt64(1))), makeLiteral(Field(UInt64(3)))));
+        else if (!segment.format.empty())
+            parts.push_back(formatted(segment.format));
+    }
+
+    if (parts.empty())
+        return makeLiteral(Field(String()));
+    if (parts.size() == 1)
+        return std::move(parts.front());
+    return makeFunction("concat", std::move(parts));
 }
 
 /// The arguments of an operator: Mongo lets an operator that takes a single argument spell it
@@ -615,10 +672,11 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     if (name == "$dateToString")
     {
         auto date = parseMongoAggregateExpression(requireMember(argument, "date", name));
-        auto format = translateMongoDateFormat(requireMember(argument, "format", name), name);
+        auto segments = translateMongoDateFormat(requireMember(argument, "format", name), name);
+        ASTPtr timezone;
         if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
-            return makeASTFunction("formatDateTime", date, format, parseMongoAggregateExpression(timezone_it->value));
-        return makeASTFunction("formatDateTime", date, format);
+            timezone = parseMongoAggregateExpression(timezone_it->value);
+        return makeFormattedDate(date, segments, timezone);
     }
 
     if (name == "$dateFromString")
@@ -626,7 +684,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         auto text = parseMongoAggregateExpression(requireMember(argument, "dateString", name));
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
             return makeASTFunction(
-                "parseDateTime64", text, translateMongoDateFormat(format_it->value, name), makeLiteral(Field(String("UTC"))));
+                "parseDateTime64",
+                text,
+                makeDateFormatLiteral(translateMongoDateFormat(format_it->value, name)),
+                makeLiteral(Field(String("UTC"))));
         return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
     }
 

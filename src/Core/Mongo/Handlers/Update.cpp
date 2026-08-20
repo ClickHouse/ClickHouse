@@ -9,6 +9,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 
+#include <unordered_set>
+
 #include <bson/bson.h>
 #include <fmt/format.h>
 #include <rapidjson/document.h>
@@ -67,6 +69,7 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'update' command does not contain any update statement");
 
     auto collection = getCollectionRef(sections[0].documents[0], "update");
+    validateWriteConcern(sections[0].documents[0].getRapidJSONRepresentation(), "update");
     const bool ordered = isOrderedUpdate(sections[0].documents[0]);
 
     /** An update of a collection of documents changes the paths of the document column rather than
@@ -81,6 +84,19 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             "document rather than the columns of a row",
             collection.database,
             collection.collection);
+
+    /** `arrayFilters` chooses which elements of an array a positional update writes and a
+      * `collation` changes which documents the filter matches, so a statement that asks for either
+      * is refused rather than written by other rules. A `hint` only names an index to read by,
+      * which changes nothing about what is written. The statements are checked before any of them
+      * runs: an option that is not implemented is a fault of the command rather than a write error
+      * of one statement, and no part of such a command is executed.
+      */
+    for (const auto & update_spec : sections[1].documents)
+    {
+        static const std::unordered_set<String> supported_fields{"q", "u", "multi", "upsert", "hint", "comment"};
+        rejectUnsupportedFields(update_spec.getRapidJSONRepresentation(), supported_fields, "update statement", "update");
+    }
 
     /// The 'update' command carries one or more update specs, each with its own 'q', 'u',
     /// 'multi', and 'upsert'. Execute every spec; 'multi: false' (updateOne) cannot be
@@ -125,15 +141,18 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
             auto mongo_dialect_query = fmt::format("db.{}.updateMany({}, {})", collection.collection, serialized_filter, serialized_update);
 
             const auto max_query_size = mongo_dialect_query.size();
-            auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
+            /// The reparse runs under the parser limits of the session, the same ones the Mongo
+            /// dialect parses under, so that the wire endpoint accepts what the dialect accepts.
+            const auto limits = executor->getParserLimits();
+            auto parser = Mongo::ParserMongoQuery(max_query_size, limits.max_parser_depth, limits.max_parser_backtracks);
             auto ast = Mongo::parseMongoQuery(
                 parser,
                 mongo_dialect_query.data(),
                 mongo_dialect_query.data() + mongo_dialect_query.size(),
                 "",
                 max_query_size,
-                10000,
-                10000,
+                limits.max_parser_depth,
+                limits.max_parser_backtracks,
                 collection.database);
 
             String alter_query;

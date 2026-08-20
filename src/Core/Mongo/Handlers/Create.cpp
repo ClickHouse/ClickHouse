@@ -62,6 +62,7 @@ std::vector<Document> namespaceExistsReply(const CollectionRef & collection)
 std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
 {
     validateCreateOptions(documents[0].documents[0]);
+    validateWriteConcern(documents[0].documents[0].getRapidJSONRepresentation(), "create");
     /// The collection to create is the value of the `create` field of the command itself.
     auto collection = getCollectionRef(documents[0].documents[0], "create");
 

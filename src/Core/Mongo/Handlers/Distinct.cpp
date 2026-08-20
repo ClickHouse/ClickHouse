@@ -76,15 +76,18 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     auto mongo_dialect_query = fmt::format("db.{}.aggregate({})", collection.collection, serialized_pipeline);
 
     const auto max_query_size = mongo_dialect_query.size();
-    auto parser = Mongo::ParserMongoQuery(max_query_size, 10000, 10000);
+    /// The reparse runs under the parser limits of the session, the same ones the Mongo dialect
+    /// parses under, so that the wire endpoint accepts exactly what the dialect accepts.
+    const auto limits = executor->getParserLimits();
+    auto parser = Mongo::ParserMongoQuery(max_query_size, limits.max_parser_depth, limits.max_parser_backtracks);
     auto ast = Mongo::parseMongoQuery(
         parser,
         mongo_dialect_query.data(),
         mongo_dialect_query.data() + mongo_dialect_query.size(),
         "",
         max_query_size,
-        10000,
-        10000,
+        limits.max_parser_depth,
+        limits.max_parser_backtracks,
         collection.database);
 
     /// A collection of documents addresses its fields as the paths of the document column.

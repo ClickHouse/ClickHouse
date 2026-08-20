@@ -36,10 +36,66 @@ namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::MongoProtocol
 {
+
+void validateWriteConcern(const rapidjson::Value & json, const char * command)
+{
+    auto it = json.FindMember("writeConcern");
+    if (it == json.MemberEnd() || it->value.IsNull())
+        return;
+
+    if (!it->value.IsObject())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'writeConcern' of the '{}' command must be a document", command);
+
+    for (auto field = it->value.MemberBegin(); field != it->value.MemberEnd(); ++field)
+    {
+        const std::string_view name(field->name.GetString(), field->name.GetStringLength());
+
+        /// `wtimeout` bounds a wait that never happens: a write is acknowledged when it returns.
+        if (name == "wtimeout" || name == "wtimeoutMS")
+            continue;
+
+        if (name == "w")
+        {
+            if (field->value.IsNumber() && (field->value.GetDouble() == 0 || field->value.GetDouble() == 1))
+                continue;
+            if (field->value.IsString() && std::string_view(field->value.GetString(), field->value.GetStringLength()) == "majority")
+                continue;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The 'writeConcern' of the '{}' command asks for a 'w' this server cannot acknowledge: a write goes to one table, so "
+                "only 'w: 0', 'w: 1' and 'w: \"majority\"' are supported",
+                command);
+        }
+
+        if ((name == "j" || name == "fsync") && field->value.IsBool() && !field->value.GetBool())
+            continue;
+
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "The '{}' field of the 'writeConcern' of the '{}' command is not supported: it would be acknowledged without being honoured",
+            name,
+            command);
+    }
+}
+
+void rejectUnsupportedFields(
+    const rapidjson::Value & json, const std::unordered_set<String> & supported, const char * what, const char * command)
+{
+    if (!json.IsObject())
+        return;
+
+    for (auto field = json.MemberBegin(); field != json.MemberEnd(); ++field)
+    {
+        String name(field->name.GetString(), field->name.GetStringLength());
+        if (!supported.contains(name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The '{}' of the {} of a '{}' command is not supported", name, what, command);
+    }
+}
 
 std::vector<std::string> splitByNewline(const std::string & s)
 {
@@ -565,8 +621,8 @@ Document buildCursorReply(const std::vector<Document> & selected, const Collecti
 
 }
 
-std::vector<Document>
-executeSelectIntoCursor(const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+std::vector<Document> executeSelectIntoCursor(
+    const String & sql_query, const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor, bool holds_documents)
 {
     /// The reply is one BSON document holding the whole result: the cursor id is always 0,
     /// so there is no `getMore` to continue from, and a result that does not fit into the
@@ -588,10 +644,6 @@ executeSelectIntoCursor(const String & sql_query, const CollectionRef & collecti
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
 
         auto columns = extractResultColumns(result_json);
-
-        /// A result that holds the documents of a collection as they are stored is turned into a
-        /// reply out of the document of each row rather than out of the columns of the result.
-        const bool holds_documents = resultHoldsDocuments(columns);
 
         FieldTree tree;
         for (size_t i = 0; i < columns.size(); ++i)
