@@ -122,32 +122,6 @@ void expandBitmapToBytes(const uint8_t * bits, size_t rows, UInt8 * out, bool in
     }
 }
 
-/// The value width of a type stored in Arrow as raw variable binary bytes (IPv6, big integers), or 0
-/// for every other type. The single source of truth for which types `reinterpretStringLeaf` handles.
-size_t rawByteWidth(const WhichDataType & which)
-{
-    if (which.isIPv6() || which.isInt128() || which.isUInt128())
-        return 16;
-    if (which.isInt256() || which.isUInt256())
-        return 32;
-    return 0;
-}
-
-/// The IPv6 / big-integer type a hint requests for a variable binary leaf, or null when it requests
-/// none of those. The conversion runs right after the leaf decodes (see the Utf8/Binary and view
-/// branches of `decodeInner`), where the invisible-rows mask still exists — hidden bytes under a
-/// dropped struct null map or in a masked list range must not force the column into the text-parsed
-/// String fallback. The post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` then only
-/// reconciles the declared type.
-DataTypePtr rawByteTargetType(const DataTypePtr & hint)
-{
-    if (!hint)
-        return nullptr;
-    DataTypePtr stripped = stripHint(hint);
-    if (rawByteWidth(WhichDataType(stripped)) != 0)
-        return stripped;
-    return nullptr;
-}
 }
 
 DataTypePtr stripHint(const DataTypePtr & type)
@@ -190,6 +164,38 @@ DataTypePtr mapEntriesHint(const DataTypePtr & hint)
     if (const auto * map = typeid_cast<const DataTypeMap *>(stripHint(hint).get()))
         return std::make_shared<DataTypeTuple>(DataTypes{map->getKeyType(), map->getValueType()});
     return nullptr;
+}
+
+namespace
+{
+
+/// The value width of a type stored in Arrow as raw variable binary bytes (IPv6, big integers), or 0
+/// for every other type. The single source of truth for which types `reinterpretStringLeaf` handles.
+size_t rawByteWidth(const WhichDataType & which)
+{
+    if (which.isIPv6() || which.isInt128() || which.isUInt128())
+        return 16;
+    if (which.isInt256() || which.isUInt256())
+        return 32;
+    return 0;
+}
+
+/// The IPv6 / big-integer type a hint requests for a variable binary leaf, or null when it requests
+/// none of those. The conversion runs right after the leaf decodes (see the Utf8/Binary and view
+/// branches of `decodeInner`), where the invisible-rows mask still exists — hidden bytes under a
+/// dropped struct null map or in a masked list range must not force the column into the text-parsed
+/// String fallback. The post-decode raw-byte rewrite in `ArrowIPCBlockInputFormat` then only
+/// reconciles the declared type.
+DataTypePtr rawByteTargetType(const DataTypePtr & hint)
+{
+    if (!hint)
+        return nullptr;
+    DataTypePtr stripped = stripHint(hint);
+    if (rawByteWidth(WhichDataType(stripped)) != 0)
+        return stripped;
+    return nullptr;
+}
+
 }
 
 void DictionaryRegistry::set(Int64 id, ColumnPtr values, bool is_delta)

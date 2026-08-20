@@ -45,8 +45,7 @@ def null_first_slot(arr):
     """The same array with slot 0 nulled at the top level only: the offsets keep spanning its range."""
     buffers = arr.buffers()
     return pa.Array.from_buffers(
-        arr.type, len(arr), [pa.py_buffer(bytes([0b10]))] + buffers[1:2],
-        children=[arr.values] if hasattr(arr, 'values') else None)
+        arr.type, len(arr), [pa.py_buffer(bytes([0b10]))] + buffers[1:2], children=[arr.values])
 
 values = pa.array(["123", "456"], type=pa.utf8())
 offsets = pa.array([0, 1, 2], type=pa.int32())

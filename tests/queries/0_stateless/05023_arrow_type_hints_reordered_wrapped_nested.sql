@@ -5,8 +5,8 @@
 -- in the post-decode raw-byte rewrite: by tuple element name, through `Nullable`/`LowCardinality`
 -- wrappers, through the `Array` layers of a flattened `Nested` request, and for every numeric-like
 -- `date32` target. Each round trip below writes with the ClickHouse Arrow writer (which stores `UUID`,
--- `IPv6` and the big integers as `fixed_size_binary`, and raw bytes for `String`) and reads back with a
--- request the plain same-order form of which already works.
+-- `IPv6` and the big integers as `fixed_size_binary`, and a `String`'s raw bytes as variable `binary`)
+-- and reads back with a request that must resolve to the same conversion as its plain same-order form.
 
 SET engine_file_truncate_on_insert = 1;
 SET allow_suspicious_low_cardinality_types = 1;
