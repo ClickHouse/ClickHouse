@@ -9872,6 +9872,10 @@
     "source": "/jp/integrations/powerbi"
   },
   {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/probedeck"
+  },
+  {
     "destination": "/ja/products/cloud/features/monitoring/prometheus",
     "source": "/jp/integrations/prometheus"
   },
@@ -10006,6 +10010,10 @@
   {
     "destination": "/ja/integrations/connectors/sql-clients/jupysql",
     "source": "/jp/integrations/sql-clients/jupysql"
+  },
+  {
+    "destination": "/ja/integrations/connectors/sql-clients/probedeck",
+    "source": "/jp/integrations/sql-clients/probedeck"
   },
   {
     "destination": "/ja/integrations/connectors/sql-clients/qstudio",
