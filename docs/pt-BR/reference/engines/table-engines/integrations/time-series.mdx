@@ -115,7 +115,7 @@ Isso equivale a declarar diretamente, na cláusula `INNER COLUMNS` de samples, o
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Se ambas as formas forem usadas na mesma instrução `CREATE TABLE`, os tipos declarados deverão coincidir.
@@ -151,7 +151,7 @@ A tabela *samples* deve ter as seguintes colunas:
 | `value`     | [x]          | `Float64`             | `Float32` ou `Float64` | Um valor associado ao `timestamp`                     |
 
 As colunas que o motor cria por conta própria recebem codecs de compressão de séries temporais:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` e `value CODEC(Gorilla, ZSTD(1))`. Timestamps quase monotônicos mal
+`timestamp CODEC(DoubleDelta, ZSTD(1))` e `value CODEC(ZSTD(3))`. Timestamps quase monotônicos mal
 são comprimidos por codecs genéricos e podem, caso contrário, dominar o tamanho em disco da tabela samples.
 Consulte também [Ajustando os tipos das colunas](#adjusting-column-types).
 
@@ -216,7 +216,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -250,7 +250,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -306,7 +306,7 @@ Você pode ajustar os tipos das colunas nas tabelas de destino internas usando a
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 Especificar colunas internas sem codecs significa usar o codec padrão para elas:
