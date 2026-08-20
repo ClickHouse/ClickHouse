@@ -13,7 +13,8 @@ SELECT '-- lightweight_update: heavyweight DELETE after a patch-mode lightweight
 
 DROP TABLE IF EXISTS t_lwu SYNC;
 CREATE TABLE t_lwu (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_lwu SELECT number, number FROM numbers(24);
 
 DELETE FROM t_lwu WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -31,7 +32,8 @@ SELECT '-- alter_update mode produces the same rows (oracle)';
 
 DROP TABLE IF EXISTS t_alter SYNC;
 CREATE TABLE t_alter (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_alter SELECT number, number FROM numbers(24);
 
 DELETE FROM t_alter WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'alter_update';
@@ -50,7 +52,8 @@ SELECT '-- lightweight_update_force';
 
 DROP TABLE IF EXISTS t_force SYNC;
 CREATE TABLE t_force (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_force SELECT number, number FROM numbers(24);
 
 DELETE FROM t_force WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update_force';
@@ -65,7 +68,8 @@ SELECT '-- APPLY DELETED MASK and REWRITE PARTS reach the same code path';
 
 DROP TABLE IF EXISTS t_mask SYNC;
 CREATE TABLE t_mask (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_mask SELECT number, number FROM numbers(24);
 
 DELETE FROM t_mask WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -81,7 +85,8 @@ WHERE database = currentDatabase() AND table = 't_mask' AND active
 
 DROP TABLE IF EXISTS t_rewrite SYNC;
 CREATE TABLE t_rewrite (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_rewrite SELECT number, number FROM numbers(24);
 
 DELETE FROM t_rewrite WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -96,7 +101,8 @@ SELECT '-- a partial update keeps the mask, so masked rows stay hidden';
 
 DROP TABLE IF EXISTS t_partial SYNC;
 CREATE TABLE t_partial (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_partial SELECT number, number FROM numbers(24);
 
 DELETE FROM t_partial WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -112,7 +118,8 @@ SELECT '-- a heavyweight DELETE matching no rows keeps the pending patch';
 
 DROP TABLE IF EXISTS t_noop SYNC;
 CREATE TABLE t_noop (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_noop SELECT number, number FROM numbers(24);
 
 DELETE FROM t_noop WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -126,7 +133,8 @@ SELECT '-- compact parts';
 DROP TABLE IF EXISTS t_compact SYNC;
 CREATE TABLE t_compact (k UInt64, v UInt64) ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-         min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000;
+         min_bytes_for_wide_part = '10G', min_rows_for_wide_part = 1000000,
+         min_bytes_for_full_part_storage = 0;
 INSERT INTO t_compact SELECT number, number FROM numbers(24);
 
 DELETE FROM t_compact WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
@@ -142,7 +150,8 @@ SELECT '-- with a projection';
 DROP TABLE IF EXISTS t_proj SYNC;
 CREATE TABLE t_proj (k UInt64, v UInt64, PROJECTION p (SELECT v, count() GROUP BY v))
 ENGINE = MergeTree PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0,
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0,
          deduplicate_merge_projection_mode = 'rebuild', lightweight_mutation_projection_mode = 'rebuild';
 INSERT INTO t_proj SELECT number, number FROM numbers(24);
 
@@ -159,7 +168,8 @@ SELECT '-- ReplicatedMergeTree';
 DROP TABLE IF EXISTS t_repl SYNC;
 CREATE TABLE t_repl (k UInt64, v UInt64)
 ENGINE = ReplicatedMergeTree('/zookeeper/{database}/t_repl/', '1') PARTITION BY (k % 4) ORDER BY k
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, min_bytes_for_wide_part = 0;
+SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
+         min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
 INSERT INTO t_repl SELECT number, number FROM numbers(24);
 
 DELETE FROM t_repl WHERE k % 3 = 0 SETTINGS lightweight_delete_mode = 'lightweight_update';
