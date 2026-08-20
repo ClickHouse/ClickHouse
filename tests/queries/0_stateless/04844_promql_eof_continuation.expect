@@ -1,4 +1,7 @@
 #!/usr/bin/expect -f
+# Tags: no-fasttest
+# Tag no-fasttest: the PromQL grammar requires ANTLR4, which is disabled in the
+# fast-test build; there `--dialect promql` reports `ANTLR4 support is disabled`.
 
 # Regression test: the single-line continuation probe must recognize an
 # incomplete PromQL statement even though `ParserPrometheusQuery` reports the
