@@ -3,20 +3,23 @@
      regression in that specific route is not masked by every other insert test, which does not
      set async_insert explicitly and mostly exercises the bulk, pass-through shape instead.
 
-     The second query below is a comparator with the same insert shape but async_insert turned
-     off, so it takes the ordinary, non queue route. The two queries differ only in the
-     async_insert and wait_for_async_insert settings; everything else, the table, the SELECT
-     shape and the row count, is identical, so a regression that is specific to the queue route
-     is visible as a change in the first query relative to the second, rather than being hidden
-     by a shift that affects both routes equally.
+     The first query uses wait_for_async_insert = 0: with the wait on, each run blocks until its
+     own flush finishes, so consecutive runs can never overlap in the queue and every batch is a
+     batch of one, making the measurement dominated by async_insert_busy_timeout_min_ms rather
+     than by the route itself. Fire and forget lets consecutive runs share the batching window
+     and queue key, so batching is actually exercised.
 
-     The queue route is expected to be slower here by design, by at least
-     async_insert_busy_timeout_min_ms, because this INSERT ... SELECT is small; that gap is
-     accepted and is not itself a regression. -->
+     This means the query measures only the read plus enqueue path; the write happens in the
+     flush and is not attributed here, so the measured time can come out below the synchronous
+     comparator, and a regression inside the flush is not visible in this query.
+
+     The second query is the same insert shape with async_insert = 0, so it takes the ordinary
+     synchronous route; a change specific to the queue route shows up as a change in the first
+     query relative to the second. -->
 <test>
     <create_query>CREATE TABLE insert_select_async_insert_queue (n UInt64) ENGINE = MergeTree ORDER BY n</create_query>
 
-    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100) SETTINGS async_insert = 1, wait_for_async_insert = 1</query>
+    <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100) SETTINGS async_insert = 1, wait_for_async_insert = 0</query>
     <query>INSERT INTO insert_select_async_insert_queue SELECT number FROM numbers(100) SETTINGS async_insert = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS insert_select_async_insert_queue</drop_query>

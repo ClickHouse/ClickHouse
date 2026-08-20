@@ -110,7 +110,8 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     ASTPtr query_ast_,
     Names insert_column_names_,
     UInt64 max_data_size_,
-    UInt64 wait_timeout_ms_)
+    UInt64 wait_timeout_ms_,
+    bool wait_for_flush_)
     : ExceptionKeepingTransform(header_, header_, /* ignore_on_start_and_finish */ false)
     , queue(queue_)
     , context(std::move(context_))
@@ -118,6 +119,7 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     , insert_column_names(std::move(insert_column_names_))
     , max_data_size(max_data_size_)
     , wait_timeout_ms(wait_timeout_ms_)
+    , wait_for_flush(wait_for_flush_)
     , logger(getLogger("AsyncInsertQueueTransform"))
 {
 }
@@ -217,8 +219,12 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             async_insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(name));
         auto result = queue->pushQueryWithBlock(async_query, std::move(block), context);
 
-        /// `wait_for_async_insert` is not honoured: returning early would hide a flush failure from a
-        /// client already told the INSERT succeeded.
+        /// The queue owns the block and the flush proceeds independently of this pipeline, so
+        /// there is nothing left to keep alive here; the client gives up the flush result, i.e.
+        /// written row/byte accounting and any flush error.
+        if (!wait_for_flush)
+            return {};
+
         /// `cancelQuery` sets `is_killed` before cancelling the pipeline executors, so a `KILL QUERY`
         /// (or `max_execution_time`) is visible here as `throwIfKilled()` / `checkTimeLimit()`. Shared
         /// by the loop and the post-loop check, since a `false` return under `'break'` is ignored.
