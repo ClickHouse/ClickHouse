@@ -12,7 +12,7 @@ import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
-As réplicas de leitura permitem criar uma ou mais cópias do seu banco de dados primário do Managed Postgres. Essas réplicas acompanham continuamente o banco de dados primário usando a replicação nativa do PostgreSQL para permanecerem atualizadas com as alterações.
+As réplicas de leitura permitem criar uma ou mais cópias do seu banco de dados primário do ClickHouse Managed Postgres. Essas réplicas acompanham continuamente o banco de dados primário usando a replicação nativa do PostgreSQL para permanecerem atualizadas com as alterações.
 
 Para gerenciar réplicas de leitura, clique no ícone de edição no seu warehouse:
 
@@ -64,7 +64,7 @@ As réplicas de leitura podem desempenhar um papel fundamental na recuperação 
   ## Como as réplicas de leitura funcionam
 </div>
 
-As réplicas de leitura no Managed Postgres usam uma arquitetura de WAL shipping em vez de replicação por streaming. Essa opção de arquitetura prioriza minimizar o impacto no banco de dados primário.
+As réplicas de leitura no ClickHouse Managed Postgres usam uma arquitetura de WAL shipping em vez de replicação por streaming. Essa opção de arquitetura prioriza minimizar o impacto no banco de dados primário.
 
 <div id="wal-shipping-from-object-storage">
   ### WAL shipping a partir do armazenamento de objetos

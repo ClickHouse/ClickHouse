@@ -211,10 +211,13 @@ StorageKafka2::StorageKafka2(
         tasks.emplace_back(std::make_shared<TaskContext>(std::move(task)));
     }
 
-    const auto first_replica = createTableIfNotExists();
+    if (!getContext()->getMessageQueueDisableInsertion())
+    {
+        const auto first_replica = createTableIfNotExists();
 
-    if (!first_replica)
-        createReplica();
+        if (!first_replica)
+            createReplica();
+    }
 
     activating_task = getContext()->getSchedulePool()->createTask(getStorageID(), log->name() + " (activating task)", [this]() { activateAndReschedule(); });
     activating_task->deactivate();
@@ -574,6 +577,12 @@ StorageKafka2::write(const ASTPtr &, const StorageMetadataPtr & metadata_snapsho
 
 void StorageKafka2::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     const auto replica_name = (*kafka_settings)[KafkaSetting::kafka_replica_name].value;
     {
         std::lock_guard lock(consumers_mutex);
