@@ -30,6 +30,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/UUID.h>
 #include <Formats/insertNullAsDefaultIfNeeded.h>
@@ -659,6 +660,15 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     const auto * nullable = typeid_cast<const ColumnNullable *>(col.get());
     const IColumn & nested = nullable ? nullable->getNestedColumn() : *col;
     const NullMap * null_map = nullable ? &nullable->getNullMapData() : nullptr;
+
+    /// A `date32` under a Decimal hint was read as the raw day number (`date32_as_number` in the
+    /// decoder), and no `Date32` -> Decimal cast exists; re-declare the (physically `Int32`) column as
+    /// `Int32` so the ordinary Int -> Decimal cast finishes the conversion.
+    if (WhichDataType(from_no_null).isDate32() && isDecimal(to_leaf))
+    {
+        const DataTypePtr int_type = std::make_shared<DataTypeInt32>();
+        return {col, nullable ? std::make_shared<DataTypeNullable>(int_type) : int_type};
+    }
 
     const WhichDataType which(to_leaf);
     const bool raw_target = which.isUUID() || which.isIPv6()

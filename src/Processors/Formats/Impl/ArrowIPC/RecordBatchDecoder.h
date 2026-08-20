@@ -188,12 +188,12 @@ private:
     /// to its plain value column (matching the type `fieldToCHType` declares for the nested field).
     /// `target_hint` is the requested ClickHouse type for this field, derived from the parent's hint as the
     /// decoder recurses (and falling back to a `target_types` lookup by `path`, the dotted column name). It
-    /// only affects `date32`: when the hint resolves to a numeric type the raw `Int32` day number is read
-    /// without the `Date32` range/overflow check, matching the library reader's numeric type hint.
-    /// `list_depth` counts the List/Map levels crossed on the way to this field (see `resolveTargetHint`).
-    /// `invisible_rows`, when non-null, is sized to this field's row count (see `InvisibleRowsMask`);
-    /// null maps and column types are built from each field's own declared validity exactly as without
-    /// a mask.
+    /// only affects `date32`: when the hint resolves to a numeric or Decimal type the raw `Int32` day
+    /// number is read without the `Date32` range/overflow check, matching the library reader's numeric
+    /// type hint. `list_depth` counts the List/Map levels crossed on the way to this field (see
+    /// `resolveTargetHint`). `invisible_rows`, when non-null, is sized to this field's row count (see
+    /// `InvisibleRowsMask`); null maps and column types are built from each field's own declared validity
+    /// exactly as without a mask.
     ColumnPtr decodeField(
         const ArrowField & field, bool allow_low_cardinality,
         const DataTypePtr & target_hint, const String & path, size_t list_depth,

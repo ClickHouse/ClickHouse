@@ -473,8 +473,12 @@ ColumnPtr RecordBatchDecoder::decodeInner(
 
     /// This field's requested ClickHouse type (parent-derived hint, or a dotted-name lookup), used only to
     /// decide whether a `date32` maps to a numeric target and is read raw; and to derive child hints below.
+    /// Decimal targets take the raw read too: no `Date32` -> Decimal cast exists, so the raw day number is
+    /// the only value the request can mean (the post-decode rewrite re-declares the column as `Int32` for
+    /// the Int -> Decimal cast).
     const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
-    const bool date32_as_number = effective_hint && isNumber(stripHint(effective_hint));
+    const DataTypePtr stripped_effective_hint = stripHint(effective_hint);
+    const bool date32_as_number = stripped_effective_hint && (isNumber(stripped_effective_hint) || isDecimal(stripped_effective_hint));
 
     auto child_path = [&](const String & child_name) -> String
     {
@@ -601,10 +605,10 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 /// A `DateTime64` header type needs the same treatment, but its window is scale-dependent: the
                 /// context-less cast clamps whole seconds the target scale cannot represent, and a scale-9
                 /// `DateTime64` stops at `2262-04-11`, far below the Date32 upper bound.
-                const DataTypePtr stripped_hint = effective_hint ? stripHint(effective_hint) : nullptr;
-                const bool date32_as_date = stripped_hint && isDate(*stripped_hint);
-                const bool date32_as_datetime = stripped_hint && isDateTime(*stripped_hint);
-                const auto * dt64_hint = stripped_hint ? typeid_cast<const DataTypeDateTime64 *>(stripped_hint.get()) : nullptr;
+                const bool date32_as_date = stripped_effective_hint && isDate(*stripped_effective_hint);
+                const bool date32_as_datetime = stripped_effective_hint && isDateTime(*stripped_effective_hint);
+                const auto * dt64_hint
+                    = stripped_effective_hint ? typeid_cast<const DataTypeDateTime64 *>(stripped_effective_hint.get()) : nullptr;
                 const auto [dt64_min_day, dt64_max_day] = dt64_hint
                     ? getDateTime64DayNumRange(
                           DecimalUtils::scaleMultiplier<DateTime64::NativeType>(dt64_hint->getScale()), dt64_hint->getTimeZone())
@@ -618,7 +622,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                     : DATE_LUT_MAX_EXTEND_DAY_NUM;
                 const String target_type_name = date32_as_date ? "Date"
                     : date32_as_datetime ? "DateTime"
-                    : dt64_hint ? stripped_hint->getName()
+                    : dt64_hint ? stripped_effective_hint->getName()
                     : "Date32";
                 checkBufferSize(values, requiredBytes(rows, sizeof(Int32)), "date32");
                 auto & data = assert_cast<ColumnInt32 &>(*column).getData();
