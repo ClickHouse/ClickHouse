@@ -14,6 +14,7 @@ namespace DB
 
 class Chain;
 class ReadBuffer;
+class InsertDependenciesBuilder;
 
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
@@ -81,6 +82,18 @@ public:
     /// Adjust the SELECT context's block-size settings to match the INSERT granularity when the
     /// SELECT is "trivial" (no joins/subqueries). Shared between the sync and async INSERT paths.
     static void applyTrivialInsertSelectOptimization(ASTInsertQuery & query, bool prefer_large_blocks, size_t effective_max_insert_threads, ContextPtr & select_context);
+
+    /// Builds a "push" pipeline (an unconnected input port feeding sinks completed with `EmptySink`)
+    /// from an already-built `insert_dependencies`. Shared by a plain `INSERT` and by
+    /// `AsyncInsertQueueTransform`'s synchronous fallback, so a lazily-started fallback reuses the
+    /// exact sink construction of a plain insert instead of a second, divergent implementation.
+    static QueryPipeline buildPushPipelineFromDependencies(
+        std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
+        ContextPtr context_,
+        const StoragePtr & table,
+        size_t max_threads_,
+        bool no_squash_,
+        bool async_insert_);
 
 private:
     static Block getSampleBlock(

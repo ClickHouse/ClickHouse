@@ -561,8 +561,10 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         else if (select_reads_destination)
             reason = "SELECT reads the destination table";
         /// Views are excluded wholesale, not per view target: a diverted block leaves their sink chain
-        /// built but unfed.
-        else if (insert_dependencies->isViewsInvolved())
+        /// built but unfed. `isViewsInvolved` only sees the dependency graph `collectAllDependencies`
+        /// walked from `table`; an `Alias` destination hides its target's own dependent views behind
+        /// the nested `INSERT` its `AliasSink` runs at execution time, so that hop needs its own probe.
+        else if (insert_dependencies->isViewsInvolved() || InsertDependenciesBuilder::forwardedInsertHidesDependentView(table))
             reason = "destination table has dependent views";
 
         if (reason.empty())
@@ -574,8 +576,11 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
         }
     }
 
-    /// Diverts a single small block to the async insert queue instead of the sink chain below, which is
-    /// built unconditionally and stays unfed then. Only side-effect-free destinations get here.
+    /// Hands the whole destination side over to the queue transform: either divert a single small
+    /// block to the async queue, or lazily build the same push pipeline a plain `INSERT` would use,
+    /// once ineligibility is actually confirmed. Building the sink chain below unconditionally would
+    /// start it (and any start-time side effect it has, e.g. `AliasSink` opening its nested `INSERT`)
+    /// before that decision is made; see `AsyncInsertQueueTransform`.
     if (add_async_insert_queue_transform)
     {
         /// Only callers that hand the destination lock over may ask for this route.
@@ -594,12 +599,20 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(
                 settings[Setting::async_insert_max_data_size],
                 settings[Setting::wait_for_async_insert_timeout].totalMilliseconds(),
                 settings[Setting::wait_for_async_insert],
-                std::move(*destination_lock));
+                std::move(*destination_lock),
+                insert_dependencies, table, max_threads, no_squash, async_insert);
         });
+
+        pipeline.setSinks([&](const SharedHeader & cur_header, QueryPipelineBuilder::StreamType) -> ProcessorPtr
+        {
+            return std::make_shared<EmptySink>(cur_header);
+        });
+
+        return QueryPipelineBuilder::getPipeline(std::move(pipeline));
     }
 
-    /// Downstream of the queue transform: the flush counts a diverted block itself and reports it back
-    /// through the future, so counting it here too would double the write and charge a failed flush.
+    /// Reached only when the async route was never eligible: build the ordinary synchronous
+    /// `INSERT ... SELECT` tail directly on the `SELECT` pipeline.
     pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
     {
         auto counting = std::make_shared<CountingTransform>(in_header, context->getQuota(), context->getNormalizedQueryHash());
@@ -1054,13 +1067,40 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
         insert_threads,
         context);
 
+    QueryPipeline pipeline
+        = buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert);
+
+    if (query.hasInlinedData() && !async_insert)
+    {
+        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
+
+        if (settings[Setting::enable_parsing_to_custom_serialization])
+            format->setSerializationHints(table->getSerializationHints());
+
+        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
+        pipeline.complete(std::move(pipe));
+    }
+
+    return pipeline;
+}
+
+QueryPipeline InterpreterInsertQuery::buildPushPipelineFromDependencies(
+    std::shared_ptr<const InsertDependenciesBuilder> insert_dependencies,
+    ContextPtr context_,
+    const StoragePtr & table,
+    size_t max_threads_,
+    bool no_squash_,
+    bool async_insert_)
+{
+    const Settings & settings = context_->getSettingsRef();
+
     auto sink_chains = insert_dependencies->createChainWithDependenciesForAllStreams();
     const size_t sink_stream_size = insert_dependencies->getSinkStreamSize();
     chassert(sink_chains.size() == sink_stream_size);
     chassert(sink_stream_size >= 1);
 
-    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert;
-    bool should_squash = shouldAddSquashingForStorage(table, context) && !no_squash;
+    bool squash_with_strict_limits = settings[Setting::use_strict_insert_block_limits] && !async_insert_;
+    bool should_squash = shouldAddSquashingForStorage(table, context_) && !no_squash_;
 
     /// The header that flows through the whole insert pipeline.
     SharedHeader insert_header = sink_chains.front().getInputSharedHeader();
@@ -1094,9 +1134,9 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
             settings[Setting::shrink_over_allocated_columns_min_waste_bytes]));
 
     {
-        auto counting = std::make_shared<CountingTransform>(insert_header, context->getQuota(), context->getNormalizedQueryHash());
-        counting->setProcessListElement(context->getProcessListElement());
-        counting->setProgressCallback(context->getProgressCallback());
+        auto counting = std::make_shared<CountingTransform>(insert_header, context_->getQuota(), context_->getNormalizedQueryHash());
+        counting->setProcessListElement(context_->getProcessListElement());
+        counting->setProgressCallback(context_->getProgressCallback());
         add_head_transform(std::move(counting));
     }
 
@@ -1181,19 +1221,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     // does not translate into reserved-but-unused slots.
     // max_threads is already memory-adjusted; use it for the parallel case to preserve that adjustment.
     const bool serial_views = !settings[Setting::parallel_view_processing] && insert_dependencies->isViewsInvolved();
-    pipeline.setNumThreads(serial_views ? 1 : max_threads);
+    pipeline.setNumThreads(serial_views ? 1 : max_threads_);
     pipeline.setConcurrencyControl(settings[Setting::use_concurrency_control]);
-
-    if (query.hasInlinedData() && !async_insert)
-    {
-        auto format = getInputFormatFromASTInsertQuery(query_ptr, true, *query_sample_block, context, nullptr);
-
-        if (settings[Setting::enable_parsing_to_custom_serialization])
-            format->setSerializationHints(table->getSerializationHints());
-
-        auto pipe = getSourceFromInputFormat(query_ptr, std::move(format), context, nullptr);
-        pipeline.complete(std::move(pipe));
-    }
 
     return pipeline;
 }
