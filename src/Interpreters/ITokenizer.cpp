@@ -352,7 +352,7 @@ void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view 
     out.clear();
     out.reserve(getLengthOfVarUInt(packed) + key.size() + value.size());
 
-    /// Keys shorter than 64 bytes pack into one varint byte: append it without the writeVarUInt buffer.
+    /// Keys under 64 bytes pack into one varint byte; skip the writeVarUInt buffer.
     if (packed < 0x80)
     {
         out.push_back(static_cast<char>(packed));

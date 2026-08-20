@@ -355,15 +355,14 @@ struct ArrayTokenizer final : public ITokenizerHelper<ArrayTokenizer>
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 };
 
-/// Tokenizer for text indexes on a `Map(String, String)` column. A token is a whole `(key, value)` pair,
-/// encoded by `encodeToken` in the index aggregator, so every string-tokenization method here throws.
+/// Text index tokenizer for a `Map(String, String)` column. One token per `(key, value)` pair:
 ///
 ///     token = varint((key.size() << 1) | is_rest) ‖ key ‖ value
 ///
-/// The length prefix keeps the key/value boundary unambiguous, so both may contain arbitrary bytes, and
-/// makes the tokens of one key a contiguous range of the sorted dictionary.
-/// `is_rest` is 0 for the first occurrence of a key in a row and 1 for later duplicates, because
-/// `m['key']` is the value of the first occurrence.
+/// The length prefix keeps the key/value boundary unambiguous (both may hold arbitrary bytes) and keeps
+/// the tokens of one key contiguous in the sorted dictionary. `is_rest` is 1 for a key's later duplicates
+/// in a row; `m['key']` is the first occurrence, so it matches `is_rest = 0`.
+/// The aggregator encodes the pairs, so the string-tokenization methods below all throw.
 struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsTokenizer>
 {
     KeyValuePairsTokenizer() : ITokenizerHelper(Type::KeyValuePairs) {}
@@ -372,7 +371,7 @@ struct KeyValuePairsTokenizer final : public ITokenizerHelper<KeyValuePairsToken
     static const char * getExternalName() { return getName(); }
     String getDescription() const override { return getName(); }
 
-    /// Writes the token into `out` (cleared first) so a hot loop can reuse one buffer.
+    /// `out` is cleared first; lets a hot loop reuse one buffer.
     static void encodeToken(std::string_view key, std::string_view value, bool is_rest, String & out);
     static String encodeToken(std::string_view key, std::string_view value, bool is_rest);
 
@@ -641,7 +640,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         }
         case ITokenizer::Type::KeyValuePairs:
         {
-            /// Dispatch through the base virtual `nextInString`, which throws.
+            /// The virtual `nextInString` throws; keep the message in one place.
             detail::forEachTokenImpl(tokenizer, data, length, callback);
             return;
         }

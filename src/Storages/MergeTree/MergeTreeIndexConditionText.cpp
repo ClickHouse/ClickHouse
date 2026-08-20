@@ -267,8 +267,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
-    /// A whole (key, value) pair is one token, so `m['key'] = 'value'` is an exact single-token lookup:
-    /// its posting list is exactly the matching rows. Nothing else is supported by this tokenizer yet.
+    /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
+    /// the matching rows. Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
         return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
 
@@ -899,9 +899,8 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
 
-    /// None of the builders below applies to a `keyValuePairs` index: they tokenize a string needle or
-    /// expect an index on `mapKeys` / `mapValues` / a JSON path. Keep the two worlds separate so no
-    /// generic builder can produce a token in the wrong format.
+    /// The builders below tokenize a string needle or expect an index on `mapKeys` / `mapValues` / a JSON
+    /// path. Partition hard, so none of them can emit a token in the pair format.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
         return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
 
@@ -1568,7 +1567,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
 {
-    /// `arrayElement(m, 'key')` form, i.e. `m['key']` before the subcolumn rewrite.
+    /// `m['key']` before the subcolumn rewrite.
     if (node.isFunction())
     {
         const auto function = node.toFunctionNode();
@@ -1580,14 +1579,14 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
 
         Field key_field;
         DataTypePtr key_type;
-        /// FixedString is excluded, see traverseMapElementKeyValueNode.
+        /// FixedString excluded, see traverseMapElementKeyValueNode.
         if (!function.getArgumentAt(1).tryGetConstant(key_field, key_type) || !WhichDataType(key_type).isString())
             return std::nullopt;
 
         return key_field.safeGet<String>();
     }
 
-    /// `m.key_<serialized_key>` subcolumn form, used when `optimize_functions_to_subcolumns` is on.
+    /// `m['key']` after the subcolumn rewrite (`optimize_functions_to_subcolumns`).
     auto parsed = tryParseMapSubcolumnName(node.getColumnName());
     if (!parsed)
         return std::nullopt;
@@ -1596,8 +1595,8 @@ std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexCo
     if (!hasIndexForColumn(map_column_name))
         return std::nullopt;
 
-    /// `serializeText` is the identity for the String keys this index requires, so it is the raw key.
-    /// Same assumption as in traverseMapElementKeyNode.
+    /// `serializeText` is the identity for the String keys this index requires, so this is the raw key.
+    /// Same assumption as traverseMapElementKeyNode.
     return serialized_key;
 }
 
@@ -1612,8 +1611,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     if (function_name != "equals")
         return false;
 
-    /// The Field of a FixedString constant carries the zero padding, which is not what the index stores,
-    /// so the token could never be found and the exact direct read would drop rows. Fall back to a scan.
+    /// A FixedString Field carries its zero padding, which the index does not store: the token would
+    /// never be found and exact direct read would drop rows. Scan instead.
     if (!WhichDataType(value_type).isString())
         return false;
 
@@ -1621,13 +1620,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     if (!key)
         return false;
 
-    /// `m['key'] = ''` is also true for rows without the key, and those have no token at all. Keep the
-    /// original predicate then, consistently with `equals` on an empty needle.
+    /// `m['key'] = ''` also holds for rows without the key, which have no token. Keep the predicate,
+    /// as `equals` does for an empty needle.
     const String & value = value_field.safeGet<String>();
     if (value.empty())
         return false;
 
-    /// `m['key']` is the first occurrence of the key, which is the token with is_rest = 0.
+    /// `m['key']` is the key's first occurrence: is_rest = 0.
     VectorWithMemoryTracking<String> tokens;
     tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
 

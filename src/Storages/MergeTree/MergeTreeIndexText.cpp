@@ -1835,11 +1835,11 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     const auto & keys = tuple.getColumn(0);
     const auto & values = tuple.getColumn(1);
 
-    /// addToken hashes the token with StringHashTable, which reads 8 bytes at a time and needs padded
-    /// memory, so tokens go through a ColumnString (PaddedPODArray) instead of a std::string.
+    /// addToken hashes through StringHashTable, which reads 8 bytes at a time and so requires padded
+    /// memory: ColumnString is a PaddedPODArray, std::string is not.
     auto tokens_column = ColumnString::create();
     String token_buf;
-    /// Keys already seen in this row, to set `is_rest`. See ITokenizer.h.
+    /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
     absl::flat_hash_set<std::string_view> keys_in_row;
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
@@ -1856,7 +1856,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
             tokens_column->insertData(token_buf.data(), token_buf.size());
         }
 
-        /// One position per map entry, in stored order (mirrors the Array path).
+        /// One position per map entry, in stored order, as the Array path does.
         UInt32 token_position = 0;
         for (size_t j = 0; j < tokens_column->size(); ++j)
             granule_builder.addToken(tokens_column->getDataAt(j), token_position++);
@@ -2094,14 +2094,14 @@ std::unordered_map<String, ASTPtr> convertArgumentsToOptionsMap(const ASTPtr & a
     return options;
 }
 
-/// The `keyValuePairs` tokenizer indexes a `Map` column as whole `(key, value)` pairs; every other
-/// tokenizer splits a string.
+/// `keyValuePairs` indexes a `Map` column as whole `(key, value)` pairs; every other tokenizer splits
+/// a string.
 void validateTextIndexColumnType(const ITokenizer & tokenizer, const DataTypePtr & index_data_type)
 {
     if (tokenizer.getType() == ITokenizer::Type::KeyValuePairs)
     {
-        /// FixedString is rejected because the column stores the padding bytes while a searched constant
-        /// does not, so lookups would silently miss rows. Nullable has no representation in the token.
+        /// FixedString is rejected: the column stores padding bytes a searched constant does not, so
+        /// lookups would silently miss rows. Nullable has no representation in the token.
         const auto * map_type = typeid_cast<const DataTypeMap *>(index_data_type.get());
         if (!map_type
             || !WhichDataType(recursiveRemoveLowCardinality(map_type->getKeyType())).isString()
@@ -2201,9 +2201,9 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             "Text index argument '{}' is experimental. Enable it with the MergeTree setting "
             "`allow_experimental_text_index_phrase_search = 1`.", ARGUMENT_POSITIONS);
 
-    /// There is no string tokenization step for `preprocessor` / `postprocessor` to transform, and a
-    /// postprocessor would corrupt the encoded tokens. A position is the ordinal of a map entry, not a
-    /// word position, so phrase search is meaningless too.
+    /// No string tokenization step exists for `preprocessor` / `postprocessor` to transform, and a
+    /// postprocessor would corrupt the encoded tokens. A position is a map entry ordinal, not a word
+    /// position, so phrase search is meaningless.
     if (is_key_value_pairs_tokenizer)
     {
         auto reject_argument = [](const String & argument)

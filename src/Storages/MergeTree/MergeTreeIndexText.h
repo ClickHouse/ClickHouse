@@ -522,7 +522,7 @@ private:
     template <bool tokenize>
     void addDocumentsFromArray(ColumnPtr column, size_t start_row, size_t rows_read);
 
-    /// Iterates over a ColumnMap slice and adds one token per (key, value) pair (`keyValuePairs` only).
+    /// One token per `(key, value)` pair of a ColumnMap slice. `keyValuePairs` only.
     void addDocumentsFromMap(ColumnPtr column, size_t start_row, size_t rows_read);
 
     String index_column_name;
