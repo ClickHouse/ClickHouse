@@ -243,22 +243,37 @@ struct MockSegmentState
     size_t segment_size;
     /// Committed frontier per segment: bytes `[seg_start, seg_start + committed[i])` are cached.
     std::vector<size_t> committed;
+    /// A frontier `resolve` does not report but the writer does, mirroring
+    /// `MockCacheState::late_committed`: the bytes a concurrent query populated in the window between
+    /// our read-only probe and the claim.
+    std::vector<size_t> late_committed;
     VectorWithMemoryTracking<ByteRange> writes;
 
     MockSegmentState(size_t file_size_, size_t segment_size_)
         : store(file_size_, 0), file_size(file_size_), segment_size(segment_size_)
-        , committed((file_size_ + segment_size_ - 1) / segment_size_, 0) {}
+        , committed((file_size_ + segment_size_ - 1) / segment_size_, 0)
+        , late_committed((file_size_ + segment_size_ - 1) / segment_size_, 0) {}
 
     size_t segmentEnd(size_t seg) const { return std::min(file_size, (seg + 1) * segment_size); }
 
+    /// The frontier a writer reports; `resolve` reads `committed` alone, so a late commit surfaces
+    /// only at claim time.
+    size_t writerFrontier(size_t seg) const { return std::max(committed[seg], late_committed[seg]); }
+
     /// Commit a prefix of one segment, filling the store with the file's pattern.
-    void commitPrefix(size_t seg, size_t bytes)
+    void commitPrefix(size_t seg, size_t bytes) { fillPrefix(seg, bytes, committed); }
+
+    /// Same, but `resolve` still reports the segment as a miss over that prefix.
+    void commitPrefixLate(size_t seg, size_t bytes) { fillPrefix(seg, bytes, late_committed); }
+
+private:
+    void fillPrefix(size_t seg, size_t bytes, std::vector<size_t> & frontier)
     {
         const size_t seg_start = seg * segment_size;
         const size_t n = std::min(bytes, segmentEnd(seg) - seg_start);
         for (size_t i = 0; i < n; ++i)
             store[seg_start + i] = static_cast<char>(patternByte(seg_start + i));
-        committed[seg] = std::max(committed[seg], n);
+        frontier[seg] = std::max(frontier[seg], n);
     }
 };
 
@@ -342,13 +357,13 @@ private:
         IntervalSet committed() const override
         {
             IntervalSet c;
-            if (state->committed[seg])
-                c.add(ByteRange{r.offset, state->committed[seg]});
+            if (const size_t frontier = state->writerFrontier(seg))
+                c.add(ByteRange{r.offset, frontier});
             return c;
         }
         ChainedBuffers read(ByteRange sub) override
         {
-            return Reader{ByteRange{r.offset, state->committed[seg]}, state}.read(sub);
+            return Reader{ByteRange{r.offset, state->writerFrontier(seg)}, state}.read(sub);
         }
 
         Lead claimLeadRole(ByteRange range) override
@@ -359,7 +374,7 @@ private:
             lead.available = ByteRange{lo, 0};
             if (lo >= hi)
                 return lead;
-            const size_t committed_end = r.offset + state->committed[seg];
+            const size_t committed_end = r.offset + state->writerFrontier(seg);
             if (committed_end > lo)
                 lead.available = ByteRange{lo, std::min(committed_end, hi) - lo};
             /// The role is held only while a tail remains to fill.
@@ -371,7 +386,8 @@ private:
         {
             chassert(claim);
             /// Append-only at the live frontier; bytes below it are already committed.
-            const size_t write_offset = r.offset + state->committed[seg];
+            const size_t frontier = state->writerFrontier(seg);
+            const size_t write_offset = r.offset + frontier;
             if (write_offset >= r.end())
                 return 0;
             const ByteRange target{write_offset, r.end() - write_offset};
@@ -385,7 +401,7 @@ private:
                 return 0;
             const ByteRange write_range{write_offset, contiguous};
             data.copyTo(state->store.data() + write_range.offset, write_range);
-            state->committed[seg] += contiguous;
+            state->committed[seg] = frontier + contiguous;
             state->writes.push_back(write_range);
             return contiguous;
         }
@@ -866,10 +882,42 @@ TEST_F(ReaderExecutorTest, SeekIntoPartialSegmentBackfillsOnlyFromTheFrontier)
     EXPECT_EQ(state->writes[0].offset, committed);
 }
 
-TEST_F(ReaderExecutorTest, FullyCommittedTailAcrossSegmentsIsNotReFetched)
+TEST_F(ReaderExecutorTest, FullyAvailableTierAtClaimTimeContributesNoSourceBytes)
 {
-    /// Two segments: the first fully committed, the second partial. The fully committed one must not
-    /// drag the fetch back to its start, and only the second segment's tail is read from source.
+    /// A segment that misses at `resolve` but reports its WHOLE extent as `available` at claim time
+    /// (a concurrent query completed it in between) has an empty tail, so it must widen neither the
+    /// fetch nor the write. Segment 0 sits partially committed and covers the head, so the fetch is
+    /// anchored there and only segment 1 can widen its end.
+    const size_t seg_size = 512;
+    const size_t committed_first = 100;
+    StoredObjects objects{makeFile("a.bin", 2 * seg_size)};
+
+    auto state = std::make_shared<MockSegmentState>(/*file_size=*/2 * seg_size, seg_size);
+    state->commitPrefix(/*seg=*/0, committed_first);
+    state->commitPrefixLate(/*seg=*/1, seg_size);   // whole segment, reported only at claim time
+
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockSegmentCacheProvider>(state));
+
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+        ReaderExecutor::Options{.window_size = 2 * seg_size, .cache_chain = std::move(chain)});
+
+    auto data = drain(ex);
+    ASSERT_EQ(data.size(), 2 * seg_size);
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), seg_size - committed_first)
+        << "the fully available segment widened the fetch past [" << committed_first << ", " << seg_size << ")";
+    for (const auto & wr : state->writes)
+        EXPECT_LE(wr.end(), seg_size) << "wrote into the fully available segment";
+}
+
+TEST_F(ReaderExecutorTest, HitSegmentServedFromCacheAcrossSegments)
+{
+    /// Two segments: the first fully committed, the second partial. The first resolves as a plain Hit
+    /// and is served from cache, and only the second segment's uncommitted tail is read from source.
     const size_t seg_size = 512;
     const size_t committed_second = 100;
     StoredObjects objects{makeFile("a.bin", 2 * seg_size)};
@@ -893,6 +941,65 @@ TEST_F(ReaderExecutorTest, FullyCommittedTailAcrossSegmentsIsNotReFetched)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), seg_size - committed_second)
         << "re-read cached bytes: only [" << seg_size + committed_second << ", " << 2 * seg_size << ") is missing";
     EXPECT_EQ(state->committed[1], seg_size);
+}
+
+TEST_F(ReaderExecutorTest, HeldConnectionBridgesOverACommittedPrefix)
+{
+    /// A held source connection is forward-only: it reaches an offset ahead of its parked position by
+    /// reading the gap through a scratch block (`LongConnection::skipForward`), so those bytes cross
+    /// the wire and count as `BytesFromSource`. When a fetch starts at a segment's committed frontier,
+    /// that frontier is the gap, so the prefix is bridged on the connection rather than re-requested.
+    /// Bridging is a property of connection reuse, independent of which range the fetch asks for.
+    const size_t seg_size = 4096;
+    const size_t committed_first = 100;
+    const size_t committed_second = 512;
+    const size_t tail_bytes = (seg_size - committed_first) + (seg_size - committed_second);
+
+    /// `bridgeable_gap` is `min_bytes_for_seek`: at 0 no gap is bridgeable, so a window starting above
+    /// the parked position drops the connection and opens a fresh one at the exact offset instead.
+    /// `ASSERT_*` needs a void-returning scope, so the counters come back through out-params.
+    auto run = [&](const char * name, size_t bridgeable_gap,
+                   ProfileEvents::Count & from_source, ProfileEvents::Count & on_connection)
+    {
+        StoredObjects objects{makeFile(name, 2 * seg_size)};
+        auto state = std::make_shared<MockSegmentState>(/*file_size=*/2 * seg_size, seg_size);
+        state->commitPrefix(/*seg=*/0, committed_first);
+        state->commitPrefix(/*seg=*/1, committed_second);
+
+        CacheChain chain;
+        chain.push_back(std::make_shared<MockSegmentCacheProvider>(state));
+
+        TestThreadGroup tg;
+        /// A window well below the segment size makes each segment span several windows, so a
+        /// connection is still parked when the next segment's frontier is reached.
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+            .window_size = 512, .min_bytes_for_seek = bridgeable_gap, .max_tail_for_drain = 0,
+            .long_connection_limit = std::make_shared<LongConnectionLimit>(4),
+            .cache_chain = std::move(chain)});
+
+        auto data = drain(ex);
+        EXPECT_EQ(data.size(), 2 * seg_size);
+        for (size_t i = 0; i < data.size(); ++i)
+            ASSERT_EQ(static_cast<unsigned char>(data[i]), patternByte(i)) << "at " << i;
+        EXPECT_EQ(state->committed[0], seg_size);
+        EXPECT_EQ(state->committed[1], seg_size);
+
+        from_source = tg.get(ProfileEvents::ReaderExecutorBytesFromSource);
+        on_connection = tg.get(ProfileEvents::ReaderExecutorLongConnectionBytes);
+    };
+
+    ProfileEvents::Count bridged_source = 0, bridged_conn = 0, exact_source = 0, exact_conn = 0;
+    run("bridge.bin", 64 * 1024, bridged_source, bridged_conn);
+    run("no_bridge.bin", 0, exact_source, exact_conn);
+
+    /// Only the second segment's frontier is ever bridged: the first segment's is the read's start,
+    /// where no connection is parked yet.
+    EXPECT_EQ(bridged_source, tail_bytes + committed_second);
+    EXPECT_GT(bridged_conn, 0u);
+    /// Without a bridgeable gap the same read transfers exactly the uncommitted tails, which
+    /// attributes the excess above to the bridge and not to the fetch range.
+    EXPECT_EQ(exact_source, tail_bytes);
+    EXPECT_GT(exact_conn, 0u);
 }
 
 TEST_F(ReaderExecutorTest, CoalescesConsecutiveMissesIntoOneSourceRead)
