@@ -923,18 +923,8 @@ void KeeperServer::startLeaderMetricsPolling(int32_t poll_interval_ms)
 
 void KeeperServer::stopLeaderMetricsPolling()
 {
-    nuraft::ptr<nuraft::delayed_task> polling_task;
-    {
-        std::lock_guard lock(leader_unavailable_metrics_mutex);
-        if (!leader_unavailable_polling_task)
-            return;
-
-        polling_task = *leader_unavailable_polling_task;
-        leader_unavailable_polling_task.reset();
-    }
-
-    if (asio_service)
-        asio_service->cancel(polling_task);
+    std::lock_guard lock(leader_unavailable_metrics_mutex);
+    leader_unavailable_polling_task.reset();
 }
 
 void KeeperServer::collectLeaderMetrics()
@@ -1011,6 +1001,13 @@ void KeeperServer::resetLeaderMetrics()
 
 nuraft::cb_func::ReturnCode KeeperServer::callbackFunc(nuraft::cb_func::Type type, nuraft::cb_func::Param * param)
 {
+    /// We / nuraft currently don't have a good way to recover from exceptions here, the whole
+    /// server crashes if this throws. So we suppress MEMORY_LIMIT_EXCEEDED and take the risk of OOM.
+    /// The soft limit check in KeeperRequestDispatcher should mostly keep memory in check.
+    /// (Although that check is not always applied on the correct node - a request we're applying
+    ///  here could come from the dispatcher on another node.)
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+
     if (type == nuraft::cb_func::BecomeLeader)
     {
         startLeaderUptimeMetrics();
