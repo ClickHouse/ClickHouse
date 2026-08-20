@@ -7,7 +7,7 @@
 #include <Formats/FormatSettings.h>
 #include <Processors/Formats/IOutputFormat.h>
 
-struct VortexFFIWriter;
+struct FFI_VortexWriter;
 
 namespace DB
 {
@@ -15,11 +15,10 @@ namespace DB
 class CHColumnToArrowColumn;
 struct VortexWriteContext;
 
-/// Writes Vortex files (https://github.com/vortex-data/vortex, https://docs.vortex.dev/) through
-/// the Rust `vortex` library, see `rust/workspace/vortex`. Chunks are converted to Arrow record
-/// batches (the same way as in the Arrow format) and passed to the library over the Arrow C Data
-/// Interface. The library compresses the data, chooses the file layout, and streams the bytes of
-/// the file back through a callback that writes them to the output buffer.
+/// Writes Vortex files (https://docs.vortex.dev/) through the Rust bindings in
+/// `rust/workspace/vortex`. Chunks are passed over as Arrow record batches; the library chooses the
+/// encodings and the layout of the file and streams the bytes back through a callback. Unlike
+/// reading, this runs entirely on the calling thread.
 class VortexBlockOutputFormat final : public IOutputFormat
 {
 public:
@@ -37,7 +36,7 @@ private:
 
     std::unique_ptr<VortexWriteContext> write_context;
     std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
-    VortexFFIWriter * writer = nullptr;
+    FFI_VortexWriter * writer = nullptr;
 
     const FormatSettings format_settings;
 };

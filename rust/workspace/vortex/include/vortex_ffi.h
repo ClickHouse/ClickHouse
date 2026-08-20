@@ -2,33 +2,27 @@
 
 #include <stdint.h>
 
-/// C bindings for reading and writing Vortex files (https://github.com/vortex-data/vortex),
-/// implemented in Rust on top of the `vortex` crate. See `rust/workspace/vortex/src/lib.rs`.
+/// C bindings for reading and writing Vortex files, implemented in Rust on top of the `vortex`
+/// crate; the other half lives in `rust/workspace/vortex/src/lib.rs`. Arrays cross the boundary as
+/// Arrow C Data Interface structs, and IO is delegated back through callbacks.
 ///
-/// Data crosses the boundary through the Arrow C Data Interface (`struct ArrowArray` and
-/// `struct ArrowSchema`), and IO is delegated to the caller through callbacks.
+/// Ownership:
+///   - an Arrow struct passed into a function is consumed by it;
+///   - an Arrow struct written to an out-parameter, and the one passed to the scan's `on_chunk`,
+///     belongs to the caller, who has to call its `release` - importing it with
+///     `arrow::ImportRecordBatch` or `arrow::ImportSchema` does that;
+///   - an error message has to be freed with `vortex_ffi_free_string`.
 ///
-/// Ownership conventions:
-///   - Arrow structs passed into a function are consumed (moved) by the callee.
-///   - Arrow structs returned through out-parameters, and the one passed to the scan consumer's
-///     `on_chunk`, are owned by the caller, which must release them through their `release`
-///     callback (e.g. by importing them with `arrow::ImportRecordBatch` / `arrow::ImportSchema`).
-///   - Error messages are heap-allocated and must be freed with `vortex_ffi_free_string`.
-///
-/// Threading: the library owns no threads and no executor. A `VortexFFIRuntime` is a pair of task
-/// queues (CPU and IO) plus a notification callback: whenever a task becomes runnable, the callback
-/// tells the caller, which then runs tasks by calling `vortex_ffi_runtime_run` from as many of its
-/// own threads as it wants, and may send the two queues to different thread pools. A runtime
-/// created without a notification callback runs its tasks only on the threads that are inside FFI
-/// calls on it, which is enough for opening a file and for writing.
-///
-/// A scan pushes its results: the task that produced a chunk calls the consumer's `on_chunk` on
-/// whichever thread ran it, so the caller converts chunks in parallel too, and the end of the scan
-/// (or its first error) is reported to `on_finish`.
+/// Nothing here owns a thread. An `FFI_VortexRuntime` is two queues of pending work plus a way to
+/// report that something became runnable; the caller decides who runs it, when, and on how many
+/// threads, and may send the two queues to different thread pools. Without a notification callback
+/// the runtime only advances on the thread already inside a call, which is enough for opening a
+/// file and for writing one. A scan does not wait to be asked: it pushes its results to callbacks.
 
-/// The standard Arrow C Data Interface definitions, see
+
+/// The Arrow C Data Interface definitions, see
 /// https://arrow.apache.org/docs/format/CDataInterface.html
-/// (compatible with the definitions in `arrow/c/abi.h`).
+/// They are compatible with the ones in `arrow/c/abi.h`.
 #ifndef ARROW_C_DATA_INTERFACE
 #define ARROW_C_DATA_INTERFACE
 
@@ -63,62 +57,57 @@ struct ArrowArray
     void * private_data;
 };
 
-#endif // ARROW_C_DATA_INTERFACE
+#endif
 
 extern "C" {
 
-struct VortexFFIRuntime;
-struct VortexFFIReader;
-struct VortexFFIScan;
-struct VortexFFIWriter;
-struct VortexFFIExpression;
+struct FFI_VortexRuntime;
+struct FFI_VortexReader;
+struct FFI_VortexScan;
+struct FFI_VortexWriter;
+struct FFI_VortexExpression;
 
-/// The queue a task belongs to.
-enum class VortexFFIQueue : int32_t
+enum class FFI_VortexTaskQueue : int32_t
 {
-    /// Decoding, filtering, Arrow export: tasks that use the CPU.
+    /// Decoding, filtering and exporting to Arrow: work that needs a core.
     CPU = 0,
-    /// Tasks that call the read callback.
+    /// Work that calls the read callback and blocks until it returns.
     IO = 1,
 };
 
-/// Called when a task becomes runnable on the given queue of the runtime. It must not call back
-/// into the library; the caller is expected to schedule `vortex_ffi_runtime_run` somewhere and
-/// return. May be called from any thread, including from inside `vortex_ffi_runtime_run` itself.
-using VortexFFINotifyCallback = void (*)(void * context, VortexFFIQueue queue);
+/// Reports that a task of this queue became runnable. It must not call back into the library:
+/// schedule `vortex_ffi_runtime_run` somewhere and return. Can be called on any thread, and
+/// synchronously from inside any FFI call that woke a task.
+using FFI_VortexTaskReadyCallback = void (*)(void * context, FFI_VortexTaskQueue queue);
 
-/// Creates a runtime. `notify` (which may be nullptr, together with `context`) is called whenever a
-/// task becomes runnable; the caller is then expected to call `vortex_ffi_runtime_run` for that
-/// queue from one of its threads. A runtime without a callback only ever runs tasks on the threads
-/// that are inside FFI calls on it. The runtime must outlive everything created on it.
-VortexFFIRuntime * vortex_ffi_runtime_new(void * context, VortexFFINotifyCallback notify);
+/// Creates a runtime. A nullptr `notify`, together with `context`, gives one that only advances
+/// inside FFI calls. It has to outlive everything created on it.
+FFI_VortexRuntime * vortex_ffi_runtime_new(void * context, FFI_VortexTaskReadyCallback notify);
 
-/// Runs at most `max_tasks` runnable tasks of the given queue (0 means no limit) and returns how
-/// many were run, or -1 if a task panicked (the panic does not cross the FFI boundary).
+/// Runs up to `max_tasks` runnable tasks of the queue, 0 meaning no limit, and returns how many
+/// were run. Returns -1 if a panic was caught; no panic ever crosses the boundary.
 ///
-/// Thread-safe: any number of threads may run the same queue at once. A task may queue more tasks,
-/// including on the other queue, which is reported through the notification callback.
-int64_t vortex_ffi_runtime_run(const VortexFFIRuntime * runtime, VortexFFIQueue queue, uint32_t max_tasks, char ** error);
+/// Any number of threads may run the same queue at once. A task may queue further tasks, on either
+/// queue, which is reported through the notification callback.
+int64_t vortex_ffi_runtime_run(const FFI_VortexRuntime * runtime, FFI_VortexTaskQueue queue, uint32_t max_tasks, char ** error);
 
-/// Returns the number of tasks waiting in the given queue. Thread-safe.
-uint64_t vortex_ffi_runtime_pending(const VortexFFIRuntime * runtime, VortexFFIQueue queue);
+/// Returns the number of tasks waiting in the given queue. Safe to call from any thread.
+uint64_t vortex_ffi_runtime_pending(const FFI_VortexRuntime * runtime, FFI_VortexTaskQueue queue);
 
-/// Frees the runtime. Everything created on it must be freed first, and no thread may be inside
+/// Frees the runtime. Everything created on it has to be freed first, and no thread may be inside
 /// `vortex_ffi_runtime_run` on it.
-void vortex_ffi_runtime_free(VortexFFIRuntime * runtime);
+void vortex_ffi_runtime_free(FFI_VortexRuntime * runtime);
 
-/// Reads `length` bytes at `offset` into `out`. Returns 0 on success, non-zero on failure.
-/// Called from the threads that run the IO queue of the runtime; concurrently from several of them
-/// if the reader was opened with `io_concurrency > 1`.
-using VortexFFIReadCallback = int32_t (*)(void * context, uint64_t offset, uint64_t length, uint8_t * out);
+/// Reads `length` bytes at `offset` into `out`. Returns zero on success. Called from the threads
+/// that run the IO queue, concurrently when `io_concurrency` is greater than 1.
+using FFI_VortexReadCallback = int32_t (*)(void * context, uint64_t offset, uint64_t length, uint8_t * out);
 
-/// Consumes `length` bytes from `data`. Returns 0 on success, non-zero on failure.
-using VortexFFIWriteCallback = int32_t (*)(void * context, const uint8_t * data, uint64_t length);
+/// Consumes `length` bytes of the file being written. Returns zero on success.
+using FFI_VortexWriteCallback = int32_t (*)(void * context, const uint8_t * data, uint64_t length);
 
-/// The primitive type of a literal built through `vortex_ffi_expr_literal_*`. Must match the
-/// exact type of the file column it is compared with: Vortex comparisons require both sides to
-/// have the same type.
-enum class VortexFFIPType : int32_t
+/// The type of a literal. It has to be exactly the type of the file column it is compared with:
+/// Vortex requires both sides of a comparison to have the same type.
+enum class FFI_VortexPrimitiveType : int32_t
 {
     I8 = 0,
     I16 = 1,
@@ -132,8 +121,7 @@ enum class VortexFFIPType : int32_t
     F64 = 9,
 };
 
-/// A comparison operator for `vortex_ffi_expr_compare`.
-enum class VortexFFIComparison : int32_t
+enum class FFI_VortexComparisonOperator : int32_t
 {
     Eq = 0,
     NotEq = 1,
@@ -143,165 +131,166 @@ enum class VortexFFIComparison : int32_t
     Gte = 5,
 };
 
-/// Options of `vortex_ffi_reader_open`. A zero-initialized struct means: one read at a time and no
-/// coalescing.
-struct VortexFFIReaderOptions
+/// A zero-initialized struct means one read at a time and no merging.
+struct FFI_VortexReaderOptions
 {
-    /// The maximum number of reads the library may have in flight at once (0 or 1 = one). The read
-    /// callback must be thread-safe if it is greater than 1.
+    /// How many reads may be outstanding at once, 0 and 1 both meaning one. Above that the read
+    /// callback has to be safe to call from several threads at once.
     uint32_t io_concurrency;
-    /// Nearby segment reads are merged into one callback invocation when the gap between them is at
-    /// most `coalesce_distance` bytes and the merged read is at most `coalesce_max_size` bytes. Both
-    /// zero disables coalescing: one callback per segment.
-    uint64_t coalesce_distance;
-    uint64_t coalesce_max_size;
+    /// Two segment reads are merged into one call when no more than `coalesce_max_gap_bytes`
+    /// separate them and the result stays under `coalesce_max_read_bytes`. Both zero disables
+    /// merging.
+    uint64_t coalesce_max_gap_bytes;
+    uint64_t coalesce_max_read_bytes;
 };
 
-/// Opens a Vortex file for reading on the given runtime. The file is accessed through `read` with
-/// the given opaque `context`; `file_size` must be the exact file size in bytes; `options` may be
-/// nullptr (the defaults). Reading the footer happens on the calling thread, so the caller does not
-/// have to be running the runtime yet. Returns nullptr on error.
-VortexFFIReader * vortex_ffi_reader_open(
-    const VortexFFIRuntime * runtime,
+/// Opens a file for reading. It is accessed through `read` with the given `context`; `file_size`
+/// has to be the exact size of the file, and `options` may be nullptr. Reading the footer happens
+/// on the calling thread, so the runtime does not have to be driven yet. Returns nullptr on
+/// failure.
+FFI_VortexReader * vortex_ffi_reader_open(
+    const FFI_VortexRuntime * runtime,
     void * context,
-    VortexFFIReadCallback read,
+    FFI_VortexReadCallback read,
     uint64_t file_size,
-    const VortexFFIReaderOptions * options,
+    const FFI_VortexReaderOptions * options,
     char ** error);
 
 /// Returns the total number of rows in the file.
-uint64_t vortex_ffi_reader_row_count(const VortexFFIReader * reader);
+uint64_t vortex_ffi_reader_row_count(const FFI_VortexReader * reader);
 
-/// Exports the file schema into `out_schema`. Returns 0 on success.
-int32_t vortex_ffi_reader_schema(const VortexFFIReader * reader, struct ArrowSchema * out_schema, char ** error);
+/// Exports the file schema into `out_schema`. Returns zero on success.
+int32_t vortex_ffi_reader_schema(const FFI_VortexReader * reader, struct ArrowSchema * out_schema, char ** error);
 
-void vortex_ffi_reader_free(VortexFFIReader * reader);
+/// Frees the reader. Every scan created on it has to be freed first.
+void vortex_ffi_reader_free(FFI_VortexReader * reader);
 
-/// Options of a scan. All fields are optional: a zero-initialized struct scans all rows of all
-/// columns.
-struct VortexFFIScanOptions
+/// Nothing here is required: a zero-initialized struct reads every row of every column.
+struct FFI_VortexScanOptions
 {
-    /// The names of the top-level columns to read, in the given order. nullptr means all columns.
+    /// The top-level columns to read, in this order. Nullptr means all of them.
     const char * const * columns;
     uint64_t num_columns;
-    /// If not nullptr, only the rows matching the filter expression are returned; selective
-    /// queries decode only the matching rows. Whole segments are not yet pruned by statistics.
-    const VortexFFIExpression * filter;
-    /// The row range `[row_range_begin, row_range_end)` to scan. Both zero means the whole file.
+    /// Only the rows matching it are returned, and the scan skips the statistics zones it rules
+    /// out. Nullptr means no filter.
+    const FFI_VortexExpression * filter;
+    /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     uint64_t row_range_begin;
     uint64_t row_range_end;
-    /// The maximum number of chunks that may be in flight at once: being read, decoded, or already
-    /// handed to `on_chunk` and not yet released with `vortex_ffi_scan_release` (0 = default).
-    /// This bounds both the memory the scan holds and the amount of IO lookahead.
-    uint32_t in_flight;
+    /// The number of splits that may be in flight at once: being read, being decoded, or already
+    /// handed over and not yet released. 0 selects the default. This is what keeps the scan from
+    /// running ahead of the caller; the reads underneath are bounded separately by
+    /// `io_concurrency` and `coalesce_max_read_bytes`.
+    uint32_t max_splits_in_flight;
 };
 
-/// The callbacks a scan reports to. They are called on the threads that run the scan's tasks,
-/// concurrently, and must not call back into the library (except `vortex_ffi_scan_release`, which
-/// must not be called from `on_chunk` itself).
-struct VortexFFIScanConsumer
+/// The callbacks a scan reports to. Both run on the caller's own threads, possibly several at a
+/// time. The only calls back into the library they may make are `vortex_ffi_scan_cancel`, which is
+/// allowed from either of them, and `vortex_ffi_scan_release`, which is not allowed from
+/// `on_chunk`.
+struct FFI_VortexScanCallbacks
 {
     void * context;
-    /// Receives one chunk of the scan: an Arrow struct array in the scan schema, whose ownership
-    /// passes to the consumer, and the 0-based index of its row split in file order. A null array
-    /// means the split matched no rows (reported so that the consumer can restore the file order).
-    /// Returns 0 on success; a non-zero return stops the scan and is reported as an error to
-    /// `on_finish`.
+    /// Delivers one chunk: an Arrow struct array in the scan's schema, which the caller now owns
+    /// and has to release, together with the position of its split in the file. A null array means
+    /// the split matched no rows; it is still reported so that the caller can restore the file
+    /// order. Returning non-zero stops the scan and surfaces from `on_finish` as an error.
     int32_t (*on_chunk)(void * context, struct ArrowArray * array, uint64_t split_index);
-    /// Called exactly once when the scan ends: with nullptr when all splits were delivered, or with
-    /// an error message (valid only during the call) when the scan failed. Not called when the scan
-    /// is cancelled with `vortex_ffi_scan_cancel`.
+    /// Reports the end of the scan, exactly once: nullptr if every split was delivered, otherwise
+    /// a message that is only valid for the duration of the call. Never called for a scan that was
+    /// cancelled. After a failure a split task already in flight can still reach `on_chunk`, so the
+    /// context has to outlive the caller's last pass over the queues.
     void (*on_finish)(void * context, const char * error);
 };
 
-/// Creates a scan over the file and starts it: the split tasks are spawned onto the reader's
-/// runtime as capacity allows, and every chunk they produce is handed to `consumer.on_chunk` on the
-/// thread that ran the task. The end of the scan (or its first error) is reported to
-/// `consumer.on_finish`.
+/// Creates a scan and starts it: split tasks are spawned onto the reader's runtime as far ahead as
+/// the permits allow, each chunk is passed to `on_chunk` on the thread that produced it, and the
+/// end of the scan, or its first failure, is reported to `on_finish`. Optimizing the expression and
+/// computing the splits happens here, on the calling thread.
 ///
-/// Expression optimization and split computation happen here, on the calling thread. The reader and
-/// the consumer's context must stay alive for the whole lifetime of the scan; `filter` is not
-/// consumed. Returns nullptr on error.
-VortexFFIScan * vortex_ffi_scan_create(
-    const VortexFFIReader * reader, const VortexFFIScanOptions * options, const VortexFFIScanConsumer * consumer, char ** error);
+/// The reader and the callbacks' context have to outlive the scan. `filter` is borrowed, not
+/// consumed. Returns nullptr on failure.
+FFI_VortexScan * vortex_ffi_scan_create(
+    const FFI_VortexReader * reader, const FFI_VortexScanOptions * options, const FFI_VortexScanCallbacks * consumer, char ** error);
 
-/// Exports the schema of the chunks produced by the scan into `out_schema`. Returns 0 on success.
-int32_t vortex_ffi_scan_schema(const VortexFFIScan * scan, struct ArrowSchema * out_schema, char ** error);
+/// Exports the schema of the scan's chunks into `out_schema`. Returns zero on success.
+int32_t vortex_ffi_scan_schema(const FFI_VortexScan * scan, struct ArrowSchema * out_schema, char ** error);
 
-/// Returns the capacity of `count` chunks that were delivered to `on_chunk` and are not needed by
-/// the caller anymore, letting the scan read that many splits further ahead. Thread-safe, and safe
-/// to call after the scan has finished or was cancelled. Must not be called from `on_chunk`.
-void vortex_ffi_scan_release(const VortexFFIScan * scan, uint64_t count);
+/// Returns the capacity taken by `count` chunks the caller has finished with, letting the scan
+/// read that many splits further ahead. Safe from any thread and a no-op once the scan has ended.
+/// Must not be called from inside `on_chunk`.
+void vortex_ffi_scan_release(const FFI_VortexScan * scan, uint64_t count);
 
-/// Cancels the scan. Thread-safe. The pending tasks are dropped; `on_chunk` and `on_finish` are not
-/// called anymore once this returns, except from a task that is running at that moment, so the
-/// caller must stop running the runtime's queues before it frees the consumer's context.
-void vortex_ffi_scan_cancel(const VortexFFIScan * scan);
+/// Cancels the scan; safe from any thread. Pending tasks are dropped and no callback happens after
+/// this returns, except from a task that was already running - so stop driving the queues before
+/// releasing the callbacks' context.
+void vortex_ffi_scan_cancel(const FFI_VortexScan * scan);
 
-/// Frees the scan. The caller must have stopped running the runtime's queues (no task of this scan
-/// may be running).
-void vortex_ffi_scan_free(VortexFFIScan * scan);
+/// Frees the scan. The queues must no longer be driven: no task of it may still be running.
+void vortex_ffi_scan_free(FFI_VortexScan * scan);
 
-/// Filter expression builders. All of them return nullptr on invalid input (an unrepresentable
-/// literal value, invalid UTF-8, or a nullptr argument), and none of them consume their
-/// arguments: every returned handle must be freed with `vortex_ffi_expr_free`.
+
+// Every builder below returns nullptr for input it cannot use, borrows rather than consumes its
+// arguments, and returns a handle that has to be freed with `vortex_ffi_expr_free`.
 
 /// Creates an expression referencing the top-level column `name`.
-VortexFFIExpression * vortex_ffi_expr_column(const char * name);
+FFI_VortexExpression * vortex_ffi_expr_column(const char * name);
 
 /// Creates a signed integer literal of the given type. Returns nullptr if the value does not fit.
-VortexFFIExpression * vortex_ffi_expr_literal_int(VortexFFIPType ptype, int64_t value);
+FFI_VortexExpression * vortex_ffi_expr_literal_int(FFI_VortexPrimitiveType ptype, int64_t value);
 
 /// Creates an unsigned integer literal of the given type. Returns nullptr if the value does not fit.
-VortexFFIExpression * vortex_ffi_expr_literal_uint(VortexFFIPType ptype, uint64_t value);
+FFI_VortexExpression * vortex_ffi_expr_literal_uint(FFI_VortexPrimitiveType ptype, uint64_t value);
 
-/// Creates a floating-point literal of the given type. For `F32` the value must be exactly
-/// representable as `float`, otherwise nullptr is returned.
-VortexFFIExpression * vortex_ffi_expr_literal_float(VortexFFIPType ptype, double value);
+/// Creates a floating-point literal of the given type. An `F32` value has to be exactly
+/// representable as `float`; a rounded bound would change which rows the comparison matches.
+FFI_VortexExpression * vortex_ffi_expr_literal_float(FFI_VortexPrimitiveType ptype, double value);
 
 /// Creates a boolean literal.
-VortexFFIExpression * vortex_ffi_expr_literal_bool(bool value);
+FFI_VortexExpression * vortex_ffi_expr_literal_bool(bool value);
 
-/// Creates a string literal: `Utf8` if `is_utf8` is true (the bytes must be valid UTF-8,
-/// otherwise nullptr is returned), `Binary` otherwise.
-VortexFFIExpression * vortex_ffi_expr_literal_string(const uint8_t * data, uint64_t length, bool is_utf8);
+/// Creates a string literal. `is_utf8` selects a `Utf8` literal, whose bytes have to be valid
+/// UTF-8, or a `Binary` one.
+FFI_VortexExpression * vortex_ffi_expr_literal_string(const uint8_t * data, uint64_t length, bool is_utf8);
 
-/// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the
-/// scan treats as "row does not match".
-VortexFFIExpression * vortex_ffi_expr_compare(
-    VortexFFIComparison comparison, const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+/// Creates a comparison `lhs op rhs`. A comparison with a null value yields null, which the scan
+/// treats as a row that does not match.
+FFI_VortexExpression * vortex_ffi_expr_compare(
+    FFI_VortexComparisonOperator comparison, const FFI_VortexExpression * lhs, const FFI_VortexExpression * rhs);
 
-/// Creates a Kleene (three-valued) AND of two boolean expressions.
-VortexFFIExpression * vortex_ffi_expr_and(const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+/// Creates a Kleene, three-valued AND of two boolean expressions.
+FFI_VortexExpression * vortex_ffi_expr_and(const FFI_VortexExpression * lhs, const FFI_VortexExpression * rhs);
 
-/// Creates a Kleene (three-valued) OR of two boolean expressions.
-VortexFFIExpression * vortex_ffi_expr_or(const VortexFFIExpression * lhs, const VortexFFIExpression * rhs);
+/// Creates a Kleene, three-valued OR of two boolean expressions.
+FFI_VortexExpression * vortex_ffi_expr_or(const FFI_VortexExpression * lhs, const FFI_VortexExpression * rhs);
 
-/// Creates a logical NOT of a boolean expression (NOT of null is null).
-VortexFFIExpression * vortex_ffi_expr_not(const VortexFFIExpression * child);
+/// Creates a logical NOT of a boolean expression. NOT of a null is null.
+FFI_VortexExpression * vortex_ffi_expr_not(const FFI_VortexExpression * child);
 
-/// Creates an expression that is true where the child expression is null.
-VortexFFIExpression * vortex_ffi_expr_is_null(const VortexFFIExpression * child);
+/// Creates an expression that is true for the rows where the child expression is null.
+FFI_VortexExpression * vortex_ffi_expr_is_null(const FFI_VortexExpression * child);
 
-void vortex_ffi_expr_free(VortexFFIExpression * expr);
+/// Frees an expression handle.
+void vortex_ffi_expr_free(FFI_VortexExpression * expr);
 
-/// Creates a writer producing a Vortex file with the given schema (consumed). The bytes of the
-/// file are sent to `write` with the given opaque `context`. The writer drives its own runtime on
-/// the calling thread, so writing needs no threads from the caller. Returns nullptr on error.
-VortexFFIWriter * vortex_ffi_writer_create(
-    void * context, VortexFFIWriteCallback write, struct ArrowSchema * schema, char ** error);
+/// Creates a writer for a file with the given schema, which it consumes. The bytes are sent to
+/// `write` with the given `context`. It drives a runtime of its own on the calling thread, so
+/// writing needs no threads from the caller. Returns nullptr on failure.
+FFI_VortexWriter * vortex_ffi_writer_create(
+    void * context, FFI_VortexWriteCallback write, struct ArrowSchema * schema, char ** error);
 
-/// Appends one record batch (consumed) to the file. The batch must have the same schema the
-/// writer was created with. Returns 0 on success.
+/// Appends one record batch, which it consumes, in the schema the writer was created with.
+/// Returns zero on success.
 int32_t vortex_ffi_writer_write(
-    VortexFFIWriter * writer, struct ArrowArray * array, struct ArrowSchema * schema, char ** error);
+    FFI_VortexWriter * writer, struct ArrowArray * array, struct ArrowSchema * schema, char ** error);
 
-/// Flushes the remaining data and writes the file footer. Must be called exactly once before
-/// `vortex_ffi_writer_free`. Returns 0 on success.
-int32_t vortex_ffi_writer_finish(VortexFFIWriter * writer, char ** error);
+/// Flushes the remaining data and writes the file footer. Must be called exactly once, before
+/// freeing the writer. Returns zero on success.
+int32_t vortex_ffi_writer_finish(FFI_VortexWriter * writer, char ** error);
 
-void vortex_ffi_writer_free(VortexFFIWriter * writer);
+/// Frees the writer. Without a preceding `vortex_ffi_writer_finish` the file is left incomplete.
+void vortex_ffi_writer_free(FFI_VortexWriter * writer);
 
-/// Frees a string returned by this library (for example an error message).
+/// Frees a string returned by this library, such as an error message.
 void vortex_ffi_free_string(char * string);
 }

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# ^ the Vortex format is not included in the fast test and MSan builds
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# Pushdown has to give the same answers as the scan without it, and has to actually reach the
+# scan - which result equivalence alone cannot show, since ClickHouse reapplies WHERE either way.
 DATA_FILE=$CUR_DIR/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 
 $CLICKHOUSE_LOCAL -q "
@@ -19,9 +20,7 @@ $CLICKHOUSE_LOCAL -q "
     FROM numbers(10000)
     FORMAT Vortex" > "$DATA_FILE"
 
-# A scan-side assertion: a selective predicate must avoid reading the wide payload
-# when pushdown is enabled. Result equivalence below alone would also pass if the
-# filter stopped reaching the Vortex scan, because ClickHouse reapplies WHERE.
+# A wide payload column nobody selects: if the predicate reaches the scan, its bytes stay unread.
 PUSHDOWN_DATA_FILE=$CUR_DIR/pushdown_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 $CLICKHOUSE_LOCAL -q "
     SELECT
@@ -62,8 +61,7 @@ assert_scan_pushdown "Integer pushdown reduces scan bytes" "n = 1"
 assert_scan_pushdown "String pushdown reduces scan bytes" "s = '1'"
 assert_scan_pushdown "Float pushdown reduces scan bytes" "f = 0.25"
 
-# Runs the query twice: with the filter pushdown enabled and disabled. The two results must be
-# identical, so every case below prints its result twice.
+# Same query twice, pushdown on and off, so every case below prints its answer twice.
 run_query() {
     local label=$1
     local query=$2

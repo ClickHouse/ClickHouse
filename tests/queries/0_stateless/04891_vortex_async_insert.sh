@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# ^ the Vortex format is not included in the fast test and MSan builds
 
-# `Vortex` is excluded from the generic matrix of `02187_async_inserts_all_formats` (it is not
-# available in every build), so the async insert path of the format is covered here.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# `Vortex` is left out of the all-formats matrix in `02187_async_inserts_all_formats` because it is
+# not in every build, so its async insert path is covered here.
 
 DATA_FILE=$CLICKHOUSE_TMP/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 
@@ -16,7 +16,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_vortex_async_insert (id UInt64, s String, arr Array(UInt64)) ENGINE = Memory;
 "
 
-# Two files, so that two asynchronous inserts are squashed into one entry of the queue.
 $CLICKHOUSE_LOCAL -q "
     SELECT number AS id, toString(number) AS s, range(number % 3) AS arr FROM numbers(5)
     INTO OUTFILE '$DATA_FILE' TRUNCATE FORMAT Vortex

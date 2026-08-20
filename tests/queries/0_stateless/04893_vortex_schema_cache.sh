@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-msan
-# ^ the Vortex format is not included in the fast test and MSan builds
 
-# The settings that shape the inferred types must be a part of the schema cache key, otherwise
-# a cached schema is reused for a different value of the setting.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+
+# Every setting that shapes an inferred type has to be part of the schema cache key, or a schema
+# cached under one value gets handed out for another.
 
 DATA_FILE=$CLICKHOUSE_TMP/test_$CLICKHOUSE_TEST_UNIQUE_NAME.vortex
 
