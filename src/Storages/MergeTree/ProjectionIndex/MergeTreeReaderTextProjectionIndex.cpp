@@ -32,7 +32,7 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     , projection_granule(std::move(index_granule_))
 {
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getPhysicalFormat(*data_part, index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
@@ -41,6 +41,10 @@ MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
         .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
+        /// This reader serves granule reads that do consume posting lists, matching
+        /// MergeTreeReaderTextIndex. Only the single-token count shortcut in
+        /// ReadFromTextIndexCount sets this.
+        .skip_postings_deserialization = false,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));

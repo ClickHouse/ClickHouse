@@ -91,7 +91,7 @@ public:
     bool isProjectionIndex() const override { return true; }
 
     MergeTreeIndexSubstreams getSubstreams() const override;
-    MergeTreeIndexFormat getDeserializedFormat(
+    MergeTreeIndexFormat getPhysicalFormat(
         const IMergeTreeDataPart & part,
         const std::string & relative_path_prefix) const override;
 

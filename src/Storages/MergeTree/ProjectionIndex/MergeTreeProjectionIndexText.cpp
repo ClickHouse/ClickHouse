@@ -633,7 +633,7 @@ MergeTreeIndexSubstreams MergeTreeProjectionIndexText::getSubstreams() const
     return text_index->getSubstreams();
 }
 
-MergeTreeIndexFormat MergeTreeProjectionIndexText::getDeserializedFormat(
+MergeTreeIndexFormat MergeTreeProjectionIndexText::getPhysicalFormat(
     const IMergeTreeDataPart & part, const std::string & /* relative_path_prefix */) const
 {
     if (part.checksums.files.contains(index.name + ".proj"))
