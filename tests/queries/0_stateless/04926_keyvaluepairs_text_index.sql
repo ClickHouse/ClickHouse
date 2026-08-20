@@ -131,3 +131,6 @@ CREATE TABLE t_kv_bad3 (id UInt64, m Map(FixedString(3), String), INDEX idx m TY
 -- The keyValuePairs tokenizer does not support the preprocessor / postprocessor options.
 CREATE TABLE t_kv_bad4 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', preprocessor = 'toString(m)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
 CREATE TABLE t_kv_bad5 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', postprocessor = 'lower(token)')) ENGINE = MergeTree ORDER BY id; -- { serverError BAD_ARGUMENTS }
+-- The keyValuePairs tokenizer has no query surface that consumes positions, so support_phrase_search is rejected
+-- (allow_experimental_text_index_phrase_search is enabled here so the rejection is the tokenizer check, not the experimental gate).
+CREATE TABLE t_kv_bad6 (id UInt64, m Map(String, String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs', support_phrase_search = 1)) ENGINE = MergeTree ORDER BY id SETTINGS allow_experimental_text_index_phrase_search = 1; -- { serverError BAD_ARGUMENTS }

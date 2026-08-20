@@ -2228,6 +2228,13 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `keyValuePairs` tokenizer", ARGUMENT_PREPROCESSOR);
         if (postprocessor_ast)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `keyValuePairs` tokenizer", ARGUMENT_POSTPROCESSOR);
+        /// A `Map` index exposes no query surface that consumes positions: `hasPhrase` rejects the
+        /// `keyValuePairs` tokenizer, and the exact `m['key'] = value` / `IN` atoms this tokenizer
+        /// accelerates do not use positions. Enabling `support_phrase_search` would only write `.pos`
+        /// streams and `HasPositions` metadata, growing build time and storage without ever changing
+        /// query behavior. Reject it until an actual positions consumer exists.
+        if (positions)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' is not supported with the `keyValuePairs` tokenizer", ARGUMENT_POSITIONS);
     }
 
     /// Create the preprocessor for validation.
