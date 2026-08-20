@@ -77,12 +77,14 @@ IProcessor::Status BufferedShardByHashTransform::prepare()
             has_pushable_queued_chunks = true;
     }
 
-    /// Every active output with an empty queue was finished above, so a queue is non-empty here.
+    /// Every active output with an empty queue was finished by the loop above, so normally some
+    /// queue is non-empty here. This is not an invariant we can assert on: `prepare` only holds
+    /// this node's lock, so a downstream processor running on another thread can close one of our
+    /// output ports in between the two loops (for example `LimitTransform` reaching its limit).
+    /// The port state change is guaranteed to schedule another `prepare` call for this processor,
+    /// which then observes every output as finished and returns `Finished`.
     if (input_finished)
-    {
-        chassert(has_queued_chunks);
         return has_pushable_queued_chunks ? Status::Ready : Status::PortFull;
-    }
 
     /// There is no forward progress only when no queued chunk is pushable and no empty port
     /// is asking; anything else means input must keep flowing.
