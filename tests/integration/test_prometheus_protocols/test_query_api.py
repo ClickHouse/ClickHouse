@@ -1,9 +1,11 @@
 import urllib
+import uuid
 
 import pytest
 import requests
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
     execute_query_via_http_api,
@@ -344,3 +346,36 @@ def test_api_v1_url_path_routing_is_write_only():
 
     assert response.status_code == requests.codes.bad_request
     assert "URL path routing for prometheus_api_v1 is supported only for remote write" in response.text
+
+
+def test_generated_sql_always_runs_with_analyzer():
+    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
+    # analyzer honors, so the handler forces the analyzer and enable_materialized_cte
+    # regardless of the caller's enable_analyzer. The materialization itself is covered by
+    # 04816_promql_shared_subqueries_materialized; here it is enough to check the settings
+    # the generated query ran with.
+    for path, time_params in (
+        ("/api/v1/query", "time=1000"),
+        ("/api/v1/query_range", "start=999&end=1002&step=1"),
+    ):
+        query_id = f"promql-analyzer-{uuid.uuid4()}"
+        url = (
+            f"http://{node.ip_address}:9093{path}"
+            f"?query=post_body_metric&{time_params}&enable_analyzer=0"
+        )
+        response = requests.get(url, headers={"X-ClickHouse-Query-Id": query_id})
+        extract_data_from_http_api_response(response)  # raises unless a success envelope
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        # The response is flushed to the client before the QueryFinish row is queued, so a
+        # flush can run before there is anything to flush and the row then waits for the
+        # background interval. Retry for longer than that interval.
+        assert_eq_with_retry(
+            node,
+            "SELECT Settings['allow_experimental_analyzer'], "
+            "Settings['enable_materialized_cte'] "
+            f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+            "1\t1\n",
+            retry_count=30,
+            sleep_time=1,
+        )

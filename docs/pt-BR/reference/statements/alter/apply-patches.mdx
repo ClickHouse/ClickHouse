@@ -14,7 +14,7 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 ```
 
-O comando aciona manualmente a materialização física das partes de patch criadas por instruções de [`UPDATE` lightweight](/pt-BR/reference/statements/update). Ele força a aplicação dos patches pendentes às partes de dados, reescrevendo apenas as colunas afetadas.
+O comando aciona manualmente a materialização física das partes de patch criadas por instruções de [`UPDATE` leve](/pt-BR/reference/statements/update). Ele força a aplicação dos patches pendentes às partes de dados, reescrevendo apenas as colunas afetadas.
 
 <Note>
   * Funciona apenas para tabelas da família [`MergeTree`](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo tabelas [replicadas](/pt-BR/reference/engines/table-engines/mergetree-family/replication)).
@@ -29,7 +29,7 @@ O comando aciona manualmente a materialização física das partes de patch cria
   Em geral, você não deve precisar usar `APPLY PATCHES`
 </Tip>
 
-As partes de patch normalmente são aplicadas automaticamente durante os merges quando a configuração [`apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings#apply_patches_on_merge) está habilitada (padrão). No entanto, talvez você queira acionar manualmente a aplicação de patches nestes cenários:
+As partes de patch normalmente são aplicadas automaticamente durante os merges quando a configuração [`apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings/other#apply_patches_on_merge) está habilitada (padrão). No entanto, talvez você queira acionar manualmente a aplicação de patches nestes cenários:
 
 * Para reduzir a sobrecarga de aplicar patches durante consultas `SELECT`
 * Para consolidar várias partes de patch antes que se acumulem
@@ -74,4 +74,4 @@ WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 </div>
 
 * [`UPDATE` leve](/pt-BR/reference/statements/update) - Criar parte de patch com atualizações leves
-* [configuração `apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings#apply_patches_on_merge) - Controlar a aplicação automática de patches durante os merges
+* [configuração `apply_patches_on_merge`](/pt-BR/reference/settings/merge-tree-settings/other#apply_patches_on_merge) - Controlar a aplicação automática de patches durante os merges
