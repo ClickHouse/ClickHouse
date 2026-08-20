@@ -25,6 +25,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
 Nombre de tâches par défaut pour la lecture parallèle dans une requête distribuée. Les tâches sont réparties entre les différentes répliques.
+Utilisé par le planificateur distribué basé sur des règles. L’optimiseur basé sur les coûts choisit le fan-out de lecture selon le coût estimé et n’utilise pas ce paramètre.
 
 <div id="distributed_plan_default_shuffle_join_bucket_count">
   ## distributed_plan_default_shuffle_join_bucket_count
@@ -37,6 +38,7 @@ Nombre de tâches par défaut pour la lecture parallèle dans une requête distr
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "8"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
 Nombre de buckets par défaut pour la jointure shuffle-hash distribuée.
+Utilisé par le planificateur distribué basé sur des règles. L’optimiseur basé sur les coûts choisit le fan-out selon le coût estimé et n’utilise pas ce paramètre.
 
 <div id="distributed_plan_execute_locally">
   ## distributed_plan_execute_locally
@@ -89,6 +91,7 @@ Utiliser la stratégie d’agrégation Shuffle au lieu de PartialAggregation + M
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "20000"},{"label": "Nouveau paramètre expérimental."}]}]} />
 
 Nombre maximal de lignes à partir duquel utiliser une jointure broadcast plutôt qu’une jointure shuffle dans un plan de requête distribuée.
+Une heuristique destinée au planificateur distribué basé sur des règles. Lorsque l’optimiseur basé sur les coûts est activé, le choix entre broadcast et shuffle est effectué en fonction du coût estimé, et ce paramètre n’a aucun effet.
 
 <div id="distributed_plan_optimize_exchanges">
   ## distributed_plan_optimize_exchanges

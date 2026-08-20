@@ -49,17 +49,31 @@ doc_type: 'reference'
   기능:
 
   * 자동 완성, `EXPLAIN` 유형, 22개 형식의 결과 내보내기, 쿼리 프로파일러, 쿼리 메트릭 타임라인을 제공하는 SQL Editor.
-  * 클러스터 개요: 종료 제어 기능을 갖춘 실시간 쿼리 모니터, 쿼리 분석 및 로그, 테이블과 파트 검사, 머지 및 뮤테이션, 분산 DDL 대기열.
+  * 클러스터 개요: 종료 제어 기능을 갖춘 실시간 쿼리 모니터, 쿼리 분석 및 로그, 테이블과 파트 검사, 머지 및 뮤테이션, 분산 DDL 큐.
   * 차트 빌더, 10가지 이상의 차트 유형, 구성 가능한 그리드 레이아웃을 갖춘 사용자 지정 대시보드.
   * 과거 메트릭을 프레임 단위로 재생할 수 있는 DVR 스타일 재생 기능을 제공하는 모니터링.
-  * 임곗값 평가와 이메일 알림을 지원하는 SQL 기반 알림 규칙.
-  * 접근 제어: ClickHouse 사용자 및 역할 관리, 권한 시각화, 설정 프로필 편집.
+  * 임계값 평가와 이메일 알림을 지원하는 SQL 기반 알림 규칙.
+  * 접근 제어: ClickHouse 사용자 및 역할 관리, 권한 부여 시각화, 설정 프로필 편집.
   * 백업 검색과 스토리지 프로필 관리를 지원하는 S3 호환 스토리지 백업 및 복원 오케스트레이션.
   * 인덱스 도구: 데이터 건너뛰기 인덱스 시각화, 프로젝션 관리, 보조 인덱스 생성.
   * 캘린더 히트맵과 필터링 검색을 갖춘 예외, 오류, 텍스트 로그 뷰어.
   * 단일 독립 실행형 바이너리, Docker 또는 소스에서 배포할 수 있습니다.
 
   [CHOps 소스 코드](https://github.com/Quantrail-Data/CH-Ops).
+</Accordion>
+
+<Accordion title="LibreDB Studio">
+  [LibreDB Studio](https://github.com/libredb/libredb-studio)는 브라우저에서 실행되며 데이터베이스와 함께 배포할 수 있는 자체 호스팅 MIT 라이선스 데이터베이스 IDE입니다. 컨테이너, Helm 차트, OLM operator 또는 다른 제품에 포함된 npm 패키지로 배포할 수 있습니다. ClickHouse provider는 문서화된 `8123`/`8443` HTTP 인터페이스를 사용하며 드라이버 종속성이 없습니다.
+
+  기능:
+
+  * 스키마 인식 자동 완성, 여러 탭에서의 실행, 계획 트리로 렌더링되는 `EXPLAIN`을 제공하는 Monaco 기반 SQL Editor
+  * 가상화된 결과 그리드, 필터링 및 CSV/JSON 내보내기를 제공하는 스키마 탐색기
+  * `system` 테이블 기반 모니터링: `system.metrics`, `system.parts`, `system.disks`의 서버 개요 및 파트 크기, `system.query_log`의 완료된 SQL 문, 종료 제어 기능을 갖춘 `system.processes`의 실행 중인 SQL 문
+  * PostgreSQL, MySQL, Oracle, SQL Server, SQLite, MongoDB, Redis, Couchbase 및 Apache Druid와 동일한 인터페이스에서 ClickHouse를 사용하므로 분석 스토어와 이를 제공하는 OLTP 데이터베이스를 하나의 브라우저 탭에서 관리
+  * MIT 빌드에 포함된 OIDC single sign-on, 역할 기반 접근 및 쿼리 감사 추적
+
+  [LibreDB Studio ClickHouse provider 참조](https://github.com/libredb/libredb-studio/blob/main/docs/providers/clickhouse.md).
 </Accordion>
 
 <Accordion title="DataStoria">
@@ -143,15 +157,15 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="HouseOps">
-  [HouseOps](https://github.com/HouseOps/HouseOps)는 OSX, Linux 및 Windows용 UI/IDE입니다.
+  [HouseOps](https://github.com/HouseOps/HouseOps)는 macOS, Linux 및 Windows용 UI/IDE입니다.
 
   기능:
 
-  * 구문 강조 기능이 있는 쿼리 빌더. 응답을 테이블 또는 JSON 보기로 확인할 수 있습니다.
-  * 쿼리 결과를 CSV 또는 JSON으로 내보냅니다.
-  * 설명이 포함된 프로세스 목록. 쓰기 모드. 프로세스를 중지(`KILL`)할 수 있습니다.
+  * 구문 강조 표시를 지원하는 쿼리 빌더. 응답을 테이블 또는 JSON 뷰에서 확인할 수 있습니다.
+  * 쿼리 결과를 CSV 또는 JSON으로 내보내기.
+  * 설명이 포함된 프로세스 목록, 쓰기 모드 및 프로세스 중지(`KILL`) 기능.
   * 데이터베이스 그래프. 모든 테이블과 컬럼을 추가 정보와 함께 표시합니다.
-  * 컬럼 크기를 빠르게 확인할 수 있습니다.
+  * 컬럼 크기 빠른 보기.
   * 서버 구성.
 
   다음 기능은 개발 예정입니다:
@@ -169,8 +183,8 @@ doc_type: 'reference'
 
   기능:
 
-  * 필터링 및 메타데이터를 제공하는 테이블 목록.
-  * 필터링 및 정렬이 가능한 테이블 미리 보기.
+  * 필터링과 메타데이터를 제공하는 테이블 목록.
+  * 필터링 및 정렬을 지원하는 테이블 미리보기.
   * 읽기 전용 쿼리 실행.
 </Accordion>
 
@@ -183,13 +197,13 @@ doc_type: 'reference'
 
   * 강력한 쿼리 편집기.
   * 데이터베이스 탐색기.
-  * 데이터를 다양한 형태로 표현할 수 있는 시각화 도구.
+  * 데이터를 다양한 형식으로 표현할 수 있는 시각화 도구.
 </Accordion>
 
 <Accordion title="Grafana">
   [Grafana](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/)는 모니터링 및 시각화 플랫폼입니다.
 
-  &quot;Grafana를 사용하면 메트릭이 어디에 저장되어 있든 쿼리, 시각화, 알림 설정 및 분석을 수행할 수 있습니다. 팀과 함께 대시보드를 만들고, 탐색하고, 공유하여 데이터 기반 문화를 조성하십시오. 커뮤니티의 신뢰와 사랑을 받고 있습니다&quot; — grafana.com.
+  &quot;Grafana를 사용하면 메트릭이 어디에 저장되어 있든 쿼리하고, 시각화하며, 알림을 설정하고, 이해할 수 있습니다. 팀과 함께 대시보드를 만들고, 탐색하고, 공유하여 데이터 중심 문화를 조성하십시오. 커뮤니티의 신뢰와 사랑을 받는 도구입니다.&quot; — grafana.com.
 
   ClickHouse 데이터 소스 플러그인은 ClickHouse를 백엔드 데이터베이스로 지원합니다.
 </Accordion>
@@ -239,15 +253,15 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickHouse 테이블 그래프">
-  [ClickHouse 테이블 그래프](https://github.com/mbaksheev/clickhouse-table-graph)는 ClickHouse 테이블 간의 의존성을 시각화하는 간단한 CLI 도구입니다. 이 도구는 `system.tables` 테이블에서 테이블 간 연결 정보를 가져와 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 형식의 의존성 흐름도를 생성합니다. 이 도구를 사용하면 테이블 의존성을 쉽게 시각화하고 ClickHouse 데이터베이스 내 데이터 흐름을 파악할 수 있습니다. mermaid를 사용하므로 생성된 흐름도는 보기 좋고 Markdown 문서에 쉽게 추가할 수 있습니다.
+  [ClickHouse table graph](https://github.com/mbaksheev/clickhouse-table-graph)는 ClickHouse 테이블 간 의존성을 시각화하는 간단한 CLI 도구입니다. 이 도구는 `system.tables` 테이블에서 테이블 간 연결을 가져와 [mermaid](https://mermaid.js.org/syntax/flowchart.html) 형식의 의존성 흐름도를 생성합니다. 이 도구를 사용하면 테이블 의존성을 쉽게 시각화하고 ClickHouse 데이터베이스의 데이터 흐름을 파악할 수 있습니다. mermaid를 사용하므로 생성된 흐름도는 보기 좋고 markdown 문서에 쉽게 추가할 수 있습니다.
 </Accordion>
 
 <Accordion title="xeus-clickhouse">
-  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse)는 Jupyter에서 SQL로 ClickHouse 데이터를 쿼리할 수 있도록 지원하는 ClickHouse용 Jupyter 커널입니다.
+  [xeus-clickhouse](https://github.com/wangfenjin/xeus-clickhouse)는 Jupyter에서 SQL로 CH 데이터를 쿼리할 수 있는 ClickHouse용 Jupyter 커널입니다.
 </Accordion>
 
 <Accordion title="MindsDB Studio">
-  [MindsDB](https://mindsdb.com/)는 ClickHouse를 포함한 데이터베이스를 위한 오픈 소스 AI 계층으로, 최첨단 머신 러닝 모델을 손쉽게 개발, 학습, 배포할 수 있습니다. MindsDB Studio(GUI)를 사용하면 데이터베이스의 데이터로 새 모델을 학습하고, 모델의 예측을 해석하며, 잠재적인 데이터 편향을 식별하고, Explainable AI 함수를 사용해 모델 정확도를 평가 및 시각화하여 머신 러닝 모델을 더 빠르게 조정하고 튜닝할 수 있습니다.
+  [MindsDB](https://mindsdb.com/)는 ClickHouse를 포함한 데이터베이스를 위한 오픈 소스 AI 계층으로, 최첨단 machine learning 모델을 손쉽게 개발, 학습 및 배포할 수 있습니다. MindsDB Studio(GUI)를 사용하면 데이터베이스의 데이터로 새 모델을 학습하고, 모델의 예측을 해석하며, 잠재적인 데이터 편향을 식별하고, Explainable AI 함수를 사용해 모델 정확도를 평가하고 시각화하여 Machine Learning 모델을 더 빠르게 조정하고 튜닝할 수 있습니다.
 </Accordion>
 
 <Accordion title="DBM">
@@ -255,14 +269,14 @@ doc_type: 'reference'
 
   기능:
 
-  * 쿼리 이력 지원(페이지 매김, 모두 지우기 등)
-  * 선택한 SQL 절의 쿼리 지원
+  * 쿼리 기록 지원(페이지 매김, 모두 지우기 등)
+  * 선택한 SQL 절 쿼리 지원
   * 쿼리 종료 지원
   * 테이블 관리 지원(메타데이터, 삭제, 미리 보기)
   * 데이터베이스 관리 지원(삭제, 생성)
   * 사용자 지정 쿼리 지원
   * 여러 데이터 소스 관리 지원(연결 테스트, 모니터링)
-  * 모니터링 지원(프로세서, 연결, 쿼리)
+  * 모니터링 지원(processor, 연결, 쿼리)
   * 데이터 마이그레이션 지원
 </Accordion>
 
@@ -335,13 +349,13 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="clickhouse-monitoring">
-  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring)은 `system.*` 테이블을 활용하여 ClickHouse 클러스터를 모니터링하고 전반적인 현황을 파악할 수 있도록 지원하는 간단한 Next.js 대시보드입니다.
+  [clickhouse-monitoring](https://github.com/duyet/clickhouse-monitoring)은 `system.*` 테이블을 기반으로 ClickHouse 클러스터를 모니터링하고 개요를 제공하는 간단한 Next.js 대시보드입니다.
 
   기능:
 
-  * 쿼리 모니터: 현재 쿼리, 쿼리 이력, 쿼리 리소스(메모리, 읽은 파트, file&#95;open 등), 리소스를 가장 많이 사용하는 쿼리, 가장 많이 사용되는 테이블 또는 컬럼 등
-  * 클러스터 모니터: 총 메모리/CPU 사용량, 분산 큐, 전역 설정, mergetree 설정, 메트릭 등
-  * 테이블 및 파트 정보: 컬럼 수준에서 크기, 행 수, 압축, 파트 크기 등의 세부 정보 제공
+  * 쿼리 모니터: 현재 실행 중인 쿼리, 쿼리 이력, 쿼리 리소스(메모리, 읽은 파트, file&#95;open, ...), 리소스 사용량이 가장 큰 쿼리, 가장 많이 사용된 테이블 또는 컬럼 등
+  * 클러스터 모니터: 총 메모리/CPU 사용량, 분산 큐, 전역 설정, MergeTree 설정, 메트릭 등
+  * 테이블 및 파트 정보: 컬럼 수준의 세부 정보로 크기, 행 수, 압축률, 파트 크기 등
   * 유용한 도구: Zookeeper 데이터 탐색, 쿼리 EXPLAIN, 쿼리 종료 등
   * 메트릭 차트 시각화: 쿼리 및 리소스 사용량, 머지/뮤테이션 수, 머지 성능, 쿼리 성능 등
 </Accordion>
@@ -353,19 +367,19 @@ doc_type: 'reference'
 
   * 네이티브 Kibana UI의 차트 요청을 ClickHouse 쿼리 구문으로 변환합니다.
   * 쿼리 성능을 향상하기 위해 샘플링 및 캐싱과 같은 고급 기능을 지원합니다.
-  * ElasticSearch에서 ClickHouse로 마이그레이션한 후 사용자의 학습 비용을 최소화합니다.
+  * ElasticSearch에서 ClickHouse로 마이그레이션한 사용자의 학습 부담을 최소화합니다.
 </Accordion>
 
 <Accordion title="Telescope">
-  [Telescope](https://iamtelescope.net/)는 ClickHouse에 저장된 로그를 탐색하기 위한 현대적인 웹 인터페이스입니다. 세분화된 접근 제어를 통해 로그 데이터를 쿼리, 시각화, 관리할 수 있는 사용자 친화적인 UI를 제공합니다.
+  [Telescope](https://iamtelescope.net/)는 ClickHouse에 저장된 로그를 탐색하기 위한 최신 웹 인터페이스입니다. 세분화된 접근 제어를 통해 로그 데이터를 쿼리하고 시각화하며 관리할 수 있는 사용자 친화적인 UI를 제공합니다.
 
   기능:
 
-  * 강력한 필터와 사용자 지정 가능한 필드 선택 기능을 갖춘 깔끔하고 반응형인 UI.
+  * 강력한 필터와 사용자 지정 가능한 필드 선택 기능을 갖춘 깔끔한 반응형 UI.
   * 직관적이고 표현력 있는 로그 필터링을 위한 FlyQL 구문.
-  * 중첩된 JSON, Map 및 Array 필드를 포함해 그룹화 기능을 지원하는 시간 기반 그래프.
-  * 고급 필터링을 위한 선택적 원시 SQL `WHERE` 쿼리 지원(권한 확인 포함).
-  * 저장된 뷰: 쿼리 및 레이아웃을 위한 사용자 지정 UI 구성을 저장하고 공유합니다.
+  * 중첩된 JSON, Map, Array 필드를 포함해 그룹화 기능을 지원하는 시간 기반 그래프.
+  * 고급 필터링을 위한 선택적 원시 SQL `WHERE` 쿼리 지원(권한 검사 포함).
+  * 저장된 뷰: 쿼리와 레이아웃에 맞게 사용자 지정한 UI 구성을 저장하고 공유합니다.
   * 역할 기반 접근 제어(RBAC) 및 GitHub 인증 통합.
   * ClickHouse 측에 추가 에이전트나 구성 요소가 필요하지 않습니다.
 
@@ -373,14 +387,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickLens">
-  [ClickLens](https://ntk148v.github.io/clicklens/)는 ClickHouse 데이터베이스를 관리하고 모니터링할 수 있는 현대적이고 강력하며 사용하기 쉬운 웹 인터페이스입니다. 개발자, 분석가, 관리자가 ClickHouse 클러스터를 효율적으로 다룰 수 있도록 포괄적인 도구 모음을 제공합니다. ClickHouse는 뛰어난 분석용 데이터베이스이지만, CLI나 기본 도구만으로 관리하기는 어려울 수 있습니다. ClickLens는 다음과 같은 기능을 제공해 이러한 간극을 해소합니다.
+  [ClickLens](https://ntk148v.github.io/clicklens/)는 ClickHouse 데이터베이스를 관리하고 모니터링하기 위한 최신의 강력하고 사용자 친화적인 웹 인터페이스입니다. 개발자, 분석가, 관리자가 ClickHouse 클러스터를 효율적으로 활용할 수 있도록 포괄적인 도구 모음을 제공합니다. ClickHouse는 뛰어난 분석 데이터베이스이지만 CLI나 기본 도구로 관리하기는 어려울 수 있습니다. ClickLens는 다음 기능을 제공하여 이러한 간극을 해소합니다.
 
-  * Discover - 모든 테이블에서 Kibana와 유사한 방식으로 유연하게 데이터를 탐색
-  * SQL 콘솔 - 구문 강조 표시와 스트리밍 결과를 통해 쿼리를 작성, 실행, 분석
-  * 실시간 모니터링 - 클러스터 상태, 쿼리 성능, 리소스 사용량을 지속적으로 확인
-  * 스키마 탐색기 - 데이터베이스, 테이블, 컬럼, 파트 등을 탐색
-  * 접근 제어 - UI에서 직접 사용자와 역할 관리
-  * 네이티브 RBAC - UI 권한이 ClickHouse의 권한 부여를 직접 기반으로 함
+  * Discover - 모든 테이블을 위한 유연한 Kibana와 유사한 데이터 탐색
+  * SQL 콘솔 - 구문 강조 표시와 스트리밍 결과를 통해 쿼리 작성, 실행 및 분석
+  * 실시간 모니터링 - 클러스터 상태, 쿼리 성능 및 리소스 사용량 모니터링
+  * Schema Explorer - 데이터베이스, 테이블, 열, 파트 등을 탐색
+  * 접근 제어 - UI에서 직접 사용자 및 역할 관리
+  * 네이티브 RBAC - UI 권한은 ClickHouse 권한 부여에서 직접 파생됩니다
 
   [ClickLens 소스 코드](https://github.com/ntk148v/clicklens)
 </Accordion>
@@ -395,7 +409,7 @@ doc_type: 'reference'
   * **Chouse AI — Fleet Doctor** - 자율형 읽기 전용 AI SRE입니다. 보호된 `system.*` 전용 `SELECT` 도구(ClickHouse `readonly=1`)로 플릿을 스캔하고, 근본 원인을 짚어내며, 고비용 쿼리 심층 분석과 제안된 재작성을 포함한 구조화된 보고서를 작성합니다. 클러스터를 변경하는 일은 절대 없습니다.
   * **모니터링 탭의 AI** - Query Logs 행에서 &quot;Optimize with Chouse AI&quot;를 사용해 재작성, 변경 전→변경 후 `EXPLAIN` 추정치 확인, SQL 워크스페이스에서 열기를 수행할 수 있으며, `system.errors` 행이나 part log 항목에서는 한 번의 클릭으로 &quot;Diagnose&quot;를 실행할 수 있습니다.
   * **임계값 알림** - 노드 메모리 %, 쿼리별 메모리, 장시간 실행 쿼리 규칙을 Slack과 이메일로 전달하며, 임계값 초과 시 자율형 근본 원인 분석이 함께 첨부됩니다.
-  * **전체 워크스페이스** - Monaco SQL 에디터, 스키마 탐색기, kill 지원이 포함된 실시간 쿼리 보기, ClickHouse 네이티브 모니터링(메모리 세부 분석, 파트/머지, 레플리카 지연, 지연 시간 백분위수), 데이터 가져오기/내보내기를 제공합니다.
+  * **전체 워크스페이스** - Monaco SQL Editor, 스키마 탐색기, kill 지원이 포함된 실시간 쿼리 보기, ClickHouse 네이티브 모니터링(메모리 세부 분석, 파트/머지, 레플리카 지연, 지연 시간 백분위수), 데이터 가져오기/내보내기를 제공합니다.
 
   오픈소스(Apache 2.0)이며 온프레미스 우선입니다. 유료 티어 없이 모든 기능이 기본 제공됩니다.
 
