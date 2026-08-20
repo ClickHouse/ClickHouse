@@ -82,6 +82,12 @@
             --metric-c6: #dc2626;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #EEE;
+            /* How a column-header icon is muted while the feature it controls is not in effect on that
+               column: it is drained of its color and nudged towards the header background (lighter
+               here, darker in the dark theme), which lands it at about the weight of the glyph icons
+               beside it. Used only for the emoji icons, which cannot take a text color; the glyph icons
+               are muted with `--misc-text-color` instead. */
+            --icon-muted-filter: grayscale(1) brightness(1.1);
             --table-hover-filter: brightness(0.9);
             --link-color: #06D;
             --logo-color: #FFF;
@@ -161,6 +167,7 @@
             --metric-c6: #f85149;
             --error-color: #400;
             --table-header-color: #102020;
+            --icon-muted-filter: grayscale(1) brightness(0.85);
             --table-hover-filter: contrast(0.9) brightness(2);
             --link-color: #4BDAF7;
             --logo-color: #444;
@@ -2660,6 +2667,9 @@ class QueryResultElement extends HTMLElement
     static _FUNNEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
     static _PLAY_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 
+    /// The comparisons a cell menu offers for an ordered value - a number, a date or a time.
+    static _COMPARISON_OPERATORS = ['=', '!=', '>', '<', '>=', '<='];
+
     /// A cell whose value is longer than this offers no filter menu: a filter on a whole paragraph is
     /// not something anyone means to click, and the operator labels would sit under an unreadable
     /// tooltip. The header input still accepts any expression for such a column.
@@ -2870,7 +2880,9 @@ class QueryResultElement extends HTMLElement
 
                 /* Icon at the right side of a column header to switch the color coding mode.
                    On devices with a hovering pointer it appears only while the header is hovered,
-                   so it stays out of the way otherwise. Sits just left of the resizer. */
+                   so it stays out of the way otherwise - except on a column that carries an explicit
+                   color mode, which keeps it shown as the indicator of that mode. Sits just left of
+                   the resizer. */
                 .colorize-toggle
                 {
                     display: none;
@@ -2884,7 +2896,8 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                 }
 
-                th:hover .colorize-toggle
+                th:hover .colorize-toggle,
+                th.keep-colorize-toggle .colorize-toggle
                 {
                     display: inline-block;
                 }
@@ -2901,11 +2914,6 @@ class QueryResultElement extends HTMLElement
                     }
                 }
 
-                /* A faint dimming on hover, since the colorful emoji cannot take a text color. */
-                .colorize-toggle:hover
-                {
-                    opacity: 0.7;
-                }
 
                 /* Icon at the left side of a column header to pin/unpin the column. Pinning is only
                    meaningful when the table is wider than the viewport (i.e. it can be scrolled
@@ -2941,26 +2949,12 @@ class QueryResultElement extends HTMLElement
                     color: inherit;
                 }
 
-                /* Reveal the icon only when the table can scroll horizontally: on header hover or
-                   keyboard focus of the toggle itself. */
+                /* Reveal the icon only when the table can scroll horizontally: on header hover, on
+                   keyboard focus of the toggle itself, or - whatever the pointer is doing - on a column
+                   that is pinned, whose icon is the indicator of that. Whether it then reads as active
+                   is carried by the muting below, not by how visible it is. */
                 #data-table.has-hscroll th:hover .pin-toggle,
-                #data-table.has-hscroll th .pin-toggle:focus-visible
-                {
-                    opacity: 0.55;
-                    pointer-events: auto;
-                }
-
-                /* A faint extra emphasis while the icon itself (not just its header) is hovered;
-                   placed after the rule above so it wins the tie in specificity. */
-                #data-table.has-hscroll th .pin-toggle:hover
-                {
-                    opacity: 0.85;
-                    pointer-events: auto;
-                }
-
-                /* A pinned column shows its icon at full strength, so it is clear which columns
-                   are pinned; placed last so it wins over the hover rules above regardless of
-                   whether the pinned icon is also being hovered or focused. */
+                #data-table.has-hscroll th .pin-toggle:focus-visible,
                 #data-table.has-hscroll th.pinned-column .pin-toggle
                 {
                     opacity: 1;
@@ -2973,7 +2967,7 @@ class QueryResultElement extends HTMLElement
                 {
                     #data-table.has-hscroll .pin-toggle
                     {
-                        opacity: 0.55;
+                        opacity: 1;
                         pointer-events: auto;
                     }
                 }
@@ -3022,10 +3016,10 @@ class QueryResultElement extends HTMLElement
                     right: 1.8rem;
                 }
 
-                /* An inactive arrow stays invisible - but, being a real <button>, in the tab order -
-                   until its header is hovered or the arrow itself takes keyboard focus, exactly like
-                   the pin toggle. The pointer events follow the visibility so an invisible arrow is
-                   not clickable. */
+                /* An arrow of a direction that is not in effect stays invisible - but, being a real
+                   <button>, in the tab order - until its header is hovered or the arrow itself takes
+                   keyboard focus, exactly like the pin toggle. The pointer events follow the visibility
+                   so an invisible arrow is not clickable. */
                 .sort-toggle
                 {
                     opacity: 0;
@@ -3040,30 +3034,16 @@ class QueryResultElement extends HTMLElement
                     padding: 0;
                     margin: 0;
                     font-family: inherit;
-                    color: inherit;
                 }
 
                 th:hover .sort-toggle,
-                th .sort-toggle:focus-visible
-                {
-                    opacity: 0.55;
-                    pointer-events: auto;
-                }
-
-                th .sort-toggle:hover
-                {
-                    opacity: 0.85;
-                    pointer-events: auto;
-                }
-
-                /* The arrow of an active sort direction is always shown, and in the accent color, so
-                   the sorted columns and their order are readable without hovering every header.
-                   Placed last so it wins over the hover rules above. */
-                .sort-toggle.sort-active
+                th .sort-toggle:focus-visible,
+                /* A sorted column shows both of its arrows without hovering: the one in effect so the
+                   sort is visible, the other because reversing it is the likeliest next action. */
+                th.sorted-column .sort-toggle
                 {
                     opacity: 1;
                     pointer-events: auto;
-                    color: var(--link-color);
                 }
 
                 /* Touch / coarse-pointer devices have no hover, and an invisible arrow is not
@@ -3074,17 +3054,63 @@ class QueryResultElement extends HTMLElement
                 {
                     .sort-toggle
                     {
-                        opacity: 0.55;
+                        opacity: 1;
                         pointer-events: auto;
                     }
                 }
 
-                /* A sorted column shows both of its arrows without hovering: the active one so the
-                   sort is visible, the other because reversing it is the likeliest next action. */
-                th.sorted-column .sort-toggle
+                /* Every header icon reads the same way: MUTED while the feature it controls is not in
+                   effect on this column, at FULL strength once it is - and at full strength while the
+                   pointer or the keyboard focus is on the icon itself, as a preview of turning it on.
+
+                   Muting is a loss of colour and contrast, never of opacity. A half-transparent icon
+                   sitting over a column name (or over the colour coding of the cells below) reads as
+                   damaged rather than as inactive, and how transparent it looks depends on whatever
+                   happens to be behind it. Opacity is used only to hide an icon outright, which is a
+                   different thing, and only because it keeps these buttons in the tab order while they
+                   are invisible - display: none would not.
+
+                   The lever differs by icon because the glyphs do: the emoji icons (pushpin, rainbow)
+                   cannot take a text colour, so they are muted with a filter that drains their colour
+                   and pushes them towards the header background; the arrows and the funnel take a
+                   colour directly, which a filter could not do for them (no brightness can lighten a
+                   black glyph). */
+                .sort-toggle,
+                .filter-toggle
                 {
-                    opacity: 0.55;
-                    pointer-events: auto;
+                    color: var(--misc-text-color);
+                }
+
+                th .sort-toggle:hover,
+                th .filter-toggle:hover,
+                th .sort-toggle:focus-visible,
+                th .filter-toggle:focus-visible
+                {
+                    color: var(--text-color);
+                }
+
+                /* Placed after the hover rules, so a column already sorted or filtered keeps saying so
+                   while the pointer passes over it. */
+                .sort-toggle.sort-active,
+                th.filtered-column .filter-toggle
+                {
+                    color: var(--link-color);
+                }
+
+                .pin-toggle,
+                .colorize-toggle
+                {
+                    --icon-mute: var(--icon-muted-filter);
+                }
+
+                #data-table.has-hscroll th.pinned-column .pin-toggle,
+                #data-table.has-hscroll th .pin-toggle:hover,
+                #data-table.has-hscroll th .pin-toggle:focus-visible,
+                th.keep-colorize-toggle .colorize-toggle,
+                th .colorize-toggle:hover
+                {
+                    /* A no-op filter rather than an empty value, so the chain below stays valid CSS. */
+                    --icon-mute: grayscale(0);
                 }
 
                 /* Every header icon is absolutely positioned over the column name, which the name of a
@@ -3092,15 +3118,17 @@ class QueryResultElement extends HTMLElement
                    the two stay legible instead of merging into each other. A drop-shadow rather than a
                    text-shadow: it also applies to the colour-emoji icons (the pushpin and the
                    rainbow), for which the browser ignores text-shadow, and to the inline SVG of the
-                   funnel. Three stacked passes of a 1px blur make the halo opaque enough to cut a
-                   letter behind the glyph, while staying invisible against the plain header.
+                   funnel. Five stacked passes of a 1px blur make the halo opaque enough to cut a
+                   letter behind the glyph, while staying invisible against the plain header. The muting
+                   above rides in front of the halo in the same chain, since one element has one filter.
                    No backticks in this comment: this style block lives inside a JS template literal. */
                 .pin-toggle,
                 .colorize-toggle,
                 .sort-toggle,
                 .filter-toggle
                 {
-                    filter: drop-shadow(0 0 1px var(--table-header-color))
+                    filter: var(--icon-mute, grayscale(0))
+                            drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
@@ -3133,7 +3161,6 @@ class QueryResultElement extends HTMLElement
                     border: none;
                     padding: 0;
                     margin: 0;
-                    color: inherit;
                 }
 
                 .filter-toggle svg
@@ -3144,15 +3171,12 @@ class QueryResultElement extends HTMLElement
                 }
 
                 th:hover .filter-toggle,
-                th .filter-toggle:focus-visible
+                th .filter-toggle:focus-visible,
+                /* A filtered column keeps its funnel shown, as the control that edits the filter the
+                   header displays underneath. */
+                th.filtered-column .filter-toggle
                 {
-                    opacity: 0.55;
-                    pointer-events: auto;
-                }
-
-                th .filter-toggle:hover
-                {
-                    opacity: 0.85;
+                    opacity: 1;
                     pointer-events: auto;
                 }
 
@@ -3160,7 +3184,7 @@ class QueryResultElement extends HTMLElement
                 {
                     .filter-toggle
                     {
-                        opacity: 0.55;
+                        opacity: 1;
                         pointer-events: auto;
                     }
                 }
@@ -3208,13 +3232,14 @@ class QueryResultElement extends HTMLElement
                     padding: 0;
                     margin: 0;
                     font: inherit;
-                    color: inherit;
-                    opacity: 0.7;
+                    /* Muted by colour, like the header icons: removing the filter is the secondary
+                       action next to reading it, and transparency is not how this page says "quieter". */
+                    color: var(--misc-text-color);
                 }
 
                 .filter-reset:hover
                 {
-                    opacity: 1;
+                    color: var(--link-color);
                 }
 
                 /* The filter input, revealed in place under the header cell it belongs to. Built once
@@ -4996,8 +5021,8 @@ class QueryResultElement extends HTMLElement
     ///
     /// Every value arrives as text (the page requests a `JSONStrings…` format), so a numeric column's
     /// literal is the text itself - a column the server typed as a number cannot spell anything that
-    /// is not a number - while a string column's is quoted, and the substring/prefix/suffix options
-    /// become `LIKE` patterns with the value's own `%` and `_` escaped so they match literally.
+    /// is not a number - while a date's and a string's are quoted, and the substring/prefix/suffix
+    /// options become `LIKE` patterns with the value's own `%` and `_` escaped so they match literally.
     _cellFilterOptions(name, is_null, text)
     {
         /// A NULL is filterable whatever the column's type is, and only with the null predicates:
@@ -5008,7 +5033,15 @@ class QueryResultElement extends HTMLElement
         }
         if (this._column_is_number[name])
         {
-            return ['=', '!=', '>', '<', '>=', '<='].map(op => ({ label: op, suffix: op + ' ' + text }));
+            return QueryResultElement._COMPARISON_OPERATORS.map(op => ({ label: op, suffix: op + ' ' + text }));
+        }
+        /// A `Date` / `DateTime` is ordered like a number, and is compared against the very text the
+        /// server rendered it as: a string literal on the other side of the comparison is parsed as the
+        /// column's own type, so no formatting or timezone handling is needed on this side.
+        if (this._column_is_date[name])
+        {
+            const literal = quoteStringLiteral(text);
+            return QueryResultElement._COMPARISON_OPERATORS.map(op => ({ label: op, suffix: op + ' ' + literal }));
         }
         if (this._column_is_string[name] && text.length <= QueryResultElement._MAX_CELL_FILTER_LENGTH)
         {

@@ -15,7 +15,9 @@ None of this happens in the browser. Each change re-runs the query with the corr
 
 Two arrows appear at the right of every column header: ▲ sorts the result by that column ascending, ▼ sorts it descending. Clicking an arrow activates that sort and re-runs the query; clicking the arrow of the direction that is already active deactivates it, and clicking the arrow of the other direction switches to it. The arrows are real buttons, so keyboard users can tab to them and activate them with the keyboard, and each exposes its state to assistive technology (the header itself carries `aria-sort`).
 
-On devices with a hovering pointer (a mouse) the arrows are shown only while the header is hovered or an arrow is focused, so they stay out of the way otherwise; on touch and other coarse-pointer devices, which have no hover, they are always shown so they can be tapped directly. A column that is part of the sort shows both of its arrows without hovering — the active one in the accent color, so the sorted columns are readable at a glance, and the other because reversing the direction is the likeliest next action.
+On devices with a hovering pointer (a mouse) the arrows are shown only while the header is hovered or an arrow is focused, so they stay out of the way otherwise; on touch and other coarse-pointer devices, which have no hover, they are always shown so they can be tapped directly. A column that is part of the sort shows both of its arrows without hovering — one so the sort is readable at a glance, the other because reversing the direction is the likeliest next action.
+
+Every icon in a column header reads the same way, whichever feature it controls: it is muted while that feature is not in effect on the column, and at full strength — in the accent color, or in its own colors for the pushpin and the rainbow — once it is, which is also when it stays shown without hovering. Muting is a loss of color, never of transparency, so an icon never looks faded over a column name or over the color coding of the cells.
 
 ### Sorting by several columns {#sorting-by-several-columns}
 
@@ -38,10 +40,11 @@ Selecting a cell also puts a funnel icon next to its copy icon, when a filter on
 | Value | Offered |
 |-------|---------|
 | A number | `=`, `!=`, `>`, `<`, `>=`, `<=` |
+| A date or a time (`Date`, `Date32`, `DateTime`, `DateTime64`) | `=`, `!=`, `>`, `<`, `>=`, `<=` |
 | A string of at most 100 characters | `=`, `!=`, `startsWith`, `endsWith`, `contains` |
 | `NULL` | `IS NULL`, `IS NOT NULL` |
 
-Picking one applies it immediately. The prefix, suffix and substring options become `LIKE` patterns with the value's own `%` and `_` escaped, so they match the value literally. A cell whose value is none of the above — an array, a tuple, a map, a long text — offers no menu; its column can still be filtered from the header input.
+Picking one applies it immediately. A date or a time is compared against the very text the server rendered it as, which ClickHouse parses back as the column's own type. The prefix, suffix and substring options become `LIKE` patterns with the value's own `%` and `_` escaped, so they match the value literally. A cell whose value is none of the above — an array, a tuple, a map, a long text — offers no menu; its column can still be filtered from the header input.
 
 ### The filter in effect {#the-filter-in-effect}
 
