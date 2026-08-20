@@ -51,13 +51,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-def assert_socket_receive_timeout(error):
-    # Only the wording common to all three settings combinations is matched, because each of
-    # them reports the timeout from a different place. 5000 ms is the receive_timeout=5 asked
-    # for in the query, so it is what distinguishes this timeout from any other one.
+def assert_socket_receive_timeout(error, expected_origin):
+    # receive_timeout=5 must surface as SOCKET_TIMEOUT reporting the 5000 ms it asked for.
     assert "Timeout exceeded while reading from socket" in error
     assert "5000 ms" in error
     assert "(SOCKET_TIMEOUT)" in error
+    # Each settings combination must raise from its own place, otherwise an ignored
+    # async_socket_for_remote or use_hedged_requests would silently collapse the arms.
+    assert expected_origin in error, f"expected {expected_origin} in: {error}"
 
 
 def test(started_cluster):
@@ -85,22 +86,16 @@ def test(started_cluster):
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;"
     )
 
-    assert_socket_receive_timeout(error)
+    assert_socket_receive_timeout(error, "ReadBufferFromPocoSocket")
 
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;"
     )
 
-    assert_socket_receive_timeout(error)
-
-    # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
-    assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1
+    assert_socket_receive_timeout(error, "checkTimeout")
 
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;"
     )
 
-    assert_socket_receive_timeout(error)
-
-    # Check that exception about timeout wasn't thrown from DB::ReadBufferFromPocoSocket::nextImpl().
-    assert error.find("DB::ReadBufferFromPocoSocket::nextImpl()") == -1
+    assert_socket_receive_timeout(error, "HedgedConnections")
