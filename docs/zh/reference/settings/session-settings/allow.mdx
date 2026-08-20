@@ -272,6 +272,17 @@ File/S3 引擎/表函数会将包含 &#39;::&#39; 的路径解析为 `<archive> 
 
 允许 CREATE MATERIALIZED VIEW 使用引用不存在表或列的 SELECT 查询。但该查询在语法上仍必须有效。不适用于 refreshable MV。如果 MV 的 schema 需要从 SELECT 查询中推断，也不适用 (即 CREATE 没有列列表，且没有 TO table) 。可用于在源表创建之前先创建 MV。
 
+<div id="allow_metadata_only_named_tuple_alter">
+  ## allow_metadata_only_named_tuple_alter
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增设置，用于控制向命名 Tuple 子字段添加字段时是否仅修改元数据。"}]}]} />
+
+如果为 true，则对于仅添加新子字段的命名 Tuple，ALTER MODIFY COLUMN 操作仅修改元数据 (不会进行数据变更) 。
+设为 false 可强制使用旧的完整变更行为。
+
 <div id="allow_minmax_index_for_json">
   ## allow_minmax_index_for_json
 </div>

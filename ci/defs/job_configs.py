@@ -166,8 +166,10 @@ common_integration_test_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/integration_test_job.py",
             "./ci/jobs/scripts/integration_tests_configs.py",
-            "./ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
             "./ci/jobs/scripts/job_hooks/promql_compliance_s3.py",
+            "./ci/jobs/promql_compliance_job.py",
+            "./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
             "./tests/integration/",
             "./ci/docker/integration",
             "./ci/jobs/scripts/docker_in_docker.sh",
@@ -176,7 +178,7 @@ common_integration_test_job_config = Job.Config(
     run_in_docker=f"clickhouse/integration-tests-runner+root+--memory={LIMITED_MEM}+--privileged+--dns-search='.'+--security-opt seccomp=unconfined+--cap-add=SYS_PTRACE+{docker_sock_mount}+--volume=clickhouse_integration_tests_volume:/var/lib/docker+--cgroupns=host+--ulimit nofile=262144:262144",
     post_hooks=[
         "python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py",
-        "python3 ci/jobs/scripts/job_hooks/promql_compliance_hook.py",
+        "python3 ci/jobs/scripts/job_hooks/promql_compliance_upload_hook.py",
     ],
 )
 
@@ -467,12 +469,18 @@ class JobConfigs:
     ).parametrize(
         Job.ParamSet(
             parameter=BuildTypes.AMD_DARWIN,
-            provides=[ArtifactNames.CH_AMD_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_AMD_DARWIN_BIN,
+                ArtifactNames.CH_AMD_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.AMD_LARGE,  # cannot crosscompile on arm
         ),
         Job.ParamSet(
             parameter=BuildTypes.ARM_DARWIN,
-            provides=[ArtifactNames.CH_ARM_DARWIN_BIN],
+            provides=[
+                ArtifactNames.CH_ARM_DARWIN_BIN,
+                ArtifactNames.CH_ARM_DARWIN_PLAIN,
+            ],
             runs_on=RunnerLabels.ARM_LARGE,
         ),
         Job.ParamSet(
@@ -636,6 +644,61 @@ class JobConfigs:
             parameter="arm_asan_ubsan, targeted",
             runs_on=RunnerLabels.ARM_LARGE,
             requires=[ArtifactNames.CH_ARM_ASAN_UBSAN],
+        ),
+    )
+    # Most sanitizer flavors of the functional tests for pull requests. They run only
+    # the tests selected for the change (`selected tests`, see
+    # `SELECTED_TESTS_OPTION` in `ci/jobs/functional_tests.py`) and replace the
+    # full-suite sanitizer jobs of `functional_tests_jobs`, which the master
+    # workflow keeps running in every flavor. What is left in a pull request is
+    # the full suite in the debug and plain binary flavors, plus the stress
+    # tests, which run the functional tests under every sanitizer with heavy
+    # concurrency and randomized settings and find more than a plain functional
+    # run does. See ClickHouse/ClickHouse#114725.
+    #
+    # The selection is a few hundred tests, so the batches of the full-suite jobs
+    # are collapsed into a single job per flavor. The runner labels and the
+    # timeout are kept as they are for the corresponding full-suite jobs: the
+    # test runner sizes its worker pool from the CPU count, and a sanitizer
+    # flavor that needs a large-memory runner for the full suite needs it for a
+    # subset as well. If test selection cannot be fetched, the job fails instead
+    # of silently running a weaker unbatched fallback configuration.
+    # The selection is computed from PR-local state (including failed tests
+    # from earlier jobs) that is not part of a repository digest. Reusing a
+    # cached result could therefore skip a different selection; keep these
+    # jobs uncached.
+    selected_ft_job_config = common_ft_job_config.copy()
+    selected_ft_job_config.digest_config = None
+    stateless_tests_selected_pr_jobs = selected_ft_job_config.parametrize(
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, distributed plan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_asan_ubsan, db disk, distributed plan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_ASAN_UBSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_LARGE,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, parallel, selected tests",
+            runs_on=RunnerLabels.AMD_MEDIUM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
+        ),
+        Job.ParamSet(
+            parameter="amd_tsan, s3 storage, sequential, selected tests",
+            runs_on=RunnerLabels.AMD_SMALL_MEM,
+            requires=[ArtifactNames.CH_AMD_TSAN],
         ),
     )
     # --root/--privileged/--cgroupns=host is required for clickhouse-test --memory-limit
@@ -1668,6 +1731,23 @@ class JobConfigs:
             ],
         ),
     )
+    parser_memory_check_job = Job.Config(
+        name=JobNames.PARSER_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/parser_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
+                "./ci/jobs/parser_memory_check.py",
+                "./ci/workflows/pull_request.py",
+                "./utils/parser-memory-profiler/",
+            ],
+        ),
+    )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,
         runs_on=[],  # from parametrize()
@@ -1769,4 +1849,53 @@ class JobConfigs:
         ),
         timeout=3600,
         enable_gh_auth=True,
+    )
+    promql_compliance_job = Job.Config(
+        name=JobNames.PROMQL_COMPLIANCE,
+        runs_on=RunnerLabels.STYLE_CHECK_ARM,
+        run_in_docker="clickhouse/test-base",
+        # Wait for integration upload post-hooks, including failed integration jobs.
+        run_after=[
+            j.name
+            for j in (
+                integration_test_jobs_required + integration_test_jobs_non_required
+            )
+        ],
+        run_unless_cancelled=True,
+        command="python3 ./ci/jobs/promql_compliance_job.py",
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/promql_compliance_comment_hook.py",
+        ],
+        # No digest_config: output depends on PR SHA and S3 JSON; script-only cache keys
+        # would skip later labeled PRs after one successful run.
+        timeout=600,
+        enable_gh_auth=True,
+        allow_failure=True,
+    )
+
+    sign_macos_binary_jobs = Job.Config(
+        name=JobNames.SIGN_MACOS,
+        runs_on=RunnerLabels.STYLE_CHECK_AMD,
+        command="python3 ./ci/jobs/sign_macos_binary.py --build-type {PARAMETER}",
+        run_in_docker="clickhouse/utils+--network=host+root",
+        timeout=3600,
+        digest_config=Job.CacheDigestConfig(
+            include_paths=build_digest_config.include_paths
+            + [
+                "./ci/jobs/sign_macos_binary.py",
+                "./ci/jobs/scripts/sign_macos_binary",
+            ],
+            with_git_submodules=True,
+        ),
+    ).parametrize(
+        Job.ParamSet(
+            parameter=BuildTypes.AMD_DARWIN,
+            requires=[ArtifactNames.CH_AMD_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_AMD_DARWIN_SIGNED],
+        ),
+        Job.ParamSet(
+            parameter=BuildTypes.ARM_DARWIN,
+            requires=[ArtifactNames.CH_ARM_DARWIN_PLAIN],
+            provides=[ArtifactNames.CH_ARM_DARWIN_SIGNED],
+        ),
     )
