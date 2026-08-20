@@ -3484,17 +3484,27 @@ class QueryResultElement extends HTMLElement
                     height: 1em;
                 }
 
-                /* The copy chip is flush with the cell's right edge and the filter chip abuts it, one
-                   chip further left. Both are the same size, so the same expression - the icon plus its
-                   padding on both sides - is both their width and that offset, and they stay touching
-                   whatever the font size is. */
-                .cell-copy
+                /* Both chips are flush with the cell's right edge, the filter chip giving way to the
+                   copy chip when there is one. A cell has no copy chip when there is nothing worth
+                   copying (an empty value, a zero, a NULL - see _appendCopyButton), and then the filter
+                   chip takes the edge itself rather than leaving a chip-sized hole beside it. The copy
+                   chip is rendered with the cell and the filter chip is added when the cell is selected,
+                   so the latter always follows the former and a sibling selector can tell them apart.
+                   Both chips are the same size, so the same expression - the icon plus its padding on
+                   both sides - is both their width and that offset, and they stay touching whatever the
+                   font size is. */
+                .cell-copy,
+                .cell-filter
                 {
-                    display: none;
                     right: -1px;
                 }
 
-                .cell-filter
+                .cell-copy
+                {
+                    display: none;
+                }
+
+                .cell-copy ~ .cell-filter
                 {
                     right: calc(1em + 0.5rem - 1px);
                 }
