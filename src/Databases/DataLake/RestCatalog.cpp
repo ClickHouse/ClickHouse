@@ -814,12 +814,26 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
     std::string json_str;
     Poco::StreamCopier::copyToString(rs, json_str);
 
+    /// The body of a failed response is an OAuth error object, safe to show.
+    /// The URL is omitted: its query string can carry `client_secret`.
+    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "OAuth token request failed with status {} ({}): {}",
+            static_cast<int>(response.getStatus()), response.getReason(), json_str);
+
     Poco::JSON::Parser parser;
     Poco::Dynamic::Var res_json = parser.parse(json_str);
     const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
 
+    if (!object->has("access_token"))
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "OAuth token response has no `access_token` field: {}",
+            json_str);
+
     AccessToken token;
-    token.token = object->get("access_token").extract<String>();
+    token.token = object->getValue<String>("access_token");
 
     if (object->has("expires_in"))
     {
