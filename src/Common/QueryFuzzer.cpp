@@ -6888,7 +6888,6 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
         /// DROP SYNC: wait for all mutations/merges to finish before returning
         if (drop_query->kind == ASTDropQuery::Drop && fuzz_rand() % 20 == 0)
             drop_query->sync = !drop_query->sync;
-        fuzzChildrenWithAlias(*drop_query, drop_query->database_and_tables);
         /// Turn a single-table DROP into UNDROP TABLE for the same target. Exercises the Atomic
         /// database delayed-cleanup / UUID-resurrection path (undrop only makes sense right after a
         /// drop, so replacing an emitted DROP is a natural place to probe it).
