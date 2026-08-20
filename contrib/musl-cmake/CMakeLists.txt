@@ -859,6 +859,7 @@ set(MUSL_SOURCES_BASE_COMMON
     "${MUSL_SOURCE_DIR}/src/regex/regexec.c"
     "${MUSL_SOURCE_DIR}/src/regex/tre-mem.c"
     "${MUSL_SOURCE_DIR}/src/sched/affinity.c"
+    "${MUSL_SOURCE_DIR}/src/sched/rseq.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_cpucount.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_get_priority_max.c"
     "${MUSL_SOURCE_DIR}/src/sched/sched_getcpu.c"
