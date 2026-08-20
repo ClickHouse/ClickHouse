@@ -252,7 +252,7 @@ def test_shutdown_cancel_wedged_backup():
 
     backup_id = uuid.uuid4().hex
     try:
-        # This parks the backup at the top of doBackup, upstream of both checkTimeLimit() polls,
+        # This parks the backup at the top of doBackup, before any checkTimeLimit() check,
         # so the operation never observes a cancellation request.
         node.query("SYSTEM ENABLE FAILPOINT backup_pause_on_start")
         node.query(

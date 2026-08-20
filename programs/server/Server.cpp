@@ -3843,7 +3843,7 @@ try
                 LOG_INFO(log, "Closed all listening sockets.");
 
             /// Wait for unfinished backups and restores.
-            /// This must be done after closing listening sockets (no more backups/restores) but before ProcessList::killAllQueries
+            /// This must be done after closing listening sockets (no more socket-delivered backups/restores) but before ProcessList::killAllQueries
             /// (because killAllQueries() will cancel all running backups/restores).
             bool backups_finished = true;
             if (server_settings[ServerSetting::shutdown_wait_backups_and_restores])
