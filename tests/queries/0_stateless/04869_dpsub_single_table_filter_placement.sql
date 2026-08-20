@@ -25,6 +25,7 @@ INSERT INTO t3 VALUES (0, 'Join_3_Value_0'), (1, 'Join_3_Value_1'), (4, 'Join_3_
 INSERT INTO t4 VALUES (0, 'Join_4_Value_0'), (1, 'Join_4_Value_1'), (5, 'Join_4_Value_5');
 
 SET enable_analyzer = 1;
+SET query_plan_optimize_join_order_limit = 10;
 
 -- The reported case: filter on the first relation, INNER then LEFT join.
 SELECT 'reported greedy:';
