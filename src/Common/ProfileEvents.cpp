@@ -448,7 +448,7 @@
     M(HashJoinBuildInsertMicroseconds, "HashJoin build-side sub-phase: time spent inserting scattered rows into the shared hash map, including slot-lock waits. A subset of HashJoinBuildMicroseconds.", ValueType::Microseconds) \
     M(HashJoinBuildLockWaitMicroseconds, "HashJoin build-side: time spent yielding in insertIntoSlots while waiting for a slot mutex. A subset of HashJoinBuildInsertMicroseconds.", ValueType::Microseconds) \
     M(HashJoinProbeMicroseconds, "Time spent joining probe-side blocks in HashJoin (lookup plus draining HashJoinResult), summed over all probe threads.", ValueType::Microseconds) \
-    M(HashJoinProbeLookupMicroseconds, "HashJoin probe-side sub-phase: hash-map lookup (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
+    M(HashJoinProbeLookupMicroseconds, "HashJoin probe-side sub-phase: hash-map lookup and per-row match emission (findKey plus recording match row-refs; includes residual ON filter). Does not include gathering column values. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
     M(HashJoinProbeGatherMicroseconds, "HashJoin probe-side sub-phase: gathering right-side column values in lazy_output.buildOutput. Does not include left-column replication. A subset of HashJoinProbeMicroseconds.", ValueType::Microseconds) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
