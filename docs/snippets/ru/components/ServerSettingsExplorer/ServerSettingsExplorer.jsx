@@ -356,8 +356,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "http_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -1622,7 +1623,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            Найдено настроек: {matchingCount}
+            {matchingCount} найден{matchingCount === 1 ? "а" : "о"} {matchingCount === 1 ? "настройка" : "настроек"}
           </span>
         </div>
       )}
