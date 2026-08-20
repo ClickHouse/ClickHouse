@@ -313,6 +313,26 @@ SELECT count() FROM test_nullable_string_key WHERE has([CAST('a', 'Nullable(Stri
 
 DROP TABLE test_nullable_string_key;
 
+-- A Nullable key can represent the NULL that a Dynamic or a LowCardinality dictionary carries, so
+-- those elements keep the set index instead of giving it up the way a non-Nullable key has to.
+DROP TABLE IF EXISTS test_nullable_key_prune;
+CREATE TABLE test_nullable_key_prune (k Nullable(String)) ENGINE = MergeTree
+ORDER BY k
+SETTINGS allow_nullable_key = 1, index_granularity = 1;
+
+INSERT INTO test_nullable_key_prune SELECT toString(number) FROM numbers(16);
+
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_prune WHERE has(CAST(['3'], 'Array(Dynamic)'), k)) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_nullable_key_prune WHERE has(CAST(['3'], 'Array(Dynamic)'), k);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_prune WHERE has([CAST('3', 'LowCardinality(Nullable(String))')], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_nullable_key_prune WHERE has([CAST('3', 'LowCardinality(Nullable(String))')], k);
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_prune WHERE has([CAST('3', 'Nullable(String)')], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT k FROM test_nullable_key_prune WHERE has(['3'], k)) WHERE explain LIKE '%Granules:%/%';
+SELECT count() FROM test_nullable_key_prune WHERE has([CAST(NULL, 'Dynamic')], k);
+SELECT count() FROM test_nullable_key_prune WHERE has([CAST(NULL, 'Dynamic')], k) SETTINGS use_primary_key = 0;
+
+DROP TABLE test_nullable_key_prune;
+
 -- A monotonic wrapper whose argument type is the container key itself resolves the constant against
 -- that container type, which reaches the same rule.
 DROP TABLE IF EXISTS test_mono_container_key;

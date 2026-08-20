@@ -136,8 +136,10 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         }
         case TypeIndex::LowCardinality:
         {
+            /// The target keeps its nullability here, because a Nullable dictionary type needs a target
+            /// that can hold a NULL. Stripping only LowCardinality leaves the unwrapped target the same.
             const auto & from_type_low_cardinality = assert_cast<const DataTypeLowCardinality &>(*from_type);
-            return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), to_type_unwrapped);
+            return canBeSafelyCast(from_type_low_cardinality.getDictionaryType(), removeLowCardinality(to_type));
         }
         case TypeIndex::Array:
         {
@@ -232,8 +234,8 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
         }
         case TypeIndex::Variant:
         case TypeIndex::Dynamic:
-            /// Both encode NULL via NULL_DISCRIMINATOR, which no non-Nullable target can represent.
-            return false;
+            /// Both encode a NULL via NULL_DISCRIMINATOR, so only a target that can hold one is safe.
+            return to_type_was_nullable && to_which_type.isString();
         case TypeIndex::String:
         case TypeIndex::Set:
         case TypeIndex::Interval:

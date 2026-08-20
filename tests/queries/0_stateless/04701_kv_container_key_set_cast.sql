@@ -51,6 +51,9 @@ INSERT INTO 04701_mem_map VALUES (map('a', '1'), 'x'), (map('b', '2'), 'y');
 SELECT count() FROM 04701_rdb_map WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, Nullable(String))'));
 SELECT count() FROM 04701_mem_map WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, Nullable(String))'));
 
+-- A container key loses its point lookup, which the read type reports directly.
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_map WHERE k IN (SELECT CAST(map('a', '1'), 'Map(String, Nullable(String))'))) WHERE explain LIKE '%ReadType%';
+
 DROP TABLE 04701_rdb_map;
 DROP TABLE 04701_mem_map;
 
@@ -67,5 +70,26 @@ INSERT INTO 04701_rdb_scalar VALUES ('a', 'x'), ('b', 'y');
 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST('a', 'Nullable(String)'));
 SELECT count() FROM 04701_rdb_scalar WHERE k IN ('a');
 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST(NULL, 'Nullable(String)'));
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_scalar WHERE k IN ('a')) WHERE explain LIKE '%ReadType%';
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_scalar WHERE k IN (SELECT CAST('a', 'Nullable(String)'))) WHERE explain LIKE '%ReadType%';
 
 DROP TABLE 04701_rdb_scalar;
+
+-- A LowCardinality(Nullable(String)) key can hold a NULL of its own, but still cannot be wrapped in
+-- Nullable, so the guard must ask the cast about the target rather than only about NULL capability.
+
+DROP TABLE IF EXISTS 04701_rdb_lc_nullable;
+
+CREATE TABLE 04701_rdb_lc_nullable (k LowCardinality(Nullable(String)), v String)
+ENGINE = EmbeddedRocksDB PRIMARY KEY (k);
+
+INSERT INTO 04701_rdb_lc_nullable VALUES ('a', 'x'), ('b', 'y');
+
+SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Dynamic'));
+SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST(NULL, 'Dynamic'));
+SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Variant(String, UInt8)'));
+SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN (SELECT CAST('a', 'Nullable(String)'));
+SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN ('a');
+SELECT trimLeft(explain) FROM (EXPLAIN actions = 1 SELECT count() FROM 04701_rdb_lc_nullable WHERE k IN ('a')) WHERE explain LIKE '%ReadType%';
+
+DROP TABLE 04701_rdb_lc_nullable;

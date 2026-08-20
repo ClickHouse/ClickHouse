@@ -56,6 +56,11 @@ static DataTypePtr findUnsupportedTypeForAccurateCastOrNull(const DataTypePtr & 
 
 bool canBeAccurateCastOrNullTarget(const DataTypePtr & type)
 {
+    /// The cast wraps its target in Nullable to report a failure, so a target that cannot itself be
+    /// inside Nullable is refused even when it can hold a NULL of its own.
+    if (!type->isNullable() && !type->canBeInsideNullable())
+        return false;
+
     return findUnsupportedTypeForAccurateCastOrNull(type) == nullptr;
 }
 
