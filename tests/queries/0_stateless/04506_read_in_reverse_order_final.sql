@@ -154,3 +154,20 @@ SELECT if(explain like '%ReadType: InReverseOrder%', 'Error: ' || explain, 'Ok')
 SELECT x, y FROM t_reverse_final FINAL ORDER BY x DESC;
 
 DROP TABLE t_reverse_final;
+
+-- The `Merge` engine does not pass a reverse order request with `FINAL` to its child tables
+-- (see `ReadFromMerge::requestReadingInOrder`), so the optimization does not apply there,
+-- but the result must still be correct.
+CREATE TABLE t_reverse_final (x Int32, y Int32) ENGINE = ReplacingMergeTree ORDER BY x;
+CREATE TABLE t_reverse_final_merge (x Int32, y Int32) ENGINE = Merge(currentDatabase(), '^t_reverse_final$');
+
+SYSTEM STOP MERGES t_reverse_final;
+
+INSERT INTO t_reverse_final SETTINGS optimize_on_insert = 0 VALUES (0, 0), (1, 0), (2, 0);
+INSERT INTO t_reverse_final SETTINGS optimize_on_insert = 0 VALUES (1, 1);
+
+SELECT 'merge engine';
+SELECT * FROM t_reverse_final_merge FINAL ORDER BY x DESC;
+
+DROP TABLE t_reverse_final_merge;
+DROP TABLE t_reverse_final;
