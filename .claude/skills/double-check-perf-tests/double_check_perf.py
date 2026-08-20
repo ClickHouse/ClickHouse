@@ -80,6 +80,29 @@ RIGHT_KEEPER_RAFT = 19234
 RIGHT_INTERSERVER = 19009
 RIGHT_HTTP = 18123
 
+# These mirror `CHServer` in ci/jobs/performance_tests.py, which runs in a
+# container with nothing else on the box. On a development machine the left
+# side's values are simply the ClickHouse defaults, so any local server owns
+# them and `ensure_ports_free` refuses the run -- correctly, since measuring
+# against someone else's server would compare the wrong binaries. `--port-
+# offset` shifts the whole set instead, which changes nothing about what is
+# measured.
+PORT_NAMES = (
+    "LEFT_TCP", "LEFT_KEEPER_TCP", "LEFT_KEEPER_RAFT", "LEFT_INTERSERVER",
+    "LEFT_HTTP", "PRECONFIG_TCP", "PRECONFIG_KEEPER_TCP",
+    "PRECONFIG_KEEPER_RAFT", "RIGHT_TCP", "RIGHT_KEEPER_TCP",
+    "RIGHT_KEEPER_RAFT", "RIGHT_INTERSERVER", "RIGHT_HTTP",
+)
+
+
+def apply_port_offset(offset: int) -> None:
+    for name in PORT_NAMES:
+        shifted = globals()[name] + offset
+        if not 1024 < shifted < 65536:
+            die(f"--port-offset {offset} puts {name} at {shifted}, "
+                "outside the usable port range")
+        globals()[name] = shifted
+
 
 def log(msg: str) -> None:
     print(f"[double-check] {msg}", flush=True)
@@ -720,7 +743,14 @@ def materialize_perf_tree(repo_root: Path, pr_number: int, sha: str,
         # without it.
         "tests/benchmarks",
         "programs/server",
-        "tests/config/top_level_domains",
+        # Not just top_level_domains: most of programs/server/config.d and
+        # users.d are symlinks into tests/config (`clusters.xml`,
+        # `keeper_port.xml`, `ext-en.txt`, ...), and prepare_configs copies
+        # them dereferenced, the way the CI job does with
+        # `cp -r --dereference`. Extracting only the TLD files leaves those
+        # links dangling and the copy fails outright. The whole directory is
+        # ~1 MB.
+        "tests/config",
     ]
     archive = subprocess.run(
         ["git", "-C", str(archive_from), "archive", sha, *paths],
@@ -2082,6 +2112,7 @@ def print_report(
     failed_tests: Optional[dict[str, int]] = None,
     unreadable: Optional[list[tuple[str, int, int, str]]] = None,
     local_arch_measured: bool = True,
+    errored_tests: Optional[set[str]] = None,
 ) -> None:
     print()
     print("=" * 120)
@@ -2097,6 +2128,7 @@ def print_report(
     confirmed = 0
     not_reproduced = 0
     failed = 0
+    errored = 0
     unverifiable = 0
 
     def print_arch_disagreement(cq: ChangedQuery) -> bool:
@@ -2142,6 +2174,18 @@ def print_report(
             )
             local_str = f"{'':>8} {'':>8} {'':>8} {'':>6}"
             failed += 1
+        elif local is None and cq.test in (errored_tests or set()):
+            # perf.py skips a query that failed on *every* server and exits 0
+            # (`if len(no_errors) == 0: continue`), printing only a traceback
+            # on stderr -- so this is indistinguishable from a missing row
+            # unless the per-test stderr is read. It is not an absence of
+            # data, it is a query that could not run.
+            verdict = (
+                f"query ERRORED locally, NOT MEASURED — perf.py skipped it "
+                f"after it failed on every server; see raw/{cq.test}-err.log"
+            )
+            local_str = f"{'':>8} {'':>8} {'':>8} {'':>6}"
+            errored += 1
         elif local is None:
             verdict = "no local data"
             local_str = f"{'':>8} {'':>8} {'':>8} {'':>6}"
@@ -2218,6 +2262,7 @@ def print_report(
         f"{not_reproduced} not reproduced, "
         f"{len(changed) - confirmed - not_reproduced} not measured"
         + (f" (of which {failed} from failed perf.py runs)" if failed else "")
+        + (f" ({errored} errored on every server)" if errored else "")
         + (f", {unverifiable} without a verdict" if unverifiable else "")
     )
     if unreadable:
@@ -2231,6 +2276,12 @@ def print_report(
             "'CI split' lines: CI flagged the query on both arches but in "
             "opposite directions. The table row carries one arch's numbers; "
             "the split line has all of them."
+        )
+    if errored:
+        print(
+            "A query marked ERRORED did not run at all — it is neither "
+            "confirmed nor refuted. perf.py drops such a query and still "
+            "exits 0, so the per-test stderr log is the only record."
         )
     if failed_tests:
         print(
@@ -2358,6 +2409,15 @@ def main() -> int:
         "checked)",
     )
     parser.add_argument(
+        "--port-offset",
+        type=int,
+        default=0,
+        help="add this to every port the script uses. The defaults mirror "
+        "CI, where the left server sits on the standard ClickHouse ports; "
+        "shift them when a local server already owns those. Does not affect "
+        "what is measured.",
+    )
+    parser.add_argument(
         "--skip-wait-for-merges",
         action="store_true",
         help="don't wait for background merges to quiesce before running "
@@ -2369,6 +2429,11 @@ def main() -> int:
     repo_root = Path.cwd()
     if not (repo_root / "tests/performance/scripts/perf.py").is_file():
         die("must be run from the root of a ClickHouse checkout")
+
+    if args.port_offset:
+        apply_port_offset(args.port_offset)
+        log(f"port offset {args.port_offset}: left TCP {LEFT_TCP}, "
+            f"right TCP {RIGHT_TCP}")
 
     perf_arch, build_type = detect_arch()
     log(f"machine arch: {perf_arch} ({build_type})")
@@ -2834,6 +2899,7 @@ def main() -> int:
         # Run perf.py per test
         side_dbs = [work_dir / side / "db" for side in ("left", "right")]
         failed_tests: dict[str, int] = {}
+        errored_tests: set[str] = set()
         for test, qs in sorted(by_test.items()):
             if test not in test_files:
                 continue
@@ -2842,6 +2908,17 @@ def main() -> int:
             )
             if rc != 0:
                 failed_tests[test] = rc
+            else:
+                # A query that failed on every server is skipped by perf.py
+                # with a zero exit and nothing but a stderr traceback, which
+                # would otherwise surface as the benign-looking "no local
+                # data". Anything on stderr from an otherwise-clean run means
+                # at least one query did not run.
+                err_log = work_dir / "raw" / f"{test}-err.log"
+                if err_log.is_file() and err_log.stat().st_size > 0:
+                    errored_tests.add(test)
+                    log(f"ERROR: perf.py reported query errors for {test} "
+                        f"but exited 0; see {err_log}")
             cleanup_user_files(side_dbs)
 
         # Collect results. stat_threshold is recomputed from the per-run
@@ -2863,7 +2940,8 @@ def main() -> int:
                 local_results[(test, qi)] = d
 
         print_report(changed, local_results, perf_arch, failed_tests,
-                     unreadable, local_arch_measured=bool(arch_shards))
+                     unreadable, local_arch_measured=bool(arch_shards),
+                     errored_tests=errored_tests)
         # JSON dump for downstream use
         json_path = work_dir / "result.json"
         json_path.write_text(
@@ -2876,6 +2954,7 @@ def main() -> int:
                     "populated_tables": populate_tables,
                     "changed": [cq.__dict__ for cq in changed],
                     "failed_tests": failed_tests,
+                    "errored_tests": sorted(errored_tests),
                     "unreadable_shards": [
                         {"arch": a, "shard": n, "of": t, "error": e}
                         for a, n, t, e in unreadable
@@ -2888,7 +2967,7 @@ def main() -> int:
             )
         )
         log(f"wrote {json_path}")
-        if failed_tests or unreadable:
+        if failed_tests or errored_tests or unreadable:
             # An unreadable shard leaves part of the comparison uninspected;
             # a zero exit would read as "all of CI's findings were checked".
             exit_code = 1

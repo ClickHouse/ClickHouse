@@ -89,6 +89,11 @@ skill:
   on a local change to a test — see the note on pinning below.
 - `--dry-run`: stop after resolving PR / SHAs / changed queries; do not
   download or run.
+- `--port-offset N`: shift every port the script uses. The defaults mirror
+  CI, where the left server sits on the standard ClickHouse ports
+  (`8123`/`9009`/`9181`/`9234`); on a development machine a local server
+  usually owns those and the run is refused. Shifting is the safe fix —
+  never stop someone else's server. Does not affect what is measured.
 
 ## Procedure
 
@@ -170,10 +175,15 @@ The script prints a table. For each changed query show:
 - CI old / new / Δ (from the report)
 - Local old / new / Δ / p-value (from `perf.py`)
 - Verdict: `CONFIRMED slower|faster`, `NOT REPRODUCED`, `no local data`,
-  `NO VERDICT` (CI's threshold for a demoted query is unavailable), or
-  `perf.py FAILED ... NOT MEASURED`. The last one is not a verdict about the
-  change: nothing was measured, the run itself broke, and `raw/<test>-err.log`
-  says why. Any such failure also makes the script exit non-zero.
+  `NO VERDICT` (CI's threshold for a demoted query is unavailable),
+  `query ERRORED locally ... NOT MEASURED`, or
+  `perf.py FAILED ... NOT MEASURED`. The last two are not verdicts about the
+  change: nothing was measured, and `raw/<test>-err.log` says why. Either one
+  also makes the script exit non-zero. `ERRORED` is the sneaky case —
+  `perf.py` drops a query that failed on *every* server (`if len(no_errors)
+  == 0: continue`) and still exits 0, writing only a traceback to stderr, so
+  without reading that log it would look like the benign `no local data`. Any
+  stderr from an otherwise-clean `perf.py` run is taken as that signal.
 
 A query counts as `CONFIRMED` when the local rerun passes the same gate
 `compare.sh` uses to confirm a flagged query: same direction, `|Δ|` above the
