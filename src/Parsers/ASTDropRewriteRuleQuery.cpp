@@ -20,11 +20,14 @@ void ASTDropRewriteRuleQuery::updateTreeHashImpl(SipHash & hash_state, bool igno
 {
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(rule_name);
+    hash_state.update(if_exists);
 }
 
 void ASTDropRewriteRuleQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings &, IAST::FormatState &, IAST::FormatStateStacked) const
 {
     ostr << "DROP RULE ";
+    if (if_exists)
+        ostr << "IF EXISTS ";
     ostr << backQuoteIfNeed(rule_name);
 }
 

@@ -61,7 +61,7 @@ SET query_rules = 'rule_1, rule_2';
 
 SELECT date, sum(hits) FROM stats WHERE date = 'today' AND page = 'first' GROUP BY date;
 
-SELECT * FROM system.query_rules FORMAT VERTICAL;
+SELECT * FROM system.query_rules WHERE name IN ('rule_1', 'rule_2') ORDER BY name FORMAT VERTICAL;
 
 SET query_rules = '';
 
@@ -69,6 +69,6 @@ DROP RULE rule_1;
 
 DROP RULE rule_2;
 
-SELECT * FROM system.query_rules FORMAT VERTICAL;
+SELECT * FROM system.query_rules WHERE name IN ('rule_1', 'rule_2') ORDER BY name FORMAT VERTICAL;
 
 SELECT date, hits FROM totals WHERE page = 'first' AND date = 'today';

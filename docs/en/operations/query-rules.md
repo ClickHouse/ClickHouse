@@ -98,8 +98,10 @@ REJECT WITH 'Message';
 ### DROP RULE {#drop-rule}
 
 ```sql
-DROP RULE rule_name;
+DROP RULE [IF EXISTS] rule_name;
 ```
+
+With `IF EXISTS`, dropping a rule that does not exist is not an error.
 
 ## Types of storages for query rewrite rules {#types-of-storages}
 

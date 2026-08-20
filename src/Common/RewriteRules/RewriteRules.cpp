@@ -841,6 +841,9 @@ void RewriteRules::removeRule(const ASTDropRewriteRuleQuery & query)
     loadIfNot(lock);
     if (!exists(query.rule_name, lock))
     {
+        if (query.if_exists)
+            return;
+
         throw Exception(
             ErrorCodes::REWRITE_RULE_DOESNT_EXIST,
             "A rewrite rule `{}` doesn't exists",
