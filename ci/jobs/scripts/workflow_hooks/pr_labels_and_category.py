@@ -234,13 +234,21 @@ def get_category(pr_body: str) -> Tuple[str, str]:
 def _submodule_paths() -> set:
     # Each line reads "submodule.<name>.path <path>". A changed submodule shows up in
     # the PR file list as that path itself, because a gitlink is a single tree entry.
-    out = Shell.get_output("git config --file .gitmodules --get-regexp path")
+    # The head's `.gitmodules` no longer lists a submodule this PR removes, so the base
+    # branch's copy is read too; a removed gitlink path then still matches.
+    commands = ["git config --file .gitmodules --get-regexp path"]
+    base_branch = Info().base_branch
+    if base_branch:
+        commands.append(
+            f"git config --blob 'origin/{base_branch}:.gitmodules' --get-regexp path"
+        )
     paths = set()
-    for line in out.splitlines():
-        _, _, path = line.partition(" ")
-        path = path.strip()
-        if path:
-            paths.add(path)
+    for command in commands:
+        for line in Shell.get_output(command).splitlines():
+            _, _, path = line.partition(" ")
+            path = path.strip()
+            if path:
+                paths.add(path)
     return paths
 
 
