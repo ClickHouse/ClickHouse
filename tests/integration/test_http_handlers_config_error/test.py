@@ -20,6 +20,9 @@ BAD_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/bad_handler.xml"
 LISTEN_TRY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/listen_try.xml"
 NO_HTTP_PORT_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/no_http_port.xml"
 HTTPS_ONLY_CONFIG_IN_CONTAINER = "/etc/clickhouse-server/config.d/https_only.xml"
+BAD_PROMETHEUS_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_prometheus.xml"
+)
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -186,3 +189,126 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure_on_https(start
             user="root",
         )
         node.start_clickhouse()
+
+
+def test_prometheus_handler_config_error_is_not_reported_as_a_listen_failure(
+    start_cluster,
+):
+    # The standalone Prometheus listener builds its factory from `<prometheus.handlers>` the same
+    # way, so it needs its own case. `http_port` is left in place: the Prometheus section is only
+    # read by the Prometheus factory, so a failure can only be attributed to that path.
+    node.stop_clickhouse()
+
+    # An absence is asserted below, so an earlier case's report must not survive in the search
+    # space: `grep_in_log` globs every rotation and these instances set `<rotateOnOpen>`.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "bad_prometheus.xml"),
+        BAD_PROMETHEUS_CONFIG_IN_CONTAINER,
+    )
+    try:
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(
+            substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+        )
+        assert reported != ""
+
+        # Bracket-free for the same reason as in the cases above.
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+    finally:
+        node.exec_in_container(
+            ["bash", "-c", f"rm -f {BAD_PROMETHEUS_CONFIG_IN_CONTAINER}"], user="root"
+        )
+        node.start_clickhouse()
+
+
+def test_prometheus_handler_config_error_is_not_discarded_when_listen_try_is_set(
+    start_cluster,
+):
+    # `listen_try` reaches the other exit of the same handler: the error was logged as a warning
+    # about `<listen_host>` and the server ran on with no Prometheus endpoint at all.
+    node.stop_clickhouse()
+
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+
+    configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "bad_prometheus.xml"),
+        BAD_PROMETHEUS_CONFIG_IN_CONTAINER,
+    )
+    node.copy_file_to_container(
+        os.path.join(configs_dir, "listen_try.xml"), LISTEN_TRY_CONFIG_IN_CONTAINER
+    )
+    try:
+        # The startup must fail. It used to succeed here, serving no Prometheus endpoint.
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(
+            substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+        )
+        assert reported != ""
+
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+        assert "consider to" not in reported
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {BAD_PROMETHEUS_CONFIG_IN_CONTAINER} {LISTEN_TRY_CONFIG_IN_CONTAINER}",
+            ],
+            user="root",
+        )
+        node.start_clickhouse()
+
+
+def test_handler_config_error_on_reload_is_reported_to_the_client(start_cluster):
+    # `updateServers` reuses `createServers`, so a runtime reload re-enters the same code with the
+    # listener already stopped for recreation. The error must reach the `SYSTEM RELOAD CONFIG`
+    # caller as the configuration error it is; it used to be reported as a listen failure, and
+    # under `listen_try` swallowed entirely while HTTP stayed down.
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "configs/listen_try.xml"
+        ),
+        LISTEN_TRY_CONFIG_IN_CONTAINER,
+    )
+    node.start_clickhouse()
+    try:
+        assert node.http_query("SELECT 1").strip() == "1"
+
+        node.copy_file_to_container(
+            os.path.join(
+                os.path.dirname(os.path.realpath(__file__)), "configs/bad_handler.xml"
+            ),
+            BAD_CONFIG_IN_CONTAINER,
+        )
+        error = node.query_and_get_error("SYSTEM RELOAD CONFIG")
+
+        # The cause must be named. Asserted on the error returned to the caller, so unrelated log
+        # contents cannot satisfy it.
+        assert "Unknown handler type" in error
+        assert "Listen" not in error
+        assert "NETWORK_ERROR" not in error
+    finally:
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"rm -f {BAD_CONFIG_IN_CONTAINER} {LISTEN_TRY_CONFIG_IN_CONTAINER}",
+            ],
+            user="root",
+        )
+        node.restart_clickhouse()
