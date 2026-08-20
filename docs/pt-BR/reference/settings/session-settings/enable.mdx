@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Nova configuração para ativar a agregação adaptativa de `GROUP BY`, que congela a tabela hash local de cada thread quando ela atinge `adaptive_aggregator_freeze_threshold` chaves, permitindo que chaves frequentes continuem sendo agregadas nas pequenas tabelas locais, enquanto chaves raras são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket; assim, as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread."}]}]} />
+
+Ativa o algoritmo adaptativo de `GROUP BY`: cada thread agrega em sua tabela hash local até atingir `adaptive_aggregator_freeze_threshold` chaves; então, a tabela é congelada, de modo que as linhas de chaves já vistas (frequentes) continuam sendo atualizadas nela, enquanto chaves novas (raras) são direcionadas pelo hash para filas por bucket e agregadas exatamente uma vez durante a mesclagem paralela por bucket. As chaves frequentes permanecem em pequenas tabelas residentes em cache, e as chaves raras são armazenadas e processadas uma vez, em vez de uma vez por thread.
+
+As configurações de agregação externa (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) são respeitadas: depois de ultrapassar o limite, as filas são descarregadas antecipadamente na tabela compartilhada e, se isso não for suficiente para voltar a ficar abaixo do limite, a tabela compartilhada é gravada em disco por meio da agregação externa comum.
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ No entanto, habilitar essa configuração acrescenta esforço extra de mesclagem
 
 Se definido, o ClickHouse habilitará automaticamente essa otimização quando a expressão da chave de partição for determinística e todas as colunas usadas nela estiverem incluídas na chave primária.
 Essa derivação automática garante que linhas com os mesmos valores de chave primária sempre pertençam à mesma partição, tornando seguro evitar mesclagens entre partições.
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração experimental."}]}]} />
+
+Habilita o otimizador de custo Cascades para planos de consultas distribuídas.
+Só tem efeito junto com `make_distributed_plan = 1`: isoladamente, a configuração não altera o planejamento de consultas em um único nó.
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding
