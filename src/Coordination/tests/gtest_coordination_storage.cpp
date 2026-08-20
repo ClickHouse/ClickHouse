@@ -384,6 +384,29 @@ TEST_P(CoordinationTest, TestRemoveRecursiveRequest)
         ASSERT_EQ(responses.size(), 1);
         ASSERT_EQ(responses[0].response->error, Coordination::Error::ZBADARGUMENTS);
     }
+
+    {
+        SCOPED_TRACE("Recursive Remove Single Node Zero Limit");
+        create("/T10", zkutil::CreateMode::Persistent);
+
+        /// The node itself counts toward the limit, so a zero limit removes nothing.
+        auto responses = remove_recursive("/T10", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZNOTEMPTY);
+        ASSERT_TRUE(exists("/T10"));
+
+        responses = remove_recursive("/T10", 1);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+        ASSERT_FALSE(exists("/T10"));
+    }
+
+    {
+        SCOPED_TRACE("Recursive Remove Nonexistent Node Zero Limit");
+        auto responses = remove_recursive("/T11", 0);
+        ASSERT_EQ(responses.size(), 1);
+        ASSERT_EQ(responses[0].response->error, Coordination::Error::ZOK);
+    }
 }
 
 namespace
@@ -2375,6 +2398,35 @@ TEST_P(CoordinationTest, TestCreate2ResponseDataLength)
 
     const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
     EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
+}
+
+TEST_P(CoordinationTest, ReadViewStableCountAndRepeatedNext)
+{
+    /// The KeeperNodesReadView contract: getNodeCount must return the same value before and
+    /// after the iteration, and next must keep returning false after the view is exhausted
+    /// (`system.keeper_storage` calls next once per block, retrying after the last one).
+    this->keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+
+    addNode(storage, "/a", "data_a");
+    addNode(storage, "/b", "data_b");
+
+    auto view = storage.issueReadView();
+    const size_t count_before = view->getNodeCount();
+    EXPECT_GT(count_before, 0u);
+
+    size_t nodes_seen = 0;
+    std::string_view path;
+    std::string_view node_data;
+    DB::KeeperNodeStats stats;
+    while (view->next(path, node_data, stats))
+        ++nodes_seen;
+
+    EXPECT_EQ(nodes_seen, count_before);
+    EXPECT_EQ(view->getNodeCount(), count_before);
+    EXPECT_FALSE(view->next(path, node_data, stats));
+    EXPECT_FALSE(view->next(path, node_data, stats));
 }
 
 #endif

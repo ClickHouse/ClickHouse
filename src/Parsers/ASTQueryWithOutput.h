@@ -94,6 +94,8 @@ class ASTQueryWithOutputImpl : public ASTQueryWithOutput
 public:
     String getID(char) const override { return ASTIDAndQueryNames::ID; }
 
+    QueryKind getQueryKind() const override { return ASTIDAndQueryNames::Kind; }
+
     ASTPtr clone() const override
     {
         auto res = make_intrusive<ASTQueryWithOutputImpl<ASTIDAndQueryNames>>(*this);

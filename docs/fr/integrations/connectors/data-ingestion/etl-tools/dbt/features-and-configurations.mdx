@@ -183,7 +183,7 @@ clés suivantes, utilisées pour renseigner les paramètres de la fonction de ta
 | structure                         | La structure en colonnes des données du bucket, sous la forme d’une liste de paires nom/type de données, par exemple `['id UInt32', 'date DateTime', 'value String']` Si elle n’est pas fournie, ClickHouse inférera la structure. |
 | aws&#95;access&#95;key&#95;id     | L’identifiant de la clé d’accès S3.                                                                                                                                                                                                |
 | aws&#95;secret&#95;access&#95;key | La clé secrète S3.                                                                                                                                                                                                                 |
-| role&#95;arn                      | L’ARN d’un IAM role ClickhouseAccess à utiliser pour accéder de manière sécurisée aux objets S3. Consultez cette [documentation](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour plus d’informations.         |
+| role&#95;arn                      | L’ARN du rôle IAM créé pour sécuriser l’accès à S3. Consultez cette [documentation](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour plus d’informations.                                                      |
 | compression                       | La méthode de compression utilisée pour les objets S3. Si elle n’est pas fournie, ClickHouse tentera de déterminer la compression à partir du nom du fichier.                                                                      |
 
 Consultez

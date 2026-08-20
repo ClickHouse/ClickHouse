@@ -11,12 +11,12 @@ doc_type: 'reference'
   ## timeSeriesPredictLinearToGrid
 </div>
 
-مُقدَّم في: v25.6.0
+أُضيف في: v25.6.0
 
-دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [تنبؤًا خطيًا على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) بإزاحة زمنية محددة للتنبؤ انطلاقًا من هذه البيانات، وذلك على شبكة زمنية منتظمة تُحدَّد بطابع زمني للبداية وطابع زمني للنهاية وخطوة. لكل نقطة على الشبكة، تُؤخذ العينات المستخدمة في حساب `predict_linear` من ضمن النافذة الزمنية المحددة.
+دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [تنبؤًا خطيًا على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#predict_linear) بإزاحة زمنية محددة عن طابع التنبؤ، وذلك على شبكة زمنية منتظمة تُحدَّد بطابع البداية وطابع النهاية والخطوة. ولكل نقطة على الشبكة، تُؤخذ في الاعتبار العينات الواقعة ضمن النافذة الزمنية المحددة لحساب `predict_linear`.
 
 <Note>
-  هذه الدالة تجريبية. فعِّلها عن طريق ضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
+  هذه الدالة تجريبية؛ فعّلها بضبط `allow_experimental_time_series_aggregate_functions=true`.
 </Note>
 
 **البنية**
@@ -27,19 +27,23 @@ timeSeriesPredictLinearToGrid(start_timestamp, end_timestamp, grid_step, stalene
 
 **المعاملات**
 
-* `start_timestamp` — يحدّد بداية الشبكة. - `end_timestamp` — يحدّد نهاية الشبكة. - `grid_step` — يحدّد خطوة الشبكة بالثواني. - `staleness` — يحدّد الحد الأقصى لـ &quot;قِدم&quot; العينات التي يُؤخذ بها في الاعتبار، بالثواني. نافذة القِدم هي فترة مفتوحة من اليسار ومغلقة من اليمين. - `predict_offset` — يحدّد عدد ثواني الإزاحة التي ستُضاف إلى وقت التنبؤ.
+* `start_timestamp` — يحدد بداية الشبكة. عند استخدام وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `end_timestamp` — يحدد نهاية الشبكة. عند استخدام وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `grid_step` — يحدد خطوة الشبكة بالثواني. عند استخدام وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `staleness` — يحدد الحد الأقصى لـ &quot;التقادم&quot; بالثواني للعينات المأخوذة في الاعتبار. نافذة التقادم فترة مفتوحة من اليسار ومغلقة من اليمين. عند استخدام وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضًا رقمًا كسريًا أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `predict_offset` — يحدد عدد ثواني الإزاحة التي تُضاف إلى وقت التنبؤ. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
 
 **الوسيطات**
 
-* `timestamp` — الطابع الزمني للعينة. يمكن أن يكون قيمةً منفردة أو مصفوفة. - `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. يمكن أن تكون قيمةً منفردة أو مصفوفة.
+* `timestamp` — الطابع الزمني للعينة. يمكن أن يكون قيمة مفردة أو مصفوفة. - `value` — قيمة السلسلة الزمنية المقابلة للطابع الزمني. يمكن أن تكون قيمة مفردة أو مصفوفة.
 
 **القيمة المُعادة**
 
-قيم `predict_linear` على الشبكة المحددة بوصفها `Array(Nullable(Float64))`. تحتوي المصفوفة المُعادة على قيمة واحدة لكل نقطة زمنية في الشبكة. تكون القيمة NULL إذا لم تكن هناك عينات كافية ضمن النافذة لحساب قيمة المعدل لنقطة شبكة معينة.
+قيم `predict_linear` على الشبكة المحددة على هيئة `Array(Nullable(Float64))`. تحتوي المصفوفة المُعادة على قيمة واحدة لكل نقطة في الشبكة الزمنية. تكون القيمة NULL إذا لم تتوفر عينات كافية ضمن النافذة لحساب قيمة المعدل لنقطة معينة في الشبكة.
 
 **أمثلة**
 
-**احسب قيم predict&#95;linear على الشبكة [90, 105, 120, 135, 150, 165, 180, 195, 210] بإزاحة مقدارها 60 ثانية**
+**احسب قيم predict&#95;linear على الشبكة [90, 105, 120, 135, 150, 165, 180, 195, 210] بإزاحة قدرها 60 ثانية**
 
 ```sql title=Query
 SET allow_experimental_time_series_aggregate_functions = 1;

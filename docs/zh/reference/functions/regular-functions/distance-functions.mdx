@@ -230,7 +230,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
 * `reference` — 参考 (查询) 向量：`Float` 数组 (即查询向量，以 `Float32` 精度进行比较——`Float64` 查询会收窄为 `Float32`) ，或由 `quantizeBFloat16ToInt8` 编码组成并在使用时即时反量化的 `Array(Int8)`。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
-* `p` — 每个已存储 `QBit` 编码要使用的高位数 (1 到 8) 。位数越少，重建出的嵌入式量化器越粗糙，I/O 越快，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终按完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `p` — 每个已存储 `QBit` 编码要使用的高位数 (1 到 8) 。位数越少，会使用现有 Lloyd-Max 前缀区间的高斯条件均值质心重建出更粗糙的嵌入式量化器，从而实现更快的 I/O，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终按完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
 * `used_dims` — 可选。要读取的前几个维度，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅的倍数，且不能超过其维度；参考向量也必须至少包含这么多元素 (任何额外的尾随元素都会被忽略) 。只会读取覆盖这些维度的步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -727,7 +727,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
 引入版本：v26.7.0
 
-计算由 `quantizeBFloat16ToInt8` 编码构成的 `QBit(Int8)` (在计算过程中即时反量化) 与参考向量之间的近似[余弦距离](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)。返回值越小，向量越相似。`Float` 参考 (查询) 向量会直接以 `Float32` 精度进行比较——这也是反量化编码的重建精度，因此 `Float64` 查询会被降为 `Float32`，而 `BFloat16` 查询则会被精确提升到该精度 (非对称距离计算) ；`Array(Int8)` 参考本身会被视为 `quantizeBFloat16ToInt8` 编码，并反量化到其重建级别。请注意，`p` 只会截断已存储的 `QBit` 编码；`Array(Int8)` 参考本身是完整查询，始终以完整 8 位精度重建，因此只有在 `p = 8` 时，这才是对称的量化对量化距离 (对于 `p < 8`，只有存储侧会以较低精度读取) 。它必须与量化前的值所在的空间一致 (即经过相同的随机旋转和缩放之后) ，这由调用方负责。余弦距离具有缩放不变性；点积和 L2 距离则不具备。
+计算由 `quantizeBFloat16ToInt8` 编码构成的 `QBit(Int8)` (在计算过程中即时反量化) 与参考向量之间的近似[余弦距离](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance)。返回值越小，向量越相似。`Float` 参考 (查询) 向量会直接以 `Float32` 精度进行比较——这也是反量化编码的重建精度，因此 `Float64` 查询会被降为 `Float32`，而 `BFloat16` 查询则会被精确提升到该精度 (非对称距离计算) ；`Array(Int8)` 参考本身会被视为 `quantizeBFloat16ToInt8` 编码，并反量化到其重建级别。请注意，`p` 只会截断已存储的 `QBit` 编码；`Array(Int8)` 参考本身是完整查询，始终以完整 8 位精度重建，因此只有在 `p = 8` 时，这才是对称的量化对量化距离 (对于 `p < 8`，只有存储侧会以较粗精度读取) 。它必须与量化前的值所在的空间一致 (即经过相同的随机旋转和缩放之后) ，这由调用方负责。余弦距离具有缩放不变性；点积和 L2 距离则不具备。
 
 **语法**
 
@@ -739,8 +739,8 @@ cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
 * `reference` — 参考 (查询) 向量：可以是 `Float` 数组 (查询会以 `Float32` 精度进行比较——`Float64` 查询会被收窄为 `Float32`) ，也可以是会在使用时即时反量化的 `quantizeBFloat16ToInt8` 编码 `Array(Int8)`。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
-* `p` — 每个已存储 `QBit` 编码使用的高位数 (1 到 8) 。位数越少，重建出的量化器越粗略，从而以精度降低为代价获得更快的 I/O；8 位表示全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考始终按完整 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
-* `used_dims` — 可选。要读取的前导维度数，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。该值必须是 QBit 步幅的倍数，且不能超过其维度；同时参考向量必须至少包含这么多个元素 (任何额外的尾随元素都会被忽略) 。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+* `p` — 每个已存储 `QBit` 编码使用的高位数 (1 到 8) 。位数越少，使用现有 Lloyd-Max 前缀区间的高斯条件均值质心重建出的嵌入式量化器越粗略，从而以精度降低为代价获得更快的 I/O；8 位表示全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考始终按完整 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。该值必须是 QBit 步幅的倍数，且不能超过其维度；同时参考向量必须至少包含这么多个元素 (任何额外的尾随元素都会被忽略) 。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
@@ -817,8 +817,8 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 
 * `vectors` — `quantizeBFloat16ToInt8` 编码的向量。[`QBit(Int8, UInt64[, UInt64])`](/zh/reference/data-types/qbit)
 * `reference` — 参考 (查询) 向量：`Float` 数组 (查询会以 `Float32` 精度进行比较——`Float64` 查询会被收窄为 `Float32`)，或 `quantizeBFloat16ToInt8` 编码的 `Array(Int8)`，并在运行时即时反量化。[`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Int8)`](/zh/reference/data-types/array)
-* `p` — 每个已存储 `QBit` 编码中要使用的高位位数 (1 到 8)。位数越少，重建出的嵌入式量化器越粗糙，可获得更快的 I/O，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终以完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
-* `used_dims` — 可选。要读取的前几个维度的数量，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅 的倍数，且不能超过其维度；参考向量也必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略)。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
+* `p` — 每个已存储 `QBit` 编码中要使用的高位数 (1 到 8)。位数越少，会使用现有 Lloyd-Max 前缀区间的高斯条件均值质心重建出更粗糙的嵌入式量化器，可获得更快的 I/O，但准确性会降低；8 位则为全精度重建。`p` 只会截断已存储的 `QBit`；`Array(Int8)` 参考向量始终以完整的 8 位精度重建。[`UInt`](/zh/reference/data-types/int-uint)
+* `used_dims` — 可选。要读取的前几个维度，用于在带步幅的 `QBit` 上执行降维 (Matryoshka) 搜索。必须是 QBit 步幅 的倍数，且不能超过其维度；参考向量也必须至少包含这么多个元素 (任何额外的尾部元素都会被忽略)。只会读取覆盖这些维度的 步幅分组。[`UInt`](/zh/reference/data-types/int-uint)
 
 **返回值**
 

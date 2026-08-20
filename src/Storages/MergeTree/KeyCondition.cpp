@@ -1132,6 +1132,13 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
     const ActionsDAG::Node * res = nullptr;
     bool handled_inversion = false;
 
+    /// An inversion may only be pushed onto a node whose negation equals its two-valued complement.
+    /// `NOT NULL` is `NULL`, so absorb the inversion at an all-NULL node. That substitutes the
+    /// operand's type for the `not()` result type, so it is only valid where the value is discarded.
+    if (need_inversion && boolean_context
+        && ((node.column && node.column->onlyNull()) || node.result_type->onlyNull()))
+        return cloneDAGWithInversionPushDown(node, inverted_dag, inputs_mapping, context, false, boolean_context);
+
     switch (node.type)
     {
         case ActionsDAG::ActionType::INPUT:

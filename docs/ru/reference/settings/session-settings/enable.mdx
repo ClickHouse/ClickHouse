@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "Новая настройка для включения адаптивной агрегации `GROUP BY`: локальная хеш-таблица каждого потока замораживается по достижении `adaptive_aggregator_freeze_threshold` ключей, благодаря чему частые ключи продолжают агрегироваться в небольших локальных таблицах, а редкие ключи по хешу направляются в очереди отдельных бакетов и агрегируются ровно один раз при параллельном слиянии по бакетам; редкие ключи хранятся и обрабатываются один раз, а не по одному разу для каждого потока."}]}]} />
+
+Включает адаптивный алгоритм `GROUP BY`: каждый поток агрегирует данные в локальную хеш-таблицу, пока число ключей не достигнет `adaptive_aggregator_freeze_threshold`, после чего таблица замораживается. Строки уже встречавшихся (частых) ключей продолжают обновляться в этой таблице, а новые (редкие) ключи по хешу направляются в очереди отдельных бакетов и агрегируются ровно один раз при параллельном слиянии по бакетам. Частые ключи остаются в небольших таблицах, помещающихся в кэше, а редкие ключи хранятся и обрабатываются один раз, а не по одному разу для каждого потока.
+
+Настройки внешней агрегации (`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`) учитываются: после превышения порога очереди заранее переносятся в общую таблицу, а если этого недостаточно для возврата ниже порога, общая таблица выгружается на диск с помощью обычной внешней агрегации.
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Если параметр включен, ClickHouse автоматически активирует эту оптимизацию, когда выражение ключа партиционирования детерминировано, а все столбцы, используемые в выражении ключа партиционирования, входят в первичный ключ.
 Это гарантирует, что строки с одинаковыми значениями первичного ключа всегда будут относиться к одной и той же партиции, поэтому можно безопасно избегать слияний между партициями.
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая экспериментальная настройка."}]}]} />
+
+Включает оптимизатор Cascades, основанный на оценке стоимости, для распределённых планов запросов.
+Настройка действует только вместе с `make_distributed_plan = 1`; сама по себе она не влияет на планирование запросов на одном узле.
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding

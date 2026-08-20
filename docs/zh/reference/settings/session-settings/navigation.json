@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "会话设置",
   "pages": [
     "zh/reference/settings/session-settings/additional",
     "zh/reference/settings/session-settings/aggregate",
@@ -223,6 +223,7 @@
     "zh/reference/settings/session-settings/shared-merge",
     "zh/reference/settings/session-settings/short-circuit-function-evaluation",
     "zh/reference/settings/session-settings/show",
+    "zh/reference/settings/session-settings/shrink-over",
     "zh/reference/settings/session-settings/skip-unavailable-shards",
     "zh/reference/settings/session-settings/sleep-in",
     "zh/reference/settings/session-settings/split",

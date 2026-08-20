@@ -199,7 +199,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "이 문서에서는 ClickHouse 클라이언트와 clickhouse-local 터미널 창의 프롬프트를 :)에서 접두사 뒤에 :)가 오는 형식으로 변경하는 방법을 설명합니다.",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [

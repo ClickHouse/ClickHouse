@@ -100,69 +100,6 @@ namespace ErrorCodes
     extern const int SYSTEM_ERROR;
 }
 
-namespace
-{
-
-bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & request)
-{
-    if (request->getOpNum() == Coordination::OpNum::Create
-        || request->getOpNum() == Coordination::OpNum::Create2
-        || request->getOpNum() == Coordination::OpNum::CreateContainer
-        || request->getOpNum() == Coordination::OpNum::CreateTTL
-        || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
-        || request->getOpNum() == Coordination::OpNum::Set)
-    {
-        return true;
-    }
-    if (request->getOpNum() == Coordination::OpNum::Multi)
-    {
-        Coordination::ZooKeeperMultiRequest & multi_req = dynamic_cast<Coordination::ZooKeeperMultiRequest &>(*request);
-        Int64 memory_delta = 0;
-        for (const auto & sub_req : multi_req.requests)
-        {
-            auto sub_zk_request = std::dynamic_pointer_cast<Coordination::ZooKeeperRequest>(sub_req);
-            switch (sub_zk_request->getOpNum())
-            {
-                case Coordination::OpNum::Create:
-                case Coordination::OpNum::Create2:
-                case Coordination::OpNum::CreateContainer:
-                case Coordination::OpNum::CreateTTL:
-                case Coordination::OpNum::CreateIfNotExists: {
-                    Coordination::ZooKeeperCreateRequest & create_req
-                        = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
-                    memory_delta += create_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Set: {
-                    Coordination::ZooKeeperSetRequest & set_req = dynamic_cast<Coordination::ZooKeeperSetRequest &>(*sub_zk_request);
-                    memory_delta += set_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::Remove:
-                case Coordination::OpNum::TryRemove: {
-                    Coordination::ZooKeeperRemoveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                case Coordination::OpNum::RemoveRecursive: {
-                    Coordination::ZooKeeperRemoveRecursiveRequest & remove_req
-                        = dynamic_cast<Coordination::ZooKeeperRemoveRecursiveRequest &>(*sub_zk_request);
-                    memory_delta -= remove_req.bytesSize();
-                    break;
-                }
-                default:
-                    break;
-            }
-        }
-        return memory_delta > 0;
-    }
-
-    return false;
-}
-
-}
-
 KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, KeeperSpecialResponseRouter special_response_router_)
     : responses_queue(std::numeric_limits<size_t>::max())
     , server(server_)

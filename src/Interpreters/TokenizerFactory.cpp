@@ -223,6 +223,7 @@ static void registerTokenizers(TokenizerFactory & factory)
     };
 
     factory.registerTokenizer(ArrayTokenizer::getName(), ITokenizer::Type::Array, array_creator);
+    factory.registerTokenizer("keyword", ITokenizer::Type::Array, array_creator); /// compat with Elasticsearch, OpenSearch, Lucene, Solr
 
     auto sparse_grams_creator = [](const FieldVector & args) -> std::unique_ptr<ITokenizer>
     {

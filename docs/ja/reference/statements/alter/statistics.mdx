@@ -33,9 +33,9 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 2つのカラムに2種類のSTATISTICSを追加する例:
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>
-  STATISTICSは、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブル ([Replicated](/ja/reference/engines/table-engines/mergetree-family/replication) などのバリアントを含む) でのみサポートされています。
+  STATISTICSは、[`*MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) エンジンのテーブル ([レプリケーション](/ja/reference/engines/table-engines/mergetree-family/replication) などのバリアントを含む) でのみサポートされています。
 </Note>

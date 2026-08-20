@@ -550,7 +550,7 @@ ClickHouse поддерживает множество типов данных. 
 Для числовых значений можно проверить минимальное и максимальное значения в наборе данных, чтобы убедиться, что текущая точность соответствует фактическим данным. 
 
 ```sql
--- Найти минимальные/максимальные значения для поля payment_type
+-- Find min/max values for the payment_type field
 SELECT
     min(payment_type),max(payment_type),
     min(passenger_count), max(passenger_count)

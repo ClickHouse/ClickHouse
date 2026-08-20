@@ -1,7 +1,5 @@
 const ServerSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 모듈 스코프 바인딩을 유지하지 않은 상태로
-  // 내보낸 컴포넌트를 평가합니다. 지연(lazy) 상태를 사용하면 생성된 데이터가 해당
-  // 평가 스코프에 유지되면서 마운트당 한 번만 생성됩니다.
+  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을 유지하지 않은 상태로 평가합니다. 지연 상태는 생성된 데이터를 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -356,8 +354,9 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "http_*",
-      count: 3,
+      count: 4,
       settings: [
+        { name: "http_allow_path_requests", path: "/http#http_allow_path_requests", default: "0" },
         { name: "http_handlers", path: "/http#http_handlers" },
         { name: "http_options_response", path: "/http#http_options_response" },
         { name: "http_server_default_response", path: "/http#http_server_default_response", default: '"Ok.\\n"' }
@@ -1531,7 +1530,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     const key = [...path, entry.label].join("/")
     const isOpen = isSearching || expandedGroups.has(key)
     const items = [...entry.settings.map((setting) => ({ type: "setting", value: setting })), ...entry.children.map((child) => ({ type: "group", value: child }))]
-    const countLabel = `설정 ${entry.count}개`
+    const countLabel = `${entry.count} ${entry.count === 1 ? "setting" : "settings"}`
 
     return (
       <div key={key} className="min-w-max">

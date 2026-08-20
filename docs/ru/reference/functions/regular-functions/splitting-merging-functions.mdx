@@ -600,6 +600,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 * `splitByNonAlpha` разбивает строки по неалфавитно-цифровым ASCII-символам (см. также функцию [splitByNonAlpha](/ru/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)).
 * `splitByString(S)` разбивает строки по заданным пользователем строкам-разделителям `S` (см. также функцию [splitByString](/ru/reference/functions/regular-functions/splitting-merging-functions#splitByString)). Разделители можно указать с помощью необязательного параметра, например, `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`. Обратите внимание, что каждая строка может состоять из нескольких символов (`', '` в примере). Если список разделителей явно не задан, по умолчанию используется один пробельный символ `[' ']`.
 * `asciiCJK` разбивает строки на токены, используя правила границ слов Unicode (аналогично UAX #29). ASCII-буквенно-цифровые символы и символы подчёркивания образуют токены с соединителями (`:` для букв, `.` и `'` для символов одного типа). Символы Unicode вне ASCII становятся односимвольными токенами.
+* `chinese` сегментирует китайский текст на слова с помощью словаря и скрытой марковской модели (алгоритм основан на [jieba](https://github.com/fxsjy/jieba); встроенные данные словаря и модели взяты из [cppjieba](https://github.com/yanyiwu/cppjieba)). В отличие от `asciiCJK`, который рассматривает каждый символ вне ASCII как односимвольный токен, `chinese` группирует последовательные китайские символы в слова, что даёт более содержательные токены и повышает качество поиска по китайскому тексту. Необязательный аргумент `granularity` принимает значение `coarse_grained` (по умолчанию) или `fine_grained`; последнее дополнительно перечисляет перекрывающиеся подслова, повышая полноту поиска за счёт увеличения индекса.
 * `icu(locale)` разбивает строки на токены-слова с помощью сегментации слов Unicode (UAX #29) из библиотеки ICU. Для письменностей без пробелов между словами (например, китайской, японской и тайской) ICU применяет сегментацию на основе словаря, поэтому такой текст разбивается на значимые слова. `locale` — это локаль ICU, передаваемая сегментатору (сегментация в основном определяется письменностью и словарём; локаль выбирает специфичные для локали настройки ICU); этот параметр обязателен и передаётся как отдельный аргумент, например `tokens(value, 'icu', 'ja')`.
 * `japanese` разбивает японский текст на слова с помощью морфологического анализатора MeCab. Требует словаря, настроенного в конфигурации сервера (см. документацию по [текстовому индексу](/ru/reference/engines/table-engines/mergetree-family/textindexes)).
 * `ngrams(N)` разбивает строки на `N`-граммы одинаковой длины (см. также функцию [ngrams](/ru/reference/functions/regular-functions/splitting-merging-functions#ngrams)). Длину n-граммы можно указать с помощью необязательного целочисленного параметра от 1 до 8, например, `tokens(value, 'ngrams', 3)`. Если размер n-граммы явно не задан, по умолчанию используется 3.
@@ -617,6 +618,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
@@ -627,13 +629,14 @@ tokens(value, 'array')
 **Аргументы**
 
 * `value` — Входная строка. [`String`](/ru/reference/data-types/string) или [`FixedString`](/ru/reference/data-types/fixedstring)
-* `tokenizer` — Используемый токенизатор. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `icu`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
+* `tokenizer` — Используемый токенизатор. Допустимые аргументы: `splitByNonAlpha`, `splitByString`, `asciiCJK`, `chinese`, `icu`, `japanese`, `ngrams`, `sparseGrams` и `array`. Необязательный параметр; если явно не задан, по умолчанию используется `splitByNonAlpha`. [`const String`](/ru/reference/data-types/string)
 * `locale` — Имеет значение только в том случае, если аргумент `tokenizer` равен `icu`: обязательная локаль, например `'ja'`. [`const String`](/ru/reference/data-types/string)
 * `n` — Имеет значение только в том случае, если аргумент `tokenizer` равен `ngrams`: необязательный параметр, определяющий длину n-грамм. Если явно не задан, по умолчанию используется `3`. [`const UInt8`](/ru/reference/data-types/int-uint)
 * `separators` — Имеет значение только в том случае, если аргумент `tokenizer` равен `split`: необязательный параметр, определяющий строки-разделители. Если явно не задан, по умолчанию используется `[' ']`. [`const Array(String)`](/ru/reference/data-types/array)
 * `min_length` — Имеет значение только в том случае, если аргумент `tokenizer` равен `sparseGrams`: необязательный параметр, определяющий минимальную длину граммы; значение по умолчанию — 3. [`const UInt8`](/ru/reference/data-types/int-uint)
 * `max_length` — Имеет значение только в том случае, если аргумент `tokenizer` равен `sparseGrams`: необязательный параметр, определяющий максимальную длину граммы; значение по умолчанию — 100. [`const UInt8`](/ru/reference/data-types/int-uint)
 * `min_cutoff_length` — Имеет значение только в том случае, если аргумент `tokenizer` равен `sparseGrams`: необязательный параметр, определяющий минимальную длину отсечения. [`const UInt8`](/ru/reference/data-types/int-uint)
+* `granularity` — Имеет значение только в том случае, если аргумент `tokenizer` равен `chinese`: необязательный параметр — `coarse_grained` (по умолчанию) или `fine_grained`, — управляющий детализацией сегментации. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -673,10 +676,17 @@ SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 (например, подстановочные символы в начале и в конце) и применяет правила,
 специфичные для токенизатора, чтобы выделять значимые токены для сопоставления с шаблоном.
 
-Она поддерживает те же наборы аргументов, что и функция `tokens`, за исключением токенизатора `icu`,
-который не поддерживает токенизацию шаблонов LIKE; дополнительные аргументы после `tokenizer`
-интерпретируются в соответствии с выбранным токенизатором (например, `n` для `ngrams`, `separators` для `splitByString`,
-и `min_length` / `max_length` [/ `min_cutoff_length`] для `sparseGrams`).
+Она поддерживает те же наборы аргументов, что и функция `tokens`, но с некоторыми
+исключениями: токенизаторы `chinese` и `icu` здесь не поддерживаются.
+Токенизация шаблонов LIKE имеет смысл только для токенизаторов, которые
+явно поддерживают семантику LIKE (`supportsStringLike()`). Вызов
+`tokensForLikePattern` с неподдерживаемым токенизатором генерирует исключение `BAD_ARGUMENTS`;
+вместо этого используйте обычную функцию `tokens`.
+
+Дополнительные аргументы после `tokenizer` интерпретируются в соответствии с выбранным
+токенизатором (например, `n` для `ngrams`, `separators` для
+`splitByString` и `min_length` / `max_length` [/ `min_cutoff_length`]
+для `sparseGrams`).
 
 Эта функция в первую очередь предназначена для отладки и тестирования
 и используется внутри системы для анализа поведения токенизации шаблонов LIKE.
@@ -697,6 +707,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `min_length` — Актуально только для аргумента `tokenizer` со значением `sparseGrams`: необязательный параметр, определяющий минимальную длину граммы; по умолчанию — 3. [`const UInt8`](/ru/reference/data-types/int-uint)
 * `max_length` — Актуально только для аргумента `tokenizer` со значением `sparseGrams`: необязательный параметр, определяющий максимальную длину граммы; по умолчанию — 100. [`const UInt8`](/ru/reference/data-types/int-uint)
 * `min_cutoff_length` — Актуально только для аргумента `tokenizer` со значением `sparseGrams`: необязательный параметр, определяющий минимальную длину отсечения. [`const UInt8`](/ru/reference/data-types/int-uint)
+* `granularity` — Актуально только для аргумента `tokenizer` со значением `chinese`: необязательный параметр со значением `coarse_grained` (по умолчанию) или `fine_grained`, определяющий степень детализации сегментации. [`const String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 

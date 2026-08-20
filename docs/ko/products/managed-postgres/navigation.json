@@ -1,14 +1,14 @@
 {
   "groups": [
     {
-      "group": "Get started",
+      "group": "시작하기",
       "pages": [
         "ko/products/managed-postgres/overview",
         "ko/products/managed-postgres/quickstart"
       ]
     },
     {
-      "group": "Features",
+      "group": "기능",
       "pages": [
         "ko/products/managed-postgres/connection",
         "ko/products/managed-postgres/settings",
@@ -19,6 +19,7 @@
         "ko/products/managed-postgres/high-availability",
         "ko/products/managed-postgres/read-replicas",
         "ko/products/managed-postgres/backup-and-restore",
+        "ko/products/managed-postgres/branching",
         "ko/products/managed-postgres/extensions",
         {
           "group": "pg_clickhouse",
@@ -34,7 +35,7 @@
       ]
     },
     {
-      "group": "Pricing",
+      "group": "가격",
       "pages": [
         "ko/products/managed-postgres/pricing"
       ]
@@ -46,7 +47,7 @@
       ]
     },
     {
-      "group": "Migrations",
+      "group": "마이그레이션",
       "pages": [
         "ko/products/managed-postgres/migrations/overview",
         "ko/products/managed-postgres/migrations/pg_dump-pg_restore",
@@ -58,7 +59,7 @@
       ]
     },
     {
-      "group": "Monitoring",
+      "group": "모니터링",
       "pages": [
         "ko/products/managed-postgres/monitoring/overview",
         "ko/products/managed-postgres/monitoring/dashboard",

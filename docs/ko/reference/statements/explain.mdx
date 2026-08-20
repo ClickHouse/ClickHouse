@@ -124,6 +124,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
 * `oneline` – 쿼리를 한 줄로 출력합니다. 기본값: `0`.
 * `run_query_tree_passes` – 쿼리 트리를 덤프하기 전에 쿼리 트리 패스를 실행합니다. 기본값: `0`.
 * `query_tree_passes` – `run_query_tree_passes`가 설정된 경우 실행할 패스 수를 지정합니다. `query_tree_passes`를 지정하지 않으면 모든 패스를 실행합니다.
+* `single_record` – 줄마다 하나의 레코드를 반환하는 대신, 재포맷된 쿼리를 여러 줄로 구성된 단일 레코드로 반환합니다. 기본값은 `1`이며(`explain_syntax_single_record` 설정으로 제어됨), `0`으로 설정하면 기존의 줄당 하나의 레코드 출력 형식으로 복원됩니다. 또는 `explain_syntax_single_record = 0`을 설정하거나(전역 또는 쿼리별 `SETTINGS`에서), `compatibility`를 `26.8`보다 이전 버전으로 설정하십시오.
 
 예시:
 

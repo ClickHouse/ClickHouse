@@ -17,7 +17,7 @@ doc_type: 'reference'
 对于网格上的每个点，计算 `delta` 时会考虑指定时间窗口内的样本。
 
 <Warning>
-  此函数为 Experimental，请通过设置 `allow_experimental_ts_to_grid_aggregate_function=true` 启用。
+  此函数为 Experimental，请通过设置 `allow_experimental_time_series_aggregate_functions=true` 启用。
 </Warning>
 
 **语法**
@@ -28,10 +28,10 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **参数**
 
-* `start_timestamp` — 指定网格的起始时间。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`DateTime`](/zh/reference/data-types/datetime)
-* `end_timestamp` — 指定网格的结束时间。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`DateTime`](/zh/reference/data-types/datetime)
-* `grid_step` — 指定网格的步长 (秒) 。[`UInt32`](/zh/reference/data-types/int-uint)
-* `staleness` — 指定纳入计算的样本允许的最大陈旧度 (秒) 。陈旧度窗口为左开右闭区间。[`UInt32`](/zh/reference/data-types/int-uint)
+* `start_timestamp` — 指定网格的起始时间。当 `timestamp` 参数为 `DateTime64` 时，也可以是小数，或包含数字或日期时间文本的字符串。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`String`](/zh/reference/data-types/string)
+* `end_timestamp` — 指定网格的结束时间。当 `timestamp` 参数为 `DateTime64` 时，也可以是小数，或包含数字或日期时间文本的字符串。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`String`](/zh/reference/data-types/string)
+* `grid_step` — 指定网格的步长 (秒) 。当 `timestamp` 参数为 `DateTime64` 时，也可以是小数，或包含数字或类似 &#39;15s&#39; 或 &#39;1m&#39; 的耗时的字符串。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`String`](/zh/reference/data-types/string)
+* `staleness` — 指定纳入计算的样本允许的最大陈旧度 (秒) 。陈旧度窗口为左开右闭区间。当 `timestamp` 参数为 `DateTime64` 时，也可以是小数，或包含数字或类似 &#39;15s&#39; 或 &#39;1m&#39; 的耗时的字符串。[`UInt32`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal*`](/zh/reference/data-types/decimal) 或 [`String`](/zh/reference/data-types/string)
 
 **参数**
 

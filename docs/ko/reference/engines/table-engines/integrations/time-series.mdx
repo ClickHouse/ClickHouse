@@ -104,20 +104,20 @@ INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit,
   ### 외부 컬럼 지정
 </div>
 
-외부 `time_series` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 타입을 재정의할 수 있습니다. ClickHouse는 튜플에서 타임스탬프와 스칼라 타입을 추출해 내부 samples table에 반영합니다:
+외부 `time_series` 컬럼은 `CREATE TABLE` 문에서 명시적으로 나열해 기본 `Array(Tuple(DateTime64(3), Float64))` 유형을 재정의할 수 있습니다. ClickHouse는 튜플에서 타임스탬프와 스칼라 유형을 추출해 내부 samples table에 반영합니다:
 
 ```sql
 CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
 ```
 
-이는 samples `INNER COLUMNS` 절에서 timestamp 및 value 컬럼의 타입을 직접 선언하는 것과 동일합니다:
+이는 samples `INNER COLUMNS` 절에서 timestamp 및 value 컬럼의 유형을 직접 선언하는 것과 동일합니다:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
-두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 타입이 일치해야 합니다.
+두 형식을 모두 같은 `CREATE TABLE` 문에서 사용하는 경우, 선언된 유형이 일치해야 합니다.
 
 <div id="target-tables">
   ## 대상 테이블
@@ -150,7 +150,7 @@ materialized view는 대상 테이블이 하나인 반면
 | `value`     | [x] | `Float64`             | `Float32` 또는 `Float64` | `timestamp`에 연결된 값   |
 
 엔진이 자체적으로 생성하는 컬럼에는 시계열 압축 코덱이 적용됩니다:
-`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(Gorilla, ZSTD(1))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
+`timestamp CODEC(DoubleDelta, ZSTD(1))` 및 `value CODEC(ZSTD(3))`입니다. 거의 단조로운 타임스탬프는 일반 코덱으로는 거의
 압축되지 않으며, 그렇지 않으면 samples 테이블의 디스크상 크기에서 큰 비중을 차지할 수 있습니다.
 [컬럼 타입 조정](#adjusting-column-types)도 참조하십시오.
 
@@ -215,7 +215,7 @@ SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla, ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768
 TAGS INNER COLUMNS
@@ -248,7 +248,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, UUID),
     `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
-    `value` Float64 CODEC(Gorilla(8), ZSTD(1))
+    `value` Float64 CODEC(ZSTD(3))
 )
 ENGINE = MergeTree
 ORDER BY (id, timestamp)
@@ -297,14 +297,14 @@ SETTINGS index_granularity = 8192
 외부 컬럼 목록은 복사되지 않으며 다시 생성됩니다.
 
 <div id="adjusting-column-types">
-  ## 컬럼 타입 조정
+  ## 컬럼 유형 조정
 </div>
 
-`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 타입을 조정할 수 있습니다. 예를 들어, 타임스탬프를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음을 사용합니다:
+`INNER COLUMNS` 절을 사용하면 내부 대상 테이블의 컬럼 유형을 조정할 수 있습니다. 예를 들어, 타임스탬프를 마이크로초 단위로 저장하고 값을 `Float32`로 저장하려면 다음을 사용합니다:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(Gorilla, ZSTD(1)))
+SAMPLES INNER COLUMNS (timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3)))
 ```
 
 내부 컬럼을 코덱 없이 지정하면 기본 코덱이 사용됩니다:

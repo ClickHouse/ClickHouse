@@ -600,6 +600,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 * `splitByNonAlpha` 按非 ASCII 字母数字字符拆分字符串 (另请参见函数 [splitByNonAlpha](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)) 。
 * `splitByString(S)` 按用户定义的分隔符字符串 `S` 拆分字符串 (另请参见函数 [splitByString](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByString)) 。这些分隔符可通过可选参数指定，例如 `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])`。请注意，每个分隔符字符串都可以由多个字符组成 (如示例中的 `', '`) 。如果未显式指定，则默认分隔符列表为单个空格 `[' ']`。
 * `asciiCJK` 使用 Unicode 单词边界规则 (类似于 UAX #29) 将字符串拆分为标记。ASCII 字母数字字符和下划线会与连接符一起组成标记 (字母使用 `:`，同类字符使用 `.` 和 `'`) 。非 ASCII Unicode 字符会成为单字符标记。
+* `chinese` 使用字典和隐马尔可夫模型将中文文本分割为单词 (该算法遵循 [jieba](https://github.com/fxsjy/jieba)；内嵌的字典和模型数据源自 [cppjieba](https://github.com/yanyiwu/cppjieba))。与将每个非 ASCII 字符视为单字符标记的 `asciiCJK` 不同，`chinese` 会将连续的中文字符组合成单词，从而生成更有意义的标记，并提高中文文本的搜索质量。可选的 `granularity` 参数可以是 `coarse_grained` (默认值) 或 `fine_grained`；后者还会枚举重叠的子词，以更大的索引为代价提高召回率。
 * `icu(locale)` 使用 ICU 库的 Unicode 单词分段功能 (UAX #29) 将字符串拆分为单词标记。对于单词之间没有空格的文字系统 (例如中文、日文和泰文)，ICU 会应用基于字典的分段，因此此类文本会被拆分为有意义的单词。`locale` 是传递给分段器的 ICU 区域设置 (分段主要由文字系统和字典驱动；区域设置会选择 ICU 的区域特定定制)；它是必需的，并作为单独的参数传入，例如 `tokens(value, 'icu', 'ja')`。
 * `japanese` 使用 MeCab 形态分析器将日文文本拆分为单词。需要在服务器配置中配置字典 (请参阅[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)文档)。
 * `ngrams(N)` 将字符串拆分为等长的 `N`-gram (另请参见函数 [ngrams](/zh/reference/functions/regular-functions/splitting-merging-functions#ngrams)) 。可通过 1 到 8 之间的可选整数参数指定 ngram 长度，例如 `tokens(value, 'ngrams', 3)`。如果未显式指定，则默认 ngram 长度为 3。
@@ -617,6 +618,7 @@ tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
 tokens(value, 'asciiCJK')
+tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
 tokens(value, 'japanese')
 tokens(value, 'ngrams'[, n])
@@ -627,13 +629,14 @@ tokens(value, 'array')
 **参数**
 
 * `value` — 输入字符串。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring)
-* `tokenizer` — 要使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`icu`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数可选；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
+* `tokenizer` — 要使用的分词器。有效参数包括 `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams` 和 `array`。该参数可选；如果未显式设置，则默认为 `splitByNonAlpha`。[`const String`](/zh/reference/data-types/string)
 * `locale` — 仅当参数 `tokenizer` 为 `icu` 时适用：必填的区域设置，例如 `'ja'`。[`const String`](/zh/reference/data-types/string)
 * `n` — 仅当参数 `tokenizer` 为 `ngrams` 时适用：可选参数，用于定义 ngrams 的长度。如果未显式设置，则默认为 `3`。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `separators` — 仅当参数 `tokenizer` 为 `split` 时适用：可选参数，用于定义分隔符字符串。如果未显式设置，则默认为 `[' ']`。[`const Array(String)`](/zh/reference/data-types/array)
 * `min_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最小 gram 长度，默认为 3。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `max_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最大 gram 长度，默认为 100。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `min_cutoff_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时适用：可选参数，用于定义最小截断长度。[`const UInt8`](/zh/reference/data-types/int-uint)
+* `granularity` — 仅当参数 `tokenizer` 为 `chinese` 时适用：可选参数，可为 `coarse_grained` (默认) 或 `fine_grained`，用于控制分词粒度。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -673,8 +676,13 @@ SELECT tokens('abc def', 'ngrams', 3) AS tokens;
 (例如前导和尾随通配符) ，并应用分词器特有的规则，
 提取用于模式匹配的有效标记。
 
-它支持与 `tokens` 函数相同的参数集，但不包括未实现 LIKE 模式分词的 `icu`
-分词器；`tokenizer` 之后的其他参数会根据所选
+它支持与 `tokens` 函数相同的参数集，但有一些
+例外：此处不支持 `chinese` 和 `icu` 分词器。
+LIKE 模式的分词仅对明确支持 LIKE 语义的分词器
+(`supportsStringLike()`) 有意义。使用不受支持的分词器调用
+`tokensForLikePattern` 会引发 `BAD_ARGUMENTS`；请改用普通的 `tokens`。
+
+`tokenizer` 之后的其他参数会根据所选
 分词器来解释
 (例如，`ngrams` 的 `n`、`splitByString` 的 `separators`，
 以及 `sparseGrams` 的 `min_length` / `max_length` [/ `min_cutoff_length`]) 。
@@ -698,6 +706,7 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `min_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最小 gram 长度，默认为 3。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `max_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最大 gram 长度，默认为 100。[`const UInt8`](/zh/reference/data-types/int-uint)
 * `min_cutoff_length` — 仅当参数 `tokenizer` 为 `sparseGrams` 时才相关：一个可选参数，用于定义最小截断长度。[`const UInt8`](/zh/reference/data-types/int-uint)
+* `granularity` — 仅当参数 `tokenizer` 为 `chinese` 时才相关：一个可选参数，可以是 `coarse_grained` (默认) 或 `fine_grained`，用于控制分词粒度。[`const String`](/zh/reference/data-types/string)
 
 **返回值**
 
