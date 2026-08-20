@@ -7,7 +7,6 @@ transform as the nightly generator, and compares it with the committed region.
 """
 
 import importlib.util
-import os
 import re
 import sys
 from pathlib import Path
