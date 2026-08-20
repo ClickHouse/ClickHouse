@@ -589,9 +589,17 @@ CatalogTables UnifiedUnityCatalog::getTablesForSchema(const std::string & schema
                     const auto current_table_json = tables_object->get(static_cast<int>(i)).extract<Poco::JSON::Object::Ptr>();
                     const auto table_name = current_table_json->get("name").extract<String>();
                     auto qualified_name = schema + "." + table_name;
+
+                    const auto table_format = detectTableFormat(current_table_json);
+                    /// Delta needs `storage_location` from this response, while an Iceberg table
+                    /// gets its location from the Iceberg REST catalog instead.
+                    const bool has_location = table_format == DataLakeTableFormat::ICEBERG
+                        || hasValueAndItsNotNone("storage_location", current_table_json);
+
                     tables.push_back(CatalogTable{
                         .name = qualified_name,
-                        .is_readable = detectTableFormat(current_table_json) != DataLakeTableFormat::UNKNOWN
+                        .is_readable = table_format != DataLakeTableFormat::UNKNOWN
+                            && has_location
                             && hasReadableTableType(current_table_json),
                     });
 
