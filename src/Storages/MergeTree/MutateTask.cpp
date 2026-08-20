@@ -446,7 +446,17 @@ static void splitAndModifyMutationCommands(
                 if (alter_conversions->isColumnRenamed(marker_name))
                     marker_name = alter_conversions->getColumnOldName(marker_name);
                 if (part->getSerializationInfos().isMissingColumn(marker_name))
+                {
+                    if (command.clear)
+                    {
+                        /// CLEAR must reach the interpreter even without physical files so
+                        /// dependent projections and indices are rebuilt from the cleared
+                        /// value (the current DEFAULT), not from the stale frozen marker.
+                        for_interpreter.push_back(command);
+                        mutated_columns.emplace(command.column_name);
+                    }
                     for_file_renames.push_back(command);
+                }
             }
         }
 

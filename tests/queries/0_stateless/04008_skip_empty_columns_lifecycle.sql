@@ -537,3 +537,34 @@ SELECT 'case40_data';
 SELECT * FROM t_skip_empty_case40 ORDER BY key;
 
 DROP TABLE t_skip_empty_case40;
+
+-- ============================================================================
+-- CASE 47: Compact marker-only CLEAR rebuilds projections from the cleared value.
+-- ============================================================================
+DROP TABLE IF EXISTS t_skip_empty_case47;
+
+CREATE TABLE t_skip_empty_case47
+(
+    key UInt64,
+    b UInt64,
+    PROJECTION p (SELECT key, sum(b) GROUP BY key)
+)
+ENGINE = MergeTree
+ORDER BY key
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000,
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         skip_empty_columns_on_insert = 1,
+         serialization_info_version = 'with_missing_columns',
+         enable_block_number_column = 0, enable_block_offset_column = 0;
+
+INSERT INTO t_skip_empty_case47 VALUES (1, 0);
+ALTER TABLE t_skip_empty_case47 MODIFY COLUMN b UInt64 DEFAULT 999;
+ALTER TABLE t_skip_empty_case47 CLEAR COLUMN b;
+
+SELECT 'case47_table';
+SELECT key, b FROM t_skip_empty_case47 ORDER BY key;
+
+SELECT 'case47_projection';
+SELECT key, sum(b) FROM t_skip_empty_case47 GROUP BY key ORDER BY key SETTINGS force_optimize_projection = 1;
+
+DROP TABLE t_skip_empty_case47;

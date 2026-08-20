@@ -55,3 +55,7 @@ case40_columns_in_part
 key
 case40_data
 1	1970-01-01	1970-01-01 00:00:00
+case47_table
+1	999
+case47_projection
+1	999
