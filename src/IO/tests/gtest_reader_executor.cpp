@@ -988,7 +988,10 @@ TEST_F(ReaderExecutorTest, HeldConnectionBridgesOverACommittedPrefix)
         on_connection = tg.get(ProfileEvents::ReaderExecutorLongConnectionBytes);
     };
 
-    ProfileEvents::Count bridged_source = 0, bridged_conn = 0, exact_source = 0, exact_conn = 0;
+    ProfileEvents::Count bridged_source = 0;
+    ProfileEvents::Count bridged_conn = 0;
+    ProfileEvents::Count exact_source = 0;
+    ProfileEvents::Count exact_conn = 0;
     run("bridge.bin", 64 * 1024, bridged_source, bridged_conn);
     run("no_bridge.bin", 0, exact_source, exact_conn);
 
