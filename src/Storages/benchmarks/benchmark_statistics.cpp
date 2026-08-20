@@ -45,9 +45,9 @@ createBenchmarkUniqCombined64(const String &, const DataTypes & argument_types, 
     const WhichDataType which(argument_types[0]);
     /// Keep precision 12 and the UInt64 hash type in sync with StatisticsUniqV2.
     if (which.isUInt64())
-        return std::make_shared<AggregateFunctionUniqCombined<UInt64, 12, UInt64>>(argument_types, parameters);
+        return std::make_shared<AggregateFunctionUniqCombined<UInt64, ColumnVector<UInt64>, 12, UInt64>>(argument_types, parameters);
     if (which.isFloat64())
-        return std::make_shared<AggregateFunctionUniqCombined<Float64, 12, UInt64>>(argument_types, parameters);
+        return std::make_shared<AggregateFunctionUniqCombined<Float64, ColumnVector<Float64>, 12, UInt64>>(argument_types, parameters);
 
     throw Exception(
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
