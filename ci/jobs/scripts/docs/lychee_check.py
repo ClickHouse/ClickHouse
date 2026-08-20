@@ -129,6 +129,35 @@ def collect_snippet_anchors(text, docs_root, page_dir, seen):
 
 def collect_generated_setting_anchors(page_path):
     """Expose client-side setting redirects as fragment aliases to lychee."""
+    page_path = os.fspath(page_path)
+    normalized_path = page_path.replace(os.sep, "/")
+    if normalized_path.endswith("/reference/settings/session-settings.mdx"):
+        # Session settings no longer publish a separate manifest. The generated
+        # legacy-routes script contains the same exact anchor-to-page map.
+        docs_root = os.path.dirname(os.path.dirname(os.path.dirname(page_path)))
+        routes_path = os.path.join(
+            docs_root,
+            "_site/customizations/settings-legacy-routes/session-settings.js",
+        )
+        assignment = (
+            'window.clickhouseSettingsLegacyRoutes['
+            '"/reference/settings/session-settings"] = '
+        )
+        try:
+            with open(routes_path, encoding="utf-8") as f:
+                route_line = next(
+                    (line for line in f if line.startswith(assignment)),
+                    None,
+                )
+            if route_line is None or not route_line.rstrip().endswith(";"):
+                return set()
+            anchor_routes = json.loads(
+                route_line[len(assignment):].rstrip()[:-1]
+            )
+        except (OSError, ValueError, TypeError):
+            return set()
+        return set(anchor_routes) if isinstance(anchor_routes, dict) else set()
+
     manifest = os.path.splitext(page_path)[0] + "/manifest.json"
     if not os.path.isfile(manifest):
         return set()
@@ -283,8 +312,8 @@ def build_tree(docs_root, dest):
                 # Mintlify renders inline but lychee cannot see across the import.
                 anchors = collect_snippet_anchors(raw, docs_root, root, set())
                 # Split settings overview pages redirect their historical
-                # fragments client-side. Their generated manifest is the
-                # canonical alias registry; append its keys only in this
+                # fragments client-side. Their generated routing metadata is
+                # the canonical alias registry; append its keys only in this
                 # throwaway tree so static fragment validation matches runtime.
                 anchors |= collect_generated_setting_anchors(
                     os.path.join(root, name))

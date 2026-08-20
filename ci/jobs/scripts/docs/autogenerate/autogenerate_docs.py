@@ -201,7 +201,7 @@ SETTINGS_GENERATORS = [
     },
     {
         # Run after the split settings families so both `--write` and `--check`
-        # resolve links from their freshly generated manifests.
+        # resolve links from their freshly generated routing metadata.
         "name": "beta-and-experimental",
         "sql": ["beta-settings.sql", "experimental-settings.sql"],
         "outfile": "experimental-beta-settings.md",
@@ -831,9 +831,9 @@ def group_session_settings(
         previous_manifest=None):
     """Group settings without changing the page of an existing setting.
 
-    The committed manifest is the routing contract. New settings first join a
-    matching existing page; only the remaining new settings participate in the
-    prefix-count heuristic which can create another page.
+    The committed routing metadata is the routing contract. New settings first
+    join a matching existing page; only the remaining new settings participate
+    in the prefix-count heuristic which can create another page.
     """
     if not previous_manifest or not previous_manifest.get("anchorRoutes"):
         return _group_session_settings_fresh(sections, base_route)
@@ -1087,8 +1087,63 @@ def _settings_manifest_path(docs_dir, family):
     )
 
 
+def _settings_legacy_routes_path(docs_dir, family_name):
+    return (
+        Path(docs_dir)
+        / "_site/customizations/settings-legacy-routes"
+        / f"{family_name}.js"
+    )
+
+
+def _parse_settings_legacy_routes_script(script, family_name):
+    family = SETTINGS_SPLIT_FAMILIES[family_name]
+    assignment = (
+        "window.clickhouseSettingsLegacyRoutes["
+        + json.dumps(family["base_route"])
+        + "] = "
+    )
+    route_line = next(
+        (line for line in script.splitlines() if line.startswith(assignment)),
+        None,
+    )
+    if route_line is None or not route_line.endswith(";"):
+        raise ValueError(
+            f"invalid generated {family_name} legacy routes script"
+        )
+    return json.loads(route_line[len(assignment):-1])
+
+
+def _settings_anchor_routes_from_legacy_script(docs_dir, family_name):
+    script = _settings_legacy_routes_path(docs_dir, family_name).read_text(
+        encoding="utf-8"
+    )
+    return _parse_settings_legacy_routes_script(script, family_name)
+
+
 def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
     family = SETTINGS_SPLIT_FAMILIES[family_name]
+    if family_name == "session-settings":
+        # The session-settings manifest is intentionally not persisted. Its
+        # exact anchor map already exists in the generated legacy-routes script.
+        routes_path = _settings_legacy_routes_path(
+            docs_dir, family_name
+        ).resolve()
+        matches = [
+            artifact for artifact in artifacts
+            if artifact.path.resolve() == routes_path
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"expected one generated {family_name} legacy routes script, "
+                f"found {len(matches)}"
+            )
+        return {
+            "routes": [],
+            "anchorRoutes": _parse_settings_legacy_routes_script(
+                matches[0].content, family_name
+            ),
+        }
+
     manifest_path = _settings_manifest_path(docs_dir, family).resolve()
     matches = [
         artifact for artifact in artifacts
@@ -1103,7 +1158,7 @@ def _settings_manifest_from_artifacts(family_name, artifacts, docs_dir):
 
 def _rewrite_setting_links_from_manifests(
         markdown, docs_dir, generated_manifests=None):
-    """Resolve settings links against the current generated shard manifests."""
+    """Resolve settings links against current generated routing metadata."""
     if generated_manifests is not None:
         missing = set(SETTINGS_SPLIT_FAMILIES) - set(generated_manifests)
         if missing:
@@ -1114,11 +1169,16 @@ def _rewrite_setting_links_from_manifests(
 
     for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
         if generated_manifests is None:
-            manifest = json.loads(
-                _settings_manifest_path(docs_dir, family).read_text(
-                    encoding="utf-8"
-                )
-            )
+            if family_name == "session-settings":
+                manifest = {
+                    "routes": [],
+                    "anchorRoutes": _settings_anchor_routes_from_legacy_script(
+                        docs_dir, family_name
+                    ),
+                }
+            else:
+                manifest_path = _settings_manifest_path(docs_dir, family)
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         else:
             manifest = generated_manifests[family_name]
         markdown = _rewrite_setting_links(
@@ -1564,6 +1624,14 @@ def split_settings_page(dest, content, docs_dir, family_name):
     previous_manifest = None
     if manifest_path.is_file():
         previous_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    elif family_name == "session-settings":
+        legacy_routes_path = _settings_legacy_routes_path(docs_dir, family_name)
+        if legacy_routes_path.is_file():
+            previous_manifest = {
+                "anchorRoutes": _settings_anchor_routes_from_legacy_script(
+                    docs_dir, family_name
+                ),
+            }
     pages = group_session_settings(
         sections,
         base_route=family["base_route"],
@@ -1599,8 +1667,7 @@ def split_settings_page(dest, content, docs_dir, family_name):
         _settings_explorer_component(pages, family),
     ))
     artifacts.append(GeneratedArtifact(
-        Path(docs_dir) / "_site/customizations/settings-legacy-routes"
-        / f"{family_name}.js",
+        _settings_legacy_routes_path(docs_dir, family_name),
         _settings_legacy_routes_script(anchor_routes, family),
     ))
 
@@ -1655,8 +1722,13 @@ def split_settings_page(dest, content, docs_dir, family_name):
         "routes": routes,
         "pages": sorted(current_routes),
     }
-    artifacts.append(GeneratedArtifact(
-        manifest_path, json.dumps(manifest, indent=2, sort_keys=False) + "\n"))
+    # Session settings persist this routing data only in the legacy-routes
+    # script. Other settings families continue to publish their manifests.
+    if family_name != "session-settings":
+        artifacts.append(GeneratedArtifact(
+            manifest_path,
+            json.dumps(manifest, indent=2, sort_keys=False) + "\n",
+        ))
     return artifacts
 
 
@@ -1919,10 +1991,18 @@ def main(argv=None):
         for family_name, family in SETTINGS_SPLIT_FAMILIES.items():
             if family_name in selected_generator_names:
                 continue
-            manifest_path = _settings_manifest_path(docs_dir, family)
-            generated_settings_manifests[family_name] = json.loads(
-                manifest_path.read_text(encoding="utf-8")
-            )
+            if family_name == "session-settings":
+                generated_settings_manifests[family_name] = {
+                    "routes": [],
+                    "anchorRoutes": _settings_anchor_routes_from_legacy_script(
+                        docs_dir, family_name
+                    ),
+                }
+            else:
+                manifest_path = _settings_manifest_path(docs_dir, family)
+                generated_settings_manifests[family_name] = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                )
     for gen in generators:
         artifacts = generate_artifacts(
             gen,
