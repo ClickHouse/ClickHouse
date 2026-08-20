@@ -14,10 +14,12 @@
     <profile_zk_yaml_sequence>
         <include from_zk="/profile_settings_yaml_sequence" yaml="true" />
     </profile_zk_yaml_sequence>
+    <!-- The <include> is written inline (no surrounding whitespace inside <log_comment>): the
+         whitespace-only text nodes around a child element are preserved, and the value of an
+         element is its concatenated inner text, so a pretty-printed <include> would wrap the
+         substituted value in newlines and indentation. -->
     <profile_zk_yaml_include_in_leaf>
-        <log_comment>
-            <include from_zk="/profile_settings_yaml" yaml="true" />
-        </log_comment>
+        <log_comment><include from_zk="/profile_settings_yaml" yaml="true" /></log_comment>
     </profile_zk_yaml_include_in_leaf>
     <!-- The ZooKeeper node holds a value that is a valid YAML mapping ("abc: def"), but it is
          used as a leaf substitution (not a structural <include>), so it must be kept as literal

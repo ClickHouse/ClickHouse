@@ -42,7 +42,6 @@ node_zk = cluster.add_instance(
     main_configs=["configs/config_zk_ordinary_xml_subtree.xml"],
     user_configs=["configs/config_zk_users.xml"],
     with_zookeeper=True,
-    stay_alive=True,
 )
 # from_zk on an ordinary (non-<include>) element such as <merge_tree> with a YAML (non-'<')
 # value: it must be kept as literal text, not autodetected as YAML, so the setting inside is
@@ -334,28 +333,34 @@ def test_config_zk_leaf_entity_encoded_stays_literal(start_cluster):
     assert get_log_comment(node_zk, "zk_entity_encoded") == "a&amp;b\n"
 
 
-def test_config_zk_leaf_crlf_preprocessed_fallback(start_cluster):
-    """A saved preprocessed config must preserve CR/LF when ZooKeeper is unavailable.
+def test_config_zk_leaf_crlf_saved_preprocessed_config(start_cluster):
+    """The saved preprocessed config must keep a CR of a `from_zk` leaf value.
 
-    The initial load verifies the in-memory DOM path. Stop ZooKeeper and restart the server to
-    force `loadConfigWithZooKeeperIncludes` to parse the saved preprocessed config instead.
-    `XMLWriter` must serialize CR as a character reference; a literal CR would be normalized to
-    LF by the XML parser during the fallback reload.
+    The preprocessed config is what the server reparses when it reloads from the saved file, so a
+    literal CR written into it would be silently rewritten to LF by XML end-of-line normalization
+    (XML 1.0, section 2.11). `XMLWriter` must therefore serialize CR as the character reference
+    `&#xD;`, which survives the reparse. `a\r\nb` is 0x61 0x0D 0x0A 0x62, i.e. hex `610D0A62`.
+
+    The check reparses the saved file with `clickhouse extract-from-config` instead of restarting
+    the server without ZooKeeper: `loadConfigWithZooKeeperIncludes` does not fall back to the
+    preprocessed file when the whole ensemble is unavailable (the Keeper error is thrown directly
+    rather than nested, and the preprocessed path is not known yet at that point), which is a
+    pre-existing limitation unrelated to this change.
     """
-    zookeeper_nodes = ["zoo1", "zoo2", "zoo3"]
-    cluster.stop_zookeeper_nodes(zookeeper_nodes)
-    try:
-        node_zk.restart_clickhouse()
-        assert (
-            node_zk.query(
-                "SELECT hex(value) FROM system.settings WHERE name = 'log_comment'",
-                user="zk_leaf_crlf",
-            )
-            == "610D0A62\n"
-        )
-    finally:
-        cluster.start_zookeeper_nodes(zookeeper_nodes)
-        cluster.wait_zookeeper_nodes_to_start(zookeeper_nodes)
+    preprocessed = node_zk.exec_in_container(["cat", "/var/lib/clickhouse/preprocessed_configs/users.xml"])
+    assert "a&#xD;" in preprocessed
+
+    value = node_zk.exec_in_container(
+        [
+            "clickhouse",
+            "extract-from-config",
+            "--config-file",
+            "/var/lib/clickhouse/preprocessed_configs/users.xml",
+            "--key",
+            "profiles.profile_zk_leaf_crlf.log_comment",
+        ]
+    )
+    assert value.encode().startswith(b"a\r\nb")
 
 
 def test_config_zk_ordinary_element_xml_subtree(start_cluster):

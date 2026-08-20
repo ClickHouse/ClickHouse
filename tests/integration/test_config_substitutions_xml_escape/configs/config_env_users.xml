@@ -56,5 +56,10 @@
           <profile>profile_env_subtree</profile>
           <quota>default</quota>
       </env_subtree>
+      <env_direct_subtree>
+          <password></password>
+          <profile>profile_env_direct_subtree</profile>
+          <quota>default</quota>
+      </env_direct_subtree>
   </users>
 </clickhouse>
