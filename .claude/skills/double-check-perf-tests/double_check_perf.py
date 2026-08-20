@@ -73,6 +73,13 @@ LEFT_HTTP = 8123
 PRECONFIG_TCP = 9101
 PRECONFIG_KEEPER_TCP = 9281
 PRECONFIG_KEEPER_RAFT = 9334
+# The perf drop-in removes <http_port>, <mysql_port>, <postgresql_port> and
+# <tcp_with_proxy_port>, and the command line overrides the TCP and Keeper
+# ports -- but <interserver_http_port> survives from programs/server/config.xml
+# and would otherwise stay on the default 9009 no matter what --port-offset
+# says. A dev server owning 9009 then kills the preconfig server outright
+# ("Listen [::]:9009 failed: Address already in use") before any rerun starts.
+PRECONFIG_INTERSERVER = 9109
 
 RIGHT_TCP = 19001
 RIGHT_KEEPER_TCP = 19181
@@ -90,7 +97,8 @@ RIGHT_HTTP = 18123
 PORT_NAMES = (
     "LEFT_TCP", "LEFT_KEEPER_TCP", "LEFT_KEEPER_RAFT", "LEFT_INTERSERVER",
     "LEFT_HTTP", "PRECONFIG_TCP", "PRECONFIG_KEEPER_TCP",
-    "PRECONFIG_KEEPER_RAFT", "RIGHT_TCP", "RIGHT_KEEPER_TCP",
+    "PRECONFIG_KEEPER_RAFT", "PRECONFIG_INTERSERVER",
+    "RIGHT_TCP", "RIGHT_KEEPER_TCP",
     "RIGHT_KEEPER_RAFT", "RIGHT_INTERSERVER", "RIGHT_HTTP",
 )
 
@@ -1487,6 +1495,7 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
             PRECONFIG_TCP: "preconfig TCP",
             PRECONFIG_KEEPER_TCP: "preconfig keeper",
             PRECONFIG_KEEPER_RAFT: "preconfig keeper raft",
+            PRECONFIG_INTERSERVER: "preconfig interserver",
         })
         coord = work_dir / "coordination0"
         # Keeper state is only ever valid for the data it was written against.
@@ -1508,6 +1517,7 @@ def prepare_dataset(db_source: Path, binary_for_preconfig: Path,
                 "--keeper_server.raft_configuration.server.port",
                 str(PRECONFIG_KEEPER_RAFT),
                 "--zookeeper.node.port", str(PRECONFIG_KEEPER_TCP),
+                "--interserver_http_port", str(PRECONFIG_INTERSERVER),
             ]
             proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT)
         client = binary_for_preconfig.parent / "clickhouse-client"
