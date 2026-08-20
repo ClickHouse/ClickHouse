@@ -170,6 +170,15 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
 
     if (command.type == RENAME_COLUMN)
     {
+        /// Handle a reused rename target: if column A was renamed to B, B was then dropped and C is
+        /// now renamed to B, erase the entry mapping B to A. This runs before the chained lookup
+        /// below, because C can reach B through a chain as well, and it never erases the entry that
+        /// lookup is about to update: that would take renaming a column to the name it already has.
+        std::erase_if(rename_map, [&](const RenamePair & entry)
+        {
+            return entry.rename_to == command.rename_to && dropped_columns.contains(entry.rename_from);
+        });
+
         /// Handle chained renames: if column A was renamed to B, and now B is renamed to C,
         /// update the existing entry to map A directly to C instead of having two separate entries.
         bool chained = false;
@@ -183,28 +192,12 @@ void AlterConversions::addMutationCommand(const MutationCommand & command, const
             }
         }
         if (!chained)
-        {
-            /// The name being taken may still map to a column that an earlier command dropped, as in
-            /// `RENAME a TO b, DROP b, RENAME c TO b`. That mapping is obsolete: the dropped column is
-            /// no longer reachable under any name, while `b` now means `c`. Keeping both entries would
-            /// leave the lookup by `b` returning whichever of them comes first.
-            std::erase_if(rename_map, [&](const RenamePair & entry)
-            {
-                return entry.rename_to == command.rename_to && dropped_columns.contains(entry.rename_from);
-            });
-
             rename_map.emplace_back(RenamePair{command.rename_to, command.column_name});
-        }
     }
     else if (command.type == DROP_COLUMN)
     {
-        /// Record the name the column has in the part, not the one the command used, because every
-        /// consumer of `isColumnDropped` asks about a part column. The two differ once renames are in
-        /// play, and only the position of the drop among them tells the cases apart: after
-        /// `RENAME a TO b, DROP b` the part's `a` is what got dropped, while after
-        /// `DROP b, RENAME a TO b` the drop hit a different column that merely had that name and the
-        /// part's `a` is still live. Commands arrive in the order they were issued, so the renames
-        /// recorded so far are exactly those that precede this drop.
+        /// Handle a drop after a rename: if column A was renamed to B and B is now dropped, record the
+        /// drop under A
         auto name_in_part = command.column_name;
         for (const auto & entry : rename_map)
         {

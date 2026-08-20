@@ -12,3 +12,5 @@ dropped, then the name reused by a rename
 1000	100	1099
 the dropped name taken over by another rename
 1000	5000	5999
+the dropped name taken over by a chained rename
+1000	5000	5999

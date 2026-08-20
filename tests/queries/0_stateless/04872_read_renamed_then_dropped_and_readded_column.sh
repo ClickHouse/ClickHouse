@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
+# Tags: no-parallel, zookeeper
 # Tag no-parallel: uses the server-global failpoint mt_select_parts_to_mutate_no_free_threads
+# Tag zookeeper: the last case needs ReplicatedMergeTree to keep several ALTERs pending at once
 
 # A column that was renamed, dropped and then added again in one ALTER must read as its new default,
 # not as the data of the column that was dropped.
@@ -25,6 +26,8 @@ cleanup() {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_rename_only" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_drop_then_reuse_name" 2>/dev/null
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_reuse_dropped_target" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "SYSTEM START MERGES t_chained_reuse_dropped_target" 2>/dev/null
+    $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_chained_reuse_dropped_target SYNC" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -152,4 +155,42 @@ ALTER TABLE t_reuse_dropped_target RENAME COLUMN a TO b, DROP COLUMN b, RENAME C
 SELECT count(), min(b), max(b) FROM t_reuse_dropped_target;
 
 SYSTEM DISABLE FAILPOINT mt_select_parts_to_mutate_no_free_threads;
+"
+
+echo 'the dropped name taken over by a chained rename'
+
+# Same as above, except that `c` reaches `b` through `d`, so the last rename is applied to the existing
+# `d -> c` entry instead of appending a new one. Retiring the obsolete mapping only on the appending
+# path would miss it, leaving `b -> a` and `b -> c` side by side again.
+#
+# This needs ReplicatedMergeTree: a single ALTER rejects transitive renames, and on MergeTree a
+# metadata ALTER always waits for the previous mutation, so two of them can never both be pending. The
+# ALTERs run with the partition detached, then the part carrying the old column names is attached to a
+# table whose merges are stopped, so the mutations stay unapplied while it is read.
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE IF EXISTS t_chained_reuse_dropped_target SYNC;
+
+CREATE TABLE t_chained_reuse_dropped_target (a UInt64, c UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_chained_reuse_dropped_target', 'r1')
+ORDER BY tuple() PARTITION BY tuple()
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+
+INSERT INTO t_chained_reuse_dropped_target SELECT number + 100, number + 5000 FROM numbers(1000);
+
+ALTER TABLE t_chained_reuse_dropped_target DETACH PARTITION tuple();
+
+SET alter_sync = 1;
+SET mutations_sync = 0;
+ALTER TABLE t_chained_reuse_dropped_target RENAME COLUMN a TO b;
+ALTER TABLE t_chained_reuse_dropped_target DROP COLUMN b;
+ALTER TABLE t_chained_reuse_dropped_target RENAME COLUMN c TO d;
+ALTER TABLE t_chained_reuse_dropped_target RENAME COLUMN d TO b;
+
+SYSTEM STOP MERGES t_chained_reuse_dropped_target;
+ALTER TABLE t_chained_reuse_dropped_target ATTACH PARTITION tuple();
+SYSTEM SYNC REPLICA t_chained_reuse_dropped_target;
+
+SELECT count(), min(b), max(b) FROM t_chained_reuse_dropped_target;
+
+SYSTEM START MERGES t_chained_reuse_dropped_target;
 "
