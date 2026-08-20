@@ -260,7 +260,10 @@ void insertBlockSync(ASTPtr insert_query, Block block, const ContextMutablePtr &
 void insertBlockAsync(ASTPtr insert_query, Block block, AsynchronousInsertQueue & queue, const ContextMutablePtr & context)
 {
     /// Deduplication on flush is not needed here: a flushed block combines data from multiple
-    /// remote-write requests, and the inner tables of the TimeSeries engine handle duplicates themselves.
+    /// remote-write requests (so its hash is different on every retry anyway), and the inner tables
+    /// of the TimeSeries engine handle duplicates themselves.
+    /// `deduplicate_insert` overrides `async_insert_deduplicate`, so both must be disabled.
+    context->setSetting("deduplicate_insert", String{"disable"});
     context->setSetting("async_insert_deduplicate", false);
 
     auto result = queue.pushQueryWithBlock(std::move(insert_query), std::move(block), context);
