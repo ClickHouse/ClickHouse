@@ -96,7 +96,7 @@ namespace
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
-                 /* drop_metric_name = */ false,
+                 /* drop_metric_name = */ true,
              }},
 
             {"deriv",

@@ -275,6 +275,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
+**Note**: the scalar arguments of `quantile_over_time` and `predict_linear` have the same limitation: on a range vector with a fixed `@` timestamp, an expression that varies per step, such as `quantile_over_time(time(), m[5m] @ 1700000000)` or `predict_linear(m[5m] @ 1700000000, time())`, is rejected with a `NOT_IMPLEMENTED` exception.
+
 ### Operators {#operators}
 
 Arithmetic (`+`, `-`, `*`, `/`, `%`, `^`, `atan2`) and comparison (`==`, `!=`, `<`, `>`, `<=`, `>=` with optional `bool`) binary operators, with `on()`/`ignoring()` and `group_left()`/`group_right()` modifiers.
@@ -351,6 +353,8 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Other | `time`, `pi` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
+
+**Note**: the scalar arguments of `quantile_over_time` and `predict_linear` have the same limitation: on a range vector with a fixed `@` timestamp, an expression that varies per step, such as `quantile_over_time(time(), m[5m] @ 1700000000)` or `predict_linear(m[5m] @ 1700000000, time())`, is rejected with a `NOT_IMPLEMENTED` exception.
 
 ### Operators {#operators}
 

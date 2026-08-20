@@ -1,8 +1,8 @@
 -- present_over_time(up[3m]): 1 for every series with a sample in the range window.
 -- host1/host2/host3 have samples in (1699999820, 1700000000]; host4's only sample is older, so it is dropped.
-[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
-[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	1
-[('__name__','up'),('instance','host3')]	2023-11-14 22:13:20.000	1
+[('instance','host1')]	2023-11-14 22:13:20.000	1
+[('instance','host2')]	2023-11-14 22:13:20.000	1
+[('instance','host3')]	2023-11-14 22:13:20.000	1
 -- absent_over_time(up[3m]): the metric has samples in the range, so the result is empty.
 -- absent_over_time(nonexistent_metric[5m]): no samples anywhere, so a single synthetic series
 -- with value 1 is emitted (with the labels inferred from the selector: none here).

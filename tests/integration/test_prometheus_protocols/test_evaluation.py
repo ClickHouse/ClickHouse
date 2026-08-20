@@ -1066,6 +1066,63 @@ def test_function_over_time():
     )
 
 
+def test_phase3_functions_over_time():
+    # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
+    do_query_test(
+        "present_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "1"], [180, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time: the first sample is at 110, so only the first grid point (105) has an
+    # empty window (60, 105] and yields the synthetic 1.
+    do_query_test(
+        "absent_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',1)]",
+            ]
+        ],
+    )
+
+    # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
+    # at 165 it holds {3,4} -> 3.5.
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing.
+    do_query_test(
+        "predict_linear(test[25s], 30)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "10"], [150, "8"], [210, "12"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+    )
+
+
 def test_literals():
     timestamp = 250
     do_query_test(
