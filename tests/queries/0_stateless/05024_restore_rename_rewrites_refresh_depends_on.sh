@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, atomic-database
-# no-fasttest: needs the `backups` disk, which the fast-test config does not define.
+# Tags: no-replicated-database, atomic-database
 # no-replicated-database: creates its own databases and restores one under a new name.
 # atomic-database: refreshable materialized views require an Atomic database.
 
@@ -51,7 +50,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$OUT\`.p REFRESH EVERY 1 YEA
     (a UInt64) ENGINE = MergeTree ORDER BY a AS SELECT 1 AS a"
 
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$SRC\`"
-${CLICKHOUSE_CLIENT} --multiquery -q "
+${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE \`$SRC\`.raw (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE TABLE \`$SRC\`.dst (a UInt64) ENGINE = MergeTree ORDER BY a;
     CREATE MATERIALIZED VIEW \`$SRC\`.parent REFRESH EVERY 1 YEAR
