@@ -23,10 +23,6 @@ FUNCTIONAL_TESTS_JOBS = [
     job
     for job in JobConfigs.functional_tests_jobs
     if not any(sanitizer in job.name for sanitizer in SANITIZERS)
-    # All existing Wasm UDF functional tests are `no-msan`, so selected test
-    # discovery cannot provide a representative WasmEdge smoke test. Keep the
-    # established full-suite MSan/WasmEdge lanes until that coverage exists.
-    or "amd_msan, WasmEdge" in job.name
 ] + JobConfigs.stateless_tests_selected_pr_jobs
 
 ALL_FUNCTIONAL_TESTS = [job.name for job in FUNCTIONAL_TESTS_JOBS]
