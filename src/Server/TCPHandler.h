@@ -199,6 +199,7 @@ private:
     TCPServer & tcp_server;
     bool parse_proxy_protocol = false;
     LoggerPtr log;
+    bool is_from_introspection_port = false;
 
     String forwarded_for;
     String certificate;

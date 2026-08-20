@@ -65,7 +65,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
-#include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 #if USE_SSL
@@ -95,12 +94,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool allow_experimental_codecs;
-    extern const SettingsBool allow_suspicious_codecs;
     extern const SettingsBool async_insert;
     extern const SettingsUInt64 async_insert_max_data_size;
     extern const SettingsBool calculate_text_stack_trace;
-    extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
     extern const SettingsBool discard_query_data;
     extern const SettingsUInt64 idle_connection_timeout;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
@@ -353,6 +349,7 @@ TCPHandler::TCPHandler(
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("TCPHandler"))
+    , is_from_introspection_port(stack_data.is_introspection)
     , forwarded_for(stack_data.forwarded_for)
     , certificate(stack_data.certificate)
     , read_event(read_event_)
@@ -546,7 +543,7 @@ void TCPHandler::runImpl()
             Stopwatch idle_time;
             UInt64 timeout_us = std::min(poll_interval, idle_connection_timeout) * 1000000;
 
-            while (tcp_server.isOpen() && !server.isCancelled() && !in->poll(timeout_us))
+            while (tcp_server.isOpen() && !in->poll(timeout_us))
             {
                 const auto elapsed_seconds = idle_time.elapsedSeconds();
 
@@ -564,10 +561,10 @@ void TCPHandler::runImpl()
             }
 
             /// If we need to shut down, or client disconnects.
-            if (!tcp_server.isOpen() || server.isCancelled() || in->isCanceled() || in->eof())
+            if (!tcp_server.isOpen() || in->isCanceled() || in->eof())
             {
-                LOG_TEST(log, "Closing connection (open: {}, cancelled: {}, in_canceled: {}, eof: {})",
-                    tcp_server.isOpen(), server.isCancelled(), in->isCanceled(),
+                LOG_TEST(log, "Closing connection (open: {}, in_canceled: {}, eof: {})",
+                    tcp_server.isOpen(), in->isCanceled(),
                     !in->isCanceled() && in->eof());
                 return;
             }
@@ -1275,7 +1272,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
 
     Stopwatch watch;
 
-    while (!server.isCancelled())
+    while (tcp_server.isOpen() || !server.isCancelled())
     {
         while (!in->poll(timeout_us))
         {
@@ -1336,7 +1333,7 @@ bool TCPHandler::receivePacketsExpectData(QueryState & state)
         }
     }
 
-    chassert(server.isCancelled());
+    chassert(!tcp_server.isOpen() && server.isCancelled());
     throw Exception(ErrorCodes::ABORTED, "Server shutdown is called");
 }
 
@@ -2701,6 +2698,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// when the upstream is too old to speak features added in newer protocol versions and degrade
     /// gracefully instead of triggering rolling-upgrade incompatibilities.
     client_info.connection_parallel_replicas_protocol_version = client_parallel_replicas_protocol_version;
+    client_info.is_from_introspection_port = is_from_introspection_port;
 
     state->run_query_in_background = passed_settings[Setting::run_query_in_background].changed
         ? passed_settings[Setting::run_query_in_background].value
@@ -3007,11 +3005,7 @@ CompressionCodecPtr TCPHandler::getCompressionCodec(const Settings & query_setti
 
     if (compression == Protocol::Compression::Enable)
     {
-        CompressionCodecFactory::instance().validateCodec(
-            method,
-            level,
-            !query_settings[Setting::allow_suspicious_codecs],
-            query_settings[Setting::allow_experimental_codecs]);
+        CompressionCodecFactory::instance().validateCodec(method, level, CodecValidationSettings(query_settings));
 
         return CompressionCodecFactory::instance().get(method, level);
     }

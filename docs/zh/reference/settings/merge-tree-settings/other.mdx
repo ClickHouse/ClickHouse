@@ -553,6 +553,25 @@ below the threshold)` 成比例增长。
 * `partition_key_only` — 仅跟踪分区键列。
 * `with_block_number_offset` — 分区键列，以及持久化的 `_block_number` 和 `_block_offset` 虚拟列。启用基于这些列的分片级裁剪。
 
+<div id="patch_parts_version">
+  ## patch_parts_version
+</div>
+
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "新增设置，用于控制轻量级更新生成的补丁分区片段在磁盘上的序列化版本。旧版兼容模式会继续写入 v1 补丁，混合版本集群中的所有副本均可读取。"}]}]} />
+
+轻量级 UPDATE 查询生成的补丁分区片段在磁盘上的序列化版本。
+
+可能的值：
+
+* `v1` - 旧版格式：补丁分区片段包含 `_part, _part_offset` 系统列，并按
+  `(_part, _part_offset)` 排序。在最坏情况下，应用时的内存使用量以整个补丁分区片段的大小为上限。
+* `v2` - 补丁分区片段包含主表的排序键列，并按
+  `(sorting_key_columns..., _block_number, _block_offset)` 排序。应用时的内存使用量以最大的一段相同排序键连续数据为上限。
+
+无论此设置为何值，磁盘上的旧格式补丁仍可读取。
+
 <div id="propagate_types_serialization_versions_to_nested_types">
   ## propagate_types_serialization_versions_to_nested_types
 </div>
