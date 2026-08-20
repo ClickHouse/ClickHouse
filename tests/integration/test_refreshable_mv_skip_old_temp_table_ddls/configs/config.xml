@@ -1,4 +1,6 @@
 <clickhouse>
+    <!-- For some reason the test becomes flaky with the default (changed) value -->
+    <s3_retry_attempts>100</s3_retry_attempts>
     <remote_servers>
         <default>
             <shard>

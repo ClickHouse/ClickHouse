@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'прямая структура словаря'
+sidebarTitle: 'direct'
+description: 'Структура словаря, которая напрямую обращается к источнику без кэширования.'
+doc_type: 'reference'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+Словарь не хранится в памяти и при обработке запроса обращается напрямую к источнику.
+
+Ключ словаря имеет тип [UInt64](/ru/reference/data-types/int-uint).
+
+Поддерживаются все типы [источников](/ru/reference/statements/create/dictionary/sources/overview#dictionary-sources), кроме локальных файлов.
+
+Пример конфигурации:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+Этот тип хранилища используется с составными [ключами](/ru/reference/statements/create/dictionary/attributes#composite-key). Аналогичен `direct`.

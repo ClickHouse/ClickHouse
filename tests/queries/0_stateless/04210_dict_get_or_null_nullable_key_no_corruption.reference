@@ -1,0 +1,37 @@
+subquery + arrayJoin
+0	\N
+1	one
+2	two
+Memory engine
+0	\N
+1	one
+2	two
+Memory engine with ifNull wrapper
+0	\N
+1	one
+2	two
+MergeTree engine
+0	\N
+1	one
+2	two
+MergeTree engine with ifNull wrapper
+0	\N
+1	one
+2	two
+aggregate preserves x
+3	2
+original reporter shape — JSON column preserved
+{"ProviderId":0,"Option":"All"}	\N
+multi-attr dict, attr a, nullable key
+0	\N
+1	one
+2	two
+multi-attr dict, attr b, nullable key
+0	\N
+1	1
+2	2
+multi-attr dict, tuple-attr access, non-nullable key
+0	(NULL,NULL)
+1	('one',1)
+2	('two',2)
+multi-attr dict, tuple-attr access, nullable key (unsupported)

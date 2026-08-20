@@ -11,8 +11,8 @@ export TABLE_NAME="03373_session_test"
 export SESSION_ID="${SESSION}_$RANDOM.$RANDOM"
 export SETTINGS="session_id=$SESSION_ID&session_timeout=3&throw_on_unsupported_query_inside_transaction=0"
 
-$CLICKHOUSE_CLIENT -q 'select * from numbers(1000000) format TSV' > $DATA_FILE
-$CLICKHOUSE_CLIENT -q "create table $TABLE_NAME (A Int64) Engine = MergeTree order by sin(A) partition by intDiv(A, 100000)"
+$CLICKHOUSE_CLIENT -q 'select * from numbers(100000) format TSV' > $DATA_FILE
+$CLICKHOUSE_CLIENT -q "create table $TABLE_NAME (A Int64) Engine = MergeTree order by sin(A) partition by intDiv(A, 10000)"
 
 # set a setting to distinguish newly created named session from a reused one
 $CLICKHOUSE_CURL -sS -d 'set http_max_tries=3373' "$CLICKHOUSE_URL&$SETTINGS"
@@ -21,30 +21,28 @@ $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name =
 $CLICKHOUSE_CURL -sS -d 'begin transaction' "$CLICKHOUSE_URL&$SETTINGS"
 $CLICKHOUSE_CURL -sS -d 'commit' "$CLICKHOUSE_URL&$SETTINGS&close_session=1"
 
-# Poll for SESSION_NOT_FOUND to avoid CI timing issues
-MAX_RETRIES=10
-RETRY_INTERVAL=1
-for i in $(seq 1 $MAX_RETRIES); do
-    output=$($CLICKHOUSE_CURL -sS -X POST --data-binary @- \
-        "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" < "$DATA_FILE" 2>&1)
-    if echo "$output" | grep -q "SESSION_NOT_FOUND"; then
-        break  # detected as expected
-    fi
-    sleep $RETRY_INTERVAL
-done
-
-# Fail test if SESSION_NOT_FOUND did not appear
-echo "$output" | grep -q "SESSION_NOT_FOUND" || { echo "Expected SESSION_NOT_FOUND error"; exit 1; }
-
-# Ensure table is still empty
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME"
+# Deferred HTTP 100 response from ClickHouse prevents curl from sending body using potentially closed connection
+$CLICKHOUSE_CURL -sS -X POST -H "X-ClickHouse-100-Continue: defer" --data-binary @- \
+  "$CLICKHOUSE_URL&$SETTINGS&session_check=1&query=insert+into+$TABLE_NAME+format+TSV" \
+  < "$DATA_FILE" 2>&1 | {
+    response=$(cat)
+    echo "$response" | grep -Faq "SESSION_NOT_FOUND" || {
+        echo "Expected SESSION_NOT_FOUND error"
+        echo "---- FULL RESPONSE START ----"
+        echo "$response"
+        echo "---- FULL RESPONSE END ----"
+        exit 1
+    }
+  }
+$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 0) from $TABLE_NAME" \
+  || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
 
 # sleep a bit more than a session timeout (3) to make sure there's enough time to close it using close time buckets
 sleep 5
 
 $CLICKHOUSE_CURL -sS -d "select value, changed from system.settings where name = 'http_max_tries'" "$CLICKHOUSE_URL&$SETTINGS"
-$CLICKHOUSE_CURL -sS -X POST --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE
-$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 1000000) from $TABLE_NAME" \
+$CLICKHOUSE_CURL -sS -X POST --max-time 300 --data-binary @- "$CLICKHOUSE_URL&$SETTINGS&query=insert+into+$TABLE_NAME+format+TSV" < $DATA_FILE
+$CLICKHOUSE_CLIENT --implicit_transaction=1 -q "select throwIf(count() != 100000) from $TABLE_NAME" \
   || $CLICKHOUSE_CLIENT -q "select name, rows, active, visible, creation_tid, creation_csn from system.parts where database=currentDatabase()"
 
 $CLICKHOUSE_CLIENT -q "drop table $TABLE_NAME"

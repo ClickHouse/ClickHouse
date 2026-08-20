@@ -11,7 +11,7 @@ namespace DB
 {
 
 InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, QueryTreeNodePtr interpolate_expression_)
-    : IQueryTreeNode(children_size)
+    : ITableExpressionNode(children_size)
 {
     if (expression_)
         expression_name = expression_->getIdentifier().getFullName();
@@ -51,7 +51,7 @@ QueryTreeNodePtr InterpolateNode::cloneImpl() const
 
 ASTPtr InterpolateNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTInterpolateElement>();
+    auto result = make_intrusive<ASTInterpolateElement>();
 
     /// Interpolate parser supports only identifier node.
     /// In case of alias, identifier is replaced to expression, which can't be parsed.

@@ -1,0 +1,31 @@
+# Source files for LLVMInstrumentation
+set(LLVMINSTRUMENTATION_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/AddressSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/AllocToken.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/BlockCoverageInference.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/BoundsChecking.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/CGProfile.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/ControlHeightReduction.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/DataFlowSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/GCOVProfiling.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/HWAddressSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/IndirectCallPromotion.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/InstrProfiling.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/KCFI.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/LowerAllowCheckPass.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/MemorySanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/MemProfInstrumentation.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/MemProfUse.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/NumericalStabilitySanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/PGOCtxProfFlattening.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/PGOCtxProfLowering.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/PGOForceFunctionAttrs.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/PGOInstrumentation.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/PGOMemOPSizeOpt.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/RealtimeSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/SanitizerBinaryMetadata.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/SanitizerCoverage.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/ThreadSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/TypeSanitizer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Transforms/Instrumentation/ValueProfileCollector.cpp
+)

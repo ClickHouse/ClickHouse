@@ -88,6 +88,7 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
         sort_description,
         /*max_block_size_rows=*/ 8192,
         /*max_block_size_bytes=*/ 0,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
         SortingQueueStrategy::Batch,
         /*limit=*/ 0,
         /*always_read_till_end=*/ false,
@@ -103,13 +104,15 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
     size_t total_rows = 0;
     Block block1;
     Block block2;
+    Block block3;
     executor.pull(block1);
     executor.pull(block2);
+    executor.pull(block3);
 
     Block tmp_block;
     ASSERT_FALSE(executor.pull(tmp_block));
 
-    for (const auto & block : {block1, block2})
+    for (const auto & block : {block1, block2, block3})
         total_rows += block.rows();
 
     /**
@@ -118,9 +121,13 @@ TEST(MergingSortedTest, SimpleBlockSizeTest)
       */
     EXPECT_EQ(block1.rows(), 8);
     /**
-      * Second block consists of 8 rows from block2 + 20 rows from block3
+      * Second block consists of 8 rows from block2 + 6 rows from block3.
       */
-    EXPECT_EQ(block2.rows(), 28);
+    EXPECT_EQ(block2.rows(), 14);
+    /**
+      * Third block consists of the remaining 14 rows from block3.
+      */
+    EXPECT_EQ(block3.rows(), 14);
 
     EXPECT_EQ(total_rows, 5 + 10 + 21);
 }
@@ -140,6 +147,7 @@ TEST(MergingSortedTest, MoreInterestingBlockSizes)
         sort_description,
         /*max_block_size_rows=*/ 8192,
         /*max_block_size_bytes=*/ 0,
+        /*max_dynamic_subcolumns=*/ std::nullopt,
         SortingQueueStrategy::Batch,
         /*limit=*/ 0,
         /*always_read_till_end=*/ false,

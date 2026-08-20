@@ -18,10 +18,12 @@ NullDictionarySource::NullDictionarySource(const NullDictionarySource & other) :
 {
 }
 
-QueryPipeline NullDictionarySource::loadAll()
+BlockIO NullDictionarySource::loadAll()
 {
     LOG_TRACE(getLogger("NullDictionarySource"), "loadAll {}", toString());
-    return QueryPipeline(std::make_shared<NullSource>(sample_block));
+    BlockIO io;
+    io.pipeline = QueryPipeline(std::make_shared<NullSource>(sample_block));
+    return io;
 }
 
 
@@ -31,6 +33,7 @@ std::string NullDictionarySource::toString() const
 }
 
 
+void registerDictionarySourceNull(DictionarySourceFactory & factory);
 void registerDictionarySourceNull(DictionarySourceFactory & factory)
 {
     auto create_table_source
@@ -43,7 +46,10 @@ void registerDictionarySourceNull(DictionarySourceFactory & factory)
               const std::string & /* default_database */,
               bool /* created_from_ddl*/) -> DictionarySourcePtr { return std::make_unique<NullDictionarySource>(std::make_shared<const Block>(sample_block)); };
 
-    factory.registerSource("null", create_table_source);
+    factory.registerSource("null", create_table_source, Documentation{
+        .description = "A source that returns no data. Used internally as a placeholder and for testing.",
+        .syntax = "SOURCE(NULL())",
+        .related = {}});
 }
 
 }

@@ -13,8 +13,8 @@ class Block;
 class MergedData
 {
 public:
-    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_)
-        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(bool use_average_block_size_, UInt64 max_block_size_, UInt64 max_block_size_bytes_, std::optional<size_t> max_dynamic_subcolumns_)
+        : max_block_size(max_block_size_), max_block_size_bytes(max_block_size_bytes_), use_average_block_size(use_average_block_size_), max_dynamic_subcolumns(max_dynamic_subcolumns_)
     {
     }
 
@@ -32,6 +32,12 @@ public:
     Chunk pull();
 
     bool hasEnoughRows() const;
+
+    size_t rowsToInsertBeforeFlush(
+        const ColumnRawPtrs & raw_columns,
+        size_t start_index,
+        size_t max_rows,
+        size_t block_size) const;
 
     UInt64 mergedRows() const { return merged_rows; }
     UInt64 totalMergedRows() const { return total_merged_rows; }
@@ -55,6 +61,7 @@ protected:
     const UInt64 max_block_size = 0;
     const UInt64 max_block_size_bytes = 0;
     const bool use_average_block_size = false;
+    const std::optional<size_t> max_dynamic_subcolumns;
 
     bool need_flush = false;
 };

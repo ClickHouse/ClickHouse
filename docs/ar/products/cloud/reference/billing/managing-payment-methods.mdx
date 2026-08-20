@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'إدارة طرق الدفع'
+slug: /manage/manage/billing/managing-payment-methods
+title: 'إدارة طرق الدفع'
+description: 'إدارة اشتراكات Marketplace وإضافة بطاقة ائتمان احتياطية'
+keywords: ['الفوترة']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+توضّح هذه الوثيقة كيفية إدارة وتحديث طريقة فوترة مؤسستك في ClickHouse Cloud، بما في ذلك التبديل بين بطاقة الائتمان والفوترة عبر Marketplace، وإضافة بطاقة ائتمان احتياطية، ومشاركة اشتراك Marketplace بين عدة مؤسسات.
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* يجب أن يكون لديك دور Admin أو Billing في المؤسسة لتحديث طرق الدفع.
+* اشتراكات Marketplace المتاحة لك هي الاشتراكات النشطة في مؤسسات أخرى لديك فيها دور Admin أو Billing.
+* لمشاركة اشتراك Marketplace من مؤسسة أخرى، يجب أن يكون لديك دور Admin أو Billing في كلٍّ من المؤسسة الحالية والمؤسسة المالكة لاشتراك Marketplace.
+* يجب أن تكون جميع الخدمات في المؤسسة التي تريد فوترة رسومها عبر اشتراك Marketplace على مزود السحابة نفسه الخاص بـ Marketplace ‏(AWS أو GCP أو Azure).
+
+<Note>
+  لا يمكنك مشاركة البطاقة الائتمانية الخاصة بمؤسسة أخرى.
+  إذا كانت طريقة الدفع الحالية بطاقة ائتمان وأردت تحديثها، فيجب عليك إدخال بيانات بطاقة جديدة.
+</Note>
+
+<div id="add-update-cc-payment-method">
+  ## إضافة أو تحديث طريقة دفع ببطاقة ائتمان
+</div>
+
+إذا كانت مؤسستك تُحاسَب حاليًا باستخدام بطاقة ائتمان، فيمكنك تحديث بيانات بطاقتك من صفحة الفوترة.
+
+<div id="steps-add-update">
+  ### خطوات إضافة بطاقتك الائتمانية أو تحديثها
+</div>
+
+1. انتقل إلى **Billing** في وحدة تحكم ClickHouse Cloud.
+2. إذا كنت ترغب في إضافة بطاقة ائتمانية، فانقر على زر **إضافة طريقة الدفع** أعلى الصفحة.
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="إضافة طريقة الدفع" size="lg" />
+
+3. إذا كنت ترغب في تعديل بطاقتك الائتمانية، فانقر على زر **تعديل بطاقتك الائتمانية** أعلى الصفحة.
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="تعديل بطاقتك الائتمانية" size="lg" />
+
+4. في كلتا الحالتين، اتبع التعليمات لإضافة تفاصيل عنوان الفوترة الخاص ببطاقتك الائتمانية أو تحديثها.
+
+<div id="configure-billing-to-existing-mp-sub">
+  ## اضبط فوترة مؤسسة لاستخدام اشتراك marketplace حالي
+</div>
+
+إذا كانت لديك عدة مؤسسات، فيمكنك:
+
+* تحويل فوترة مؤسسة من البطاقة الائتمانية إلى اشتراك marketplace مفعّل بالفعل في إحدى مؤسساتك الأخرى.
+* تغيير اشتراك marketplace الحالي الخاص بمؤسسة إلى اشتراك تستخدمه مؤسسة أخرى.
+
+<div id="steps-switch-org-already-active">
+  ### خطوات تحويل فوترة مؤسسة من بطاقة ائتمان إلى اشتراك في Marketplace مُفعّل بالفعل في إحدى مؤسساتك الأخرى
+</div>
+
+1. انتقل إلى صفحة **Billing** في وحدة تحكم ClickHouse Cloud.
+2. انقر على أيقونة التعديل بجوار **طريقة الدفع**.
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="تعديل طريقة الدفع" size="lg" />
+
+3. في مربع الحوار **تعديل طريقة الدفع**، سترى بطاقة الائتمان الحالية مُدرجة باعتبارها طريقة الدفع الأساسية.
+4. أسفل بطاقة الائتمان، ستظهر اشتراكات Marketplace المؤهلة من مؤسساتك الأخرى. ويعرض كل إدخال نوع Marketplace (مثل AWS Marketplace) واسم المؤسسة المرتبطة.
+5. حدِّد اشتراك Marketplace الذي تريد احتساب استخدام هذه المؤسسة عليه.
+6. انقر على **تحديث طريقة الدفع** للتأكيد.
+
+<div id="steps-switch-org-different-org">
+  ### خطوات تغيير اشتراك marketplace الحالي لمؤسسة إلى اشتراك تستخدمه مؤسسة أخرى
+</div>
+
+1. انتقل إلى صفحة **Billing** في وحدة تحكم ClickHouse Cloud.
+2. انقر على أيقونة التعديل بجوار **طريقة الدفع**.
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="تعديل طريقة الدفع" size="lg" />
+
+3. في مربع الحوار **تعديل طريقة الدفع**، سترى اشتراك marketplace الحالي مُدرجًا كطريقة للدفع.
+4. أسفل اشتراك marketplace الحالي، ستظهر اشتراكات marketplace المؤهلة الأخرى من مؤسساتك الأخرى. ويعرض كل إدخال نوع marketplace (مثل AWS Marketplace) واسم المؤسسة المرتبطة به.
+5. حدِّد اشتراك marketplace الجديد الذي تريد احتساب استخدام هذه المؤسسة عليه.
+6. انقر على **تحديث طريقة الدفع** للتأكيد.
+
+<div id="add-backup-cc-to-marketplace-org">
+  ## إضافة بطاقة ائتمان احتياطية إلى مؤسسة في Marketplace
+</div>
+
+إذا كانت طريقة الدفع الأساسية لمؤسستك هي اشتراك Marketplace، فيمكنك إضافة بطاقة ائتمان كطريقة دفع احتياطية. ولن تُحصَّل الرسوم من البطاقة الاحتياطية إلا إذا تعذر علينا احتساب رسوم الاستخدام على اشتراك Marketplace (على سبيل المثال، إذا أُلغي الاشتراك أو انتهت صلاحيته).
+
+<Note>
+  يتطلب استخدامك لـ ClickHouse Cloud أن يكون لدى مؤسستك طريقة فوترة واحدة نشطة وصالحة على الأقل ومهيأة (إما اشتراك Marketplace أو بطاقة ائتمان). اطّلع على مزيد من المعلومات حول امتثال الفوترة [هنا](/ar/products/cloud/reference/billing/billing-compliance#billing-compliance).
+</Note>
+
+<div id="steps-add-backup-cc">
+  ### خطوات إضافة بطاقة ائتمان احتياطية
+</div>
+
+1. انتقل إلى صفحة **Billing** في وحدة تحكم ClickHouse Cloud.
+2. سيظهر في أعلى صفحة Billing أن طريقة الدفع الأساسية لديك هي اشتراك Marketplace، وأن طريقة الدفع الاحتياطية هي **None**.
+3. انقر على زر **add credit card** لإعداد طريقة دفع احتياطية.
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="إضافة بطاقة ائتمان احتياطية" size="lg" />
+
+4. اتبع التعليمات لإضافة تفاصيل عنوان الفوترة الخاص ببطاقتك الائتمانية أو تحديثها. بعد الحفظ، ستعرض صفحة **Billing** بطاقة الائتمان الاحتياطية إلى جانب اشتراك Marketplace الأساسي.
+
+<Note>
+  بعد إعداد بطاقة ائتمان احتياطية، سيتوفر لك أيضًا خيار النقر على الزر لتعديل بطاقتك الائتمانية وتعيينها كطريقة الدفع الأساسية.
+  ومع ذلك، إذا فعلت ذلك، فستصبح بطاقتك الائتمانية طريقة الدفع الوحيدة للمؤسسة، وسيُزال اشتراك Marketplace بالكامل من ClickHouse Cloud.
+  ستحتاج إلى الرجوع إلى حسابك في Marketplace لإعادة إعداده استنادًا إلى الخطوات الواردة في قسم [&quot;إعداد فوترة Marketplace من موفر الخدمات السحابية لديك&quot;](#set-up-marketplace-billing-from-cp).
+</Note>
+
+<div id="set-up-marketplace-billing-from-cp">
+  ## إعداد فوترة Marketplace من موفّر السحابة لديك
+</div>
+
+يمكنك أيضًا إعداد اشتراك Marketplace الخاص بمؤسستك أو تحديثه مباشرةً من المتجر السحابي، بدلًا من إجراء ذلك عبر وحدة تحكم ClickHouse Cloud. وقد يكون هذا مفيدًا إذا كنت تريد تحويل فوترة مؤسسة ClickHouse الخاصة بك لتتم عبر اشتراك جديد ضمن حساب فوترة Marketplace مختلف.
+
+اتبع الإرشادات أدناه وفقًا لـ Marketplace ونوع الاشتراك:
+
+* [AWS Marketplace PAYG](/ar/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/ar/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/ar/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+بعد إكمال هذه العملية، سيتم ربط فوترة المؤسسة المحددة باشتراك Marketplace الجديد، وستعكس صفحة الفوترة في وحدة تحكم ClickHouse Cloud هذا التحديث.
+
+<div id="support">
+  ## الدعم
+</div>
+
+إذا واجهت أي مشكلة، فلا تتردد في [التواصل مع فريق الدعم لدينا](https://clickhouse.com/support/program).
+
+<div id="faqs">
+  ## الأسئلة الشائعة
+</div>
+
+<div id="what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle">
+  ### ماذا يحدث لرسوم استخدامي إذا غيّرت طريقة الفوترة في منتصف دورة الفوترة؟
+</div>
+
+يعتمد ذلك على اتجاه التغيير:
+
+التحويل من فوترة Marketplace إلى الفوترة ببطاقة ائتمان: يُرسَل الاستخدام من بداية دورة الفوترة حتى وقت التحويل إلى Marketplace. أما الاستخدام المتبقي من وقت التحويل حتى نهاية دورة الفوترة، فتُصدَر فاتورته على بطاقة الائتمان في نهاية دورة الفوترة.
+
+التحويل من الفوترة ببطاقة ائتمان إلى فوترة Marketplace: يُرسَل كل الاستخدام غير المُفوتر خلال فترة الفوترة بالكامل إلى Marketplace.

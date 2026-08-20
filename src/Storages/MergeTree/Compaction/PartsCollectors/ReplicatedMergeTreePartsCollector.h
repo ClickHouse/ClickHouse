@@ -14,7 +14,7 @@ public:
     ReplicatedMergeTreePartsCollector(const StorageReplicatedMergeTree & storage_, ReplicatedMergeTreeMergePredicatePtr merge_pred_);
     ~ReplicatedMergeTreePartsCollector() override = default;
 
-    PartsRanges grabAllPossibleRanges(
+    CollectedPartsRanges grabAllPossibleRanges(
         const StorageMetadataPtr & metadata_snapshot,
         const StoragePolicyPtr & storage_policy,
         const time_t & current_time,

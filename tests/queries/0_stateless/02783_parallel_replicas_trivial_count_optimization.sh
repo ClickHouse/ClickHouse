@@ -15,7 +15,7 @@ function has_used_parallel_replicas () {
             sumIf(read_rows, is_initial_query) as read_rows,
             sumIf(read_bytes, is_initial_query) as read_bytes
         FROM system.query_log
-    WHERE event_date >= yesterday() and initial_query_id LIKE '$1%'
+    WHERE event_date >= yesterday() AND event_time >= now() - 600 and initial_query_id LIKE '$1%'
     GROUP BY initial_query_id
     ORDER BY min(event_time_microseconds) ASC
     FORMAT TSV"
@@ -25,7 +25,8 @@ function run_query_with_pure_parallel_replicas () {
     $CLICKHOUSE_CLIENT \
         --query "$2" \
         --query_id "${1}_disabled" \
-        --max_parallel_replicas 1
+        --max_parallel_replicas 1 \
+        --optimize_trivial_count_query 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
@@ -33,9 +34,11 @@ function run_query_with_pure_parallel_replicas () {
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
+        --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
         --enable_analyzer 0 \
-        --parallel_replicas_only_with_analyzer 0
+        --parallel_replicas_only_with_analyzer 0 \
+        --optimize_trivial_count_query 1
 
     $CLICKHOUSE_CLIENT \
         --query "$2" \
@@ -43,8 +46,10 @@ function run_query_with_pure_parallel_replicas () {
         --max_parallel_replicas 3 \
         --prefer_localhost_replica 1 \
         --cluster_for_parallel_replicas 'test_cluster_one_shard_three_replicas_localhost' \
+        --automatic_parallel_replicas_mode 0 \
         --enable_parallel_replicas 1 \
-        --enable_analyzer 1
+        --enable_analyzer 1 \
+        --optimize_trivial_count_query 1
 }
 
 function run_query_with_custom_key_parallel_replicas () {

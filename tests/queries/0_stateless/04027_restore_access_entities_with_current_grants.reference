@@ -1,0 +1,12 @@
+--- Restore without setting (should fail) ---
+ACCESS_DENIED
+--- Restore with restore_access_entities_with_current_grants=true ---
+-- user_a grants (should only have SELECT, not INSERT/ALTER/CREATE) --
+GRANT SELECT ON *.* TO user_a
+GRANT role_b TO user_a
+-- role_b grants (should only have SELECT, not INSERT/ALTER) --
+GRANT SELECT ON *.* TO role_b
+--- Extreme case: restoring user has no GRANT OPTION ---
+-- user_a grants (should have no access grants, only role assignment) --
+GRANT role_b TO user_a
+-- role_b grants (should be empty) --

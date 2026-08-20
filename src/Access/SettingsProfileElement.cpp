@@ -21,6 +21,19 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+    /// ParserSettingsProfileElement accepts only scalar literals, so a Map is emitted as a quoted
+    /// string holding the setting's canonical text. Custom settings are excluded: castValueUtil
+    /// returns their value unchanged, so a string would stay a String instead of becoming a Map.
+    std::optional<Field> settingValueToASTField(const String & setting_name, const std::optional<Field> & value)
+    {
+        if (!value || value->getType() != Field::Types::Map || !Settings::hasBuiltin(setting_name))
+            return value;
+        return Field(Settings::valueToStringUtil(setting_name, *value));
+    }
+}
+
 
 SettingsProfileElement::SettingsProfileElement(const ASTSettingsProfileElement & ast)
 {
@@ -38,7 +51,7 @@ void SettingsProfileElement::init(const ASTSettingsProfileElement & ast, const A
     {
         if (id_mode)
             return parse<UUID>(name_);
-        assert(access_control);
+        chassert(access_control);
         return access_control->getID<SettingsProfile>(name_);  /// NOLINT(clang-analyzer-core.CallAndMessage)
     };
 
@@ -83,18 +96,18 @@ bool SettingsProfileElement::isConstraint() const
     return this->writability || this->min_value || this->max_value || !this->disallowed_values.empty();
 }
 
-std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
+boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 {
-    auto ast = std::make_shared<ASTSettingsProfileElement>();
+    auto ast = make_intrusive<ASTSettingsProfileElement>();
     ast->id_mode = true;
 
     if (parent_profile)
         ast->parent_profile = ::DB::toString(*parent_profile);
 
     ast->setting_name = setting_name;
-    ast->value = value;
-    ast->min_value = min_value;
-    ast->max_value = max_value;
+    ast->value = settingValueToASTField(setting_name, value);
+    ast->min_value = settingValueToASTField(setting_name, min_value);
+    ast->max_value = settingValueToASTField(setting_name, max_value);
     ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
@@ -102,9 +115,9 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toAST() const
 }
 
 
-std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
+boost::intrusive_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithNames(const AccessControl & access_control) const
 {
-    auto ast = std::make_shared<ASTSettingsProfileElement>();
+    auto ast = make_intrusive<ASTSettingsProfileElement>();
 
     if (parent_profile)
     {
@@ -114,9 +127,9 @@ std::shared_ptr<ASTSettingsProfileElement> SettingsProfileElement::toASTWithName
     }
 
     ast->setting_name = setting_name;
-    ast->value = value;
-    ast->min_value = min_value;
-    ast->max_value = max_value;
+    ast->value = settingValueToASTField(setting_name, value);
+    ast->min_value = settingValueToASTField(setting_name, min_value);
+    ast->max_value = settingValueToASTField(setting_name, max_value);
     ast->disallowed_values = disallowed_values;
     ast->writability = writability;
 
@@ -141,9 +154,9 @@ SettingsProfileElements::SettingsProfileElements(const ASTSettingsProfileElement
 }
 
 
-std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
+boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() const
 {
-    auto res = std::make_shared<ASTSettingsProfileElements>();
+    auto res = make_intrusive<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toAST();
@@ -153,9 +166,9 @@ std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toAST() con
     return res;
 }
 
-std::shared_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
+boost::intrusive_ptr<ASTSettingsProfileElements> SettingsProfileElements::toASTWithNames(const AccessControl & access_control) const
 {
-    auto res = std::make_shared<ASTSettingsProfileElements>();
+    auto res = make_intrusive<ASTSettingsProfileElements>();
     for (const auto & element : *this)
     {
         auto element_ast = element.toASTWithNames(access_control);
@@ -287,9 +300,9 @@ SettingsConstraints SettingsProfileElements::toSettingsConstraints(const AccessC
     return res;
 }
 
-std::vector<UUID> SettingsProfileElements::toProfileIDs() const
+UUIDs SettingsProfileElements::toProfileIDs() const
 {
-    std::vector<UUID> res;
+    UUIDs res;
     for (const auto & elem : *this)
     {
         if (elem.parent_profile)

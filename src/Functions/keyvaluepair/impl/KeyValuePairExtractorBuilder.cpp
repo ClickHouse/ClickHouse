@@ -11,7 +11,7 @@ KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withKeyValueDelimit
     return *this;
 }
 
-KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withItemDelimiters(std::vector<char> item_delimiters_)
+KeyValuePairExtractorBuilder & KeyValuePairExtractorBuilder::withItemDelimiters(VectorWithMemoryTracking<char> item_delimiters_)
 {
     item_delimiters = std::move(item_delimiters_);
     return *this;

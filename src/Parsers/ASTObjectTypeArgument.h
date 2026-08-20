@@ -6,6 +6,23 @@
 namespace DB
 {
 
+/// A pair of  Object path and its data type. For example: a.b.c String.
+class ASTObjectTypedPathArgument : public IAST
+{
+public:
+    /// path
+    String path;
+    /// type
+    ASTPtr type;
+
+    /** Get the text that identifies this element. */
+    String getID(char delim) const override { return "ObjectTypedPath" + (delim + path); }
+    ASTPtr clone() const override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 /** An argument of Object data type declaration (for example for JSON). Can contain one of:
  *  - pair (path, data type)
  *  - path that should be skipped

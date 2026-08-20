@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 namespace DB
 {
@@ -37,7 +38,7 @@ static void threadFunction(
 {
     try
     {
-        ThreadGroupSwitcher switcher(thread_group, "QueryCompPipeEx");
+        ThreadGroupSwitcher switcher(thread_group, ThreadName::COMPLETED_PIPELINE_EXECUTOR);
 
         data.executor->execute(num_threads, concurrency_control);
     }
@@ -68,7 +69,7 @@ void CompletedPipelineExecutor::execute()
     if (interactive_timeout_ms)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
 
         /// Avoid passing this to lambda, copy ptr to data instead.
@@ -100,7 +101,7 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
+        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element, pipeline.step_wall_clock_registry.get());
         executor.setReadProgressCallback(pipeline.getReadProgressCallback());
         executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
     }

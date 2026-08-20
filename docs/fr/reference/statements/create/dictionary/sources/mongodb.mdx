@@ -1,0 +1,78 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/mongodb
+title: 'Source de dictionnaire MongoDB'
+sidebarTitle: 'MongoDB'
+description: 'Configurer MongoDB comme source de dictionnaire dans ClickHouse.'
+doc_type: 'reference'
+---
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(MONGODB(
+        host 'localhost'
+        port 27017
+        user ''
+        password ''
+        db 'test'
+        collection 'dictionary_source'
+        options 'ssl=true'
+    ))
+    ```
+
+    Ou en utilisant un URI :
+
+    ```sql
+    SOURCE(MONGODB(
+        uri 'mongodb://localhost:27017/clickhouse'
+        collection 'dictionary_source'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <mongodb>
+            <host>localhost</host>
+            <port>27017</port>
+            <user></user>
+            <password></password>
+            <db>test</db>
+            <collection>dictionary_source</collection>
+            <options>ssl=true</options>
+        </mongodb>
+    </source>
+    ```
+
+    Ou en utilisant un URI :
+
+    ```xml
+    <source>
+        <mongodb>
+            <uri>mongodb://localhost:27017/test?ssl=true</uri>
+            <collection>dictionary_source</collection>
+        </mongodb>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Champs des paramètres :
+
+| Paramètre    | Description                                                                            |
+| ------------ | -------------------------------------------------------------------------------------- |
+| `host`       | L’hôte MongoDB.                                                                        |
+| `port`       | Le port du serveur MongoDB.                                                            |
+| `user`       | Nom de l’utilisateur MongoDB.                                                          |
+| `password`   | Mot de passe de l’utilisateur MongoDB.                                                 |
+| `db`         | Nom de la base de données.                                                             |
+| `collection` | Nom de la collection.                                                                  |
+| `options`    | Options de la chaîne de connexion MongoDB. Facultatif.                                 |
+| `uri`        | URI permettant d’établir la connexion (alternative aux champs `host`, `port` et `db`). |
+
+[Plus d’informations sur le moteur](/fr/reference/engines/table-engines/integrations/mongodb)

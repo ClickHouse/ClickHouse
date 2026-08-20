@@ -1,0 +1,183 @@
+---
+title: '连接到 ClickHouse'
+slug: /cloud/reference/byoc/connect
+sidebarTitle: '连接到 ClickHouse'
+keywords: ['BYOC', '云', '自备 Cloud', '连接到 ClickHouse', '负载均衡器', 'privatelink', '私有服务连接', 'Azure Private Link']
+description: '通过公网负载均衡器，或专用终结点（PrivateLink、Private Service Connect、Private Link）连接到您的 BYOC ClickHouse 服务实例'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本页介绍了在 BYOC 中连接 ClickHouse 服务的不同方式。你可以根据安全和网络要求，选择公网负载均衡器、私有负载均衡器或专用终结点 (AWS PrivateLink、GCP Private Service Connect 或 Azure Private Link) 。
+
+<div id="connection-via">
+  ## 在控制台中选择连接路径
+</div>
+
+每个 BYOC 服务的连接信息都可在 ClickHouse Cloud 控制台中查看：打开相应服务，然后点击 **Connect**。
+
+对于 BYOC 服务，**Connect** 对话框中包含一个 **Connection via** 下拉列表。你可以用它选择访问该服务的方式：
+
+* **公网负载均衡器** — 面向互联网的端点。
+* **私有负载均衡器** — 内部端点，通过 VPC peering 或已连接的网络访问。仅当你的基础设施已启用 [私有负载均衡器](#private-load-balancer) 时才会显示。
+* **PrivateLink** (AWS) / **Private Service Connect** (GCP) / **Private Link** (Azure) — 云提供商的私有端点主机名。仅当已启用 [专用终结点](#privatelink-or-private-service-connect) 时才会显示。
+
+选择某条路径后，对话框中所有连接示例里的主机名都会更新——包括 HTTPS (`curl`) 命令、原生客户端、JDBC 以及各语言客户端代码片段 (Python、Node.js、Java、Go 和 C#) ——这样你就可以直接复制与你所需路径完全对应的现成命令，无需手动修改主机名。
+
+下拉列表中只会显示你的基础设施已启用的路径，并且每次打开对话框时都会刷新——新启用的私有负载均衡器或 PrivateLink 端点会在你下次打开 **Connect** 时显示出来，无需等待传播延迟。当只有一条路径可用时，下拉列表会以禁用状态显示，并选中该端点。
+
+<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="展开 Connection via 下拉列表的 Connect 对话框，显示公网负载均衡器、私有负载均衡器和 PrivateLink 路径" background="black" />
+
+<div id="public-load-balancer">
+  ## 公网负载均衡器
+</div>
+
+公网负载均衡器可为您的 ClickHouse 服务提供面向互联网的访问。这是在使用 ClickHouse 托管的专用 VPC 时的默认配置。
+
+<div id="public-load-balancer-overview">
+  ### 概述
+</div>
+
+* **访问**: 可通过公共互联网访问
+* **使用场景**: 适用于需要从不同地点或网络连接的应用和用户
+* **安全**: 通过 TLS 加密和 IP 过滤器提供保护 (推荐)
+
+<div id="connecting-via-public-load-balancer">
+  ### 通过公网负载均衡器连接
+</div>
+
+要通过公网端点连接到您的 ClickHouse 服务：
+
+1. 从 ClickHouse Cloud 控制台**获取服务端点**。该端点显示在您的服务的 &quot;Connect&quot; 部分。
+
+<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="BYOC 连接" background="black" />
+
+例如：
+
+```text
+sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
+```
+
+`aws` 片段表示您的云提供商；如果部署在其他云上，则为 `gcp` 或 `azure`。
+
+<div id="public-ip-filtering">
+  ### IP 过滤
+</div>
+
+使用公网负载均衡器时，**强烈建议**启用 IP 过滤 (IP Access List) ，将访问限制为已授权的 IP 地址或 CIDR 网段。
+
+有关 IP 过滤的详细信息，请参阅 [IP Access List 文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+
+<div id="private-load-balancer">
+  ## 私有负载均衡器
+</div>
+
+私有负载均衡器可为您的 ClickHouse 服务提供内部访问，且只能通过您已连接的网络 (例如已建立对等连接的 VPC/VNet) 进行访问。这是在使用客户自管 VPC 时的默认配置。
+
+<div id="private-load-balancer-overview">
+  ### 概览
+</div>
+
+* **访问**：仅可从您的私有网络基础设施内部访问
+* **使用场景**：非常适合同一云环境中运行的应用，或通过 VPC/VNet 对等互连接入的应用
+* **安全**：流量始终保留在您的私有网络内，不会暴露到公共互联网
+
+<div id="connecting-via-private-load-balancer">
+  ### 通过私有负载均衡器连接
+</div>
+
+要使用专用终结点进行连接：
+
+1. 在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施**启用私有负载均衡器** (如果尚未启用) 。有关详细信息，请参阅[负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)。
+2. **确保网络连通性**：
+   * 对于 VPC/VNet 对等互连：完成 peering 设置 (参见[私有网络设置](/zh/products/bring-your-own-cloud/onboarding/network))
+   * 对于其他私有网络：确保已配置好可访问 BYOC VPC/VNet 的路由
+3. **获取您的专用终结点**：
+   您可以在 ClickHouse Cloud 控制台中服务的“Connect”部分找到专用终结点。专用终结点的格式与公网端点相同，只是在服务 ID 部分添加了 `-private` 后缀。例如：
+
+   * **公网端点**：`sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   * **专用终结点**：`sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+   无需手动推导 `-private` 主机名，只需在 **Connect** 对话框的 **Connection via** 下拉列表中选择 **Private load balancer**，即可直接复制该端点和现成的连接命令。
+
+<div id="public-ip-filtering">
+  ### IP 过滤
+</div>
+
+尽管私有负载均衡器只允许内部网络访问，您仍可设置 IP 过滤，以更细粒度地控制私有网络中哪些来源能够连接。私有负载均衡器的 IP 过滤与公网负载均衡器采用相同的配置机制：定义允许的 IP 地址或 CIDR 范围后，ClickHouse Cloud 会将这些规则正确应用到各类端点。平台会自动区分公共和私有 CIDR 范围，并将其分配给相应的负载均衡器端点。请参阅 [IP Access List 文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+
+<div id="security-group-configuration">
+  ### 安全组 (Security Group) 配置
+</div>
+
+对于 AWS 部署，私有负载均衡器的安全组 (Security Group) 用于控制哪些网络可以访问该端点。默认情况下，只允许来自 BYOC VPC 内部的流量。
+
+更多详情，请参阅[私有负载均衡器安全组 (Security Group) 配置](/zh/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group)。
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink、Private Service Connect 或 Private Link
+</div>
+
+AWS PrivateLink、GCP Private Service Connect 和 Azure Private Link 提供了最安全的连接方式，让您无需使用 VPC/VNet 对等互连 或互联网网关，即可通过私有网络访问 ClickHouse 服务。
+
+<div id="private-load-balancer-overview">
+  ### 概览
+</div>
+
+* **访问**: 通过云提供商的托管服务实现私有连接
+* **网络隔离**: 流量绝不会经过公共互联网
+* **使用场景**: 适用于需要最高级别安全性和网络隔离的 Enterprise 部署
+* **优势**:
+  * 无需 VPC 对等互连
+  * 简化网络架构
+  * 提升安全性和合规性
+
+<div id="connecting-via-privatelink">
+  ### 通过专用终结点连接
+</div>
+
+完成 PrivateLink、Private Service Connect 或 Private Link 的设置 (请参阅[私有网络设置](/zh/products/bring-your-own-cloud/onboarding/network)) 。配置完成后，您可以使用专用的专用终结点主机名连接到 ClickHouse 服务。不同提供商的 DNS 行为有所不同：在 AWS 上，为端点启用 **Private DNS names** 后，VPC 中的 DNS 解析会自动将流量路由至该端点。GCP Private Service Connect 要求您自行创建通配符 DNS 记录——请参阅 [GCP 设置指南](/zh/products/bring-your-own-cloud/onboarding/network-gcp)——Azure Private Link 同样要求创建链接到 VNet 且包含通配符记录的私有 DNS 区域——请参阅 [Azure 设置指南](/zh/products/bring-your-own-cloud/onboarding/network-azure)。
+
+专用终结点主机名与公网端点类似，但会在服务子域和 BYOC 基础设施子域之间添加特定于云提供商的标签——AWS 为 `vpce`，GCP 为 `p`，Azure 为 `privatelink`。例如：
+
+* **公网端点 (AWS)**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **PrivateLink 端点 (AWS)**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **Private Service Connect 端点 (GCP)**: `h5ju65kv87.p.mhp0y4dmph.us-central1.gcp.clickhouse-byoc.com`
+* **Private Link 端点 (Azure)**: `h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com`
+
+设置端点并将其加入允许列表后，在 **Connect** 对话框的 **Connection via** 下拉列表中选择 **PrivateLink** (GCP 上为 **Private Service Connect**，Azure 上为 **Private Link**) ，即可直接复制专用终结点的连接信息。
+
+<div id="endpoint-id-allowlist">
+  ### Endpoint ID 允许列表
+</div>
+
+要使用 PrivateLink、Private Service Connect 或 Private Link，必须将客户端连接的 Endpoint ID 明确添加到每个 ClickHouse 服务的允许列表中。您可以在 ClickHouse Cloud 控制台中自行管理允许列表：打开服务的 Settings 页面，点击 **设置专用终结点**，然后输入云提供商的端点标识符：
+
+* **AWS**：VPC 端点 ID (请参阅 [AWS 设置指南](/zh/products/bring-your-own-cloud/onboarding/network-aws#setup-privatelink))
+* **GCP**：PSC Connection ID (请参阅 [GCP 设置指南](/zh/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc))
+* **Azure**：Private Endpoint Resource ID (请参阅 [Azure 设置指南](/zh/products/bring-your-own-cloud/onboarding/network-azure#setup-privatelink))
+
+<div id="choosing-connection-method">
+  ## 选择合适的连接方法
+</div>
+
+| 连接方法                                                 | 安全级别          | 网络要求          | 使用场景                    |
+| ---------------------------------------------------- | ------------- | ------------- | ----------------------- |
+| **公网负载均衡器**                                          | 中等 (配合 IP 过滤) | 互联网访问         | 来自不同地点的应用程序和用户          |
+| **私有负载均衡器**                                          | 高             | VPC 对等互连或私有网络 | 位于同一云环境中的应用程序           |
+| **PrivateLink/Private Service Connect/Private Link** | 最高            | 云提供商托管服务      | 需要最高隔离级别的 Enterprise 部署 |
+
+<div id="troubleshooting">
+  ## 连接问题故障排查
+</div>
+
+如果你遇到连接问题：
+
+1. **验证端点可访问性**：确保使用的是正确的端点 (公有或私有)
+2. **检查 IP 过滤规则**：对于公网负载均衡器，确认你的 IP 地址已在允许列表中
+3. **验证网络连通性**：对于私有连接，确保 VPC/VNet 对等互连或专用终结点已正确配置
+4. **检查安全组 (Security Group)&#x20;**：对于私有负载均衡器，确认安全组规则允许来自源网络的流量
+5. **检查端点允许列表**：对于 PrivateLink、Private Service Connect 或 Private Link，确认已将 Endpoint ID 添加到 ClickHouse 服务的允许列表中
+6. **检查身份验证**：确保使用了正确的凭据 (用户名和密码)
+7. **联系支持团队**：如果问题仍然存在，请联系 ClickHouse 支持团队

@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab ( `k` Nullable(UInt32), `k1` Nullable(UInt32), `k2` Nullable(UInt32), `v` String ) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO tab VALUES (1, 1, 1, 'a'), (2, 2, 2, 'b');
@@ -20,6 +21,7 @@ ANY RIGHT JOIN mem2 ON k2 = mem2.k
 ORDER BY tab.v
 SETTINGS enable_parallel_replicas=0;
 
+SET automatic_parallel_replicas_mode = 0;
 SELECT '-- parallel replicas --';
 SELECT *
 FROM tab

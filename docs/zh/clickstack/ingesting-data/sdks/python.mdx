@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/sdks/python
+description: '面向 ClickStack 的 Python - ClickHouse 可观测性技术栈'
+title: 'Python'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
+---
+
+ClickStack 使用 OpenTelemetry 标准收集遥测数据 (日志和
+链路追踪) 。链路追踪可通过自动埋点自动生成，因此无需手动
+埋点也能从链路追踪中获益。
+
+本指南集成了：
+
+* **日志**
+* **指标**
+* **链路追踪**
+
+<div id="getting-started">
+  ## 入门
+</div>
+
+<div id="install-clickstack-otel-instrumentation-package">
+  ### 安装 ClickStack OpenTelemetry 埋点包
+</div>
+
+使用以下命令安装 [ClickStack OpenTelemetry 埋点包](https://pypi.org/project/hyperdx-opentelemetry/)。
+
+```shell
+pip install hyperdx-opentelemetry
+```
+
+为你的 Python 应用所使用的软件包安装 OpenTelemetry 自动埋点库。我们建议使用
+OpenTelemetry Python SDK 附带的 `opentelemetry-bootstrap` 工具扫描应用的软件包，并生成可用库列表。
+
+```shell
+opentelemetry-bootstrap -a install
+```
+
+<div id="configure-environment-variables">
+  ### 配置环境变量
+</div>
+
+接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry collector 将遥测数据发送到 ClickStack：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+
+  <Tab title="ClickStack 开源版">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，你可以将其设置为任意名称。*
+
+<div id="run-the-application-with-otel-python-agent">
+  ### 使用 OpenTelemetry Python agent 运行应用
+</div>
+
+现在，你可以使用 OpenTelemetry Python agent (`opentelemetry-instrument`) 来运行应用。
+
+```shell
+opentelemetry-instrument python app.py
+```
+
+<div id="using-uvicorn-gunicorn-uwsgi">
+  #### 如果你使用的是 `Gunicorn`、`uWSGI` 或 `uvicorn`
+</div>
+
+在这种情况下，OpenTelemetry Python agent 需要进行额外配置才能正常工作。
+
+要为采用预分叉 Web 服务器模式的应用服务器配置 OpenTelemetry，请确保在 post-fork hook 中调用 `configure_opentelemetry` 方法。
+
+<Tabs>
+  <Tab title="Gunicorn">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+
+    def post_fork(server, worker):
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uWSGI">
+    ```python
+    from hyperdx.opentelemetry import configure_opentelemetry
+    from uwsgidecorators import postfork
+
+    @postfork
+    def init_tracing():
+        configure_opentelemetry()
+    ```
+  </Tab>
+
+  <Tab title="uvicorn">
+    OpenTelemetry [目前无法正常工作](https://github.com/open-telemetry/opentelemetry-python-contrib/issues/385)，尤其是在 `uvicorn` 使用 `--reload`
+    标志运行或启用多个工作线程 (`--workers`) 时。我们建议你在测试期间禁用这些标志，或改用 Gunicorn。
+  </Tab>
+</Tabs>
+
+<div id="advanced-configuration">
+  ## 高级配置
+</div>
+
+<div id="network-capture">
+  #### 网络捕获
+</div>
+
+启用网络捕获功能后，开发人员便能够更高效地调试
+HTTP 请求头和请求体载荷。只需
+将 `HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE` 标志设为 1 即可。
+
+```shell
+export HYPERDX_ENABLE_ADVANCED_NETWORK_CAPTURE=1
+```
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="logs-not-appearing-due-to-log-level">
+  ### 由于日志级别设置导致日志未显示
+</div>
+
+默认情况下，OpenTelemetry 日志处理程序使用 `logging.NOTSET` 级别，
+该级别会默认采用 WARNING 级别。你可以在创建
+日志记录器时指定日志级别：
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+```
+
+<div id="exporting-to-the-console">
+  ### 导出到控制台
+</div>
+
+OpenTelemetry Python SDK 通常会在出错时将错误信息显示在控制台中。
+不过，如果你没有遇到任何错误，却发现数据没有如预期那样出现在
+HyperDX 中，则可以启用调试模式。启用调试模式后，所有遥测数据都会打印到控制台，
+这样你就可以确认应用程序是否已正确埋点，并生成了
+预期的数据。
+
+```shell
+export DEBUG=true
+```
+
+在此了解有关 Python OpenTelemetry 埋点的更多信息：
+[https://opentelemetry.io/docs/instrumentation/python/manual/](https://opentelemetry.io/docs/instrumentation/python/manual/)

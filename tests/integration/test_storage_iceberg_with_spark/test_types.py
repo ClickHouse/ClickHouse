@@ -81,7 +81,7 @@ def test_types(started_cluster_iceberg_with_spark, format_version, storage_type)
         [
             ["a", "Nullable(Int32)"],
             ["b", "Nullable(String)"],
-            ["c", "Nullable(Date)"],
+            ["c", "Nullable(Date32)"],
             ["d", "Array(Nullable(String))"],
             ["e", "Nullable(Bool)"],
         ]

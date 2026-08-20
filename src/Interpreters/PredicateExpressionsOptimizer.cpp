@@ -183,7 +183,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     {
         ASTPtr res = predicates[0];
         for (size_t index = 1; index < predicates.size(); ++index)
-            res = makeASTFunction("and", res, predicates[index]);
+            res = makeASTOperator("and", res, predicates[index]);
 
         return res;
     };
@@ -221,7 +221,7 @@ bool PredicateExpressionsOptimizer::tryMovePredicatesFromHavingToWhere(ASTSelect
     if (!where_predicates.empty())
     {
         auto moved_predicate = reduce_predicates(where_predicates);
-        moved_predicate = select_query.where() ? makeASTFunction("and", select_query.where(), moved_predicate) : moved_predicate;
+        moved_predicate = select_query.where() ? makeASTOperator("and", select_query.where(), moved_predicate) : moved_predicate;
         select_query.setExpression(ASTSelectQuery::Expression::WHERE, std::move(moved_predicate));
     }
 

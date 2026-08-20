@@ -13,7 +13,7 @@
    ┌─────────x─┐
 1. │ 123456789 │ -- 123.46 million
    └───────────┘
-Nullable(UInt64), Nullable(size = 10, UInt64(size = 10), UInt8(size = 10))
+Nullable(UInt64), Sparse(size = 10, Nullable(size = 6, UInt64(size = 6), UInt8(size = 6)), UInt64(size = 5))
    ┏━━━━━━━━━━━━┓
    ┃          x ┃
    ┡━━━━━━━━━━━━┩

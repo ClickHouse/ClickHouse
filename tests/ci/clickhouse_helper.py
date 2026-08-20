@@ -271,7 +271,7 @@ class CiLogsCredentials:
             )  # type: str
         except:
             logging.warning(
-                "Unable to retreive host and/or password from smm, all other "
+                "Unable to retrieve host and/or password from smm, all other "
                 "methods will noop"
             )
             self._host = ""

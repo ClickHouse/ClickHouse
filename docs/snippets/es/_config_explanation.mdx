@@ -1,0 +1,30 @@
+---
+title: Explicación de la configuración
+---
+
+* El directorio `config.d` contiene el archivo de configuración del servidor ClickHouse `config.xml`,
+  en el que se define la configuración personalizada de cada nodo de ClickHouse. Esta
+  configuración se combina con el archivo de configuración predeterminado `config.xml` de ClickHouse,
+  incluido en cada instalación de ClickHouse.
+* El directorio `users.d` contiene el archivo de configuración de usuarios `users.xml`, en el que
+  se define la configuración personalizada para los usuarios. Esta configuración se combina con
+  el archivo de configuración predeterminado `users.xml` de ClickHouse, incluido en cada
+  instalación de ClickHouse.
+
+<Tip>
+  **Directorios de configuración personalizados**
+
+  Se recomienda usar los directorios `config.d` y `users.d` al
+  crear su propia configuración, en lugar de modificar directamente la configuración predeterminada
+  en `/etc/clickhouse-server/config.xml` y `etc/clickhouse-server/users.xml`.
+
+  La línea
+
+  ```xml
+  <clickhouse replace="true">
+  ```
+
+  garantiza que las secciones de configuración definidas en los directorios `config.d` y `users.d`
+  sobrescriban las secciones de configuración predeterminadas definidas en los archivos
+  predeterminados `config.xml` y `users.xml`.
+</Tip>

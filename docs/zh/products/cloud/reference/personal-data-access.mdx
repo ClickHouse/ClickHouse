@@ -1,0 +1,73 @@
+---
+sidebarTitle: '访问个人数据'
+slug: /cloud/manage/personal-data-access
+title: '访问个人数据'
+description: '作为注册用户，您可以在 ClickHouse 中查看和管理个人账户数据，包括联系信息。'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '个人数据', 'DSAR', '数据主体访问请求', '隐私政策', 'GDPR']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="intro">
+  ## 简介
+</div>
+
+作为注册用户，您可以在 ClickHouse 中查看和管理您的个人账户数据，包括联系信息。根据您的角色，您还可能有权访问您所在组织中其他用户的联系信息、API key 详情及其他相关信息。您可以通过 ClickHouse 控制台 直接以自助方式管理这些信息。
+
+**什么是数据主体访问请求 (DSAR)&#x20;**
+
+根据您所在地区，适用法律还可能赋予您与 ClickHouse 持有的您的个人数据相关的额外权利 (数据主体权利) ，具体说明请参见 ClickHouse 隐私政策。行使数据主体权利的流程称为数据主体访问请求 (DSAR) 。
+
+**个人数据范围**
+
+请查阅 ClickHouse 隐私政策，了解 ClickHouse 收集的个人数据及其可能的用途详情。
+
+<div id="self-service">
+  ## 自助服务
+</div>
+
+默认情况下，ClickHouse 允许用户直接在 ClickHouse 控制台中查看自己的个人数据。
+
+下表汇总了 ClickHouse 在账户设置和服务使用过程中收集的数据，以及可在 ClickHouse 控制台中查看特定个人数据的位置。
+
+| 位置/URL                                                       | 描述                     | 个人数据    |
+| ------------------------------------------------------------ | ---------------------- | ------- |
+| https://auth.clickhouse.cloud/u/signup/                      | 账户注册                   | 邮箱、密码   |
+| https://console.clickhouse.cloud/profile                     | 用户基本资料信息               | 姓名、邮箱   |
+| https://console.clickhouse.cloud/organizations/OrgID/members | 组织中的用户列表               | 姓名、邮箱   |
+| https://console.clickhouse.cloud/organizations/OrgID/keys    | API 密钥列表及其创建者          | 邮箱      |
+| https://console.clickhouse.cloud/organizations/OrgID/audit   | 活动日志，列出各个用户执行的操作       | 邮箱      |
+| https://console.clickhouse.cloud/organizations/OrgID/billing | 计费信息和发票                | 账单地址、邮箱 |
+| https://console.clickhouse.cloud/support                     | 与 ClickHouse 支持团队的交互记录 | 姓名、邮箱   |
+
+注意：包含 `OrgID` 的 URL 需要替换为与你的账户对应的 `OrgID`。
+
+<div id="current-customers">
+  ### 现有客户
+</div>
+
+如果您在我们这里已有账户，且自助服务选项仍未解决您的个人数据问题，您可以根据《隐私政策》提交数据主体访问请求。为此，请登录您的 ClickHouse 账户并创建一个[支持工单](https://console.clickhouse.cloud/support)。这有助于我们核实您的身份，并更高效地处理您的请求。
+
+请务必在支持工单中包含以下信息：
+
+| 字段 | 请求中需包含的文本                          |
+| -- | ---------------------------------- |
+| 主题 | Data Subject Access Request (DSAR) |
+| 描述 | 详细说明您希望 ClickHouse 查找、收集和/或提供的信息。  |
+
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="ClickHouse Cloud 中的支持工单表单" border />
+
+<div id="individuals-without-an-account">
+  ### 没有账户的个人
+</div>
+
+如果您没有我们的账户，且上述自助选项仍未解决您的个人数据问题，并希望根据《隐私政策》提出数据主体访问请求，您可以通过电子邮件将请求发送至 [privacy@clickhouse.com](mailto:privacy@clickhouse.com)。
+
+<div id="identity-verification">
+  ## 身份核验
+</div>
+
+如果您通过电子邮件提交数据主体访问请求，我们可能会要求您提供特定信息，以便核实您的身份并处理您的请求。根据适用法律，我们可能必须或有权拒绝您的请求。如果我们拒绝您的请求，在法律允许的范围内，我们会告知您原因。
+
+如需了解更多信息，请查阅 [ClickHouse 隐私政策](https://clickhouse.com/legal/privacy-policy)

@@ -1,0 +1,68 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: 'uniqArray 조합자 사용 예시'
+keywords: ['uniq', '배열', '조합자', '예시', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Array`](/ko/reference/functions/aggregate-functions/combinators#-array) 조합자는
+[`uniq`](/ko/reference/functions/aggregate-functions/uniq)
+함수에 적용할 수 있으며, `uniqArray` 집계 조합자 함수를 사용해 모든 배열에 걸친
+고유 요소의 대략적인 개수를 계산합니다.
+
+`uniqArray` 함수는 데이터셋의 여러 배열에 걸쳐
+고유 요소 수를 계산해야 할 때 유용합니다. 이는 `uniq(arrayJoin())`를 사용하는 것과 동일하며,
+이때 `arrayJoin`은 먼저 배열을 펼친 다음 `uniq`가 고유 요소를 계산합니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+이 예시에서는 여러 카테고리에 걸친 사용자 관심사 샘플 데이터셋을 사용해
+`uniqArray`의 작동 방식을 보여줍니다. 또한 고유 요소 수를 계산하는 방식의 차이를
+보여주기 위해 `uniq(arrayJoin())`와 비교합니다.
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+`uniqArray` 함수는 `uniq(arrayJoin())`와 마찬가지로, 모든 배열을 합쳐 고유한 요소의 개수를 계산합니다.
+이 예시에서는:
+
+* `uniqArray`는 모든 사용자의 배열 전체에서 고유한 관심사가 5개이므로 5를 반환합니다: &#39;reading&#39;, &#39;gaming&#39;, &#39;music&#39;, &#39;sports&#39;, &#39;cooking&#39;
+* `uniq(arrayJoin())`도 5를 반환하며, 두 함수 모두 모든 배열을 합쳐 고유한 요소의 개수를 계산한다는 것을 보여줍니다
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [`uniq`](/ko/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/ko/reference/functions/regular-functions/array-join)
+* [`배열 조합자`](/ko/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/ko/reference/functions/aggregate-functions/uniqCombined)

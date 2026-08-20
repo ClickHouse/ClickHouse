@@ -19,6 +19,8 @@ public:
 
     String getName() const override { return "ValuesRowOutputFormat"; }
 
+    bool supportsSpecialSerializationKinds() const override { return format_settings.allow_special_serialization_kinds; }
+
 private:
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;

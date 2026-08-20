@@ -2,7 +2,7 @@
 
 drop table if exists test;
 
-create table test (s String) engine MergeTree order by () settings serialization_info_version = 'default', string_serialization_version = 'default';
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'basic', string_serialization_version = 'single_stream';
 
 insert into test values ('hello world');
 
@@ -23,8 +23,8 @@ select column, substreams, subcolumns.names, subcolumns.types from system.parts_
 
 drop table test;
 
--- When `serialization_info_version` is set to `default`, any per-type string serialization version (`string_serialization_version`) will be ignored and reset to `DEFAULT`.
-create table test (s String) engine MergeTree order by () settings serialization_info_version = 'default', string_serialization_version = 'with_size_stream';
+-- When `serialization_info_version` is set to `single_stream`, any per-type string serialization version (`string_serialization_version`) will be ignored and reset to `DEFAULT`.
+create table test (s String) engine MergeTree order by () settings serialization_info_version = 'basic', string_serialization_version = 'with_size_stream';
 
 insert into test values ('hello world');
 
@@ -41,7 +41,7 @@ set query_plan_max_limit_for_lazy_materialization=10;
 drop table if exists test_old;
 drop table if exists test_new;
 
-create table test_old (x UInt64, y UInt64, s String) engine MergeTree order by x settings serialization_info_version = 'default';
+create table test_old (x UInt64, y UInt64, s String) engine MergeTree order by x settings serialization_info_version = 'basic';
 create table test_new (x UInt64, y UInt64, s String) engine MergeTree order by x settings serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream';
 
 insert into test_old select number, number, number from numbers(10);
@@ -62,8 +62,8 @@ drop table if exists test_old_wide;
 drop table if exists test_new_compact;
 drop table if exists test_new_wide;
 
-create table test_old_compact (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'default', min_rows_for_wide_part = 10000000, min_bytes_for_wide_part = 10000000;
-create table test_old_wide (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'default', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
+create table test_old_compact (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'basic', min_rows_for_wide_part = 10000000, min_bytes_for_wide_part = 10000000;
+create table test_old_wide (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'basic', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 create table test_new_compact (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', min_rows_for_wide_part = 10000000, min_bytes_for_wide_part = 10000000;
 create table test_new_wide (s String, t Tuple(a String, b String)) engine MergeTree order by () settings serialization_info_version = 'with_types', string_serialization_version = 'with_size_stream', min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1;
 

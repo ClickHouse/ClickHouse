@@ -165,7 +165,7 @@ void GrantedRoles::makeIntersection(const GrantedRoles & other)
 
     boost::range::remove_erase_if(roles_with_admin_option, [&other](const UUID & id) // NOLINT
     {
-        return other.roles_with_admin_option.find(id) == other.roles_with_admin_option.end();
+        return !other.roles_with_admin_option.contains(id);
     });
 }
 

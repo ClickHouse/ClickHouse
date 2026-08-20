@@ -1,0 +1,70 @@
+-- caseFoldUTF8
+hello world
+strasse
+héllo
+ffi
+ⅷ
+-- removeDiacriticsUTF8
+cafe resume naive
+Angstrom
+pinata
+-- empty strings
+
+
+-- single chars
+a	a	é	ω
+A	a	e	Ω
+-- ASCII only
+abc
+abc
+abc
+-- supplementary plane
+𝐀𝐁𝐂
+𝐀𝐁𝐂
+hello 🌍
+-- only combining marks
+
+-- multiple accents
+a
+-- CJK passthrough
+日本語テスト	日本語テスト
+-- removeAccentsUTF8 alias
+cafe resume naive
+Angstrom
+-- idempotency
+1
+1
+-- table test
+		
+Hello World	hello world	Hello World
+HÉLLO	héllo	HELLO
+Straße	strasse	Straße
+café résumé	café résumé	cafe resume
+ﬃ	ffi	ﬃ
+-- text index: caseFoldUTF8 preprocessor
+1
+1
+1
+1
+1
+0
+-- text index: removeDiacriticsUTF8 preprocessor
+1
+1
+1
+1
+1
+1
+0
+-- text index: combined removeDiacriticsUTF8(caseFoldUTF8) preprocessor
+1
+1
+1
+1
+1
+1
+1
+1
+1
+1
+0

@@ -1,0 +1,12 @@
+-- { echo }
+select count() from mt;
+10000
+-- { echo }
+alter table mt rewrite parts settings mutations_sync=2;
+select count() from mt;
+10000
+detach table mt;
+attach table mt;
+select count() from mt;
+10000
+Hashes are the same

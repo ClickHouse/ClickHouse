@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-debug
+# Tags: long, no-debug, no-azure-blob-storage
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

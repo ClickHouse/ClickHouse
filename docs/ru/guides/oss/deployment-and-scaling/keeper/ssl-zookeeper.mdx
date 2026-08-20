@@ -1,0 +1,79 @@
+---
+description: 'Руководство по настройке защищённого соединения по SSL/TLS между ClickHouse
+  и ZooKeeper'
+sidebarTitle: 'Защищённое соединение с ZooKeeper'
+slug: /operations/ssl-zookeeper
+title: 'Необязательная настройка защищённого соединения между ClickHouse и ZooKeeper'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ru/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+Для связи с клиентом ClickHouse по SSL необходимо указать `ssl.keyStore.location`, `ssl.keyStore.password`, `ssl.trustStore.location` и `ssl.trustStore.password`. Эти параметры доступны начиная с версии Zookeeper 3.5.2.
+
+Вы можете добавить `zookeeper.crt` в список доверенных сертификатов.
+
+```bash
+sudo cp zookeeper.crt /usr/local/share/ca-certificates/zookeeper.crt
+sudo update-ca-certificates
+```
+
+Раздел клиента в файле `config.xml` будет выглядеть так:
+
+```xml
+<client>
+    <certificateFile>/etc/clickhouse-server/client.crt</certificateFile>
+    <privateKeyFile>/etc/clickhouse-server/client.key</privateKeyFile>
+    <loadDefaultCAFile>true</loadDefaultCAFile>
+    <cacheSessions>true</cacheSessions>
+    <disableProtocols>sslv2,sslv3</disableProtocols>
+    <preferServerCiphers>true</preferServerCiphers>
+    <invalidCertificateHandler>
+        <name>RejectCertificateHandler</name>
+    </invalidCertificateHandler>
+</client>
+```
+
+Добавьте Zookeeper в конфигурацию ClickHouse вместе с параметрами кластера и макросами:
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <node>
+            <host>localhost</host>
+            <port>2281</port>
+            <secure>1</secure>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+Запустите `clickhouse-server`. В журнале должны появиться:
+
+```text
+<Trace> ZooKeeper: initialized, hosts: secure://localhost:2281
+```
+
+Префикс `secure://` указывает на то, что соединение защищено с помощью SSL.
+
+Чтобы убедиться, что трафик зашифрован, запустите `tcpdump` на защищённом порту:
+
+```bash
+tcpdump -i any dst port 2281 -nnXS
+```
+
+И выполните запрос в `clickhouse-client`:
+
+```sql
+SELECT * FROM system.zookeeper WHERE path = '/';
+```
+
+При незашифрованном соединении в выводе `tcpdump` вы увидите примерно следующее:
+
+```text
+..../zookeeper/quota.
+```
+
+При зашифрованном соединении этого быть не должно.

@@ -1,0 +1,18 @@
+---
+sidebarTitle: 'Configurar ajustes'
+slug: /manage/settings
+title: 'Configurar ajustes'
+description: 'Cómo configurar los ajustes de tu servicio de ClickHouse Cloud para un usuario o rol específicos'
+keywords: ['ClickHouse Cloud', 'configuración de ajustes', 'ajustes de la nube', 'ajustes de usuario', 'ajustes de rol']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Para especificar ajustes para su servicio de ClickHouse Cloud para un [usuario](/es/concepts/features/security/access-rights#user-account-management) o un [rol](/es/concepts/features/security/access-rights#role-management) específicos, debe usar [Settings Profiles basados en SQL](/es/concepts/features/security/access-rights#settings-profiles-management). Aplicar Settings Profiles garantiza que los ajustes que configure se mantengan, incluso cuando sus servicios se detengan, queden inactivos o se actualicen. Para obtener más información sobre Settings Profiles, consulte [esta página](/es/concepts/features/configuration/settings/settings-profiles).
+
+Tenga en cuenta que los Settings Profiles basados en XML y los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files) actualmente no son compatibles con ClickHouse Cloud.
+
+Para obtener más información sobre los ajustes que puede especificar para su servicio de ClickHouse Cloud, consulte todos los ajustes posibles por categoría en [nuestra documentación](/es/reference/settings/index).
+
+<Image img="/images/cloud/manage/cloud-settings-sidebar.webp" size="sm" alt="Barra lateral de ajustes de Cloud" border />

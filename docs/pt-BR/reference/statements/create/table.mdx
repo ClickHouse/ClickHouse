@@ -1,0 +1,514 @@
+---
+description: 'Documentação da tabela'
+keywords: ['esquema', 'DDL']
+sidebarTitle: 'CREATE TABLE'
+slug: /sql-reference/statements/create/table
+title: 'CREATE TABLE'
+doc_type: 'referência'
+---
+
+Cria uma nova tabela. Por padrão, as tabelas são criadas apenas no servidor atual.
+As consultas DDL distribuídas são implementadas por meio da cláusula `ON CLUSTER`, que é [descrita separadamente](/pt-BR/reference/statements/distributed-ddl).
+
+<div id="syntax-forms">
+  ## Formas de sintaxe
+</div>
+
+Esta consulta pode assumir várias variações de sintaxe, dependendo do caso de uso.
+
+<div id="with-explicit-schema">
+  ### Criar uma tabela com um esquema explícito
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr1] [COMMENT 'comment for column'] [compression_codec] [TTL expr1],
+    name2 [type2] [NULL|NOT NULL] [DEFAULT|MATERIALIZED|EPHEMERAL|ALIAS expr2] [COMMENT 'comment for column'] [compression_codec] [TTL expr2],
+    ...
+) ENGINE = engine
+  [COMMENT 'comment for table']
+```
+
+Cria uma tabela chamada `table_name` no banco de dados `db` ou no banco de dados atual, se `db` não estiver definido, com a estrutura especificada entre colchetes e o `engine` especificado.
+A estrutura da tabela é uma lista de descrições de colunas, índices secundários, projeções e restrições. Se a [chave primária](#primary-key) for compatível com o `engine`, ela será indicada como parâmetro do motor de tabela.
+
+Uma descrição de coluna é `name type` no caso mais simples. Exemplo: `RegionID UInt32`.
+
+Os modificadores que seguem o tipo — `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` e `SETTINGS` por coluna — podem ser escritos em qualquer ordem, e cada um deles pode aparecer no máximo uma vez. Por exemplo, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` e `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` são equivalentes. Observe que `SHOW CREATE TABLE` normaliza a declaração de coluna: os modificadores que permanecem nela são sempre impressos na ordem canônica `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, enquanto uma `PRIMARY KEY` por coluna é movida da declaração de coluna para a cláusula `PRIMARY KEY` no nível da tabela.
+
+Expressões também podem ser definidas para valores padrão (veja abaixo).
+
+Se necessário, a chave primária pode ser especificada com uma ou mais expressões-chave.
+
+Comentários podem ser adicionados às colunas e à tabela.
+
+<div id="with-a-schema-similar-to-other-table">
+  ### Criar uma tabela com o esquema de uma tabela existente
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
+```
+
+O ClickHouse permite copiar o esquema e os dados de uma tabela existente.
+
+Para replicar o esquema de uma tabela existente:
+
+Isso cria uma tabela com a mesma estrutura de outra tabela.
+
+<div id="with-a-schema-and-data-cloned-from-another-table">
+  ### Crie uma tabela com o esquema e os dados de tabelas existentes
+</div>
+
+Para replicar o esquema e os dados de uma tabela existente:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
+```
+
+Isso cria uma tabela com o mesmo esquema e os mesmos dados que uma tabela existente.  Depois que a nova tabela é criada, todas as partições de `db.table` são anexadas a ela. Em outras palavras, os dados de `db.table` são clonados para `db2.table_clone` no momento da criação. Esta consulta é equivalente à seguinte:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+```
+
+Para ambas as funcionalidades, você pode especificar um motor diferente para a tabela. Se o motor não for especificado, será usado o mesmo motor da tabela original (`db.table`).
+
+<div id="from-a-table-function">
+  ### Criar uma tabela com uma função de tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
+```
+
+Cria uma tabela com o mesmo resultado da [função de tabela](/pt-BR/reference/functions/table-functions/index) especificada. A tabela criada também funcionará da mesma forma que a função de tabela correspondente.
+
+<div id="from-select-query">
+  ### Criar uma tabela com uma consulta SELECT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
+```
+
+Cria uma tabela com uma estrutura igual à do resultado da consulta `SELECT`, com o motor `engine`, e a preenche com os dados de `SELECT`. Você também pode especificar explicitamente a definição das colunas.
+
+Se a tabela já existir e `IF NOT EXISTS` for especificado, a consulta não fará nada.
+
+Pode haver outras cláusulas após a cláusula `ENGINE` na consulta. Veja a documentação detalhada sobre como criar tabelas nas descrições de [motores de tabela](/pt-BR/reference/engines/table-engines/index).
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
+SELECT x, toTypeName(x) FROM t1;
+```
+
+```text title="Response"
+┌─x─┬─toTypeName(x)─┐
+│ 1 │ String        │
+└───┴───────────────┘
+```
+
+<div id="default_values">
+  ## Especificar valores padrão de colunas
+</div>
+
+A descrição da coluna pode especificar uma expressão de valor padrão na forma de `DEFAULT expr`, `MATERIALIZED expr` ou `ALIAS expr`. Exemplo: `URLDomain String DEFAULT domain(URL)`.
+
+A expressão `expr` é opcional. Se for omitida, o tipo da coluna deve ser especificado explicitamente, e o valor padrão será `0` para colunas numéricas, `''` (a string vazia) para colunas de string, `[]` (o array vazio) para colunas de array, `1970-01-01` para colunas de data ou `NULL` para colunas Nullable.
+
+O tipo da coluna com valor padrão pode ser omitido; nesse caso, ele é inferido a partir do tipo de `expr`. Por exemplo, o tipo da coluna `EventDate DEFAULT toDate(EventTime)` será date.
+
+Se um tipo de dado e uma expressão de valor padrão forem especificados, será inserida uma função implícita de conversão de tipo que converte a expressão para o tipo especificado. Exemplo: `Hits UInt32 DEFAULT 0` é representado internamente como `Hits UInt32 DEFAULT toUInt32(0)`.
+
+Uma expressão de valor padrão `expr` pode referenciar colunas arbitrárias da tabela e constantes. O ClickHouse verifica se alterações na estrutura da tabela não introduzem loops no cálculo da expressão. Para INSERT, ele verifica se as expressões podem ser resolvidas — isto é, se todas as colunas a partir das quais elas podem ser calculadas foram fornecidas.
+
+<div id="default">
+  ### DEFAULT
+</div>
+
+`DEFAULT expr`
+
+Valor padrão comum. Se o valor dessa coluna não for especificado em uma consulta INSERT, ele será calculado com base em `expr`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime DEFAULT now(),
+    updated_at_date Date DEFAULT toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id) VALUES (1);
+
+SELECT * FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:06:46 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="materialized">
+  ### MATERIALIZED
+</div>
+
+`MATERIALIZED expr`
+
+Expressão materializada. Os valores dessas colunas são calculados automaticamente de acordo com a expressão materializada especificada quando as linhas são inseridas. Não é possível especificar explicitamente esses valores durante `INSERT`s.
+
+Além disso, colunas com valor padrão desse tipo não são incluídas no resultado de `SELECT *`. Isso preserva a invariante de que o resultado de um `SELECT *` sempre pode ser inserido de volta na tabela usando `INSERT`. Esse comportamento pode ser desativado com a configuração `asterisk_include_materialized_columns`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    updated_at DateTime MATERIALIZED now(),
+    updated_at_date Date MATERIALIZED toDate(updated_at)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1);
+
+SELECT * FROM test;
+┌─id─┐
+│  1 │
+└────┘
+
+SELECT id, updated_at, updated_at_date FROM test;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
+┌─id─┬──────────updated_at─┬─updated_at_date─┐
+│  1 │ 2023-02-24 17:08:08 │      2023-02-24 │
+└────┴─────────────────────┴─────────────────┘
+```
+
+<div id="ephemeral">
+  ### EPHEMERAL
+</div>
+
+`EPHEMERAL [expr]`
+
+Coluna efêmera. Colunas desse tipo não são armazenadas na tabela e não é possível consultá-las com `SELECT`. O único propósito das colunas efêmeras é servir de base para expressões de valor padrão de outras colunas.
+
+Um insert sem colunas explicitamente especificadas ignorará colunas desse tipo. Isso preserva a invariante de que o resultado de um `SELECT *` sempre pode ser inserido de volta na tabela usando `INSERT`.
+
+Exemplo:
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    unhexed String EPHEMERAL,
+    hexed FixedString(4) DEFAULT unhex(unhexed)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test (id, unhexed) VALUES (1, '5a90b714');
+
+SELECT
+    id,
+    hexed,
+    hex(hexed)
+FROM test
+FORMAT Vertical;
+
+Row 1:
+──────
+id:         1
+hexed:      Z��
+hex(hexed): 5A90B714
+```
+
+<div id="alias">
+  ### ALIAS
+</div>
+
+`ALIAS expr`
+
+Colunas calculadas (sinônimo). Colunas desse tipo não são armazenadas na tabela, e não é possível fazer INSERT de valores nelas.
+
+Quando consultas SELECT fazem referência explícita a colunas desse tipo, o valor é calculado no momento da consulta a partir de `expr`. Por padrão, `SELECT *` exclui colunas ALIAS. Esse comportamento pode ser desativado com a configuração `asterisk_include_alias_columns`.
+
+Ao usar a consulta ALTER para adicionar novas colunas, os dados antigos dessas colunas não são gravados. Em vez disso, ao ler dados antigos que não têm valores para as novas colunas, as expressões são calculadas dinamicamente por padrão. No entanto, se a execução dessas expressões exigir colunas diferentes que não estejam indicadas na consulta, essas colunas também serão lidas, mas apenas para os blocos de dados que precisarem disso.
+
+Se você adicionar uma nova coluna a uma tabela, mas depois alterar sua expressão padrão, os valores usados para os dados antigos mudarão (para dados cujos valores não foram armazenados em disco). Observe que, ao executar mesclagens em segundo plano, os dados das colunas que estiverem ausentes em uma das partes que estão sendo mescladas serão gravados na parte mesclada.
+
+Não é possível definir valores padrão para elementos em estruturas de dados aninhadas.
+
+```sql
+CREATE OR REPLACE TABLE test
+(
+    id UInt64,
+    size_bytes Int64,
+    size String ALIAS formatReadableSize(size_bytes)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO test VALUES (1, 4678899);
+
+SELECT id, size_bytes, size FROM test;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+
+SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
+┌─id─┬─size_bytes─┬─size─────┐
+│  1 │    4678899 │ 4.46 MiB │
+└────┴────────────┴──────────┘
+```
+
+<div id="null-or-not-null-modifiers">
+  ## Modificadores `NULL` ou `NOT NULL`
+</div>
+
+Os modificadores `NULL` e `NOT NULL`, quando usados após o tipo de dado na definição da coluna, indicam se ela pode ou não ser [Nullable](/pt-BR/reference/data-types/nullable).
+
+Se o tipo não for `Nullable` e `NULL` for especificado, ele será tratado como `Nullable`; se `NOT NULL` for especificado, não será. Por exemplo, `INT NULL` é o mesmo que `Nullable(INT)`. Se o tipo for `Nullable` e os modificadores `NULL` ou `NOT NULL` forem especificados, uma exceção será gerada.
+
+Veja também a configuração [data&#95;type&#95;default&#95;nullable](/pt-BR/reference/settings/session-settings/other#data_type_default_nullable).
+
+<div id="primary-key">
+  ## Chave primária
+</div>
+
+Você pode definir uma [chave primária](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries) ao criar uma tabela. A chave primária pode ser especificada de duas formas:
+
+<Columns cols={2}>
+  <div>
+    **Na lista de colunas**
+
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...,
+        PRIMARY KEY(expr1[, expr2,...])
+    )
+    ENGINE = engine;
+    ```
+  </div>
+
+  <div>
+    **Fora da lista de colunas**
+
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...
+    )
+    ENGINE = engine
+    PRIMARY KEY(expr1[, expr2,...]);
+    ```
+  </div>
+</Columns>
+
+<Tip>
+  Não é possível combinar as duas formas em uma única consulta.
+</Tip>
+
+<div id="constraints">
+  ## Especificar restrições de tabela
+</div>
+
+Além das descrições das colunas, também é possível definir restrições:
+
+<div id="constraint">
+  ### CONSTRAINT
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [compression_codec] [TTL expr1],
+    ...
+    CONSTRAINT constraint_name_1 CHECK boolean_expr_1,
+    ...
+) ENGINE = engine
+```
+
+`boolean_expr_1` pode ser qualquer expressão booleana. Se forem definidas restrições para a tabela, cada uma delas será verificada para cada linha na consulta `INSERT`. Se alguma restrição não for atendida — o servidor gerará uma exceção com o nome da restrição e a expressão de verificação.
+
+Adicionar um grande número de restrições pode afetar negativamente o desempenho de consultas `INSERT` grandes.
+
+As restrições existentes em todas as tabelas podem ser inspecionadas por meio da tabela [`system.constraints`](/pt-BR/reference/system-tables/constraints).
+
+<div id="assume">
+  ### ASSUME
+</div>
+
+A cláusula `ASSUME` é usada para definir uma `CONSTRAINT` em uma tabela que se presume ser true. Essa restrição pode então ser usada pelo otimizador para melhorar o desempenho das consultas SQL.
+
+Veja este exemplo em que `ASSUME CONSTRAINT` é usado na criação da tabela `users_a`:
+
+```sql
+CREATE TABLE users_a (
+    uid Int16, 
+    name String, 
+    age Int16, 
+    name_len UInt8 MATERIALIZED length(name), 
+    CONSTRAINT c1 ASSUME length(name) = name_len
+) 
+ENGINE=MergeTree 
+ORDER BY (name_len, name);
+```
+
+Aqui, `ASSUME CONSTRAINT` é usado para declarar que a função `length(name)` é sempre igual ao valor da coluna `name_len`. Isso significa que, sempre que `length(name)` for chamada em uma consulta, o ClickHouse poderá substituí-la por `name_len`, o que tende a ser mais rápido, pois evita chamar a função `length()`.
+
+Assim, ao executar a consulta `SELECT name FROM users_a WHERE length(name) < 5;`, o ClickHouse pode otimizá-la para `SELECT name FROM users_a WHERE name_len < 5`; por causa de `ASSUME CONSTRAINT`. Isso pode fazer com que a consulta seja executada mais rapidamente, pois evita calcular o comprimento de `name` para cada linha.
+
+`ASSUME CONSTRAINT` **não impõe a restrição**; ele apenas informa ao otimizador que a restrição é válida. Se a restrição não for realmente válida, os resultados das consultas poderão estar incorretos. Portanto, você só deve usar `ASSUME CONSTRAINT` se tiver certeza de que a restrição é válida.
+
+<div id="ttl-expression">
+  ## Defina o tempo de armazenamento com TTL
+</div>
+
+Define por quanto tempo os valores são armazenados. Pode ser especificada apenas para tabelas da família MergeTree. Para uma descrição detalhada, consulte [TTL para colunas e tabelas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
+
+<div id="column_compression_codec">
+  ## Selecionar codecs de compressão para colunas
+</div>
+
+{/* Âncoras de destino para links de seções movidas para /reference/statements/create/table/codec */}
+
+<a id="general-purpose-codecs" />
+
+<a id="none" />
+
+<a id="lz4" />
+
+<a id="lz4hc" />
+
+<a id="zstd" />
+
+<a id="zxc" />
+
+<a id="zstd_qat" />
+
+<a id="deflate_qpl" />
+
+<a id="specialized-codecs" />
+
+<a id="delta" />
+
+<a id="doubledelta" />
+
+<a id="gcd" />
+
+<a id="gorilla" />
+
+<a id="alp" />
+
+<a id="fpc" />
+
+<a id="sz3" />
+
+<a id="t64" />
+
+<a id="quantized" />
+
+<a id="encryption-codecs" />
+
+<a id="aes_128_gcm_siv" />
+
+<a id="aes-256-gcm-siv" />
+
+<a id="adaptive-codec-selection" />
+
+Por padrão, o ClickHouse usa a compressão `lz4` na versão autogerenciada e `zstd` no ClickHouse Cloud. Também é possível definir o método de compressão de cada coluna na consulta `CREATE TABLE`:
+
+```sql
+CREATE TABLE codec_example
+(
+    dt Date CODEC(ZSTD),
+    ts DateTime CODEC(LZ4HC),
+    float_value Float32 CODEC(NONE),
+    double_value Float64 CODEC(LZ4HC(9)),
+    value Float32 CODEC(Delta, ZSTD)
+)
+ENGINE = <Engine>
+...
+```
+
+Para ver os codecs de uso geral, especializados e de criptografia disponíveis, consulte [Codecs de compressão de colunas](/pt-BR/reference/statements/create/table/codec).
+
+<div id="temporary-tables">
+  ## Criar tabelas temporárias
+</div>
+
+O ClickHouse oferece suporte a tabelas temporárias, que desaparecem quando a sessão é encerrada. Para mais detalhes, consulte [CREATE TEMPORARY TABLE](/pt-BR/reference/statements/create/table/temporary-table).
+
+<div id="replace-table">
+  ## Atualize uma tabela atomicamente com REPLACE TABLE
+</div>
+
+{/* Âncoras de destino para links de seções movidas para /reference/statements/create/table/replace-table */}
+
+<a id="syntax" />
+
+<a id="examples" />
+
+A instrução `REPLACE` permite atualizar uma tabela [atomicamente](/pt-BR/concepts/core-concepts/glossary#atomicity). Para obter detalhes, consulte [REPLACE TABLE](/pt-BR/reference/statements/create/table/replace-table).
+
+<div id="comment-clause">
+  ## Adicionar um comentário à tabela
+</div>
+
+Você pode adicionar um comentário à tabela ao criá-la.
+
+**Sintaxe**
+
+```sql
+CREATE TABLE [db.]table_name
+(
+    name1 type1, name2 type2, ...
+)
+ENGINE = engine
+COMMENT 'Comment'
+```
+
+<Note>
+  A cláusula `COMMENT` deve ser especificada **depois** de quaisquer cláusulas específicas de armazenamento, como `PARTITION BY`, `ORDER BY` e `SETTINGS` específicos de armazenamento.
+
+  Após a cláusula `COMMENT`, apenas `SETTINGS` específicos da consulta (como `max_threads` etc.) serão interpretados, e não as configurações relacionadas ao armazenamento.
+
+  Isso significa que a ordem correta das cláusulas é:
+
+  * `ENGINE`
+  * cláusulas de armazenamento
+  * `COMMENT`
+  * configurações da consulta (se houver)
+</Note>
+
+**Exemplo**
+
+```sql title="Query"
+CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
+SELECT name, comment FROM system.tables WHERE name = 't1';
+```
+
+```text title="Response"
+┌─name─┬─comment─────────────┐
+│ t1   │ The temporary table │
+└──────┴─────────────────────┘
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Otimizando o ClickHouse com esquemas e codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
+* Blog: [Trabalhando com dados de séries temporais no ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

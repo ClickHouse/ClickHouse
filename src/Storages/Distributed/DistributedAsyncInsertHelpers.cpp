@@ -49,7 +49,7 @@ bool isDistributedSendBroken(int code, bool remote_error)
         || (!remote_error && code == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF);
 }
 
-void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
+static void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader & distributed_header, ReadBufferFromFile & in)
 {
     CompressedReadBuffer decompressing_in(in);
     NativeReader block_in(decompressing_in, distributed_header.revision);
@@ -59,7 +59,8 @@ void writeAndConvert(RemoteInserter & remote, const DistributedAsyncInsertHeader
         auto converting_dag = ActionsDAG::makeConvertingActions(
             block.cloneEmpty().getColumnsWithTypeAndName(),
             remote.getHeader().getColumnsWithTypeAndName(),
-            ActionsDAG::MatchColumnsMode::Name);
+            ActionsDAG::MatchColumnsMode::Name,
+            nullptr);
 
         auto converting_actions = std::make_shared<ExpressionActions>(std::move(converting_dag));
         converting_actions->execute(block);

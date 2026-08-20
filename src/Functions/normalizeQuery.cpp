@@ -78,7 +78,7 @@ SELECT normalizeQuery('[1, 2, 3, x]') AS query
     };
     FunctionDocumentation::IntroducedIn normalizeQuery_introduced_in = {20, 8};
     FunctionDocumentation::Category normalizeQuery_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation normalizeQuery_documentation = {normalizeQuery_description, normalizeQuery_syntax, normalizeQuery_arguments, normalizeQuery_returned_value, normalizeQuery_examples, normalizeQuery_introduced_in, normalizeQuery_category};
+    FunctionDocumentation normalizeQuery_documentation = {normalizeQuery_description, normalizeQuery_syntax, normalizeQuery_arguments, {}, normalizeQuery_returned_value, normalizeQuery_examples, normalizeQuery_introduced_in, normalizeQuery_category};
 
     FunctionDocumentation::Description normalizeQueryKeepNames_description = R"(
 Replaces literals and sequences of literals with placeholder `?` but does not replace complex aliases (containing whitespace, more than two digits or at least 36 bytes long such as UUIDs).
@@ -104,7 +104,7 @@ SELECT normalizeQuery('SELECT 1 AS aComplexName123'), normalizeQueryKeepNames('S
     };
     FunctionDocumentation::IntroducedIn normalizeQueryKeepNames_introduced_in = {21, 2};
     FunctionDocumentation::Category normalizeQueryKeepNames_category = FunctionDocumentation::Category::Other;
-    FunctionDocumentation normalizeQueryKeepNames_documentation = {normalizeQueryKeepNames_description, normalizeQueryKeepNames_syntax, normalizeQueryKeepNames_arguments, normalizeQueryKeepNames_returned_value, normalizeQueryKeepNames_examples, normalizeQueryKeepNames_introduced_in, normalizeQueryKeepNames_category};
+    FunctionDocumentation normalizeQueryKeepNames_documentation = {normalizeQueryKeepNames_description, normalizeQueryKeepNames_syntax, normalizeQueryKeepNames_arguments, {}, normalizeQueryKeepNames_returned_value, normalizeQueryKeepNames_examples, normalizeQueryKeepNames_introduced_in, normalizeQueryKeepNames_category};
 
     factory.registerFunction<FunctionStringToString<Impl<true>, Impl<true>>>(normalizeQueryKeepNames_documentation);
     factory.registerFunction<FunctionStringToString<Impl<false>, Impl<false>>>(normalizeQuery_documentation);

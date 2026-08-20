@@ -21,7 +21,8 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
+# Enable highlighting (it is disabled by default in `CLICKHOUSE_CLIENT_EXPECT_OPT`), otherwise this test does not validate highlighting at all.
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \${CLICKHOUSE_CLIENT_EXPECT_OPT/--highlight 0/--highlight 1} --history_file=$history_file"
 
 # (?n) - Do not match new lines
 expect -re "(?n)ClickHouse client version \[\\d\]{2}\.\[\\d\]{1,2}\.\[\\d\]{1,2}\.\[\\d\]{1,}.*\r"
@@ -30,7 +31,12 @@ expect -re "(?n)Connected to ClickHouse server version \[\\d\]{2}\.\[\\d\]{1,2}\
 expect ":) "
 
 send -- "SELECT (+123) AS x"
-expect {[47G[0;1mSELECT[0m (+[0;38;5;40m1[0m) [0;1mAS[0m [0;38;5;44mx[0m[J[63G}
+# Validate that highlighting actually works: the keyword `SELECT` is rendered in bold,
+# and the number `123` is rendered with the digit-group color.
+# The previous assertion used `expect {...}`, which expect parses as a pattern/action list rather than a single
+# literal pattern, so the test passed regardless of whether highlighting actually worked.
+expect -- "\033\\\[0;1mSELECT\033\\\[0m"
+expect -- "\033\\\[0;38;5;40m123"
 
 send -- "\r"
 expect ":) "

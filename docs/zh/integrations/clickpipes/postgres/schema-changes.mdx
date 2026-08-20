@@ -1,0 +1,38 @@
+---
+title: 'Schema 变更传播支持'
+slug: /integrations/clickpipes/postgres/schema-changes
+description: '介绍 ClickPipes 可检测到的源表 schema 变更类型的页面'
+doc_type: 'reference'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+ClickPipes for Postgres 可以检测源表中的 schema 变更，并且在某些情况下会自动将这些变更同步到目标端表。下面说明了各类 DDL 操作的处理方式：
+
+[//]: # "TODO 补充本页内容：rename、数据类型变更以及 truncate 时的行为，并提供如何处理不兼容 schema 变更的指导。"
+
+| Schema 变更类型                                          | 行为                                                                                                                           |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 添加新列 (`ALTER TABLE ADD COLUMN ...`)                  | 在该表发生插入/更新/删除后会自动传播。对于 schema 变更后复制的所有行，新列都会被填充                                                                              |
+| 添加带默认值的新列 (`ALTER TABLE ADD COLUMN ... DEFAULT ...`) | 在该表发生插入/更新/删除后会自动传播。[支持的默认值](#default-values-for-added-columns)也会添加到 ClickHouse 列，因此它们适用于 ClickHouse 中已有的行以及 schema 变更后复制的行。 |
+| 删除现有列 (`ALTER TABLE DROP COLUMN ...`)                | 可以检测到，但**不会**传播。对于 schema 变更后复制的所有行，被删除的列都会填充为 `NULL`                                                                        |
+
+请注意，新增列会在某个批次同步结束时才传播，这可能发生在达到同步时间间隔或拉取批次大小之后。有关如何控制同步的更多信息，请参见[此处](/zh/integrations/clickpipes/postgres/controlling-sync)
+
+<div id="default-values-for-added-columns">
+  ## 新增列的默认值
+</div>
+
+对于新增列，只有能够将默认值安全地转换为 ClickHouse 时，ClickPipes 才会传播该默认值。传播后，ClickHouse 在读取早于新列创建的数据分区片段时会使用该默认值。因此，ClickHouse 中已有的行会显示与 PostgreSQL 为早于 `ADD COLUMN` 的行使用的相同值；无需完整刷新表。
+
+对于 PostgreSQL，ClickPipes 读取的是 PostgreSQL 为已有行存储的值，而不是该列当前的默认表达式。当默认值为表达式时，这一点尤为重要：例如，`now()` 等非易变表达式会在添加列时由 PostgreSQL 求值，ClickPipes 传播的是求值结果，而非表达式本身。后续的 `SET DEFAULT` 或 `DROP DEFAULT` 操作不会改变现有行使用的默认值，也不会传播到 ClickHouse。
+
+以下值会被传播：
+
+* 布尔值和有限数值。
+* 文本值，包括 `varchar`、`char`、枚举、UUID、JSON/JSONB、`hstore`、网络地址和日期。
+* 时间戳。带时区的时间戳会归一化为 UTC。
+
+当默认值的表示形式无法安全地移植到 ClickHouse 时，将不会传播该默认值，包括 `NULL`、非有限数值、`bytea`、数组、时间间隔、时刻值和几何类型。该列仍会被添加，但对于早于该列创建的数据分区片段，ClickHouse 会使用该类型的常规默认值。如果这些现有行必须包含源默认值，则需要完整刷新表。

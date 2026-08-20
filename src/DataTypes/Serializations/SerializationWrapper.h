@@ -17,7 +17,8 @@ public:
 
     const SerializationPtr & getNested() const  { return nested_serialization; }
 
-    Kind getKind() const override { return nested_serialization->getKind(); }
+    KindStack getKindStack() const override { return nested_serialization->getKindStack(); }
+    bool supportsPooling() const override { return nested_serialization->supportsPooling(); }
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
@@ -62,6 +63,8 @@ public:
     void serializeBinary(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const override;
     void deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
 
+    void serializeForHashCalculation(const IColumn & column, size_t row_num, WriteBuffer & ostr) const override;
+
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextEscaped(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
@@ -73,6 +76,7 @@ public:
     void serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;
+    void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings &) const override;

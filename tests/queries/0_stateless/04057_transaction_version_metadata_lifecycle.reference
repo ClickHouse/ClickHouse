@@ -1,0 +1,9 @@
+non_txn_creation_csn_is_1	1
+in_txn_creation_csn_is_0	1
+committed_creation_csn_positive	1
+rolled_back_creation_csn	1
+in_removal_txn_removal_tid_set	1	1
+in_removal_txn_removal_tid_set	1	1
+committed_removal_csn_positive	1
+committed_removal_csn_positive	1
+rollback_removal_tid_empty	1	1

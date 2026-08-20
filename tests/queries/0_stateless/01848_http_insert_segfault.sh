@@ -9,8 +9,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 {
   ${CLICKHOUSE_LOCAL} --query "select col1, initializeAggregation('argMaxState', col2, insertTime) as col2, now() as insertTime FROM generateRandom('col1 String, col2 Array(Float64)') LIMIT 1000000 FORMAT CSV"
 } | {
-  ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20non_existing_table%20SELECT%20col1%2C%20initializeAggregation(%27argMaxState%27%2C%20col2%2C%20insertTime)%20as%20col2%2C%20now()%20as%20insertTime%20FROM%20input(%27col1%20String%2C%20col2%20Array(Float64)%27)%20FORMAT%20CSV" --data-binary @-
+  # NOTE: Expect: 100-Continue should be disabled for this test, otherwise
+  # client (cURL) may got "100 Continue" even in case of UNKNOWN_TABLE error,
+  # after which server will close the connection, while cURL will try to send
+  # data and got "Send failure: Connection reset by peer"
+  ${CLICKHOUSE_CURL} -H "Expect:" --http1.1 -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20non_existing_table%20SELECT%20col1%2C%20initializeAggregation(%27argMaxState%27%2C%20col2%2C%20insertTime)%20as%20col2%2C%20now()%20as%20insertTime%20FROM%20input(%27col1%20String%2C%20col2%20Array(Float64)%27)%20FORMAT%20CSV" --data-binary @-
 } | {
-  grep -q "Table $CLICKHOUSE_DATABASE.non_existing_table does not exist" && echo 'Ok.' || echo 'FAIL'
+  grep -o "Table $CLICKHOUSE_DATABASE.non_existing_table does not exist"
 }
 exit 0

@@ -1,6 +1,9 @@
 #pragma once
 
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include "config.h"
+#include <optional>
+#include <vector>
 
 #if USE_AVRO
 
@@ -17,22 +20,36 @@
 namespace DB::Iceberg
 {
 
+/// Fast pre-check that throws `NOT_IMPLEMENTED` when the table's configured
+/// `write_format` is not Parquet. Mutations rely on Parquet for the
+/// position-delete file format; other formats either fail on write (e.g. ORC)
+/// or produce data that cannot be read back, corrupting the table.
+/// This is a configured-format-only check; the deeper per-data-file check (for
+/// mixed-format tables) lives in `IcebergMetadata::mutate`.
+void validateMutationWriteFormat(const String & write_format);
+
 void mutate(
     const MutationCommands & commands,
     ContextPtr context,
-    StorageMetadataPtr metadata,
+    StoragePtr storage_ptr,
+    StorageMetadataPtr storage_metadata,
     StorageID storage_id,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration,
+    const DataLakeStorageSettings & data_lake_settings,
+    const PersistentTableComponents & persistent_table_components,
+    const String & write_format,
     const std::optional<FormatSettings> & format_settings,
     std::shared_ptr<DataLake::ICatalog> catalog);
 
 void alter(
     const AlterCommands & params,
     ContextPtr context,
+    StorageID storage_id,
     ObjectStoragePtr object_storage,
-    StorageObjectStorageConfigurationPtr configuration
-);
+    const DataLakeStorageSettings & data_lake_settings,
+    const PersistentTableComponents & persistent_table_components,
+    const String & write_format,
+    std::shared_ptr<DataLake::ICatalog> catalog);
 
 }
 

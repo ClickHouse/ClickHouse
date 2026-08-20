@@ -1,4 +1,5 @@
 -- Tags: memory-engine
+SET create_table_empty_primary_key_by_default = 0;
 SET default_table_engine = 'None';
 
 CREATE TABLE table_02184 (x UInt8); --{serverError ENGINE_REQUIRED}
@@ -8,7 +9,7 @@ SHOW CREATE TABLE table_02184;
 DROP TABLE table_02184;
 
 SET default_table_engine = 'MergeTree';
-CREATE TABLE table_02184 (x UInt8); --{serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH}
+CREATE TABLE table_02184 (x UInt8); --{serverError BAD_ARGUMENTS}
 CREATE TABLE table_02184 (x UInt8, PRIMARY KEY (x));
 SHOW CREATE TABLE table_02184;
 DROP TABLE table_02184;
@@ -68,8 +69,8 @@ DROP TABLE t1;
 DROP TABLE t2;
 
 
-CREATE DATABASE test_02184 ORDER BY kek; -- {serverError UNKNOWN_ELEMENT_IN_AST}
-CREATE DATABASE test_02184 SETTINGS x=1; -- {serverError UNKNOWN_SETTING}
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ORDER BY kek; -- {serverError UNKNOWN_ELEMENT_IN_AST}
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SETTINGS x=1; -- {serverError UNKNOWN_SETTING}
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) ENGINE=MergeTree PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}
 SET default_table_engine = 'MergeTree';
 CREATE TABLE table_02184 (x UInt8, y int, PRIMARY KEY (x)) PRIMARY KEY y; -- {clientError BAD_ARGUMENTS}

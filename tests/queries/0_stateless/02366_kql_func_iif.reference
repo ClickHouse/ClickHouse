@@ -1,0 +1,25 @@
+-- iif() basic tests
+yes
+no
+less or equal
+100
+-- iif() with numeric types
+1.5
+200
+-- iif() with null values
+is null
+has value
+-- iif() nested
+inner true
+inner true
+-- iif() with table data
+ten	low
+twenty	high
+thirty	high
+five	low
+ten	20
+twenty	20
+thirty	30
+five	10
+twenty	20
+thirty	30

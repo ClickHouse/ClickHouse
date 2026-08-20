@@ -1,0 +1,60 @@
+---
+description: 'يتيح المحرك `ExternalDistributed` تنفيذ استعلامات `SELECT` على البيانات
+  المخزنة على خوادم MySQL أو PostgreSQL بعيدة. ويقبل محركَي MySQL أو
+  PostgreSQL كوسيطة، مما يتيح تجزئة البيانات.'
+sidebarTitle: 'ExternalDistributed'
+slug: /engines/table-engines/integrations/ExternalDistributed
+title: 'محرك الجدول ExternalDistributed'
+doc_type: 'مرجع'
+---
+
+يتيح المحرك `ExternalDistributed` تنفيذ استعلامات `SELECT` على البيانات المخزنة على خوادم [MySQL](/ar/reference/engines/table-engines/integrations/mysql) أو [PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) بعيدة. ويقبل محركَي MySQL أو PostgreSQL كوسيطة، مما يتيح تجزئة البيانات.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2] [TTL expr2],
+    ...
+) ENGINE = ExternalDistributed('engine', 'host:port', 'database', 'table', 'user', 'password');
+```
+
+راجع الوصف التفصيلي لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+يمكن أن يختلف هيكل الجدول عن هيكل الجدول الأصلي:
+
+* يجب أن تكون أسماء الأعمدة مطابقةً لتلك الموجودة في الجدول الأصلي، لكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
+* قد تختلف أنواع الأعمدة عن تلك الموجودة في الجدول الأصلي. ويحاول ClickHouse [تحويل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) القيم إلى أنواع بيانات ClickHouse.
+
+**معلمات المحرك**
+
+* `engine` — محرك الجدول `MySQL` أو `PostgreSQL`.
+* `host:port` — عنوان خادم MySQL أو PostgreSQL.
+* `database` — اسم قاعدة البيانات البعيدة.
+* `table` — اسم الجدول البعيد.
+* `user` — اسم المستخدم.
+* `password` — كلمة مرور المستخدم.
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+يدعم عدة نُسخ متماثلة يجب سردها باستخدام `|`، كما يجب سرد الأجزاء باستخدام `,`. على سبيل المثال:
+
+```sql
+CREATE TABLE test_shards (id UInt32, name String, age UInt32, money UInt32) ENGINE = ExternalDistributed('MySQL', `mysql{1|2}:3306,mysql{3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+عند تحديد النسخ المتماثلة، يُختار أحد النسخ المتماثلة المتاحة لكل جزء عند القراءة. وإذا فشل الاتصال، تُختار النسخة المتماثلة التالية، وهكذا حتى استنفاد جميع النسخ المتماثلة. وإذا فشلت محاولة الاتصال مع جميع النسخ المتماثلة، تُعاد المحاولة بالطريقة نفسها عدة مرات.
+
+يمكنك تحديد أي عدد من الأجزاء وأي عدد من النسخ المتماثلة لكل جزء.
+
+**انظر أيضًا**
+
+* [محرك الجدول MySQL](/ar/reference/engines/table-engines/integrations/mysql)
+* [محرك الجدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql)
+* [محرك الجدول Distributed](/ar/reference/engines/table-engines/special/distributed)

@@ -5,16 +5,20 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
+#include <Interpreters/StorageID.h>
 #include <base/defines.h>
 #include <boost/noncopyable.hpp>
 #include <Poco/Notification.h>
 #include <Poco/NotificationQueue.h>
 #include <Poco/Timestamp.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ZooKeeper/Types.h>
 #include <Common/callOnce.h>
+#include <Common/setThreadName.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 
 namespace DB
@@ -48,31 +52,62 @@ public:
     using TaskFunc = std::function<void()>;
     using TaskHolder = BackgroundSchedulePoolTaskHolder;
 
-    TaskHolder createTask(const std::string & log_name, const TaskFunc & function);
+    TaskHolder createTask(const StorageID & storage, const std::string & log_name, const TaskFunc & function);
 
     /// As for MergeTreeBackgroundExecutor we refuse to implement tasks eviction, because it will
-    /// be error prone. We support only increasing number of threads at runtime.
+    /// be error prone. We support only increasing the cap on the number of threads at runtime.
+    /// Threads above the current count are still spawned lazily on demand up to this cap.
     void increaseThreadsCount(size_t new_threads_count);
 
-    static BackgroundSchedulePoolPtr create(size_t size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, const char * thread_name);
+    static BackgroundSchedulePoolPtr create(size_t size, size_t initial_size, size_t max_parallel_tasks_per_type, CurrentMetrics::Metric tasks_metric, CurrentMetrics::Metric size_metric, ThreadName thread_name);
     ~BackgroundSchedulePool();
 
     /// Shutdown the pool (set flag, destroy threads)
     /// Should be called explicitly before destroying object.
     void join();
 
+    struct TaskInfoSnapshot
+    {
+        StorageID storage;
+        String log_name;
+        String query_id;
+        UInt64 elapsed_ms;
+        bool deactivated;
+        bool scheduled;
+        bool delayed;
+        bool executing;
+    };
+
+    std::vector<TaskInfoSnapshot> getTasks();
+
 private:
     using TaskInfoPtr = std::shared_ptr<TaskInfo>;
-    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>;
+    /// These pool queues are deliberately kept as plain `std` containers, NOT the throwing
+    /// `-WithMemoryTracking` aliases. Tasks are scheduled/cancelled (i.e. these containers are
+    /// mutated) from `BackgroundSchedulePoolTaskHolder`/`PauseHolder` destructors and other cleanup
+    /// paths that can run while the stack is already unwinding from another exception. A throwing
+    /// allocation (`MEMORY_LIMIT_EXCEEDED`) on such a path would be a second in-flight exception and
+    /// call `std::terminate`, killing the server.
+    /// In theory all this code should be made exception-safe, in practice we chose to avoid dealing with it for now.
+    using DelayedTasks = std::multimap<Poco::Timestamp, TaskInfoPtr>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
     /// BackgroundSchedulePool schedules a task on its own task queue, there's no need to construct/restore tracing context on this level.
     /// This is also how ThreadPool class treats the tracing context. See ThreadPool for more information.
-    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>;
+    using Threads = std::vector<ThreadFromGlobalPoolNoTracingContextPropagation>; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// @param thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
-    BackgroundSchedulePool(size_t size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, const char * thread_name_);
+    BackgroundSchedulePool(size_t size_, size_t initial_size_, size_t max_parallel_tasks_per_type_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric size_metric_, ThreadName thread_name_);
 
     void threadFunction();
     void delayExecutionThreadFunction();
+
+    /// Spawn a single new worker thread. Must be called with tasks_mutex held.
+    void spawnThreadLocked() TSA_REQUIRES(tasks_mutex);
+
+    /// Whether the number of currently runnable tasks exceeds `threshold`. A single task group
+    /// can run up to max_parallel_tasks_per_type tasks at once, so demand is counted per group
+    /// (not as the number of distinct runnable task types). Stops as soon as the threshold is
+    /// passed, so it is cheap on the scheduling hot path. Must be called with tasks_mutex held.
+    bool runnableTasksExceedLocked(size_t threshold) const TSA_REQUIRES(tasks_mutex);
 
     void scheduleTask(TaskInfo & task_info);
 
@@ -87,17 +122,24 @@ private:
     /// Tasks.
     std::condition_variable tasks_cond_var;
     std::mutex tasks_mutex;
+    LoggerPtr logger;
 
     struct TasksGroup
     {
         size_t num_running = 0;
         std::optional<size_t> runnable_list_pos;
-        std::deque<TaskInfoPtr> tasks;
+        std::deque<TaskInfoPtr> tasks; /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     };
-    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex);
-    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex);
-    Threads threads;
+    std::unordered_map<UInt64, TasksGroup> task_groups TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    std::vector<UInt64> runnable_task_types TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
+    Threads threads TSA_GUARDED_BY(tasks_mutex);
+    /// Number of worker threads currently parked in tasks_cond_var.wait, available to take work without spawning.
+    size_t idle_threads TSA_GUARDED_BY(tasks_mutex) = 0;
+    /// Maximum number of worker threads this pool may grow to. Threads are spawned lazily up to this cap.
+    size_t max_size TSA_GUARDED_BY(tasks_mutex);
+    /// Tasks from tasks_groups are removed while executing, hold list of running tasks separately, for better introspection via system.background_schedule_pool.
+    std::unordered_set<TaskInfoPtr> running_tasks TSA_GUARDED_BY(tasks_mutex); /// STYLE_CHECK_ALLOW_STD_CONTAINERS
 
     /// Delayed tasks.
 
@@ -110,7 +152,7 @@ private:
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Increment size_metric;
-    std::string thread_name;
+    ThreadName thread_name;
 
     size_t max_parallel_tasks_per_type;
 };
@@ -140,22 +182,20 @@ public:
     /// Return **permanent** watch callback needed for notifications from ZooKeeper watches.
     Coordination::WatchCallbackPtr getWatchCallback();
 
-    /// Returns lock that protects from concurrent task execution.
-    /// This lock should not be held for a long time.
-    std::unique_lock<std::mutex> getExecLock();
-
 private:
     friend class TaskNotification;
     friend class BackgroundSchedulePool;
 
-    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
+    BackgroundSchedulePoolTaskInfo(BackgroundSchedulePoolWeakPtr pool_, const StorageID & storage_, const std::string & log_name_, const BackgroundSchedulePool::TaskFunc & function_);
 
-    void execute(BackgroundSchedulePool & pool);
+    /// Return true if it the task was scheduled again
+    bool execute(BackgroundSchedulePool & pool);
 
     bool scheduleImpl(std::lock_guard<std::mutex> & schedule_mutex_lock);
 
     BackgroundSchedulePoolWeakPtr pool_ref;
-    std::string log_name;
+    const StorageID storage;
+    const std::string log_name;
     BackgroundSchedulePool::TaskFunc function;
 
     OnceFlag watch_callback_initialized;
@@ -171,6 +211,9 @@ private:
     bool scheduled TSA_GUARDED_BY(schedule_mutex) = false;
     bool delayed TSA_GUARDED_BY(schedule_mutex) = false;
     bool executing TSA_GUARDED_BY(schedule_mutex) = false;
+
+    std::string query_id TSA_GUARDED_BY(schedule_mutex);
+    AtomicStopwatch watch;
 
     /// If the task is scheduled with delay, points to element of delayed_tasks.
     BackgroundSchedulePool::DelayedTasks::iterator iterator;

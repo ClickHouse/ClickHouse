@@ -12,7 +12,7 @@ namespace DB
  *     ...
  * ]
  */
-class JSONCompactColumnsReader : public JSONColumnsReaderBase
+class JSONCompactColumnsReader final : public JSONColumnsReaderBase
 {
 public:
     explicit JSONCompactColumnsReader(ReadBuffer & in_);

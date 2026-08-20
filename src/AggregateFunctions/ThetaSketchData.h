@@ -6,22 +6,30 @@
 
 #include <boost/noncopyable.hpp>
 #include <memory>
-#include <base/StringRef.h>
 #include <theta_sketch.hpp>
 #include <theta_union.hpp>
 #include <theta_intersection.hpp>
 #include <theta_a_not_b.hpp>
 
+#include <Common/Exception.h>
+
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CORRUPTED_DATA;
+}
 
 
 template <typename Key>
 class ThetaSketchData : private boost::noncopyable
 {
 private:
+    /// Used for insertions
     std::unique_ptr<datasketches::update_theta_sketch> sk_update;
+    /// Used for merging
     std::unique_ptr<datasketches::theta_union> sk_union;
 
     datasketches::update_theta_sketch * getSkUpdate()
@@ -45,15 +53,29 @@ public:
     ~ThetaSketchData() = default;
 
     /// Insert original value without hash, as `datasketches::update_theta_sketch.update` will do the hash internal.
-    void insertOriginal(StringRef value)
+    void insertOriginal(std::string_view value)
     {
-        getSkUpdate()->update(value.data, value.size);
+        getSkUpdate()->update(value.data(), value.size());
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     /// Note that `datasketches::update_theta_sketch.update` will do the hash again.
     void insert(Key value)
     {
         getSkUpdate()->update(value);
+        /// In case of optimization for u8 keys (see addBatchLookupTable()) it is possible to have few calls of insert() after merge(),
+        /// and we should update sk_union as well, note, that there should not be too many, so performance wise it should be OK
+        if (sk_union)
+        {
+            sk_union->update(*sk_update);
+            sk_update.reset(nullptr);
+        }
     }
 
     UInt64 size() const
@@ -83,6 +105,21 @@ public:
 
     void intersect(const ThetaSketchData & rhs)
     {
+        /// If `rhs` has no recorded values it represents an empty set, and the
+        /// intersection with an empty set is always empty. Without this guard
+        /// `theta_intersection` would only receive `this` as a single input and
+        /// `get_result` would return that input unchanged — yielding a wrong,
+        /// non-empty result. This matters for example after
+        /// `uniqThetaMergeStateIf(state, predicate)` when the predicate excludes
+        /// every row: the resulting state is freshly created and has neither
+        /// `sk_update` nor `sk_union` allocated.
+        if (!rhs.sk_update && !rhs.sk_union)
+        {
+            sk_update.reset(nullptr);
+            sk_union.reset(nullptr);
+            return;
+        }
+
         datasketches::theta_union * u = getSkUnion();
 
         if (sk_update)
@@ -138,10 +175,36 @@ public:
     {
         datasketches::compact_theta_sketch::vector_bytes bytes;
         readVectorBinary(bytes, in);
-        if (!bytes.empty())
+        if (bytes.empty())
+            return;
+
+        try
         {
             auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
             getSkUnion()->update(sk);
+        }
+        catch (const DB::Exception &)
+        {
+            throw;
+        }
+        catch (const std::bad_alloc &)
+        {
+            /// Memory pressure on `compact_theta_sketch::deserialize`, `getSkUnion`,
+            /// or `theta_union.update` is not data corruption; let it propagate.
+            throw;
+        }
+        catch (const std::exception & e)
+        {
+            /// `datasketches` throws `std::invalid_argument` / `std::out_of_range` on
+            /// malformed input. These are not `DB::Exception`, so without translation
+            /// they escape `SerializationAggregateFunction`'s `catch (...)` block, reach
+            /// the top level as `LOGICAL_ERROR` (code 1001), and abort the process via
+            /// `abortOnFailedAssertion`. Translate to `CORRUPTED_DATA` so the bad input
+            /// is rejected cleanly.
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Cannot deserialize Theta sketch state: {}",
+                e.what());
         }
     }
 

@@ -44,7 +44,6 @@ public:
         bool dictionary) override;
 
     ASTPtr getCreateTableQueryImpl(const String & name, ContextPtr context, bool throw_on_error) const override;
-    ASTPtr getCreateDatabaseQuery() const override;
 
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
@@ -66,9 +65,9 @@ public:
 
     void shutdown() override;
 
-    bool canContainMergeTreeTables() const override;
-    bool canContainDistributedTables() const override;
-    bool canContainRocksDBTables() const override;
+    /// Return false if at least one underlying database is not external, otherwise return true
+    bool isExternal() const override;
+
     void loadStoredObjects(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
     bool supportsLoadingInTopologicalOrder() const override;
     void beforeLoadingMetadata(ContextMutablePtr local_context, LoadingStrictnessLevel mode) override;
@@ -100,8 +99,11 @@ public:
     void waitDatabaseStarted() const override;
     void stopLoading() override;
     void checkMetadataFilenameAvailability(const String & table_name) const override;
+    void checkTableNameLength(const String & table_name) const override;
 
 protected:
+    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
+
     std::vector<DatabasePtr> databases;
     LoggerPtr log;
 };

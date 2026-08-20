@@ -1,9 +1,13 @@
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Disks/IVolume.h>
@@ -34,7 +38,7 @@ namespace
 
 
 StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & table_id_)
-        : IStorage(table_id_)
+        : StorageWithCommonVirtualColumns(table_id_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(
@@ -51,7 +55,16 @@ StorageSystemStoragePolicies::StorageSystemStoragePolicies(const StorageID & tab
             {"load_balancing", std::make_shared<DataTypeEnum8>(getTypeEnumValues<VolumeLoadBalancing>()), "Policy for disk balancing, `round_robin` or `least_used`."}
     }));
     // TODO: Add string column with custom volume-type-specific options
+    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
+}
+
+VirtualColumnsDescription StorageSystemStoragePolicies::createVirtuals()
+{
+    VirtualColumnsDescription desc;
+    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
+    return desc;
 }
 
 Pipe StorageSystemStoragePolicies::read(
@@ -117,3 +130,6 @@ Pipe StorageSystemStoragePolicies::read(
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemStoragePolicies) }

@@ -24,7 +24,7 @@ Returns the cubic root of the argument.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT cbrt(8);", "2"}};
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionCbrt>(documentation);
 }

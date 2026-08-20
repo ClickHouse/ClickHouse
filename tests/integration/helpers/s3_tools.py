@@ -1,10 +1,7 @@
 import glob
 import json
 import os
-import shutil
-from enum import Enum
 
-from minio import Minio
 
 
 class CloudUploader:
@@ -83,18 +80,21 @@ class S3Downloader:
             recursive=True,
         )
 
+        result_files = []
         for obj in objects:
+            result_files.append(obj.object_name)
             diff_path = os.path.relpath(obj.object_name, start=remote_blobs_path)
             local_file_path = os.path.join(local_path, diff_path)
             os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
             print(f"Downloading {obj.object_name} to {local_file_path}")
             self.download_file(obj.object_name, local_file_path, bucket=self.bucket_name)
+        return result_files
 
 
 class LocalUploader(CloudUploader):
 
-    def __init__(self, clickhouse_node):
-        super().__init__()
+    def __init__(self, clickhouse_node, use_relpath=False):
+        super().__init__(use_relpath=use_relpath)
         self.clickhouse_node = clickhouse_node
 
     def upload_file(self, local_path, remote_blob_path):
@@ -154,8 +154,8 @@ class LocalDownloader:
 
 class AzureUploader(CloudUploader):
 
-    def __init__(self, blob_service_client, container_name):
-        super().__init__()
+    def __init__(self, blob_service_client, container_name, use_relpath=False):
+        super().__init__(use_relpath=use_relpath)
         self.blob_service_client = blob_service_client
         self.container_client = self.blob_service_client.get_container_client(
             container_name

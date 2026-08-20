@@ -1,7 +1,4 @@
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
-
-SET use_query_condition_cache = 0;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS 03443_data;
 

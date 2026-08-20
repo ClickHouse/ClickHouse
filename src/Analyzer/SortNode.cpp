@@ -1,3 +1,5 @@
+#include <Analyzer/IdentifierNode.h>
+#include <iostream>
 #include <Analyzer/SortNode.h>
 
 #include <Common/assert_cast.h>
@@ -33,6 +35,10 @@ SortNode::SortNode(QueryTreeNodePtr expression_,
     , collator(std::move(collator_))
     , with_fill(with_fill_)
 {
+    if (expression_)
+        if (auto * identifier = expression_->as<IdentifierNode>())
+            column_name = identifier->getIdentifier().getFullName();
+
     children[sort_expression_child_index] = std::move(expression_);
 }
 
@@ -49,7 +55,10 @@ void SortNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, si
 
     buffer << ", with_fill: " << with_fill;
 
-    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION\n";
+    buffer << '\n' << std::string(indent + 2, ' ') << "EXPRESSION";
+    if (!column_name.empty())
+        buffer << " " << column_name;
+    buffer << "\n";
     getExpression()->dumpTreeImpl(buffer, format_state, indent + 4);
 
     if (hasFillFrom())
@@ -118,7 +127,7 @@ QueryTreeNodePtr SortNode::cloneImpl() const
 
 ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
 {
-    auto result = std::make_shared<ASTOrderByElement>();
+    auto result = make_intrusive<ASTOrderByElement>();
     result->direction = sort_direction == SortDirection::ASCENDING ? 1 : -1;
     result->nulls_direction = result->direction;
     if (nulls_sort_direction)
@@ -129,7 +138,7 @@ ASTPtr SortNode::toASTImpl(const ConvertToASTOptions & options) const
     result->children.push_back(getExpression()->toAST(options));
 
     if (collator)
-        result->setCollation(std::make_shared<ASTLiteral>(Field(collator->getLocale())));
+        result->setCollation(make_intrusive<ASTLiteral>(Field(collator->getLocale())));
 
     result->with_fill = with_fill;
     if (hasFillFrom())

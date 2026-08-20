@@ -1,14 +1,42 @@
+#include <Common/StringUtils.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTObjectTypeArgument.h>
 #include <Parsers/CommonParsers.h>
+#include <Common/quoteString.h>
 
 
 namespace DB
 {
 
+ASTPtr ASTObjectTypedPathArgument::clone() const
+{
+    auto res = make_intrusive<ASTObjectTypedPathArgument>(*this);
+    res->children.clear();
+
+    if (type)
+    {
+        res->type = type->clone();
+        res->children.push_back(res->type);
+    }
+
+    return res;
+}
+
+void ASTObjectTypedPathArgument::formatImpl(
+    WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
+{
+    /// We must quote path "SKIP" to avoid its confusion with SKIP keyword in Object arguments.
+    if (equalsCaseInsensitive(path, "SKIP"))
+        ostr << backQuote(path) << ' ';
+    else
+        ostr << backQuoteIfNeed(path) << ' ';
+
+    type->format(ostr, settings, state, frame);
+}
+
 ASTPtr ASTObjectTypeArgument::clone() const
 {
-    auto res = std::make_shared<ASTObjectTypeArgument>(*this);
+    auto res = make_intrusive<ASTObjectTypeArgument>(*this);
     res->children.clear();
 
     if (path_with_type)

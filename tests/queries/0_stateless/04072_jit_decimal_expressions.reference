@@ -1,0 +1,45 @@
+Test abs on Decimal types
+5.1234	123.45678901	999.123456789012345678
+0.0001	0.00000001	0.000000000000000001
+0	0	0
+7.9999	999.99999999	999.999999999999999999
+Test sign on Decimal types
+-1	-1	-1
+-1	-1	-1
+0	0	0
+1	1	1
+Test Decimal to integer conversions
+-5	-123	-999
+0	0	0
+0	0	0
+7	999	999
+Test Decimal to float conversions
+-5.1234	-123.45678901
+-0.0001	-1e-8
+0	0
+7.9999	999.99999999
+Test integer to Decimal conversions
+-42	-42
+-1	-1
+0	0
+100	100
+Test float to Decimal conversions
+-3.14
+-0.001
+0
+2.718
+Test Decimal to Decimal conversions (different scales)
+-5.1234	-123.4567
+-0.0001	0
+0	0
+7.9999	999.9999
+Test isNull/isNotNull with Nullable(Decimal)
+-3	0	1
+0	0	1
+1.5	0	1
+\N	1	0
+\N	1	0
+Test assumeNotNull with Nullable(Decimal)
+-3
+0
+1.5

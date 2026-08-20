@@ -19,6 +19,7 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
 
 void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 {
+    removeReplicatedFromSortingColumns(header, inputs, description);
     removeConstAndSparse(inputs);
     merged_data->initialize(*header, inputs);
 
@@ -45,6 +46,7 @@ void IMergingAlgorithmWithSharedChunks::initialize(Inputs inputs)
 
 void IMergingAlgorithmWithSharedChunks::consume(Input & input, size_t source_num)
 {
+    removeReplicatedFromSortingColumns(header, input, description);
     removeConstAndSparse(input);
 
     auto & source = sources[source_num];

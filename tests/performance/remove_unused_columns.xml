@@ -1,0 +1,21 @@
+<test>
+    <query>
+        WITH 100000. AS cnt
+        SELECT count()
+        FROM
+        (
+            SELECT
+                number AS k,
+                sipHash64(arrayStringConcat(arrayMap(x -> number, range(number % 1000)), ';')) AS v
+            FROM numbers(cnt)
+        ) AS l
+        INNER JOIN
+        (
+            SELECT
+                number AS k,
+                sipHash64(arrayStringConcat(arrayMap(x -> number, range(number % 1000)), ';')) AS v
+            FROM numbers(cnt)
+        ) AS r ON l.k = r.k
+        WHERE (l.v != 12094310375782415882) AND (r.v != 12094310375782415882)
+    </query>
+</test>

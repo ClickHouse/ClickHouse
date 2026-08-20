@@ -48,3 +48,26 @@ SELECT toDate(toDateTime64('2299-12-31 23:59:59.999', 3));
 
 SELECT toDate(toDate32('1900-01-01'));
 SELECT toDate(toDate32('2299-12-31'));
+
+
+-- Test DateTime64 to Date conversion with different timezones
+SELECT 'DateTime64 to Date with timezones';
+SET date_time_overflow_behavior = 'saturate';
+
+-- Test with UTC
+SELECT toDate(toDateTime64('2245-12-31 23:59:59', 0, 'UTC'));
+SELECT toDate(toDateTime64('1900-01-01 00:00:00', 0, 'UTC'));
+
+-- Test with Europe/Berlin (UTC+1/+2)
+SELECT toDate(toDateTime64('2245-12-31 23:59:59', 0, 'Europe/Berlin'));
+SELECT toDate(toDateTime64('1900-01-01 00:00:00', 0, 'Europe/Berlin'));
+
+-- Test with America/New_York (UTC-5/-4)
+SELECT toDate(toDateTime64('2245-12-31 23:59:59', 0, 'America/New_York'));
+SELECT toDate(toDateTime64('1900-01-01 00:00:00', 0, 'America/New_York'));
+
+-- Test edge cases around max date with timezone
+SELECT toDate(toDateTime64('2149-06-06 23:59:59', 0, 'UTC'));
+SELECT toDate(toDateTime64('2149-06-07 00:00:00', 0, 'UTC'));
+SELECT toDate(toDateTime64('2149-06-06 23:59:59', 0, 'Europe/Berlin'));
+SELECT toDate(toDateTime64('2149-06-07 00:00:00', 0, 'Europe/Berlin'));

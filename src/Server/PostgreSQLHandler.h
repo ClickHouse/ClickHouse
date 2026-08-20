@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Common/CurrentMetrics.h>
-#include "config.h"
+#include <Common/ProfileEvents.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <Poco/Net/TCPServerConnection.h>
 #include <Server/IServer.h>
+
+#include "config.h"
 
 #if USE_SSL
 #    include <Poco/Net/SSLManager.h>
@@ -38,7 +40,7 @@ public:
         bool ssl_enabled_,
         bool secure_required_,
         Int32 connection_id_,
-        std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
+        VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> & auth_methods_,
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
         const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
@@ -109,8 +111,21 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    std::function<void(const Progress&)> createProgressCallback(
+        ContextMutablePtr query_context,
+        std::atomic<UInt64>& result_rows,
+        std::atomic<UInt64>& written_rows);
+
+    UInt64 executeQueryWithTracking(
+        String && sql_query,
+        ContextMutablePtr query_context,
+        PostgreSQLProtocol::Messaging::CommandComplete::Command command);
+
     static bool isEmptyQuery(const String & query);
     static Int32 parseNumberColumns(const std::vector<char> & output);
+
+    void initializeSystemTables(ContextMutablePtr query_context);
+    bool should_init_system_tables = true;
 };
 
 }

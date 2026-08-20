@@ -1,3 +1,7 @@
+#include <Access/AccessControl.h>
+#include <Access/Role.h>
+#include <Access/User.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/ServerSettings.h>
 #include <Core/ServerUUID.h>
 #include <Core/Settings.h>
@@ -6,10 +10,12 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Common/NetException.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ParserQuery.h>
@@ -18,9 +24,11 @@
 #include <Poco/Net/NetException.h>
 #include <Common/DNSResolver.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/config_version.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/isLocalAddress.h>
 #include <Common/logger_useful.h>
+
 
 namespace DB
 {
@@ -35,6 +43,11 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     }
 
+namespace ServerSetting
+{
+    extern const ServerSettingsBool distributed_ddl_use_initial_user_and_roles;
+}
+
 namespace ErrorCodes
 {
     extern const int UNKNOWN_FORMAT_VERSION;
@@ -42,8 +55,15 @@ namespace ErrorCodes
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int LOGICAL_ERROR;
     extern const int DNS_ERROR;
+    extern const int UNKNOWN_USER;
+    extern const int UNKNOWN_ROLE;
 }
 
+
+String HostID::readableString() const
+{
+    return host_name + ":" + DB::toString(port);
+}
 
 HostID HostID::fromString(const String & host_port_str)
 {
@@ -55,21 +75,8 @@ HostID HostID::fromString(const String & host_port_str)
 
 bool HostID::isLocalAddress(UInt16 clickhouse_port) const
 {
-    try
-    {
-        auto address = DNSResolver::instance().resolveAddress(host_name, port);
-        return DB::isLocalAddress(address, clickhouse_port);
-    }
-    catch (const DB::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
-    catch (const Poco::Net::NetException &)
-    {
-        /// Avoid "Host not found" exceptions
-        return false;
-    }
+    auto address = DNSResolver::instance().resolveAddress(host_name, port);
+    return DB::isLocalAddress(address, clickhouse_port);
 }
 
 bool HostID::isLoopbackHost() const
@@ -117,7 +124,30 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
         version = SETTINGS_IN_ZK_VERSION;
 
     if (version >= SETTINGS_IN_ZK_VERSION)
+    {
         settings.emplace(context->getSettingsRef().changes());
+
+        /// These settings are interpreted only at the initiator: they shape the final query
+        /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
+        /// shape how data is parsed from / serialised to the client (`format`, `input_format`,
+        /// `output_format`, `default_format`, `compression`), select the initiator's default database
+        /// (`database`, the equivalent of `USE`), or drive the HTTP query-construction / path routing on
+        /// the initiator only (`http_allow_database_as_path`, `http_allow_table_as_file`,
+        /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`,
+        /// `implicit_table_at_top_level`). Forwarding them to the hosts that pick up this DDL entry is at
+        /// best meaningless for a DDL query and at worst harmful — `database` in particular makes the
+        /// executing host `USE` the initiator's database, which may not exist there and aborts the task,
+        /// leaving `ON CLUSTER` queries hanging until `distributed_ddl_task_timeout`; and a new setting
+        /// name reaches an older worker during a rolling upgrade as `UNKNOWN_SETTING`. Strip them here,
+        /// mirroring `ClusterProxy::stripInitiatorOnlySettings`.
+        static constexpr std::array initiator_only_settings = {
+            "database", "select", "order", "sort", "filter", "additional_result_filter",
+            "limit", "offset", "page", "format", "input_format", "output_format", "default_format", "compression",
+            "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
+            "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level"};
+        for (const auto * name : initiator_only_settings)
+            settings->removeSetting(name);
+    }
 }
 
 String DDLLogEntry::toString() const
@@ -168,6 +198,12 @@ String DDLLogEntry::toString() const
         else
             wb << "-";
         wb << "\n";
+    }
+
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        wb << "initiator_user: " << initiator_user << "\n";
+        wb << "initiator_roles: " << initiator_user_roles << "\n";
     }
 
     return wb.str();
@@ -242,6 +278,12 @@ void DDLLogEntry::parse(const String & data)
         rb >> "\n";
     }
 
+    if (version >= INITIATOR_USER_VERSION)
+    {
+        rb >> "initiator_user: " >> initiator_user >> "\n";
+        rb >> "initiator_roles: " >> initiator_user_roles >> "\n";
+    }
+
     assertEOF(rb);
 
     if (!host_id_strings.empty())
@@ -275,9 +317,69 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
     auto query_context = Context::createCopy(from_context);
     query_context->makeQueryContext();
     query_context->setCurrentQueryId(""); // generate random query_id
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
+
+    /// This host (re-)initiates the DDL query, so any distributed sub-query spawned during its
+    /// execution (e.g. the `SELECT` of a `CREATE TABLE ... AS SELECT` reading a `Distributed` table)
+    /// treats this host as the initiator. Fill the client version with this server's version;
+    /// otherwise it stays 0.0.0 and remote shards apply legacy version compatibility downgrades -
+    /// in particular disabling the analyzer for supposedly pre-23.3 initiators (see `TCPHandler`).
+    /// That makes the initiator and the shards use different query interpreters, so column names
+    /// diverge (identifier `__table1.x` vs result name `x`) and distributed execution fails with
+    /// `NOT_FOUND_COLUMN_IN_BLOCK`.
+    query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+
+    const bool preserve_user = from_context->getServerSettings()[ServerSetting::distributed_ddl_use_initial_user_and_roles];
+    if (preserve_user && !entry.initiator_user.empty())
+    {
+        const auto & access_control = from_context->getAccessControl();
+
+        /// Find the user by name
+        auto user_id = access_control.find<User>(entry.initiator_user);
+        if (!user_id)
+            throw Exception(ErrorCodes::UNKNOWN_USER, "User '{}' required for executing distributed DDL query is not found on this instance", entry.initiator_user);
+
+        /// Find all roles by name
+        std::vector<UUID> role_ids;
+        role_ids.reserve(entry.initiator_user_roles.size());
+        for (const auto & role_name : entry.initiator_user_roles)
+        {
+            auto role_id = access_control.find<Role>(role_name);
+            if (!role_id)
+                throw Exception(ErrorCodes::UNKNOWN_ROLE, "Role '{}' required for executing distributed DDL query is not found on this instance", role_name);
+            role_ids.push_back(*role_id);
+        }
+
+        query_context->setUser(*user_id, role_ids);
+    }
+
     if (entry.settings)
-        query_context->applySettingsChanges(*entry.settings);
+    {
+        /// Clamp settings to the constraints of the local node, similar to how
+        /// TCPHandler handles secondary queries. Without this, settings from the
+        /// initiator node could bypass stricter constraints on worker nodes.
+        /// Work on a copy to avoid mutating the entry, which may be read later
+        /// (e.g. by DatabaseReplicatedTask::createSyncedNodeIfNeed) or retried.
+        auto settings_changes = *entry.settings;
+        query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        query_context->applySettingsChanges(settings_changes);
+
+        /// `BACKUP`/`RESTORE ON CLUSTER` runs a per-host continuation on every replica through this DDL
+        /// queue, and those hosts derive their S3 credentials from `s3_allow_server_credentials_in_user_queries`.
+        /// The initiator's value travels in the entry, but the clamp above silently drops it on a host whose
+        /// (default, no-user) profile pins the setting `readonly`, so an on-cluster backup started by a trusted
+        /// profile fails. The initiator has already opened the same backup destination under its own, properly
+        /// constrained, settings, so honor its decision here rather than re-clamping it. Restricted to backup
+        /// and restore because they are the only on-cluster operations whose worker side re-resolves S3
+        /// credentials from the session setting; every other DDL keeps the strict clamp. An untrusted initiator
+        /// cannot smuggle a `1` in: its own `readonly` constraint keeps the entry value at `0`.
+        if (query && query->as<ASTBackupQuery>())
+        {
+            if (const auto * value = entry.settings->tryGet("s3_allow_server_credentials_in_user_queries"))
+                query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
+        }
+    }
+
     return query_context;
 }
 
@@ -292,7 +394,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
     if (config_host_name)
     {
-        if (!IsSelfHostname(*config_host_name, maybe_secure_port, port))
+        if (!isSelfHostname(log, *config_host_name, maybe_secure_port, port))
             throw Exception(
                 ErrorCodes::DNS_ERROR,
                 "{} is not a local address. Check parameter 'host_name' in the configuration",
@@ -317,7 +419,7 @@ bool DDLTask::findCurrentHostID(ContextPtr global_context, LoggerPtr log, const 
 
         try
         {
-            if (!IsSelfHostID(host, maybe_secure_port, port))
+            if (!isSelfHostID(log, host, maybe_secure_port, port))
                 continue;
 
             if (host.isLoopbackHost())
@@ -541,18 +643,47 @@ String DDLTask::getShardID() const
     return res;
 }
 
-bool DDLTask::IsSelfHostID(const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostID(LoggerPtr log, const HostID & checking_host_id, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    // If the checking_host_id has a loopback address, it is not considered as the self host_id.
-    // Because all replicas will try to claim it as their own hosts.
-    return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
-        || checking_host_id.isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && checking_host_id.isLocalAddress(*maybe_self_secure_port))
+            || checking_host_id.isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_id.host_name, e.displayText());
+        return false;
+    }
 }
 
-bool DDLTask::IsSelfHostname(const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
+bool DDLTask::isSelfHostname(
+    LoggerPtr log, const String & checking_host_name, std::optional<UInt16> maybe_self_secure_port, UInt16 self_port)
 {
-    return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
-        || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    try
+    {
+        return (maybe_self_secure_port && HostID(checking_host_name, *maybe_self_secure_port).isLocalAddress(*maybe_self_secure_port))
+            || HostID(checking_host_name, self_port).isLocalAddress(self_port);
+    }
+    catch (const DB::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
+    catch (const Poco::Net::NetException & e)
+    {
+        /// Avoid "Host not found" exceptions
+        LOG_WARNING(log, "Unable to check if host {} is a local address, exception: {}", checking_host_name, e.displayText());
+        return false;
+    }
 }
 
 DatabaseReplicatedTask::DatabaseReplicatedTask(const String & name, const String & path, DatabaseReplicated * database_)
@@ -582,7 +713,7 @@ void DatabaseReplicatedTask::parseQueryFromEntry(ContextPtr context)
 ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_context, const ZooKeeperPtr & zookeeper)
 {
     auto query_context = DDLTaskBase::makeQueryContext(from_context, zookeeper);
-    query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    query_context->setDDLOrOnClusterInternal(true);
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
@@ -594,6 +725,20 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
         txn->addOp(zkutil::makeRemoveRequest(entry_path + "/try", -1));
         txn->addOp(zkutil::makeCreateRequest(entry_path + "/committed", host_id_str, zkutil::CreateMode::Persistent));
         txn->addOp(zkutil::makeSetRequest(database->zookeeper_path + "/max_log_ptr", toString(getLogEntryNumber(entry_name)), -1));
+
+        /// Make sure that we did not disable replicated DDL queries
+        const auto & macros = from_context->getMacros();
+        bool should_check_stop_flag = macros->getMacroMap().contains("replica");
+        if (should_check_stop_flag)
+        {
+            String stop_flag_path = "/clickhouse/stop_replicated_ddl_queries/{replica}";
+            stop_flag_path = macros->expand(stop_flag_path);
+
+            zookeeper->createAncestors(stop_flag_path);
+
+            txn->addOp(zkutil::makeCreateRequest(stop_flag_path, "", zkutil::CreateMode::Persistent));
+            txn->addOp(zkutil::makeRemoveRequest(stop_flag_path, -1));
+        }
     }
 
     txn->addOp(getOpToUpdateLogPointer());
@@ -612,7 +757,7 @@ Coordination::RequestPtr DatabaseReplicatedTask::getOpToUpdateLogPointer()
 
 void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeeper)
 {
-    assert(!completely_processed);
+    chassert(!completely_processed);
     if (!entry.settings)
         return;
 
@@ -621,7 +766,7 @@ void DatabaseReplicatedTask::createSyncedNodeIfNeed(const ZooKeeperPtr & zookeep
         return;
 
     /// Bool type is really weird, sometimes it's Bool and sometimes it's UInt64...
-    assert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
+    chassert(value.getType() == Field::Types::Bool || value.getType() == Field::Types::UInt64);
     if (!value.safeGet<UInt64>())
         return;
 
@@ -636,9 +781,9 @@ String DDLTaskBase::getLogEntryName(UInt32 log_entry_number)
 UInt32 DDLTaskBase::getLogEntryNumber(const String & log_entry_name)
 {
     constexpr const char * name = "query-";
-    assert(startsWith(log_entry_name, name));
+    chassert(startsWith(log_entry_name, name));
     UInt32 num = parse<UInt32>(log_entry_name.substr(strlen(name)));
-    assert(num < std::numeric_limits<Int32>::max());
+    chassert(num < std::numeric_limits<Int32>::max());
     return num;
 }
 

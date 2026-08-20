@@ -2,8 +2,9 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/ReadBufferFromString.h>
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
-int main(int, char **)
+int mainEntryExampleQuantileTDigest(int, char **)
 {
     using namespace DB;
 

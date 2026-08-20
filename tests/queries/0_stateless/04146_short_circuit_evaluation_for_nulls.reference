@@ -1,0 +1,63 @@
+concat short-circuit
+abc
+\N
+\N
+\N
+abc
+\N
+\N
+\N
+concat baseline
+abc
+\N
+\N
+\N
+abc
+\N
+\N
+\N
+concat no short-circuit due to high threshold
+abc
+\N
+\N
+\N
+abc
+\N
+\N
+\N
+concat mostly non-null, threshold=0
+x-y
+x-y
+x-y
+\N
+x-y
+x-y
+x-y
+x-y
+concat mostly non-null baseline
+x-y
+x-y
+x-y
+\N
+x-y
+x-y
+x-y
+x-y
+lower short-circuit
+hello
+\N
+\N
+\N
+hello
+\N
+\N
+\N
+substring short-circuit
+hello
+\N
+\N
+\N
+hello
+\N
+\N
+\N

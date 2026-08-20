@@ -1,0 +1,41 @@
+LIKE without wildcard uses an exact point range, same as equality
+Condition: (value in [\'example.com\', \'example.com\'])
+Condition: (value in [\'example.com\', \'example.com\'])
+NOT LIKE without wildcard excludes an exact point range, same as inequality
+Condition: (value not in [\'example.com\', \'example.com\'])
+Condition: (value not in [\'example.com\', \'example.com\'])
+An escaped wildcard is a literal, so the pattern is still an exact match
+Condition: (value in [\'example.com%\', \'example.com%\'])
+A pattern with a real wildcard still uses the half-open prefix range
+Condition: (value in [\'example.com\', \'example.con\'))
+Results stay correct: exact LIKE matches equality, NOT LIKE matches inequality
+200000
+200000
+800000
+800000
+Text index is used for a wildcard-free LIKE
+Name: idx
+1
+1
+A trailing escape is not optimized into an exact point range
+Condition: (value in [\'a\', \'b\'))
+LIKE / NOT LIKE with a trailing escape raise instead of being pruned away
+An unknown escape keeps the backslash, so the exact range is the literal pattern, not the unescaped char
+Condition: (value in [\'\\\\w\', \'\\\\w\'])
+LIKE with an unknown escape keeps the matching row under force_primary_key (matches equality)
+1
+1
+NOT LIKE with an unknown escape keeps the non-matching row under force_primary_key (matches inequality)
+1
+1
+An empty LIKE pattern uses the exact empty-string point range, same as equality
+Condition: (value in [\'\', \'\'])
+Condition: (value in [\'\', \'\'])
+An empty NOT LIKE pattern excludes the exact empty-string point range, same as inequality
+Condition: (value not in [\'\', \'\'])
+Condition: (value not in [\'\', \'\'])
+LIKE / NOT LIKE empty use the primary key (no INDEX_NOT_USED) and match equality / inequality
+1
+1
+2
+2

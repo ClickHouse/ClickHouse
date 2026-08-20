@@ -1,0 +1,68 @@
+---
+slug: '/examples/aggregate-function-combinators/uniqArray'
+title: 'uniqArray'
+description: 'مثال على استخدام المُركِّب uniqArray'
+keywords: ['uniq', 'array', 'combinator', 'examples', 'uniqArray']
+sidebarTitle: 'uniqArray'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Array`](/ar/reference/functions/aggregate-functions/combinators#-array)
+على الدالة [`uniq`](/ar/reference/functions/aggregate-functions/uniq)
+لحساب العدد التقريبي للعناصر الفريدة عبر جميع المصفوفات،
+باستخدام دالة المُركِّب التجميعي `uniqArray`.
+
+تكون الدالة `uniqArray` مفيدة عندما تحتاج إلى حساب العناصر الفريدة عبر
+عدة مصفوفات ضمن مجموعة بيانات. وهي مكافئة لاستخدام `uniq(arrayJoin())`، حيث
+تعمل `arrayJoin` أولًا على تسطيح المصفوفات، ثم تحسب `uniq` العناصر الفريدة.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+في هذا المثال، سنستخدم مجموعة بيانات نموذجية عن اهتمامات المستخدمين عبر فئات
+مختلفة لتوضيح كيفية عمل `uniqArray`. وسنقارنها مع
+`uniq(arrayJoin())` لبيان الفرق في احتساب العناصر الفريدة.
+
+```sql title="Query"
+CREATE TABLE user_interests
+(
+    user_id UInt32,
+    interests Array(String)
+) ENGINE = Memory;
+
+INSERT INTO user_interests VALUES
+    (1, ['reading', 'gaming', 'music']),
+    (2, ['gaming', 'sports', 'music']),
+    (3, ['reading', 'cooking']);
+
+SELECT 
+    uniqArray(interests) AS unique_interests_total,
+    uniq(arrayJoin(interests)) AS unique_interests_arrayJoin
+FROM user_interests;
+```
+
+تحسب الدالة `uniqArray` العناصر الفريدة عبر جميع المصفوفات مجتمعة، على نحو مماثل لـ `uniq(arrayJoin())`.
+في هذا المثال:
+
+* تُرجع `uniqArray` القيمة 5 لأن هناك 5 اهتمامات فريدة لدى جميع المستخدمين: &#39;reading&#39;، &#39;gaming&#39;، &#39;music&#39;، &#39;sports&#39;، &#39;cooking&#39;
+* تُرجع `uniq(arrayJoin())` أيضًا القيمة 5، مما يوضح أن كلتا الدالتين تحسبان العناصر الفريدة عبر جميع المصفوفات
+
+```response title="Response"
+   ┌─unique_interests_total─┬─unique_interests_arrayJoin─┐
+1. │                      5 │                          5 │
+   └────────────────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`uniq`](/ar/reference/functions/aggregate-functions/uniq)
+* [`arrayJoin`](/ar/reference/functions/regular-functions/array-join)
+* [`Array مُركِّب`](/ar/reference/functions/aggregate-functions/combinators#-array)
+* [`uniqCombined`](/ar/reference/functions/aggregate-functions/uniqCombined)

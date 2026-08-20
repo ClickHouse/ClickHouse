@@ -1,0 +1,7 @@
+left_semi	10	-1	-19
+left_anti	10	0	-18
+right_semi	10
+right_anti	0
+left_semi_plan_sort_count	1	1
+limit_with_totals_plan_sort_count	1
+alias_shadow_correctness	2	1090

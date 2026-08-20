@@ -1,13 +1,14 @@
 import asyncio
 import logging
 import os.path as p
+import shlex
 import subprocess
 import time
 import nats
 
-from helpers.cluster import check_nats_is_available, nats_connect_ssl
+from helpers.cluster import check_nats_is_available
+from helpers.cluster import nats_connect_ssl as nats_connect_ssl  # re-exported for the test modules
 from helpers.test_tools import TSV
-from helpers.config_cluster import nats_user, nats_pass
 
 def wait_nats_to_start(cluster, timeout=180):
     start = time.time()
@@ -84,8 +85,63 @@ def wait_for_mv_attached_to_table(instance, table_name, sleep_timeout = 0.5, tim
     deadline = time.monotonic() + time_limit_sec
     while check_table_is_ready(instance, table_name) and time.monotonic() < deadline:
         time.sleep(sleep_timeout)
-    
+
     assert(not check_table_is_ready(instance, table_name))
+
+    # Refusing a direct `SELECT` only proves that a materialized view is attached; the
+    # background task subscribes to the subjects slightly later. Core NATS has no backlog, so
+    # a message published in that window is dropped and never reaches the view.
+    wait_for_streaming_started(instance, table_name, time_limit_sec)
+
+STREAMING_STARTED_LOG_LINE = "Started streaming to [0-9]+ attached views"
+
+def wait_for_streaming_started(instance, table_name, time_limit_sec = 60):
+    # The background task logs the line on every iteration, right after the consumer has
+    # subscribed, so a fresh occurrence means the subscription is live now. Tests within a
+    # module reuse table names, hence the wait is anchored past the occurrences the previous
+    # tests left in the window `wait_for_log_line` looks at.
+    log_line = "{}.*{}".format(table_name, STREAMING_STARTED_LOG_LINE)
+    seen = count_in_recent_log(instance, log_line)
+    instance.wait_for_log_line(log_line, timeout=time_limit_sec, repetitions=seen + 1)
+
+def count_in_recent_log(instance, pattern, look_behind_lines = 10000):
+    result = instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tail -n{} /var/log/clickhouse-server/clickhouse-server.log | grep -Ec {} || true".format(
+                look_behind_lines, shlex.quote(pattern)
+            ),
+        ]
+    )
+    return int(result.strip() or 0)
+
+def log_line_count(instance):
+    # Absolute line count of the whole log, to be used as an anchor for `count_in_log_after`.
+    result = instance.exec_in_container(
+        ["bash", "-c", "wc -l < /var/log/clickhouse-server/clickhouse-server.log"]
+    )
+    return int(result.strip() or 0)
+
+def count_in_log_after(instance, pattern, after_line):
+    # Counts matches strictly after an absolute line offset, so a count of zero really means "no
+    # such line was written since the anchor". Unlike `count_in_recent_log`, which looks at a
+    # fixed-size tail, this cannot lose an older match as the log grows.
+    #
+    # An absolute offset only goes stale if the log rotates between the anchor and the count. The
+    # integration config rotates at 1000M keeping 10 files
+    # (`helpers/0_common_instance_config.xml`), which is hours away at these tests' log rate, and
+    # callers assert the log has not shrunk below the anchor so a rotation fails loudly.
+    result = instance.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "tail -n +{} /var/log/clickhouse-server/clickhouse-server.log | grep -Ec {} || true".format(
+                after_line + 1, shlex.quote(pattern)
+            ),
+        ]
+    )
+    return int(result.strip() or 0)
 
 def check_table_is_ready(instance, table_name):
     try:

@@ -39,7 +39,7 @@ public:
         auto disk_to = getDiskWithPath(client, options, "disk-to");
         String path_from = disk_from.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-from"));
         String path_to = disk_to.getRelativeFromRoot(getValueFromCommandLineOptionsThrow<String>(options, "path-to"));
-        bool recursive = options.count("recursive");
+        bool recursive = options.contains("recursive");
 
         if (disk_from.getDisk()->existsFile(path_from))
         {

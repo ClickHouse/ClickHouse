@@ -37,7 +37,7 @@ SELECT toRelativeMinuteNum(toDateTime('2023-01-01 00:30:00')) - toRelativeMinute
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::DateAndTime;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionToRelativeMinuteNum>(documentation);
 }

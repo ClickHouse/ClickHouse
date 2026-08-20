@@ -63,7 +63,7 @@ Returns the hyperbolic tangent.
     FunctionDocumentation::Examples examples = {{"Usage example", "SELECT tanh(0)", "0"}};
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionTanh>(documentation, FunctionFactory::Case::Insensitive);
 }

@@ -1,4 +1,4 @@
-// Copyright 2022-2024 The OpenSSL Project Authors. All Rights Reserved.
+// Copyright 2022-2025 The OpenSSL Project Authors. All Rights Reserved.
 //
 // Licensed under the Apache License 2.0 (the "License").  You may not use
 // this file except in compliance with the License.  You can obtain a copy
@@ -49,22 +49,26 @@ _vpsm4_ex_consts:
 _vpsm4_ex_set_key:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v5.4s},[x0]
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 #ifndef __AARCH64EB__
 	rev32	v5.16b,v5.16b
 #endif
-	adr	x5,.Lshuffles
+	adrp	x5,.Lshuffles
+	add	x5,x5,#:lo12:.Lshuffles
 	ld1	{v7.2d},[x5]
-	adr	x5,.Lfk
+	adrp	x5,.Lfk
+	add	x5,x5,#:lo12:.Lfk
 	ld1	{v6.2d},[x5]
 	eor	v5.16b,v5.16b,v6.16b
 	mov	x6,#32
-	adr	x5,.Lck
+	adrp	x5,.Lck
+	add	x5,x5,#:lo12:.Lck
 	movi	v0.16b,#64
 	cbnz	w2,1f
 	add	x1,x1,124
@@ -622,12 +626,13 @@ vpsm4_ex_set_decrypt_key:
 vpsm4_ex_encrypt:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v4.4s},[x0]
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 #ifndef __AARCH64EB__
 	rev32	v4.16b,v4.16b
 #endif
@@ -763,12 +768,13 @@ vpsm4_ex_encrypt:
 vpsm4_ex_decrypt:
 	AARCH64_VALID_CALL_TARGET
 	ld1	{v4.4s},[x0]
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 #ifndef __AARCH64EB__
 	rev32	v4.16b,v4.16b
 #endif
@@ -910,12 +916,13 @@ vpsm4_ex_ecb_encrypt:
 	stp	d12,d13,[sp,#32]
 	stp	d14,d15,[sp,#48]
 	stp	x29,x30,[sp,#64]
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 .Lecb_8_blocks_process:
 	cmp	w2,#8
 	b.lt	.Lecb_4_blocks_process
@@ -1157,12 +1164,13 @@ vpsm4_ex_ecb_encrypt:
 vpsm4_ex_cbc_encrypt:
 	AARCH64_VALID_CALL_TARGET
 	lsr	x2,x2,4
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 	cbz	w5,.Ldec
 	ld1	{v3.4s},[x4]
 .Lcbc_4_blocks_enc:
@@ -1872,7 +1880,7 @@ vpsm4_ex_cbc_encrypt:
 	zip2	v7.2d,v9.2d,v11.2d
 	ld1	{v15.4s},[x4]
 	ld1	{v8.4s,v9.4s,v10.4s,v11.4s},[x0],#64
-	// note ivec1 and vtmpx[3] are resuing the same register
+	// note ivec1 and vtmpx[3] are reusing the same register
 	// care needs to be taken to avoid conflict
 	eor	v0.16b,v0.16b,v15.16b
 	ld1	{v12.4s,v13.4s,v14.4s,v15.4s},[x0],#64
@@ -2148,12 +2156,13 @@ vpsm4_ex_ctr32_encrypt_blocks:
 #ifndef __AARCH64EB__
 	rev32	v3.16b,v3.16b
 #endif
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 	cmp	w2,#1
 	b.ne	1f
 	// fast processing for one single block without
@@ -2547,12 +2556,13 @@ vpsm4_ex_xts_encrypt_gb:
 	mov	w28,w6
 	ld1	{v16.4s}, [x5]
 	mov	x3,x27
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 #ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
@@ -3189,7 +3199,8 @@ vpsm4_ex_xts_encrypt_gb:
 	rev32	v25.16b,v25.16b
 #endif
 	rbit	v2.16b,v25.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v17.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7
@@ -3197,7 +3208,8 @@ vpsm4_ex_xts_encrypt_gb:
 	eor	v17.16b, v17.16b, v1.16b
 	rbit	v17.16b,v17.16b
 	rbit	v2.16b,v17.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v18.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7
@@ -3215,7 +3227,8 @@ vpsm4_ex_xts_encrypt_gb:
 	rev32	v17.16b,v17.16b
 #endif
 	rbit	v2.16b,v17.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v18.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7
@@ -3547,12 +3560,13 @@ vpsm4_ex_xts_encrypt:
 	mov	w28,w6
 	ld1	{v16.4s}, [x5]
 	mov	x3,x27
-	ldr	q26, .Lsbox_magic
-	ldr	q27, .Lsbox_magic+16
-	ldr	q28, .Lsbox_magic+32
-	ldr	q29, .Lsbox_magic+48
-	ldr	q30, .Lsbox_magic+64
-	ldr	q31, .Lsbox_magic+80
+	adrp	x9, .Lsbox_magic
+	ldr	q26, [x9, #:lo12:.Lsbox_magic]
+	ldr	q27, [x9, #:lo12:.Lsbox_magic+16]
+	ldr	q28, [x9, #:lo12:.Lsbox_magic+32]
+	ldr	q29, [x9, #:lo12:.Lsbox_magic+48]
+	ldr	q30, [x9, #:lo12:.Lsbox_magic+64]
+	ldr	q31, [x9, #:lo12:.Lsbox_magic+80]
 #ifndef __AARCH64EB__
 	rev32	v16.16b,v16.16b
 #endif
@@ -4170,14 +4184,16 @@ vpsm4_ex_xts_encrypt:
 	rev32	v25.16b,v25.16b
 #endif
 	mov	v2.16b,v25.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v17.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7
 	mul	v1.16b, v1.16b, v0.16b
 	eor	v17.16b, v17.16b, v1.16b
 	mov	v2.16b,v17.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v18.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7
@@ -4194,7 +4210,8 @@ vpsm4_ex_xts_encrypt:
 	rev32	v17.16b,v17.16b
 #endif
 	mov	v2.16b,v17.16b
-	ldr	q0, .Lxts_magic
+	adrp	x9, .Lxts_magic
+	ldr	q0, [x9, #:lo12:.Lxts_magic]
 	shl	v18.16b, v2.16b, #1
 	ext	v1.16b, v2.16b, v2.16b,#15
 	ushr	v1.16b, v1.16b, #7

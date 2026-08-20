@@ -19,7 +19,7 @@ function handle_term()
 }
 trap handle_term TERM
 
-echo "Runnig: $*"
+echo "Running: $*"
 "$@" &
 PID=$!
 # This will be interrupted by SIGTERM that is received by this script
@@ -68,6 +68,8 @@ if [[ $JEMALLOC_PROFILER -eq 1 ]]; then
         jeprof "$bin" "$last_profile" --collapsed | flamegraph.pl --color mem --width 2560 > "$jemalloc_reports/jemalloc.svg"
     fi
 fi
+
+chmod -R a+rX /var/log/clickhouse-server 2>/dev/null || true
 
 # Preserve exit code of the server
 exit $server_exit_code

@@ -26,7 +26,7 @@ extern const int ILLEGAL_COLUMN;
 namespace
 {
 
-class FunctionH3EdgeLengthKm : public IFunction
+class FunctionH3EdgeLengthKm final : public IFunction
 {
 public:
     static constexpr auto name = "h3EdgeLengthKm";
@@ -87,7 +87,8 @@ public:
                     toString(resolution),
                     getName(),
                     MAX_H3_RES);
-            Float64 res = getHexagonEdgeLengthAvgKm(resolution);
+            double res = 0;
+            getHexagonEdgeLengthAvgKm(resolution, &res);
             dst_data[row] = res;
         }
 
@@ -123,7 +124,7 @@ Calculates the average length of an [H3](https://h3geo.org/docs/core-library/h3I
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
     factory.registerFunction<FunctionH3EdgeLengthKm>(documentation);
 }
 

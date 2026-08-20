@@ -13,9 +13,14 @@ namespace DB
 
 BlockIO InterpreterShowEnginesQuery::execute()
 {
-    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", getContext(), QueryFlags{ .internal = true }).second;
+    auto query_context = Context::createCopy(getContext());
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("");
+
+    return executeQuery("SELECT * FROM system.table_engines ORDER BY name", query_context, QueryFlags{ .internal = true }).second;
 }
 
+void registerInterpreterShowEnginesQuery(InterpreterFactory & factory);
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

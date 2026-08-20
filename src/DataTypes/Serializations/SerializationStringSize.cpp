@@ -1,3 +1,4 @@
+#include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationStringSize.h>
 
 #include <Columns/ColumnString.h>
@@ -8,8 +9,22 @@ namespace DB
 
 SerializationStringSize::SerializationStringSize(MergeTreeStringSerializationVersion version_)
     : version(version_)
-    , serialization_string(version)
+    , serialization_string(SerializationString::create(version))
 {
+}
+
+
+UInt128 SerializationStringSize::getHash(MergeTreeStringSerializationVersion version_)
+{
+    SipHash hash;
+    hash.update("StringSize");
+    hash.update(static_cast<int>(version_));
+    return hash.get128();
+}
+
+SerializationPtr SerializationStringSize::create(MergeTreeStringSerializationVersion version_)
+{
+    return ISerialization::pooled(getHash(version_), [=] { return new SerializationStringSize(version_); });
 }
 
 void SerializationStringSize::enumerateStreams(
@@ -17,7 +32,7 @@ void SerializationStringSize::enumerateStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             settings.path.push_back(Substream::Regular);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -40,7 +55,7 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
 {
     switch (version)
     {
-        case MergeTreeStringSerializationVersion::DEFAULT:
+        case MergeTreeStringSerializationVersion::SINGLE_STREAM:
             deserializeBinaryBulkWithoutSizeStream(column, rows_offset, limit, settings, state, cache);
             break;
         case MergeTreeStringSerializationVersion::WITH_SIZE_STREAM:
@@ -52,7 +67,7 @@ void SerializationStringSize::deserializeBinaryBulkWithMultipleStreams(
 void SerializationStringSize::deserializeBinaryBulkStatePrefix(
     DeserializeBinaryBulkSettings & settings, DeserializeBinaryBulkStatePtr & state, SubstreamsDeserializeStatesCache * cache) const
 {
-    if (version == MergeTreeStringSerializationVersion::DEFAULT)
+    if (version == MergeTreeStringSerializationVersion::SINGLE_STREAM)
     {
         settings.path.push_back(Substream::Regular);
         if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
@@ -61,7 +76,19 @@ void SerializationStringSize::deserializeBinaryBulkStatePrefix(
         }
         else
         {
-            state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+            auto string_state = std::make_shared<DeserializeBinaryBulkStateStringWithoutSizeStream>();
+
+            /// If there is no state cache (e.g. StorageLog), we must always read the full string data. Without cached
+            /// state, we cannot know in advance whether the string data will be needed later, and the string size has
+            /// to be derived from the data itself.
+            ///
+            /// As a result, the subsequent deserialization relies on the substream cache to correctly share the string
+            /// data across subcolumns. We do not support an optimization that deserializes only the size substream in
+            /// this case, and therefore we must always populate the substream cache with the string data rather than
+            /// the size-only substream.
+            if (!cache)
+                string_state->need_string_data = true;
+            state = string_state;
             addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
         }
         settings.path.pop_back();
@@ -110,7 +137,7 @@ void SerializationStringSize::deserializeWithStringData(
         double avg_value_size_hint
             = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
 
-        serialization_string.deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
+        serialization_string->deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
 
         num_read_rows = string_state.column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);
@@ -142,9 +169,9 @@ void SerializationStringSize::deserializeWithoutStringData(
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
-        for (size_t i = 0; i < rows_offset; ++i)
+        for (size_t i = 0; unlikely(i < rows_offset); ++i)
         {
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
         }
@@ -155,11 +182,11 @@ void SerializationStringSize::deserializeWithoutStringData(
         mutable_column_data.resize(prev_size + limit);
 
         size_t num_read_rows = 0;
-        for (; num_read_rows < limit; ++num_read_rows)
+        for (; likely(num_read_rows < limit); ++num_read_rows)
         {
-            if (stream->eof())
+            if (unlikely(stream->eof()))
                 break;
-            UInt64 size;
+            UInt64 size = 0;
             readVarUInt(size, *stream);
             stream->ignore(size);
             mutable_column_data[prev_size + num_read_rows] = size;
@@ -191,9 +218,17 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         /// so if rows_offset is not 0 we cannot use it as is because we will modify it here later by applying rows_offset.
         /// Instead we need to insert data from the current range from it.
         if (rows_offset)
-            column->assumeMutable()->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+        {
+            /// `column` may alias `cached_column` (the substream can be read first with rows_offset == 0,
+            /// placing `column` itself into the cache, and then re-read in the same range with rows_offset > 0),
+            /// so clone it when shared — `IColumn::mutate` is a no-op when uniquely owned — before the append
+            /// and the in-place rows_offset compaction below.
+            MutableColumnPtr mutable_column = IColumn::mutate(std::move(column));
+            mutable_column->insertRangeFrom(*cached_column, cached_column->size() - num_read_rows, num_read_rows);
+            column = std::move(mutable_column);
+        }
         else
-            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows);
+            insertDataFromCachedColumn(settings, column, cached_column, num_read_rows, cache, true);
     }
     else if (ReadBuffer * stream = settings.getter(settings.path))
     {
@@ -207,7 +242,7 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         {
             ColumnPtr column_for_cache;
             /// If rows_offset != 0 we should keep data without applied offsets in the cache to be able
-            /// to calculate offset for nested data in SerializationArray if the whole array is also read.
+            /// to calculate offset for string data in SerializationString if the whole string is also read.
             /// As we will apply offsets to the current column we cannot put in the cache, so we use cut()
             /// method to create a separate column with all the data from current range.
             if (rows_offset)
@@ -219,7 +254,9 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
         }
     }
 
-    /// Apply rows_offset if needed.
+    /// Apply rows_offset if needed. `column` is uniquely owned here (it was cloned above on the cache path
+    /// when shared, and the fresh-read path caches a separate cut() copy), so this in-place compaction does
+    /// not touch storage referenced elsewhere.
     if (rows_offset)
     {
         auto mutable_column = column->assumeMutable();
@@ -232,6 +269,11 @@ void SerializationStringSize::deserializeBinaryBulkWithSizeStream(
     }
 
     settings.path.pop_back();
+}
+
+size_t SerializationStringSize::allocatedBytes() const
+{
+    return sizeof(*this);
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/Backup.h>
 
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Disks/IDiskTransaction.h>
 #include <string>
 #include <cerrno>

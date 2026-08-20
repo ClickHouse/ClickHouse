@@ -11,7 +11,7 @@ namespace DB::ErrorCodes
 }
 
 
-void check(const Field & field)
+static void check(const Field & field)
 {
 //    std::cerr << "Check " << toString(field) << "\n";
     WriteBufferFromOwnString ostr;

@@ -1,7 +1,5 @@
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan=1;
-
--- Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.
-SET use_skip_indexes_on_data_read = 0;
 
 DROP TABLE IF EXISTS bloom_filter_has_const_array;
 

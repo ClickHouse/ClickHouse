@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int BACKUP_ENTRY_NOT_FOUND;
     extern const int BACKUP_NOT_FOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -35,7 +36,13 @@ void BackupWriterNull::copyDataToFile(const String & /* path_in_backup */, const
     /// no op
 }
 
-void BackupWriterNull::copyFileFromDisk(const String & /* path_in_backup */, DiskPtr /* src_disk */, const String & /* src_path */, bool /* copy_encrypted */, UInt64 /* start_pos */, UInt64 /* length */)
+void BackupWriterNull::copyFileFromDisk(
+    const String & /* path_in_backup */,
+    DiskPtr /* src_disk */,
+    const String & /* src_path */,
+    bool /* copy_encrypted */,
+    UInt64 /* start_pos */,
+    UInt64 /* length */)
 {
     /// no op
 }
@@ -85,6 +92,8 @@ bool BackupWriterNull::fileContentsEqual(const String & file_name, const String 
 }
 
 
+void registerBackupEngineNull(BackupFactory & factory);
+
 void registerBackupEngineNull(BackupFactory & factory)
 {
     auto creator_fn = [](const BackupFactory::CreateParams & params) -> std::unique_ptr<IBackup>
@@ -101,7 +110,16 @@ void registerBackupEngineNull(BackupFactory & factory)
         return std::make_unique<BackupImpl>(params, BackupImpl::ArchiveParams{}, writer);
     };
 
-    factory.registerBackupEngine("Null", creator_fn);
+    auto destination_identity_fn = [](const BackupInfo &, ContextPtr) -> Strings
+    {
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Null backup destinations do not have a persistent identity");
+    };
+
+    /// No external location: nothing to authorize against the SOURCES grant model.
+    auto source_access_fn = [](const BackupInfo &, ContextPtr, IBackup::OpenMode)
+        -> std::optional<BackupFactory::SourceAccessTarget> { return std::nullopt; };
+
+    factory.registerBackupEngine("Null", creator_fn, destination_identity_fn, source_access_fn);
 }
 
 }

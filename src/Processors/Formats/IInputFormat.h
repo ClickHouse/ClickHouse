@@ -4,13 +4,15 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
 #include <Common/PODArray.h>
-#include <Core/BlockMissingValues.h>
+#include <IO/WriteBuffer.h>
+#include <base/types.h>
 #include <Processors/ISource.h>
 
 
 namespace DB
 {
 
+class BlockMissingValues;
 struct SelectQueryInfo;
 
 using ColumnMappingPtr = std::shared_ptr<ColumnMapping>;
@@ -22,9 +24,10 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// positional deletes.
 ///
 /// Warning: we currently don't correctly update this info in most transforms. E.g. things like
-/// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// LimitTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
 /// have a mechanism to systematically find all code sites that would need to do that or to detect
-/// if one was missed.
+/// if one was missed. (FilterTransform can optionally update it, but only when explicitly told to
+/// via `update_row_numbers_info`; by default it leaves it untouched like the others.)
 /// So this is only used in a few specific situations, and the builder of query pipeline must be
 /// careful to never put a step that uses this info after a step that breaks it.
 ///
@@ -44,6 +47,30 @@ struct ChunkInfoRowNumbers : public ChunkInfo
     /// row_num_offset + {index of the i-th '1' element in applied_filter}.
     std::optional<IColumnFilter> applied_filter;
 };
+
+/// Structure for storing information about buckets that IInputFormat needs to read.
+struct FileBucketInfo
+{
+    virtual void serialize(WriteBuffer & buffer) = 0;
+    virtual void deserialize(ReadBuffer & buffer) = 0;
+    virtual String getIdentifier() const = 0;
+    virtual String getFormatName() const = 0;
+    virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+
+    virtual ~FileBucketInfo() = default;
+};
+using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
+
+/// Interface for splitting a file into buckets.
+struct IBucketSplitter
+{
+    /// Splits a file into buckets using the given read buffer and format settings.
+    /// Returns information about the resulting buckets (see the structure above for details).
+    virtual std::vector<FileBucketInfoPtr> splitToBuckets(size_t bucket_size, ReadBuffer & buf, const FormatSettings & format_settings_) = 0;
+
+    virtual ~IBucketSplitter() = default;
+};
+using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 /** Input format is a source, that reads data from ReadBuffer.
   */
@@ -68,6 +95,7 @@ public:
     /// All data reading from the read buffer must be performed by this method.
     virtual Chunk read() = 0;
 
+    virtual void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read);
     /** In some usecase (hello Kafka) we need to read a lot of tiny streams in exactly the same format.
      * The recreating of parser for each small stream takes too long, so we introduce a method
      * resetParser() which allow to reset the state of parser to continue reading of
@@ -101,6 +129,8 @@ public:
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
     void needOnlyCount() { need_only_count = true; }
+
+    virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
 protected:
     ReadBuffer & getReadBuffer() const { chassert(in); return *in; }

@@ -60,7 +60,7 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         {
             Field field_with_null;
             ASTLiteral null_literal(field_with_null);
-            expr_else = std::make_shared<ASTLiteral>(null_literal);
+            expr_else = make_intrusive<ASTLiteral>(null_literal);
         }
         args.push_back(expr_else);
 
@@ -77,10 +77,10 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parse_branches())
             return false;
 
-        auto function_args = std::make_shared<ASTExpressionList>();
+        auto function_args = make_intrusive<ASTExpressionList>();
         function_args->children = std::move(args);
 
-        auto function = std::make_shared<ASTFunction>();
+        auto function = make_intrusive<ASTFunction>();
         function->name = "caseWithExpression";
         function->arguments = function_args;
         function->children.push_back(function->arguments);
@@ -92,10 +92,10 @@ bool ParserCase::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!parse_branches())
             return false;
 
-        auto function_args = std::make_shared<ASTExpressionList>();
+        auto function_args = make_intrusive<ASTExpressionList>();
         function_args->children = std::move(args);
 
-        auto function = std::make_shared<ASTFunction>();
+        auto function = make_intrusive<ASTFunction>();
         function->name = "multiIf";
         function->arguments = function_args;
         function->children.push_back(function->arguments);

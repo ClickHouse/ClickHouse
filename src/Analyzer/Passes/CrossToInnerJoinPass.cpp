@@ -7,15 +7,10 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/FunctionNode.h>
-#include <Analyzer/ConstantNode.h>
-#include <Analyzer/ColumnNode.h>
 #include <Analyzer/Utils.h>
 
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
 #include <Functions/logical.h>
 
-#include <Common/logger_useful.h>
 #include <Core/Settings.h>
 
 
@@ -77,8 +72,8 @@ bool findInTableExpression(const QueryTreeNodePtr & source, const QueryTreeNodeP
 
     if (const auto * join_node = table_expression->as<JoinNode>())
     {
-        return findInTableExpression(source, join_node->getLeftTableExpression())
-            || findInTableExpression(source, join_node->getRightTableExpression());
+        return findInTableExpression(source, join_node->getLeftTableExpressionNode())
+            || findInTableExpression(source, join_node->getRightTableExpressionNode());
     }
 
     return false;
@@ -94,8 +89,8 @@ void getJoinNodes(QueryTreeNodePtr & join_tree_node, std::vector<JoinNode *> & j
         return;
 
     join_nodes.push_back(join_node);
-    getJoinNodes(join_node->getLeftTableExpression(), join_nodes);
-    getJoinNodes(join_node->getRightTableExpression(), join_nodes);
+    getJoinNodes(join_node->getLeftTableExpressionNode(), join_nodes);
+    getJoinNodes(join_node->getRightTableExpressionNode(), join_nodes);
 }
 
 class CrossToInnerJoinVisitor : public InDepthQueryTreeVisitorWithContext<CrossToInnerJoinVisitor>
@@ -152,8 +147,8 @@ public:
             /// If there is common key type, we can join on this condition
             if (common_key_type)
             {
-                auto left_src = getExpressionSource(lhs_equi_argument);
-                auto right_src = getExpressionSource(rhs_equi_argument);
+                auto left_src = getExpressionSource(lhs_equi_argument).first;
+                auto right_src = getExpressionSource(rhs_equi_argument).first;
 
                 if (left_src && right_src)
                 {
@@ -282,12 +277,12 @@ public:
             checkNotRewritten(table_with_condition.join_type.is_comma, join_node);
 
             if (!cross)
-                cross = std::make_shared<CrossJoinNode>(std::move(join_node->getLeftTableExpression()));
+                cross = std::make_shared<CrossJoinNode>(std::move(join_node->getLeftTableExpressionNode()));
             else
-                cross->appendTable(std::move(join_node->getLeftTableExpression()), cross_join_type);
+                cross->appendTable(std::move(join_node->getLeftTableExpressionNode()), cross_join_type);
 
             cross_join_type = table_with_condition.join_type;
-            lhs = std::move(join_node->getRightTableExpression());
+            lhs = std::move(join_node->getRightTableExpressionNode());
         }
 
         if (!cross)
@@ -310,7 +305,7 @@ public:
         if (!where_node)
             return;
 
-        auto & join_tree_node = query_node->getJoinTree();
+        auto & join_tree_node = query_node->getJoinTreeNode();
         if (!join_tree_node || join_tree_node->getNodeType() != QueryTreeNodeType::CROSS_JOIN)
             return;
 
@@ -334,7 +329,7 @@ public:
 
         auto tables_with_conditions = buildJoinsChain(join_graph);
         auto table_node = rebuildJoins(tables_with_conditions);
-        query_node->getJoinTree() = table_node;
+        query_node->getJoinTreeNode() = table_node;
 
         where_node = makeConjunction(other_conditions);
     }
@@ -375,6 +370,7 @@ private:
             return nodes.front();
 
         auto function_node = std::make_shared<FunctionNode>("and");
+        function_node->markAsOperator();
         for (const auto & node : nodes)
             function_node->getArguments().getNodes().push_back(node);
 

@@ -1,0 +1,163 @@
+---
+description: 'arrayJoin 関数のドキュメント'
+sidebarTitle: 'arrayJoin'
+slug: /sql-reference/functions/array-join
+title: 'arrayJoin 関数'
+doc_type: 'reference'
+---
+
+これは非常に特殊な関数です。
+
+通常の関数は行の集合を変更せず、各行の値を変更するだけです (map) 。
+集約関数は行の集合を圧縮します (fold または reduce) 。
+`arrayJoin` 関数は各行を受け取り、行の集合を生成します (unfold) 。
+
+この関数は引数として配列を受け取り、その配列の要素数に応じて元の行を複数の行に展開します。
+すべてのカラムの値はそのままコピーされますが、この関数が適用されるカラムの値だけは、対応する配列の値に置き換えられます。
+
+<Note>
+  配列が空の場合、`arrayJoin` は行を生成しません。
+  配列型のデフォルト値を含む 1 行を返すには、[emptyArrayToSingle](/ja/reference/functions/regular-functions/array-functions#emptyArrayToSingle) でラップします。たとえば、`arrayJoin(emptyArrayToSingle(...))` のようにします。
+</Note>
+
+例えば：
+
+```sql title="Query"
+SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
+```
+
+```text title="Response"
+┌─dst─┬─\'Hello\'─┬─src─────┐
+│   1 │ Hello     │ [1,2,3] │
+│   2 │ Hello     │ [1,2,3] │
+│   3 │ Hello     │ [1,2,3] │
+└─────┴───────────┴─────────┘
+```
+
+`arrayJoin` 関数は、`WHERE` 句を含むクエリのすべての部分に影響します。以下のクエリでは、サブクエリが返したのは 1 行だけであるにもかかわらず、結果が `2` になる点に注目してください。
+
+```sql title="Query"
+SELECT sum(1) AS impressions
+FROM
+(
+    SELECT ['Istanbul', 'Berlin', 'Babruysk'] AS cities
+)
+WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
+```
+
+```text title="Response"
+┌─impressions─┐
+│           2 │
+└─────────────┘
+```
+
+1つのクエリで複数の `arrayJoin` 関数を使用できます。この場合、変換は複数回行われ、行数がその分だけ増えます。
+たとえば:
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    arrayJoin(cities) AS city,
+    arrayJoin(browsers) AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
+│           2 │ Berlin   │ Chrome  │
+│           1 │ Berlin   │ Firefox │
+│           2 │ Babruysk │ Chrome  │
+│           1 │ Babruysk │ Firefox │
+└─────────────┴──────────┴─────────┘
+```
+
+<div id="important-note">
+  ### ベストプラクティス
+</div>
+
+同じ式に対して複数の `arrayJoin` を使用すると、共通部分式の除去により、期待どおりの結果にならない場合があります。
+そのような場合は、繰り返し使用する配列式に、結果に影響しない追加の操作を加えて変更することを検討してください。たとえば、`arrayJoin(arraySort(arr))`、`arrayJoin(arrayConcat(arr, []))`
+
+例:
+
+```sql title="Query"
+SELECT
+    arrayJoin(dice) AS first_throw,
+    /* arrayJoin(dice) as second_throw */ -- 技術的には正しいが、result setを消滅させてしまう
+    arrayJoin(arrayConcat(dice, [])) AS second_throw -- 再評価を強制するために意図的に式を変更
+FROM (
+    SELECT [1, 2, 3, 4, 5, 6] AS dice
+);
+```
+
+SELECTクエリ内の[`ARRAY JOIN`](/ja/reference/statements/select/array-join)構文に注目してください。これにより、より柔軟な処理が可能になります。
+`ARRAY JOIN`を使うと、同じ要素数を持つ複数の配列を一度に変換できます。
+
+例:
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    city,
+    browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+ARRAY JOIN
+    cities AS city,
+    browsers AS browser
+GROUP BY
+    2,
+    3
+```
+
+```text title="Response"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+または、[`Tuple`](/ja/reference/data-types/tuple) を使用できます。
+
+例:
+
+```sql title="Query"
+SELECT
+    sum(1) AS impressions,
+    (arrayJoin(arrayZip(cities, browsers)) AS t).1 AS city,
+    t.2 AS browser
+FROM
+(
+    SELECT
+        ['Istanbul', 'Berlin', 'Babruysk'] AS cities,
+        ['Firefox', 'Chrome', 'Chrome'] AS browsers
+)
+GROUP BY
+    2,
+    3
+```
+
+```text title="Row"
+┌─impressions─┬─city─────┬─browser─┐
+│           1 │ Istanbul │ Firefox │
+│           1 │ Berlin   │ Chrome  │
+│           1 │ Babruysk │ Chrome  │
+└─────────────┴──────────┴─────────┘
+```
+
+ClickHouse における `arrayJoin` という名前は、JOIN 演算との概念的な類似性に由来していますが、その対象は 1 行内の配列です。従来の JOIN が異なるテーブルの行を結合するのに対し、`arrayJoin` は 1 行内の配列の各要素を「結合」し、他のカラムの値を複製しながら、配列要素ごとに 1 行ずつ複数の行を生成します。ClickHouse では [`ARRAY JOIN`](/ja/reference/statements/select/array-join) 句の構文も提供されており、使い慣れた SQL の JOIN 用語を用いることで、従来の JOIN 演算との関係がさらに明確になっています。この処理は配列の「展開」とも呼ばれますが、関数名と句の両方で &quot;join&quot; という語が使われているのは、テーブルを配列要素と結合するのに似ており、結果として JOIN 演算と同様の形でデータセットを効果的に拡張するためです。

@@ -1,0 +1,33 @@
+---
+description: 'توثيق يشرح معدِّل EXCEPT الذي يحدّد اسم عمود واحد أو أكثر لاستبعاده من النتيجة. تُحذف جميع أسماء الأعمدة المطابقة من الناتج.'
+sidebarTitle: 'EXCEPT'
+slug: /sql-reference/statements/select/except-modifier
+title: 'معدِّل EXCEPT'
+keywords: ['EXCEPT', 'modifier']
+doc_type: 'reference'
+---
+
+> يحدّد اسم عمود واحد أو أكثر لاستبعاده من النتيجة. تُحذف جميع أسماء الأعمدة المطابقة من الناتج.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql title="Query"
+SELECT * EXCEPT (i) from columns_transformers;
+```
+
+```response title="Response"
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```

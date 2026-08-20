@@ -1,0 +1,103 @@
+(Expression)
+ExpressionTransform × 2
+  (MergingAggregated)
+  Resize 2 → 2
+    MergingAggregatedBucketTransform × 2
+      Resize 1 → 2
+        GroupingAggregatedTransform 3 → 1
+          (Union)
+            (Aggregating)
+            AggregatingTransform
+              (Expression)
+              ExpressionTransform
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
+            (ReadFromRemote)
+                (BlocksMarshalling)
+                SortChunksBySequenceNumber
+                  MarshallBlocks
+                    AddSequenceNumber
+                      (Aggregating)
+                      AggregatingTransform
+                        (Expression)
+                        ExpressionTransform
+                          (ReadFromSystemNumbers)
+                          NumbersRange 0 → 1
+                (BlocksMarshalling)
+                SortChunksBySequenceNumber
+                  MarshallBlocks
+                    AddSequenceNumber
+                      (Aggregating)
+                      AggregatingTransform
+                        (Expression)
+                        ExpressionTransform
+                          (ReadFromSystemNumbers)
+                          NumbersRange 0 → 1
+----------
+(Expression)
+ExpressionTransform × 2
+Header: sum(number) UInt64: sum(number) UInt64 UInt64(size = 0)
+  (MergingAggregated)
+  Resize 2 → 2
+  Header × 2 : sum(__table1.number) UInt64: sum(__table1.number) UInt64 UInt64(size = 0)
+    MergingAggregatedBucketTransform × 2
+    Header: sum(__table1.number) UInt64: sum(__table1.number) UInt64 UInt64(size = 0)
+      Resize 1 → 2
+      Header × 2 :  empty
+        GroupingAggregatedTransform 2 → 1
+        Header:  empty
+          (Union)
+            (Aggregating)
+            AggregatingTransform
+            Header: sum(__table1.number) AggregateFunction(sum, UInt64): sum(__table1.number) AggregateFunction(sum, UInt64) AggregateFunction(size = 0)
+              (Expression)
+              ExpressionTransform
+              Header: __table1.number UInt64: __table1.number UInt64 UInt64(size = 0)
+                (ReadFromSystemNumbers)
+                NumbersRange 0 → 1
+                Header: number UInt64: number UInt64 UInt64(size = 0)
+            (ReadFromRemote)
+                (BlocksMarshalling)
+                SortChunksBySequenceNumber
+                Header: sum(__table1.number) AggregateFunction(sum, UInt64): sum(__table1.number) AggregateFunction(sum, UInt64) AggregateFunction(size = 0)
+                  MarshallBlocks
+                  Header: sum(__table1.number) AggregateFunction(sum, UInt64): sum(__table1.number) AggregateFunction(sum, UInt64) AggregateFunction(size = 0)
+                    AddSequenceNumber
+                    Header: sum(__table1.number) AggregateFunction(sum, UInt64): sum(__table1.number) AggregateFunction(sum, UInt64) AggregateFunction(size = 0)
+                      (Aggregating)
+                      AggregatingTransform
+                      Header: sum(__table1.number) AggregateFunction(sum, UInt64): sum(__table1.number) AggregateFunction(sum, UInt64) AggregateFunction(size = 0)
+                        (Expression)
+                        ExpressionTransform
+                        Header: __table1.number UInt64: __table1.number UInt64 UInt64(size = 0)
+                          (ReadFromSystemNumbers)
+                          NumbersRange 0 → 1
+                          Header: number UInt64: number UInt64 UInt64(size = 0)
+----------
+----------
+(Expression)
+ExpressionTransform
+  (Sorting)
+  MergingSortedTransform 2 → 1
+    BufferChunks × 2
+      (Union)
+        (Sorting)
+        MergingSortedTransform 3 → 1
+          BufferChunks × 3
+            (Expression)
+            ExpressionTransform × 3
+              (ReadFromMergeTree)
+              MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) × 3 0 → 1
+        (ReadFromRemoteParallelReplicas)
+            (BlocksMarshalling)
+            SortChunksBySequenceNumber 2 → 1
+              MarshallBlocks × 2
+                Resize 1 → 2
+                  AddSequenceNumber
+                    (Sorting)
+                    MergingSortedTransform 3 → 1
+                      BufferChunks × 3
+                        (Expression)
+                        ExpressionTransform × 3
+                          (ReadFromMergeTree)
+                          MergeTreeSelect(pool: ReadPoolParallelReplicasInOrder, algorithm: InOrder) × 3 0 → 1

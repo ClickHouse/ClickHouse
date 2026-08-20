@@ -1,0 +1,53 @@
+---
+description: 'Documentation de l’instruction SET ROLE'
+sidebarTitle: 'SET ROLE'
+slug: /sql-reference/statements/set-role
+title: 'Instruction SET ROLE'
+doc_type: 'reference'
+---
+
+Active les rôles de l’utilisateur actuel.
+
+```sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
+
+<div id="set-default-role">
+  ## SET DEFAULT ROLE
+</div>
+
+Définit les rôles par défaut pour un utilisateur.
+
+Les rôles par défaut sont automatiquement activés lors de la connexion de l’utilisateur. Vous ne pouvez définir comme rôles par défaut que des rôles préalablement accordés. Si le rôle n’est pas accordé à un utilisateur, ClickHouse lève une exception.
+
+```sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Attribuez plusieurs rôles par défaut à un utilisateur :
+
+```sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Définissez comme rôles par défaut tous les rôles accordés à un utilisateur :
+
+```sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Supprimer les rôles par défaut d’un utilisateur :
+
+```sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Définissez par défaut tous les rôles accordés, à l’exception des rôles spécifiques `role1` et `role2` :
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
+```

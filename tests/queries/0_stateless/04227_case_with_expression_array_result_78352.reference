@@ -1,0 +1,16 @@
+memory table, analyzer=1:
+1	['a','b','c','d']
+2	[]
+3	[]
+memory table, analyzer=0:
+1	['a','b','c','d']
+2	[]
+3	[]
+materialize subquery, analyzer=1:
+1	['a','b','c','d']
+materialize subquery, analyzer=0:
+1	['a','b','c','d']
+all-constant subquery, analyzer=1:
+1	['a','b','c','d']
+all-constant subquery, analyzer=0:
+1	['a','b','c','d']

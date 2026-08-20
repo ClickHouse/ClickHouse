@@ -27,6 +27,8 @@ public:
         {}
 
 
+    ~MutateFromLogEntryTask() override;
+
     Priority getPriority() const override { return priority; }
 
     void cancel() noexcept override
@@ -56,6 +58,7 @@ private:
 
     MergeTreePartInfo new_part_info;
     MutationCommandsConstPtr commands;
+    Strings mutation_ids_for_log;
 
     MergeTreeData::TransactionUniquePtr transaction_ptr{nullptr};
     std::optional<ZeroCopyLock> zero_copy_lock;

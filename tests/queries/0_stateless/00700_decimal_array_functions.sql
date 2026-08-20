@@ -18,3 +18,7 @@ SELECT arrayCompact([toDecimal32(1.0,4), toDecimal32(1.0,4)]) x, toTypeName(x);
 SELECT arrayCompact([toDecimal64(1.0,8), toDecimal64(1.0,8)]) x, toTypeName(x);
 SELECT arrayCompact([toDecimal128(1.0,8), toDecimal128(1.0,8)]) x, toTypeName(x);
 SELECT '-';
+SELECT arrayRemove([toDecimal32(1.0,4), toDecimal32(2.0,4), toDecimal32(3.0,4)], toDecimal32(1.0,4)) x, toTypeName(x);
+SELECT arrayRemove([toDecimal64(1.0,8), toDecimal64(2.0,8), toDecimal64(3.0,8)], toDecimal64(1.0,8)) x, toTypeName(x);
+SELECT arrayRemove([toDecimal128(1.0,8), toDecimal128(2.0,8), toDecimal128(3.0,8)], toDecimal128(1.0,8)) x, toTypeName(x);
+SELECT '-';

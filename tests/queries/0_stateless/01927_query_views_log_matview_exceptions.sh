@@ -51,7 +51,7 @@ function test()
             replaceOne(CAST(type AS String), 'ExceptionWhileProcessing', 'Excep****WhileProcessing'),
             exception_code
         FROM system.query_log
-        WHERE
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND
               query_id='$query_id' AND
               current_database = currentDatabase()
         ORDER BY event_time_microseconds DESC
@@ -66,7 +66,7 @@ function test()
             view_target,
             view_query
         FROM system.query_views_log
-        WHERE initial_query_id = '$query_id'
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '$query_id'
         ORDER BY view_name ASC
         ";
 }

@@ -8,8 +8,16 @@ echo '{
     "ip-forward": true,
     "log-level": "debug",
     "storage-driver": "overlay2",
+    "features": {
+        "containerd-snapshotter": false
+    },
     "insecure-registries" : ["dockerhub-proxy.dockerhub-proxy-zone:5000"],
-    "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"]
+    "registry-mirrors" : ["http://dockerhub-proxy.dockerhub-proxy-zone:5000"],
+    "log-driver": "json-file",
+    "log-opts": {
+        "max-size": "100m",
+        "max-file": "3"
+    }
 }' | dd of=/etc/docker/daemon.json
 
 # if [ -f /sys/fs/cgroup/cgroup.controllers ]; then

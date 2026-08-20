@@ -125,6 +125,11 @@ public:
         return max_size_in_bytes;
     }
 
+    size_t maxCount() const override
+    {
+        return max_count;
+    }
+
     void setMaxCount(size_t max_count_) override
     {
         /// lazy behavior: the cache only shrinks upon the next insert
@@ -228,6 +233,7 @@ public:
         {
             /// Remove stale entries
             for (auto it = cache.begin(); it != cache.end();)
+            {
                 if (is_stale_function(it->first))
                 {
                     size_t sz = weight_function(*it->second);
@@ -238,6 +244,7 @@ public:
                 }
                 else
                     ++it;
+            }
         }
 
         if (sufficient_space_in_cache() && sufficient_space_in_cache_for_user())

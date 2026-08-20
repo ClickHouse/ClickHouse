@@ -1,11 +1,11 @@
 #include <iostream>
 #include <iomanip>
-#include <vector>
 
 #include <Common/Stopwatch.h>
 
 #include <farmhash.h>
 #include <metrohash.h>
+#include <Examples/clickhouse_examples.h>
 
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 #define DBMS_HASH_MAP_DEBUG_RESIZES
@@ -14,7 +14,6 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadHelpers.h>
 #include <Compression/CompressedReadBuffer.h>
-#include <base/StringRef.h>
 #include <Common/HashTable/HashMap.h>
 #include <Interpreters/AggregationCommon.h>
 
@@ -50,49 +49,63 @@ done
 */
 
 
-#define DefineStringRef(STRUCT) \
-\
-struct STRUCT : public StringRef {}; \
-\
-namespace ZeroTraits \
-{ \
-    template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
- \
-    template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \
-} \
- \
-template <> \
-struct DefaultHash<STRUCT> \
-{ \
-    size_t operator() (STRUCT x) const \
-    { \
-        return CityHash_v1_0_2::CityHash64(x.data, x.size); \
-    } \
-};
-
-
-DefineStringRef(StringRef_CompareMemcmp)
-DefineStringRef(StringRef_CompareAlwaysTrue)
-
-
-inline bool operator==(StringRef_CompareMemcmp lhs, StringRef_CompareMemcmp rhs)
+namespace
 {
-    if (lhs.size != rhs.size)
+
+struct StringView_CompareMemcmp : public std::string_view {};
+struct StringView_CompareAlwaysTrue : public std::string_view {};
+
+[[maybe_unused]] inline bool operator==(StringView_CompareMemcmp lhs, StringView_CompareMemcmp rhs)
+{
+    if (lhs.size() != rhs.size())
         return false;
 
-    if (lhs.size == 0)
+    if (lhs.empty())
         return true;
 
-    return 0 == memcmp(lhs.data, rhs.data, lhs.size);
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size());
 }
 
-inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
+[[maybe_unused]] inline bool operator==(StringView_CompareAlwaysTrue, StringView_CompareAlwaysTrue)
 {
     return true;
 }
 
+} /// close anonymous namespace for ZeroTraits/DefaultHash specializations
+
+namespace ZeroTraits
+{
+    template <>
+    [[maybe_unused]] inline bool check<StringView_CompareMemcmp>(StringView_CompareMemcmp x) { return x.empty(); }
+    template <>
+    [[maybe_unused]] inline void set<StringView_CompareMemcmp>(StringView_CompareMemcmp & x) { x = StringView_CompareMemcmp{}; }
+
+    template <>
+    [[maybe_unused]] inline bool check<StringView_CompareAlwaysTrue>(StringView_CompareAlwaysTrue x) { return x.empty(); }
+    template <>
+    [[maybe_unused]] inline void set<StringView_CompareAlwaysTrue>(StringView_CompareAlwaysTrue & x) { x = StringView_CompareAlwaysTrue{}; }
+}
+
+template <>
+struct DefaultHash<StringView_CompareMemcmp>
+{
+    [[maybe_unused]] size_t operator() (StringView_CompareMemcmp x) const
+    {
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+    }
+};
+
+template <>
+struct DefaultHash<StringView_CompareAlwaysTrue>
+{
+    [[maybe_unused]] size_t operator() (StringView_CompareAlwaysTrue x) const
+    {
+        return CityHash_v1_0_2::CityHash64(x.data(), x.size());
+    }
+};
+
+namespace
+{
 
 struct FastHash64
 {
@@ -104,17 +117,17 @@ struct FastHash64
         return h;
     }
 
-    size_t operator() (StringRef x) const
+    [[maybe_unused]] size_t operator() (std::string_view x) const
     {
-        const char * buf = x.data;
-        size_t len = x.size;
+        const char * buf = x.data();
+        size_t len = x.size();
 
         const uint64_t    m = 0x880355f21e6d1965ULL;
         const uint64_t *pos = reinterpret_cast<const uint64_t *>(buf);
         const uint64_t *end = pos + (len / 8);
-        const unsigned char *pos2;
+        const unsigned char *pos2 = nullptr;
         uint64_t h = len * m;
-        uint64_t v;
+        uint64_t v = {};
 
         while (pos != end)
         {
@@ -146,12 +159,12 @@ struct FastHash64
 
 struct FNV1a
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         size_t res = 0xcbf29ce484222325ULL;
 
-        const char * pos = x.data;
-        const char * end = x.data + x.size;
+        const char * pos = x.data();
+        const char * end = x.data() + x.size();
 
         for (; pos < end; ++pos)
         {
@@ -168,10 +181,10 @@ struct FNV1a
 
 struct CrapWow
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        const char * key = x.data;
-        size_t len = x.size;
+        const char * key = x.data();
+        size_t len = x.size();
         size_t seed = 0;
 
         const UInt64 m = 0x95b47aa3355ba1a1;
@@ -241,10 +254,10 @@ struct CrapWow
 
 struct SimpleHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         const char * end = pos + size;
 
@@ -256,7 +269,7 @@ struct SimpleHash
         if (size < 8)
         {
 #ifdef __SSE4_2__
-            return hashLessThan8(x.data, x.size);
+            return hashLessThan8(x.data(), x.size());
 #endif
         }
 
@@ -278,10 +291,10 @@ struct SimpleHash
 
 struct VerySimpleHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         const char * end = pos + size;
 
@@ -293,7 +306,7 @@ struct VerySimpleHash
         if (size < 8)
         {
 #ifdef __SSE4_2__
-            return hashLessThan8(x.data, x.size);
+            return hashLessThan8(x.data(), x.size());
 #endif
         }
 
@@ -318,9 +331,9 @@ struct VerySimpleHash
 
 struct FarmHash64
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data, x.size);
+        return NAMESPACE_FOR_HASH_FUNCTIONS::Hash64(x.data(), x.size());
     }
 };
 
@@ -328,15 +341,15 @@ struct FarmHash64
 template <void metrohash64(const uint8_t * key, uint64_t len, uint32_t seed, uint8_t * out)>
 struct SMetroHash64
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        union
+        union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             uint64_t u64;
             std::uint8_t u8[sizeof(u64)];
         };
 
-        metrohash64(reinterpret_cast<const std::uint8_t *>(x.data), x.size, 0, u8);
+        metrohash64(reinterpret_cast<const std::uint8_t *>(x.data()), x.size(), 0, u8);
 
         return u64;
     }
@@ -347,7 +360,7 @@ struct SMetroHash64
 
 /*struct CRC32Hash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
         const char * pos = x.data;
         size_t size = x.size;
@@ -381,17 +394,17 @@ struct SMetroHash64
 
 struct CRC32ILPHash
 {
-    size_t operator() (StringRef x) const
+    size_t operator() (std::string_view x) const
     {
-        const char * pos = x.data;
-        size_t size = x.size;
+        const char * pos = x.data();
+        size_t size = x.size();
 
         if (size == 0)
             return 0;
 
         if (size < 16)
         {
-            return hashLessThan16(x.data, x.size);
+            return hashLessThan16(x.data(), x.size());
         }
 
         const char * end = pos + size;
@@ -429,7 +442,7 @@ using Value = uint64_t;
 
 
 template <typename Key, typename Hash>
-void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
+void NO_INLINE bench(const std::vector<std::string_view> & data, const char * name)
 {
     Stopwatch watch;
 
@@ -437,7 +450,7 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
 
     Map map;
     typename Map::LookupResult it;
-    bool inserted;
+    bool inserted = {};
 
     for (const auto & value : data)
     {
@@ -451,15 +464,16 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     std::cerr << std::fixed << std::setprecision(2)
         << "HashMap (" << name << "). Size: " << map.size()
         << ", elapsed: " << watch.elapsedSeconds()
-        << " (" << data.size() / watch.elapsedSeconds() << " elem/sec.)"
+        << " (" << static_cast<double>(data.size()) / watch.elapsedSeconds() << " elem/sec.)"
 #ifdef DBMS_HASH_MAP_COUNT_COLLISIONS
         << ", collisions: " << map.getCollisions()
 #endif
         << std::endl;
 }
 
+}
 
-int main(int argc, char ** argv)
+int mainEntryExampleHashMapString3(int argc, char ** argv)
 {
     if (argc < 3)
     {
@@ -471,9 +485,9 @@ int main(int argc, char ** argv)
     size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
-    std::vector<StringRef> data(n);
+    std::vector<std::string_view> data(n);
 
-    std::cerr << "sizeof(Key) = " << sizeof(StringRef) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
+    std::cerr << "sizeof(Key) = " << sizeof(std::string_view) << ", sizeof(Value) = " << sizeof(Value) << std::endl;
 
     {
         Stopwatch watch;
@@ -484,32 +498,32 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < n && !in2.eof(); ++i)
         {
             DB::readStringBinary(tmp, in2);
-            data[i] = StringRef(pool.insert(tmp.data(), tmp.size()), tmp.size());
+            data[i] = std::string_view(pool.insert(tmp.data(), tmp.size()), tmp.size());
         }
 
         watch.stop();
         std::cerr << std::fixed << std::setprecision(2)
             << "Vector. Size: " << n
             << ", elapsed: " << watch.elapsedSeconds()
-            << " (" << n / watch.elapsedSeconds() << " elem/sec.)"
+            << " (" << static_cast<double>(n) / watch.elapsedSeconds() << " elem/sec.)"
             << std::endl;
     }
 
-    if (!m || m == 1) bench<StringRef, StringRefHash64>(data, "StringRef_CityHash64");
-    if (!m || m == 2) bench<StringRef, FastHash64>     (data, "StringRef_FastHash64");
-    if (!m || m == 3) bench<StringRef, SimpleHash>     (data, "StringRef_SimpleHash");
-    if (!m || m == 4) bench<StringRef, FNV1a>          (data, "StringRef_FNV1a");
+    if (!m || m == 1) bench<std::string_view, StringViewHash64>(data, "StringView_CityHash64");
+    if (!m || m == 2) bench<std::string_view, FastHash64>     (data, "StringView_FastHash64");
+    if (!m || m == 3) bench<std::string_view, SimpleHash>     (data, "StringView_SimpleHash");
+    if (!m || m == 4) bench<std::string_view, FNV1a>          (data, "StringView_FNV1a");
 
 #ifdef __SSE4_2__
-    if (!m || m == 5) bench<StringRef, CrapWow>        (data, "StringRef_CrapWow");
-    if (!m || m == 6) bench<StringRef, CRC32Hash>      (data, "StringRef_CRC32Hash");
-    if (!m || m == 7) bench<StringRef, CRC32ILPHash>   (data, "StringRef_CRC32ILPHash");
+    if (!m || m == 5) bench<std::string_view, CrapWow>        (data, "StringView_CrapWow");
+    if (!m || m == 6) bench<std::string_view, CRC32Hash>      (data, "StringView_CRC32Hash");
+    if (!m || m == 7) bench<std::string_view, CRC32ILPHash>   (data, "StringView_CRC32ILPHash");
 #endif
 
-    if (!m || m == 8) bench<StringRef, VerySimpleHash> (data, "StringRef_VerySimpleHash");
-    if (!m || m == 9) bench<StringRef, FarmHash64>     (data, "StringRef_FarmHash64");
-    if (!m || m == 10) bench<StringRef, SMetroHash64<metrohash64_1>>(data, "StringRef_MetroHash64_1");
-    if (!m || m == 11) bench<StringRef, SMetroHash64<metrohash64_2>>(data, "StringRef_MetroHash64_2");
+    if (!m || m == 8) bench<std::string_view, VerySimpleHash> (data, "StringView_VerySimpleHash");
+    if (!m || m == 9) bench<std::string_view, FarmHash64>     (data, "StringView_FarmHash64");
+    if (!m || m == 10) bench<std::string_view, SMetroHash64<metrohash64_1>>(data, "StringView_MetroHash64_1");
+    if (!m || m == 11) bench<std::string_view, SMetroHash64<metrohash64_2>>(data, "StringView_MetroHash64_2");
 
     return 0;
 }
