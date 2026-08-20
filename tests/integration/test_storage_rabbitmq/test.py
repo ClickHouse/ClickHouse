@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import re
 import random
 import threading
@@ -133,6 +134,24 @@ def check_expected_result_polling(expected, query, instance=instance, timeout=DE
 
 
 # Tests
+
+
+def test_rabbitmq_broker_log_is_collected(rabbitmq_cluster):
+    logs_dir = rabbitmq_cluster.rabbitmq_logs_dir
+    path = os.path.join(logs_dir, "rabbit.log")
+
+    deadline = time.monotonic() + 30
+    size = 0
+    while time.monotonic() < deadline:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            if size > 0:
+                break
+        time.sleep(1)
+
+    listing = sorted(os.listdir(logs_dir)) if os.path.isdir(logs_dir) else "<no such directory>"
+    assert os.path.exists(path), f"{path} is absent, {logs_dir} contains {listing}"
+    assert size > 0, f"{path} is empty, {logs_dir} contains {listing}"
 
 
 @pytest.mark.parametrize(
@@ -709,7 +728,7 @@ def test_rabbitmq_mv_combo(rabbitmq_cluster, db, unique):
             SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_exchange_name = '{unique}_combo',
                      rabbitmq_queue_base = '{unique}_combo',
-                     rabbitmq_max_block_size = 100,
+                     rabbitmq_max_block_size = 10000,
                      rabbitmq_flush_interval_ms=1000,
                      rabbitmq_num_consumers = 2,
                      rabbitmq_num_queues = 5,
