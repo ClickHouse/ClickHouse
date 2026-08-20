@@ -572,7 +572,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// Version 1 of the `uniq` state keeps 64-bit hashes instead of 32-bit ones,
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
     /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
     bool isVersioned() const override { return is_uniques_hash_set; }
 
@@ -739,7 +739,7 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
-    /// Version 1 of the `uniq` state keeps 64-bit hashes instead of 32-bit ones,
+    /// Version 1 of the `uniq` state carries an additional small sample of 64-bit hashes,
     /// which fixes the overflow of the estimate at cardinalities above ten billion (issue #6078).
     /// The versioning follows the same scheme as the single-argument `uniq` above, see the comments there.
     bool isVersioned() const override { return is_uniques_hash_set; }

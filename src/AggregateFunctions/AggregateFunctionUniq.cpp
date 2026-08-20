@@ -237,11 +237,12 @@ For the calculation state, the function uses a sample of element hash values up 
 This algorithm is very accurate and very efficient on the CPU.
 When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
-The state keeps 64-bit hashes of the values, so the estimate stays accurate for cardinalities of hundreds of billions.
-States written by servers older than 26.8 (state version 0) kept only 32 bits of each hash,
-which capped the number of distinguishable values at around ten billion.
-Merging with such a state - as well as storing the state into a table column created before the upgrade,
-whose type keeps state version 0 - degrades the calculation to the legacy 32-bit accuracy.
+The sample keeps 32-bit hashes, which cannot distinguish more than a few billion values, so in addition
+a small heavily-thinned-out sample of full 64-bit hashes is maintained (about one hash per 262144 values,
+bounded by 16384 hashes), and the estimate switches to it at around two billion. This keeps the estimate
+accurate (within about 1%) for cardinalities of hundreds of billions and more, where servers older
+than 26.8 returned garbage (issue #6078). States written by those servers carry no 64-bit sample,
+so merging with them keeps only the 32-bit precision for the merged-in values.
 
 </details>
 
