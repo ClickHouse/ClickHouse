@@ -13,12 +13,14 @@ namespace TimeSeriesHistogramFlags
     constexpr UInt8 IsFloat = 0x01;
     constexpr UInt8 CounterResetHintShift = 1;
     constexpr UInt8 CounterResetHintMask = 0x06;  /// prometheus::Histogram::ResetHint (UNKNOWN/YES/NO/GAUGE) << 1
-    constexpr UInt8 IsGauge = 0x08;
+    /// 0x08 is reserved (was a gauge bit, dropped as redundant with reset hint == GAUGE).
     constexpr UInt8 StaleMarker = 0x10;
 }
 
 /// Indexes of the elements of the tuple in the outer `histograms` column,
 /// see getTimeSeriesHistogramsOuterColumnType().
+/// The tuple is a persisted format: extend it only by APPENDING new elements at the end
+/// (before `Size`), so tables written by older versions keep a compatible layout.
 namespace TimeSeriesHistogramsTupleIndex
 {
     constexpr size_t Timestamp = 0;

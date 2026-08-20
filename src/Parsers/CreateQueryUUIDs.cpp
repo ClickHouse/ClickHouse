@@ -5,10 +5,8 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
-#include <Common/FieldVisitorConvertToNumber.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
-#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTViewTargets.h>
 
 
@@ -118,14 +116,9 @@ CreateQueryUUIDs::CreateQueryUUIDs(const ASTCreateQuery & query, bool generate_r
                 generate_target_uuid(ViewTarget::Metrics);
 
                 /// The "histograms" target is optional: its inner table exists only when the CREATE query
-                /// asks for it, either with an explicit HISTOGRAMS clause or the `store_native_histograms` setting.
-                bool has_histograms_target = query.targets && query.targets->tryGetTarget(ViewTarget::Histograms);
-                if (!has_histograms_target && query.storage && query.storage->settings)
-                {
-                    if (const auto * setting_value = query.storage->settings->changes.tryGet("store_native_histograms"))
-                        has_histograms_target = applyVisitor(FieldVisitorConvertToNumber<bool>(), *setting_value);
-                }
-                if (has_histograms_target)
+                /// declares it (an explicit HISTOGRAMS clause, or the `store_native_histograms` setting, which
+                /// normalizeTimeSeriesDefinition() has already materialized into the target by this point).
+                if (query.targets && query.targets->tryGetTarget(ViewTarget::Histograms))
                     generate_target_uuid(ViewTarget::Histograms);
             }
         }
