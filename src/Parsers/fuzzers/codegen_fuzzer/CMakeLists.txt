@@ -50,11 +50,17 @@ add_custom_command(
         ${CODEGEN_DICT_SCANNED_SOURCES}
 )
 
+# The script and the template it prepends are inputs like the dictionary is:
+# a command only reruns for a file named in its DEPENDS, so without them an
+# edit to either leaves the grammar as it was.
 add_custom_command(
     OUTPUT
         "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
     COMMAND ./update.sh "${CURRENT_DIR_IN_BINARY}/codegen.dict"
-    DEPENDS "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+    DEPENDS
+        "${CURRENT_DIR_IN_BINARY}/codegen.dict"
+        "${CURRENT_DIR_IN_BINARY}/update.sh"
+        "${CURRENT_DIR_IN_BINARY}/clickhouse-template.g"
 )
 
 add_custom_command(
@@ -62,7 +68,9 @@ add_custom_command(
         "${CURRENT_DIR_IN_BINARY}/out.cpp"
         "${CURRENT_DIR_IN_BINARY}/out.proto"
     COMMAND python3 gen.py clickhouse.g out.cpp out.proto
-    DEPENDS "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+    DEPENDS
+        "${CURRENT_DIR_IN_BINARY}/clickhouse.g"
+        "${CURRENT_DIR_IN_BINARY}/gen.py"
 )
 
 set(PROTOBUF_GENERATE_CPP_APPEND_PATH TRUE)

@@ -254,11 +254,16 @@ class TestTheDependencySetReachesTheGrammar:
     where an edited carrier regenerates nothing.
     """
 
-    # Each output and the dependency that must reach it, in order.
+    # Each output and a dependency that must reach it. The data edges carry the
+    # sources through to the grammar; the script edges are what make an edit to
+    # a generator rerun the step it drives.
     _EDGES = (
         (_DICT, "${%s}" % _DEPS_VAR),
         (_GRAMMAR, _DICT),
         (_GENERATED_SOURCE, _GRAMMAR),
+        (_GRAMMAR, "update.sh"),
+        (_GRAMMAR, "clickhouse-template.g"),
+        (_GENERATED_SOURCE, "gen.py"),
     )
 
     @pytest.mark.parametrize("output,dependency", _EDGES, ids=lambda v: v.strip("${}"))
@@ -298,6 +303,31 @@ class TestTheDependencySetReachesTheGrammar:
         )
         assert _DICT in command
         assert "all.dict" not in command
+
+    @pytest.mark.parametrize(
+        "output,script",
+        [
+            (_GRAMMAR, "update.sh"),
+            (_GRAMMAR, "clickhouse-template.g"),
+            (_GENERATED_SOURCE, "gen.py"),
+        ],
+    )
+    def test_a_copied_script_is_depended_on_where_it_is_run(self, output, script):
+        # These are configure_file'd into the binary directory and the commands
+        # run there, so the copy is the file the build compares timestamps
+        # against; depending on the source path would not rerun the step.
+        text = _read(_CODEGEN_CMAKE)
+        assert re.search(
+            r'configure_file\(\s*"\$\{CURRENT_DIR_IN_SOURCES\}/%s"\s*'
+            r'"\$\{CURRENT_DIR_IN_BINARY\}/%s"'
+            % (re.escape(script), re.escape(script)),
+            text,
+        ), f"{script} is no longer copied into the binary directory"
+        depends = _section(_custom_command(text, output), "DEPENDS")
+        assert any(
+            "${CURRENT_DIR_IN_BINARY}/%s" % script == argument.strip('"')
+            for argument in depends
+        ), f"the command producing {output} must depend on the copy of {script}"
 
 
 class TestNarrowingTheDependencySetIsDetected:
