@@ -53,6 +53,8 @@ def started_cluster():
 
 def assert_socket_receive_timeout(error, expected_origin):
     # receive_timeout=5 must surface as SOCKET_TIMEOUT reporting the 5000 ms it asked for.
+    # send_timeout stays distinct from it, or this value is ambiguous between the two settings,
+    # and stays below it, since a blocking secure read waits max(receive_timeout, send_timeout).
     assert "Timeout exceeded while reading from socket" in error
     assert "5000 ms" in error
     assert "(SOCKET_TIMEOUT)" in error
@@ -83,19 +85,19 @@ def test(started_cluster):
     assert attempts < 1000
 
     error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;"
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=0, async_socket_for_remote=0;"
     )
 
     assert_socket_receive_timeout(error, "socket (peer: ")
 
     error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;"
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=0, async_socket_for_remote=1;"
     )
 
     assert_socket_receive_timeout(error, "socket (socket (")
 
     error = NODES["node1"].query_and_get_error(
-        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;"
+        "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=4, use_hedged_requests=1, async_socket_for_remote=1;"
     )
 
     assert_socket_receive_timeout(error, "socket (node2:9440, receive timeout")
