@@ -352,6 +352,61 @@ def test_s3_time_virtual_column():
     assert result.strip() == "1"
 
 
+def test_local_time_virtual_column_matches_exact_mtime():
+    """`_time` must be the file's real last-modified time as reported by `IDisk`.
+
+    The weaker "is it after year 2000" checks above would still pass if the metadata
+    path regressed to some unrelated timestamp, so pin an exact value here.
+    """
+    node_local.exec_in_container(
+        [
+            "bash",
+            "-c",
+            "echo 'exact_mtime_test' > /test_user_files_disk1/exact_mtime_test.csv && "
+            "touch -d '2020-03-04 05:06:07 UTC' /test_user_files_disk1/exact_mtime_test.csv",
+        ]
+    )
+
+    result = node_local.query(
+        "SELECT _time = toDateTime('2020-03-04 05:06:07', 'UTC') "
+        "FROM file('exact_mtime_test.csv', 'CSV', 'x String')"
+    )
+    assert result.strip() == "1"
+
+
+def test_s3_time_virtual_column_tracks_the_object():
+    """On a remote disk `_time` comes from `disk->getLastModified`; check it is the
+    object's own modification time (close to the write) and that it advances when the
+    object is rewritten."""
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    near_now = node_s3.query(
+        "SELECT abs(dateDiff('second', _time, now())) < 600 "
+        "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+    )
+    assert near_now.strip() == "1"
+
+    first = int(
+        node_s3.query(
+            "SELECT toUnixTimestamp(_time) "
+            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+        ).strip()
+    )
+
+    node_s3.query(
+        "INSERT INTO FUNCTION file('s3_mtime_tracked.csv', 'CSV', 'x UInt64') "
+        "SELECT 2 SETTINGS engine_file_truncate_on_insert = 1"
+    )
+    second = int(
+        node_s3.query(
+            "SELECT toUnixTimestamp(_time) "
+            "FROM file('s3_mtime_tracked.csv', 'CSV', 'x UInt64')"
+        ).strip()
+    )
+    assert second >= first
+
+
 def test_local_insert_appends_to_existing_file():
     """Append-capable formats (CSV/TSV) must not silently overwrite an existing file."""
     node_local.query(
