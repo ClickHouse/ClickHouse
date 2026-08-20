@@ -26,8 +26,10 @@ OpenAIProvider::OpenAIProvider(const String & endpoint_, const String & api_key_
 {
 }
 
-AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
+void OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
+    response = {};
+
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
@@ -92,7 +94,16 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    AIResponse ai_response;
+    /// A malformed body was still charged for, so read the usage before the checks below can throw.
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+        {
+            response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
+            response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
+        }
+    }
 
     auto choices = json_obj->getArray("choices");
     if (!choices || choices->size() == 0)
@@ -109,20 +120,8 @@ AIResponse OpenAIProvider::call(const AIRequest & ai_request, const ConnectionTi
         throw Exception(ErrorCodes::MALFORMED_AI_PROVIDER_RESPONSE,
             "AI chat response is missing output message");
 
-    ai_response.result = message->optValue<String>("content", "");
-    ai_response.finish_reason = choice->optValue<String>("finish_reason", "stop");
-
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-        {
-            ai_response.input_tokens = usage->optValue<UInt64>("prompt_tokens", 0);
-            ai_response.output_tokens = usage->optValue<UInt64>("completion_tokens", 0);
-        }
-    }
-
-    return ai_response;
+    response.result = message->optValue<String>("content", "");
+    response.finish_reason = choice->optValue<String>("finish_reason", "stop");
 }
 
 void OpenAIProvider::embed(

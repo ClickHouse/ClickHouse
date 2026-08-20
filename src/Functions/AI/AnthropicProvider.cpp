@@ -31,8 +31,10 @@ AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & ap
             "Unsupported Anthropic API version '{}'. Supported: '{}'", api_version, DEFAULT_ANTHROPIC_API_VERSION);
 }
 
-AIResponse AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts)
+void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
+    response = {};
+
     Poco::JSON::Object::Ptr root = new Poco::JSON::Object;
     root->set("model", ai_request.model);
     root->set("temperature", ai_request.temperature);
@@ -110,15 +112,24 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
     auto json_result = parser.parse(response_body);
     const auto & json_obj = json_result.extract<Poco::JSON::Object::Ptr>();
 
-    AIResponse ai_response;
+    /// A malformed body was still charged for, so read the usage before the checks below can throw.
+    if (json_obj->has("usage"))
+    {
+        auto usage = json_obj->getObject("usage");
+        if (usage)
+        {
+            response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
+            response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
+        }
+    }
 
     String anthropic_stop_reason = json_obj->optValue<String>("stop_reason", "end_turn");
     if (anthropic_stop_reason == "max_tokens")
-        ai_response.finish_reason = "length";
+        response.finish_reason = "length";
     else if (anthropic_stop_reason == "end_turn")
-        ai_response.finish_reason = "stop";
+        response.finish_reason = "stop";
     else
-        ai_response.finish_reason = anthropic_stop_reason;
+        response.finish_reason = anthropic_stop_reason;
 
     auto content = json_obj->getArray("content");
     if (!content)
@@ -134,7 +145,7 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
         String type = block->optValue<String>("type", "");
         if (type == "text")
         {
-            ai_response.result = block->optValue<String>("text", "");
+            response.result = block->optValue<String>("text", "");
             break;
         }
         else if (type == "tool_use")
@@ -145,22 +156,10 @@ AIResponse AnthropicProvider::call(const AIRequest & ai_request, const Connectio
                     "Anthropic response output is missing for tool_use block");
             std::ostringstream ss; /// STYLE_CHECK_ALLOW_STD_STRING_STREAM
             input->stringify(ss);
-            ai_response.result = ss.str();
+            response.result = ss.str();
             break;
         }
     }
-
-    if (json_obj->has("usage"))
-    {
-        auto usage = json_obj->getObject("usage");
-        if (usage)
-        {
-            ai_response.input_tokens = usage->optValue<UInt64>("input_tokens", 0);
-            ai_response.output_tokens = usage->optValue<UInt64>("output_tokens", 0);
-        }
-    }
-
-    return ai_response;
 }
 
 }

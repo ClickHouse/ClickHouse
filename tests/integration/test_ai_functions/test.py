@@ -105,6 +105,14 @@ def started_cluster() -> typing.Generator[ClickHouseCluster, None, None]:
             f"model = 'test-model', "
             f"api_key = 'test-key'"
         )
+        # Endpoint returning a billed `200` whose body has no usable `choices`.
+        instance.query(
+            f"CREATE NAMED COLLECTION ai_no_choices AS "
+            f"provider = 'openai', "
+            f"endpoint = 'http://localhost:{MOCK_PORT}/v1/chat/no_choices', "
+            f"model = 'test-model', "
+            f"api_key = 'test-key'"
+        )
         # Endpoint returning a deterministic HTTP 400, which the url table function never retries.
         instance.query(
             f"CREATE NAMED COLLECTION ai_bad_request AS "
@@ -1089,6 +1097,51 @@ def test_embed_malformed_response_records_input_tokens(started_cluster):
     events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
     assert int(events["api_calls"]) == 1
     assert int(events["input_tokens"]) == 2  # the mock bills one token per input character: "a", "b"
+
+
+def test_generate_malformed_response_records_input_tokens(started_cluster):
+    """Same guarantee on the text path: a chat `200` the provider billed for still reports its tokens when
+    the body fails validation. Uses `ai_function_throw_on_error = 0` so the query reaches `QueryFinish`."""
+    qid = unique_query_id("generate_malformed_tokens")
+    result = instance.query(
+        "SELECT aiGenerate('hi', map('credentials', 'ai_no_choices'))",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_throw_on_error": 0,
+            "ai_function_max_retries": 0,
+        },
+        query_id=qid,
+    )
+    assert result.strip() == ""  # the rejected response yields no output
+    events = get_profile_events(qid)
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 7  # `usage.prompt_tokens` of the rejected body
+
+
+def test_similarity_row_counters_stay_zero_on_throw(started_cluster):
+    """`aiSimilarity` scores rows only once every batch is embedded, so a throw mid-embedding leaves no
+    scored row to report even though the first row's pair was embedded and billed. Pins that split: the
+    embedding counters are reported, the row counters are zero because no row was scored."""
+    qid = unique_query_id("sim_throw_rows")
+    # Batch size 2 over rows ('a','b') and ('c','d'): the first batch embeds row 0's pair and consumes the
+    # 2-token cap, so the second batch raises instead of embedding row 1.
+    error = instance.query_and_get_error(
+        "SELECT aiSimilarity(p.1, p.2, 'test-embed-model', map('credentials', 'ai_embed')) "
+        "FROM (SELECT arrayJoin([('a', 'b'), ('c', 'd')]) AS p)",
+        settings={
+            **AI_SETTINGS,
+            "ai_function_embedding_max_batch_size": 2,
+            "ai_function_max_input_tokens_per_query": 2,
+            "ai_function_throw_on_quota_exceeded": 1,
+        },
+        query_id=qid,
+    )
+    assert "LIMIT_EXCEEDED" in error
+    events = get_profile_events(qid, query_type="ExceptionWhileProcessing")
+    assert int(events["api_calls"]) == 1
+    assert int(events["input_tokens"]) == 2  # "a" and "b" were embedded and billed
+    assert int(events["rows_processed"]) == 0
+    assert int(events["rows_skipped"]) == 0
 
 
 def test_embed_error_throw_records_api_calls(started_cluster):

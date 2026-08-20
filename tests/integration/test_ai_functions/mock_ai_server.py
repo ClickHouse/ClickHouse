@@ -230,6 +230,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, make_success_response(content))
             return
 
+        if parsed.path == "/v1/chat/no_choices":
+            # A `200` the provider bills for, whose body then fails validation.
+            self._send_json(200, {
+                "id": "chatcmpl-no-choices",
+                "object": "chat.completion",
+                "choices": [],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 0, "total_tokens": 7},
+            })
+            return
+
         if parsed.path == "/v1/error":
             self._send_json(500, make_error_response("permanent failure"))
             return

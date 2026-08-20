@@ -126,8 +126,9 @@ class IAIProvider
 public:
     virtual ~IAIProvider() = default;
 
-    /// Send a chat completion request and return the parsed response.
-    virtual AIResponse call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts) = 0;
+    /// Send a chat completion request. Replaces the contents of `response`, filling the token counts
+    /// before the payload is validated: so a failed request can still update token counts.
+    virtual void call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response) = 0;
 
     /// Whether this provider exposes an embeddings endpoint.
     virtual bool supportsEmbeddings() const { return false; }

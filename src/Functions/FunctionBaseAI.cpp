@@ -569,11 +569,13 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 ++total_api_calls;
                 quota.recordAttempt();
 
-                auto ai_response = provider->call(ai_request, timeouts);
-
-                quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
-                total_input_tokens += ai_response.input_tokens;
-                total_output_tokens += ai_response.output_tokens;
+                AIResponse ai_response;
+                SCOPE_EXIT({
+                    quota.recordTokens(ai_response.input_tokens, ai_response.output_tokens);
+                    total_input_tokens += ai_response.input_tokens;
+                    total_output_tokens += ai_response.output_tokens;
+                });
+                provider->call(ai_request, timeouts, ai_response);
 
                 result = postProcessResponse(ai_response.result);
                 success = true;
