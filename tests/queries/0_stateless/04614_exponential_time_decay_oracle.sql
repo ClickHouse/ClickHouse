@@ -545,6 +545,13 @@ FROM
 )
 ORDER BY value; -- { serverError BAD_ARGUMENTS }
 
+-- MergeTree set indexes sort internal blocks and must preserve their data types.
+DROP TABLE IF EXISTS time_decay_set_index_sort;
+CREATE TABLE time_decay_set_index_sort (key Int8) ENGINE = MergeTree ORDER BY key;
+INSERT INTO time_decay_set_index_sort VALUES (-30), (1);
+SELECT count() FROM time_decay_set_index_sort WHERE key IN (-30);
+DROP TABLE time_decay_set_index_sort;
+
 -- Regular aggregates use aggregation properties when applying OrNull rewrites.
 SET enable_analyzer = 1;
 SELECT

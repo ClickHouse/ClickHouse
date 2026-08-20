@@ -658,9 +658,14 @@ void Set::checkTypesEqual(size_t set_type_idx, const DataTypePtr & other_type) c
                         other_type->getName(), data_types[set_type_idx]->getName());
 }
 
-MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<KeyTuplePositionMapping> && indexes_mapping_)
+MergeTreeSetIndex::MergeTreeSetIndex(
+    const Columns & set_elements,
+    const DataTypes & set_element_types,
+    std::vector<KeyTuplePositionMapping> && indexes_mapping_)
     : has_all_keys(set_elements.size() == indexes_mapping_.size()), indexes_mapping(std::move(indexes_mapping_))
 {
+    chassert(set_elements.size() == set_element_types.size());
+
     ::sort(indexes_mapping.begin(), indexes_mapping.end(),
         [](const KeyTuplePositionMapping & l, const KeyTuplePositionMapping & r)
         {
@@ -689,7 +694,7 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
     for (size_t i = 0; i < tuple_size; ++i)
     {
         String column_name = "_" + toString(i);
-        block_to_sort.insert({ordered_set[i], nullptr, column_name});
+        block_to_sort.insert({ordered_set[i], set_element_types[indexes_mapping[i].tuple_index], column_name});
         sort_description.emplace_back(column_name, 1, 1);
     }
 

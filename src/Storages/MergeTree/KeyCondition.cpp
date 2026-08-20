@@ -2735,7 +2735,7 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
         return false;
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, set_types, std::move(indexes_mapping));
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = out.set_index->getIndexesMapping();
@@ -2838,7 +2838,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
         return false;
 
-    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
+    out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, set_types, std::move(indexes_mapping));
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
     const auto & adjusted_indexes_mapping = out.set_index->getIndexesMapping();
