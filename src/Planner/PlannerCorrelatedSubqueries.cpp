@@ -13,9 +13,11 @@
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionFactory.h>
@@ -174,30 +176,44 @@ struct DecorrelationContext
     bool uses_in_memory_buffer = false;
 };
 
-/// Conversion applied to an equivalent column to obtain exactly the correlated column type.
-enum class ConversionRule : UInt8
+/// How to convert an equivalent column to exactly the correlated column type.
+struct SubstitutionConversion
 {
-    Exact,               /// Same type: plain alias.
-    ToNullable,          /// Nullability-only difference, the correlated type is Nullable.
-    AssumeNotNull,       /// Nullability-only difference, the correlated type is not Nullable; needs a NULL pre-filter.
-    LosslessCast,        /// Numeric cast to a least supertype equal to the correlated type; cannot fail.
-    AccurateCastOrNull,  /// Exactness-checking numeric cast; needs a pre-filter of NULL cast results.
+    /// The base types differ and do not embed losslessly: an exactness-checking cast is needed.
+    bool needs_accurate_cast = false;
+    /// Rows whose value cannot match any correlated-typed value must be dropped up front.
+    bool needs_null_prefilter = false;
+    /// 0 = same type, 1 = lossless conversion, 2 = conversion with a pre-filter. Lower is better.
+    size_t rank = 0;
 };
 
-/// Lower is better: an exact match needs no conversion, a lossless conversion needs no pre-filter.
-size_t conversionRank(ConversionRule rule)
+/// Classifies the conversion of an equivalent member column to the correlated column type.
+/// `Nullable` and `LowCardinality` are value-transparent wrappers, so only the base types
+/// base(T) = removeNullable(removeLowCardinality(T)) decide. Returns std::nullopt when the member
+/// is unusable for substitution.
+std::optional<SubstitutionConversion> classifySubstitutionConversion(const DataTypePtr & member_type, const DataTypePtr & correlated_type)
 {
-    switch (rule)
+    SubstitutionConversion conversion;
+    if (member_type->equals(*correlated_type))
+        return conversion;
+
+    auto member_base = removeNullable(removeLowCardinality(member_type));
+    auto correlated_base = removeNullable(removeLowCardinality(correlated_type));
+    if (!member_base->equals(*correlated_base))
     {
-        case ConversionRule::Exact:
-            return 0;
-        case ConversionRule::ToNullable:
-        case ConversionRule::LosslessCast:
-            return 1;
-        case ConversionRule::AssumeNotNull:
-        case ConversionRule::AccurateCastOrNull:
-            return 2;
+        if (!isNativeNumber(member_base) || !isNativeNumber(correlated_base))
+            return std::nullopt;
+        auto supertype = tryGetLeastSupertype(DataTypes{member_base, correlated_base});
+        if (!supertype)
+            return std::nullopt;
+        /// A widening into the correlated base is lossless; anything else must be checked per value.
+        conversion.needs_accurate_cast = !supertype->equals(*correlated_base);
     }
+
+    conversion.needs_null_prefilter = conversion.needs_accurate_cast
+        || (isNullableOrLowCardinalityNullable(member_type) && !isNullableOrLowCardinalityNullable(correlated_type));
+    conversion.rank = conversion.needs_null_prefilter ? 2 : 1;
+    return conversion;
 }
 
 /// A renaming of a correlated column to an equivalent column of the decorrelated subplan.
@@ -206,7 +222,7 @@ struct ExpressionRenaming
     const ActionsDAG::Node * source;
     String correlated_name;
     DataTypePtr correlated_type;
-    ConversionRule rule;
+    SubstitutionConversion conversion;
 };
 
 /// Builds accurateCastOrNull(node, 'TypeName'): NULL for values that do not convert exactly,
@@ -283,27 +299,14 @@ QueryPlan decorrelateQueryPlan(
                     if (!it->second->result_type->equals(*member.type))
                         continue;
 
-                    std::optional<ConversionRule> rule;
-                    if (member.type->equals(*correlated_type))
-                        rule = ConversionRule::Exact;
-                    else if (removeNullable(member.type)->equals(*removeNullable(correlated_type)))
-                        rule = correlated_type->isNullable() ? ConversionRule::ToNullable : ConversionRule::AssumeNotNull;
-                    else if (isNativeNumber(removeNullable(member.type)) && isNativeNumber(removeNullable(correlated_type)))
-                    {
-                        auto supertype = tryGetLeastSupertype(DataTypes{member.type, correlated_type});
-                        if (supertype && supertype->equals(*correlated_type))
-                            rule = ConversionRule::LosslessCast;
-                        else
-                            rule = ConversionRule::AccurateCastOrNull;
-                    }
-
-                    if (!rule)
+                    auto conversion = classifySubstitutionConversion(member.type, correlated_type);
+                    if (!conversion)
                         continue;
 
-                    if (!best_renaming || conversionRank(*rule) < conversionRank(best_renaming->rule))
-                        best_renaming = ExpressionRenaming{it->second, correlated_column_identifier, correlated_type, *rule};
+                    if (!best_renaming || conversion->rank < best_renaming->conversion.rank)
+                        best_renaming = ExpressionRenaming{it->second, correlated_column_identifier, correlated_type, *conversion};
 
-                    if (best_renaming->rule == ConversionRule::Exact)
+                    if (best_renaming->conversion.rank == 0)
                         break;
                 }
 
@@ -320,36 +323,25 @@ QueryPlan decorrelateQueryPlan(
                 bool needs_prefilter = false;
                 for (const auto & renaming : expression_renamings)
                 {
-                    const ActionsDAG::Node * substituted = nullptr;
-                    switch (renaming.rule)
-                    {
-                        case ConversionRule::Exact:
-                            substituted = &dag.addAlias(*renaming.source, renaming.correlated_name);
-                            break;
-                        case ConversionRule::ToNullable:
-                            substituted = &dag.addAlias(
-                                dag.addFunction(function_factory.get("toNullable", query_context), {renaming.source}, {}),
-                                renaming.correlated_name);
-                            break;
-                        case ConversionRule::AssumeNotNull:
-                            needs_prefilter = true;
-                            substituted = &dag.addAlias(
-                                dag.addFunction(function_factory.get("assumeNotNull", query_context), {renaming.source}, {}),
-                                renaming.correlated_name);
-                            break;
-                        case ConversionRule::LosslessCast:
-                            substituted = &dag.addCast(*renaming.source, renaming.correlated_type, renaming.correlated_name, query_context);
-                            break;
-                        case ConversionRule::AccurateCastOrNull:
-                        {
-                            needs_prefilter = true;
-                            const auto * casted = &addAccurateCastOrNull(dag, *renaming.source, removeNullable(renaming.correlated_type), query_context);
-                            if (!renaming.correlated_type->isNullable())
-                                casted = &dag.addFunction(function_factory.get("assumeNotNull", query_context), {casted}, {});
-                            substituted = &dag.addAlias(*casted, renaming.correlated_name);
-                            break;
-                        }
-                    }
+                    needs_prefilter |= renaming.conversion.needs_null_prefilter;
+
+                    const ActionsDAG::Node * substituted = renaming.source;
+                    if (renaming.conversion.needs_accurate_cast)
+                        substituted = &addAccurateCastOrNull(
+                            dag, *substituted, removeNullable(removeLowCardinality(renaming.correlated_type)), query_context);
+                    /// `assumeNotNull` (and `accurateCastOrNull`) is used instead of a throwing `CAST`
+                    /// deliberately: the plan optimizer may merge the pre-filter and this expression
+                    /// into a single step, which computes expressions on the not-yet-filtered rows, so
+                    /// the conversion must not throw on rows the filter drops. The final `CAST` below
+                    /// never sees a NULL it cannot represent for the same reason.
+                    if (isNullableOrLowCardinalityNullable(substituted->result_type) && !isNullableOrLowCardinalityNullable(renaming.correlated_type))
+                        substituted = &dag.addFunction(function_factory.get("assumeNotNull", query_context), {substituted}, {});
+                    /// The remaining difference is a lossless wrapper change or numeric widening.
+                    /// The named cast also serves as the renaming alias.
+                    if (!substituted->result_type->equals(*renaming.correlated_type))
+                        substituted = &dag.addCast(*substituted, renaming.correlated_type, renaming.correlated_name, query_context);
+                    else
+                        substituted = &dag.addAlias(*substituted, renaming.correlated_name);
 
                     chassert(substituted->result_type->equals(*renaming.correlated_type));
                     outputs.push_back(substituted);
@@ -370,16 +362,16 @@ QueryPlan decorrelateQueryPlan(
                     std::unordered_set<String> deduplicated_conditions;
                     for (const auto & renaming : expression_renamings)
                     {
-                        if (renaming.rule != ConversionRule::AssumeNotNull && renaming.rule != ConversionRule::AccurateCastOrNull)
+                        if (!renaming.conversion.needs_null_prefilter)
                             continue;
 
                         DataTypePtr cast_target;
                         String condition_key = renaming.source->result_name;
-                        if (renaming.rule == ConversionRule::AccurateCastOrNull)
+                        if (renaming.conversion.needs_accurate_cast)
                         {
                             /// The same member may be converted to different types for different
                             /// correlated columns, so the target type is a part of the key.
-                            cast_target = removeNullable(renaming.correlated_type);
+                            cast_target = removeNullable(removeLowCardinality(renaming.correlated_type));
                             condition_key += '\0';
                             condition_key += cast_target->getName();
                         }
@@ -583,12 +575,16 @@ QueryPlan decorrelateQueryPlan(
                 /// Substitution can compensate for a nullability difference (the equality rejects NULLs),
                 /// and for native-number pairs with a least supertype: for them `equals` is mathematically
                 /// exact (so equivalence is transitive across a class) and accurateCastOrNull is
-                /// exactness-checking. Anything else (Decimal vs Float, String vs FixedString, ...) has
-                /// comparison semantics that are not consistent with CAST, so it is not recorded.
-                bool nullability_only_difference = removeNullable(lhs_type)->equals(*removeNullable(rhs_type));
-                bool safe_number_pair = isNativeNumber(removeNullable(lhs_type)) && isNativeNumber(removeNullable(rhs_type))
-                    && tryGetLeastSupertype(DataTypes{lhs_type, rhs_type}) != nullptr;
-                if (!nullability_only_difference && !safe_number_pair)
+                /// exactness-checking. `LowCardinality` and `Nullable` are value-transparent wrappers,
+                /// so only the base types decide. Anything else (Decimal vs Float, String vs
+                /// FixedString, ...) has comparison semantics that are not consistent with CAST, so it
+                /// is not recorded.
+                auto lhs_base = removeNullable(removeLowCardinality(lhs_type));
+                auto rhs_base = removeNullable(removeLowCardinality(rhs_type));
+                bool equal_bases = lhs_base->equals(*rhs_base);
+                bool safe_number_pair = isNativeNumber(lhs_base) && isNativeNumber(rhs_base)
+                    && tryGetLeastSupertype(DataTypes{lhs_base, rhs_base}) != nullptr;
+                if (!equal_bases && !safe_number_pair)
                     continue;
 
                 context.equivalence_class_stack.back().add(

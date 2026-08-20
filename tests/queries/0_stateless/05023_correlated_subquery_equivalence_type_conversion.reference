@@ -49,3 +49,27 @@ plan: substituted=0
 plan: substituted=0
 a
 bb
+-- Case 16: outer String vs inner LowCardinality(String); lossless rewrap, no pre-filter
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+a
+zz
+-- Case 17: outer LowCardinality(String) vs inner String; lossless rewrap in the other direction
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+a
+zz
+-- Case 18: outer String vs inner LowCardinality(Nullable(String)); inner NULL must not match, in particular not outer \'\'
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+a
+b
+-- Case 19: outer LowCardinality(Nullable(Int64)) vs inner Int32; lossless widening, outer NULL rows must not match
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+1
+3
+-- Case 20: outer Int64 vs inner LowCardinality(Nullable(Int32)); inner NULL must not match, in particular not outer 0
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+1
+3
+-- Case 21: guarded, outer String vs inner LowCardinality(FixedString(2)); the comparison ignores padding, so \'a\' must match toFixedString(\'a\', 2)
+plan: substituted=0
+a
+bb

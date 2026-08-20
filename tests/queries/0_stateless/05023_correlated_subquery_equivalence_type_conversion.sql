@@ -225,3 +225,85 @@ SELECT format('plan: substituted={}',
               toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_15 AS o WHERE EXISTS (SELECT 1 FROM t_inner_15 AS i WHERE i.s = o.s));
 SELECT s FROM t_outer_15 AS o WHERE EXISTS (SELECT 1 FROM t_inner_15 AS i WHERE i.s = o.s) ORDER BY s;
+
+-- LowCardinality is a value-transparent wrapper: only the base types decide the conversion,
+-- so LC pairs are substituted (cases 16-20) unless the base itself is excluded (case 21).
+
+SELECT '-- Case 16: outer String vs inner LowCardinality(String); lossless rewrap, no pre-filter';
+CREATE TABLE t_outer_16 (s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_16 (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_16 VALUES ('a'), ('b'), ('zz');
+INSERT INTO t_inner_16 VALUES ('a'), ('zz'), ('q');
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_16 AS o WHERE EXISTS (SELECT 1 FROM t_inner_16 AS i WHERE i.s = o.s));
+SELECT s FROM t_outer_16 AS o WHERE EXISTS (SELECT 1 FROM t_inner_16 AS i WHERE i.s = o.s) ORDER BY s;
+
+SELECT '-- Case 17: outer LowCardinality(String) vs inner String; lossless rewrap in the other direction';
+CREATE TABLE t_outer_17 (s LowCardinality(String)) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_17 (s String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_17 VALUES ('a'), ('b'), ('zz');
+INSERT INTO t_inner_17 VALUES ('a'), ('q'), ('zz');
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_17 AS o WHERE EXISTS (SELECT 1 FROM t_inner_17 AS i WHERE i.s = o.s));
+SELECT s FROM t_outer_17 AS o WHERE EXISTS (SELECT 1 FROM t_inner_17 AS i WHERE i.s = o.s) ORDER BY s;
+
+SELECT '-- Case 18: outer String vs inner LowCardinality(Nullable(String)); inner NULL must not match, in particular not outer ''''';
+CREATE TABLE t_outer_18 (s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_18 (s LowCardinality(Nullable(String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_18 VALUES (''), ('a'), ('b');
+INSERT INTO t_inner_18 VALUES (NULL), ('a'), (NULL), ('b'), ('zz');
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_18 AS o WHERE EXISTS (SELECT 1 FROM t_inner_18 AS i WHERE i.s = o.s));
+SELECT s FROM t_outer_18 AS o WHERE EXISTS (SELECT 1 FROM t_inner_18 AS i WHERE i.s = o.s) ORDER BY s;
+
+-- LowCardinality of numeric types is suspicious by default; enabled here for the test only.
+SET allow_suspicious_low_cardinality_types = 1;
+
+SELECT '-- Case 19: outer LowCardinality(Nullable(Int64)) vs inner Int32; lossless widening, outer NULL rows must not match';
+CREATE TABLE t_outer_19 (x LowCardinality(Nullable(Int64))) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_19 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_19 VALUES (NULL), (1), (2), (3);
+INSERT INTO t_inner_19 VALUES (1), (3), (100);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_19 AS o WHERE EXISTS (SELECT 1 FROM t_inner_19 AS i WHERE i.x = o.x));
+SELECT x FROM t_outer_19 AS o WHERE EXISTS (SELECT 1 FROM t_inner_19 AS i WHERE i.x = o.x) ORDER BY x;
+
+SELECT '-- Case 20: outer Int64 vs inner LowCardinality(Nullable(Int32)); inner NULL must not match, in particular not outer 0';
+CREATE TABLE t_outer_20 (x Int64) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_20 (x LowCardinality(Nullable(Int32))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_20 VALUES (0), (1), (2), (3), (2147483648);
+INSERT INTO t_inner_20 VALUES (NULL), (1), (NULL), (3), (42);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x FROM t_outer_20 AS o WHERE EXISTS (SELECT 1 FROM t_inner_20 AS i WHERE i.x = o.x));
+SELECT x FROM t_outer_20 AS o WHERE EXISTS (SELECT 1 FROM t_inner_20 AS i WHERE i.x = o.x) ORDER BY x;
+
+SELECT '-- Case 21: guarded, outer String vs inner LowCardinality(FixedString(2)); the comparison ignores padding, so ''a'' must match toFixedString(''a'', 2)';
+CREATE TABLE t_outer_21 (s String) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_21 (s LowCardinality(FixedString(2))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_21 VALUES ('a'), ('bb'), ('zz');
+INSERT INTO t_inner_21 VALUES ('a'), ('bb');
+
+SELECT format('plan: substituted={}',
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_21 AS o WHERE EXISTS (SELECT 1 FROM t_inner_21 AS i WHERE i.s = o.s));
+SELECT s FROM t_outer_21 AS o WHERE EXISTS (SELECT 1 FROM t_inner_21 AS i WHERE i.s = o.s) ORDER BY s;
