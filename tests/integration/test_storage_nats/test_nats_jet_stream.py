@@ -111,7 +111,7 @@ async def delete_stream(cluster_inst, stream_name):
     await nc.close()
 
 
-async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
+async def add_durable_consumer(cluster_inst, stream_name, consumer_name, ack_wait_sec = None):
     nc = await nats_helpers.nats_connect_ssl(cluster_inst)
     logging.debug("NATS connection status: " + str(nc.is_connected))
 
@@ -119,6 +119,8 @@ async def add_durable_consumer(cluster_inst, stream_name, consumer_name):
     js = nc.jetstream()
 
     consumer_config = api.ConsumerConfig(name=consumer_name, durable_name=consumer_name)
+    if ack_wait_sec is not None:
+        consumer_config.ack_wait = ack_wait_sec
 
     # Persist messages on 'foo's subject.
     consumer_info = await js.add_consumer(stream=stream_name, config=consumer_config)
@@ -1283,7 +1285,71 @@ def test_nats_jet_stream_direct_select_resumes_after_broker_hard_kill(nats_clust
     _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
 
     asyncio.run(publish_messages(nats_cluster, "test_stream", "test_subject", [json.dumps({"key": 42, "value": 42})]))
-    assert TSV(select.get_answer()) == TSV("42\\n")
+    assert TSV(select.get_answer()) == TSV("42")
+
+
+IN_SOURCE_RESUBSCRIBE_LOG_LINE = (
+    "A subscription stopped consuming from the NATS server, resubscribing within a running query"
+)
+
+
+def test_nats_jet_stream_streaming_drains_local_backlog_after_in_source_recovery(nats_cluster):
+    # When a reconnect lands while a streaming source is inside its flush interval, the source
+    # itself recovers the subscription. The consumer must then stay subscribed when that source is
+    # destroyed: rows beyond the first output block are already delivered to the local queue, and
+    # unsubscribing would make the next cycle drop them locally, stalling the view until the server
+    # redelivers them after the ACK deadline.
+    #
+    # The ACK deadline is set far beyond the waits below, so server redelivery cannot make up for a
+    # locally dropped backlog: the final assertion holds only if the recovered consumer stayed
+    # subscribed and the following streaming cycles drained the local queue.
+    asyncio.run(add_durable_consumer(cluster, "test_stream", "test_consumer", ack_wait_sec = 600))
+
+    instance.query(
+        """
+        CREATE TABLE test.view (key UInt64, value UInt64)
+            ENGINE = MergeTree
+            ORDER BY key;
+        CREATE TABLE test.consume (key UInt64, value UInt64)
+            ENGINE = NATS
+            SETTINGS nats_url = 'nats1:4444',
+                     nats_stream = 'test_stream',
+                     nats_consumer_name = 'test_consumer',
+                     nats_subjects = 'test_subject',
+                     nats_format = 'JSONEachRow',
+                     nats_row_delimiter = '\\n',
+                     nats_max_block_size = 5,
+                     nats_flush_interval_ms = 60000,
+                     nats_wait_for_flush_interval = 1;
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.consume;
+        """
+    )
+    nats_helpers.wait_for_streaming_started(instance, "test.consume")
+
+    # A streaming cycle spans the whole 60 second flush interval, so a reconnect all but always
+    # lands mid-cycle, where the source performs the recovery itself. Only that in-source recovery
+    # exercises the code path under test, so wait for its log line; in the rare case the reconnect
+    # hits the gap between cycles and the background task recovers the subscription instead, the
+    # broker is healthy again and the restart can simply be retried.
+    anchor = nats_helpers.log_line_count(instance)
+    for _ in range(3):
+        _restart_nats(nats_cluster, kill = nats_helpers.hard_kill_nats)
+
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if nats_helpers.count_in_log_after(instance, IN_SOURCE_RESUBSCRIBE_LOG_LINE, anchor) > 0:
+                break
+            time.sleep(0.2)
+        else:
+            continue
+        break
+    else:
+        raise AssertionError("no streaming source performed an in-source recovery")
+
+    # More rows than one output block: the first block ends the recovering source's cycle, and the
+    # rest waits in the local queue for the cycles after it.
+    _publish_and_expect("test_subject", range(0, 25), 25)
 
 
 def test_nats_jet_stream_resumes_consuming_after_two_broker_restarts(nats_cluster):
