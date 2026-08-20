@@ -19,12 +19,8 @@ namespace AdaptiveCodec
 /// Beyond [0] and [1], candidates must be ordered by descending decompression speed as draw in size should resolve to the fastest reads.
 Codecs poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
 
-/// The distinct types that can get a non-default codec.
+/// The distinct types that can get a non-default codec. Only used by tests to drift-guard the candidate table.
 VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
-
-/// Whether `type` has a candidate beyond `NONE` and the default. Only such types are wrapped for now.
-/// TODO: wrap every type, so a block the default expands falls back to `NONE` instead of being stored larger than raw.
-bool isCandidateType(const IDataType & type);
 
 }
 
