@@ -560,6 +560,25 @@ below the threshold)` に比例します。
 * `partition_key_only` — パーティションキーのカラムのみを追跡します。
 * `with_block_number_offset` — パーティションキーのカラムに加えて、永続化された仮想カラム `_block_number` と `_block_offset` も追跡します。これにより、これらのカラムによるパートレベルの pruning が有効になります。
 
+<div id="patch_parts_version">
+  ## patch_parts_version
+</div>
+
+<SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "v2"},{"label": "論理更新で生成されるパッチパートのディスク上のシリアライゼーションバージョンを制御する新しい設定です。古い互換性モードでは引き続き v1 パッチが書き込まれ、バージョンが混在するクラスター内のすべてのレプリカで読み取れます。"}]}]} />
+
+論理 UPDATE クエリで生成されるパッチパートのディスク上のシリアライゼーションバージョン。
+
+設定可能な値:
+
+* `v1` - レガシーフォーマット: パッチパートには `_part, _part_offset` システムカラムが含まれ、
+  `(_part, _part_offset)` でソートされます。最悪の場合、適用時のメモリ使用量はパッチパート全体のサイズに抑えられます。
+* `v2` - パッチパートにはメインテーブルのソートキーカラムが含まれ、
+  `(sorting_key_columns..., _block_number, _block_offset)` でソートされます。適用時のメモリ使用量は、同一ソートキーが連続する範囲のうち最大のものに抑えられます。
+
+ディスク上の旧形式のパッチは、この設定にかかわらず引き続き読み取れます。
+
 <div id="propagate_types_serialization_versions_to_nested_types">
   ## propagate_types_serialization_versions_to_nested_types
 </div>

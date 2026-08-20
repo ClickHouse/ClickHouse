@@ -337,7 +337,7 @@ freestanding C로 작성한 완전한 예시입니다. `str_reverse`는 `seriali
 typedef struct {
     uint8_t * data;
     uint32_t size;
-} ClickhouseBuffer;
+} ClickHouseBuffer;
 
 #define HEAP_SIZE (1 << 24)
 static _Alignas(16) uint8_t heap[HEAP_SIZE];
@@ -345,13 +345,13 @@ static uint32_t heap_pos = 0;
 static uint32_t live_buffers = 0;
 
 __attribute__((export_name("clickhouse_create_buffer")))
-ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
+ClickHouseBuffer * clickhouse_create_buffer(uint32_t size)
 {
-    uint32_t total = (sizeof(ClickhouseBuffer) + size + 15u) & ~15u;
+    uint32_t total = (sizeof(ClickHouseBuffer) + size + 15u) & ~15u;
     if (heap_pos + total > HEAP_SIZE)
         return 0; /* a zero handle makes the host fail the query with an error */
-    ClickhouseBuffer * buf = (ClickhouseBuffer *) &heap[heap_pos];
-    buf->data = &heap[heap_pos + sizeof(ClickhouseBuffer)];
+    ClickHouseBuffer * buf = (ClickHouseBuffer *) &heap[heap_pos];
+    buf->data = &heap[heap_pos + sizeof(ClickHouseBuffer)];
     buf->size = size;
     heap_pos += total;
     ++live_buffers;
@@ -359,7 +359,7 @@ ClickhouseBuffer * clickhouse_create_buffer(uint32_t size)
 }
 
 __attribute__((export_name("clickhouse_destroy_buffer")))
-void clickhouse_destroy_buffer(ClickhouseBuffer * buf)
+void clickhouse_destroy_buffer(ClickHouseBuffer * buf)
 {
     if (--live_buffers == 0)
         heap_pos = 0;
@@ -390,9 +390,9 @@ static void write_varint(uint8_t ** pp, uint64_t value)
 
 /* Reverses the bytes of each input string */
 __attribute__((export_name("str_reverse")))
-ClickhouseBuffer * str_reverse(ClickhouseBuffer * input, uint32_t num_rows)
+ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 {
-    ClickhouseBuffer * out = clickhouse_create_buffer(input->size);
+    ClickHouseBuffer * out = clickhouse_create_buffer(input->size);
     if (!out)
         return 0;
     const uint8_t * in = input->data;
@@ -418,7 +418,7 @@ clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
 wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
 ```
 
-함수는 모듈 내보내기에 포함되어야 합니다. 위와 같이 `__attribute__((export_name("...")))`로 표시하거나 `wasm-ld --export-all`로 링크하십시오. `-fno-builtin`은 clang이 단순한 바이트 루프를 표준 라이브러리 없이는 사용할 수 없는 `memcpy`/`memset` 호출로 변환하는 것을 방지합니다.
+함수는 모듈에서 내보내야 합니다. 위와 같이 `__attribute__((export_name("...")))`로 표시하거나 `wasm-ld --export-all`로 링크하십시오. `-fno-builtin`은 clang이 단순한 바이트 루프를 표준 라이브러리 없이는 사용할 수 없는 `memcpy`/`memset` 호출로 변환하는 것을 방지합니다.
 
 모듈을 로드하고 함수를 생성합니다:
 
