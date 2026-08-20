@@ -8530,8 +8530,8 @@ ReadSettings Context::getReadSettings() const
 {
     ReadSettings res;
 
-    /// The shared lock is released before the cache and throttler getters below: the throttler getters
-    /// take this mutex exclusively, and the cache getters take `shared->mutex`, never held together with it.
+    /// This mutex cannot be upgraded and the throttler getters below re-enter it exclusively, so it is
+    /// released as soon as the settings have been copied; nothing after the unlock reads `settings_ref`.
     SharedLockGuard lock(mutex);
     const auto & settings_ref = getSettingsRef();
 
