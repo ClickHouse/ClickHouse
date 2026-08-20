@@ -38,7 +38,7 @@ enum class ExtractAllGroupsResultKind : uint8_t
 
 /** Match all groups of given input string with given re, return array of arrays of matches.
  *
- * Depending on `Impl::Kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
+ * Depending on `kind`, result is either grouped by group id (Horizontal) or in order of appearance (Vertical):
  *
  *  SELECT extractAllGroupsVertical('abc=111, def=222, ghi=333', '("[^"]+"|\\w+)=("[^"]+"|\\w+)')
  * =>
@@ -48,22 +48,25 @@ enum class ExtractAllGroupsResultKind : uint8_t
  * =>
  *   [['abc', 'def', 'ghi'], ['111', '222', '333']
 */
-template <typename Impl>
-class FunctionExtractAllGroups : public IFunction
+class FunctionExtractAllGroups final : public IFunction
 {
     const UInt64 regexp_max_matches_per_row;
+    const char * function_name;
+    ExtractAllGroupsResultKind kind;
 
 public:
-    static constexpr auto Kind = Impl::Kind;
-    static constexpr auto name = Impl::Name;
-
-    explicit FunctionExtractAllGroups(ContextPtr context)
+    FunctionExtractAllGroups(ContextPtr context, const char * name_, ExtractAllGroupsResultKind kind_)
         : regexp_max_matches_per_row(context->getSettingsRef()[Setting::regexp_max_matches_per_row].value)
+        , function_name(name_)
+        , kind(kind_)
     {}
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionExtractAllGroups>(context); }
+    static FunctionPtr create(ContextPtr context, const char * name, ExtractAllGroupsResultKind kind)
+    {
+        return std::make_shared<FunctionExtractAllGroups>(context, name, kind);
+    }
 
-    String getName() const override { return name; }
+    String getName() const override { return function_name; }
 
     size_t getNumberOfArguments() const override { return 2; }
 
@@ -124,7 +127,7 @@ public:
         ColumnArray::Offset current_root_offset = 0;
         ColumnArray::Offset current_nested_offset = 0;
 
-        if constexpr (Kind == ExtractAllGroupsResultKind::VERTICAL)
+        if (kind == ExtractAllGroupsResultKind::VERTICAL)
         {
             root_offsets_data.resize(input_rows_count);
             for (size_t i = 0; i < input_rows_count; ++i)
@@ -132,11 +135,14 @@ public:
                 std::string_view current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED,
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED,
                         matched_groups.data(), static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.
@@ -173,11 +179,14 @@ public:
                 const auto & current_row = column_haystack->getDataAt(i);
 
                 // Extract all non-intersecting matches from haystack except group #0.
-                const auto * pos = current_row.data();
-                const auto * end = pos + current_row.size();
+                // Match over the whole row, advancing the start offset, so that the characters before the current
+                // position are seen as context for zero-width assertions such as `\b` and `^`.
+                const auto * begin = current_row.data();
+                const auto * pos = begin;
+                const auto * end = begin + current_row.size();
                 while (pos < end
-                    && regexp->Match({pos, static_cast<size_t>(end - pos)},
-                        0, end - pos, RE2::UNANCHORED, matched_groups.data(),
+                    && regexp->Match({begin, current_row.size()},
+                        pos - begin, current_row.size(), RE2::UNANCHORED, matched_groups.data(),
                         static_cast<int>(matched_groups.size())))
                 {
                     // 1 is to exclude group #0 which is whole re match.

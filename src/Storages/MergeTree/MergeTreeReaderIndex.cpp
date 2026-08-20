@@ -10,6 +10,11 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+bool MergeTreeReaderIndex::canSkipAnyMark() const
+{
+    return index_read_result && index_read_result->canSkipAnyMark();
+}
+
 MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_, MergeTreeIndexReadResultPtr index_read_result_, const PaddedPODArray<UInt64> * lazy_materializing_rows_)
     : IMergeTreeReader(
           main_reader_->data_part_info_for_read,
@@ -21,9 +26,9 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
           nullptr,
           main_reader_->all_mark_ranges,
           main_reader_->settings)
-    , main_reader(main_reader_)
     , index_read_result(std::move(index_read_result_))
     , lazy_materializing_rows(lazy_materializing_rows_)
+    , main_reader(main_reader_)
 {
     chassert(lazy_materializing_rows || index_read_result);
     chassert(lazy_materializing_rows || index_read_result->skip_index_read_result || index_read_result->projection_index_read_result);
@@ -31,7 +36,6 @@ MergeTreeReaderIndex::MergeTreeReaderIndex(const IMergeTreeReader * main_reader_
 
 size_t MergeTreeReaderIndex::readRows(
     size_t from_mark,
-    size_t /* current_task_last_mark */,
     bool continue_reading,
     size_t max_rows_to_read,
     size_t rows_offset,
@@ -60,11 +64,17 @@ size_t MergeTreeReaderIndex::readRows(
     if (!continue_reading && lazy_materializing_rows)
         next_lazy_row_it = std::lower_bound(lazy_materializing_rows->begin(), lazy_materializing_rows->end(), starting_row);
 
-    /// Clamp max_rows_to_read.
-    size_t total_rows = data_part_info_for_read->getIndexGranularity().getTotalRows();
+    /// Clamp max_rows_to_read to the actual number of remaining rows in the part.
+    /// We use getRowCount() (from part metadata) rather than getTotalRows() (from index granularity)
+    /// because for constant granularity parts with non-adaptive marks, getTotalRows() can overestimate
+    /// the last granule size (the mark file does not store per-granule row counts, so the last mark
+    /// is assumed to have full granularity).
+    size_t total_rows = data_part_info_for_read->getRowCount();
+    chassert(starting_row <= total_rows);
     if (starting_row < total_rows)
         max_rows_to_read = std::min(max_rows_to_read, total_rows - starting_row);
-    max_rows_to_read = std::min(max_rows_to_read, data_part_info_for_read->getRowCount());
+    else
+        max_rows_to_read = 0;
     /// If projection index is available, attempt to construct the filter column
     if (index_read_result && index_read_result->projection_index_read_result)
     {
@@ -85,7 +95,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             index_read_result->projection_index_read_result->appendToFilter(filter_data, starting_row, max_rows_to_read);
             filter_column = std::move(mutable_filter_column);
@@ -113,7 +123,7 @@ size_t MergeTreeReaderIndex::readRows(
         /// If there are rows to read, apply bitmap filtering.
         if (max_rows_to_read > 0)
         {
-            auto mutable_filter_column = filter_column->assumeMutable();
+            auto mutable_filter_column = IColumn::mutate(std::move(filter_column));
             auto & filter_data = static_cast<ColumnUInt8 &>(*mutable_filter_column).getData();
             size_t old_size = filter_data.size();
             filter_data.resize(old_size + max_rows_to_read);
@@ -140,37 +150,9 @@ size_t MergeTreeReaderIndex::readRows(
     return max_rows_to_read;
 }
 
-bool MergeTreeReaderIndex::canSkipMark(size_t mark, size_t /*current_task_last_mark*/)
+bool MergeTreeReaderIndex::canSkipMark(size_t mark)
 {
-    if (index_read_result && index_read_result->skip_index_read_result)
-    {
-        auto skip_index_read_result = index_read_result->skip_index_read_result;
-        chassert(mark < skip_index_read_result->granules_selected.size());
-
-        if (!skip_index_read_result->granules_selected.at(mark))
-            return true;
-
-        if (skip_index_read_result->threshold_tracker && skip_index_read_result->threshold_tracker->isSet())
-        {
-            if (skip_index_read_result->min_max_index_for_top_k) /// index may not have been materialized for this part
-            {
-                auto granule_num = skip_index_read_result->min_max_index_for_top_k->granules_map[mark];
-                if (!skip_index_read_result->threshold_tracker->isValueInsideThreshold(
-                        skip_index_read_result->min_max_index_for_top_k->granules[granule_num].min_or_max_value))
-                    return true;
-            }
-        }
-    }
-
-    if (index_read_result && index_read_result->projection_index_read_result)
-    {
-        size_t begin = data_part_info_for_read->getIndexGranularity().getMarkStartingRow(mark);
-        size_t end = begin + data_part_info_for_read->getIndexGranularity().getMarkRows(mark);
-        if (index_read_result->projection_index_read_result->rangeAllZero(begin, end))
-            return true;
-    }
-
-    return false;
+    return index_read_result && index_read_result->canSkipMark(mark, data_part_info_for_read->getIndexGranularity());
 }
 
 }

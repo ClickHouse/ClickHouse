@@ -1,6 +1,17 @@
 -- Tags: no-parallel, no-parallel-replicas, no-async-insert
+-- Random settings limits: send_table_structure_on_insert_with_inline_data=(1, 1)
+-- The test distinguishes the sync `INSERT VALUES (NULL)` path (which raises
+-- `clientError TYPE_MISMATCH` because the client parses VALUES locally and rejects
+-- `NULL` into a non-nullable `Enum`) from the async path (which raises
+-- `serverError TYPE_MISMATCH` because the server parses VALUES). With
+-- `send_table_structure_on_insert_with_inline_data=0` the client stops parsing inline
+-- `VALUES` and the server-side parser raises the error in both the sync and async cases,
+-- so the sync-path annotation `-- { clientError TYPE_MISMATCH }` fails to match (it is
+-- now a `serverError`). Pin the legacy client-parses-VALUES path; the test is about the
+-- client-vs-server error-attribution boundary for the `INSERT VALUES (NULL)` flow, which
+-- the new inline-insert path collapses.
 
---- GitHub issue 56144 
+--- GitHub issue 56144
 --- Tests number values of enum are validated during insertion.
 
 SELECT 'Table insertion';
@@ -25,7 +36,7 @@ INSERT INTO enum_table SETTINGS input_format_null_as_default = 0, async_insert =
 
 SELECT 'Non-null values';
 
-SET check_conversion_from_numbers_to_enum = 0; -- current behavior
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -35,7 +46,7 @@ INSERT INTO enum_table SELECT 0, 'first';
 INSERT INTO enum_table SELECT 0, 'fifth'; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO enum_table SELECT 0, 0;
 
-SET check_conversion_from_numbers_to_enum = 1;
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO enum_table VALUES (0, 'first');
 INSERT INTO enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -64,14 +75,14 @@ SELECT val FROM nullable_enum_table;
 
 SELECT 'Non-null values';
 
-SET check_conversion_from_numbers_to_enum = 0; -- current behavior
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
 INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
 INSERT INTO nullable_enum_table VALUES (0, NULL);
 INSERT INTO nullable_enum_table VALUES (0, 0);
 
-SET check_conversion_from_numbers_to_enum = 1;
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 INSERT INTO nullable_enum_table VALUES (0, 'first');
 INSERT INTO nullable_enum_table VALUES (0, 'fifth'); -- { clientError UNKNOWN_ELEMENT_OF_ENUM }
@@ -82,8 +93,8 @@ DROP TABLE nullable_enum_table;
 
 SELECT 'CAST';
 
-SELECT '-- current behaviour';
-SET check_conversion_from_numbers_to_enum = 0;
+SELECT '-- legacy behaviour';
+SET check_conversion_from_numbers_to_enum = 0; -- legacy behavior
 
 SELECT (('first'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT (('second'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
@@ -105,8 +116,8 @@ SELECT ((4::UInt64)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT ((4::Float32)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT ((4::Float64)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 
-SELECT '-- new behaviour';
-SET check_conversion_from_numbers_to_enum = 1;
+SELECT '-- default behaviour';
+SET check_conversion_from_numbers_to_enum = 1; -- default behavior
 
 SELECT (('first'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;
 SELECT (('second'::String)::Enum('first' = 1, 'second' = 2, 'third' = 3))::UInt64;

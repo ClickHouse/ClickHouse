@@ -1,7 +1,7 @@
 -- Tags: no-parallel
 -- Tag no-parallel: Messes with internal cache
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 DROP TABLE IF EXISTS tbl;
 
 CREATE TABLE tbl (key UInt64, agg UInt64) ENGINE = MergeTree ORDER BY key;
@@ -18,7 +18,7 @@ SELECT count(*) FROM system.query_cache;
 
 SELECT '---';
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- A query with extremes calculation. The result should be written into / read from the query cache.
 -- Check that both queries produce the same result.
@@ -31,7 +31,7 @@ SELECT count(*) FROM system.query_cache;
 
 SELECT '---';
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;
 
 -- A query with totals and extremes calculation. The result should be written into / read from the query cache.
 -- Check that both queries produce the same result.
@@ -43,4 +43,4 @@ SELECT key, sum(agg) FROM tbl GROUP BY key WITH totals ORDER BY key SETTINGS use
 SELECT count(*) FROM system.query_cache;
 DROP TABLE IF EXISTS tbl;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE;

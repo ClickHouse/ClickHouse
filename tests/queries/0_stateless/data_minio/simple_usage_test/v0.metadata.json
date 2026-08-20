@@ -1,0 +1,46 @@
+{
+  "format-version" : 2,
+  "table-uuid" : "8f1f9ae2-18bb-421e-b640-ec2f85e67bca",
+  "location": "/ClickHouse/tests/queries/0_stateless/data_minio/simple_usage_test/metadata/field_ids_table_test",
+  "last-sequence-number" : 0,
+  "last-updated-ms" : 1752481476160,
+  "last-column-id" : 1,
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "test",
+      "required" : false,
+      "type" : "int"
+    } ]
+  } ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "owner" : "scanhex12",
+    "write.parquet.compression-codec" : "zstd"
+  },
+  "current-snapshot-id" : -1,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : -1,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ ],
+  "statistics" : [ ],
+  "partition-statistics" : [ ],
+  "snapshot-log" : [],
+  "metadata-log" : [ ]
+}

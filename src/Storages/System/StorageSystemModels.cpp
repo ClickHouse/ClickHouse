@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemModels.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Common/ExternalModelInfo.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -37,3 +38,6 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, ContextPtr cont
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemModels) }

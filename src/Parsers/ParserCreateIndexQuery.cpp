@@ -47,11 +47,14 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         {
             auto order_by_elem = order_list->children[0];
             expr = order_by_elem->children[0];
+            /// The index's own `(...)` already groups the expression; a top-level parenthesization
+            /// flag (from input like `((expr))`) is redundant and does not survive a format-parse
+            /// round trip, so drop it.
+            expr->setParenthesized(false);
         }
         else
         {
             auto tuple_func = makeASTOperator("tuple");
-            tuple_func->arguments = std::make_shared<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)
             {
@@ -79,7 +82,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
     }
 
     /// name is set below in ParserCreateIndexQuery
-    auto index = std::make_shared<ASTIndexDeclaration>(expr, type, "");
+    auto index = make_intrusive<ASTIndexDeclaration>(expr, type, "");
     index->part_of_create_index_query = true;
     index->granularity = getSecondaryIndexGranularity(index->getType(), granularity);
     node = index;
@@ -88,7 +91,7 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
 
 bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTCreateIndexQuery>();
+    auto query = make_intrusive<ASTCreateIndexQuery>();
     node = query;
 
     ParserKeyword s_create(Keyword::CREATE);

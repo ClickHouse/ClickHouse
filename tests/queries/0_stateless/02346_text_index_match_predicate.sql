@@ -1,8 +1,6 @@
 -- Tags: no-parallel-replicas
-
 -- Tests that match() utilizes the text index
-
-SET enable_full_text_index = true;
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 

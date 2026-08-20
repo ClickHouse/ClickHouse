@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'JSONの読み込み'
+title: 'JSONの操作'
+slug: /integrations/data-formats/json/loading
+description: 'JSONの読み込み'
+keywords: ['json', 'clickhouse', '挿入', '読み込み', '挿入']
+score: 15
+doc_type: 'guide'
+---
+
+以下の例では、構造化JSONデータと半構造化JSONデータの読み込み方法を、ごく簡単な例で示します。ネスト構造を含むより複雑なJSONについては、ガイド[**JSONスキーマの設計**](/ja/guides/clickhouse/data-formats/json/schema)を参照してください。
+
+<div id="loading-structured-json">
+  ## 構造化JSONの読み込み
+</div>
+
+このセクションでは、JSONデータが[`NDJSON`](https://github.com/ndjson/ndjson-spec) (改行区切りJSON) フォーマット、すなわちClickHouseで[`JSONEachRow`](/ja/reference/formats/JSON/JSONEachRow)として知られるフォーマットであり、カラム名と型が固定された構造化データであることを前提とします。`NDJSON`は簡潔でスペース効率に優れるため、JSONの読み込みに推奨されるフォーマットですが、[入力と出力](/ja/reference/formats/JSON/JSON)の両方で他のフォーマットもサポートされています。
+
+次のJSONサンプルは、[Python PyPIデータセット](https://clickpy.clickhouse.com/)の1行を表しています：
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+このJSONオブジェクトをClickHouseに読み込むには、テーブルのスキーマを定義する必要があります。
+
+この単純なケースでは、構造は静的で、カラム名は既知であり、各カラムの型も明確に定義されています。
+
+ClickHouseはJSON型を通じて半構造化データをサポートしており、キー名とその型を動的に扱うことができますが、ここではその必要はありません。
+
+<Info>
+  **可能であれば静的なスキーマを優先してください**
+
+  カラム名と型が固定されており、新しいカラムが追加される見込みがない場合は、本番環境では常に静的に定義されたスキーマを優先してください。
+
+  JSON型は、カラム名や型が変わる可能性のある、非常に動的なデータに適しています。この型は、プロトタイピングやデータ探索にも役立ちます。
+</Info>
+
+これに対応するシンプルなスキーマを以下に示します。**JSONのキーはカラム名にマップされます**：
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **ソートキー**
+
+  ここでは、`ORDER BY` 句でソートキーを指定しています。ソートキーの詳細と選び方については、[こちら](/ja/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)を参照してください。
+</Info>
+
+ClickHouse は複数のフォーマットで JSON データを読み込むことができ、ファイルの拡張子と内容から型を自動的に推論します。上記のテーブルの JSON ファイルは、[S3 function](/ja/reference/functions/table-functions/s3) を使用して読み込むことができます：
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 row in set. Elapsed: 1.232 sec.
+```
+
+ファイルのフォーマットを指定する必要がない点に注目してください。代わりに、glob パターンを使用してバケット内のすべての `*.json.gz` ファイルを読み込みます。ClickHouse はファイルの拡張子と内容からフォーマットが `JSONEachRow` (ndjson) であることを自動的に推測します。ClickHouse が検出できない場合は、パラメータ関数を使ってフォーマットを手動で指定できます。
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **圧縮ファイル**
+
+  上記のファイルは圧縮形式にも対応しており、ClickHouse が自動的に検出して処理します。
+</Info>
+
+これらのファイルの行を読み込むには、[`INSERT INTO SELECT`](/ja/reference/statements/insert-into#inserting-the-results-of-select) を使用します。
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+行は、[`FORMAT` 句](/ja/reference/statements/select/format) を使ってインラインで読み込むこともできます。たとえば、
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+これらの例では、`JSONEachRow` フォーマットを使用することを前提としています。その他の一般的な JSON フォーマットにも対応しており、それらの読み込み例は[こちら](/ja/guides/clickhouse/data-formats/json/formats)で確認できます。
+
+<div id="loading-semi-structured-json">
+  ## 半構造化 JSON の読み込み
+</div>
+
+前の例では、キー名と型があらかじめ分かっている固定的な JSON を読み込みました。しかし、実際にはそうでないことも少なくありません。キーが追加されたり、型が変わったりすることがあります。これは、オブザーバビリティ データのようなユースケースではよくあることです。
+
+ClickHouse では、専用の [`JSON`](/ja/reference/data-types/newjson) 型でこれに対応しています。
+
+次に、上記の [Python PyPI dataset](https://clickpy.clickhouse.com/) を拡張したバージョンの例を見てみましょう。ここでは、任意のキーと値のペアを含む `tags` カラムを追加しています。
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+ここでの`tags`カラムは内容が一定ではないため、スキーマとして定義できません。このデータを読み込むには、先ほどのスキーマを使いつつ、型を[`JSON`](/ja/reference/data-types/newjson)とする追加の`tags`カラムを指定できます。
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+元のデータセットと同じ方法で、テーブルにデータを取り込みます。
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.149 sec.
+```
+
+ここでは、データの読み込み時の性能差に注目してください。JSONカラムでは、挿入時に型推論が必要になるほか、複数の型を持つカラムが存在する場合は追加のストレージ領域も必要になります。JSON型は、カラムを明示的に宣言した場合と同等の性能になるように設定できます ([JSONスキーマの設計](/ja/guides/clickhouse/data-formats/json/schema)を参照) が、既定では意図的に高い柔軟性を持たせています。ただし、この柔軟性には一定の代償が伴います。
+
+<div id="when-to-use-the-json-type">
+  ### JSON 型を使用するケース
+</div>
+
+データが次のような場合は、JSON 型を使用します。
+
+* **キーが固定されておらず**、時間の経過とともに変化する。
+* **値の型が一定ではない** (例: path には文字列が入ることもあれば、数値が入ることもある) 。
+* 厳密な型付けが現実的でなく、スキーマに柔軟性が求められる。
+
+一方、データ構造が明確で一貫している場合は、データが JSON フォーマットであっても、JSON 型が必要になることはほとんどありません。具体的には、データに次のような特徴がある場合です。
+
+* **既知のキーを持つフラットな構造**: 標準的なカラム型 (例: String) を使用します。
+* **予測可能なネスト構造**: このような構造には Tuple、Array、または Nested 型を使用します。
+* **構造は予測可能だが型が変わる**: 代わりに Dynamic 型または Variant 型を検討してください。
+
+また、上記の例のように、予測可能なトップレベルのキーには静的カラムを使用し、ペイロード内の動的な部分には 1 つの JSON カラムを使う形で、これらのアプローチを組み合わせることもできます。

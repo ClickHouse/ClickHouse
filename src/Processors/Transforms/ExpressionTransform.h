@@ -3,6 +3,8 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -30,10 +32,16 @@ public:
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
 
 protected:
+    void onCancel() noexcept override;
+
     void transform(Chunk & chunk) override;
 
 private:
     ExpressionActionsPtr expression;
+
+    /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
+    /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
+    std::vector<ssize_t> input_positions;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };

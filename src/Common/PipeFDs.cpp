@@ -1,5 +1,6 @@
 #include <Common/PipeFDs.h>
 #include <Common/Exception.h>
+#include <Common/ErrnoException.h>
 #include <Common/formatReadable.h>
 #include <Common/FailPoint.h>
 

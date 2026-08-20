@@ -13,6 +13,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 
 namespace DB
@@ -24,7 +25,7 @@ extern const int ILLEGAL_COLUMN;
 }
 
 // Decompose time series data based on STL(Seasonal-Trend Decomposition Procedure Based on Loess)
-class FunctionSeriesDecomposeSTL : public IFunction
+class FunctionSeriesDecomposeSTL final : public IFunction
 {
 public:
     static constexpr auto name = "seriesDecomposeSTL";
@@ -81,7 +82,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            UInt64 period;
+            UInt64 period = 0;
             auto period_ptr = arguments[1].column->convertToFullColumnIfConst();
             if (checkAndGetColumn<ColumnUInt8>(period_ptr.get())
                 || checkAndGetColumn<ColumnUInt16>(period_ptr.get())
@@ -96,9 +97,9 @@ public:
                     getName());
 
 
-            std::vector<Float32> seasonal;
-            std::vector<Float32> trend;
-            std::vector<Float32> residue;
+            VectorWithMemoryTracking<Float32> seasonal;
+            VectorWithMemoryTracking<Float32> trend;
+            VectorWithMemoryTracking<Float32> residue;
 
             ColumnArray::Offset curr_offset = src_offsets[i];
 
@@ -147,9 +148,9 @@ public:
         UInt64 period,
         ColumnArray::Offset start,
         ColumnArray::Offset end,
-        std::vector<Float32> & seasonal,
-        std::vector<Float32> & trend,
-        std::vector<Float32> & residue) const
+        VectorWithMemoryTracking<Float32> & seasonal,
+        VectorWithMemoryTracking<Float32> & trend,
+        VectorWithMemoryTracking<Float32> & residue) const
     {
         const ColumnVector<T> * src_data_concrete = checkAndGetColumn<ColumnVector<T>>(&src_data);
         if (!src_data_concrete)
@@ -165,7 +166,7 @@ public:
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS, "The series should have data of at least two period lengths for function {}", getName());
 
-        std::vector<float> src(src_vec.begin() + start, src_vec.begin() + end);
+        VectorWithMemoryTracking<float> src(src_vec.begin() + start, src_vec.begin() + end);
 
         auto res = stl::params().fit(src, period);
 
@@ -181,7 +182,7 @@ public:
 REGISTER_FUNCTION(seriesDecomposeSTL)
 {
     FunctionDocumentation::Description description = R"(
-Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.wessa.net/download/stl.pdf) into a season, a trend and a residual component.
+Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Based on Loess)](https://www.math.unm.edu/~lil/Stat581/STL.pdf) into a season, a trend and a residual component.
     )";
     FunctionDocumentation::Syntax syntax = "seriesDecomposeSTL(series, period)";
     FunctionDocumentation::Arguments arguments = {
@@ -194,26 +195,9 @@ Decomposes a series data using STL [(Seasonal-Trend Decomposition Procedure Base
         "Decompose series data using STL",
         "SELECT seriesDecomposeSTL([10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34], 3) AS print_0",
         R"(
-┌───────────print_0──────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ [[
-        -13.529999, -3.1799996, 16.71,      -13.53,     -3.1799996, 16.71,      -13.53,     -3.1799996,
-        16.71,      -13.530001, -3.18,      16.710001,  -13.530001, -3.1800003, 16.710001,  -13.530001,
-        -3.1800003, 16.710001,  -13.530001, -3.1799994, 16.71,      -13.529999, -3.1799994, 16.709997
-    ],
-    [
-        23.63,     23.63,     23.630003, 23.630001, 23.630001, 23.630001, 23.630001, 23.630001,
-        23.630001, 23.630001, 23.630001, 23.63,     23.630001, 23.630001, 23.63,     23.630001,
-        23.630001, 23.63,     23.630001, 23.630001, 23.630001, 23.630001, 23.630001, 23.630003
-    ],
-    [
-        0, 0.0000019073486, -0.0000019073486, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -0.0000019073486, 0,
-        0
-    ],
-    [
-        10.1, 20.449999, 40.340004, 10.100001, 20.45, 40.34, 10.100001, 20.45, 40.34, 10.1, 20.45, 40.34,
-        10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.1, 20.45, 40.34, 10.100002, 20.45, 40.34
-    ]]                                                                                                                   │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─print_0─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [[-13.529999,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.53,-3.1799996,16.71,-13.530001,-3.18,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1800003,16.710001,-13.530001,-3.1799994,16.71,-13.529999,-3.1799994,16.709997],[23.63,23.63,23.630003,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.63,23.630001,23.630001,23.630001,23.630001,23.630001,23.630003],[0,0.0000019073486,-0.0000019073486,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-0.0000019073486,0,0],[10.1,20.449999,40.340004,10.100001,20.45,40.34,10.100001,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.1,20.45,40.34,10.100002,20.45,40.34]] │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };

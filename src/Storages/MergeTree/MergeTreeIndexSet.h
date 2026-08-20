@@ -23,7 +23,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const Block & index_sample_block_,
         size_t max_rows_,
         MutableColumns && columns_,
-        std::vector<Range> && set_hyperrectangle_);
+        Ranges && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -39,7 +39,7 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
 
     Block block;
     Serializations serializations;
-    std::vector<Range> set_hyperrectangle;
+    Ranges set_hyperrectangle;
 };
 
 
@@ -91,7 +91,7 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
-    std::vector<Range> set_hyperrectangle;
+    Ranges set_hyperrectangle;
 };
 
 
@@ -118,16 +118,19 @@ private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
-        const ContextPtr & context) const;
+        const ContextPtr & context,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
@@ -139,7 +142,11 @@ private:
         return actions == nullptr;
     }
 
-    std::unordered_set<String> key_columns;
+    /// Index key columns with the types they have in the index granule block. The type is needed
+    /// because `atomFromDAG` matches a query subexpression to a key column by name only, while
+    /// `ExpressionActions::execute` later binds the granule column by name too. A name that
+    /// matches under a different type would silently substitute a differently-typed column.
+    std::unordered_map<String, DataTypePtr> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 
@@ -152,9 +159,10 @@ class MergeTreeIndexSet final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t max_rows_)
-        : IMergeTreeIndex(index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , max_rows(max_rows_)
     {}
 

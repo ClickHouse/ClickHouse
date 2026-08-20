@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashTable.h>
 #include <Common/HashTable/HashTableAllocator.h>
@@ -189,7 +190,7 @@ public:
         {
             reverseIndexEmplaceNonZero(key, impl_it, inserted, hash_value, object);
         }
-        assert(impl_it != nullptr);
+        chassert(impl_it != nullptr);
         it = iterator(this, impl_it);
     }
 
@@ -445,11 +446,11 @@ void ReverseIndex<IndexType, ColumnType>::buildIndex()
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
-    bool inserted;
+    bool inserted = false;
 
     for (auto row : collections::range(num_prefix_rows_to_skip, size))
     {
-        UInt64 hash;
+        UInt64 hash = 0;
         if constexpr (use_saved_hash)
             hash = saved_hash->getElement(row);
         else
@@ -485,7 +486,7 @@ UInt64 ReverseIndex<IndexType, ColumnType>::insert(std::string_view data)
 
     using IteratorType = typename IndexMapType::iterator;
     IteratorType iterator;
-    bool inserted;
+    bool inserted = false;
 
     auto hash = getHash(data);
     UInt64 num_rows = size();

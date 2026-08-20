@@ -1,0 +1,48 @@
+---
+title: 'AI 컴플라이언스'
+slug: /cloud/security/ai-compliance
+description: 'ClickHouse의 AI 컴플라이언스 개요'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '인공지능', 'AI 거버넌스', 'AI 컴플라이언스']
+---
+
+ClickHouse는 고객 지원과 플랫폼 기능 향상을 위해 AI를 활용합니다. 이 문서에서는 AI가 사용되는 영역, 이를 활성화하거나 비활성화하는 옵션, 그리고 사용 방법을 설명하는 관련 문서 링크를 안내합니다.
+
+<Info>
+  **AI 데이터 보존 및 학습**
+
+  기본적으로 ClickHouse의 AI 기능은 고객 데이터를 보존하지 않으며, 고객 데이터를 모델 학습에 사용하지도 않습니다.
+</Info>
+
+<div id="ai-support">
+  ## AI 지원
+</div>
+
+AI 지원을 활성화하는 설정은 `organization:manage` 권한이 있는 사용자가 검토하고 수정할 수 있습니다. 이 설정은 조직 설정 페이지에서 확인할 수 있습니다.
+
+ClickHouse는 고객이 구성 또는 문제 해결 지원을 위해 채팅 에이전트와 상호작용할 수 있도록 AI 기능을 제공합니다. 이 에이전트는 ClickHouse 문서와 지원 사례 관리 시스템의 정보를 활용해 고객 문의에 신속하게 응답합니다.
+
+<div id="sharing-data-for-product-improvement">
+  ## 제품 개선을 위한 데이터 공유
+</div>
+
+제품 개선을 위한 데이터 공유를 활성화하는 설정은 `organization:manage` 권한이 있는 사용자가 검토하고 수정할 수 있습니다. 이 설정은 조직 설정 페이지에서 확인할 수 있습니다.
+
+조직에서 제품 개선을 위해 ClickHouse와 데이터를 공유하는 관리자 수준 설정을 켜면, ClickHouse는 AI 기능 사용을 통해 생성되거나 수집된 데이터(입력, 출력, 로그, 메타데이터를 포함하되 ClickHouse Cloud에 대한 쿼리의 직접 결과는 제외)를 모델 평가(정확도, 성능, 안전성/컴플라이언스 테스트), 서비스 신뢰성 및 안전성 개선, 사용자 경험 향상, 분석 수행 등의 목적으로 사용할 수 있습니다. 이 데이터는 모델을 학습, 재학습 또는 미세 조정하는 데 사용되지 않습니다.
+
+<div id="clickhouse-assistant">
+  ## ClickHouse Assistant
+</div>
+
+[ClickHouse Assistant](/ko/products/cloud/features/ai-ml/ask-ai)를 활성화하는 설정은 `service:manage-generative-ai` 권한이 있는 사용자가 검토하고 변경할 수 있습니다. 이 설정은 서비스 설정 페이지에서 확인할 수 있습니다. 이 기능은 서로 다른 두 가지 기능을 제공합니다.
+
+| 기능                   | 설명                                | 사용되는 데이터                               | 사용자 검증                            |
+| :------------------- | :-------------------------------- | :------------------------------------- | :-------------------------------- |
+| SQL AI               | 쿼리를 작성, 분석하고 개선 사항을 추천합니다         | 서비스 메타데이터, 쿼리 텍스트, 프롬프트 입력             | 쿼리 실행 전에 사용자가 검토할 수 있도록 출력이 제공됩니다 |
+| ClickHouse Assistant | 사용자가 자연어로 질문하고 답변을 받을 수 있도록 지원합니다 | 서비스 메타데이터와 콘텐츠, ClickHouse 문서, 프롬프트 입력 | 출력이 검토용으로 제공되며, 사용 전에 검증해야 합니다    |
+
+<div id="model-comtext-protocol">
+  ## 모델 컨텍스트 프로토콜
+</div>
+
+[ClickHouse MCP](/ko/products/cloud/features/ai-ml/remote-mcp)를 사용하면 ClickHouse 서비스의 데이터를 활용하는 자체 에이전트를 더 쉽게 구축할 수 있습니다. 이를 사용하려면 별도의 설정이 필요하며, 데이터 처리는 고객이 선택한 AI 모델을 통해 이루어집니다. ClickHouse는 고객의 AI 모델을 관리하지 않으며, 해당 모델에 접근할 수도 없습니다.

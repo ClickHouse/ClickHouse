@@ -2,13 +2,11 @@
 
 #include <Core/LogsLevel.h>
 #include <base/defines.h>
-#include <base/errnoToString.h>
 #include <base/types.h>
 #include <Common/FramePointers.h>
 #include <Common/LoggingFormatStringHelpers.h>
 
 #include <atomic>
-#include <cerrno>
 #include <exception>
 #include <vector>
 
@@ -24,6 +22,7 @@ using LoggerPtr = std::shared_ptr<Logger>;
 
 using LoggerPtr = std::shared_ptr<Poco::Logger>;
 using LoggerRawPtr = Poco::Logger *;
+class LogFrequencyLimiterImpl;
 
 namespace DB
 {
@@ -137,6 +136,34 @@ public:
     /// Callback for any exception
     static std::function<void(std::string_view format_string, int code, bool remote, const Exception::Trace & trace)> callback;
 
+    /// Prevent exceptions constructed on the current thread from being recorded in `system.errors`
+    /// and consequently `system.error_log`.
+    /// An exception that leaves the scope must be recorded explicitly with `recordToSystemErrors`.
+    /// `recordToSystemErrors` bypasses active suppression and records the exception at most once.
+    /// Example:
+    ///     try
+    ///     {
+    ///         SuppressErrorCodesScope scope;
+    ///         speculativeOperation();
+    ///     }
+    ///     catch (Exception & e)
+    ///     {
+    ///         e.recordToSystemErrors();
+    ///         throw;
+    ///     }
+    class SuppressErrorCodesScope
+    {
+    public:
+        SuppressErrorCodesScope();
+        ~SuppressErrorCodesScope();
+
+        SuppressErrorCodesScope(const SuppressErrorCodesScope &) = delete;
+        SuppressErrorCodesScope & operator=(const SuppressErrorCodesScope &) = delete;
+
+    private:
+        bool previous;
+    };
+
 protected:
     static thread_local bool can_use_thread_frame_pointers;
     /// Because of unknown order of static destructor calls,
@@ -153,15 +180,17 @@ protected:
     static thread_local ThreadFramePointers thread_frame_pointers;
     static const ThreadFramePointersBase dummy_frame_pointers;
 
-    // used to remove the sensitive information from exceptions if query_masking_rules is configured
+    // Used to remove the sensitive information from exceptions if `query_masking_rules` is configured.
+    // Both constructors run `SensitiveDataMasker::wipeSensitiveData` on `msg_` when a masker is registered.
+    // There is intentionally no constructor that skips the masker - every code path that builds a
+    // `MessageMasked` (initial `Exception` construction or `addMessage` extension) must mask consistently,
+    // otherwise `query_masking_rules` cannot cover the appended portion (see issue #106441).
     struct MessageMasked
     {
         std::string msg;
         std::string format_string;
         explicit MessageMasked(const std::string & msg_, std::string format_string_);
         explicit MessageMasked(std::string && msg_, std::string format_string_);
-        explicit MessageMasked(const std::string & msg_) : msg(msg_) {}
-        explicit MessageMasked(std::string && msg_) : msg(msg_) {}
     };
 
     Exception(const MessageMasked & msg_masked, int code, bool remote_);
@@ -207,9 +236,13 @@ public:
         addMessage(fmt::format(format, std::forward<Args>(args)...));
     }
 
-    void addMessage(const std::string& message)
+    void addMessage(const std::string & message)
     {
-        addMessage(MessageMasked(message));
+        // Use the 2-argument `MessageMasked` constructor so the masker is invoked on the appended
+        // portion. Without this `query_masking_rules` cannot cover content added via `addMessage`,
+        // e.g. the `(in file/uri ...)` suffix in `IInputFormat::generate` for jdbc/odbc table functions
+        // can leak connection strings (issue #106441).
+        addMessage(MessageMasked(message, ""));
     }
 
     void addMessage(const MessageMasked & msg_masked);
@@ -226,17 +259,30 @@ public:
 
     std::vector<std::string> getMessageFormatStringArgs() const { return message_format_string_args; }
 
+    /// Record an exception that was constructed under `SuppressErrorCodesScope` but will be propagated.
+    /// This method bypasses active suppression and is idempotent.
+    void recordToSystemErrors();
+
     void markAsLogged() { logged.store(true, std::memory_order_relaxed); }
 
     /// Indicates if the error code triggers alerts in ClickHouse Cloud
     bool isErrorCodeImportant() const;
 
 private:
+    enum class ErrorIndexState : size_t
+    {
+        NotRecorded = static_cast<size_t>(-1),
+        Suppressed = static_cast<size_t>(-2),
+    };
+
+    static size_t handleErrorCode(
+        const std::string & msg, std::string_view format_string, int code, bool remote, const Trace & trace);
+
     bool remote = false;
     std::atomic<bool> logged = false;
 
-    /// Number of this error among other errors with the same code and the same `remote` flag since the program startup.
-    size_t error_index = static_cast<size_t>(-1);
+    /// Number of this error among errors with the same code and `remote` flag, or why it has no index.
+    size_t error_index = static_cast<size_t>(ErrorIndexState::NotRecorded);
 
     const char * className() const noexcept override { return "DB::Exception"; }
 
@@ -257,78 +303,6 @@ std::string getExceptionStackTraceString(const std::exception & e);
 std::string getExceptionStackTraceString(std::exception_ptr e);
 
 
-/// Contains an additional member `saved_errno`
-class ErrnoException : public Exception
-{
-public:
-    ErrnoException(std::string && msg, int code, int with_errno) : Exception(msg, code), saved_errno(with_errno)
-    {
-        capture_thread_frame_pointers = getThreadFramePointers();
-        addMessage(", {}", errnoToString(saved_errno));
-    }
-
-    /// Message must be a compile-time constant
-    template <typename T>
-    requires std::is_convertible_v<T, String>
-    ErrnoException(int code, T && message) : Exception(message, code), saved_errno(errno)
-    {
-        capture_thread_frame_pointers = getThreadFramePointers();
-        addMessage(", {}", errnoToString(saved_errno));
-    }
-
-    // Format message with fmt::format, like the logging functions.
-    template <typename... Args>
-    ErrnoException(int code, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(errno)
-    {
-        addMessage(", {}", errnoToString(saved_errno));
-    }
-
-    template <typename... Args>
-    ErrnoException(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
-        : Exception(fmt.format(std::forward<Args>(args)...), code), saved_errno(with_errno)
-    {
-        addMessage(", {}", errnoToString(saved_errno));
-    }
-
-    template <typename... Args>
-    [[noreturn]] static void throwWithErrno(int code, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
-    {
-        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
-        throw e; /// NOLINT
-    }
-
-    template <typename... Args>
-    [[noreturn]] static void throwFromPath(int code, const std::string & path, FormatStringHelper<Args...> fmt, Args &&... args)
-    {
-        auto e = ErrnoException(code, errno, std::move(fmt), std::forward<Args>(args)...);
-        e.path = path;
-        throw e; /// NOLINT
-    }
-
-    template <typename... Args>
-    [[noreturn]] static void
-    throwFromPathWithErrno(int code, const std::string & path, int with_errno, FormatStringHelper<Args...> fmt, Args &&... args)
-    {
-        auto e = ErrnoException(code, with_errno, std::move(fmt), std::forward<Args>(args)...);
-        e.path = path;
-        throw e; /// NOLINT
-    }
-
-    ErrnoException * clone() const override { return new ErrnoException(*this); }
-    void rethrow() const override { throw *this; } // NOLINT
-
-    int getErrno() const { return saved_errno; }
-    std::optional<std::string> getPath() const { return path; }
-
-private:
-    int saved_errno;
-    std::optional<std::string> path;
-
-    const char * name() const noexcept override { return "DB::ErrnoException"; }
-    const char * className() const noexcept override { return "DB::ErrnoException"; }
-};
-
 /// An exception to use in unit tests to test interfaces.
 /// It is distinguished from others, so it does not have to be logged.
 class TestException : public Exception
@@ -348,6 +322,7 @@ void tryLogCurrentException(const char * log_name, const std::string & start_of_
 void tryLogCurrentException(Poco::Logger * logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(LoggerPtr logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 void tryLogCurrentException(const AtomicLogger & logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
+void tryLogCurrentException(LogFrequencyLimiterImpl && logger, const std::string & start_of_message = "", LogsLevel level = LogsLevel::error);
 
 
 /** Prints current exception in canonical format.
@@ -419,7 +394,7 @@ T current_exception_cast()
     {
         return &concrete;
     }
-    catch (...)
+    catch (...) // Ok: exception does not match the requested type
     {
         return nullptr;
     }

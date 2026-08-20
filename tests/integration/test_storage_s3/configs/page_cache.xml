@@ -1,0 +1,4 @@
+<clickhouse>
+    <page_cache_min_size>1000000000</page_cache_min_size>
+    <page_cache_max_size>1000000000</page_cache_max_size>
+</clickhouse>

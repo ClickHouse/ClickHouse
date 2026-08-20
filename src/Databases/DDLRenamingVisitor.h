@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Parsers/IAST_fwd.h>
 #include <Core/QualifiedTableName.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <memory>
@@ -9,8 +10,6 @@
 
 namespace DB
 {
-class IAST;
-using ASTPtr = std::shared_ptr<IAST>;
 class Context;
 using ContextPtr = std::shared_ptr<const Context>;
 class DDLRenamingMap;

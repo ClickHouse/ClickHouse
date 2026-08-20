@@ -11,15 +11,17 @@
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
+#include <Common/Crypto/X509Certificate.h>
 #include <IO/WriteHelpers.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/Cluster.h>
 
-#include <base/EnumReflection.h>
 
 #include <condition_variable>
 #include <mutex>
@@ -43,6 +45,7 @@ namespace ErrorCodes
     extern const int SESSION_NOT_FOUND;
     extern const int SESSION_IS_LOCKED;
     extern const int USER_EXPIRED;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -324,7 +327,7 @@ Session::~Session()
         LOG_DEBUG(log, "{} Logout, user_id: {}", toString(auth_id), toString(user_id.value_or(UUID{})));
         if (auto session_log = getSessionLog())
         {
-            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo());
+            session_log->addLogOut(auth_id, user, user_authenticated_with, getClientInfo(), certificate_info);
         }
     }
 }
@@ -353,18 +356,18 @@ std::unordered_set<AuthenticationType> Session::getAuthenticationTypesOrLogInFai
     {
         LOG_ERROR(log, "{} Authentication failed with error: {}", toString(auth_id), e.what());
         if (auto session_log = getSessionLog())
-            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e);
+            session_log->addLoginFailure(auth_id, getClientInfo(), user_name, e, certificate_info);
 
         throw;
     }
 }
 
-void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const Strings & external_roles_)
+void Session::authenticate(const String & user_name, const String & password, const Poco::Net::SocketAddress & address, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
-    authenticate(BasicCredentials{user_name, password}, address, external_roles_);
+    authenticate(BasicCredentials{user_name, password}, address, connection_address, external_roles_);
 }
 
-void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const Strings & external_roles_)
+void Session::authenticate(const Credentials & credentials_, const Poco::Net::SocketAddress & address_, const std::optional<Poco::Net::SocketAddress> & connection_address, const Strings & external_roles_)
 {
     if (session_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "If there is a session context it must be created after authentication");
@@ -379,10 +382,10 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
     LOG_DEBUG(log, "Authenticating user '{}' from {}",
             credentials_.getUserName(), address.toString());
 
+    AuthResult auth_result;
     try
     {
-        auto auth_result =
-            global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
+        auth_result = global_context->getAccessControl().authenticate(credentials_, address.host(), getClientInfo());
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
@@ -403,9 +406,11 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         throw;
     }
 
-    prepared_client_info->current_user = credentials_.getUserName();
-    prepared_client_info->authenticated_user = credentials_.getUserName();
-    prepared_client_info->current_address = std::make_shared<Poco::Net::SocketAddress>(address);
+    chassert(!auth_result.user_name.empty());
+    prepared_client_info->current_user = auth_result.user_name;
+    prepared_client_info->authenticated_user = auth_result.user_name;
+    prepared_client_info->current_address = Poco::Net::SocketAddress(address);
+    prepared_client_info->connection_address = Poco::Net::SocketAddress(connection_address ? *connection_address : address);
 }
 
 void Session::checkIfUserIsStillValid()
@@ -426,9 +431,30 @@ void Session::onAuthenticationFailure(const std::optional<String> & user_name, c
     {
         /// Add source address to the log
         auto info_for_log = *prepared_client_info;
-        info_for_log.current_address = std::make_shared<Poco::Net::SocketAddress>(address_);
-        session_log->addLoginFailure(auth_id, info_for_log, user_name, e);
+        info_for_log.current_address = Poco::Net::SocketAddress(address_);
+        session_log->addLoginFailure(auth_id, info_for_log, user_name, e, certificate_info);
     }
+}
+
+void Session::setClientCertificate(const X509Certificate & certificate)
+{
+#if USE_SSL
+    ClientCertificateInfo info;
+
+    auto subjects = certificate.extractAllSubjects();
+    for (auto type : {X509Certificate::Subjects::Type::CN, X509Certificate::Subjects::Type::SAN})
+        for (const auto & subject : subjects.at(type))
+            info.subjects.push_back(subjects.toString(type) + ":" + subject);
+
+    info.serial = certificate.serialNumber();
+    info.issuer = certificate.issuerName();
+    info.not_before = certificate.notBefore();
+    info.not_after = certificate.notAfter();
+
+    certificate_info = std::move(info);
+#else
+    (void)certificate;
+#endif
 }
 
 const ClientInfo & Session::getClientInfo() const
@@ -653,6 +679,11 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
     return makeQueryContextImpl(nullptr, &query_client_info);
 }
 
+ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
+{
+    return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
+}
+
 std::shared_ptr<SessionLog> Session::getSessionLog() const
 {
     // take it from global context, since it outlives the Session and always available.
@@ -660,13 +691,13 @@ std::shared_ptr<SessionLog> Session::getSessionLog() const
     return global_context->getSessionLog();
 }
 
-ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move) const
+ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_to_copy, ClientInfo * client_info_to_move, bool detached) const
 {
     if (!user_id && getClientInfo().interface != ClientInfo::Interface::TCP_INTERSERVER)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query context must be created after authentication");
 
     /// We can create a query context either from a session context or from a global context.
-    const bool from_session_context = static_cast<bool>(session_context);
+    const bool from_session_context = static_cast<bool>(session_context) && !detached;
 
     /// Create a new query context.
     ContextMutablePtr query_context = Context::createCopy(from_session_context ? session_context : global_context);
@@ -686,6 +717,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setClientInfo(*client_info_to_move);
     else if (client_info_to_copy && (client_info_to_copy != &getClientInfo()))
         query_context->setClientInfo(*client_info_to_copy);
+    else if (detached && session_context)
+        query_context->setClientInfo(getClientInfo());
 
     /// Copy current user's name and address if it was authenticated after query_client_info was initialized.
     if (prepared_client_info && !prepared_client_info->current_user.empty())
@@ -696,7 +729,22 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// Set parameters of initial query.
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::NO_QUERY)
+    {
         query_context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+
+        /// A query initiated at this server through an interface that does not report a client
+        /// version (e.g. a raw HTTP request via `curl`, or a MySQL/PostgreSQL client) leaves the
+        /// version at 0.0.0. This server is the real initiator of the query and of any distributed
+        /// sub-query it spawns, so fill the version with this server's version; otherwise remote
+        /// shards treat the initiator as a pre-23.3 server and apply legacy compatibility
+        /// downgrades - in particular disabling the analyzer (see `TCPHandler`) - diverging from the
+        /// initiator, and `RemoteQueryExecutor` now rejects such a zero version outright.
+        const auto & new_client_info = query_context->getClientInfo();
+        if (new_client_info.client_version_major == 0
+            && new_client_info.client_version_minor == 0
+            && new_client_info.client_version_patch == 0)
+            query_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
+    }
 
     if (query_context->getClientInfo().query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
@@ -704,9 +752,38 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
         query_context->setInitialAddress(*query_context->getClientInfo().current_address);
     }
 
+    /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
+    /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
+    std::vector<UUID> effective_external_roles = external_roles;
+    const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
+        && query_context->getClientInfo().current_roles.has_value()
+        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+    if (apply_initiator_roles)
+    {
+        const auto & role_names = *query_context->getClientInfo().current_roles;
+        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
+        if (effective_external_roles.size() != role_names.size())
+            throw Exception(ErrorCodes::ACCESS_DENIED,
+                "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+    }
+
     /// Set user information for the new context: current profiles, roles, access rights.
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, external_roles);
+        query_context->setUser(*user_id, effective_external_roles);
+
+    if (apply_initiator_roles && user_id)
+        query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);
+
+    if (detached && session_context)
+    {
+        query_context->setCurrentRoles(session_context->getCurrentRoles());
+        query_context->setSettingsConstraintsAndCurrentProfiles(session_context->getSettingsConstraintsAndCurrentProfiles());
+        query_context->setSettings(session_context->getSettingsRef());
+        if (const String database = session_context->getCurrentDatabase(); !database.empty())
+            query_context->setCurrentDatabase(database);
+        query_context->addQueryParameters(session_context->getQueryParameters());
+    }
 
     /// Query context is ready.
     query_context_created = true;
@@ -739,7 +816,8 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      access->getAccess(),
                                      getClientInfo(),
                                      user,
-                                     user_authenticated_with);
+                                     user_authenticated_with,
+                                     certificate_info);
     }
 
     notified_session_log_about_login = true;

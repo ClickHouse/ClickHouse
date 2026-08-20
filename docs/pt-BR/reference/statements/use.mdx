@@ -1,0 +1,17 @@
+---
+description: 'Documentação sobre a instrução USE'
+sidebarTitle: 'USE'
+slug: /sql-reference/statements/use
+title: 'Instrução USE'
+doc_type: 'reference'
+---
+
+```sql
+USE [DATABASE] db
+```
+
+Permite definir o banco de dados atual da sessão.
+
+O banco de dados atual é usado para procurar tabelas caso o banco de dados não seja explicitamente definido na consulta com um ponto antes do nome da tabela.
+
+Esta consulta não pode ser executada ao usar o protocolo HTTP, pois não existe o conceito de sessão.

@@ -96,7 +96,7 @@ public:
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         Float64 value = columns[0]->getFloat64(row_num);
-        UInt8 is_second = columns[1]->getUInt(row_num);
+        bool is_second = columns[1]->getUInt(row_num);
 
         if (is_second)
             this->data(place).addY(value);
@@ -104,7 +104,7 @@ public:
             this->data(place).addX(value);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -178,6 +178,7 @@ AggregateFunctionPtr createAggregateFunctionMeanZTest(
 
 }
 
+void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMeanZTest(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -223,7 +224,7 @@ SELECT meanZTest(0.7, 0.45, 0.95)(sample_data, sample_index) FROM mean_ztest;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, parameters, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, {}, documentation});
+    factory.registerFunction("meanZTest", {createAggregateFunctionMeanZTest, documentation});
 }
 
 }

@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-void routine(String s)
+static void routine(String s)
 {
     std::cerr << "case '"<< s << "'";
     auto gen = DB::RandomStringGeneratorByRegexp(s);
@@ -41,6 +41,16 @@ TEST(GenerateRandomString, Negative)
     EXPECT_THROW(routine("[[:do_not_exists:]]"), DB::Exception);
     EXPECT_THROW(routine("[:do_not_exis..."), DB::Exception);
     EXPECT_THROW(routine("^abc"), DB::Exception);
+}
+
+TEST(GenerateRandomString, TooComplexToSimplify)
+{
+    /// A pattern large enough that re2 cannot simplify it (its node-visit budget is
+    /// exceeded and Simplify returns null) must raise an exception, not crash.
+    String huge;
+    for (size_t i = 0; i < 800000; ++i)
+        huge += "a?";
+    EXPECT_THROW(DB::RandomStringGeneratorByRegexp{huge}, DB::Exception);
 }
 
 TEST(GenerateRandomString, DifferentResult)

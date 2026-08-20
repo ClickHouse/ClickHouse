@@ -62,6 +62,10 @@ public:
     /// Returns valid reservation or nullptr if there is no space left on any disk.
     ReservationPtr reserve(UInt64 bytes) override;
 
+    /// Reserve with constraints. Checks free space requirements before making reservation.
+    /// Returns valid reservation or nullptr if constraints are not met on any disk.
+    ReservationPtr reserve(UInt64 bytes, const ReservationConstraints & constraints) override;
+
     bool areMergesAvoided() const override;
 
     void setAvoidMergesUserOverride(bool avoid) override;
@@ -70,6 +74,8 @@ public:
     bool are_merges_avoided = true;
 
 private:
+    ReservationPtr reserveImpl(UInt64 bytes, const std::optional<ReservationConstraints> & constraints);
+
     struct DiskWithSize
     {
         DiskPtr disk;

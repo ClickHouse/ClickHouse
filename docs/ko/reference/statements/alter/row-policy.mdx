@@ -1,0 +1,74 @@
+---
+description: 'ALTER ROW POLICY 참고 문서'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/alter/row-policy
+title: 'ALTER ROW POLICY'
+doc_type: 'reference'
+---
+
+ROW POLICY를 변경합니다.
+
+구문:
+
+```sql
+-- Rename: exactly one fully qualified policy (one name on one target).
+-- RENAME TO may be combined with the same optional alteration clauses as below.
+ALTER [ROW] POLICY [IF EXISTS] name
+    ON { [database.]table | database.* }
+    RENAME TO new_name
+    [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- Multiple names on one table target (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS] name [, ...]
+    [ON CLUSTER cluster_name]
+    ON { [database.]table | database.* }
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- One name on multiple table targets (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS] name
+    [ON CLUSTER cluster_name]
+    ON { [database.]table | database.* } [, ...]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+
+-- Mixed packing: each name paired with its own table target (no RENAME)
+ALTER [ROW] POLICY [IF EXISTS]
+    name ON { [database.]table | database.* } [, name ON { [database.]table | database.* } ...]
+    [ON CLUSTER cluster_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+`RENAME TO`는 SQL 문에서 하나의 테이블 대상에 대한 정책을 **정확히 하나만** 지정할 때만 허용됩니다. 여러 이름이나 여러 테이블을 묶어 지정하는 목록에는 `RENAME TO`를 포함할 수 없습니다. 해당 정책의 이름은 별도의 SQL 문에서 변경하십시오. 단일 정책 형식에서는 같은 SQL 문에서 `RENAME TO`를 `AS`, `USING`, `TO` 등의 다른 변경과 함께 사용할 수 있습니다.
+
+`RENAME TO`가 없으면 패킹은 `ParserRowPolicyNames`와 동일하게 동작합니다. 즉, **하나의** 대상에 여러 이름을 지정하거나, **여러** 대상에 하나의 이름을 지정하거나, `name ON target` 쌍을 혼합할 수 있습니다. 여러 이름 × 여러 테이블(`p1, p2 ON t1, t2`)은 **허용되지 않습니다**. 선택적 `ON CLUSTER`는 전체 SQL 문에 한 번만 적용됩니다. 서로 다른 클러스터가 필요한 경우 별도의 `ALTER ROW POLICY` SQL 문을 실행하십시오.
+
+예시:
+
+```sql
+-- Single-policy rename
+ALTER ROW POLICY p1 ON db.table RENAME TO p1_new;
+
+-- Rename plus other alterations on the same single policy
+ALTER POLICY old_name ON db.table RENAME TO new_name USING id > 10;
+
+-- Multiple names, one table
+ALTER POLICY p1, p2 ON db.table TO ALL;
+
+-- One name, multiple tables
+ALTER POLICY p1 ON db.table, db.table2 USING NONE;
+
+-- Mixed targets without rename
+ALTER POLICY p1 ON db.table, p2 ON db2.table2 TO ALL;
+```

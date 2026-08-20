@@ -13,6 +13,8 @@
 #include <Disks/WriteMode.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
+#include <Disks/DiskObjectStorage/Replication/ClusterConfiguration.h>
+#include <Disks/DiskObjectStorage/Replication/Location.h>
 #include <Disks/DiskCommitTransactionOptions.h>
 #include <Disks/DiskType.h>
 #include <Common/ErrorCodes.h>
@@ -25,25 +27,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-class IMetadataStorage;
-
-/// Return the result of operation to the caller.
-/// It is used in `IDiskObjectStorageOperation::finalize` after metadata transaction executed to make decision on blob removal.
-struct UnlinkMetadataFileOperationOutcome
-{
-    UInt32 num_hardlinks = std::numeric_limits<UInt32>::max();
-};
-
-struct TruncateFileOperationOutcome
-{
-    StoredObjects objects_to_remove;
-};
-
-
-using UnlinkMetadataFileOperationOutcomePtr = std::shared_ptr<UnlinkMetadataFileOperationOutcome>;
-using TruncateFileOperationOutcomePtr = std::shared_ptr<TruncateFileOperationOutcome>;
-
-
 /// Tries to provide some "transactions" interface, which allow
 /// to execute (commit) operations simultaneously. We don't provide
 /// any snapshot isolation here, so no read operations in transactions
@@ -54,18 +37,7 @@ class IMetadataTransaction : private boost::noncopyable
 {
 public:
     virtual void commit(const TransactionCommitOptionsVariant & options) = 0;
-    void commit() { commit(NoCommitOptions{}); }
-
-    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant &)
-    {
-        throwNotImplemented();
-    }
-    TransactionCommitOutcomeVariant tryCommit()
-    {
-        return tryCommit(NoCommitOptions{});
-    }
-
-    virtual const IMetadataStorage & getStorageForNonTransactionalReads() const = 0;
+    virtual TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) = 0;
 
     /// General purpose methods
 
@@ -97,7 +69,7 @@ public:
         throwNotImplemented();
     }
 
-    virtual void unlinkFile(const std::string & /* path */)
+    virtual void unlinkFile(const std::string & /* path */, bool /* if_exists */, bool /* should_remove_objects */)
     {
         throwNotImplemented();
     }
@@ -117,7 +89,8 @@ public:
         throwNotImplemented();
     }
 
-    virtual void removeRecursive(const std::string & /* path */)
+    using ShouldRemoveObjectsPredicate = std::function<bool(const std::string & relative_path)>;
+    virtual void removeRecursive(const std::string & /* path */, const ShouldRemoveObjectsPredicate & /* should_remove_objects */)
     {
         throwNotImplemented();
     }
@@ -147,33 +120,44 @@ public:
     /// Generate blob name for passed absolute local path.
     /// Path can be generated either independently or based on `path`.
     virtual ObjectStorageKey generateObjectKeyForPath(const std::string & path) = 0;
+    virtual void recordBlobsReplication(const StoredObject & /*blob*/, const Locations & missing_locations)
+    {
+        if (!missing_locations.empty())
+            throwNotImplemented();
+    }
+    virtual StoredObjects getSubmittedForRemovalBlobs() = 0;
 
     /// Create metadata file on paths with content consisting of objects
     virtual void createMetadataFile(const std::string & path, const StoredObjects & objects) = 0;
 
-    virtual bool supportAddingBlobToMetadata() { return false; }
     /// Add to new blob to metadata file (way to implement appends).
-    /// If `addBlobToMetadata` is supported, `supportAddingBlobToMetadata` must return `true`
     virtual void addBlobToMetadata(const std::string & /* path */, const StoredObject & /* object */)
     {
         throwNotImplemented();
     }
 
-    /// Unlink metadata file and do something special if required
-    /// By default just remove file (unlink file).
-    virtual UnlinkMetadataFileOperationOutcomePtr unlinkMetadata(const std::string & path)
-    {
-        unlinkFile(path);
-        return nullptr;
-    }
-
-    virtual TruncateFileOperationOutcomePtr truncateFile(const std::string & /* path */, size_t /* size */)
+    virtual void truncateFile(const std::string & /* path */, size_t /* size */)
     {
         throwNotImplemented();
     }
 
-    /// Get objects that are going to be created inside transaction if they exists
-    virtual std::optional<StoredObjects> tryGetBlobsFromTransactionIfExists(const std::string &) const = 0;
+    /// Increment the reference count of a data blob shared between metadata files.
+    virtual void incrementBlobRefCount(const std::string & /* blob */)
+    {
+        throwNotImplemented();
+    }
+
+    /// Decrement the reference count of a data blob; at zero the blob becomes eligible for removal.
+    virtual void decrementBlobRefCount(const std::string & /* blob */)
+    {
+        throwNotImplemented();
+    }
+
+    /// Register a data blob for background removal, atomically with the commit.
+    virtual void submitBlobForRemoval(const std::string & /* remote_path */)
+    {
+        throwNotImplemented();
+    }
 
     virtual ~IMetadataTransaction() = default;
 
@@ -206,6 +190,10 @@ public:
     /// E.g. metadata storage can store the empty list of blobs corresponding to a file without actually storing any blobs.
     /// But if the metadata storage just relies on for example local FS to store data under logical path, then a file has to be created even if it's empty.
     virtual bool supportsEmptyFilesWithoutBlobs() const { return false; }
+
+    /// Whether small file content can be stored inside the metadata itself, with no backing blob
+    /// (see `WriteSettings::inline_file_max_bytes`).
+    virtual bool supportsInlineData() const { return false; }
 
     /// Returns true if underlying blob ids generator uses random.
     virtual bool areBlobPathsRandom() const = 0;
@@ -308,6 +296,18 @@ public:
 
     virtual bool isReadOnly() const = 0;
 
+    /// True if transactions apply operations immediately instead of accumulating them until commit.
+    virtual bool appliesOperationsEagerly() const
+    {
+        return false;
+    }
+
+    /// The generator of object storage keys for new blobs, if this storage owns one.
+    virtual ObjectStorageKeyGeneratorPtr getKeyGenerator() const
+    {
+        return nullptr;
+    }
+
     virtual bool isTransactional() const
     {
         return false;
@@ -322,6 +322,24 @@ public:
     {
         return false;
     }
+
+    using BlobsToRemove = std::unordered_map<StoredObject, LocationSet>;
+    virtual BlobsToRemove getBlobsToRemove(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
+    virtual int64_t recordAsRemoved(const StoredObjects & /*blobs*/) { return 0; }
+    virtual bool hasPendingRemovalBlobs(const StoredObjects & /*blobs*/) const { return false; }
+    virtual int64_t getDeadBlobsQueueEstimate() { return 0; }
+
+    struct BlobsReplication
+    {
+        StoredObject blob;
+        Location from;
+        Location to;
+    };
+    using BlobsToReplicate = std::vector<BlobsReplication>;
+    virtual BlobsToReplicate getBlobsToReplicate(const ClusterConfigurationPtr & /*cluster*/, int64_t /*max_count*/) { return {}; }
+    virtual int64_t recordAsReplicated(const BlobsToReplicate & /*blobs*/) { return 0; }
+    virtual bool hasUnreplicatedBlobs(const Location & /*location_to_check*/) { return false; }
+    virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
     /// Can return serialized description of cache update which can be used to populate cache on other nodes.
@@ -340,7 +358,7 @@ public:
         const std::string & /* config_prefix */,
         ContextPtr /* context */) {}
 
-    /// Only support writing with Append if MetadataTransactionPtr created by `createTransaction` has `supportAddingBlobToMetadata`
+    /// True if write with Append mode supported.
     virtual bool supportWritingWithAppend() const { return false; }
 
 protected:

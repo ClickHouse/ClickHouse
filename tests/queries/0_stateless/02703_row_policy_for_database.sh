@@ -43,7 +43,7 @@ DROP TABLE 02703_rqtable_default;
 
 SELECT 'Check system.query_log';
 SYSTEM FLUSH LOGS query_log;
-SELECT query, used_row_policies FROM system.query_log WHERE current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;
+SELECT query, used_row_policies FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database == currentDatabase() AND type == 'QueryStart' AND query_kind == 'Select' ORDER BY event_time_microseconds;
 
 DROP ROW POLICY ${CLICKHOUSE_DATABASE}_filter_11_db_policy ON *;
 DROP ROW POLICY ${CLICKHOUSE_DATABASE}_filter_11_policy ON 02703_rqtable_default;

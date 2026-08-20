@@ -1,0 +1,219 @@
+---
+slug: /use-cases/AI/MCP/remote_mcp
+sidebarTitle: '启用远程 MCP 服务器'
+title: '启用并连接 ClickHouse Cloud 远程 MCP 服务器'
+description: '本指南介绍如何启用和使用 ClickHouse Cloud 远程 MCP 服务器'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南介绍如何启用 ClickHouse Cloud Remote MCP Server，并将其配置为可与常见的开发者工具配合使用。
+
+**前置条件**
+
+* 一个正在运行的 [ClickHouse Cloud 服务](/zh/get-started/setup/cloud)
+* 你选择的 IDE 或智能体开发工具
+
+<div id="enable-remote-mcp-server">
+  ## 为 Cloud 启用远程 MCP 服务器
+</div>
+
+连接到要为其启用远程 MCP 服务器的 ClickHouse Cloud 服务。
+在左侧菜单中，点击 **Connect**。此时会打开一个显示连接详情的对话框。
+
+选择 **Connect with MCP**：
+
+<Image img="/images/use-cases/AI_ML/MCP/1connectmcpmodal.webp" alt="在 Connect 对话框中选择 MCP" size="md" />
+
+打开切换开关，为该服务启用 MCP：
+
+<Image img="/images/use-cases/AI_ML/MCP/2enable_mcp.webp" alt="启用 MCP 服务器" size="md" />
+
+复制显示的 URL，它与下方的 URL 相同：
+
+```bash
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="setup-clickhouse-cloud-remote-mcp-server">
+  ## 为开发配置远程 MCP
+</div>
+
+请选择下方的 IDE 或工具，并按相应说明完成设置。
+
+<div id="claude-code">
+  ### Claude Code
+</div>
+
+在工作目录中，运行以下命令，将 ClickHouse Cloud MCP Server 配置添加到 Claude Code 中：
+
+```bash
+claude mcp add --transport http clickhouse-cloud https://mcp.clickhouse.cloud/mcp
+```
+
+然后启动 Claude Code：
+
+```bash
+claude
+```
+
+运行以下命令以列出 MCP 服务器：
+
+```bash
+/mcp
+```
+
+选择 `clickhouse-cloud`，然后使用 ClickHouse Cloud 凭据通过 OAuth 完成身份验证。
+
+<div id="claude-web">
+  ### Claude web UI
+</div>
+
+1. 前往 **Customize** &gt; **Connectors**
+2. 点击 “+” 图标，然后点击 **Add custom connector**
+3. 为自定义连接器命名，例如 `clickhouse-cloud`，然后将其添加
+4. 点击新添加的 `clickhouse-cloud` 连接器，然后点击 **Connect**
+5. 通过 OAuth 使用你的 ClickHouse Cloud 凭据进行身份验证
+
+<div id="cursor">
+  ### Cursor
+</div>
+
+1. 在 [Cursor 市场](https://cursor.com/marketplace)中浏览并安装 MCP 服务器。
+2. 搜索 ClickHouse，然后在任一服务器上点击“Add to Cursor”进行安装
+3. 通过 OAuth 进行身份验证。
+
+<div id="visual-studio-code">
+  ### Visual Studio Code
+</div>
+
+将以下配置添加到 `.vscode/mcp.json` 中：
+
+```json
+{
+  "servers": {
+    "clickhouse-cloud": {
+      "type": "http",
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+更多详情请参阅 [Visual Studio Code 文档](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)。
+
+<div id="windsurf">
+  ### Windsurf
+</div>
+
+按以下配置编辑 `mcp_config.json` 文件：
+
+```json
+{
+  "mcpServers": {
+    "clickhouse-cloud": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://mcp.clickhouse.cloud/mcp"]
+    }
+  }
+}
+```
+
+更多详细信息请参阅 [Windsurf 文档](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)。
+
+<div id="zed">
+  ### Zed
+</div>
+
+将 ClickHouse 添加为自定义服务器。
+在 Zed 设置的 **context&#95;servers** 下添加以下内容：
+
+```json
+{
+  "context_servers": {
+    "clickhouse-cloud": {
+      "url": "https://mcp.clickhouse.cloud/mcp"
+    }
+  }
+}
+```
+
+当 Zed 首次连接到服务器时，应会提示你通过 OAuth 进行身份验证。
+更多信息请参阅 [Zed 文档](https://zed.dev/docs/ai/mcp#as-custom-servers)。
+
+<div id="codex">
+  ### Codex
+</div>
+
+运行以下命令，通过 CLI 添加 ClickHouse Cloud MCP 服务器：
+
+```bash
+codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+连接完成后，您就可以通过自然语言提示词与 ClickHouse Cloud 交互。
+下面列出了一些常见工作流，以及您的 MCP 客户端会在后台调用的工具。
+如需查看可用工具的完整列表，请参阅[工具参考](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)。
+
+<div id="exploring-data">
+  ### 探索你的数据
+</div>
+
+先查看有哪些可用内容：
+
+| 提示词                                | 调用的工具                          |
+| ---------------------------------- | ------------------------------ |
+| &quot;我可以访问哪些组织？&quot;             | `get_organizations`            |
+| &quot;我的服务中有哪些可用数据库？&quot;         | `list_databases`               |
+| &quot;显示 `default` 数据库中的表&quot;    | `list_tables`                  |
+| &quot;列出所有名称以 `events_` 开头的表&quot; | `list_tables` (使用 `like` 过滤器)  |
+
+<div id="running-queries">
+  ### 执行分析查询
+</div>
+
+用自然语言提问，agent 会将其转换为 SQL：
+
+| 提示词                              | 调用的工具              |
+| ------------------------------- | ------------------ |
+| “显示 `hits` 表中的前 10 行”           | `run_select_query` |
+| “过去 7 天按国家分组的平均 session 耗时是多少？” | `run_select_query` |
+| “`analytics` 数据库中的每个表各有多少行？”    | `run_select_query` |
+
+`run_select_query` 工具只允许执行 `SELECT` 语句。所有查询均为只读。
+
+<div id="managing-services">
+  ### 管理服务和基础设施
+</div>
+
+查看你的 ClickHouse Cloud 资源信息：
+
+| 提示词                               | 调用的工具                              |
+| --------------------------------- | ---------------------------------- |
+| &quot;列出我所有的服务&quot;              | `get_services_list`                |
+| &quot;我的生产服务当前状态如何？&quot;         | `get_service_details`              |
+| &quot;显示此服务的备份计划&quot;            | `get_service_backup_configuration` |
+| &quot;列出最近的备份&quot;               | `list_service_backups`             |
+| &quot;此服务上配置了哪些 ClickPipes？&quot; | `list_clickpipes`                  |
+
+<div id="monitoring-costs">
+  ### 监控成本
+</div>
+
+| 提示词                         | 调用的工具                                                 |
+| --------------------------- | ----------------------------------------------------- |
+| “我的组织上周的成本是多少？”             | `get_organization_cost`                               |
+| “显示 3 月 1 日至 3 月 15 日的每日成本” | `get_organization_cost` (使用 `from_date` 和 `to_date`)  |
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* [ClickHouse agent 技能](https://github.com/ClickHouse/agent-skills)

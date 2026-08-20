@@ -1,0 +1,60 @@
+---
+sidebarTitle: 'Transfert de données'
+slug: /cloud/manage/network-data-transfer
+title: 'Transfert de données'
+description: 'Comprendre comment ClickHouse Cloud mesure les volumes de données transférées en entrée et en sortie'
+doc_type: 'guide'
+keywords: ['facturation', 'transfert réseau', 'sortie de données', 'coûts', 'tarification']
+---
+
+import NetworkPricing from '/snippets/fr/_network_transfer_rates.mdx';
+
+ClickHouse Cloud mesure les données transférées en entrée et en sortie.
+Cela inclut toutes les données entrantes et sortantes de ClickHouse Cloud, ainsi que tous les transferts de données intra-région
+et inter-région. Cette utilisation est suivie au niveau du service. Sur la base
+de cette utilisation, des frais de transfert de données sont facturés aux clients, puis ajoutés à leur
+facture mensuelle.
+
+ClickHouse Cloud facture :
+
+* Les données sortantes de ClickHouse Cloud vers l’Internet public, y compris vers d’autres
+  régions d’autres fournisseurs de cloud.
+* Les données sortantes vers une autre région chez le même fournisseur de cloud.
+
+Aucun frais ne s’applique aux transferts de données intra-région, ni à l’utilisation de Private Link/Private
+Service Connect et aux transferts de données associés. Toutefois, nous nous réservons le droit d’ajouter
+des dimensions tarifaires supplémentaires pour le transfert de données si nous constatons des schémas d’utilisation qui affectent
+notre capacité à facturer les utilisateurs de manière appropriée.
+
+Remarque : les frais du fournisseur de services cloud (CSP) s’appliquent à l’utilisation de Private Link/Private Service Connect. Veuillez consulter la page tarifaire du CSP pour obtenir les informations les plus récentes.
+
+Les frais de transfert de données varient selon le fournisseur de services cloud (CSP) et la région.
+La tarification des sorties vers l’Internet public repose uniquement sur la région d’origine.
+La tarification inter-région (ou cross-region) dépend à la fois des régions d’origine et de destination.
+
+**Bonnes pratiques pour minimiser les coûts de transfert de données**
+
+Voici quelques points à garder à l’esprit lors des transferts de données entrants et sortants
+afin de minimiser les coûts de transfert de données.
+
+1. Lors des transferts de données entrants ou sortants avec ClickHouse Cloud, utilisez la compression lorsque
+   cela est possible, afin de minimiser la quantité de données transférées et le coût associé.
+
+2. Sachez que lors d’un `INSERT` via le protocole natif avec des
+   valeurs non incluses en ligne (par ex. `INSERT INTO [TABLE] FROM INFILE [FILE] FORMAT NATIVE`), les clients ClickHouse
+   récupèrent les métadonnées auprès des serveurs pour empaqueter les données. Si les métadonnées sont plus volumineuses
+   que la charge utile de l’`INSERT`, vous pourriez constater, de manière contre-intuitive, davantage de données sortantes
+   que de données entrantes du point de vue du serveur. Si cela est inacceptable, envisagez
+   d’inclure les données en ligne avec la syntaxe `VALUES` ou d’utiliser le protocole HTTP.
+
+Les tableaux ci-dessous montrent comment les frais de transfert de données sortantes varient sur l’Internet
+public ou en inter-région selon le fournisseur de cloud et la région.
+
+<Note>
+  ClickHouse Cloud mesure l’utilisation inter-région par tiers, de Tier 1 à
+  Tier 4, selon les régions d’origine et de destination. Le tableau ci-dessous indique
+  le tier pour chaque combinaison de transfert de données inter-région. Dans l’écran Billing usage
+  de ClickHouse Cloud, l’utilisation du transfert de données est ventilée par tiers.
+</Note>
+
+<NetworkPricing />

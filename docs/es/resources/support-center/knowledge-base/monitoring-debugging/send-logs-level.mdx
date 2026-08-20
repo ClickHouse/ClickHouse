@@ -1,0 +1,30 @@
+---
+date: 2023-03-01
+title: "Capturar los logs del servidor de las consultas en el cliente"
+description: "Aprende a capturar los logs del servidor en el cliente, incluso con distintas configuraciones de registro, mediante la configuración de cliente `send_logs_level`."
+tags: ['Administración del servidor']
+keywords: ['Logs del servidor']
+---
+
+<div id="learn-how-to-capture-server-logs-of-queries-at-the-client">
+  ## Aprenda a capturar en el cliente los logs del servidor de las consultas.
+</div>
+
+Un cliente puede ver los logs del servidor —incluso con un nivel distinto del configurado en el servidor— estableciendo la configuración de cliente `send_logs_level`.
+
+Por ejemplo, suponga que el cliente ejecuta:
+
+```sql
+SET send_logs_level = 'trace';
+```
+
+El cliente recibirá logs de nivel trace incluso si el servidor tiene el nivel de log configurado como info.
+
+Un caso de uso útil es usar `send_logs_level` para supervisar la inserción de filas en una tabla `Distributed`:
+
+* Active los logs en `clickhouse-client` con `SET send_logs_level = 'trace';`
+* Ejecute la consulta `INSERT`
+* Las inserciones en una tabla distribuida son asíncronas de forma predeterminada. Los datos se escriben en un búfer local en disco y luego se envían a los servidores remotos en segundo plano.
+* Se enviarán logs desde todos los nodos que participan en el procesamiento de la consulta (trazado distribuido)
+
+Para comprobar el estado de las inserciones distribuidas, consulte la [tabla `system.distribution_queue`](/es/reference/system-tables/distribution_queue). Esta tabla contiene información sobre los archivos locales que están en la cola para enviarse a los segmentos. Estos archivos locales contienen nuevas partes creadas al insertar datos nuevos en la tabla `Distributed` en modo asíncrono.

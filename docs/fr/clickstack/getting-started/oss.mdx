@@ -1,0 +1,218 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'Premiers pas avec ClickStack Open Source'
+sidebarTitle: 'Open source'
+description: 'Exécutez ClickStack Open Source localement, envoyez des données de test et vérifiez que l’ingestion fonctionne'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', 'premiers pas', 'déploiement Docker', 'OpenTelemetry', 'déploiement local']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Exécutez ClickStack Open Source localement, envoyez un événement de test via son OpenTelemetry Collector et vérifiez que l’événement est disponible dans l’interface utilisateur de ClickStack.
+
+Avec ClickStack Open Source, vous exécutez et gérez le backend ClickHouse, l’interface utilisateur de ClickStack et le pipeline d’ingestion. L’image tout-en-un regroupe ces composants et MongoDB dans un unique conteneur Docker pour l’évaluation et les tests locaux.
+
+<Tip>
+  Une version gérée de ClickStack est également disponible — consultez [Managed ClickStack](/fr/clickstack/getting-started/managed).
+</Tip>
+
+Les étapes ci-dessous utilisent l’image tout-en-un authentifiée. Si vous souhaitez disposer d’une interface utilisateur locale sans créer de compte, suivez plutôt le [guide du mode local avec Docker](/fr/clickstack/deployment/local-mode-only).
+
+<div id="before-you-begin">
+  ## Avant de commencer
+</div>
+
+Installez [Docker](https://docs.docker.com/get-docker/) et vérifiez que les ports suivants sont disponibles :
+
+* `8080` pour l’interface utilisateur de ClickStack
+* `4317` pour OTLP via gRPC
+* `4318` pour OTLP via HTTP
+* `8123` pour l’interface HTTP de ClickHouse
+
+Pour les charges de travail soutenues ou en production, consultez les [options de déploiement open source](/fr/clickstack/deployment/oss) et [Passer en production](/fr/clickstack/managing/production).
+
+<div id="set-up-clickstack-open-source">
+  ## Configurer ClickStack Open Source avec l’image tout-en-un
+</div>
+
+<Steps titleSize="h3">
+  <Step title="Démarrer ClickStack" id="deploy-stack-with-docker">
+    Exécutez l’image tout-en-un :
+
+    ```shell
+    docker run \
+      --name clickstack \
+      -p 8123:8123 \
+      -p 8080:8080 \
+      -p 4317:4317 \
+      -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    Le conteneur s’exécute au premier plan. Laissez ce terminal ouvert et utilisez un second terminal pour exécuter les autres commandes de ce guide.
+
+    <Accordion title="Conserver les données et les paramètres">
+      Pour conserver les paramètres de ClickStack, les données et les logs ClickHouse après la suppression du conteneur, exécutez plutôt la commande suivante :
+
+      ```shell
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+
+      `$(pwd)` correspond à votre répertoire courant. Cette commande stocke les fichiers persistants dans un répertoire `.volumes` à cet emplacement.
+    </Accordion>
+  </Step>
+
+  <Step title="Ouvrir ClickStack" id="navigate-to-hyperdx-ui">
+    Une fois ClickStack démarré, ouvrez [http://localhost:8080](http://localhost:8080) et créez un compte.
+
+    ClickStack se connecte automatiquement à l’instance ClickHouse incluse et crée des sources de données pour les logs, les traces, les métriques et les sessions.
+
+    #### Copier l’API key d’ingestion
+
+    Dans la section **Prise en main** du menu de gauche, sélectionnez **Ajouter des données**, puis copiez l’**API key d’ingestion**. La télémétrie envoyée à l’OpenTelemetry Collector inclus doit inclure cette clé dans l’en-tête `authorization`.
+  </Step>
+
+  <Step title="Envoyer des données de test" id="send-test-data">
+    Dans le second terminal, exportez l’API key d’ingestion :
+
+    ```shell
+    export CLICKSTACK_API_KEY=<your_ingestion_api_key>
+    ```
+
+    Envoyez un log OTLP avec l’horodatage actuel :
+
+    ```shell
+    NOW_NANO="$(date +%s)000000000"
+
+    curl -i "http://localhost:4318/v1/logs" \
+      -H "Content-Type: application/json" \
+      -H "authorization: ${CLICKSTACK_API_KEY}" \
+      --data-binary @- <<EOF
+    {
+      "resourceLogs": [{
+        "resource": {
+          "attributes": [{
+            "key": "service.name",
+            "value": {"stringValue": "clickstack-docs-test"}
+          }]
+        },
+        "scopeLogs": [{
+          "scope": {"name": "clickstack-docs-test"},
+          "logRecords": [{
+            "timeUnixNano": "${NOW_NANO}",
+            "severityText": "INFO",
+            "body": {"stringValue": "ClickStack ingestion test"}
+          }]
+        }]
+      }]
+    }
+    EOF
+    ```
+
+    Une requête réussie renvoie `HTTP/1.1 200 OK`.
+  </Step>
+
+  <Step title="Confirmer l’ingestion" id="confirm-ingestion">
+    Ouvrez la vue **Recherche** dans ClickStack et recherchez `ClickStack ingestion test`.
+
+    Le résultat doit inclure l’événement de test associé au nom de service `clickstack-docs-test`.
+
+    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="Vue des logs ClickStack Open Source affichant l’événement de test d’ingestion ClickStack" border />
+  </Step>
+</Steps>
+
+Vous disposez désormais d’une instance ClickStack locale, d’un endpoint d’ingestion fonctionnel et d’un événement de test que vous pouvez examiner dans ClickStack.
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+<div id="send-application-and-infrastructure-data">
+  ### Envoyer les données des applications et de l&#39;infrastructure
+</div>
+
+Choisissez le guide correspondant aux données que vous souhaitez envoyer à ClickStack :
+
+<CardGroup cols={2}>
+  <Card title="Instrumenter une application" icon="code" href="/fr/clickstack/ingesting-data/sdks/index">
+    Envoyez les traces et les logs de l&#39;application à l&#39;aide d&#39;un SDK OpenTelemetry pris en charge.
+  </Card>
+
+  <Card title="Collecter les logs de l'hôte" icon="server" href="/fr/clickstack/integration-examples/host-logs">
+    Transférez les logs de l&#39;hôte depuis un OpenTelemetry Collector exécuté en rôle d&#39;agent.
+  </Card>
+
+  <Card title="Surveiller Kubernetes" icon="cubes" href="/fr/clickstack/integration-examples/kubernetes">
+    Collectez les logs, les métriques et les traces d&#39;un cluster Kubernetes.
+  </Card>
+
+  <Card title="Explorer d'autres intégrations" icon="plug" href="/fr/clickstack/integration-examples/index">
+    Trouvez des guides pour d&#39;autres applications et sources de télémétrie.
+  </Card>
+</CardGroup>
+
+<div id="explore-sample-data">
+  ### Explorer des données d’exemple
+</div>
+
+Utilisez un jeu de données d’exemple pour explorer ClickStack avec une télémétrie plus riche :
+
+<CardGroup cols={2}>
+  <Card title="Logs, traces et métriques d’exemple" href="/fr/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+
+    Chargez les données de la démo publique et diagnostiquez un incident.
+  </Card>
+
+  <Card title="Logs et métriques locaux" href="/fr/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+
+    Collectez des fichiers locaux et des métriques système sur macOS ou Linux.
+  </Card>
+</CardGroup>
+
+Pour explorer des données préchargées sans installer Docker, utilisez la [démo ClickStack hébergée](/fr/clickstack/example-datasets/remote-demo-data).
+
+<div id="generate-synthetic-data">
+  ### Générer des données synthétiques
+</div>
+
+Utilisez un générateur pour tester l’ingestion sans application ni jeu de données existants :
+
+<CardGroup cols={2}>
+  <Card title="Générer des données avec otelgen" icon="terminal" href="/fr/clickstack/example-datasets/otelgen">
+    Envoyez une courte rafale de logs, traces et métriques OTLP synthétiques.
+  </Card>
+
+  <Card title="Générer des données avec telemetrygen" icon="terminal" href="/fr/clickstack/example-datasets/telemetrygen">
+    Générez des signaux OpenTelemetry configurables pour plusieurs services.
+  </Card>
+</CardGroup>
+
+Consultez [toutes les données d’exemple et démos ClickStack](/fr/clickstack/example-datasets/index).
+
+<div id="prepare-for-production">
+  ### Préparer la mise en production
+</div>
+
+Consultez les recommandations relatives au déploiement et à la production avant d&#39;utiliser ClickStack pour des workloads durables :
+
+<CardGroup cols={2}>
+  <Card title="Passer en production" icon="shield" href="/fr/clickstack/managing/production">
+    Consultez les recommandations concernant les identifiants d&#39;ingestion, la sécurité, la rétention et l&#39;exploitation.
+  </Card>
+
+  <Card title="Choisir un modèle de déploiement" icon="server" href="/fr/clickstack/deployment/oss">
+    Comparez les options de déploiement open source pour votre environnement.
+  </Card>
+</CardGroup>

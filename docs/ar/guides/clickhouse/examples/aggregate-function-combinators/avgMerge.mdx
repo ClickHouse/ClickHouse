@@ -1,0 +1,32 @@
+---
+slug: '/examples/aggregate-function-combinators/avgMerge'
+title: 'avgMerge'
+description: 'مثال لاستخدام المُركِّب avgMerge'
+keywords: ['avg', 'merge', 'combinator', 'examples', 'avgMerge']
+sidebarTitle: 'avgMerge'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+يمكن تطبيق المُركِّب [`Merge`](/ar/reference/functions/aggregate-functions/combinators#-state)
+على الدالة [`avg`](/ar/reference/functions/aggregate-functions/avg)
+لإنتاج نتيجة نهائية من خلال دمج حالات التجميع الجزئية.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+يرتبط المُركِّب `Merge` ارتباطًا وثيقًا بالمُركِّب `State`. راجع
+[&quot;مثال لاستخدام avgState&quot;](/ar/guides/clickhouse/examples/aggregate-function-combinators/avgState#example-usage)
+للاطلاع على مثال لكلٍّ من `avgMerge` و`avgState`.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [`avg`](/ar/reference/functions/aggregate-functions/avg)
+* [`Merge`](/ar/reference/functions/aggregate-functions/combinators#-merge)
+* [`MergeState`](/ar/reference/functions/aggregate-functions/combinators#-mergestate)

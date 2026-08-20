@@ -1,0 +1,103 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/copilotkit
+sidebarTitle: 'CopilotKit 통합'
+title: 'CopilotKit과 ClickHouse MCP 서버로 AI Agent를 구축하는 방법'
+description: 'ClickHouse에 저장된 데이터로 ClickHouse MCP와 CopilotKit을 사용해 에이전트형 애플리케이션을 구축하는 방법을 알아봅니다'
+keywords: ['ClickHouse', 'MCP', 'copilotkit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+이 문서는 ClickHouse에 저장된 데이터를 사용해 에이전트형 애플리케이션을 구축하는 예시입니다. [ClickHouse MCP 서버](https://github.com/ClickHouse/mcp-clickhouse)를 사용해 ClickHouse의 데이터를 쿼리하고, 그 결과를 바탕으로 차트를 생성합니다.
+
+[CopilotKit](https://github.com/CopilotKit/CopilotKit)는 UI를 구축하고 사용자에게 채팅 인터페이스를 제공하는 데 사용됩니다.
+
+<Info>
+  **예시 코드**
+
+  이 예시의 코드는 [examples 리포지토리](https://github.com/ClickHouse/examples/edit/main/ai/mcp/copilotkit)에서 확인할 수 있습니다.
+</Info>
+
+<div id="prerequisites">
+  ## 사전 요구사항
+</div>
+
+* `Node.js >= 20.14.0`
+* `uv >= 0.1.0`
+
+<div id="install-dependencies">
+  ## 종속성 설치
+</div>
+
+프로젝트를 로컬에 복제합니다: `git clone https://github.com/ClickHouse/examples`를 실행한 다음
+`ai/mcp/copilotkit` 디렉터리로 이동합니다.
+
+이 섹션은 건너뛰고 `./install.sh` 스크립트를 실행하여 종속성을 설치하세요. 종속성을
+수동으로 설치하려면 아래 지침을 따르세요.
+
+<div id="install-dependencies-manually">
+  ## 종속성 수동 설치
+</div>
+
+1. 종속성 설치:
+
+Node 종속성을 설치하려면 `npm install`을 실행하십시오.
+
+2. mcp-clickhouse 설치:
+
+새 폴더 `external`을 만들고 그 안에 mcp-clickhouse 리포지토리를 클론하십시오.
+
+```sh
+mkdir -p external
+git clone https://github.com/ClickHouse/mcp-clickhouse external/mcp-clickhouse
+```
+
+Python 종속성을 설치하고 fastmcp CLI 도구를 추가하세요.
+
+```sh
+cd external/mcp-clickhouse
+uv sync
+uv add fastmcp
+```
+
+<div id="configure-the-application">
+  ## 애플리케이션 구성
+</div>
+
+`env.example` 파일을 `.env`로 복사한 다음, `ANTHROPIC_API_KEY`를 설정할 수 있도록 내용을 수정하십시오.
+
+<div id="use-your-own-llm">
+  ## 자체 LLM 사용하기
+</div>
+
+Anthropic 대신 다른 LLM 제공업체를 사용하려면
+Copilotkit 런타임을 수정해 다른 LLM 어댑터를 사용하면 됩니다.
+[여기](https://docs.copilotkit.ai/guides/bring-your-own-llm)에서 지원되는
+제공업체 목록을 확인할 수 있습니다.
+
+<div id="use-your-own-clickhouse-cluster">
+  ## 자체 ClickHouse 클러스터 사용
+</div>
+
+기본적으로 이 예시는
+[ClickHouse demo cluster](https://sql.clickhouse.com/)에 연결되도록 구성되어 있습니다. 다음 환경 변수를 설정하면 자체
+ClickHouse 클러스터에 연결할 수도 있습니다:
+
+* `CLICKHOUSE_HOST`
+* `CLICKHOUSE_PORT`
+* `CLICKHOUSE_USER`
+* `CLICKHOUSE_PASSWORD`
+* `CLICKHOUSE_SECURE`
+
+<div id="run-the-application">
+  ## 애플리케이션 실행
+</div>
+
+개발 서버를 시작하려면 `npm run dev`를 실행하세요.
+
+다음과 같은 프롬프트로 Agent를 테스트할 수 있습니다:
+
+> &quot;지난 10년 동안
+> Manchester의 가격 변동을 보여줘.&quot;
+
+결과를 보려면 브라우저에서 [http://localhost:3000](http://localhost:3000)을 여세요.

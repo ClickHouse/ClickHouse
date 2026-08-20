@@ -27,7 +27,7 @@ services:
             - "autoheal=true"
         cpus: 3
     autoheal:
-      image: willfarrell/autoheal:latest
+      image: willfarrell/autoheal:1.2.0
       stop_grace_period: 5s
       tty: true
       restart: always

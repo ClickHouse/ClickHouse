@@ -1,3 +1,5 @@
+-- Tags: no-azure-blob-storage
+
 CREATE TABLE nation(n_nationkey Int32, n_name String) ENGINE MergeTree ORDER BY n_nationkey;
 CREATE TABLE customer(c_custkey Int32, c_nationkey Int32, c_nationkey_copy Int32) ENGINE MergeTree ORDER BY c_custkey SETTINGS index_granularity=10;
 
@@ -28,9 +30,9 @@ SETTINGS enable_join_runtime_filters=0;
 SELECT count()
 FROM customer LEFT ANTI JOIN nation
 ON c_nationkey = n_nationkey AND n_name = 'FRANCE'
-SETTINGS enable_join_runtime_filters=1;
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;
 
 SELECT count()
 FROM customer LEFT ANTI JOIN (SELECT * FROM nation WHERE n_name = 'FRANCE') AS n
 ON c_nationkey = n.n_nationkey
-SETTINGS enable_join_runtime_filters=1;
+SETTINGS enable_join_runtime_filters=1, join_runtime_filter_min_probe_rows = 0;

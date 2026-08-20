@@ -9,7 +9,7 @@ namespace DB
 
 bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ASTTransactionControl::QueryType action;
+    ASTTransactionControl::QueryType action = {};
     UInt64 snapshot = 0;
 
     if (ParserKeyword(Keyword::BEGIN_TRANSACTION).ignore(pos, expected))
@@ -34,7 +34,7 @@ bool ParserTransactionControl::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     else
         return false;
 
-    auto ast = std::make_shared<ASTTransactionControl>(action);
+    auto ast = make_intrusive<ASTTransactionControl>(action);
     ast->snapshot = snapshot;
     node = ast;
     return true;

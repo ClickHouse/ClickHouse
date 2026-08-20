@@ -26,9 +26,9 @@ using Strings = std::vector<String>;
 class ASTShowCreateAccessEntityQuery : public ASTQueryWithOutput
 {
 public:
-    AccessEntityType type;
+    AccessEntityType type{};
     Strings names;
-    std::shared_ptr<ASTRowPolicyNames> row_policy_names;
+    boost::intrusive_ptr<ASTRowPolicyNames> row_policy_names;
 
     bool current_quota = false;
     bool current_user = false;

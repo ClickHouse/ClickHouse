@@ -36,13 +36,13 @@ class Event:
     timestamp: int  # Unix timestamp when event occurred
     sha: str  # Git commit SHA
     result: dict  # Top-level workflow result
-    ci_status: str  # Overall CI status (success/failure/pending)
+    ci_status: str  # Overall CI status (Result.Status value)
     ext: dict  # Additional extensible metadata (includes: branch, pr_number, pr_status, pr_title)
     linked_events: List["Event"] = dataclasses.field(default_factory=list)
 
 
 # Maximum number of days to retain non-open PRs in the timeline
-MAX_TIMELINE_DAYS = 120
+MAX_TIMELINE_DAYS = 30
 
 
 def _sanitize_s3_key_name(name: str) -> str:
@@ -78,14 +78,55 @@ class EventFeed:
         import time
 
         cutoff_timestamp = int(time.time()) - (MAX_TIMELINE_DAYS * 24 * 60 * 60)
+        running_cutoff_timestamp = int(time.time()) - (12 * 60 * 60)
+
+        def sanitize_event(e: Event) -> None:
+            if e.timestamp < running_cutoff_timestamp and (e.ci_status or "").upper() in (
+                "RUNNING",
+                "PENDING",
+            ):
+                e.ci_status = "FAIL"
+                if not isinstance(e.ext, dict):
+                    e.ext = {}
+                e.ext["is_cancelled"] = True
+
+            # Compact bloated result entries that were stored before the
+            # pruning was added to Result.to_event.  The feed only needs
+            # name+status from each sub-result and report_url from ext.
+            result = getattr(e, "result", None)
+            if isinstance(result, dict):
+                for key in ("start_time", "duration", "files", "assets", "links", "info"):
+                    if key in result:
+                        del result[key]
+                results = result.get("results")
+                if isinstance(results, list) and results:
+                    first = results[0]
+                    if isinstance(first, dict) and len(first) > 2:
+                        result["results"] = [
+                            {
+                                "name": r.get("name", ""),
+                                "status": r.get("status", ""),
+                            }
+                            for r in results
+                            if isinstance(r, dict)
+                        ]
+                ext = result.get("ext")
+                if isinstance(ext, dict) and len(ext) > 1:
+                    report_url = ext.get("report_url", "")
+                    result["ext"] = (
+                        {"report_url": report_url} if report_url else {}
+                    )
 
         # Remove existing events that match the incoming event
         event_pr_number = event.ext.get("pr_number", 0)
         event_repo_name = event.ext.get("repo_name", "")
         event_sha = event.sha
 
+        sanitize_event(event)
+
         filtered_events = []
         for e in self.events:
+            sanitize_event(e)
             e_pr_number = e.ext.get("pr_number", 0)
             e_repo_name = e.ext.get("repo_name", "")
             e_sha = e.sha
@@ -106,11 +147,53 @@ class EventFeed:
 
         self.events = filtered_events
 
+        # Ensure pr_status exists for PR events
+        if event_pr_number and event_pr_number > 0:
+            event.ext["pr_status"] = Event.PRStatus.OPEN
+
+        if event_pr_number == 0:
+            event.ext["pr_status"] = Event.PRStatus.MERGED
+
+        # If we received a merge-result event (pr_number == 0) that references a parent PR,
+        # mark that parent PR as merged.
+        if event_pr_number == 0:
+            parent_pr_number = event.ext.get("parent_pr_number", 0)
+            linked_pr_number = event.ext.get("linked_pr_number", 0)
+            if parent_pr_number and parent_pr_number > 0 and event_repo_name:
+                for e in self.events:
+                    e_pr_number = e.ext.get("pr_number", 0)
+                    e_repo_name = e.ext.get("repo_name", "")
+                    if (
+                        e_pr_number == parent_pr_number
+                        and e_repo_name == event_repo_name
+                    ):
+                        e.ext["pr_status"] = Event.PRStatus.MERGED
+                        break
+
+            if (
+                linked_pr_number
+                and linked_pr_number > 0
+                and linked_pr_number != parent_pr_number
+                and event_repo_name
+            ):
+                for e in self.events:
+                    e_pr_number = e.ext.get("pr_number", 0)
+                    e_repo_name = e.ext.get("repo_name", "")
+                    if (
+                        e_pr_number == linked_pr_number
+                        and e_repo_name == event_repo_name
+                    ):
+                        e.ext["pr_status"] = Event.PRStatus.MERGED
+                        break
+
         # Append the new event
         self.events.append(event)
 
         # Sort events by timestamp (newest first)
         self.events.sort(key=lambda e: e.timestamp, reverse=True)
+
+        for e in self.events:
+            sanitize_event(e)
 
         # Apply retention policy based on parent_pr_number grouping
         # Build a map of parent_pr_number -> list of events
@@ -262,7 +345,7 @@ class EventFeed:
             max_retries: Maximum retry attempts on conflicts (default: 3)
 
         Implements exponential backoff retry logic for handling concurrent updates.
-        On PreconditionFailed (ETag mismatch), retries with exponentially increasing delays.
+        On a lost race (PreconditionFailed / ConditionalRequestConflict), retries with exponentially increasing delays.
         """
         from botocore.exceptions import ClientError
 
@@ -274,7 +357,10 @@ class EventFeed:
                 break
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code")
-                if error_code == "PreconditionFailed" and attempt < max_retries - 1:
+                if (
+                    error_code in ("PreconditionFailed", "ConditionalRequestConflict")
+                    and attempt < max_retries - 1
+                ):
                     time.sleep(0.1 * (2**attempt))
                     continue
                 raise
@@ -317,6 +403,7 @@ class FeedSubscription:
     user_ids: List[str]
     user_email: str  # Email address of the user being tracked
     subscribed_at: str
+    user_prefs: dict = dataclasses.field(default_factory=dict)
 
     def to_s3(self, s3_path):
         """Save subscription to S3 storage.
@@ -368,6 +455,48 @@ class FeedSubscription:
         return self
 
     @classmethod
+    def get_subscription(cls, user_email, s3_path):
+        """Retrieve full subscription object for a given email from S3.
+
+        Backward compatible with older subscription files that do not include user_prefs.
+        """
+        import boto3
+        from botocore.exceptions import ClientError
+
+        assert s3_path
+        s3_bucket_name = s3_path.split("/")[0]
+        s3_prefix = "/".join(s3_path.split("/")[1:])
+        if not s3_bucket_name:
+            raise ValueError("s3_path must contain bucket name")
+
+        s3_key = (
+            f"{s3_prefix}/subscriptions/email_{_sanitize_s3_key_name(user_email)}.json"
+        )
+        s3_client = boto3.client("s3")
+
+        try:
+            response = s3_client.get_object(Bucket=s3_bucket_name, Key=s3_key)
+            json_data = response["Body"].read().decode("utf-8")
+            data_dict = json.loads(json_data)
+            if not isinstance(data_dict, dict):
+                return cls(
+                    user_ids=[], user_email=user_email, subscribed_at="", user_prefs={}
+                )
+
+            return cls(
+                user_ids=data_dict.get("user_ids", []) or [],
+                user_email=data_dict.get("user_email") or user_email,
+                subscribed_at=data_dict.get("subscribed_at", "") or "",
+                user_prefs=data_dict.get("user_prefs", {}) or {},
+            )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchKey":
+                return cls(
+                    user_ids=[], user_email=user_email, subscribed_at="", user_prefs={}
+                )
+            raise
+
+    @classmethod
     def get_user_ids(cls, user_email, s3_path):
         """Retrieve user_ids for a given email from S3.
 
@@ -415,8 +544,10 @@ class FeedSubscription:
         """
         from datetime import datetime, timezone
 
-        # Load existing subscription or create new
-        existing_user_ids = cls.get_user_ids(user_email, s3_path)
+        # Load existing subscription or create new (preserve user_prefs)
+        existing = cls.get_subscription(user_email, s3_path)
+        existing_user_ids = existing.user_ids
+        existing_user_prefs = existing.user_prefs
 
         # Add user_id if not already present
         if user_id not in existing_user_ids:
@@ -427,6 +558,7 @@ class FeedSubscription:
             user_ids=existing_user_ids,
             user_email=user_email,
             subscribed_at=datetime.now(timezone.utc).isoformat(),
+            user_prefs=existing_user_prefs,
         )
         subscription.to_s3(s3_path)
         return subscription
@@ -448,12 +580,17 @@ class FeedSubscription:
         import boto3
         from botocore.exceptions import ClientError
 
-        # Load existing subscription
-        existing_user_ids = cls.get_user_ids(user_email, s3_path)
+        # Load existing subscription (preserve user_prefs)
+        existing = cls.get_subscription(user_email, s3_path)
+        existing_user_ids = existing.user_ids
+        existing_user_prefs = existing.user_prefs
 
         # Remove user_id if present
         if user_id in existing_user_ids:
             existing_user_ids.remove(user_id)
+
+        if isinstance(existing_user_prefs, dict) and user_id in existing_user_prefs:
+            del existing_user_prefs[user_id]
 
         # Delete the reverse lookup file for this user
         s3_bucket_name = s3_path.split("/")[0]
@@ -471,6 +608,7 @@ class FeedSubscription:
             user_ids=existing_user_ids,
             user_email=user_email,
             subscribed_at=datetime.now(timezone.utc).isoformat(),
+            user_prefs=existing_user_prefs,
         )
         subscription.to_s3(s3_path)
         return subscription

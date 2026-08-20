@@ -1,0 +1,59 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>cardinality</name>
+            <values>
+                <value>1000</value>
+                <value>100000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- LIMIT with offset + length -->
+    <query>
+        SELECT number % {cardinality} AS k, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 5, 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Expensive BY expression -->
+    <query>
+        SELECT number, concat(toString(number), '-', lowerUTF8(toString(number * 31)), '-', toString(number % 97)) AS bucket
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY bucket
+        FORMAT NULL
+    </query>
+
+    <!-- Skewed key distribution: ~90% of rows fall into a single hot key, interleaved with cold keys -->
+    <query>
+        SELECT if(number % 10 = 0, number % {cardinality}, 0) AS k, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- UInt8 BY key: narrow integer type, 256 distinct groups -->
+    <query>
+        SELECT toUInt8(number % {cardinality}) AS k, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- LowCardinality(String) BY key -->
+    <query>
+        SELECT toLowCardinality(toString(number % {cardinality})) AS k, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY k
+        FORMAT NULL
+    </query>
+
+    <!-- Two String BY columns -->
+    <query>
+        SELECT toString(number % {cardinality}) AS k1, toString(number % 97) AS k2, number AS v
+        FROM numbers_mt(10000000)
+        LIMIT 10 BY k1, k2
+        FORMAT NULL
+    </query>
+</test>

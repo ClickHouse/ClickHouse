@@ -97,7 +97,7 @@ FileChecker::DataValidationTasksPtr FileChecker::getDataValidationTasks()
 std::optional<CheckResult> FileChecker::checkNextEntry(DataValidationTasksPtr & check_data_tasks) const
 {
     String name;
-    size_t expected_size;
+    size_t expected_size = 0;
     bool is_finished = check_data_tasks->next(name, expected_size);
     if (is_finished)
         return {};
@@ -191,7 +191,7 @@ void FileChecker::load()
     /// The JSON library does not support whitespace. We delete them. Inefficient.
     while (!in->eof())
     {
-        char c;
+        char c = 0;
         readChar(c, *in);
         if (!isspace(c))
             writeChar(c, out);

@@ -3,9 +3,10 @@
 #include <IO/WriteBufferFromString.h>
 
 #include <iostream>
+#include <Examples/clickhouse_examples.h>
 
 
-int main(int, char **)
+int mainEntryExampleIoOperators(int, char **)
 {
     {
         DB::WriteBufferFromFileDescriptor buf(STDOUT_FILENO);

@@ -10,7 +10,6 @@
 #include <Functions/IFunction.h>
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
-#include <base/range.h>
 
 
 namespace DB
@@ -25,12 +24,16 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionH3Line : public IFunction
+class FunctionH3Line final : public IFunction
 {
 public:
     static constexpr auto name = "h3Line";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3Line>(); }
+    H3Validator validator;
+
+    explicit FunctionH3Line(const ContextPtr & context) : validator(context) {}
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3Line>(context); }
 
     std::string getName() const override { return name; }
 
@@ -86,10 +89,10 @@ public:
         const auto & data_end_index = col_end_index->getData();
 
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = typeid_cast<ColumnUInt64 &>(dst->getData());
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
 
         /// First calculate array sizes for all rows and save them in Offsets
         UInt64 current_offset = 0;
@@ -97,15 +100,21 @@ public:
         {
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
-            validateH3Cell(start);
-            validateH3Cell(end);
+            const bool start_valid = validator.validateCell(start);
+            const bool end_valid = validator.validateCell(end);
+            if (!start_valid || !end_valid)
+            {
+                dst_offsets[row] = current_offset;
+                continue;
+            }
 
-            auto size = gridPathCellsSize(start, end);
-            if (size < 0)
+            int64_t size = 0;
+            H3Error err = gridPathCellsSize(start, end, &size);
+            if (err)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Line cannot be computed between start H3 index {} and end H3 index {}",
-                    start, end);
+                    "Line cannot be computed between start H3 index {} and end H3 index {}, error: {}",
+                    start, end, err);
 
             current_offset += size;
             dst_offsets[row] = current_offset;
@@ -122,11 +131,15 @@ public:
             const UInt64 start = data_start_index[row];
             const UInt64 end = data_end_index[row];
             const auto size = dst_offsets[row] - current_offset;
+            if (size == 0)
+            {
+                continue;
+            }
             gridPathCells(start, end, ptr + current_offset);
             current_offset += size;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 };
 

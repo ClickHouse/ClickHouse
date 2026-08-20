@@ -4,6 +4,6 @@ create table data_add_minmax_index_for_numeric_columns (key Int, value Int) engi
 select *, *+1000000 from numbers(100000) settings max_insert_threads=1;
 -- { echoOn }
 select * from mergeTreeAnalyzeIndexes(currentDatabase(), data_add_minmax_index_for_numeric_columns, key = 8193);
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data_add_minmax_index_for_numeric_columns, key = 8193, 'no_such_part');
-select * from mergeTreeAnalyzeIndexes(currentDatabase(), data_add_minmax_index_for_numeric_columns, key = 8193, '.*|no_such_part');
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data_add_minmax_index_for_numeric_columns, key = 8193, ['no_such_part']);
+select * from mergeTreeAnalyzeIndexes(currentDatabase(), data_add_minmax_index_for_numeric_columns, key = 8193, []);
 -- { echoOff }

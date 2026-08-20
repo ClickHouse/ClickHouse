@@ -3,4 +3,4 @@ Test L2DistanceTransposed(qbit, ref_vec, precision)
 1	0
 Test L2DistanceTransposed(qbit.1, ..., qbit.precision, qbit_dim, ref_vec)
 1	0
-1	0.11385936947447674
+1	0.1

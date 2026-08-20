@@ -41,4 +41,5 @@ drop table buffer_flush_by_flush_time;
 
 system flush logs text_log;
 -- to avoid flakiness we only check that number of logs < 20, instead of some strict values
-select extractAll(logger_name, 'StorageBuffer \\([^.]+\\.([^)]+)\\)')[1] as table_name, max2(count(), 20) from system.text_log where logger_name LIKE format('%StorageBuffer ({}.%', currentDatabase()) group by 1 order by 1;
+select extractAll(logger_name, 'StorageBuffer \\([^.]+\\.([^)]+)\\)')[1] as table_name, max2(count(), 20) from system.text_log where event_date >= yesterday() AND event_time >= now() - 600 AND logger_name LIKE format('%StorageBuffer ({}.%', currentDatabase()) group by 1 order by 1
+SETTINGS max_rows_to_read = 0; -- system.text_log can be really big

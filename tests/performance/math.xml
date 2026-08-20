@@ -6,28 +6,43 @@
                <value>atan</value>
                <value>cbrt</value>
                <value>cos</value>
+               <value>sin</value>
+               <value>tan</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>func_slow_positive</name>
+           <values>
                <value>lgamma</value>
                <value>tgamma</value>
                <value>log10</value>
-               <value>sin</value>
-               <value>tan</value>
            </values>
         </substitution>
         <substitution>
            <name>func</name>
            <values>
                <value>exp</value>
-               <value>log</value>
                <value>exp2</value>
-               <value>log2</value>
                <value>exp10</value>
                <value>sqrt</value>
                <value>erf</value>
                <value>erfc</value>
-               <value>asin</value>
-               <value>acos</value>
                <value>sigmoid</value>
                <value>tanh</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>func_positive</name>
+           <values>
+               <value>log</value>
+               <value>log2</value>
+           </values>
+        </substitution>
+        <substitution>
+           <name>func_bounded</name>
+           <values>
+               <value>asin</value>
+               <value>acos</value>
            </values>
         </substitution>
         <substitution>
@@ -38,8 +53,27 @@
                 <value>number</value>
             </values>
         </substitution>
+        <substitution>
+            <name>arg_positive</name>
+            <values>
+                <value>toFloat64(number + 1)</value>
+                <value>toFloat32(number + 1)</value>
+                <value>number + 1</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>arg_bounded</name>
+            <values>
+                <value>toFloat64(number % 1000) / 1000.0</value>
+                <value>toFloat32(number % 1000) / 1000.0</value>
+                <value>(number % 1000) / 1000.0</value>
+            </values>
+        </substitution>
     </substitutions>
 
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func}({arg}))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func_positive}({arg_positive}))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore({func_bounded}({arg_bounded}))</query>
     <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore({func_slow}({arg}))</query>
+    <query>SELECT count() FROM numbers(10000000) WHERE NOT ignore({func_slow_positive}({arg_positive}))</query>
 </test>

@@ -3,8 +3,12 @@
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterUndropQuery.h>
+#include <Interpreters/ProcessList.h>
 #include <Access/Common/AccessRightsElement.h>
 #include <Parsers/ASTUndropQuery.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 #include "config.h"
 
@@ -52,7 +56,7 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
         query.setDatabase(table_id.database_name);
     }
 
-    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name);
+    auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, nullptr);
 
     auto database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->getEngineName() == "Replicated")
@@ -63,7 +67,22 @@ BlockIO InterpreterUndropQuery::executeToTable(ASTUndropQuery & query)
 
     database->checkMetadataFilenameAvailability(table_id.table_name);
 
-    DatabaseCatalog::instance().undropTable(table_id);
+#if CLICKHOUSE_CLOUD
+    if (SharedDatabaseCatalog::shouldReplicateQuery(getContext(), query_ptr))
+    {
+        SharedDatabaseCatalog::instance().undropTable(database->getUUID(), table_id.table_name);
+        return {};
+    }
+#endif
+
+    QueryStatusPtr query_status = context->getProcessListElementSafe();
+    auto throw_if_cancelled = [&]()
+    {
+        if (query_status)
+            query_status->throwIfKilled();
+    };
+
+    DatabaseCatalog::instance().undropTable(table_id, throw_if_cancelled);
     return {};
 }
 
@@ -76,6 +95,7 @@ AccessRightsElements InterpreterUndropQuery::getRequiredAccessForDDLOnCluster() 
     return required_access;
 }
 
+void registerInterpreterUndropQuery(InterpreterFactory & factory);
 void registerInterpreterUndropQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

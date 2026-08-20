@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tags: long, no-fasttest, no-parallel, no-random-settings, no-flaky-check, no-distributed-cache
 # Tag no-flaky-check -- access to system.remote_data_path is too slow with thread fuzzer enabled
+# Tag no-distributed-cache -- This test aims to test filesystem cache
 
 # set -x
 
@@ -11,6 +12,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/cache.lib
 
 set -e
+
+function wait_for_cache_cleanup()
+{
+    local max_tries=30
+    # Wait for all queries to finish (query may still be running if a thread is killed by timeout)
+    local num_tries=0
+    while [[ $($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$1'") -ne 0 ]]; do
+        sleep 1;
+        num_tries=$((num_tries+1))
+        if [ $num_tries -eq $max_tries ]; then
+            break
+        fi
+    done
+}
 
 for disk in 's3_disk' 'local_disk' 'azure'; do
     echo "Using disk: $disk"
@@ -39,7 +54,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
     $CLICKHOUSE_CLIENT --query "SELECT * FROM test_02286 FORMAT Null"
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
-    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM DROP FILESYSTEM CACHE 'ff'; --{serverError 36}"
+    $CLICKHOUSE_CLIENT --multiline --query "SYSTEM CLEAR FILESYSTEM CACHE 'ff'; --{serverError 36}"
 
     $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
 
@@ -60,6 +75,7 @@ for disk in 's3_disk' 'local_disk' 'azure'; do
 
     $CLICKHOUSE_CLIENT --query "DROP TABLE test_02286 SYNC"
 
+    wait_for_cache_cleanup "$cache_name"
     cache_entries=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE cache_name = '$cache_name'")
     echo "$cache_entries"
     # system.remote_data_paths is very slow for web disks, so let's avoid extra

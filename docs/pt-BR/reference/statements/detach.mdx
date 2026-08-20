@@ -1,0 +1,73 @@
+---
+description: 'Documentação da instrução DETACH'
+sidebarTitle: 'DETACH'
+slug: /sql-reference/statements/detach
+title: 'Instrução DETACH'
+doc_type: 'reference'
+---
+
+Faz com que o servidor &quot;esqueça&quot; a existência de uma tabela, uma visão materializada, um dicionário ou um banco de dados.
+
+**Sintaxe**
+
+```sql
+DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
+```
+
+Desanexar não exclui os dados nem os metadados de uma tabela, de uma visão materializada, de um dicionário ou de um banco de dados. Se uma entidade não foi desanexada `PERMANENTLY`, na próxima inicialização do servidor ele lerá os metadados e anexará a tabela/visão/dicionário/banco de dados novamente. Se uma entidade foi desanexada `PERMANENTLY`, não haverá reanexação automática.
+
+Independentemente de uma tabela, um dicionário ou um banco de dados ter sido desanexado permanentemente ou não, em ambos os casos você pode anexá-los novamente usando a consulta [ATTACH](/pt-BR/reference/statements/attach).
+As tabelas de log do sistema também podem ser anexadas novamente (por exemplo, `query_log`, `text_log` etc.). Outras tabelas do sistema n&#39;o podem ser reanexadas. Na próxima inicialização do servidor, ele anexará essas tabelas novamente.
+
+`ATTACH MATERIALIZED VIEW` não funciona com a sintaxe curta (sem `SELECT`), mas você pode anexá-la usando a consulta `ATTACH TABLE`.
+
+Observe que você não pode desanexar permanentemente uma tabela que já esteja desanexada (temporariamente). Mas pode anexá-la novamente e depois desanexá-la permanentemente outra vez.
+
+Além disso, você não pode fazer [DROP](/pt-BR/reference/statements/drop#drop-table) da tabela desanexada, nem executar [CREATE TABLE](/pt-BR/reference/statements/create/table) com o mesmo nome de uma tabela desanexada permanentemente, nem substituí-la por outra tabela com a consulta [RENAME TABLE](/pt-BR/reference/statements/rename).
+
+O modificador `SYNC` executa a ação sem atraso.
+
+**Exemplo**
+
+Criando uma tabela:
+
+```sql title="Query"
+CREATE TABLE test ENGINE = MergeTree ORDER BY () AS SELECT * FROM numbers(10);
+SELECT * FROM test;
+```
+
+```text title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+Desanexar a tabela:
+
+```sql title="Query"
+DETACH TABLE test;
+SELECT * FROM test;
+```
+
+```text title="Response"
+Received exception from server (version 21.4.1):
+Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Table default.test does not exist.
+```
+
+<Note>
+  No ClickHouse Cloud, os usuários devem usar a cláusula `PERMANENTLY`, por exemplo, `DETACH TABLE <table> PERMANENTLY`. Se essa cláusula não for usada, as tabelas serão reanexadas na reinicialização do cluster, por exemplo, durante atualizações.
+</Note>
+
+**Veja também**
+
+* [Visão materializada](/pt-BR/reference/statements/create/view#materialized-view)
+* [Dicionários](/pt-BR/reference/statements/create/dictionary)

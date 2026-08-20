@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -28,12 +29,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket : public IFunction
+class FunctionWidthBucket final : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -121,7 +121,7 @@ class FunctionWidthBucket : public IFunction
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "The calculation resulted in NaN or Inf which is unexpected in function {}.", getName());
         }
-        return static_cast<TResultType>(count * relative_bucket + 1);
+        return static_cast<TResultType>(static_cast<Float64>(count) * relative_bucket + 1);
     }
 
     template <is_any_of<UInt8, UInt16, UInt32, UInt64> TCountType>
@@ -130,7 +130,7 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> cast_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -189,28 +189,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 4; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        for (const auto argument_index : collections::range(0, 3))
-        {
-            if (!isNativeNumber(arguments[argument_index]))
-            {
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The first three arguments of function {} must be a Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32 "
-                    "or Float64.",
-                    getName());
-            }
-        }
-        if (!WhichDataType(arguments[3]).isNativeUInt())
-        {
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The last argument of function {} must be UInt8, UInt16, UInt32 or UInt64, found {}.",
-                getName(),
-                arguments[3]->getName());
-        }
-        switch (arguments[3]->getTypeId())
+        FunctionArgumentDescriptors mandatory_args{
+            {"operand", isNativeNumber, nullptr, "native numeric"},
+            {"min_range", isNativeNumber, nullptr, "native numeric"},
+            {"max_range", isNativeNumber, nullptr, "native numeric"},
+            {"num_buckets", isNativeUInt, nullptr, "UInt8, UInt16, UInt32 or UInt64"}
+        };
+
+        validateFunctionArguments(*this, arguments, mandatory_args);
+
+        switch (arguments[3].type->getTypeId())
         {
             case TypeIndex::UInt8:
                 return std::make_shared<DataTypeUInt16>();

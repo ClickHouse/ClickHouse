@@ -1,0 +1,16 @@
+---
+title: Crear usuario de ingestión
+---
+
+Recomendamos crear un usuario específico para el collector en lugar de reutilizar `default`. Conéctese a su servicio desde SQL Console y ejecute:
+
+```sql
+CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+```
+
+<Tip>
+  Reemplaza la contraseña en el fragmento anterior por un valor seguro.
+</Tip>
+
+El collector crea el esquema de logs, trazas y métricas dentro de la base de datos `otel` la primera vez que se utiliza. Para obtener más información sobre la configuración de usuarios en producción, consulta [Pasar a producción](/es/clickstack/managing/production#create-a-database-ingestion-user-managed).

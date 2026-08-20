@@ -26,6 +26,7 @@ void RawBLOBRowOutputFormat::writeField(const IColumn & column, const ISerializa
 }
 
 
+void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory)
 {
     factory.registerOutputFormat("RawBLOB", [](
@@ -36,6 +37,9 @@ void registerOutputFormatRawBLOB(FormatFactory & factory)
     {
         return std::make_shared<RawBLOBRowOutputFormat>(buf, std::make_shared<const Block>(sample));
     });
+
+    /// The output is a verbatim copy of the column bytes, which are not guaranteed to be valid UTF-8 text.
+    factory.markOutputFormatMayProduceRawBytes("RawBLOB");
 }
 
 }

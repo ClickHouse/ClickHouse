@@ -26,7 +26,7 @@ namespace ErrorCodes
   * In fact it calculate the number of Unicode code points.
   * It does not support zero width and full width characters, combining characters, etc.
   */
-class FunctionVisibleWidth : public IFunction
+class FunctionVisibleWidth final : public IFunction
 {
 private:
     UInt64 behavior;

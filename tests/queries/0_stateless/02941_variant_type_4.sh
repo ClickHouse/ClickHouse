@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-msan
+# Tags: long, no-msan, no-azure-blob-storage
 # msan: too slow
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

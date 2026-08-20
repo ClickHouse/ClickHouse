@@ -1,0 +1,20 @@
+-- { echo }
+
+-- A negative LIMIT BY / OFFSET (and plain negative LIMIT) chooses which rows survive from the end of the
+-- input, so a feeding ORDER BY is part of the result and is never redundant. removeRedundantSorting must
+-- not drop it, even when an outer ORDER BY would otherwise let it. The outer ORDER BY below both triggers
+-- removeRedundantSorting and makes the output deterministic.
+DROP TABLE IF EXISTS test_neg_redundant_sort;
+CREATE TABLE test_neg_redundant_sort (k UInt32, v UInt32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_neg_redundant_sort VALUES (1, 30), (1, 10), (1, 20), (2, 25), (2, 5), (2, 15);
+
+-- Negative LIMIT BY keeps, per key, the row with the largest v (the last in v order): (1,30) and (2,25).
+SELECT k, v FROM (SELECT k, v FROM test_neg_redundant_sort ORDER BY v LIMIT -1 BY k) ORDER BY k, v;
+
+-- Negative OFFSET drops the largest v (30) and keeps the rest.
+SELECT v FROM (SELECT v FROM test_neg_redundant_sort ORDER BY v OFFSET -1) ORDER BY v;
+
+-- Plain negative LIMIT keeps the two largest v (25, 30).
+SELECT v FROM (SELECT v FROM test_neg_redundant_sort ORDER BY v LIMIT -2) ORDER BY v;
+
+DROP TABLE test_neg_redundant_sort;

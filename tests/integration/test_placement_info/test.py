@@ -7,6 +7,8 @@ from helpers.mock_servers import start_mock_servers
 
 METADATA_SERVER_HOSTNAME = "node_imds"
 METADATA_SERVER_PORT = 8080
+METADATA_SERVER_V2_HOSTNAME = "node_imds_v2"
+METADATA_SERVER_V2_PORT = 8081
 
 cluster = ClickHouseCluster(__file__)
 node_imds = cluster.add_instance(
@@ -14,6 +16,14 @@ node_imds = cluster.add_instance(
     main_configs=["configs/imds_bootstrap.xml"],
     env_variables={
         "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"http://{METADATA_SERVER_HOSTNAME}:{METADATA_SERVER_PORT}",
+    },
+    stay_alive=True,
+)
+node_imds_v2 = cluster.add_instance(
+    "node_imds_v2",
+    main_configs=["configs/imds_bootstrap.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_SERVICE_ENDPOINT": f"http://{METADATA_SERVER_V2_HOSTNAME}:{METADATA_SERVER_V2_PORT}",
     },
     stay_alive=True,
 )
@@ -42,7 +52,12 @@ def start_metadata_server(started_cluster):
                 "simple_server.py",
                 METADATA_SERVER_HOSTNAME,
                 METADATA_SERVER_PORT,
-            )
+            ),
+            (
+                "imdsv2_server.py",
+                METADATA_SERVER_V2_HOSTNAME,
+                METADATA_SERVER_V2_PORT,
+            ),
         ],
     )
 
@@ -67,6 +82,24 @@ def test_placement_info_from_imds():
 
     node_imds.query("SYSTEM FLUSH LOGS")
     assert node_imds.contains_in_log(
+        "CloudPlacementInfo: Loaded info: availability_zone: ci-test-1a"
+    )
+
+
+def test_placement_info_from_imdsv2_only():
+    # Regression test for #81402: an EC2 instance configured with
+    # "IMDSv2 only (token required)" rejects unauthenticated GETs
+    # against the metadata service. The mock server here only honors
+    # GETs that present a freshly-issued IMDSv2 session token.
+    with open(os.path.join(os.path.dirname(__file__), "configs/imds.xml"), "r") as f:
+        node_imds_v2.replace_config(
+            "/etc/clickhouse-server/config.d/imds_bootstrap.xml", f.read()
+        )
+    node_imds_v2.stop_clickhouse(kill=True)
+    node_imds_v2.start_clickhouse()
+
+    node_imds_v2.query("SYSTEM FLUSH LOGS")
+    assert node_imds_v2.contains_in_log(
         "CloudPlacementInfo: Loaded info: availability_zone: ci-test-1a"
     )
 

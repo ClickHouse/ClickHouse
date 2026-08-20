@@ -11,7 +11,7 @@ namespace DB
 
 bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto query = std::make_shared<ASTUpdateQuery>();
+    auto query = make_intrusive<ASTUpdateQuery>();
     node = query;
 
     ParserKeyword s_update(Keyword::UPDATE);

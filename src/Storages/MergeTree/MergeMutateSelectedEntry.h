@@ -45,13 +45,16 @@ struct MergeMutateSelectedEntry
     CurrentlyMergingPartsTaggerPtr tagger;
     MutationCommandsConstPtr commands;
     MergeTreeTransactionPtr txn;
+    Strings mutation_ids; /// List of mutation version strings being applied
     bool finalized{false};
     MergeMutateSelectedEntry(FutureMergedMutatedPartPtr future_part_, CurrentlyMergingPartsTaggerPtr tagger_,
-                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR)
+                             MutationCommandsConstPtr commands_, const MergeTreeTransactionPtr & txn_ = NO_TRANSACTION_PTR,
+                             Strings mutation_ids_ = {})
         : future_part(future_part_)
         , tagger(std::move(tagger_))
         , commands(commands_)
         , txn(txn_)
+        , mutation_ids(std::move(mutation_ids_))
     {}
 
     void finalize();

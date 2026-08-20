@@ -23,17 +23,25 @@ class MockControl:
         self._container = container
         self._port = port
 
-    def reset(self):
-        response = self._cluster.exec_in_container(
-            self._cluster.get_container_id(self._container),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:{self._port}/mock_settings/reset",
-            ],
-            nothrow=True,
-        )
+    def _apply(self, url):
+        # Retry while the flooded mock is briefly unreachable. Each attempt is short
+        # and the total wait is capped, so a wedged mock that accepts the connection
+        # but never replies fails within the window instead of stalling for minutes.
+        response = ""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            response = self._cluster.exec_in_container(
+                self._cluster.get_container_id(self._container),
+                ["curl", "-s", "--connect-timeout", "1", "--max-time", "1", url],
+                nothrow=True,
+            )
+            if response == "OK":
+                return
+            time.sleep(0.5)
         assert response == "OK", response
+
+    def reset(self):
+        self._apply(f"http://localhost:{self._port}/mock_settings/reset")
 
     def setup_action(self, when, count=None, after=None, action=None, action_args=None):
         url = f"http://localhost:{self._port}/mock_settings/{when}?nothing=1"
@@ -51,16 +59,7 @@ class MockControl:
             for x in action_args:
                 url += f"&action_args={x}"
 
-        response = self._cluster.exec_in_container(
-            self._cluster.get_container_id(self._container),
-            [
-                "curl",
-                "-s",
-                url,
-            ],
-            nothrow=True,
-        )
-        assert response == "OK", response
+        self._apply(url)
 
     def setup_at_object_upload(self, **kwargs):
         self.setup_action("at_object_upload", **kwargs)
@@ -75,28 +74,14 @@ class MockControl:
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
     def setup_fake_puts(self, part_length):
-        response = self._cluster.exec_in_container(
-            self._cluster.get_container_id(self._container),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}",
-            ],
-            nothrow=True,
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}"
         )
-        assert response == "OK", response
 
     def setup_fake_multpartuploads(self):
-        response = self._cluster.exec_in_container(
-            self._cluster.get_container_id(self._container),
-            [
-                "curl",
-                "-s",
-                f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?",
-            ],
-            nothrow=True,
+        self._apply(
+            f"http://localhost:{self._port}/mock_settings/setup_fake_multpartuploads?"
         )
-        assert response == "OK", response
 
     def setup_slow_answers(
         self, minimal_length=0, timeout=None, probability=None, count=None
@@ -112,6 +97,17 @@ class MockControl:
 
         if probability is not None:
             url += f"&probability={probability}"
+
+        if count is not None:
+            url += f"&count={count}"
+
+        self._apply(url)
+
+    def setup_slow_get_answers(self, timeout=None, count=None):
+        url = f"http://localhost:{self._port}/mock_settings/slow_get?nothing=1"
+
+        if timeout is not None:
+            url += f"&timeout={timeout}"
 
         if count is not None:
             url += f"&count={count}"
@@ -198,6 +194,27 @@ class _ServerRuntime:
                         ):
                             self.count -= 1
                             return _runtime.slow_put.timeout
+            return None
+
+    class SlowGet:
+        def __init__(
+            self,
+            lock,
+            timeout_=None,
+            count_=None,
+        ):
+            self.lock = lock
+            self.timeout = timeout_ if timeout_ is not None else 0.1
+            self.count = count_ if count_ is not None else INF_COUNT
+
+        def __str__(self):
+            return f"timeout:{self.timeout} count:{self.count}"
+
+        def get_timeout(self):
+            with self.lock:
+                if self.count > 0:
+                    self.count -= 1
+                    return self.timeout
             return None
 
     class Expected500ErrorAction:
@@ -414,6 +431,7 @@ class _ServerRuntime:
         self.fake_put_when_length_bigger = None
         self.fake_uploads = dict()
         self.slow_put = None
+        self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
 
@@ -434,6 +452,7 @@ class _ServerRuntime:
             self.fake_put_when_length_bigger = None
             self.fake_uploads = dict()
             self.slow_put = None
+            self.slow_get = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
             self.at_listing = None
@@ -598,6 +617,16 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             self.log_message("set slow put %s", _runtime.slow_put)
             return self._ok()
 
+        if path[1] == "slow_get":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.slow_get = _ServerRuntime.SlowGet(
+                lock=_runtime.lock,
+                timeout_=_and_then(params.get("timeout", [None])[0], float),
+                count_=_and_then(params.get("count", [None])[0], int),
+            )
+            self.log_message("set slow get %s", _runtime.slow_get)
+            return self._ok()
+
         if path[1] == "setup_fake_multpartuploads":
             _runtime.fake_multipart_upload = True
             self.log_message("set setup_fake_multpartuploads")
@@ -643,6 +672,12 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         if is_listing and _runtime.at_listing is not None:
             if _runtime.at_listing.has_effect():
                 return _runtime.at_listing.inject_error(self)
+
+        if not is_listing and _runtime.slow_get is not None:
+            timeout = _runtime.slow_get.get_timeout()
+            if timeout is not None:
+                self.log_message("slow get %s", timeout)
+                time.sleep(timeout)
 
         self.log_message("get redirect")
         return self.redirect()
@@ -720,6 +755,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
         return self.redirect()
 
     def do_HEAD(self):
+        if _runtime.slow_get is not None:
+            timeout = _runtime.slow_get.get_timeout()
+            if timeout is not None:
+                self.log_message("slow head %s", timeout)
+                time.sleep(timeout)
         self.redirect()
 
     def do_DELETE(self):

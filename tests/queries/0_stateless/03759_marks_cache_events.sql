@@ -21,7 +21,7 @@ select * from data format Null settings load_marks_asynchronously=1;
 system flush logs query_log;
 select query_kind, Settings['load_marks_asynchronously'] load_marks_asynchronously, ProfileEvents['MarkCacheHits'] hits, ProfileEvents['MarkCacheMisses'] misses
   from system.query_log
-  where current_database = currentDatabase() and query_kind in ('Select', 'Insert') and type != 'QueryStart'
+  where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() and query_kind in ('Select', 'Insert') and type != 'QueryStart'
   order by event_time_microseconds
   format CSVWithNames;
 
@@ -38,6 +38,6 @@ optimize table data final;
 system flush logs part_log;
 select part_name, ProfileEvents['MarkCacheHits'] hits, ProfileEvents['MarkCacheMisses'] misses
   from system.part_log
-  where database = currentDatabase() and event_type = 'MergeParts'
+  where event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() and event_type = 'MergeParts'
   order by event_time_microseconds
   format CSVWithNames;

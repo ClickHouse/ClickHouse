@@ -67,6 +67,7 @@ AggregateFunctionPtr createAggregateFunctionStudentTTestOneSample(
 
 }
 
+void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & factory);
 void registerAggregateFunctionStudentTTestOneSample(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description_studentTTestOneSample = R"(
@@ -83,7 +84,7 @@ The optional `confidence_level` enables confidence interval calculation.
 **See Also**
 
 - [Student's t-test](https://en.wikipedia.org/wiki/Student%27s_t-test)
-- [studentTTest function](/sql-reference/aggregate-functions/reference/studentttest)
+- [studentTTest function](/reference/functions/aggregate-functions/studentTTest)
     )";
     FunctionDocumentation::Syntax syntax_studentTTestOneSample = R"(
 studentTTestOneSample([confidence_level])(sample_data, population_mean)
@@ -118,7 +119,7 @@ SELECT studentTTestOneSample(0.95)(value, 20.0) FROM t;
     FunctionDocumentation::Category category_studentTTestOneSample = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_studentTTestOneSample = {description_studentTTestOneSample, syntax_studentTTestOneSample, arguments_studentTTestOneSample, parameters_studentTTestOneSample, returned_value_studentTTestOneSample, examples_studentTTestOneSample, introduced_in_studentTTestOneSample, category_studentTTestOneSample};
 
-    factory.registerFunction("studentTTestOneSample", {createAggregateFunctionStudentTTestOneSample, {}, documentation_studentTTestOneSample});
+    factory.registerFunction("studentTTestOneSample", {createAggregateFunctionStudentTTestOneSample, documentation_studentTTestOneSample});
 }
 
 }

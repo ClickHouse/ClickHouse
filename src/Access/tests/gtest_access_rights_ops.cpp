@@ -545,6 +545,46 @@ TEST(AccessRights, Filter)
     root.revoke(AccessType::READ, "URL");
     res = root.getFilters("URL");
     ASSERT_EQ(res.size(), 0);
+
+    res = root.getFilters("NoSuchParam");
+    ASSERT_EQ(res.size(), 0);
+}
+
+TEST(AccessRights, FilterDoesNotMutate)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://url1.*");
+
+    /// operator = is a deep copy, so `before` is an independent snapshot of the tree.
+    const AccessRights before = root;
+    const auto nodes_before = root.dumpNodes();
+
+    /// A parameter that is absent from the tree: "URL" shares no first character with
+    /// "S3", so the lookup misses and a mutating find-or-create would insert nodes.
+    root.getFilters("URL");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
+
+    /// A parameter that is present must likewise leave the tree untouched.
+    root.getFilters("S3");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
+}
+
+TEST(AccessRights, FilterDoesNotMutateOnPrefixSplit)
+{
+    AccessRights root;
+    root.grant(AccessType::READ, "S3", "s3://url1.*");
+
+    const AccessRights before = root;
+    const auto nodes_before = root.dumpNodes();
+
+    /// "SQLITE" shares its first character with the existing "S3" node but mismatches
+    /// after it, so a mutating find-or-create would rename "S3" in place and splice it
+    /// into a new "S" parent. Both are real source names.
+    root.getFilters("SQLITE");
+    ASSERT_EQ(root, before);
+    ASSERT_EQ(root.dumpNodes(), nodes_before);
 }
 
 TEST(AccessRights, RevokeWithParameters)
@@ -560,6 +600,27 @@ TEST(AccessRights, RevokeWithParameters)
     root.grantWithGrantOption(AccessType::CREATE_USER);
     root.revokeWildcard(AccessType::SELECT, "default", "foo", "bar");
     ASSERT_EQ(root.toString(), "GRANT SELECT ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE SELECT(bar*) ON default.foo");
+}
+
+TEST(AccessRights, RevokeWithParametersWithGrantOption)
+{
+    AccessRights root;
+    root.grantWithGrantOption(AccessType::ALL);
+    root.revokeWildcard(AccessType::INTROSPECTION, "system");  // global grant, do nothing for database revoke
+    ASSERT_EQ(root.toString(), "GRANT ALL ON *.* WITH GRANT OPTION");
+
+    root = {};
+    root.grant(AccessType::SELECT);
+    root.grant(AccessType::INTROSPECTION);
+    root.grant(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.*, GRANT CREATE USER ON *, REVOKE CREATE USER ON system*");
+
+    root.grantWithGrantOption(AccessType::SELECT);
+    root.grantWithGrantOption(AccessType::INTROSPECTION);
+    root.grantWithGrantOption(AccessType::CREATE_USER);
+    root.revokeWildcard(AccessType::CREATE_USER, "system");
+    ASSERT_EQ(root.toString(), "GRANT SELECT, INTROSPECTION ON *.* WITH GRANT OPTION, GRANT CREATE USER ON * WITH GRANT OPTION, REVOKE CREATE USER ON system*");
 }
 
 TEST(AccessRights, ParialRevokeWithGrantOption)
@@ -903,6 +964,59 @@ TEST(AccessRights, ContainsWithWildcardsAndPartialRevokes)
     lhs.grantWildcard(AccessType::SELECT, "testing");
     rhs.grantWildcard(AccessType::SELECT, "test");
     ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_FALSE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::CREATE_ROLE);
+    lhs.grant(AccessType::ROLE_ADMIN);
+    lhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    lhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.grantWithGrantOption(AccessType::SET_DEFINER);
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-1");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-2");
+    rhs.revoke(AccessType::SET_DEFINER, "internal-user-3");
+    ASSERT_TRUE(lhs.contains(rhs));
+
+    lhs = {};
+    rhs = {};
+    lhs.grant(AccessType::SELECT);
+    lhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.grant(AccessType::SELECT);
+    rhs.revoke(AccessType::SELECT, "secret_db1");
+    rhs.revoke(AccessType::SELECT, "secret_db2");
+    rhs.revoke(AccessType::SELECT, "secret_db3");
+    ASSERT_TRUE(lhs.contains(rhs));
+    ASSERT_FALSE(rhs.contains(lhs));
 }
 
 TEST(AccessRights, ColumnLevelWildcardOperations)

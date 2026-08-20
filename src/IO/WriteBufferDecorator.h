@@ -53,16 +53,24 @@ public:
         {
             /// Try to flush compression buffers before cancelling.
             /// Such buffers don't guarantee that they are flushed on next(), although callers may expect so
-            /// But if the out buffer is cancelled - it will get stuck
-            bool out_buffer_still_valid = !out->isCanceled();
+            /// But if the out buffer is cancelled or finalized - it will get stuck
+            bool out_buffer_still_valid = !out->isCanceled() && !out->isFinalized();
             if (out_buffer_still_valid)
+            {
                 finalFlushBefore();
-            this->next();
+                this->next();
+            }
             Base::cancelImpl();
-            out->next();
-            out->cancel();
             if (out_buffer_still_valid)
+            {
+                out->next();
+                out->cancel();
                 finalFlushAfter();
+            }
+            else
+            {
+                out->cancel();
+            }
         }
         catch (...)
         {

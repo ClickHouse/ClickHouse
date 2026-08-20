@@ -16,7 +16,7 @@ Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
 This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
 
-The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
+The function [interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
@@ -118,7 +118,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
         {"(k0, k1)", "A tuple of two UInt64 values representing the key.", {"Tuple(UInt64, UInt64)"}},
         {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).", {"FixedString(16)"}};
+    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](/reference/data-types/fixedstring).", {"FixedString(16)"}};
     FunctionDocumentation::Examples sipHash128Keyed_examples = {
         {
             "Usage example",
@@ -136,7 +136,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
-Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [`sipHash128`](/reference/functions/regular-functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
     )";
     FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Ref_arguments = {
@@ -548,6 +548,38 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation xxHash64_documentation = {xxHash64_description, xxHash64_syntax, xxHash64_arguments, {}, xxHash64_returned_value, xxHash64_examples, xxHash64_introduced_in, xxHash64_category};
     factory.registerFunction<FunctionXxHash64>(xxHash64_documentation);
 
+    FunctionDocumentation::Description xxHash64Spark_description = R"(
+Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
+
+This function is the same as [`xxHash64`](#xxHash64), but it uses seed `42` and returns the result as `Int64`.
+Only `String` and `NULL` inputs are supported.
+For `NULL`, the function returns `42`, matching Spark's seed behavior.
+)";
+    FunctionDocumentation::Syntax xxHash64Spark_syntax = "xxHash64Spark(arg)";
+    FunctionDocumentation::Arguments xxHash64Spark_arguments = {{"arg", "Input string to hash.", {"String"}}};
+    FunctionDocumentation::ReturnedValue xxHash64Spark_returned_value
+        = {"Returns the computed 64-bit hash of the input string.", {"Int64"}};
+    FunctionDocumentation::Examples xxHash64Spark_examples
+        = {{"Usage example",
+            "SELECT xxHash64Spark('ABC');",
+            R"(
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
+        )"}};
+    FunctionDocumentation::IntroducedIn xxHash64Spark_introduced_in = {26, 7};
+    FunctionDocumentation::Category xxHash64Spark_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation xxHash64Spark_documentation
+        = {xxHash64Spark_description,
+           xxHash64Spark_syntax,
+           xxHash64Spark_arguments,
+           {},
+           xxHash64Spark_returned_value,
+           xxHash64Spark_examples,
+           xxHash64Spark_introduced_in,
+           xxHash64Spark_category};
+    factory.registerFunction<FunctionXxHash64Spark>(xxHash64Spark_documentation);
+
     FunctionDocumentation::Description xxh3_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 64-bit hash value.";
     FunctionDocumentation::Syntax xxh3_syntax = "xxh3(expr)";
     FunctionDocumentation::Arguments xxh3_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
@@ -557,6 +589,17 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Category xxh3_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, {}, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
     factory.registerFunction<FunctionXXH3>(xxh3_documentation);
+
+    FunctionDocumentation::Description xxh3_128_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 128-bit hash value.";
+    FunctionDocumentation::Syntax xxh3_128_syntax = "xxh3_128(expr)";
+    FunctionDocumentation::Arguments xxh3_128_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue xxh3_128_returned_value = {"Returns the computed 128-bit `xxh3` hash value", {"UInt128"}};
+    FunctionDocumentation::Examples xxh3_128_example
+        = {{"Usage example", "SELECT hex(xxh3_128('ClickHouse'))", "3A038784C52804B4DBA43A038784C528"}};
+    FunctionDocumentation::Category xxh3_128_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation::IntroducedIn xxh3_128_introduced_in = {26, 2};
+    FunctionDocumentation xxh3_128_documentation = {xxh3_128_description, xxh3_128_syntax, xxh3_128_argument, {}, xxh3_128_returned_value, xxh3_128_example, xxh3_128_introduced_in, xxh3_128_category};
+    factory.registerFunction<FunctionXXH3_128>(xxh3_128_documentation);
 
     FunctionDocumentation::Description wyHash64_description = "Computes a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.";
     FunctionDocumentation::Syntax wyHash64_syntax = "wyHash64(arg)";
@@ -570,9 +613,9 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input
+[Interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
-resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
+resulting string, and interprets them as [UInt64](/reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
 
 Consider using the [`sipHash64`](#sipHash64) function instead.

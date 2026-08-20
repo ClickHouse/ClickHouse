@@ -41,7 +41,7 @@ INSERT INTO landing SELECT 1 as timestamp, 1 AS value FROM numbers(10) ORDER BY 
 --- INSERT_WAS_DEDUPLICATED = 389
 SYSTEM FLUSH LOGS part_log;
 SELECT table, name, error FROM system.part_log
-WHERE database = currentDatabase() and error != 389
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() and error != 389
 ORDER BY table, name;
 
 SELECT count() FROM landing;

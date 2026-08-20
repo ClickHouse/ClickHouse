@@ -1,0 +1,38 @@
+---
+description: 'Руководство по настройке и использованию SQL-скриптов запуска в ClickHouse для
+  автоматического создания схемы и выполнения миграций'
+sidebarTitle: 'Скрипты запуска'
+slug: /operations/startup-scripts
+title: 'Скрипты запуска'
+doc_type: 'guide'
+---
+
+ClickHouse может выполнять произвольные SQL-запросы из конфигурации сервера при запуске. Это может быть полезно для выполнения миграций или автоматического создания схемы.
+
+```xml
+<clickhouse>
+    <startup_scripts>
+        <throw_on_error>false</throw_on_error>
+        <scripts>
+            <query>CREATE ROLE OR REPLACE test_role</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
+            <user>default</user>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
+```
+
+ClickHouse выполняет все запросы из `startup_scripts` последовательно, в указанном порядке. Если какой-либо из запросов завершится ошибкой, выполнение последующих запросов не будет прервано. Однако, если `throw_on_error` установлено в `true`,
+сервер не запустится, если во время выполнения скрипта произойдёт ошибка.
+
+В конфигурации можно указать условный запрос. В этом случае соответствующий запрос будет выполняться, только если условный запрос возвращает значение `1` или `true`.
+
+<Note>
+  Если условный запрос возвращает любое значение, отличное от `1` или `true`, результат будет интерпретирован как `false`, и соответствующий запрос не будет выполнен.
+</Note>

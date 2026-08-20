@@ -1,0 +1,31 @@
+-- EXCEPT ALL: basic (subtract one from two duplicates)
+1
+-- EXCEPT ALL: subtract one occurrence per right-side row
+0
+1
+2
+3
+4
+-- EXCEPT ALL: from the issue report
+1
+-- EXCEPT ALL: right side has more duplicates than left
+-- INTERSECT ALL: min of counts
+1
+1
+-- INTERSECT ALL: no common rows
+-- EXCEPT ALL: empty right side
+0
+1
+2
+-- EXCEPT ALL: empty left side
+-- INTERSECT ALL: empty right side
+-- EXCEPT ALL with strings
+a
+b
+-- INTERSECT ALL with strings
+a
+b
+-- EXCEPT DISTINCT still works (removes all matching)
+2
+-- INTERSECT DISTINCT still works
+1

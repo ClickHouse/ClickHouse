@@ -11,4 +11,4 @@ create table t1 (key Int) engine=MergeTree order by () settings auto_statistics_
 insert into t0 values (1);
 insert into t1 values (1);
 
-alter table t1 update key = 0 where 1 or not(not exists (select key from t0 where key > 0)) settings mutations_sync=2, allow_experimental_analyzer=0, query_plan_optimize_prewhere=0, query_plan_enable_optimizations=0, allow_statistics_optimize=1;
+alter table t1 update key = 0 where 1 or not(not exists (select key from t0 where key > 0)) settings mutations_sync=2, allow_experimental_analyzer=0, query_plan_optimize_prewhere=0, query_plan_enable_optimizations=0, use_statistics=1;

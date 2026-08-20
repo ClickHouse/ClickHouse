@@ -5,6 +5,7 @@
 #include <Core/ColumnNumbers.h>
 
 #if USE_EMBEDDED_COMPILER
+#include <llvm/IR/IRBuilder.h>
 #include <DataTypes/Native.h>
 #endif
 
@@ -15,7 +16,7 @@ namespace
 {
 
 /// If value is not Nullable or NULL, wraps it to Nullable.
-class FunctionToNullable : public IFunction
+class FunctionToNullable final : public IFunction
 {
 public:
     static constexpr auto name = "toNullable";
@@ -36,14 +37,27 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
+    /// Disable the default LowCardinality handling to preserve nested LowCardinality in compound types
+    /// (e.g., Tuple(LowCardinality(UInt8), UInt8)). The default implementation would recursively strip
+    /// LowCardinality from all nested types, which is incorrect for toNullable - it should only wrap
+    /// the type in Nullable without modifying inner types.
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        return makeNullable(arguments[0]);
+        return makeNullableOrLowCardinalityNullable(arguments[0]);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const override
     {
-        return makeNullable(arguments[0].column);
+        return makeNullableOrLowCardinalityNullable(arguments[0].column);
+    }
+
+    bool hasInformationAboutMonotonicity() const override { return true; }
+
+    Monotonicity getMonotonicityForRange(const IDataType &, const Field &, const Field &) const override
+    {
+        return { .is_monotonic = true, .is_positive = true, .is_always_monotonic = true, .is_strict = true };
     }
 
 #if USE_EMBEDDED_COMPILER

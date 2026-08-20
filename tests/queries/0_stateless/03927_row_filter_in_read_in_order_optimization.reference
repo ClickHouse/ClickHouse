@@ -1,0 +1,4 @@
+-- Row policy only (no explicit key1 in WHERE)
+ReadType: InOrder
+-- Explicit key1 in WHERE clause
+ReadType: InOrder

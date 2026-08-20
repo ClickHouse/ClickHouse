@@ -1,0 +1,31 @@
+-- Ring (constant) --
+1
+0
+1
+-- Polygon (constant, with a hole) --
+0
+1
+0
+-- MultiPolygon (constant) --
+1
+1
+0
+-- Ring column --
+1	1
+2	0
+-- Polygon column --
+1	1
+2	0
+-- MultiPolygon column --
+1	1
+2	1
+3	0
+-- Geometry column (mixed Ring, Polygon and MultiPolygon values) --
+1	1
+2	1
+3	1
+1	0
+2	1
+3	0
+-- Geometry from readWKT (constant) --
+1

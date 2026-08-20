@@ -1,0 +1,8 @@
+1
+Hello, ClickHouse
+WebAssembly UDF terminated with error: Goodbye, ClickHouse
+log2_msg
+log2_msg
+not_logged
+log2_msg
+0

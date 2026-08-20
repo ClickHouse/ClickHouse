@@ -20,7 +20,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionGetMergeTreeSetting : public IFunction, WithContext
+class FunctionGetMergeTreeSetting final : public IFunction, WithContext
 {
 public:
     static constexpr auto name = "getMergeTreeSetting";

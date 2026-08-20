@@ -1,0 +1,6 @@
+Data in SQLite (first char hex):
+27
+74
+Data in SQLite (raw, first 7 chars):
+'\0\0\0
+test's\

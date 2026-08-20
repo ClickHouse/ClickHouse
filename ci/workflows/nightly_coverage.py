@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames
+from ci.defs.defs import BASE_BRANCH, DOCKERS, SECRETS, ArtifactConfigs
 from ci.defs.job_configs import JobConfigs
 
 # TODO: add alert on workflow failure
@@ -10,7 +10,7 @@ workflow = Workflow.Config(
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[
-        JobConfigs.coverage_build_jobs[0],
+        JobConfigs.coverage_build_jobs[1],  # Build (amd_llvm_coverage_per_test): WITH_COVERAGE + depth instrumentation
         *JobConfigs.functional_tests_jobs_coverage,
     ],
     dockers=DOCKERS,

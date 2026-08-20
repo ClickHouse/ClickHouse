@@ -81,15 +81,15 @@ select id, length(m) from test_length_map settings optimize_functions_to_subcolu
 
 -- Test Map mapKeys (keys substream)
 drop table if exists test_mapkeys;
-create table test_mapkeys (id UInt64, `m.keys` Array(String), m Map(String, UInt64)) engine=MergeTree order by tuple(); -- { serverError BAD_ARGUMENTS }
+create table test_mapkeys (id UInt64, `m.keys` Array(String), m Map(String, UInt64)) engine=MergeTree order by tuple() settings map_serialization_version='basic'; -- { serverError BAD_ARGUMENTS }
 
 -- Test Map mapValues (values substream)
 drop table if exists test_mapvalues;
-create table test_mapvalues (id UInt64, `m.values` Array(UInt64), m Map(String, UInt64)) engine=MergeTree order by tuple(); -- { serverError BAD_ARGUMENTS }
+create table test_mapvalues (id UInt64, `m.values` Array(UInt64), m Map(String, UInt64)) engine=MergeTree order by tuple() settings map_serialization_version='basic'; -- { serverError BAD_ARGUMENTS }
 
 -- Test Map mapContainsKey (keys substream)
 drop table if exists test_mapcontainskey;
-create table test_mapcontainskey (id UInt64, `m.keys` Array(String), m Map(String, UInt64)) engine=MergeTree order by tuple(); -- { serverError BAD_ARGUMENTS }
+create table test_mapcontainskey (id UInt64, `m.keys` Array(String), m Map(String, UInt64)) engine=MergeTree order by tuple() settings map_serialization_version='basic'; -- { serverError BAD_ARGUMENTS }
 
 -- Test Nullable isNull (null substream)
 drop table if exists test_isnull;

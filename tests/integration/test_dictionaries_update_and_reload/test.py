@@ -26,7 +26,8 @@ def started_cluster():
         instance = cluster.add_instance("instance", dictionaries=DICTIONARY_FILES)
 
         cluster.start()
-        instance.query("CREATE DATABASE IF NOT EXISTS test")
+        instance.query("DROP DATABASE IF EXISTS test")
+        instance.query("CREATE DATABASE test")
 
         yield cluster
 

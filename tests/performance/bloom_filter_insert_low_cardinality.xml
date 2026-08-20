@@ -1,0 +1,30 @@
+<test>
+    <!-- Building a bloom_filter skip index over an Array(LowCardinality(String))
+         column used to hash every array element of every row. Now it hashes only the
+         distinct dictionary values a granule uses, so the insert should be much closer
+         to the plain Array(String) case (issue #106372).
+
+         Two shapes are measured: a low-cardinality one (few distinct values, the case
+         LowCardinality is meant for) and a high-cardinality one (≈ one distinct value
+         per element), which stresses the dictionary-sized work the old code did. -->
+
+    <settings>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS test_bf_lc_low</create_query>
+    <create_query>DROP TABLE IF EXISTS test_bf_lc_high</create_query>
+    <create_query>CREATE TABLE test_bf_lc_low (`id` int, `ary` Array(LowCardinality(String)), INDEX idx_ary ary TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = MergeTree() ORDER BY id</create_query>
+    <create_query>CREATE TABLE test_bf_lc_high (`id` int, `ary` Array(LowCardinality(String)), INDEX idx_ary ary TYPE bloom_filter(0.01) GRANULARITY 1) ENGINE = MergeTree() ORDER BY id</create_query>
+    <create_query>SYSTEM STOP MERGES</create_query>
+
+    <!-- Few distinct values: each array element is one of ~200 tags. -->
+    <query>INSERT INTO test_bf_lc_low SELECT number AS id, [CAST(id % 200, 'String'), CAST((id + 1) % 200, 'String'), CAST((id + 2) % 200, 'String')] FROM numbers(2000000)</query>
+
+    <!-- ≈ unique per element: the dictionary grows with the data. -->
+    <query>INSERT INTO test_bf_lc_high SELECT number AS id, [CAST(id, 'String'), CAST(id + 1, 'String'), CAST(id + 2, 'String')] FROM numbers(2000000)</query>
+
+    <drop_query>SYSTEM START MERGES</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_bf_lc_low</drop_query>
+    <drop_query>DROP TABLE IF EXISTS test_bf_lc_high</drop_query>
+</test>

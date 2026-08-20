@@ -65,9 +65,9 @@ enum Command
 class SSLRequest : public IMySQLReadPacket
 {
 public:
-    uint32_t capability_flags;
-    uint32_t max_packet_size;
-    uint8_t character_set;
+    uint32_t capability_flags{};
+    uint32_t max_packet_size{};
+    uint8_t character_set{};
 
 protected:
     void readPayloadImpl(ReadBuffer & buf) override;

@@ -72,7 +72,11 @@ def test_jemalloc_percpu_arena():
     assert multiprocessing.cpu_count() > CPU_ID
 
     online_cpus = int(run_with_cpu_limit("getconf _NPROCESSORS_ONLN"))
-    assert online_cpus == 1, online_cpus
+    if online_cpus != 1:
+        pytest.skip(
+            f"sysconf(_SC_NPROCESSORS_ONLN) returned {online_cpus} instead of 1: "
+            "/sys/devices/system/cpu/online override not effective on this system"
+        )
 
     all_cpus = int(run_with_cpu_limit("getconf _NPROCESSORS_CONF"))
     assert all_cpus == multiprocessing.cpu_count(), all_cpus

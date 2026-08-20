@@ -8,7 +8,7 @@ CREATE TABLE test_has_idx_simple
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1000;
+SETTINGS index_granularity = 1000, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test_has_idx_simple
 SELECT number, toString(number)
 FROM numbers(100000);
@@ -61,7 +61,7 @@ Expression ((Project names + Projection))
           PrimaryKey
             Keys:
               id
-            Condition: (toUInt64(plus(id, 2)) in 5-element set)
+            Condition: (toUInt64(plus(id, 2)) in 3-element set)
             Parts: 1/1
             Granules: 3/100
             Search Algorithm: generic exclusion search
@@ -196,7 +196,7 @@ CREATE TABLE test_has_idx_tuple_two_cols
 )
 ENGINE = MergeTree
 ORDER BY (k1, k2)
-SETTINGS index_granularity = 1000;
+SETTINGS index_granularity = 1000, add_minmax_index_for_numeric_columns=0;
 INSERT INTO test_has_idx_tuple_two_cols
 SELECT number,
        number % 10,
@@ -235,7 +235,7 @@ Expression ((Project names + Projection))
             Keys:
               k1
               k2
-            Condition: ((k1, k2) in 3-element set)
+            Condition: ((k1, k2) in 2-element set)
             Parts: 1/1
             Granules: 3/100
             Search Algorithm: generic exclusion search

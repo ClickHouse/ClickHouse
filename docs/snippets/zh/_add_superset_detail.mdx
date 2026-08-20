@@ -1,0 +1,47 @@
+---
+title: 添加 Superset 详细信息
+---
+
+<Accordion title="在 Docker 中启动 Apache Superset">
+  Superset 提供了[使用 Docker Compose 在本地安装 Superset](https://superset.apache.org/docs/installation/installing-superset-using-docker-compose/)的说明。从 GitHub 检出 Apache Superset 仓库后，你可以运行最新的开发代码，也可以运行特定标签对应的版本。我们建议使用 2.0.0 版本，因为这是最新一个未标记为 `pre-release` 的发布版本。
+
+  在运行 `docker compose` 之前，需要先完成以下几项任务：
+
+  1. 添加官方 ClickHouse Connect 驱动程序
+  2. 获取一个 Mapbox API key，并将其添加为环境变量 (可选) 
+  3. 指定要运行的 Superset 版本
+
+  <Tip>
+    以下命令应在 GitHub 仓库 `superset` 的顶层目录中运行。
+  </Tip>
+
+  ## 官方 ClickHouse Connect 驱动程序
+
+  要让 ClickHouse Connect 驱动程序在 Superset 部署中可用，请将其添加到本地 requirements 文件中：
+
+  ```bash
+  echo "clickhouse-connect" >> ./docker/requirements-local.txt
+  ```
+
+  ## Mapbox
+
+  这是可选项。即使没有 Mapbox API key，你仍然可以在 Superset 中绘制位置数据，但界面会提示你应添加一个 key，并且地图背景图像会缺失 (你只能看到数据点，看不到地图底图) 。如果你想使用它，Mapbox 提供了免费层级。
+
+  指南中让你创建的一些示例可视化会使用位置数据，例如经度和纬度。Superset 内置了对 Mapbox 地图的支持。要使用 Mapbox 可视化功能，你需要一个 Mapbox API key。注册 [Mapbox 免费层级](https://account.mapbox.com/auth/signup/)，并生成一个 API key。
+
+  让 Superset 可以使用该 API key：
+
+  ```bash
+  echo "MAPBOX_API_KEY=pk.SAMPLE-Use-your-key-instead" >> docker/.env-non-dev
+  ```
+
+  ## 部署 Superset 2.0.0 版本
+
+  要部署 2.0.0 发布版本，请运行：
+
+  ```bash
+  git checkout 2.0.0
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml pull
+  TAG=2.0.0 docker-compose -f docker-compose-non-dev.yml up
+  ```
+</Accordion>

@@ -1,5 +1,6 @@
 import time
-
+import random
+import string
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -26,6 +27,8 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
+def generate_random_name():
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=12))
 
 def wait_part_in_parts(node, table, part_name, retries=40):
     for i in range(retries):
@@ -66,58 +69,60 @@ def wait_part_and_get_compression_codec(node, table, part_name, retries=40):
 
 
 def test_recompression_simple(started_cluster):
+    name = generate_random_name()
     node1.query(
-        "CREATE TABLE table_for_recompression (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(10)) SETTINGS merge_with_recompression_ttl_timeout = 0"
+        f"CREATE TABLE {name} (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(10)) SETTINGS merge_with_recompression_ttl_timeout = 0"
     )
-    node1.query("INSERT INTO table_for_recompression VALUES (now(), 1, '1')")
+    node1.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
 
     assert (
         node1.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
 
     codec = wait_part_and_get_compression_codec(
-        node1, "table_for_recompression", "all_1_1_1"
+        node1, name, "all_1_1_1"
     )
     if not codec:
         assert False, "Part all_1_1_1 doesn't appeared in system.parts"
 
     assert codec == "ZSTD(10)"
 
-    if wait_part_in_parts(node1, "table_for_recompression", "all_1_1_2", retries=20):
+    if wait_part_in_parts(node1, name, "all_1_1_2", retries=20):
         assert False, "Redundant merge were assigned for part all_1_1_1 -> all_1_1_2"
 
-    optimize_final_table_until_success(node1, "table_for_recompression")
+    optimize_final_table_until_success(node1, name)
 
     assert (
         node1.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_2'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_2' and table = '{name}'"
         )
         == "ZSTD(10)\n"
     )
 
 
 def test_recompression_multiple_ttls(started_cluster):
+    name = generate_random_name()
     node2.query(
-        "CREATE TABLE table_for_recompression (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() \
+        f"CREATE TABLE {name} (d DateTime, key UInt64, data String) ENGINE MergeTree() ORDER BY tuple() \
     TTL d + INTERVAL 5 SECOND RECOMPRESS CODEC(ZSTD(10)), \
     d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(11)), \
     d + INTERVAL 15 SECOND RECOMPRESS CODEC(ZSTD(12)) SETTINGS merge_with_recompression_ttl_timeout = 0"
     )
 
-    node2.query("INSERT INTO table_for_recompression VALUES (now(), 1, '1')")
+    node2.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
 
     assert (
         node2.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
 
     codec = wait_part_and_get_compression_codec(
-        node2, "table_for_recompression", "all_1_1_1"
+        node2, name, "all_1_1_1"
     )
     if not codec:
         assert False, "Part all_1_1_1 doesn't appeared in system.parts"
@@ -125,7 +130,7 @@ def test_recompression_multiple_ttls(started_cluster):
     assert codec == "ZSTD(10)"
 
     codec = wait_part_and_get_compression_codec(
-        node2, "table_for_recompression", "all_1_1_2"
+        node2, name, "all_1_1_2"
     )
     if not codec:
         assert False, "Part all_1_1_2 doesn't appeared in system.parts"
@@ -133,67 +138,66 @@ def test_recompression_multiple_ttls(started_cluster):
     assert codec == "ZSTD(11)"
 
     codec = wait_part_and_get_compression_codec(
-        node2, "table_for_recompression", "all_1_1_3"
+        node2, name, "all_1_1_3"
     )
     if not codec:
         assert False, "Part all_1_1_3 doesn't appeared in system.parts"
 
     assert codec == "ZSTD(12)"
 
-    if wait_part_in_parts(node2, "table_for_recompression", "all_1_1_4", retries=20):
+    if wait_part_in_parts(node2, name, "all_1_1_4", retries=20):
         assert False, "Redundant merge were assigned for part all_1_1_3 -> all_1_1_4"
 
-    optimize_final_table_until_success(node2, "table_for_recompression")
+    optimize_final_table_until_success(node2, name)
 
     assert (
         node2.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_1_1_4'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_1_1_4' and table = '{name}'"
         )
         == "ZSTD(12)\n"
     )
 
     assert (
         node2.query(
-            "SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4'"
+            f"SELECT recompression_ttl_info.expression FROM system.parts where name = 'all_1_1_4' and table = '{name}'"
         )
         == "['d + toIntervalSecond(10)','d + toIntervalSecond(15)','d + toIntervalSecond(5)']\n"
     )
 
 
 def test_recompression_replicated(started_cluster):
+    name = generate_random_name()
     for i, node in enumerate([node1, node2]):
         node.query(
-            "CREATE TABLE recompression_replicated (d DateTime, key UInt64, data String) \
-        ENGINE ReplicatedMergeTree('/test/rr', '{}') ORDER BY tuple() \
-        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0".format(
-                i + 1
-            )
+            f"CREATE TABLE {name} (d DateTime, key UInt64, data String) \
+        ENGINE ReplicatedMergeTree('/test/{name}', '{i + 1}') ORDER BY tuple() \
+        TTL d + INTERVAL 10 SECOND RECOMPRESS CODEC(ZSTD(13)) SETTINGS merge_with_recompression_ttl_timeout = 0"
         )
 
-    node1.query("INSERT INTO recompression_replicated VALUES (now(), 1, '1')")
-    node2.query("SYSTEM SYNC REPLICA recompression_replicated", timeout=5)
+    node1.query(f"INSERT INTO {name} VALUES (now(), 1, '1')")
+    node2.query(f"SYSTEM SYNC REPLICA {name}", timeout=5)
 
     assert (
         node1.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_0_0_0' and table = 'recompression_replicated'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_0_0_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
     assert (
         node2.query(
-            "SELECT default_compression_codec FROM system.parts where name = 'all_0_0_0' and table = 'recompression_replicated'"
+            f"SELECT default_compression_codec FROM system.parts where name = 'all_0_0_0' and table = '{name}'"
         )
         == "LZ4\n"
     )
 
     codec1 = wait_part_and_get_compression_codec(
-        node1, "recompression_replicated", "all_0_0_1"
+        node1, name, "all_0_0_1"
     )
     if not codec1:
         assert False, "Part all_0_0_1 doesn't appeared in system.parts on node1"
 
     codec2 = wait_part_and_get_compression_codec(
-        node2, "recompression_replicated", "all_0_0_1"
+        node2, name, "all_0_0_1"
     )
     if not codec2:
         assert False, "Part all_0_0_1 doesn't appeared in system.parts on node2"

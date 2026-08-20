@@ -21,27 +21,34 @@ namespace CurrentMetrics
 namespace DB
 {
 
-bool QueryConditionCache::Key::operator==(const Key & other) const
-{
-    return table_id == other.table_id
-        && part_name == other.part_name
-        && condition_hash == other.condition_hash;
-}
-
-size_t QueryConditionCache::KeyHasher::operator()(const Key & key) const
+QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {
     SipHash hash;
-    hash.update(key.table_id);
-    hash.update(key.part_name);
-    hash.update(key.condition_hash);
-    return hash.get64();
+    hash.update(table_id);
+    hash.update(part_name);
+    hash.update(condition_hash);
+    return hash.get128();
+}
+
+String QueryConditionCache::makeFilePartName(const String & path, std::string_view version_token)
+{
+    /// NUL cannot occur in a file path or in a version token, so it is an unambiguous separator.
+    String part_name = path;
+    part_name.push_back('\0');
+    part_name.append(version_token);
+    return part_name;
 }
 
 size_t QueryConditionCache::EntryWeight::operator()(const Entry & entry) const
 {
+    size_t memory = sizeof(Key) + sizeof(Entry);
     /// Estimate the memory size of `std::vector<bool>` (it uses bit-packing internally)
-    size_t memory = (entry.matching_marks.capacity() + 7) / 8; /// round up to bytes.
-    return memory + sizeof(decltype(entry.matching_marks));
+    /// Round up to bytes.
+    memory += (entry.matching_marks.capacity() + 7) / 8;
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    memory += entry.part_name.capacity() + entry.condition.capacity();
+#endif
+    return memory;
 }
 
 QueryConditionCache::QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)
@@ -56,9 +63,14 @@ void QueryConditionCache::write(
     if (table_id == UUIDHelpers::Nil)
         return; /// Issue #92863: Certain database engines provide no table UUIDs
 
-    Key key = {table_id, part_name, condition_hash, condition};
+    Key key = makeKey(table_id, part_name, condition_hash);
 
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    auto load_func = [&](){ return std::make_shared<Entry>(marks_count, table_id, part_name, condition_hash, condition); };
+#else
     auto load_func = [&](){ return std::make_shared<Entry>(marks_count); };
+#endif
+
     auto [entry, inserted] = cache.getOrSet(key, load_func);
 
     /// Try to avoid acquiring the RW lock below (*) by early-ing out. Matters for systems with lots of cores.
@@ -108,16 +120,17 @@ void QueryConditionCache::write(
         has_final_mark);
 }
 
-std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash)
+std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(const UUID & table_id, const String & part_name, UInt64 condition_hash, bool increment_profile_events)
 {
     if (table_id == UUIDHelpers::Nil)
         return {}; /// Issue #92864: Certain database engines provide no table UUIDs
 
-    Key key = {table_id, part_name, condition_hash, ""};
+    Key key = makeKey(table_id, part_name, condition_hash);
 
     if (auto entry = cache.get(key))
     {
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
+        if (increment_profile_events)
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheHits);
 
         std::shared_lock lock(entry->mutex);
 
@@ -132,7 +145,8 @@ std::optional<QueryConditionCache::MatchingMarks> QueryConditionCache::read(cons
     }
     else
     {
-        ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
+        if (increment_profile_events)
+            ProfileEvents::increment(ProfileEvents::QueryConditionCacheMisses);
 
         LOG_TEST(
             logger,
@@ -170,5 +184,21 @@ QueryConditionCache::Entry::Entry(size_t mark_count)
     : matching_marks(mark_count, true) /// by default, all marks potentially are potential matches, i.e. we can't skip them
 {
 }
+
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+QueryConditionCache::Entry::Entry(
+    size_t mark_count_,
+    const UUID & table_id_,
+    const String & part_name_,
+    UInt64 condition_hash_,
+    const String & condition_)
+    : table_id(table_id_)
+    , part_name(part_name_)
+    , condition_hash(condition_hash_)
+    , condition(condition_)
+    , matching_marks(mark_count_, true)
+        {}
+#endif
 
 }

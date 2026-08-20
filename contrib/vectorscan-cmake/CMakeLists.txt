@@ -1,5 +1,5 @@
 # Vectorscan is drop-in replacement for Hyperscan.
-if ((ARCH_AMD64 AND NOT NO_SSE3_OR_HIGHER) OR ARCH_AARCH64)
+if ((ARCH_AMD64 AND X86_ARCH_LEVEL VERSION_GREATER_EQUAL 2) OR ARCH_AARCH64)
     option (ENABLE_VECTORSCAN "Enable vectorscan" ${ENABLE_LIBRARIES})
 endif()
 

@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionSum.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
+#include <DataTypes/getLeastSupertype.h>
 
 
 namespace DB
@@ -63,13 +64,14 @@ AggregateFunctionPtr createAggregateFunctionSum(const std::string & name, const 
         res.reset(createWithNumericType<Function>(*data_type, argument_types));
 
     if (!res)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}",
-                        argument_types[0]->getName(), name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument for aggregate function {}{}",
+                        argument_types[0]->getName(), name, getNumericVariantSupertypeHint(argument_types[0]));
     return res;
 }
 
 }
 
+void registerAggregateFunctionSum(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSum(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(
@@ -115,7 +117,7 @@ SELECT sum(salary) FROM employees;
     FunctionDocumentation::Category category = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
-    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, {}, documentation}, AggregateFunctionFactory::Case::Insensitive);
+    factory.registerFunction("sum", {createAggregateFunctionSum<AggregateFunctionSumSimple>, documentation}, AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_overflow = R"(
 Computes a sum of numeric values, using the same data type for the result as for the input parameters.
@@ -170,12 +172,12 @@ FROM employees;
     FunctionDocumentation::Category category_overflow = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_overflow = {description_overflow, syntax_overflow, arguments_overflow, {}, returned_value_overflow, examples_overflow, introduced_in_overflow, category_overflow};
 
-    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, {}, documentation_overflow});
+    factory.registerFunction("sumWithOverflow", {createAggregateFunctionSum<AggregateFunctionSumWithOverflow>, documentation_overflow});
 
     FunctionDocumentation::Description description_kahan = R"(
 Calculates the sum of the numbers with [Kahan compensated summation algorithm](https://en.wikipedia.org/wiki/Kahan_summation_algorithm).
-Slower than [`sum`](/sql-reference/aggregate-functions/reference/sum) function.
-The compensation works only for [Float](/sql-reference/data-types/float) types.
+Slower than [`sum`](/reference/functions/aggregate-functions/sum) function.
+The compensation works only for [Float](/reference/data-types/float) types.
     )";
     FunctionDocumentation::Syntax syntax_kahan = R"(
 sumKahan(x)
@@ -203,7 +205,7 @@ SELECT sum(0.1), sumKahan(0.1) FROM numbers(10);
     FunctionDocumentation::Category category_kahan = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_kahan = {description_kahan, syntax_kahan, arguments_kahan, {}, returned_value_kahan, examples_kahan, introduced_in_kahan, category_kahan};
 
-    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, {}, documentation_kahan});
+    factory.registerFunction("sumKahan", {createAggregateFunctionSum<AggregateFunctionSumKahan>, documentation_kahan});
 }
 
 }

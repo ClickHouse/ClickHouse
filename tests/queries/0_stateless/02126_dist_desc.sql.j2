@@ -12,7 +12,9 @@ select * from remote('{{host}}', {{args}}) format Null;
 system flush logs query_log;
 select anyIf(query, is_initial_query), groupArrayIf(query, query_kind = 'Describe' and not is_initial_query) from system.query_log
 where
+    event_date >= yesterday() AND event_time >= now() - 600 AND
     type = 'QueryFinish' and
+    query not ilike '%FLUSH LOGS%' and
     -- current_database is not set for queries on shards
     -- (so 'current_database = currentDatabase()' will not show DESC queries)
     log_comment like '%' || currentDatabase() || '%'

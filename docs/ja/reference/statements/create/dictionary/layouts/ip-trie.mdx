@@ -1,0 +1,122 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ip-trie
+title: 'ip_trie Dictionary レイアウト'
+sidebarTitle: 'ip_trie'
+description: '高速なIPアドレスのプレフィックス ルックアップのために、Dictionary を trie として格納します。'
+doc_type: 'reference'
+---
+
+`ip_trie` Dictionary は、ネットワーク プレフィックスによる IP アドレスのルックアップ用に設計されています。
+CIDR 表記で IP 範囲を格納し、指定した IP がどのプレフィックス (たとえばサブネットや ASN の範囲) に属するかを高速に判定できます。そのため、地理位置情報やネットワーク分類といった IP ベースの検索に最適です。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/4dxMAqltygk?si=rrQrneBReK6lLfza" title="ip_trie Dictionary を使用した IP ベースの検索" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+**例**
+
+ClickHouse に、IP プレフィックスとそのマッピングを含むテーブルがあるとします。
+
+```sql
+CREATE TABLE my_ip_addresses (
+    prefix String,
+    asn UInt32,
+    cca2 String
+)
+ENGINE = MergeTree
+PRIMARY KEY prefix;
+```
+
+```sql
+INSERT INTO my_ip_addresses VALUES
+    ('202.79.32.0/20', 17501, 'NP'),
+    ('2620:0:870::/48', 3856, 'US'),
+    ('2a02:6b8:1::/48', 13238, 'RU'),
+    ('2001:db8::/32', 65536, 'ZZ')
+;
+```
+
+このテーブルに対して `ip_trie` Dictionary を定義してみましょう。`ip_trie` レイアウトでは複合キーが必要です。
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY my_ip_trie_dictionary (
+        prefix String,
+        asn UInt32,
+        cca2 String DEFAULT '??'
+    )
+    PRIMARY KEY prefix
+    SOURCE(CLICKHOUSE(TABLE 'my_ip_addresses'))
+    LAYOUT(IP_TRIE)
+    LIFETIME(3600);
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>prefix</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        <attribute>
+                <name>asn</name>
+                <type>UInt32</type>
+                <null_value />
+        </attribute>
+        <attribute>
+                <name>cca2</name>
+                <type>String</type>
+                <null_value>??</null_value>
+        </attribute>
+        ...
+    </structure>
+    <layout>
+        <ip_trie>
+            <!-- キー属性 `prefix` は dictGetString で取得できます。 -->
+            <!-- このオプションを有効にすると、メモリ使用量が増えます。 -->
+            <access_to_key_from_attributes>true</access_to_key_from_attributes>
+        </ip_trie>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+キーには、有効な IP プレフィックスを含む `String` 型の属性を 1 つだけ指定する必要があります。その他の型は現時点ではサポートされていません。
+
+構文は次のとおりです。
+
+```sql
+dictGetT('dict_name', 'attr_name', ip)
+```
+
+この関数は、IPv4 には `UInt32`、IPv6 には `FixedString(16)` を受け取ります。たとえば、
+
+```sql
+SELECT dictGet('my_ip_trie_dictionary', 'cca2', toIPv4('202.79.32.10')) AS result;
+
+┌─result─┐
+│ NP     │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', 'asn', IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result─┐
+│  65536 │
+└────────┘
+
+SELECT dictGet('my_ip_trie_dictionary', ('asn', 'cca2'), IPv6StringToNum('2001:db8::1')) AS result;
+
+┌─result───────┐
+│ (65536,'ZZ') │
+└──────────────┘
+```
+
+その他の型にはまだ対応していません。この関数は、このIPアドレスに対応するプレフィックスの属性を返します。プレフィックスが重複している場合は、最も具体的なものが返されます。
+
+データはRAMに完全に収まっている必要があります。

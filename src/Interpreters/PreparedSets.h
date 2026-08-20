@@ -3,10 +3,12 @@
 #include <city.h>
 #include <Parsers/IAST_fwd.h>
 #include <DataTypes/IDataType.h>
+#include <exception>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 #include <future>
+#include <Common/callOnce.h>
 #include <Storages/IStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/SetKeys.h>
@@ -102,13 +104,33 @@ public:
 
     DataTypes getTypes() const override;
     Hash getHash() const override;
+    /// Hash based on actual set element data, computed order-independently so that two IN-clause
+    /// sets with the same values (regardless of insertion order or duplicates) hash equal. Lives
+    /// only on `FutureSetFromTuple` because only tuple-literal sets have content available at
+    /// planning time; storage / subquery sets are matched by their structural (AST) hash via
+    /// `getHash()`. Callers must check the set is small enough to justify the O(N log N) cost
+    /// (see `query_plan_max_set_size_for_projection_match`).
+    Hash getContentHash() const;
     ASTPtr getSourceAST() const override { return ast; }
-    Columns getKeyColumns();
+    Columns getKeyColumns() const;
+    /// Number of rows on the right-hand side *before* deduplication — the full length of the
+    /// original `IN (...)` list, including repeated and `NULL` values. Available in O(1) and without
+    /// materializing anything, unlike `getKeyColumns`. The deduplicated count is `get`'s
+    /// `getTotalRowCount`. Useful for callers whose cost is proportional to the original list length
+    /// (e.g. `buildOrderedSetInplace`, which filters the original key columns).
+    size_t getInputRowCount() const;
 private:
+    void fillSetElementsOnce() const;
+    Columns getUniqueKeyColumns() const;
+    Hash computeContentHash() const;
+
     Hash hash;
+    mutable Hash content_hash{};
     ASTPtr ast;
     SetPtr set;
-    SetKeyColumns set_key_columns;
+    mutable SetKeyColumns set_key_columns;
+    mutable OnceFlag fill_set_elements_once;
+    mutable OnceFlag content_hash_once;
 };
 
 using FutureSetFromTuplePtr = std::shared_ptr<FutureSetFromTuple>;
@@ -148,6 +170,12 @@ public:
 
     ~FutureSetFromSubquery() override;
 
+    /// The following two methods are used to transfer ownership of `SetAndKey` from one
+    /// `DelayedCreatingSetStep` to another in automatic parallel replicas optimization.
+    /// The `hash`, `ast` and other fields should be the identical for both `FutureSetFromSubquery` objects.
+    void replaceSetAndKey(SetAndKeyPtr set);
+    SetAndKeyPtr detachSetAndKey();
+
     SetPtr get() const override;
     DataTypes getTypes() const override;
     Hash getHash() const override;
@@ -157,6 +185,11 @@ public:
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
         const PreparedSetsCachePtr & prepared_sets_cache);
+
+    /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
+    /// retain the values, and make the source run as a distributed plan when its shape allows
+    /// it. The following `build` call must skip the cache: a cached set has no values.
+    void prepareForDistributedPlan(const ContextPtr & context);
 
     void buildSetInplace(const ContextPtr & context);
 
@@ -169,6 +202,10 @@ public:
     const QueryPlan * getQueryPlan() const { return source.get(); }
     QueryPlan * getQueryPlan() { return source.get(); }
 
+    /// The set is backed by a `GLOBAL IN` / `GLOBAL JOIN` external table, either through the
+    /// set that fills that table or through the table stored next to the set itself.
+    bool hasExternalTable() const;
+
 private:
     Hash hash;
     ASTPtr ast;
@@ -177,6 +214,11 @@ private:
 
     std::unique_ptr<QueryPlan> source;
     QueryTreeNodePtr query_tree;
+
+    /// Why the destructive in-place build in `buildOrderedSetInplace` failed after it consumed `source`.
+    /// The set can never be built once that happened, so `build` rethrows this instead of returning a null
+    /// plan, which its callers would silently take for "nothing left to build".
+    std::exception_ptr in_place_build_failure;
 };
 
 using FutureSetFromSubqueryPtr = std::shared_ptr<FutureSetFromSubquery>;
