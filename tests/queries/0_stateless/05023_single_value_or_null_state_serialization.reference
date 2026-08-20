@@ -2,4 +2,4 @@ AggregateFunction(1, singleValueOrNull, UInt64)
 1	42
 2	\N
 AggregateFunction(singleValueOrNull, UInt64)
-42
+\N

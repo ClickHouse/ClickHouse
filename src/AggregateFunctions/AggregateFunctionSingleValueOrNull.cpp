@@ -118,10 +118,11 @@ public:
 
         if (version == 0)
         {
-            /// Version 0 did not serialize the flags. `first_value` can be recovered from the
-            /// underlying state, while `is_null` is unavailable and remains false for legacy data.
-            first_value = !data().has();
-            is_null = false;
+            /// Version 0 did not serialize the flags. A non-empty payload may represent either one value
+            /// or multiple distinct values, so keep the legacy state conservative and finalize it as NULL.
+            const bool has_value = data().has();
+            first_value = !has_value;
+            is_null = has_value;
         }
         else
         {
