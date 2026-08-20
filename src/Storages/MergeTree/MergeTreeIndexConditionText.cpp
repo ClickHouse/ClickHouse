@@ -267,6 +267,11 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 {
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
+    /// A whole (key, value) pair is one token, so `m['key'] = 'value'` is an exact single-token lookup:
+    /// its posting list is exactly the matching rows. Nothing else is supported by this tokenizer yet.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens")
@@ -893,6 +898,12 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 {
     const String function_name = function_node.getFunctionName();
     auto direct_read_mode = getDirectReadMode(function_name);
+
+    /// None of the builders below applies to a `keyValuePairs` index: they tokenize a string needle or
+    /// expect an index on `mapKeys` / `mapValues` / a JSON path. Keep the two worlds separate so no
+    /// generic builder can produce a token in the wrong format.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueNode(function_name, index_column_node, direct_read_mode, value_type, value_field, out);
 
     auto index_column_name = index_column_node.getColumnName();
     bool has_index_column = hasIndexForColumn(index_column_name);
@@ -1552,6 +1563,77 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     auto tokens = stringToTokens(*key_const_value);
     out.function = RPNElement::FUNCTION_EQUALS;
     out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>("mapContainsKey", TextSearchMode::All, getHintOrNoneMode(), std::move(tokens)));
+    return true;
+}
+
+std::optional<String> MergeTreeIndexConditionText::tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const
+{
+    /// `arrayElement(m, 'key')` form, i.e. `m['key']` before the subcolumn rewrite.
+    if (node.isFunction())
+    {
+        const auto function = node.toFunctionNode();
+        if (function.getArgumentsSize() != 2 || function.getFunctionName() != "arrayElement")
+            return std::nullopt;
+
+        if (!hasIndexForColumn(function.getArgumentAt(0).getColumnName()))
+            return std::nullopt;
+
+        Field key_field;
+        DataTypePtr key_type;
+        /// FixedString is excluded, see traverseMapElementKeyValueNode.
+        if (!function.getArgumentAt(1).tryGetConstant(key_field, key_type) || !WhichDataType(key_type).isString())
+            return std::nullopt;
+
+        return key_field.safeGet<String>();
+    }
+
+    /// `m.key_<serialized_key>` subcolumn form, used when `optimize_functions_to_subcolumns` is on.
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    if (!parsed)
+        return std::nullopt;
+
+    auto & [map_column_name, serialized_key] = *parsed;
+    if (!hasIndexForColumn(map_column_name))
+        return std::nullopt;
+
+    /// `serializeText` is the identity for the String keys this index requires, so it is the raw key.
+    /// Same assumption as in traverseMapElementKeyNode.
+    return serialized_key;
+}
+
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
+    const String & function_name,
+    const RPNBuilderTreeNode & index_column_node,
+    TextIndexDirectReadMode direct_read_mode,
+    const DataTypePtr & value_type,
+    const Field & value_field,
+    RPNElement & out) const
+{
+    if (function_name != "equals")
+        return false;
+
+    /// The Field of a FixedString constant carries the zero padding, which is not what the index stores,
+    /// so the token could never be found and the exact direct read would drop rows. Fall back to a scan.
+    if (!WhichDataType(value_type).isString())
+        return false;
+
+    auto key = tryGetMapElementKeyForIndexColumn(index_column_node);
+    if (!key)
+        return false;
+
+    /// `m['key'] = ''` is also true for rows without the key, and those have no token at all. Keep the
+    /// original predicate then, consistently with `equals` on an empty needle.
+    const String & value = value_field.safeGet<String>();
+    if (value.empty())
+        return false;
+
+    /// `m['key']` is the first occurrence of the key, which is the token with is_rest = 0.
+    VectorWithMemoryTracking<String> tokens;
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
+
+    out.function = RPNElement::FUNCTION_EQUALS;
+    out.text_search_queries.emplace_back(
+        std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
     return true;
 }
 

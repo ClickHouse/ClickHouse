@@ -178,6 +178,19 @@ private:
     /// and there is a text index built on `mapValues(map_col)`.
     bool hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const;
 
+    /// If the node is `m['key']` (as `arrayElement` or as the `m.key_<key>` subcolumn) where `m` is this
+    /// index's column and the key is a String constant, returns that key.
+    std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
+
+    /// Handles what a `keyValuePairs` index supports, currently only `m['key'] = 'value'`.
+    bool traverseMapElementKeyValueNode(
+        const String & function_name,
+        const RPNBuilderTreeNode & index_column_node,
+        TextIndexDirectReadMode direct_read_mode,
+        const DataTypePtr & value_type,
+        const Field & value_field,
+        RPNElement & out) const;
+
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;
     VectorWithMemoryTracking<String> substringToTokens(const Field & field, bool is_prefix, bool is_suffix) const;
     VectorWithMemoryTracking<String> stringLikeToTokens(const Field & field) const;
