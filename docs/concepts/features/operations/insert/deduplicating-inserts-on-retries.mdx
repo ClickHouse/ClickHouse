@@ -147,7 +147,7 @@ The `DuplicatedAsyncInserts` and `SelfDuplicatedAsyncInserts` events in [`system
 
 Deduplication of asynchronous inserts works together with dependent materialized views. The rule is simple: one block in, one block out. If the inner query of a view turns one input block into one output block, deduplication works. If the view emits a second block, ClickHouse throws a `NOT_IMPLEMENTED` exception.
 
-The number of rows does not matter by itself. Only the number of blocks matters, and [`max_block_size`](/reference/settings/session-settings/max#max_block_size) sets how many rows fit in one block. Column transformations, filtering, and aggregation never add rows, so they always stay in one block. A `JOIN` can add rows. It works while the result stays under `max_block_size`, and it fails above that.
+A view emits a second block when its output no longer fits in one. [`max_block_size`](/reference/settings/session-settings/max#max_block_size) sets how many rows fit. Column transformations, filtering, and aggregation never add rows, so they always stay in one block. A `JOIN` can add rows. It works while the result stays under `max_block_size`, and it fails above that.
 
 To insert through a view that emits more than one block, either set `deduplicate_blocks_in_dependent_materialized_views = 0` or use synchronous inserts.
 
