@@ -1,4 +1,6 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-shared-merge-tree
+-- no-shared-merge-tree: the second half exercises `StorageReplicatedMergeTree::alter`, which
+-- SharedMergeTree replaces with its own implementation.
 
 -- Tests that a mixed `ALTER` that includes `MODIFY SETTING escape_index_filenames` takes effect
 -- immediately. In such batches `changeSettings` commits the new policy, but the metadata copy that

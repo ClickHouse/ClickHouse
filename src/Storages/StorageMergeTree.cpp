@@ -502,14 +502,9 @@ void StorageMergeTree::alter(
 
         if (statistics_changed)
         {
-            /// `changeSettings` is the sole writer of the setting-derived escape fields and has
-            /// already committed them; carry them into `new_metadata` so the implicit statistics
-            /// commit below does not revert the index filename policy (`commands.apply` never
-            /// sets them). Mirrors `StorageReplicatedMergeTree::alter`.
-            auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
-            new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-            for (auto & index : new_metadata.secondary_indices)
-                index.escape_filenames = committed_metadata->escape_index_filenames;
+            /// `changeSettings` has already committed the index filename policy; re-apply it so the
+            /// implicit statistics commit below does not revert it. Mirrors `StorageReplicatedMergeTree::alter`.
+            applyEscapeIndexFilenamesFromSettings(new_metadata);
 
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
@@ -600,15 +595,9 @@ void StorageMergeTree::alter(
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
 
-                /// `changeSettings` is the sole writer of the setting-derived escape fields and has
-                /// already committed them; carry them into `new_metadata` so `setProperties` below
-                /// does not revert the index filename policy (`commands.apply` never sets them).
-                {
-                    auto committed_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/true);
-                    new_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-                    for (auto & index : new_metadata.secondary_indices)
-                        index.escape_filenames = committed_metadata->escape_index_filenames;
-                }
+                /// `changeSettings` has already committed the index filename policy; re-apply it so
+                /// `setProperties` below does not revert it.
+                applyEscapeIndexFilenamesFromSettings(new_metadata);
 
                 checkTTLExpressions(new_metadata, old_metadata);
 
