@@ -294,6 +294,52 @@ const InvisibleRowsMask * maskPtr(const std::optional<InvisibleRowsMask> & mask)
     return mask ? &*mask : nullptr;
 }
 
+/// An invisible Array/Map row decodes as the type default — the empty range — the same way the native
+/// Parquet reader materializes a null list slot (its definition levels reference no child values at
+/// all). Keeping the spec-undefined range would resurface it as a value whenever the slot's null map
+/// is dropped, which is always: Array/Map cannot be inside Nullable in ClickHouse. Rewrites `offs`
+/// (ClickHouse cumulative lengths, whose last entry equals `child_rows`) in place to empty every
+/// invisible slot's range, and returns the filter selecting the child rows the visible slots still
+/// reference — or std::nullopt when no invisible slot references anything, leaving `offs` untouched.
+/// The offsets buffer itself stays structurally validated; only the decoded ranges change.
+std::optional<IColumn::Filter> emptyInvisibleSlots(
+    ColumnUInt64::Container & offs, size_t child_rows, const InvisibleRowsMask * invisible_rows)
+{
+    if (!invisible_rows)
+        return std::nullopt;
+
+    bool any_referencing_invisible = false;
+    UInt64 begin = 0;
+    for (size_t i = 0; i < offs.size(); ++i)
+    {
+        if ((*invisible_rows)[i] && offs[i] > begin)
+        {
+            any_referencing_invisible = true;
+            break;
+        }
+        begin = offs[i];
+    }
+    if (!any_referencing_invisible)
+        return std::nullopt;
+
+    IColumn::Filter filt(child_rows, 0);
+    UInt64 acc = 0;
+    begin = 0;
+    for (size_t i = 0; i < offs.size(); ++i)
+    {
+        const UInt64 end = offs[i];
+        if (!(*invisible_rows)[i])
+        {
+            if (end > begin)
+                memset(filt.data() + begin, 1, end - begin);
+            acc += end - begin;
+        }
+        begin = end;
+        offs[i] = acc;
+    }
+    return filt;
+}
+
 }
 
 std::optional<InvisibleRowsMask> RecordBatchDecoder::buildOffsetsChildInvisibleMask(
@@ -873,6 +919,8 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             auto & offs = offsets_col->getData();
             for (size_t i = 0; i < rows; ++i)
                 offs[i] = (i + 1) * list_size;
+            if (const auto filt = emptyInvisibleSlots(offs, child->size(), invisible_rows))
+                child = child->filter(*filt, -1);
             return ColumnArray::create(child, std::move(offsets_col));
         }
         case TypeKind::Struct:
@@ -962,6 +1010,11 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             {
                 keys = keys->cut(static_cast<size_t>(base), referenced);
                 values = values->cut(static_cast<size_t>(base), referenced);
+            }
+            if (const auto filt = emptyInvisibleSlots(offsets_col->getData(), keys->size(), invisible_rows))
+            {
+                keys = keys->filter(*filt, -1);
+                values = values->filter(*filt, -1);
             }
             return ColumnMap::create(keys, values, std::move(offsets_col));
         }
@@ -1061,6 +1114,8 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     const size_t referenced = static_cast<size_t>(prev - base);
     ColumnPtr child_slice
         = (base == 0 && referenced == child->size()) ? child : child->cut(static_cast<size_t>(base), referenced);
+    if (const auto filt = emptyInvisibleSlots(offsets_col->getData(), child_slice->size(), invisible_rows))
+        child_slice = child_slice->filter(*filt, -1);
     return ColumnArray::create(child_slice, std::move(offsets_col));
 }
 

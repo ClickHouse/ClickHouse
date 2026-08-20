@@ -26,13 +26,13 @@
 \N
 ('hi')
 === list_date32_garbage_in_null_slot_range
-['1970-01-01']
+[]
 ['1970-01-02']
 === fixed_size_list_date32_garbage_in_null_slot_range
-['1970-01-01','1970-01-01']
+[]
 ['1970-01-06','1970-01-07']
 === map_date32_garbage_in_null_slot_range
-{'':'1970-01-01'}
+{}
 {'b':'1970-01-02'}
 === sparse_union_date32_garbage_in_unselected
 7

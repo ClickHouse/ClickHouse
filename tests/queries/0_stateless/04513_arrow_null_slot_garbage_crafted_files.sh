@@ -44,7 +44,9 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 #                                                invisibility through the list offsets)
 #
 # A NULL list/map slot whose offsets span a non-empty range is spec-legal too: the offsets stay
-# monotonic and the range's bytes are undefined.
+# monotonic and the range's bytes are undefined. Array/Map cannot be inside Nullable in ClickHouse, so
+# the slot's own null map is dropped and the row decodes as the type default — the empty array/map —
+# the same way the native Parquet reader materializes a null list slot.
 #   list_date32_garbage_in_null_slot_range
 #   fixed_size_list_date32_garbage_in_null_slot_range
 #   map_date32_garbage_in_null_slot_range
