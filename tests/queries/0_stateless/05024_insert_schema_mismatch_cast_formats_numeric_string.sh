@@ -26,8 +26,8 @@ check() {
     if grep -q "$PHRASE"; then echo "explanation present"; else echo "explanation missing"; fi
 }
 
-data_numeric="$CLICKHOUSE_TMP/data_05023_numeric.native"
-data_text="$CLICKHOUSE_TMP/data_05023_text.native"
+data_numeric="$CLICKHOUSE_TMP/data_05024_numeric.native"
+data_text="$CLICKHOUSE_TMP/data_05024_text.native"
 $CLICKHOUSE_LOCAL -q "SELECT 'not-a-uuid' AS u, '1' AS x FORMAT Native" > "$data_numeric"
 $CLICKHOUSE_LOCAL -q "SELECT 'not-a-uuid' AS u, 'not_a_number' AS x FORMAT Native" > "$data_text"
 
