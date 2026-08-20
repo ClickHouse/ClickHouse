@@ -12843,7 +12843,16 @@ void MergeTreeData::triggerStreamingSubscriptionEnrichment() const
 
 bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
 {
-    if (subscription_manager.isEmpty())
+    /// Collect the subscriptions before reading the parts, never the other way round: every
+    /// subscription below was registered before this call, so the parts snapshot we take next is at
+    /// least as fresh as each of them. Reading the parts first would let a subscription registered
+    /// in between be credited with an enrichment round computed from a snapshot that predates it,
+    /// and a bounded stream treats its first round as authoritative — it would finish the query
+    /// early, silently returning fewer rows than were committed before the query started.
+    /// A subscription registered after this point is simply served by the next round: its own
+    /// `triggerStreamingSubscriptionEnrichment` re-schedules this job even while it is running.
+    auto subscriptions = subscription_manager.collectSubscriptions();
+    if (subscriptions.empty())
         return false;
 
     LocalPartsByPartition local_parts;
@@ -12853,12 +12862,12 @@ bool MergeTreeData::scheduleStreamingJob(BackgroundJobsAssignee & assignee)
     auto promoters = buildPromoters();
 
     bool any_enriched = false;
-    subscription_manager.executeOnEachSubscription([&](StreamSubscriptionPtr & subscription)
+    for (auto & subscription : subscriptions)
     {
         auto & bounds_subscription = *subscription->as<MergeTreeBoundsSubscription>();
         any_enriched |= enrichSubscription(bounds_subscription, local_parts, promoters);
         bounds_subscription.onEnrichmentRound();
-    });
+    }
 
     if (any_enriched)
         assignee.trigger();
