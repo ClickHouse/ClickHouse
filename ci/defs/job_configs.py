@@ -212,6 +212,10 @@ class JobConfigs:
                 # two files, so a change to either must run this job.
                 "./tests/clickhouse-test",
                 "./tests/queries/shell_config.sh",
+                # The CFI build-classification guards read these two, so a change to either
+                # must run this job instead of reusing a cached result.
+                "./tests/config/install.sh",
+                "./tests/integration/helpers/cluster.py",
             ]
         ),
         post_hooks=["python3 ci/jobs/scripts/job_hooks/docker_volume_clean_up_hook.py"],

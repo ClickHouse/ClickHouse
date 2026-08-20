@@ -23,6 +23,7 @@ See ClickHouse/ClickHouse#115122.
 """
 
 import os
+import subprocess
 import sys
 
 import pytest
@@ -117,16 +118,49 @@ def test_named_checks_distinguish_between_sanitizers(name):
         assert classify(flags).is_built_with_sanitizer(name) == expected, profile
 
 
-def test_installer_gates_symbolization_on_the_same_invariant():
-    """The functional-test installer decides symbolization from the same marker.
+def run_installer_predicate(tmp_path, flags):
+    """Run the installer's own is_sanitizer_build against a stub `clickhouse`.
 
-    Scoped to `is_sanitizer_build`: `is_fast_build` also tests for `-fsanitize=`,
-    but only the Fast test job calls it and that job builds without CFI.
+    The function shells out to a bare `clickhouse local --query`, so a stub earlier
+    on PATH answers the query. Returns its exit status: 0 means the installer would
+    install trace_log_no_symbolize.xml and disable symbolization.
     """
-    with open(INSTALLER, "r", encoding="utf-8") as f:
-        installer = f.read()
-    body = installer.split("function is_sanitizer_build()", 1)
-    assert len(body) == 2, "is_sanitizer_build is gone from the installer"
-    body = body[1].split("\n}", 1)[0]
-    assert "'%-DSANITIZER%'" in body
-    assert "LIKE '%-fsanitize=%'" not in body
+    stub = tmp_path / "clickhouse"
+    stub.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "flags = {!r}\n"
+        "query = sys.argv[sys.argv.index('--query') + 1]\n"
+        'start = query.index("\'") + 1\n'
+        "pattern = query[start : query.index(\"'\", start)].strip('%')\n"
+        "print(int(pattern in flags))\n".format(flags)
+    )
+    stub.chmod(0o755)
+
+    script = (
+        "set -e\n"
+        "source_lines=$(sed -n '/^function is_sanitizer_build()/,/^}/p' "
+        '"$1"' + ")\n"
+        'eval "$source_lines"\n'
+        "is_sanitizer_build\n"
+    )
+    env = dict(os.environ, PATH="{}:{}".format(tmp_path, os.environ["PATH"]))
+    return subprocess.run(
+        ["bash", "-c", script, "bash", INSTALLER], env=env, capture_output=True
+    ).returncode
+
+
+@pytest.mark.parametrize("profile", sorted(NON_SANITIZER_FLAGS))
+def test_installer_keeps_symbolization_without_a_sanitizer(tmp_path, profile):
+    """CFI, debug, release and coverage builds must keep query-profiler symbols.
+
+    Runs the installer's own predicate, so it fails if that function stops
+    depending on the build flags at all, not only if its text changes.
+    """
+    assert run_installer_predicate(tmp_path, NON_SANITIZER_FLAGS[profile]) != 0
+
+
+@pytest.mark.parametrize("profile", sorted(SANITIZER_FLAGS))
+def test_installer_disables_symbolization_under_a_sanitizer(tmp_path, profile):
+    """In-flush symbolization is too slow under a sanitizer runtime."""
+    assert run_installer_predicate(tmp_path, SANITIZER_FLAGS[profile]) == 0
