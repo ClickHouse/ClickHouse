@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# Protobuf format is not built in the fasttest environment.
+
 set -e -o pipefail
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
