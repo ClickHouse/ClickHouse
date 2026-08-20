@@ -222,7 +222,7 @@ L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 - `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
 - `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
-- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
 - `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
 
 **Returned value**
@@ -716,7 +716,7 @@ cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])
 
 - `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
 - `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
-- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
 - `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
 
 **Returned value**
@@ -791,7 +791,7 @@ dotProductTransposedQuantized(vectors, reference, p[, used_dims])
 
 - `vectors` — Vectors of `quantizeBFloat16ToInt8` codes. [`QBit(Int8, UInt64[, UInt64])`](/reference/data-types/qbit)
 - `reference` — Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly. [`Array(Float32)`](/reference/data-types/array) or [`Array(Int8)`](/reference/data-types/array)
-- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
+- `p` — Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer using the Gaussian conditional-mean centroids of the existing Lloyd-Max prefix intervals, for faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an `Array(Int8)` reference is always reconstructed at full 8-bit precision. [`UInt`](/reference/data-types/int-uint)
 - `used_dims` — Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have at least this many elements (any extra trailing elements are ignored). Only the stride groups covering these dimensions are read. [`UInt`](/reference/data-types/int-uint)
 
 **Returned value**
