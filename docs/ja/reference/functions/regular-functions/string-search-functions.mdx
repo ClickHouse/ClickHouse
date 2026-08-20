@@ -494,7 +494,7 @@ hasAllTokens(input, needles)
 
 * `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring) または [`Array(String)`](/ja/reference/data-types/array) または [`Array(FixedString)`](/ja/reference/data-types/array)
 * `needles` — 検索するトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザー。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定されていない場合のデフォルト値は `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -724,7 +724,7 @@ hasAnyTokens(input, needles)
 
 * `input` — 入力カラムです。[`String`](/ja/reference/data-types/string) or [`FixedString`](/ja/reference/data-types/fixedstring) or [`Nullable(String)`](/ja/reference/data-types/nullable) or [`Nullable(FixedString)`](/ja/reference/data-types/nullable) or [`Array(String)`](/ja/reference/data-types/array) or [`Array(FixedString)`](/ja/reference/data-types/array) or [`Array(Nullable(String))`](/ja/reference/data-types/array) or [`Array(Nullable(FixedString))`](/ja/reference/data-types/array)
 * `needles` — 検索対象のトークン。[`String`](/ja/reference/data-types/string) または [`Array(String)`](/ja/reference/data-types/array)
-* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu('<locale>')`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -754,7 +754,7 @@ SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Array内でAS-IS (トークン化なし) で検索するneedleを指定する**
+**ArrayでAS-IS (トークン化なし) で検索するneedleを指定する**
 
 ```sql title=Query
 CREATE TABLE doc (
@@ -913,7 +913,7 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 検索を行う前に、この関数はテキスト索引に指定されたトークナイザーを使用して、`input` 引数と `phrase` 引数の両方をトークン化します。
 カラムにテキスト索引が定義されていない場合は、省略可能な第 3 引数としてトークナイザーが指定されていない限り、代わりに `splitByNonAlpha` トークナイザーが使用されます。
-トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` のいずれかを指定する必要があります。
+トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK`、`icu` のいずれかを指定する必要があります。
 
 <Note>
   テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。

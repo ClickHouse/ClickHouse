@@ -2,6 +2,7 @@
   "directory": "none",
   "group": "서버 설정",
   "pages": [
+    "ko/reference/settings/server-settings/settings",
     "ko/reference/settings/server-settings/settings/access-control",
     "ko/reference/settings/server-settings/settings/aggregate-function",
     "ko/reference/settings/server-settings/settings/allow",
@@ -132,6 +133,5 @@
     "ko/reference/settings/server-settings/settings/workload",
     "ko/reference/settings/server-settings/settings/zookeeper",
     "ko/reference/settings/server-settings/settings/other"
-  ],
-  "root": "ko/reference/settings/server-settings/settings"
+  ]
 }
