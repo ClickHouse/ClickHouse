@@ -5020,7 +5020,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             local_context,
             /*with_alters=*/ false,
             (*settings_from_storage)[MergeTreeSetting::alter_column_secondary_index_mode],
-            /*storage_has_active_parts=*/ !getDataPartsVectorForInternalUsage().empty(),
             (*settings_from_storage)[MergeTreeSetting::share_nested_offsets]);
 
         if (!mutation_commands.empty())

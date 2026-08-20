@@ -3065,7 +3065,6 @@ MutationCommands AlterCommands::getMutationCommands(
     ContextPtr context,
     bool with_alters,
     AlterColumnSecondaryIndexMode index_mode,
-    bool storage_has_active_parts,
     bool share_nested_offsets) const
 {
     /// Save a copy of the original metadata before applying commands.
@@ -3120,13 +3119,9 @@ MutationCommands AlterCommands::getMutationCommands(
     /// alters in `MergeTreeData::checkAlterIsPossible`.
     /// After the loop above, `metadata` has all commands applied, so it describes the
     /// post-ALTER schema, while `original_metadata` describes the pre-ALTER one.
-    /// When the storage has no active parts there are no index files to go stale, so the ALTER
-    /// only affects future inserts and no mutation is queued — this mirrors the
-    /// `alter_affects_existing_parts` gate that `MergeTreeData::checkAlterIsPossible` applies to
-    /// the THROW and COMPATIBILITY modes, and keeps `allow_non_metadata_alters = 0` working on
-    /// empty tables.
-    if (storage_has_active_parts
-        && (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP))
+    /// Plan the repair even when the table currently looks empty. A write using the old metadata
+    /// may not have committed its part yet; the storage orders mutation registration after it.
+    if (index_mode == AlterColumnSecondaryIndexMode::REBUILD || index_mode == AlterColumnSecondaryIndexMode::DROP)
     {
         for (const auto & [index_name, change_description] : getSkipIndicesWithChangedExpression(original_metadata, metadata, context))
         {
@@ -3141,15 +3136,10 @@ MutationCommands AlterCommands::getMutationCommands(
     /// its expansion when an unrelated command changes the schema (e.g. `ADD COLUMN` extends `*`).
     /// New inserts would compute the column from the new expansion while existing parts keep
     /// values computed from the old one, so the same column would silently return two different
-    /// definitions depending on row age. Rematerialize such columns so existing parts follow
-    /// the new expansion. When the storage has no active parts, there is nothing to
-    /// rematerialize — the ALTER only affects future inserts — so no mutation is queued and the
-    /// EPHEMERAL-dependency rejection inside the helper does not apply.
-    if (storage_has_active_parts)
-    {
-        for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
-            result.push_back(createMaterializeColumnCommand(column_name));
-    }
+    /// definitions depending on row age. Rematerialize such columns so parts written from an old
+    /// metadata snapshot follow the new expansion too.
+    for (const auto & column_name : getMaterializedColumnsWithChangedExpansion(original_metadata, metadata, context))
+        result.push_back(createMaterializeColumnCommand(column_name));
 
     return result;
 }

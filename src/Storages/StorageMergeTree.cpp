@@ -439,6 +439,11 @@ std::optional<UInt64> StorageMergeTree::totalBytesUncompressed(const Settings &)
     return res;
 }
 
+TableLockHolder StorageMergeTree::lockForInsert(const String & query_id, const Poco::Timespan & acquire_timeout)
+{
+    return tryLockTimed(insert_alter_lock, RWLockImpl::Read, query_id, acquire_timeout);
+}
+
 SinkToStoragePtr
 StorageMergeTree::write(const ASTPtr & /*query*/, const StorageMetadataPtr & metadata_snapshot, ContextPtr local_context, bool /*async_insert*/)
 {
@@ -487,10 +492,24 @@ void StorageMergeTree::alter(
         local_context,
         /*with_alters=*/ false,
         (*old_storage_settings)[MergeTreeSetting::alter_column_secondary_index_mode],
-        /*storage_has_active_parts=*/ !getDataPartsVectorForInternalUsage().empty(),
         (*old_storage_settings)[MergeTreeSetting::share_nested_offsets]);
     if (!maybe_mutation_commands.empty())
         delayMutationOrThrowIfNeeded(nullptr, local_context);
+
+    /// `lockForAlter` only serializes `ALTER` queries; `INSERT` pipelines hold the table share lock
+    /// instead. Drain writes that captured the old metadata and block new ones until the metadata
+    /// and its repair mutation are registered atomically from their point of view. Otherwise a
+    /// late old-snapshot part can receive a block number above the mutation version and skip it.
+    const bool needs_insert_barrier = std::ranges::any_of(maybe_mutation_commands, [](const auto & command)
+    {
+        return command.type == MutationCommand::MATERIALIZE_INDEX
+            || command.type == MutationCommand::MATERIALIZE_COLUMN;
+    });
+    TableLockHolder insert_barrier;
+    if (needs_insert_barrier)
+        insert_barrier = tryLockTimed(
+            insert_alter_lock, RWLockImpl::Write,
+            local_context->getCurrentQueryId(), query_settings[Setting::lock_acquire_timeout]);
 
     Int64 mutation_version = -1;
 
@@ -795,6 +814,8 @@ void StorageMergeTree::alter(
                 throw;
             }
         }
+
+        insert_barrier.reset();
 
         if (!maybe_mutation_commands.empty() && query_settings[Setting::alter_sync] > 0)
             waitForMutation(mutation_version, false);

@@ -263,11 +263,9 @@ public:
     /// prune incorrectly. Similarly, if the matcher expansion of an existing
     /// `MATERIALIZED` column changes, a MATERIALIZE_COLUMN command is returned
     /// so existing parts do not silently diverge from new inserts.
-    /// `storage_has_active_parts` tells whether the storage holds any active data
-    /// parts: when it does not, there is nothing to rematerialize — the ALTER only
-    /// affects future inserts — so no MATERIALIZE_COLUMN commands are returned.
-    /// Replicated storages must pass true: the local part state cannot prove that
-    /// the table is empty on all replicas.
+    /// Mutation commands are planned even when the storage currently has no active parts.
+    /// Storage engines must order their registration after writes using the old metadata, because
+    /// those writes can still commit a part after an empty-table observation.
     /// share_nested_offsets is threaded to tryConvertToMutationCommand -> AlterCommand::apply so the
     /// intermediate metadata built while planning mutations matches the real commands.apply() for
     /// IF NOT EXISTS nested adds (see AlterCommand::apply).
@@ -277,7 +275,6 @@ public:
         ContextPtr context,
         bool with_alters = false,
         AlterColumnSecondaryIndexMode index_mode = AlterColumnSecondaryIndexMode::REBUILD,
-        bool storage_has_active_parts = true,
         bool share_nested_offsets = true) const;
 
     /// Names of skip indices whose effective normalized expression or text-index

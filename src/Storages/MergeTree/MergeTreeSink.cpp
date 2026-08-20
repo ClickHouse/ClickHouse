@@ -50,6 +50,7 @@ namespace MergeTreeSetting
 namespace FailPoints
 {
     extern const char merge_tree_sink_on_start_random_sleep[];
+    extern const char mt_insert_pause_before_commit_part[];
 }
 
 MergeTreeSink::~MergeTreeSink()
@@ -411,6 +412,8 @@ MergeTreeTemporaryPartPtr MergeTreeSink::writeNewTempPart(BlockWithPartition & b
 
 std::vector<std::string> MergeTreeSink::commitPart(MergeTreeMutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes)
 {
+    FailPointInjection::pauseFailPoint(FailPoints::mt_insert_pause_before_commit_part);
+
     /// It's important to create it outside of lock scope because
     /// otherwise it can lock parts in destructor and deadlock is possible.
     MergeTreeData::Transaction transaction(storage, context->getCurrentTransaction().get());
