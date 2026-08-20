@@ -225,14 +225,6 @@ void optimizeTreeSecondPass(
     };
 
     Stack stack;
-
-    /// The first pass can leave an `ExpressionStep` between a `FilterStep` and its child (e.g. the
-    /// converting step of `tryOptimizeTopK`), which makes rewrites anchored on the read step's parent
-    /// silently give up. Normalize the plan before they run.
-    if (optimization_settings.merge_expressions)
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { tryMergeExpressions(&frame_node, nodes, extra_settings); });
-
-    chassert(stack.empty());
     stack.push_back({.node = &root});
 
     while (!stack.empty())
