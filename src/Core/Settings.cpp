@@ -7943,9 +7943,7 @@ If true, data from INSERT query is stored in queue and later flushed to table in
 )", 0, \
         {"26.2", false, true, "Enable async inserts by default."}) \
     DECLARE(Bool, wait_for_async_insert, true, R"(
-If true wait for processing of asynchronous insertion. This setting is ignored for an `INSERT ... SELECT`
-that takes the async insert queue route: that route always waits for the flush unconditionally, because
-returning early would hide a flush failure from a client whose INSERT already reported success.
+If true wait for processing of asynchronous insertion.
 )", 0) \
     DECLARE(Seconds, wait_for_async_insert_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Timeout for waiting for processing asynchronous insertion.

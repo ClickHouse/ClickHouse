@@ -104,11 +104,17 @@ ${CLICKHOUSE_CLIENT} -q "
       AND table = 'test_async_sel_tcp'
 "
 
-# Case 4: wait_for_async_insert is forced on this path: rows are visible right after the HTTP
-# call returns even with wait_for_async_insert=0.
+# Case 4: with wait_for_async_insert=0 the call returns once the block is queued, so visibility
+# is not guaranteed yet; poll until the rows land before selecting.
 Q=$(urlencode "INSERT INTO test_async_sel_wait SELECT number::UInt32 AS id, 'wait_' || toString(number) AS v FROM numbers(2)")
 ${CLICKHOUSE_CURL} -sS -X POST \
     "${CLICKHOUSE_URL}&async_insert=1&wait_for_async_insert=0&query=${Q}" -d ""
+
+for _ in $(seq 1 20); do
+    count=$(${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_async_sel_wait")
+    [ "$count" -ge 2 ] && break
+    sleep 0.5
+done
 ${CLICKHOUSE_CLIENT} -q "SELECT id, v FROM test_async_sel_wait ORDER BY id"
 
 # Cleanup.
