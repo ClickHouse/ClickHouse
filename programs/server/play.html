@@ -3049,7 +3049,16 @@ class QueryResultElement extends HTMLElement
                     user-select: none;
                 }
 
-                #data-table:not(.shapeable) .sort-toggles
+                /* A result the query-construction settings cannot shape - a statement they do not apply
+                   to, or one table of a multi-query run, where a shape naming one result's columns
+                   cannot be sent - carries none of their controls. Not merely dimmed: they would do
+                   nothing at all there, and the sort arrows going while the funnel stayed would leave
+                   the funnel with their empty space beside it. Hiding them outright also takes the
+                   buttons out of the tab order, which is right for a control that is not on offer. */
+                #data-table:not(.shapeable) .sort-toggles,
+                #data-table:not(.shapeable) .filter-toggle,
+                #data-table:not(.shapeable) .filter-state,
+                #data-table:not(.shapeable) .filter-popover
                 {
                     display: none;
                 }
