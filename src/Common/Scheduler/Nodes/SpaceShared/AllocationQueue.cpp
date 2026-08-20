@@ -305,13 +305,12 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     if (running_allocations.empty())
         return nullptr;
 
-    // Choose the eviction victim by (memory_eviction_score, fair_key, unique_id), highest first. `memory_eviction_score` (a
-    // per-query setting, 0 by default) is the primary key, so a reservation the user marked with a
-    // higher score is evicted first. When every reservation shares the same `memory_eviction_score` this reduces
-    // to the largest `fair_key` - exactly what `running_allocations.rbegin()` selected before - so the
-    // default eviction order is unchanged.
-    // running_allocations is non-empty (checked above), so begin() is valid; seeding the search with it
-    // (rather than a null pointer) also makes it obvious to the static analyzer that the result is never null.
+    // Select the eviction victim by (memory_eviction_score, fair_key, unique_id), highest first: the
+    // per-query `memory_eviction_score` (0 by default) is the primary key, so a higher-scored reservation
+    // is evicted first, and equal scores fall back to the largest `fair_key`. With the default score
+    // everywhere the victim is simply the reservation with the largest `fair_key`.
+    // running_allocations is non-empty here, so begin() is a valid seed (and keeps the result provably
+    // non-null for the static analyzer).
     ResourceAllocation * victim_ptr = &*running_allocations.begin();
     for (ResourceAllocation & candidate : running_allocations)
     {
@@ -328,7 +327,7 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
             details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
                 formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy increase of a smaller allocation.",
+            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
                 formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName());
     }
 
