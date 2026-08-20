@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Exception.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
@@ -37,6 +38,36 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CANNOT_READ_ALL_DATA;
+}
+
+namespace
+{
+
+/// The read window and block sizes to use at a given memory-pressure level. Under pressure the
+/// executor reads less at once, so its in-flight buffers hold less memory.
+struct WindowAndBlock
+{
+    size_t window_bytes;
+    size_t block_bytes;
+};
+
+/// Divisors applied to the base window/block per level: `Normal` keeps the base sizes, higher
+/// levels shrink both. Indexed by `MemoryPressureLevel` (Normal, Elevated, High, Critical).
+constexpr size_t WINDOW_REDUCTION[memoryPressureLevelCount()] = {1, 4, 16, 64};
+constexpr size_t BLOCK_REDUCTION[memoryPressureLevelCount()] = {1, 2, 2, 8};
+
+/// Shrink `base_window` / `base_block` for `pressure`, never below `FLOOR` and never above the base;
+/// the block is also capped at the window. A too-small window would stall progress, hence the floor.
+WindowAndBlock sizesAtPressure(MemoryPressureLevel pressure, size_t base_window, size_t base_block)
+{
+    static constexpr size_t FLOOR = 128ULL << 10;
+    const size_t level = static_cast<size_t>(pressure);
+    const size_t window = std::min(std::max(base_window / WINDOW_REDUCTION[level], FLOOR), base_window);
+    size_t block = std::min(std::max(base_block / BLOCK_REDUCTION[level], FLOOR), base_block);
+    block = std::min(block, window);
+    return {window, block};
+}
+
 }
 
 /// Read `chunk` bytes into `dest` with no intermediate copy when the buffer honors an external
@@ -367,7 +398,7 @@ ChainedBuffers ReaderExecutor::readSource(size_t file_offset, size_t want)
     return chain;
 }
 
-ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve)
+ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t max_serve, size_t serve_block)
 {
     chassert(!cache_chain.empty());
     /// Resolve the whole window across tiers (front = fastest) and act on the run covering the head:
@@ -379,7 +410,8 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t window_offset, size_t ma
     const size_t object_offset = start_piece.front().object_offset;
 
     /// Serve one block from `window_offset`, capped by the window and by what is available up to `end`.
-    auto serve_len = [&](size_t end) { return std::min({block_size, max_serve, end - window_offset}); };
+    /// `serve_block` is the pressure-adjusted block size (<= the base `block_size`).
+    auto serve_len = [&](size_t end) { return std::min({serve_block, max_serve, end - window_offset}); };
 
     /// A populating miss carries its own open writer; a bypass tier's miss is writer-less. `claim` is
     /// filled by the claim loop below (empty for a bypass tier or a tail a concurrent downloader leads).
@@ -625,10 +657,15 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_physical = toPhysical(position);
 
-    /// The most this window may serve: `window_size`, clamped to the file end (when the size is
-    /// known) and to the `read_until` bound. The cache path serves at most `block_size` of it; the
+    /// Shrink the window and block under memory pressure so in-flight buffers hold less. Sample the
+    /// level once per window; a `Normal` level keeps the base sizes.
+    const MemoryPressureLevel pressure = memoryPressureMonitor().currentLevel();
+    const WindowAndBlock sizes = sizesAtPressure(pressure, window_size, block_size);
+
+    /// The most this window may serve: the pressure-adjusted window, clamped to the file end (when the
+    /// size is known) and to the `read_until` bound. The cache path serves at most one block of it; the
     /// no-cache path serves it whole.
-    size_t max_serve = window_size;
+    size_t max_serve = sizes.window_bytes;
     if (!offset_map.hasUnknownSize())
         max_serve = std::min(max_serve, offset_map.totalSize() - position_physical);
     chassert(!read_until || *read_until >= position);
@@ -642,7 +679,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     ChainedBuffers chain = cache_chain.empty()
         ? readSource(position_physical, max_serve)
-        : readThroughCaches(position_physical, max_serve);
+        : readThroughCaches(position_physical, max_serve, sizes.block_bytes);
 
     const size_t got = chain.empty() ? 0 : chain.range().size;
     if (got == 0)

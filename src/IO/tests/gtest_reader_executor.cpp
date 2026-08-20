@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include <Common/CurrentThread.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ThreadStatus.h>
@@ -472,6 +473,31 @@ TEST_F(ReaderExecutorTest, WindowNeverExceedsBlockSize)
     }
     EXPECT_EQ(total, 1000u);
     EXPECT_EQ(windows, 10u);
+}
+
+TEST_F(ReaderExecutorTest, WindowShrinksUnderMemoryPressure)
+{
+    /// Under memory pressure the executor serves a smaller window, so its in-flight buffers hold
+    /// less. The no-cache path serves the whole (pressure-adjusted) window, so the first window's
+    /// size is exactly `sizesAtPressure(level).window_bytes`, capped by the file.
+    constexpr size_t base_window = 8 * 1024 * 1024;
+    StoredObjects objects{makeFile("a.bin", base_window)};
+
+    /// Default thresholds are 75 / 90 / 95 percent; pick a pressure inside each band.
+    auto firstWindow = [&](double pressure) -> size_t
+    {
+        FakeMemoryPressureMonitor fake(pressure, /*initial_now_ns=*/1'000'000'000ULL);
+        ScopedMemoryPressureMonitor scope(fake);
+        ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects,
+            ReaderExecutor::Options{.window_size = base_window});
+        ChainedBuffers w = ex.readNextWindow();
+        return w.atEnd() ? 0 : w.totalBytes();
+    };
+
+    EXPECT_EQ(firstWindow(0.0), base_window);        /// Normal: full window
+    EXPECT_EQ(firstWindow(0.80), base_window / 4);   /// Elevated: window / 4
+    EXPECT_EQ(firstWindow(0.92), base_window / 16);  /// High: window / 16
+    EXPECT_EQ(firstWindow(0.99), 128u * 1024);       /// Critical: window / 64, floored at 128 KiB
 }
 
 TEST_F(ReaderExecutorTest, SeekThenRead)

@@ -189,7 +189,7 @@ private:
     /// Serve the window through the cache chain: serve the cached prefix, then claim and fetch the
     /// miss ranges and populate them. A range another thread is already downloading is fetched
     /// through from source. Precondition: `!cache_chain.empty()`.
-    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve);
+    ChainedBuffers readThroughCaches(size_t window_offset, size_t max_serve, size_t serve_block);
     void dropLongConnection();
 
     /// The only logical<->physical converters: physical = header-inclusive file coords; logical =
