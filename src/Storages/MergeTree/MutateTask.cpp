@@ -23,6 +23,7 @@
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Interpreters/replaceSubcolumnsToGetSubcolumnFunctionInQuery.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
