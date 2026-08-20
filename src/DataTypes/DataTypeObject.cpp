@@ -956,6 +956,12 @@ SELECT json FROM test;
 
 It is possible to cast various types using the special syntax `::JSON`.
 
+<Note>
+By default the simdjson parser is used, and it supports only valid UTF-8. Casting a value which contains
+invalid UTF-8 raises `INCORRECT_DATA`. Set [`allow_simdjson`](/reference/settings/session-settings/allow#allow_simdjson)
+to `0` to fall back to rapidjson, which parses such values.
+</Note>
+
 #### CAST from `String` to `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
@@ -993,16 +999,6 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
 │ {"a":{"b":"42"},"c":["1","2","3"],"d":"Hello, World!"} │
 └────────────────────────────────────────────────────────┘
 ```
-
-<Note>
-Every `String` value being cast must be valid UTF-8. A value which is not raises `INCORRECT_DATA`,
-because the default JSON parser is simdjson, which rejects such values as the JSON specification requires.
-
-Setting [`allow_simdjson`](/reference/settings/session-settings/allow#allow_simdjson) to `0` selects rapidjson,
-which parses them. That also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable, and it lets the
-`JSONExtract*` functions parse such input instead of silently returning a default value; the byte-returning
-variants then preserve the invalid bytes.
-</Note>
 
 <Note>
 JSON paths are stored flattened. This means that when a JSON object is formatted from a path like `a.b.c`
