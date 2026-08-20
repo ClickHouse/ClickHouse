@@ -86,7 +86,12 @@
                direction, the funnel of a filtered column, and the filter it shows underneath. Its own
                colour rather than the link colour: these are not links, and a hue nothing else in the
                result uses makes the shaped columns pick themselves out of a wide header at a glance. */
-            --active-control-color: #C0C;
+            --active-control-color: #F0F;
+            /* What a header icon puts behind itself so a column name running under it does not muddle
+               it: the header's own color, so it is invisible against a plain header, but not quite
+               opaque, so the letters it covers stay faintly there rather than being punched out. Kept
+               as rgba rather than derived from --table-header-color, which is a plain hex. */
+            --icon-backdrop: rgba(238, 238, 238, 0.9);
             --table-hover-filter: brightness(0.9);
             --link-color: #06D;
             --logo-color: #FFF;
@@ -167,6 +172,7 @@
             --error-color: #400;
             --table-header-color: #102020;
             --active-control-color: #FF0;
+            --icon-backdrop: rgba(16, 32, 32, 0.9);
             --table-hover-filter: contrast(0.9) brightness(2);
             --link-color: #4BDAF7;
             --logo-color: #444;
@@ -2512,8 +2518,8 @@ function quoteStringLiteral(value) {
     return "'" + String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'";
 }
 
-/// Escape the `LIKE` pattern metacharacters in a value, so a substring/prefix/suffix filter built
-/// from a cell matches that value literally: a `%` or `_` inside it must not act as a wildcard. The
+/// Escape the `LIKE` pattern metacharacters in a value, so a substring filter built from a cell
+/// matches that value literally: a `%` or `_` inside it must not act as a wildcard. The
 /// escape character of the pattern language is `\`, which therefore has to be escaped too; the result
 /// is then quoted as an ordinary string literal (which escapes those backslashes again).
 function escapeLikePattern(value) {
@@ -2676,6 +2682,10 @@ class QueryResultElement extends HTMLElement
     /// not something anyone means to click, and the operator labels would sit under an unreadable
     /// tooltip. The header input still accepts any expression for such a column.
     static _MAX_CELL_FILTER_LENGTH = 100;
+
+    /// How close to the edge of the window the cell comparison menu may come before it is nudged back
+    /// on screen (see `_positionCellFilterMenu`).
+    static _MENU_VIEWPORT_MARGIN = 4;
 
     /// How many pages before the current one the pager lists. The number of pages is unknown (counting
     /// the rows would mean a second query), so the pager shows a window ending one page after the
@@ -2926,6 +2936,14 @@ class QueryResultElement extends HTMLElement
                     display: inline-block;
                 }
 
+                /* A table that does not scroll horizontally has no pin toggle - pinning is meaningless
+                   there - so the colorize icon takes the left edge itself instead of leaving a hole
+                   where the pin would have been. */
+                #data-table:not(.has-hscroll) .colorize-toggle
+                {
+                    left: 0.35rem;
+                }
+
                 /* Touch / coarse-pointer devices have no hover, and a hidden (display: none) icon is
                    not hit-testable: a tap would land on the th, never reaching the icon's click
                    handler, so the color switch could not be activated at all. Keep the icon always
@@ -3082,12 +3100,12 @@ class QueryResultElement extends HTMLElement
                    effect on this column, at FULL strength once it is - and at full strength while the
                    pointer or the keyboard focus is on the icon itself, as a preview of turning it on.
 
-                   Muting is a loss of colour, never of opacity. A half-transparent icon sitting over a
-                   column name (or over the colour coding of the cells below) reads as damaged rather
-                   than as inactive, and how transparent it looks depends on whatever happens to be
-                   behind it. Opacity is used only to hide an icon outright, which is a different thing,
-                   and only because it keeps these buttons in the tab order while they are invisible -
-                   display: none would not.
+                   The difference is hue, never strength: both states are drawn at full contrast against
+                   the header, one in the text colour and one in the accent. A dimmed icon is hard to
+                   make out at this size - these are thin strokes a few pixels across - and how dim it
+                   looks depends on whatever happens to be behind it. Opacity is used only to hide an
+                   icon outright, which is a different thing, and only because it keeps these buttons in
+                   the tab order while they are invisible - display: none would not.
 
                    All four are line art of the same weight - the arrows are text glyphs, the other three
                    inline SVG stroking itself in the current colour - so one colour drives the lot. */
@@ -3096,9 +3114,10 @@ class QueryResultElement extends HTMLElement
                 .sort-toggle,
                 .filter-toggle
                 {
-                    color: var(--misc-text-color);
+                    color: var(--text-color);
                 }
 
+                /* Pointing at an icon shows the colour it will take once its feature is on. */
                 th .pin-toggle:hover,
                 th .colorize-toggle:hover,
                 th .sort-toggle:hover,
@@ -3107,7 +3126,7 @@ class QueryResultElement extends HTMLElement
                 th .sort-toggle:focus-visible,
                 th .filter-toggle:focus-visible
                 {
-                    color: var(--text-color);
+                    color: var(--active-control-color);
                 }
 
                 /* Placed after the hover rules, so a column already pinned, colorized, sorted or
@@ -3121,21 +3140,19 @@ class QueryResultElement extends HTMLElement
                 }
 
                 /* Every header icon is absolutely positioned over the column name, which the name of a
-                   narrow column runs under. Draw a halo of the header background around each glyph so
-                   the two stay legible instead of merging into each other. A drop-shadow rather than a
-                   text-shadow: it also applies to the inline SVG of the three icons that are drawn
-                   rather than typed. Five stacked passes of a 1px blur make the halo opaque enough to
-                   cut a letter behind the glyph, while staying invisible against the plain header. */
+                   narrow column runs under. Each lays the header's own colour behind itself so the two
+                   do not muddle each other, extended a couple of pixels past the glyph by a box-shadow
+                   spread (rather than by padding, which would move the icons: they are positioned
+                   against the cell's edges). Being the header colour it is invisible on a plain header,
+                   and being not quite opaque it dims the letters it covers instead of punching a hole
+                   in the name. */
                 .pin-toggle,
                 .colorize-toggle,
                 .sort-toggle,
                 .filter-toggle
                 {
-                    filter: drop-shadow(0 0 1px var(--table-header-color))
-                            drop-shadow(0 0 1px var(--table-header-color))
-                            drop-shadow(0 0 1px var(--table-header-color))
-                            drop-shadow(0 0 1px var(--table-header-color))
-                            drop-shadow(0 0 1px var(--table-header-color));
+                    background: var(--icon-backdrop);
+                    box-shadow: 0 0 0 3px var(--icon-backdrop);
                 }
 
                 /* The funnel is an outline shape, so a halo alone would still leave the letter behind it
@@ -4003,6 +4020,9 @@ class QueryResultElement extends HTMLElement
         /// over a fixed list of names is not something anyone means, so its cell menu offers only the
         /// two comparisons that are.
         this._column_is_enum = {};
+        /// Whether a column holds a boolean. Only two values exist, so its cell menu offers them
+        /// directly instead of comparing against the one in the cell.
+        this._column_is_bool = {};
         /// Whether a column can hold NULL. Needed to tell a real NULL from data on the page's own
         /// default format: `JSONCompactStrings…` renders a NULL as the same superscript glyph the page
         /// displays it with (the server's plain-text NULL representation) rather than as a JSON null,
@@ -4422,6 +4442,7 @@ class QueryResultElement extends HTMLElement
             this._column_is_date[elem.name] = !!unwrapped_type.match(/^Date/);
             this._column_is_string[elem.name] = !!unwrapped_type.match(/^(String|FixedString)/);
             this._column_is_enum[elem.name] = !!unwrapped_type.match(/^Enum/);
+            this._column_is_bool[elem.name] = !!unwrapped_type.match(/^Bool/);
             this._column_is_nullable[elem.name] = !!elem.type.match(/^(?:LowCardinality\()?Nullable\(/);
             this._appendPinToggle(th, elem.name);
             this._appendColorizeToggle(th, elem.name);
@@ -5135,9 +5156,8 @@ class QueryResultElement extends HTMLElement
     ///
     /// Every value arrives as text (the page requests a `JSONStrings…` format), so a numeric column's
     /// literal is the text itself - a column the server typed as a number cannot spell anything that
-    /// is not a number - while a date's, an enum's and a string's are quoted, and the
-    /// substring/prefix/suffix options become `LIKE` patterns with the value's own `%` and `_` escaped
-    /// so they match literally.
+    /// is not a number - while a date's, an enum's and a string's are quoted, and the substring option
+    /// becomes a `LIKE` pattern with the value's own `%` and `_` escaped so it matches literally.
     _cellFilterOptions(name, is_null, text)
     {
         /// A NULL is filterable whatever the column's type is, and only with the null predicates:
@@ -5145,6 +5165,13 @@ class QueryResultElement extends HTMLElement
         if (is_null)
         {
             return [{ label: 'IS NULL', suffix: 'IS NULL' }, { label: 'IS NOT NULL', suffix: 'IS NOT NULL' }];
+        }
+        /// A boolean has two values and nothing between them, so the menu names them rather than
+        /// offering a comparison against the one in this cell: the choice is which of the two to keep,
+        /// which is as often the other one as it is this one.
+        if (this._column_is_bool[name])
+        {
+            return [{ label: 'true', suffix: '= true' }, { label: 'false', suffix: '= false' }];
         }
         if (this._column_is_number[name])
         {
@@ -5168,14 +5195,17 @@ class QueryResultElement extends HTMLElement
         if (this._column_is_string[name] && text.length <= QueryResultElement._MAX_CELL_FILTER_LENGTH)
         {
             const literal = quoteStringLiteral(text);
-            const pattern = escapeLikePattern(text);
-            return [
+            const options = [
                 { label: '=', suffix: '= ' + literal },
                 { label: '!=', suffix: '!= ' + literal },
-                { label: 'startsWith', suffix: 'LIKE ' + quoteStringLiteral(pattern + '%') },
-                { label: 'endsWith', suffix: 'LIKE ' + quoteStringLiteral('%' + pattern) },
-                { label: 'contains', suffix: 'LIKE ' + quoteStringLiteral('%' + pattern + '%') },
             ];
+            /// Every string contains the empty one, so that option would be a filter on nothing.
+            /// Being equal to it is still a question worth asking.
+            if (text === '') { return options; }
+            const pattern = escapeLikePattern(text);
+            return options.concat([
+                { label: 'contains', suffix: 'LIKE ' + quoteStringLiteral('%' + pattern + '%') },
+            ]);
         }
         return [];
     }
@@ -5249,6 +5279,25 @@ class QueryResultElement extends HTMLElement
             menu.appendChild(item);
         }
         td.appendChild(menu);
+        this._positionCellFilterMenu(menu);
+    }
+
+    /// Keep the comparison menu on screen. It hangs from the cell's right edge and grows leftwards -
+    /// which is where the room is for most cells - so for one near the left of the page its first
+    /// options would run off the side and be neither readable nor clickable. Nudge it back right by
+    /// however far it overhangs, leaving it as close to the cell as it can be. Measured rather than
+    /// decided from the column index: what matters is where the cell has ended up on screen, which the
+    /// column widths, the horizontal scroll and the window size all have a say in.
+    ///
+    /// The line it may not cross is the table's left edge, or the window's when the table is scrolled
+    /// out past it - the menu should not hang off into the page around the result, and must not leave
+    /// the window at all.
+    _positionCellFilterMenu(menu)
+    {
+        const bound = Math.max(QueryResultElement._MENU_VIEWPORT_MARGIN,
+                               this._dataTable.getBoundingClientRect().left);
+        const overhang = bound - menu.getBoundingClientRect().left;
+        if (overhang > 0) { menu.style.right = (-1 - overhang) + 'px'; }
     }
 
     /// How many rows one page holds: exactly as many as this result can display before it truncates

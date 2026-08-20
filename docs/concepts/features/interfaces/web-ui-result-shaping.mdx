@@ -41,11 +41,12 @@ Selecting a cell also puts a funnel icon next to its copy icon, when a filter on
 |-------|---------|
 | A number | `=`, `!=`, `>`, `<`, `>=`, `<=` |
 | A date or a time (`Date`, `Date32`, `DateTime`, `DateTime64`) | `=`, `!=`, `>`, `<`, `>=`, `<=` |
-| A string of at most 100 characters | `=`, `!=`, `startsWith`, `endsWith`, `contains` |
+| A string of at most 100 characters | `=`, `!=`, `contains` — an empty string gets only `=` and `!=`, since every string contains it |
+| A `Bool` | `true`, `false` — the two values themselves, rather than a comparison against this cell's |
 | An `Enum` | `=`, `!=` — a partial match over a closed set of names is not a useful filter |
 | `NULL` | `IS NULL`, `IS NOT NULL` |
 
-Picking one applies it immediately. A date, a time or an enum is compared against the very text the server rendered it as, which ClickHouse parses back as the column's own type (for an enum, the name of the value). The prefix, suffix and substring options become `LIKE` patterns with the value's own `%` and `_` escaped, so they match the value literally. A cell whose value is none of the above — an array, a tuple, a map, a long text — offers no menu; its column can still be filtered from the header input.
+Picking one applies it immediately. A date, a time or an enum is compared against the very text the server rendered it as, which ClickHouse parses back as the column's own type (for an enum, the name of the value). `contains` becomes a `LIKE` pattern with the value's own `%` and `_` escaped, so it matches the value literally. A cell whose value is none of the above — an array, a tuple, a map, a long text — offers no menu; its column can still be filtered from the header input.
 
 ### The filter in effect {#the-filter-in-effect}
 
