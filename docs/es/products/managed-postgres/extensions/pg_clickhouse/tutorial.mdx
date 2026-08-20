@@ -511,7 +511,7 @@ columna `LocationID` del archivo se corresponde con las columnas `pickup_nyct201
    a partir del archivo CSV en S3:
 
    ```sql
-   SELECT clickhouse_raw_query($$
+   CALL clickhouse_perform('taxi_srv', $$
        CREATE DICTIONARY taxi.taxi_zone_dictionary (
            LocationID Int64 DEFAULT 0,
            Borough String,
@@ -522,73 +522,74 @@ columna `LocationID` del archivo se corresponde con las columnas `pickup_nyct201
        SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
        LIFETIME(MIN 0 MAX 0)
        LAYOUT(HASHED_ARRAY())
-   $$, 'host=localhost dbname=taxi');
+   $$);
    ```
 
-<Note>
-  Establecer `LIFETIME` en 0 desactiva las actualizaciones automáticas para evitar
-  tráfico innecesario hacia nuestro bucket de S3. En otros casos, puede que quieras configurarlo
-  de otra forma. Para obtener más información, consulta [Actualización de datos de diccionario con
-  LIFETIME](/es/reference/statements/create/dictionary/lifetime).
-</Note>
+   <Note>
+     Establecer `LIFETIME` en 0 desactiva las actualizaciones automáticas para evitar
+     tráfico innecesario hacia nuestro bucket de S3. En otros casos, puede que quieras configurarlo
+     de otra forma. Para obtener más información, consulta [Actualización de datos de diccionario con
+     LIFETIME](/es/reference/statements/create/dictionary/lifetime).
+   </Note>
 
-2. Ahora impórtalo:
+   2. Ahora impórtalo:
 
-```sql
-    IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
-    FROM SERVER taxi_srv INTO taxi;
-```
+   ```sql
+   IMPORT FOREIGN SCHEMA taxi LIMIT TO (taxi_zone_dictionary)
+   FROM SERVER taxi_srv INTO taxi;
+   ```
 
-3. Confirma que se puede consultar:
+   3. Confirma que se puede consultar:
 
-```pgsql
-    taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
-     LocationID |  Borough  |                     Zone                      | service_zone
-    ------------+-----------+-----------------------------------------------+--------------
-             77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
-            106 | Brooklyn  | Gowanus                                       | Boro Zone
-            103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
-    (3 rows)
-```
+   ```pgsql
+   taxi=# SELECT * FROM taxi.taxi_zone_dictionary limit 3;
+    LocationID |  Borough  |                     Zone                      | service_zone
+   ------------+-----------+-----------------------------------------------+--------------
+            77 | Brooklyn  | East New York/Pennsylvania Avenue             | Boro Zone
+           106 | Brooklyn  | Gowanus                                       | Boro Zone
+           103 | Manhattan | Governor's Island/Ellis Island/Liberty Island | Yellow Zone
+   (3 rows)
+   ```
 
-4. Excelente. Ahora utiliza la función `dictGet` para obtener el
-   nombre de un distrito en una consulta. Esta consulta suma el número de viajes
-   en taxi por distrito que terminan en el aeropuerto de LaGuardia o en el JFK:
+   4. Excelente. Ahora utiliza la función `dictGet` para obtener el
+      nombre de un distrito en una consulta. Esta consulta suma el número de viajes
+      en taxi por distrito que terminan en el aeropuerto de LaGuardia o en el JFK:
 
-```pgsql
-    taxi=# SELECT
-            count(1) AS total,
-            COALESCE(NULLIF(dictGet(
-                'taxi.taxi_zone_dictionary', 'Borough',
-                toUInt64(pickup_nyct2010_gid)
-            ), ''), 'Unknown') AS borough_name
-        FROM taxi.trips
-        WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
-        GROUP BY borough_name
-        ORDER BY total DESC;
-     total | borough_name
-    -------+---------------
-     23683 | Unknown
-      7053 | Manhattan
-      6828 | Brooklyn
-      4458 | Queens
-      2670 | Bronx
-       554 | Staten Island
-        53 | EWR
-    (7 rows)
+   ```pgsql
+   taxi=# SELECT
+           count(1) AS total,
+           COALESCE(NULLIF(dictGet(
+               'taxi.taxi_zone_dictionary', 'Borough',
+               toUInt64(pickup_nyct2010_gid)
+           ), ''), 'Unknown') AS borough_name
+       FROM taxi.trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC;
+    total | borough_name
+   -------+---------------
+    23683 | Unknown
+     7053 | Manhattan
+     6828 | Brooklyn
+     4458 | Queens
+     2670 | Bronx
+      554 | Staten Island
+       53 | EWR
+   (7 rows)
 
-    Time: 66.245 ms
-```
+   Time: 66.245 ms
+   ```
 
-Esta consulta suma el número de viajes en taxi por distrito que terminan en
-los aeropuertos LaGuardia o JFK. Fíjate en que hay bastantes viajes en los que
-se desconoce el barrio de recogida.
+   Esta consulta suma el número de viajes en taxi por distrito que terminan en
+   los aeropuertos LaGuardia o JFK. Fíjate en que hay bastantes viajes en los que
+   se desconoce el barrio de recogida.
 
 <div id="perform-a-join">
   ## Realiza un JOIN
 </div>
 
-Escribe algunas consultas que hagan un `JOIN` entre `taxi_zone_dictionary` y tu tabla `trips`.
+Escribe algunas consultas que hagan un `JOIN` entre `taxi_zone_dictionary` y tu tabla
+`trips`.
 
 1. Empieza con un `JOIN` simple que funcione de forma similar a la consulta anterior
    sobre aeropuertos:
@@ -617,32 +618,32 @@ Escribe algunas consultas que hagan un `JOIN` entre `taxi_zone_dictionary` y tu 
    Time: 48.449 ms
    ```
 
-<Note>
-  Observa que la salida de la consulta `JOIN` anterior es la misma que la de la
-  consulta `dictGet` anterior (excepto que no se incluyen los valores `Unknown`).
-  Internamente, ClickHouse está llamando a la función `dictGet` para el
-  diccionario `taxi_zone_dictionary`, pero la sintaxis `JOIN` resulta más
-  familiar para los desarrolladores de SQL.
-</Note>
+   <Note>
+     Observa que la salida de la consulta `JOIN` anterior es la misma que la de la
+     consulta `dictGet` anterior (excepto que no se incluyen los valores `Unknown`).
+     Internamente, ClickHouse está llamando a la función `dictGet` para el
+     diccionario `taxi_zone_dictionary`, pero la sintaxis `JOIN` resulta más
+     familiar para los desarrolladores de SQL.
+   </Note>
 
-```pgsql
-    taxi=# explain SELECT
-            count(1) AS total,
-            "Borough"
-        FROM taxi.trips
-        JOIN taxi.taxi_zone_dictionary
-          ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
-        WHERE pickup_nyct2010_gid > 0
-          AND dropoff_nyct2010_gid IN (132, 138)
-        GROUP BY "Borough"
-        ORDER BY total DESC;
-                                  QUERY PLAN
-    -----------------------------------------------------------------------
-     Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
-       Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
-    (2 rows)
-    Time: 2.012 ms
-```
+   ```pgsql
+   taxi=# explain SELECT
+           count(1) AS total,
+           "Borough"
+       FROM taxi.trips
+       JOIN taxi.taxi_zone_dictionary
+         ON trips.pickup_nyct2010_gid = toUInt64(taxi.taxi_zone_dictionary."LocationID")
+       WHERE pickup_nyct2010_gid > 0
+         AND dropoff_nyct2010_gid IN (132, 138)
+       GROUP BY "Borough"
+       ORDER BY total DESC;
+                                 QUERY PLAN
+   -----------------------------------------------------------------------
+    Foreign Scan  (cost=1.00..5.10 rows=1000 width=40)
+      Relations: Aggregate on ((trips) INNER JOIN (taxi_zone_dictionary))
+   (2 rows)
+   Time: 2.012 ms
+   ```
 
 2. Esta consulta devuelve las filas correspondientes a los 1000 viajes con la
    propina más alta y luego realiza un INNER JOIN de cada fila con el diccionario:

@@ -1272,7 +1272,7 @@ bool Client::buzzHouse()
 #else
 bool Client::buzzHouse()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Clickhouse was compiled without BuzzHouse enabled");
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse was compiled without BuzzHouse enabled");
 }
 #endif
 

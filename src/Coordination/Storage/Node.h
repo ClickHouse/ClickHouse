@@ -117,6 +117,7 @@ struct BlockData
 
     /// The caller must ensure that there's enough space (nodeSerializedSizeUpperBound) and that
     /// writeHeader was called.
+    /// Assigns node.path_hash (if missing), and updates node.data_ptr to point into the block.
     static NodeRef appendNodeNoResize(BlockPtr block, FullNode & node);
 
     /// If the node fits in this block's capacity, append it here, and return false.
@@ -127,7 +128,7 @@ struct BlockData
     /// Deserializes the block header and assigns fields. Call after writing the block data
     /// (that presumably comes from file) to `data()` and assigning `size` and
     /// `serialization_version` (which is not stored per block, only in file header).
-    void readHeader();
+    void parseHeader();
 
     /// Make a copy with capacity = size.
     BlockPtr copyAndShrinkToFit() const;
