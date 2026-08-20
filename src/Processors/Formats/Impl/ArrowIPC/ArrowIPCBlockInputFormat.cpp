@@ -708,7 +708,7 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
 
 }
 
-void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type)
+void ArrowIPCBlockInputFormat::reinterpretRawByteColumns(ColumnWithTypeAndName & column, const DataTypePtr & to_type) const
 {
     auto [new_column, new_type] = reinterpretRawBytes(
         column.column, column.type, to_type, /*ancestor_nulls=*/nullptr,
