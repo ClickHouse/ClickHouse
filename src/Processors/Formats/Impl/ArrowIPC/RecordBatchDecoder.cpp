@@ -643,7 +643,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 data.resize(rows);
                 const auto * src = reinterpret_cast<const Int32 *>(values.ptr);
                 for (size_t i = 0; i < rows; ++i)
-                    data[i] = Time64(src[i]);
+                    data[i] = isInvisible(invisible_rows, i) ? Time64(0) : Time64(src[i]);
                 break;
             }
             fillFixed<ColumnDecimal<Time64>>(*column, rows, values, 8, invisible_rows);
