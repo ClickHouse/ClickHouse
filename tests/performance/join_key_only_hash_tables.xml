@@ -30,6 +30,13 @@
     <query>SELECT count() FROM join_set_maps_probe AS l ANTI LEFT JOIN join_set_maps_build AS r ON l.k = r.k OR l.k2 = r.k2 SETTINGS join_algorithm = 'hash' FORMAT Null</query>
     <!-- SEMI qualifies only when nothing of the right side is selected. -->
     <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash' FORMAT Null</query>
+    <!-- SEMI under `parallel_hash`. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'parallel_hash' FORMAT Null</query>
+    <!-- SEMI with the right blocks kept, so only the smaller cell is left to win. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 10000000000 FORMAT Null</query>
+    <!-- SEMI with several disjuncts, which qualifies as soon as the join adds no right key column
+         the query did not ask for. -->
+    <query>SELECT count() FROM join_set_maps_probe AS l SEMI LEFT JOIN join_set_maps_build AS r ON l.k = r.k OR l.k2 = r.k2 SETTINGS join_algorithm = 'hash' FORMAT Null</query>
     <!-- A `String` key: the cell loses the `RowRef` but keeps the key and its saved hash. -->
     <query>SELECT count() FROM join_set_maps_probe_str AS l ANTI LEFT JOIN join_set_maps_build_str AS r ON l.s = r.s SETTINGS join_algorithm = 'hash' FORMAT Null</query>
 
