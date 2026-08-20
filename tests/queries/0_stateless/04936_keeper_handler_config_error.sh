@@ -300,6 +300,7 @@ for _ in $(seq 1 20); do
 done
 
 echo "control endpoint: ${STATUS}"
+kill "$KEEPER_PID" 2>/dev/null; wait "$KEEPER_PID" 2>/dev/null; KEEPER_PID=""
 
 # The HTTPS control listener is built by its own guarded copy of the construction, so moving
 # only that one back inside the callback has to be caught here. No TLS material is configured:

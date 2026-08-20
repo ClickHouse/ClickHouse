@@ -31,6 +31,15 @@ BAD_PROMETHEUS_NO_PORT_CONFIG_IN_CONTAINER = (
 GOOD_PROMETHEUS_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/good_prometheus.xml"
 )
+BAD_KEEPER_CONTROL_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_keeper_control.xml"
+)
+BAD_KEEPER_CONTROL_SECURE_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_keeper_control_secure.xml"
+)
+BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER = (
+    "/etc/clickhouse-server/config.d/bad_keeper_control_no_port.xml"
+)
 
 ERR_LOG = "clickhouse-server.err.log"
 
@@ -422,3 +431,81 @@ def test_prometheus_handler_config_error_on_reload_is_reported_to_the_client(
             user="root",
         )
         node.restart_clickhouse()
+
+
+def _with_config(name, path_in_container):
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs/" + name),
+        path_in_container,
+    )
+
+
+def _without_config(path_in_container):
+    node.exec_in_container(["bash", "-c", f"rm -f {path_in_container}"], user="root")
+    node.start_clickhouse()
+
+
+# The server runs Keeper embedded, and its control listeners are a separate copy of the
+# construction from the standalone entrypoint, so they need their own cases here. The
+# stateless test covers `clickhouse-keeper`, which this cannot reach.
+def test_keeper_control_handler_config_error_is_not_reported_as_a_listen_failure(
+    start_cluster,
+):
+    _with_config("bad_keeper_control.xml", BAD_KEEPER_CONTROL_CONFIG_IN_CONTAINER)
+    try:
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG
+        )
+        assert reported != ""
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+    finally:
+        _without_config(BAD_KEEPER_CONTROL_CONFIG_IN_CONTAINER)
+
+
+# The secure control listener is built by its own guarded copy, so moving only that one back
+# inside its callback has to be caught. No TLS material is configured: the handler section is
+# read before any socket work, which is what this asserts.
+def test_keeper_secure_control_handler_config_error_is_not_reported_as_a_listen_failure(
+    start_cluster,
+):
+    _with_config(
+        "bad_keeper_control_secure.xml",
+        BAD_KEEPER_CONTROL_SECURE_CONFIG_IN_CONTAINER,
+    )
+    try:
+        node.start_clickhouse(expected_to_fail=True)
+
+        reported = node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG
+        )
+        assert reported != ""
+        assert "Listen" not in reported
+        assert "NETWORK_ERROR" not in reported
+    finally:
+        _without_config(BAD_KEEPER_CONTROL_SECURE_CONFIG_IN_CONTAINER)
+
+
+# Without a control port there is no listener to configure, so a broken rule must not keep the
+# server down. This is the lock on the port check that keeps the parse out of that path.
+def test_keeper_control_handler_config_is_not_read_without_a_control_port(start_cluster):
+    _with_config(
+        "bad_keeper_control_no_port.xml",
+        BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER,
+    )
+
+    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search
+    # space would fail it for the wrong reason: `grep_in_log` globs every rotation.
+    node.exec_in_container(
+        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
+        user="root",
+    )
+    try:
+        node.start_clickhouse()
+        assert node.query("SELECT 1").strip() == "1"
+        assert node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG) == ""
+    finally:
+        _without_config(BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER)
