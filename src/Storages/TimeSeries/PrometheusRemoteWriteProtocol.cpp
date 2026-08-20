@@ -9,9 +9,11 @@
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
 #include <Core/DecimalFunctions.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/executeQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -23,14 +25,25 @@
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
+#include <chrono>
+#include <tuple>
+
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool async_insert;
+    extern const SettingsSeconds wait_for_async_insert_timeout;
+}
 
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
+    extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -220,20 +233,8 @@ Block makeBlock(
     return block;
 }
 
-void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
+void insertBlockSync(ASTPtr insert_query, Block block, const ContextMutablePtr & context)
 {
-    if (!block.rows())
-        return;
-
-    auto insert_query = make_intrusive<ASTInsertQuery>();
-    insert_query->table_id = storage.getStorageID();
-    insert_query->format = "Native";
-
-    auto columns_ast = make_intrusive<ASTExpressionList>();
-    for (const auto & name : block.getNames())
-        columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
-    insert_query->columns = columns_ast;
-
     auto [ast, io] = executeQuery(insert_query->formatWithSecretsOneLine(), context);
     try
     {
@@ -249,6 +250,50 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
     }
 
     finishExecutedQuery(io, {});
+}
+
+/// Inserts a block through the asynchronous insert queue so that data from multiple remote-write
+/// requests is batched together before forming parts. Waits until the data is flushed to all inner
+/// tables of the TimeSeries table regardless of the `wait_for_async_insert` setting: the remote-write
+/// protocol treats an acknowledged write as durable, so we can acknowledge only after the flush.
+/// If the flush fails, the exception is rethrown here and the client gets an error instead of an ack.
+void insertBlockAsync(ASTPtr insert_query, Block block, AsynchronousInsertQueue & queue, const ContextMutablePtr & context)
+{
+    /// Deduplication on flush is not needed here: a flushed block combines data from multiple
+    /// remote-write requests, and the inner tables of the TimeSeries engine handle duplicates themselves.
+    context->setSetting("async_insert_deduplicate", false);
+
+    auto result = queue.pushQueryWithBlock(std::move(insert_query), std::move(block), context);
+    if (result.status != AsynchronousInsertQueue::PushResult::OK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected result of pushing a block to the asynchronous insert queue");
+
+    const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+    if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
+
+    /// Rethrows the exception if the flush failed.
+    std::ignore = result.future.get();
+}
+
+void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutablePtr & context)
+{
+    if (!block.rows())
+        return;
+
+    auto insert_query = make_intrusive<ASTInsertQuery>();
+    insert_query->table_id = storage.getStorageID();
+    insert_query->format = "Native";
+
+    auto columns_ast = make_intrusive<ASTExpressionList>();
+    for (const auto & name : block.getNames())
+        columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
+    insert_query->columns = columns_ast;
+
+    auto * queue = context->tryGetAsynchronousInsertQueue();
+    if (queue && context->getSettingsRef()[Setting::async_insert])
+        insertBlockAsync(std::move(insert_query), std::move(block), *queue, context);
+    else
+        insertBlockSync(std::move(insert_query), std::move(block), context);
 }
 
 }
