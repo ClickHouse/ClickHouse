@@ -811,7 +811,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         /// `checkTimeLimit` returns false for a soft timeout with the `break` overflow mode.
         /// Latch it before the last guard preceding `BuilderRWBufferFromHTTP::create`: its
         /// constructor can start the first request of a failover option immediately.
-        if (auto query_status = context_->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+        /// The schema inference reads with no cancellation token of their own, and `checkTimeLimit`
+        /// throws for a hard timeout, so check it whether there is a token to latch it in or not.
+        if (auto query_status = context_->getProcessListElementSafe();
+            query_status && !query_status->checkTimeLimit() && cancellation)
             cancellation->cancel(true);
 
         /// The check above is a no-op for the cancellations which do not kill the query. So check the
