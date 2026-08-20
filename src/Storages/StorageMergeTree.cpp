@@ -28,6 +28,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTPartition.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -136,6 +137,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
+    extern const MergeTreeSettingsBool apply_patches_on_merge;
 }
 
 namespace ErrorCodes
@@ -1601,7 +1604,9 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool merge_smallparts,
+    UInt64 merge_smallparts_limit)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1778,6 +1783,19 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
     if (partition_id.empty())
         return select_without_hint().and_then(construct_merge_select_entry);
+    else if (merge_smallparts)
+    {
+        /// MERGE SMALLPARTS: use the table setting for the byte cap.
+        const UInt64 max_total_bytes = (*getSettings())[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+        auto select_result = merger_mutator.selectSmallPartsToMergeWithinPartition(
+            metadata_snapshot,
+            parts_collector,
+            merge_predicate,
+            partition_id,
+            static_cast<size_t>(merge_smallparts_limit),
+            max_total_bytes);
+        return select_result.and_then(construct_future_part).and_then(construct_merge_select_entry);
+    }
     else
         return select_in_partition().and_then(construct_merge_select_entry);
 }
@@ -1791,7 +1809,9 @@ bool StorageMergeTree::merge(
     bool cleanup,
     const MergeTreeTransactionPtr & txn,
     PreformattedMessage & out_disable_reason,
-    bool optimize_skip_merged_partitions)
+    bool optimize_skip_merged_partitions,
+    bool merge_smallparts,
+    UInt64 merge_smallparts_limit)
 {
     auto table_lock_holder = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
     StorageMetadataPtr metadata_snapshot;  // assigned under the lock below; used later when constructing the merge task
@@ -1818,7 +1838,9 @@ bool StorageMergeTree::merge(
             table_lock_holder,
             lock,
             txn,
-            optimize_skip_merged_partitions);
+            optimize_skip_merged_partitions,
+            merge_smallparts,
+            merge_smallparts_limit);
     }();
 
     if (merge_select_result.has_value())
@@ -2328,7 +2350,7 @@ size_t StorageMergeTree::clearOldPartsFromFilesystem(bool force, bool with_pause
 }
 
 bool StorageMergeTree::optimize(
-    const ASTPtr & /*query*/,
+    const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     const ASTPtr & partition,
     bool final,
@@ -2367,10 +2389,53 @@ bool StorageMergeTree::optimize(
             LOG_DEBUG(log, "DEDUPLICATE BY ('{}')", fmt::join(deduplicate_by_columns, "', '"));
     }
 
+    /// Extract MERGE SMALLPARTS options from the query AST (if available).
+    bool merge_smallparts = false;
+    UInt64 merge_smallparts_limit = 0;
+    if (query)
+    {
+        if (const auto * optimize_query = query->as<ASTOptimizeQuery>())
+        {
+            merge_smallparts = optimize_query->merge_smallparts;
+            merge_smallparts_limit = optimize_query->merge_smallparts_limit;
+        }
+    }
+
     auto txn = local_context->getCurrentTransaction();
 
     PreformattedMessage disable_reason;
-    if (!partition && final)
+    if (merge_smallparts)
+    {
+        /// MERGE SMALLPARTS requires a partition to be specified (validated in interpreter,
+        /// but guard here as well for safety).
+        if (!partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS requires a PARTITION clause");
+
+        String partition_id = getPartitionIDFromQuery(partition, local_context);
+
+        if (!merge(
+                /*aggressive=*/true,
+                partition_id,
+                /*final=*/false,
+                deduplicate,
+                deduplicate_by_columns,
+                cleanup,
+                txn,
+                disable_reason,
+                /*optimize_skip_merged_partitions=*/false,
+                merge_smallparts,
+                merge_smallparts_limit))
+        {
+            constexpr auto message = "Cannot OPTIMIZE table with MERGE SMALLPARTS: {}";
+            LOG_INFO(log, message, disable_reason.text);
+
+            if (local_context->getSettingsRef()[Setting::optimize_throw_if_noop])
+                throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, message, disable_reason.text);
+
+            return false;
+        }
+    }
+    else if (!partition && final)
     {
         if (cleanup && this->merging_params.mode != MergingParams::Mode::Replacing)
             throw Exception(ErrorCodes::CANNOT_ASSIGN_OPTIMIZE, "Cannot OPTIMIZE with CLEANUP table: only ReplacingMergeTree can be CLEANUP");

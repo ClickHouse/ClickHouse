@@ -430,6 +430,126 @@ std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutat
     return MergeSelectorChoices{{std::move(parts), std::move(patch_parts), MergeType::Regular, final}};
 }
 
+std::expected<MergeSelectorChoices, SelectMergeFailure> MergeTreeDataMergerMutator::selectSmallPartsToMergeWithinPartition(
+    const StorageMetadataPtr & metadata_snapshot,
+    const PartsCollectorPtr & parts_collector,
+    const MergePredicatePtr & merge_predicate,
+    const String & partition_id,
+    size_t max_parts,
+    UInt64 max_total_bytes)
+{
+    const time_t current_time = std::time(nullptr);
+    const auto storage_policy = data.getStoragePolicy();
+
+    auto collect_result = grabAllPartsInsidePartition(parts_collector, metadata_snapshot, storage_policy, current_time, partition_id);
+    if (!collect_result)
+    {
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = std::move(collect_result.error()),
+        });
+    }
+
+    auto all_parts = std::move(collect_result.value());
+
+    if (all_parts.size() < 2)
+    {
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create(
+                "Partition {} has fewer than 2 parts; nothing to merge with MERGE SMALLPARTS", partition_id),
+        });
+    }
+
+    const size_t n = all_parts.size();
+    /// Maximum window size: if max_parts == 0, consider all parts; otherwise at most max_parts.
+    const size_t window_max = (max_parts == 0) ? n : std::min(max_parts, n);
+
+    /// Sliding window: find the contiguous subrange [best_start, best_start+best_len) of length
+    /// in [2, window_max] with minimum total size that is <= max_total_bytes.
+    size_t best_start = 0;
+    size_t best_len = 0;
+    UInt64 best_total = std::numeric_limits<UInt64>::max();
+
+    for (size_t len = 2; len <= window_max; ++len)
+    {
+        /// Compute total size of the first window of this length.
+        UInt64 window_total = 0;
+        for (size_t i = 0; i < len; ++i)
+            window_total += all_parts[i].size;
+
+        for (size_t start = 0; start + len <= n; ++start)
+        {
+            if (start > 0)
+            {
+                /// Slide: remove part going out, add part coming in.
+                window_total -= all_parts[start - 1].size;
+                window_total += all_parts[start + len - 1].size;
+            }
+
+            if (window_total <= max_total_bytes && window_total < best_total)
+            {
+                best_total = window_total;
+                best_start = start;
+                best_len = len;
+            }
+        }
+    }
+
+    if (best_len == 0)
+    {
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create(
+                "No contiguous subrange of at most {} parts in partition {} fits within {} bytes "
+                "(max_bytes_to_merge_at_max_space_in_pool). The smallest individual part is {} bytes.",
+                (max_parts == 0 ? n : max_parts),
+                partition_id,
+                max_total_bytes,
+                [&]() -> UInt64 {
+                    UInt64 min_sz = std::numeric_limits<UInt64>::max();
+                    for (const auto & p : all_parts)
+                        min_sz = std::min(min_sz, static_cast<UInt64>(p.size));
+                    return min_sz;
+                }()),
+        });
+    }
+
+    /// Extract the chosen subrange.
+    PartsRange chosen_parts(all_parts.begin() + best_start, all_parts.begin() + best_start + best_len);
+
+    if (auto result = canMergeAllParts(chosen_parts, merge_predicate); !result.has_value())
+    {
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = std::move(result.error()),
+        });
+    }
+
+    /// Check that we have enough free disk space for the merge.
+    const auto required_disk_space = CompactionStatistics::estimateAtLeastAvailableSpace(chosen_parts);
+    const auto available_disk_space = data.getStoragePolicy()->getMaxUnreservedFreeSpace();
+    if (available_disk_space <= required_disk_space)
+    {
+        return std::unexpected(SelectMergeFailure{
+            .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+            .explanation = PreformattedMessage::create(
+                "Not enough free space to merge parts from {} to {}. Has {} free and unreserved, {} required now",
+                chosen_parts.front().name, chosen_parts.back().name,
+                ReadableSize(available_disk_space), ReadableSize(required_disk_space)),
+        });
+    }
+
+    bool apply_patch_parts = (*data.getSettings())[MergeTreeSetting::apply_patches_on_merge];
+    auto patch_parts = apply_patch_parts ? merge_predicate->getPatchesToApplyOnMerge(chosen_parts) : PartsRange{};
+
+    LOG_TRACE(log, "MERGE SMALLPARTS: selected {} parts from {} to {} (total {} bytes). Will apply {} patch parts",
+        chosen_parts.size(), chosen_parts.front().name, chosen_parts.back().name,
+        best_total, patch_parts.size());
+
+    return MergeSelectorChoices{{std::move(chosen_parts), std::move(patch_parts), MergeType::Regular, /*final=*/false}};
+}
+
 /// parts should be sorted.
 MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     FutureMergedMutatedPartPtr future_part,

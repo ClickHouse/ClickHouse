@@ -35,6 +35,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     ParserKeyword s_cleanup(Keyword::CLEANUP);
     ParserKeyword s_manifest(Keyword::MANIFEST);
     ParserKeyword s_by(Keyword::BY);
+    ParserKeyword s_merge_smallparts(Keyword::MERGE_SMALLPARTS);
+    ParserKeyword s_limit(Keyword::LIMIT);
     ParserToken s_dot(TokenType::Dot);
     ParserIdentifier name_p(true);
     ParserPartition partition_p;
@@ -48,6 +50,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     bool deduplicate = false;
     bool cleanup = false;
     bool manifest = false;
+    bool merge_smallparts = false;
+    UInt64 merge_smallparts_limit = 0;
     String cluster_str;
 
     if (!s_optimize_table.ignore(pos, expected))
@@ -95,6 +99,19 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (s_manifest.ignore(pos, expected))
         manifest = true;
 
+    if (s_merge_smallparts.ignore(pos, expected))
+    {
+        merge_smallparts = true;
+        if (s_limit.ignore(pos, expected))
+        {
+            ASTPtr limit_ast;
+            ParserUnsignedInteger limit_p;
+            if (!limit_p.parse(pos, limit_ast, expected))
+                return false;
+            merge_smallparts_limit = limit_ast->as<ASTLiteral &>().value.safeGet<UInt64>();
+        }
+    }
+
     ASTPtr deduplicate_by_columns;
     if (deduplicate && s_by.ignore(pos, expected))
     {
@@ -117,6 +134,8 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     query->deduplicate_by_columns = deduplicate_by_columns;
     query->cleanup = cleanup;
     query->manifest = manifest;
+    query->merge_smallparts = merge_smallparts;
+    query->merge_smallparts_limit = merge_smallparts_limit;
     query->database = database;
     query->table = table;
 
