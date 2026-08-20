@@ -985,13 +985,26 @@ void Connection::sendQuery(
     span.addAttribute("clickhouse.query", query);
     span.addAttribute("target", [this] () { return this->getHost() + ":" + std::to_string(this->getPort()); });
 
-    ClientInfo new_client_info;
     const auto &current_trace_context = OpenTelemetry::CurrentContext();
-    if (client_info && current_trace_context.isTraceEnabled())
+    ClientInfo new_client_info;
+    const auto trusted_query_flags = client_info ? client_info->getTrustedQueryFlagsForForwarding() : QueryFlags{};
+    const bool carries_server_generated_capabilities = client_info
+        && (client_info->is_internal
+            || client_info->ignore_quota
+            || client_info->is_time_series_target_read
+            || trusted_query_flags.internal
+            || trusted_query_flags.ignore_quota);
+    if (client_info && (current_trace_context.isTraceEnabled() || carries_server_generated_capabilities))
     {
-        // use current span as the parent of remote span
-        new_client_info = *client_info;
-        new_client_info.client_trace_context = current_trace_context;
+        /// Normalize server-generated capabilities before forwarding them. Ordinary distributed
+        /// queries keep the original ClientInfo so current-role forwarding remains unchanged.
+        if (carries_server_generated_capabilities)
+            new_client_info = client_info->getClientInfoForInterserverForwarding();
+        else
+            new_client_info = *client_info;
+
+        if (current_trace_context.isTraceEnabled())
+            new_client_info.client_trace_context = current_trace_context;
 
         client_info = &new_client_info;
     }
@@ -1142,7 +1155,21 @@ void Connection::sendQuery(
                 data += current_roles_str;
             }
             if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ)
-                data += client_info->is_time_series_target_read ? "1" : "0";
+                data += (client_info->is_time_series_target_read
+                    && server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE) ? "1" : "0";
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS)
+            {
+                data += client_info->is_internal ? "1" : "0";
+                data += client_info->ignore_quota ? "1" : "0";
+            }
+            if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE)
+            {
+                String target_tables_str;
+                WriteBufferFromString buffer(target_tables_str);
+                client_info->writeTimeSeriesTargetTables(buffer);
+                buffer.finalize();
+                data += target_tables_str;
+            }
             /// TODO: add source/target host/ip-address
 
             std::string hash = encodeSHA256(data);

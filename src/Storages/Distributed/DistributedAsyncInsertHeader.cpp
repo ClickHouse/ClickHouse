@@ -112,6 +112,21 @@ DistributedAsyncInsertHeader readHeader(ReadBufferFromFile & in, LoggerPtr log)
         if (header_buf.hasPendingData())
             readStringBinary(distributed_header.client_info.http_request_url, header_buf);
 
+        bool trusted_is_internal = false;
+        bool trusted_ignore_quota = false;
+        if (header_buf.hasPendingData())
+            readBinary(trusted_is_internal, header_buf);
+        if (header_buf.hasPendingData())
+            readBinary(trusted_ignore_quota, header_buf);
+        distributed_header.client_info.setTrustedQueryFlags(QueryFlags{
+            .internal = trusted_is_internal,
+            .ignore_quota = trusted_ignore_quota,
+        });
+        /// Normalize legacy queue data too. An older file has only the raw field and no validated
+        /// companion flags, so it must not regain a privileged bit when this server replays it.
+        distributed_header.client_info.is_internal = trusted_is_internal;
+        distributed_header.client_info.ignore_quota = trusted_ignore_quota;
+
         /// Add handling new data here, for example:
         ///
         /// if (header_buf.hasPendingData())

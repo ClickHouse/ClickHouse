@@ -435,7 +435,9 @@ void PrometheusHTTPProtocolAPI::getSeries(
         max_time.reset();
     }
 
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_table_id = tags_table->getStorageID();
+    bool tags_table_is_remote = tags_table->isRemote();
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     String inner_query;
@@ -460,7 +462,13 @@ void PrometheusHTTPProtocolAPI::getSeries(
         if (!inner_query.empty())
             inner_query += " UNION ALL ";
         inner_query += StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type)->formatWithSecretsOneLine();
+            tags_table_id,
+            matchers,
+            *time_series_settings,
+            min_time,
+            max_time,
+            timestamp_data_type,
+            tags_table_is_remote)->formatWithSecretsOneLine();
     }
 
     /// timeSeriesIdToTags() returns the tags registered by the inner query (including `__name__`); `DISTINCT` dedups, and one extra row detects truncation.

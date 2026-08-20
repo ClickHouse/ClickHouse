@@ -1,13 +1,14 @@
 <clickhouse>
     <remote_servers>
-        <test_cluster>
+        <shard_only_cluster>
             <secret>123457</secret>
             <shard>
                 <replica>
-                    <host>node</host>
+                    <host>shard</host>
                     <port>9000</port>
+                    <default_database>default</default_database>
                 </replica>
             </shard>
-        </test_cluster>
+        </shard_only_cluster>
     </remote_servers>
 </clickhouse>

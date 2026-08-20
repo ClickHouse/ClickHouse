@@ -52,7 +52,9 @@ String makeFullClientInfoWire(
     UInt64 client_version_major = 1,
     UInt64 client_version_minor = 1,
     UInt64 client_version_patch = DBMS_TCP_PROTOCOL_VERSION,
-    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION)
+    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION,
+    bool is_time_series_target_read = false,
+    const std::vector<QualifiedTableName> & time_series_target_tables = {})
 {
     WriteBufferFromOwnString buf;
     writeBinary(static_cast<UInt8>(query_kind), buf);
@@ -81,7 +83,14 @@ String makeFullClientInfoWire(
     writeBinary(String(""), buf);                              /// client_agent (>= 54485)
     writeBinary(false, buf);                                   /// is_internal (>= 54486)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_current_roles = no (>= 54488)
-    writeBinary(false, buf);                                   /// is_time_series_target_read (>= 54492)
+    writeBinary(is_time_series_target_read, buf);              /// is_time_series_target_read (>= 54493)
+    writeBinary(false, buf);                                   /// ignore_quota (>= 54494)
+    writeVarUInt(time_series_target_tables.size(), buf);       /// TimeSeries target scope (>= 54495)
+    for (const auto & table : time_series_target_tables)
+    {
+        writeBinary(table.database, buf);
+        writeBinary(table.table, buf);
+    }
     buf.finalize();
     return buf.str();
 }
@@ -394,6 +403,11 @@ TEST(ClientInfoRead, TimeSeriesTargetReadMarkerRoundTrips)
     out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
     out.interface = ClientInfo::Interface::TCP;
     out.is_time_series_target_read = true;
+    out.ignore_quota = true;
+    out.time_series_target_tables = {
+        QualifiedTableName{"default", "metrics"},
+        QualifiedTableName{"remote_db", "remote_metrics"},
+    };
 
     WriteBufferFromOwnString buf;
     out.write(buf, DBMS_TCP_PROTOCOL_VERSION);
@@ -403,6 +417,20 @@ TEST(ClientInfoRead, TimeSeriesTargetReadMarkerRoundTrips)
     ReadBufferFromString in(buf.str());
     in_info.read(in, DBMS_TCP_PROTOCOL_VERSION);
     EXPECT_TRUE(in_info.is_time_series_target_read);
+    EXPECT_TRUE(in_info.ignore_quota);
+    EXPECT_EQ(in_info.time_series_target_tables, out.time_series_target_tables);
+
+    ClientInfo no_marker = out;
+    no_marker.is_time_series_target_read = false;
+    WriteBufferFromOwnString no_marker_buf;
+    no_marker.write(no_marker_buf, DBMS_TCP_PROTOCOL_VERSION);
+    no_marker_buf.finalize();
+
+    ClientInfo no_marker_info;
+    ReadBufferFromString no_marker_in(no_marker_buf.str());
+    no_marker_info.read(no_marker_in, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(no_marker_info.is_time_series_target_read);
+    EXPECT_TRUE(no_marker_info.time_series_target_tables.empty());
 
     WriteBufferFromOwnString old_buf;
     out.write(old_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ - 1);
@@ -412,6 +440,288 @@ TEST(ClientInfoRead, TimeSeriesTargetReadMarkerRoundTrips)
     ReadBufferFromString old_in(old_buf.str());
     old_info.read(old_in, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ - 1);
     EXPECT_FALSE(old_info.is_time_series_target_read);
+
+    WriteBufferFromOwnString old_scope_buf;
+    out.write(old_scope_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE - 1);
+    old_scope_buf.finalize();
+
+    ClientInfo old_scope_info;
+    ReadBufferFromString old_scope_in(old_scope_buf.str());
+    old_scope_info.read(old_scope_in, DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE - 1);
+    EXPECT_FALSE(old_scope_info.is_time_series_target_read);
+    EXPECT_TRUE(old_scope_info.time_series_target_tables.empty());
+
+    WriteBufferFromOwnString old_ignore_quota_buf;
+    out.write(old_ignore_quota_buf, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS - 1);
+    old_ignore_quota_buf.finalize();
+
+    ClientInfo old_ignore_quota_info;
+    ReadBufferFromString old_ignore_quota_in(old_ignore_quota_buf.str());
+    old_ignore_quota_info.read(old_ignore_quota_in, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS - 1);
+    EXPECT_FALSE(old_ignore_quota_info.is_time_series_target_read);
+    EXPECT_FALSE(old_ignore_quota_info.ignore_quota);
+    EXPECT_TRUE(old_ignore_quota_info.time_series_target_tables.empty());
+}
+
+TEST(ClientInfoRead, TimeSeriesTargetScopeRejectsEmptyNames)
+{
+    for (const auto & target : {QualifiedTableName{"", "metrics"}, QualifiedTableName{"default", ""}})
+    {
+        ClientInfo out;
+        out.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        out.initial_user = "default";
+        out.initial_query_id = "query-id";
+        out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
+        out.interface = ClientInfo::Interface::TCP;
+        out.is_time_series_target_read = true;
+        out.time_series_target_tables = {target};
+
+        WriteBufferFromOwnString buf;
+        EXPECT_THROW(out.write(buf, DBMS_TCP_PROTOCOL_VERSION), Exception);
+    }
+}
+
+TEST(ClientInfoRead, TimeSeriesTargetScopeReadRejectsEmptyNames)
+{
+    for (const auto & target : {QualifiedTableName{"", "metrics"}, QualifiedTableName{"default", ""}})
+    {
+        const auto wire = makeFullClientInfoWire(
+            ClientInfo::QueryKind::SECONDARY_QUERY,
+            "127.0.0.1:9000",
+            1,
+            1,
+            DBMS_TCP_PROTOCOL_VERSION,
+            DBMS_TCP_PROTOCOL_VERSION,
+            true,
+            {target});
+
+        ClientInfo info;
+        ReadBufferFromOwnString in(wire);
+        EXPECT_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION), Exception);
+    }
+}
+
+TEST(ClientInfoRead, RegularTcpInitialQueryClearsServerGeneratedFields)
+{
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    info.is_internal = true;
+    info.ignore_quota = true;
+    info.is_time_series_target_read = true;
+    info.time_series_target_tables = {QualifiedTableName{"default", "metrics"}};
+
+    info.sanitizeServerGeneratedFields(false, DBMS_TCP_PROTOCOL_VERSION);
+
+    EXPECT_FALSE(info.is_internal);
+    EXPECT_FALSE(info.ignore_quota);
+    EXPECT_FALSE(info.is_time_series_target_read);
+    EXPECT_TRUE(info.time_series_target_tables.empty());
+
+    const auto flags = info.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(flags.internal);
+    EXPECT_FALSE(flags.ignore_quota);
+}
+
+TEST(ClientInfoRead, RegularTcpSecondaryQueryClearsServerGeneratedFields)
+{
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    info.is_internal = true;
+    info.ignore_quota = true;
+    info.is_time_series_target_read = true;
+    info.time_series_target_tables = {QualifiedTableName{"default", "metrics"}};
+
+    info.sanitizeServerGeneratedFields(false, DBMS_TCP_PROTOCOL_VERSION);
+
+    EXPECT_FALSE(info.is_internal);
+    EXPECT_FALSE(info.ignore_quota);
+    EXPECT_FALSE(info.is_time_series_target_read);
+    EXPECT_TRUE(info.time_series_target_tables.empty());
+
+    const auto flags = info.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(flags.internal);
+    EXPECT_FALSE(flags.ignore_quota);
+}
+
+TEST(ClientInfoRead, RegularTcpSecondaryCapabilitiesDoNotCrossInterserverHop)
+{
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    info.is_internal = true;
+    info.ignore_quota = true;
+    info.is_time_series_target_read = true;
+    info.time_series_target_tables = {QualifiedTableName{"default", "metrics"}};
+
+    info.sanitizeServerGeneratedFields(false, DBMS_TCP_PROTOCOL_VERSION);
+    info.setTrustedQueryFlags(info.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION));
+
+    const auto forwarded = info.getClientInfoForInterserverForwarding();
+    EXPECT_FALSE(forwarded.is_internal);
+    EXPECT_FALSE(forwarded.ignore_quota);
+    EXPECT_FALSE(forwarded.is_time_series_target_read);
+    EXPECT_TRUE(forwarded.time_series_target_tables.empty());
+
+    const auto downstream_flags = forwarded.getTrustedQueryFlags(
+        true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS);
+    EXPECT_FALSE(downstream_flags.internal);
+    EXPECT_FALSE(downstream_flags.ignore_quota);
+}
+
+TEST(ClientInfoRead, InitialQueryCannotCarryTimeSeriesTargetScope)
+{
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    info.is_time_series_target_read = true;
+    info.time_series_target_tables = {QualifiedTableName{"default", "metrics"}};
+
+    info.sanitizeServerGeneratedFields(true, DBMS_TCP_PROTOCOL_VERSION);
+
+    EXPECT_FALSE(info.is_time_series_target_read);
+    EXPECT_TRUE(info.time_series_target_tables.empty());
+}
+
+TEST(ClientInfoRead, ReadResetsTrustedForwardingFlags)
+{
+    ClientInfo info;
+    info.setTrustedQueryFlags(QueryFlags{.internal = true, .ignore_quota = true});
+
+    ReadBufferFromOwnString in(makeFullClientInfoWire(ClientInfo::QueryKind::INITIAL_QUERY, "127.0.0.1:9000"));
+    ASSERT_NO_THROW(info.read(in, DBMS_TCP_PROTOCOL_VERSION));
+    EXPECT_FALSE(info.getTrustedQueryFlagsForForwarding().internal);
+    EXPECT_FALSE(info.getTrustedQueryFlagsForForwarding().ignore_quota);
+
+    info.setTrustedQueryFlags(QueryFlags{.internal = true, .ignore_quota = true});
+    WriteBufferFromOwnString no_query_payload;
+    writeBinary(static_cast<UInt8>(ClientInfo::QueryKind::NO_QUERY), no_query_payload);
+    no_query_payload.finalize();
+    ReadBufferFromOwnString no_query_in(no_query_payload.str());
+    ASSERT_NO_THROW(info.read(no_query_in, DBMS_TCP_PROTOCOL_VERSION));
+    EXPECT_FALSE(info.getTrustedQueryFlagsForForwarding().internal);
+    EXPECT_FALSE(info.getTrustedQueryFlagsForForwarding().ignore_quota);
+}
+
+TEST(ClientInfoRead, OlderInterserverInternalFlagIsNotTrusted)
+{
+    constexpr auto old_protocol_revision = DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ - 1; /// 54492
+
+    ClientInfo out;
+    out.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    out.initial_user = "default";
+    out.initial_query_id = "query-id";
+    out.initial_address = std::make_optional<Poco::Net::SocketAddress>("127.0.0.1:9000");
+    out.interface = ClientInfo::Interface::TCP;
+    out.is_internal = true;
+
+    WriteBufferFromOwnString buf;
+    out.write(buf, old_protocol_revision);
+    buf.finalize();
+
+    ClientInfo received;
+    ReadBufferFromString in(buf.str());
+    ASSERT_NO_THROW(received.read(in, old_protocol_revision));
+    ASSERT_TRUE(received.is_internal);
+
+    received.sanitizeServerGeneratedFields(true, old_protocol_revision);
+    EXPECT_FALSE(received.is_internal);
+
+    received.is_internal = true;
+    received.sanitizeServerGeneratedFields(false, old_protocol_revision);
+    EXPECT_FALSE(received.is_internal);
+
+    received.is_internal = true;
+    received.sanitizeServerGeneratedFields(true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS);
+    EXPECT_TRUE(received.is_internal);
+}
+
+TEST(ClientInfoRead, TrustedQueryFlagsRequireInterserverAuthentication)
+{
+    ClientInfo regular_initial;
+    regular_initial.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    regular_initial.is_internal = true;
+    regular_initial.ignore_quota = true;
+
+    const auto regular_initial_flags = regular_initial.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(regular_initial_flags.internal);
+    EXPECT_FALSE(regular_initial_flags.ignore_quota);
+
+    ClientInfo regular_secondary;
+    regular_secondary.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    regular_secondary.is_internal = true;
+    regular_secondary.ignore_quota = true;
+
+    const auto regular_secondary_flags = regular_secondary.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(regular_secondary_flags.internal);
+    EXPECT_FALSE(regular_secondary_flags.ignore_quota);
+
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    info.is_internal = true;
+    info.ignore_quota = true;
+    const auto old_interserver_flags = info.getTrustedQueryFlags(
+        true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS - 1);
+    EXPECT_FALSE(old_interserver_flags.internal);
+    EXPECT_FALSE(old_interserver_flags.ignore_quota);
+
+    const auto authenticated_interserver_flags = info.getTrustedQueryFlags(
+        true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS);
+    EXPECT_TRUE(authenticated_interserver_flags.internal);
+    EXPECT_TRUE(authenticated_interserver_flags.ignore_quota);
+}
+
+TEST(ClientInfoRead, InterserverForwardingUsesTrustedQueryFlags)
+{
+    ClientInfo info;
+    info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+    info.is_internal = true;
+    info.ignore_quota = true;
+
+    auto forwarded = info.getClientInfoForInterserverForwarding();
+    EXPECT_FALSE(forwarded.is_internal);
+    EXPECT_FALSE(forwarded.ignore_quota);
+    EXPECT_FALSE(forwarded.getTrustedQueryFlags(true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS).internal);
+    EXPECT_FALSE(forwarded.getTrustedQueryFlags(true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS).ignore_quota);
+
+    info.setTrustedQueryFlags(QueryFlags{.internal = true, .ignore_quota = true});
+    forwarded = info.getClientInfoForInterserverForwarding();
+    EXPECT_TRUE(forwarded.is_internal);
+    EXPECT_TRUE(forwarded.ignore_quota);
+    EXPECT_TRUE(forwarded.getTrustedQueryFlags(true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS).internal);
+    EXPECT_TRUE(forwarded.getTrustedQueryFlags(true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS).ignore_quota);
+
+    info.setTrustedQueryFlags(QueryFlags{});
+    forwarded = info.getClientInfoForInterserverForwarding();
+    EXPECT_FALSE(forwarded.is_internal);
+    EXPECT_FALSE(forwarded.ignore_quota);
+}
+
+TEST(ClientInfoRead, ForwardedQueryFlagsKeepTrustedProvenance)
+{
+    ClientInfo untrusted;
+    untrusted.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    untrusted.is_internal = true;
+    untrusted.ignore_quota = true;
+    untrusted.sanitizeServerGeneratedFields(false, DBMS_TCP_PROTOCOL_VERSION);
+
+    const auto local_flags = untrusted.getTrustedQueryFlags(false, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_FALSE(local_flags.internal);
+    EXPECT_FALSE(local_flags.ignore_quota);
+
+    /// This is the state executeQuery() records for the current query before fan-out.
+    untrusted.setTrustedQueryFlags(local_flags);
+    const auto forwarded_untrusted = untrusted.getClientInfoForInterserverForwarding();
+    const auto downstream_untrusted_flags = forwarded_untrusted.getTrustedQueryFlags(
+        true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS);
+    EXPECT_FALSE(downstream_untrusted_flags.internal);
+    EXPECT_FALSE(downstream_untrusted_flags.ignore_quota);
+
+    ClientInfo server_internal;
+    server_internal.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+    server_internal.setTrustedQueryFlags(QueryFlags{.internal = true, .ignore_quota = true});
+    const auto forwarded_internal = server_internal.getClientInfoForInterserverForwarding();
+    const auto downstream_internal_flags = forwarded_internal.getTrustedQueryFlags(
+        true, DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS);
+    EXPECT_TRUE(downstream_internal_flags.internal);
+    EXPECT_TRUE(downstream_internal_flags.ignore_quota);
 }
 
 /// An older peer can forward a server-initiated query whose context was never filled with a

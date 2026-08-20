@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -21,14 +22,17 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageProxy.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
+#include <algorithm>
 #include <filesystem>
 #include <unordered_set>
 #include <boost/algorithm/string.hpp>
@@ -45,6 +49,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
+    extern const int INCORRECT_DATA;
     extern const int INCORRECT_QUERY;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -77,9 +82,12 @@ namespace
     }
 
     /// Resolve every forwarding storage which can receive a target read. Checking only the first
-    /// storage is not enough: an Alias or lazy proxy may forward the read to a table with its own
-    /// row policy.
-    std::vector<StoragePtr> getTimeSeriesTargetStorageChain(const StoragePtr & target_table)
+    /// storage is not enough: an Alias, lazy proxy, or named Distributed target may forward the
+    /// read to a table with its own policy.
+    std::vector<StoragePtr> getTimeSeriesTargetStorageChain(
+        const StoragePtr & target_table,
+        const ContextPtr & context,
+        bool include_distributed_remote_target)
     {
         std::vector<StoragePtr> result;
         std::unordered_set<const IStorage *> visited;
@@ -101,11 +109,171 @@ namespace
                 continue;
             }
 
+            if (include_distributed_remote_target)
+            {
+                if (const auto * distributed = dynamic_cast<const StorageDistributed *>(current_target.get()))
+                {
+                    const auto remote_database = distributed->getRemoteDatabaseName();
+                    const auto remote_table = distributed->getRemoteTableName();
+                    /// A same-named coordinator table may be unrelated to a remote-only Distributed
+                    /// target. The physical shard validates that target when the query is forwarded.
+                    if (!distributed->isRemoteFunction() && !remote_database.empty() && !remote_table.empty()
+                        && distributed->getCluster()->getLocalShardCount() > 0)
+                    {
+                        current_target = DatabaseCatalog::instance().tryGetTable(
+                            StorageID{remote_database, remote_table}, context);
+                        continue;
+                    }
+                }
+            }
+
             break;
         }
 
         return result;
     }
+
+    void checkTimeSeriesTargetForwardingChain(
+        const ContextPtr & context,
+        const StorageID & time_series_table_id,
+        const StoragePtr & target_table,
+        bool check_row_policy)
+    {
+        for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table, context, true))
+        {
+            /// A View can hide arbitrary tables with their own policies. Reject it before selecting
+            /// the caller or internal context, including when another target is Distributed.
+            if (current_target->isView())
+            {
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Cannot read TimeSeries targets because view targets are not supported for TimeSeries table {}",
+                    time_series_table_id.getNameForLogs());
+            }
+
+            const auto * distributed = dynamic_cast<const StorageDistributed *>(current_target.get());
+            if (distributed && !distributed->isRemoteFunction() && distributed->getRemoteTableName().empty())
+            {
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Cannot read distributed target {} of TimeSeries table {} because its remote target is not a named table",
+                    current_target->getStorageID().getNameForLogs(),
+                    time_series_table_id.getNameForLogs());
+            }
+
+            if (check_row_policy)
+            {
+                const auto target_table_id = current_target->getStorageID();
+                const auto row_policy_filter = context->getRowPolicyFilter(
+                    target_table_id.getDatabaseName(),
+                    target_table_id.getTableName(),
+                    RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+                {
+                    throw Exception(
+                        ErrorCodes::ACCESS_DENIED,
+                        "Cannot read TimeSeries targets because SELECT row policies are applied on a target of TimeSeries table {}",
+                        time_series_table_id.getNameForLogs());
+                }
+            }
+        }
+    }
+}
+
+
+std::vector<QualifiedTableName> getTimeSeriesTargetTableNames(
+    const std::vector<StoragePtr> & target_tables,
+    const ContextPtr & context)
+{
+    std::vector<QualifiedTableName> result;
+
+    auto add_table = [&](const String & database, const String & table)
+    {
+        if (database.empty() || table.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "TimeSeries target scope must contain fully qualified table names");
+
+        QualifiedTableName table_name{database, table};
+        if (std::find(result.begin(), result.end(), table_name) == result.end())
+            result.emplace_back(std::move(table_name));
+    };
+
+    for (const auto & target_table : target_tables)
+    {
+        const auto chain = getTimeSeriesTargetStorageChain(target_table, context, true);
+        for (const auto & current_target : chain)
+        {
+            const auto target_id = current_target->getStorageID();
+            add_table(target_id.getDatabaseName(), target_id.getTableName());
+
+            /// A remote-only Distributed target is not resolvable in the coordinator's catalog,
+            /// but its named physical table still needs to be carried to the receiving shard.
+            if (const auto * distributed = dynamic_cast<const StorageDistributed *>(current_target.get()))
+            {
+                if (!distributed->isRemoteFunction())
+                {
+                    auto remote_database = distributed->getRemoteDatabaseName();
+                    if (remote_database.empty())
+                        remote_database = context->getCurrentDatabase();
+                    add_table(remote_database, distributed->getRemoteTableName());
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
+
+void expandTimeSeriesTargetTableNames(ClientInfo & client_info, const ContextPtr & context)
+{
+    if (!client_info.is_time_series_target_read)
+        return;
+
+    if (client_info.time_series_target_tables.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "TimeSeries target read must contain at least one target table");
+
+    std::vector<QualifiedTableName> expanded = client_info.time_series_target_tables;
+
+    auto add_table = [&](const QualifiedTableName & table_name)
+    {
+        if (table_name.database.empty() || table_name.table.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "TimeSeries target scope must contain fully qualified table names");
+
+        if (std::find(expanded.begin(), expanded.end(), table_name) == expanded.end())
+            expanded.emplace_back(table_name);
+    };
+
+    for (const auto & target : client_info.time_series_target_tables)
+    {
+        if (target.database.empty() || target.table.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "TimeSeries target scope must contain fully qualified table names");
+
+        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{target.database, target.table}, context);
+        if (!storage)
+            continue;
+
+        checkTimeSeriesTargetForwardingChain(context, storage->getStorageID(), storage, true);
+        for (const auto & table_name : getTimeSeriesTargetTableNames(std::vector<StoragePtr>{storage}, context))
+        {
+            add_table(table_name);
+            if (expanded.size() > ClientInfo::MAX_TIME_SERIES_TARGET_TABLES)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Too many expanded TimeSeries target tables in ClientInfo: {} (maximum {})",
+                    expanded.size(),
+                    ClientInfo::MAX_TIME_SERIES_TARGET_TABLES);
+        }
+    }
+
+    client_info.time_series_target_tables = std::move(expanded);
 }
 
 
@@ -446,29 +614,6 @@ Strings StorageTimeSeries::getDataPaths() const
 }
 
 
-namespace
-{
-    /// How long a probed FINAL capability of a remote Metrics target stays valid.
-    constexpr auto METRICS_TARGET_FINAL_SUPPORT_CACHE_TTL = std::chrono::seconds{60};
-}
-
-std::optional<bool> StorageTimeSeries::getCachedMetricsTargetFinalSupport() const
-{
-    std::lock_guard lock{metrics_target_final_support_mutex};
-    if (metrics_target_final_support && (std::chrono::steady_clock::now() < metrics_target_final_support_expires_at))
-        return metrics_target_final_support;
-    return std::nullopt;
-}
-
-
-void StorageTimeSeries::setCachedMetricsTargetFinalSupport(bool supports_final) const
-{
-    std::lock_guard lock{metrics_target_final_support_mutex};
-    metrics_target_final_support = supports_final;
-    metrics_target_final_support_expires_at = std::chrono::steady_clock::now() + METRICS_TARGET_FINAL_SUPPORT_CACHE_TTL;
-}
-
-
 bool StorageTimeSeries::optimize(
     const ASTPtr & query,
     const StorageMetadataPtr &,
@@ -735,32 +880,11 @@ void checkTimeSeriesTableSelectAccess(
 }
 
 void checkTimeSeriesTargetSelectAccess(
-    const ContextPtr & /* context */,
+    const ContextPtr & context,
     const StorageID & time_series_table_id,
     const StoragePtr & target_table)
 {
-    for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table))
-    {
-        /// A View can hide arbitrary tables with their own policies. Reject it before selecting
-        /// the caller or internal context, including when another target is Distributed.
-        if (current_target->isView())
-        {
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Cannot read TimeSeries targets because view targets are not supported for TimeSeries table {}",
-                time_series_table_id.getNameForLogs());
-        }
-
-        const auto * distributed = dynamic_cast<const StorageDistributed *>(current_target.get());
-        if (distributed && !distributed->isRemoteFunction() && distributed->getRemoteTableName().empty())
-        {
-            throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Cannot read distributed target {} of TimeSeries table {} because its remote target is not a named table",
-                current_target->getStorageID().getNameForLogs(),
-                time_series_table_id.getNameForLogs());
-        }
-    }
+    checkTimeSeriesTargetForwardingChain(context, time_series_table_id, target_table, false);
 }
 
 void checkTimeSeriesTargetSelectRowPolicy(
@@ -768,46 +892,72 @@ void checkTimeSeriesTargetSelectRowPolicy(
     const StorageID & time_series_table_id,
     const StoragePtr & target_table)
 {
-    for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table))
+    checkTimeSeriesTargetForwardingChain(context, time_series_table_id, target_table, true);
+}
+
+void checkTimeSeriesTargetInsertAccess(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table)
+{
+    for (const auto & current_target : getTimeSeriesTargetStorageChain(target_table, context, false))
     {
-        /// A View can hide arbitrary tables with their own policies. Reject it instead of
-        /// attempting to guess which inner tables its query will read.
         if (current_target->isView())
         {
             throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Cannot read TimeSeries targets because view targets are not supported for TimeSeries table {}",
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT INTO TABLE FUNCTION cannot write through view target {} of TimeSeries table {}",
+                current_target->getStorageID().getNameForLogs(),
                 time_series_table_id.getNameForLogs());
         }
 
-        const auto target_table_id = current_target->getStorageID();
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            target_table_id.getDatabaseName(),
-            target_table_id.getTableName(),
-            RowPolicyFilterType::SELECT_FILTER);
-        if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        if (dynamic_cast<const StorageTableProxy *>(current_target.get()))
+        {
+            /// Transparent implementation wrapper. The storage chain also contains its nested
+            /// table, which is validated separately.
+            continue;
+        }
+
+        if (dynamic_cast<const StorageAlias *>(current_target.get())
+            || dynamic_cast<const StorageProxy *>(current_target.get()))
         {
             throw Exception(
-                ErrorCodes::ACCESS_DENIED,
-                "Cannot read TimeSeries targets because SELECT row policies are applied on a target of TimeSeries table {}",
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT INTO TABLE FUNCTION cannot write through forwarding target {} of TimeSeries table {}",
+                current_target->getStorageID().getNameForLogs(),
                 time_series_table_id.getNameForLogs());
+        }
+
+        if (dynamic_cast<const StorageDistributed *>(current_target.get()))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "INSERT INTO TABLE FUNCTION cannot write through Distributed target {} of TimeSeries table {}",
+                current_target->getStorageID().getNameForLogs(),
+                time_series_table_id.getNameForLogs());
+        }
+
+        if (dynamic_cast<const StorageBuffer *>(current_target.get()))
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot insert into TimeSeries target {} through Buffer storage",
+                current_target->getStorageID().getNameForLogs());
         }
     }
 }
 
-ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context)
+ContextMutablePtr getTimeSeriesTargetContext(
+    const ContextPtr & context,
+    const std::vector<StoragePtr> & target_tables)
 {
-    /// Target tables are implementation details of the logical TimeSeries table. The logical
-    /// table's access and row-policy checks are performed before this context is created, so the
-    /// target query can use the same security model as SQL SECURITY NONE views without exposing
-    /// the inner table names to the caller.
-    auto target_context = Context::createCopy(context->getGlobalContext());
-    target_context->setClientInfo(context->getClientInfo());
-    target_context->getClientInfo().is_time_series_target_read = true;
-    /// A full-access target context has no ContextAccess role state. Carry the invoker's current
-    /// roles in ClientInfo so Distributed targets can forward them to the remote shard.
+    auto target_context = Context::createCopy(context);
+    auto target_client_info = context->getClientInfo();
+    target_client_info.is_time_series_target_read = true;
+    target_client_info.time_series_target_tables = getTimeSeriesTargetTableNames(target_tables, context);
     if (context->getUserID())
-        target_context->getClientInfo().current_roles = context->getRolesInfo()->getCurrentRolesNames();
+        target_client_info.current_roles = context->getRolesInfo()->getCurrentRolesNames();
+    target_context->setClientInfo(target_client_info);
     target_context->makeQueryContext();
     if (context->hasQueryContext())
         target_context->setQueryContext(context->getQueryContext());

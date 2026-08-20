@@ -1,8 +1,15 @@
 #include <Interpreters/Context.h>
+#include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
+#include <Access/Role.h>
+#include <Access/User.h>
 #include <Common/tests/gtest_global_context.h>
+#include <Core/UUID.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Core/Field.h>
+#include <base/scope_guard.h>
 #include <gtest/gtest.h>
 #include <thread>
 #include <atomic>
@@ -261,4 +268,47 @@ TEST(Context, SetClustersConfigAfterReloadClusterConfig)
     std::map<String, ClusterPtr> clusters;
     ASSERT_NO_THROW(clusters = context->getClusters());
     EXPECT_TRUE(clusters.empty());
+}
+
+TEST(Context, CopyPreservesExternalRoles)
+{
+    auto global_context = getMutableContext().context;
+    auto & access_control = global_context->getAccessControl();
+
+    const String suffix = toString(UUIDHelpers::generateV4());
+    const String storage_name = "context_copy_external_roles_" + suffix;
+    const String role_name = "context_copy_role_" + suffix;
+    const String user_name = "context_copy_user_" + suffix;
+    const String database_name = "context_copy_database";
+    const String table_name = "context_copy_table";
+
+    access_control.addMemoryStorage(storage_name, /* allow_backup= */ false);
+    auto storage = access_control.getStorageByName(storage_name);
+
+    auto role = std::make_shared<Role>();
+    role->setName(role_name);
+    role->access.grant(AccessType::SELECT, database_name, table_name);
+    const UUID role_id = storage->insert(role);
+
+    auto user = std::make_shared<User>();
+    user->setName(user_name);
+    user->default_roles.clear();
+    user->granted_roles.grant(role_id);
+    const UUID user_id = storage->insert(user);
+
+    SCOPE_EXIT({
+        storage->remove(user_id, /* throw_if_not_exists= */ false);
+        storage->remove(role_id, /* throw_if_not_exists= */ false);
+        access_control.removeStorage(storage);
+    });
+
+    auto query_context = Context::createCopy(global_context);
+    query_context->makeQueryContext();
+    query_context->setUser(user_id, {role_id});
+    ASSERT_TRUE(query_context->getAccess()->isGranted(AccessType::SELECT, database_name, table_name));
+
+    query_context->setClientInfo(query_context->getClientInfo());
+    auto copied_context = Context::createCopy(query_context);
+
+    EXPECT_TRUE(copied_context->getAccess()->isGranted(AccessType::SELECT, database_name, table_name));
 }

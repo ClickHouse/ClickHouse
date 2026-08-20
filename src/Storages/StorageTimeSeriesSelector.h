@@ -46,7 +46,8 @@ public:
         const TimeSeriesSettings & time_series_settings,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        const DataTypePtr & timestamp_data_type);
+        const DataTypePtr & timestamp_data_type,
+        bool tags_table_is_remote);
 
     void readImpl(
         QueryPlan & query_plan,

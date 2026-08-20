@@ -2215,13 +2215,14 @@ static BlockIO executeQueryImpl(
     HTTPContinueCallback http_continue_callback,
     QueryResultDetails & result_details)
 {
-    if (flags.internal)
-        context->getClientInfo().is_internal = true;
+    auto & client_info = context->getClientInfo();
+    client_info.setTrustedQueryFlags(flags);
+    client_info.is_internal = flags.internal;
+    client_info.ignore_quota = flags.ignore_quota;
 
     /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
-    /// Can be spoofed as it comes from the wire.
-    const bool log_as_internal = context->getClientInfo().is_internal;
+    const bool log_as_internal = context->getClientInfo().getTrustedQueryFlagsForForwarding().internal;
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
@@ -2240,8 +2241,6 @@ static BlockIO executeQueryImpl(
     /// * Setting the watch in QueryStatus (controls timeouts and progress) and the output formats
     /// * Logging query duration (system.query_log)
     Stopwatch start_watch{CLOCK_MONOTONIC};
-
-    const auto & client_info = context->getClientInfo();
 
     if (client_info.initial_query_start_time == 0)
     {

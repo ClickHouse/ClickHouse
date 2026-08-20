@@ -79,11 +79,11 @@ String makeFinalProbeQuery(const StorageID & time_series_table_id, const String 
     return query_ast->formatWithSecretsOneLine();
 }
 
-void executeFinalProbe(const String & query, const ContextPtr & context)
+void executeFinalProbe(const String & query, const ContextPtr & context, const StoragePtr & metrics_table)
 {
     /// The probe reads the physical Metrics target directly. Use the same target context as the
     /// generated metadata query so a logical-table grant is sufficient for Distributed targets.
-    auto query_context = getTimeSeriesTargetContext(context);
+    auto query_context = getTimeSeriesTargetContext(context, {metrics_table});
     query_context->setCurrentQueryId({});
     query_context->setSetting("log_queries", Field{false});
     /// The capability probe is an implementation detail and must not recursively trigger AST fuzzing
@@ -199,137 +199,135 @@ void PrometheusHTTPProtocolAPI::getMetadata(
         {
             execute_with_final = false;
         }
-        else if (const auto cached_support = time_series_storage->getCachedMetricsTargetFinalSupport())
-        {
-            execute_with_final = *cached_support;
-        }
         else
         {
             /// StorageDistributed advertises FINAL support before the remote target is known to support it.
             /// Probe with a bounded, metric-aware internal query in a copied target context. The
             /// logical-table access check above remains in the caller context, while the physical
             /// target stays an implementation detail. The probe also avoids creating its own
-            /// query-log or query-metric-log record or a top-level query span. Cache the capability
-            /// briefly because Prometheus polls this endpoint frequently.
+            /// query-log or query-metric-log record or a top-level query span.
             try
             {
-                executeFinalProbe(makeFinalProbeQuery(time_series_table_id, metric_param), getContext());
-                time_series_storage->setCachedMetricsTargetFinalSupport(true);
+                executeFinalProbe(makeFinalProbeQuery(time_series_table_id, metric_param), getContext(), metrics_table);
             }
             catch (const Exception & e)
             {
                 if (e.code() != ErrorCodes::ILLEGAL_FINAL)
                     throw;
 
-                time_series_storage->setCachedMetricsTargetFinalSupport(false);
                 execute_with_final = false;
                 LOG_TRACE(log, "Remote Metrics target rejected FINAL; executing metadata query without FINAL");
             }
         }
     }
 
-    bool response_started = false;
-    auto execute_metadata_query = [&](const String & query_to_execute)
+    auto execute_metadata_query = [&](const String & query_to_execute, bool allow_final_fallback)
     {
-        auto [ast, io] = executeQuery(
-            query_to_execute,
-            getContext(),
-            QueryFlags{},
-            QueryProcessingStage::Complete);
-
+        bool response_started = false;
         try
         {
-            PullingAsyncPipelineExecutor executor(io.pipeline);
-            Block block;
+            auto [ast, io] = executeQuery(
+                query_to_execute,
+                getContext(),
+                QueryFlags{},
+                QueryProcessingStage::Complete);
 
-            auto pull_next_nonempty = [&]
+            try
             {
-                while (executor.pull(block))
+                PullingAsyncPipelineExecutor executor(io.pipeline);
+                Block block;
+
+                auto pull_next_nonempty = [&]
                 {
-                    if (block.rows() > 0)
-                        return true;
-                }
-                return false;
-            };
-
-            /// Pull before writing the success envelope so an execution error can still be returned
-            /// as a complete Prometheus error response by PrometheusRequestHandler::QueryImpl.
-            bool has_output = pull_next_nonempty();
-            response_started = true;
-            writeString(R"({"status":"success","data":{)", response);
-
-            bool first_metric = true;
-            while (has_output)
-            {
-                const auto & metric_family_column = block.getByName("metric_family").column;
-                const auto & metadata_array = typeid_cast<const ColumnArray &>(*block.getByName("metadata").column);
-                const auto & offsets = metadata_array.getOffsets();
-                const auto & tuple_column = typeid_cast<const ColumnTuple &>(metadata_array.getData());
-                const auto & type_column = tuple_column.getColumn(0);
-                const auto & help_column = tuple_column.getColumn(1);
-                const auto & unit_column = tuple_column.getColumn(2);
-
-                for (size_t i = 0; i < block.rows(); ++i)
-                {
-                    if (!first_metric)
-                        writeString(",", response);
-                    first_metric = false;
-
-                    writeJSONString(metric_family_column->getDataAt(i), response, format_settings);
-                    writeString(":[", response);
-
-                    const size_t begin = (i == 0) ? 0 : offsets[i - 1];
-                    const size_t end = offsets[i];
-                    for (size_t j = begin; j < end; ++j)
+                    while (executor.pull(block))
                     {
-                        if (j != begin)
-                            writeString(",", response);
+                        if (block.rows() > 0)
+                            return true;
+                    }
+                    return false;
+                };
 
-                        writeString(R"({"type":)", response);
-                        writeJSONString(type_column.getDataAt(j), response, format_settings);
-                        writeString(R"(,"help":)", response);
-                        writeJSONString(help_column.getDataAt(j), response, format_settings);
-                        writeString(R"(,"unit":)", response);
-                        writeJSONString(unit_column.getDataAt(j), response, format_settings);
-                        writeString("}", response);
+                /// Pull before writing the success envelope so an execution error can still be returned
+                /// as a complete Prometheus error response by PrometheusRequestHandler::QueryImpl.
+                bool has_output = pull_next_nonempty();
+                response_started = true;
+                writeString(R"({"status":"success","data":{)", response);
+
+                bool first_metric = true;
+                while (has_output)
+                {
+                    const auto & metric_family_column = block.getByName("metric_family").column;
+                    const auto & metadata_array = typeid_cast<const ColumnArray &>(*block.getByName("metadata").column);
+                    const auto & offsets = metadata_array.getOffsets();
+                    const auto & tuple_column = typeid_cast<const ColumnTuple &>(metadata_array.getData());
+                    const auto & type_column = tuple_column.getColumn(0);
+                    const auto & help_column = tuple_column.getColumn(1);
+                    const auto & unit_column = tuple_column.getColumn(2);
+
+                    for (size_t i = 0; i < block.rows(); ++i)
+                    {
+                        if (!first_metric)
+                            writeString(",", response);
+                        first_metric = false;
+
+                        writeJSONString(metric_family_column->getDataAt(i), response, format_settings);
+                        writeString(":[", response);
+
+                        const size_t begin = (i == 0) ? 0 : offsets[i - 1];
+                        const size_t end = offsets[i];
+                        for (size_t j = begin; j < end; ++j)
+                        {
+                            if (j != begin)
+                                writeString(",", response);
+
+                            writeString(R"({"type":)", response);
+                            writeJSONString(type_column.getDataAt(j), response, format_settings);
+                            writeString(R"(,"help":)", response);
+                            writeJSONString(help_column.getDataAt(j), response, format_settings);
+                            writeString(R"(,"unit":)", response);
+                            writeJSONString(unit_column.getDataAt(j), response, format_settings);
+                            writeString("}", response);
+                        }
+
+                        writeString("]", response);
                     }
 
-                    writeString("]", response);
+                    has_output = pull_next_nonempty();
                 }
 
-                has_output = pull_next_nonempty();
+                writeString("}}", response);
+
+                /// Store a pending query result cache write before the pulling executor is destroyed.
+                io.pipeline.finalizeWriteInQueryResultCache();
+            }
+            catch (...)
+            {
+                io.onException();
+                throw;
             }
 
-            writeString("}}", response);
-
-            /// Store a pending query result cache write before the pulling executor is destroyed.
-            io.pipeline.finalizeWriteInQueryResultCache();
+            /// Release the query slot before a slow client finishes draining the response, then record QueryFinish.
+            finishExecutedQuery(io, query_finish_callback);
         }
-        catch (...)
+        catch (const Exception & e)
         {
-            io.onException();
+            if (allow_final_fallback && !response_started && e.code() == ErrorCodes::ILLEGAL_FINAL)
+            {
+                LOG_TRACE(
+                    log,
+                    "Remote Metrics target rejected FINAL during metadata execution; retrying without FINAL");
+                return false;
+            }
             throw;
         }
 
-        /// Release the query slot before a slow client finishes draining the response, then record QueryFinish.
-        finishExecutedQuery(io, query_finish_callback);
+        return true;
     };
 
-    try
-    {
-        execute_metadata_query(execute_with_final ? query : query_without_final);
-    }
-    catch (const Exception & e)
-    {
-        /// A cached capability can become stale if the remote target changes. Retry only before any
-        /// response bytes are written, and invalidate the cache for the next request.
-        if (!remote_metrics_target || !execute_with_final || response_started || !e.isRemoteException() || e.code() != ErrorCodes::ILLEGAL_FINAL)
-            throw;
-
-        time_series_storage->setCachedMetricsTargetFinalSupport(false);
-        LOG_TRACE(log, "Remote Metrics target rejected cached FINAL capability; retrying metadata query without FINAL");
-        execute_metadata_query(query_without_final);
-    }
+    if (!execute_metadata_query(
+            execute_with_final ? query : query_without_final,
+            execute_with_final && remote_metrics_target))
+        execute_metadata_query(query_without_final, false);
 }
 
 }

@@ -23,12 +23,22 @@ node = cluster.add_instance(
     main_configs=[
         "configs/prometheus_metadata.xml",
         "configs/config.d/query_log.xml",
+        "configs/config.d/query_metric_log.xml",
         "configs/remote_servers.xml",
+        "configs/remote_servers_shard_only.xml",
     ],
     user_configs=[
         "configs/allow_experimental_time_series_table.xml",
         "configs/prometheus_metadata_users.xml",
     ],
+)
+shard = cluster.add_instance(
+    "shard",
+    main_configs=[
+        "configs/config.d/query_metric_log.xml",
+        "configs/remote_servers_shard_only.xml",
+    ],
+    user_configs=["configs/allow_experimental_time_series_table.xml"],
 )
 
 
@@ -224,6 +234,22 @@ def setup():
         node.query(
             "CREATE TABLE external_selector_distributed_prometheus ENGINE=TimeSeries "
             "SAMPLES external_selector_samples_distributed TAGS external_selector_tags_distributed"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags_view_distributed AS external_selector_tags "
+            "ENGINE=Distributed('test_cluster', 'default', 'external_selector_tags_view', rand())"
+        )
+        node.query(
+            "CREATE TABLE external_selector_tags_alias_view_distributed AS external_selector_tags "
+            "ENGINE=Distributed('test_cluster', 'default', 'external_selector_tags_view_alias', rand())"
+        )
+        node.query(
+            "CREATE TABLE external_selector_view_distributed_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags_view_distributed"
+        )
+        node.query(
+            "CREATE TABLE external_selector_alias_view_distributed_prometheus ENGINE=TimeSeries "
+            "SAMPLES external_selector_samples TAGS external_selector_tags_alias_view_distributed"
         )
 
         node.query(
@@ -640,7 +666,7 @@ def test_metadata_final_probe_does_not_consume_query_quota():
         node.query(f"DROP USER IF EXISTS {user_name}")
 
 
-def test_selector_preserves_active_roles_for_distributed_targets():
+def test_selector_rejects_distributed_target_row_policy():
     user_name = f"metadata_external_selector_sql_reader_{uuid.uuid4().hex}"
     role_name = f"metadata_external_selector_role_{uuid.uuid4().hex}"
     policy_name = f"external_selector_distributed_tags_policy_{uuid.uuid4().hex}"
@@ -657,7 +683,7 @@ def test_selector_preserves_active_roles_for_distributed_targets():
     ]
 
     node.query(
-        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
     )
     try:
         for table_name in [
@@ -673,18 +699,246 @@ def test_selector_preserves_active_roles_for_distributed_targets():
         )
 
         for query in queries:
-            response = execute_sql(query, auth=auth)
-            assert response.status_code == 200, response.text
-            assert response.text.strip() == "1", response.text
-
-            response = execute_sql(query, auth=auth, params={"role": role_name})
-            assert response.status_code == 200, response.text
-            assert response.text.strip() == "0", response.text
+            for params in ({}, {"role": role_name}):
+                response = execute_sql(query, auth=auth, params=params)
+                assert response.status_code != 200, response.text
+                assert "row polic" in response.text.lower(), response.text
     finally:
         node.query(f"DROP ROW POLICY IF EXISTS {policy_name} ON default.external_selector_tags")
         node.query(f"REVOKE {role_name} FROM {user_name}")
         node.query(f"DROP ROLE IF EXISTS {role_name}")
         node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_selector_rejects_remote_row_policy_and_ignores_coordinator_target():
+    user_name = f"metadata_external_selector_shard_only_{uuid.uuid4().hex}"
+    role_name = f"metadata_external_selector_shard_only_role_{uuid.uuid4().hex}"
+    policy_name = f"external_selector_shard_only_tags_policy_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    queries = []
+
+    shard.query(
+        "CREATE TABLE shard_only_samples "
+        "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    shard.query(
+        "CREATE TABLE shard_only_tags "
+        "(id Tuple(UInt64, UUID), metric_name LowCardinality(String), "
+        "tags Map(LowCardinality(String), String), "
+        "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+        "ENGINE=AggregatingMergeTree PRIMARY KEY metric_name "
+        "ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key=1"
+    )
+    shard.query(
+        "INSERT INTO shard_only_tags VALUES "
+        "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+        "'protected_metric', {'__name__': 'protected_metric'}, "
+        "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+    )
+    shard.query(
+        "INSERT INTO shard_only_samples VALUES "
+        "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+        "toDateTime64(1000, 3), 42)"
+    )
+
+    for suffix, remote_database in (("", ""), ("_explicit", "default")):
+        node.query(
+            f"CREATE TABLE shard_only_samples{suffix}_distributed "
+            "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+            f"ENGINE=Distributed('shard_only_cluster', '{remote_database}', 'shard_only_samples', rand())"
+        )
+        node.query(
+            f"CREATE TABLE shard_only_tags{suffix}_distributed "
+            "(id Tuple(UInt64, UUID), metric_name LowCardinality(String), "
+            "tags Map(LowCardinality(String), String), "
+            "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+            "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+            f"ENGINE=Distributed('shard_only_cluster', '{remote_database}', 'shard_only_tags', rand())"
+        )
+        node.query(
+            f"CREATE TABLE shard_only{suffix}_prometheus ENGINE=TimeSeries "
+            f"SAMPLES shard_only_samples{suffix}_distributed "
+            f"TAGS shard_only_tags{suffix}_distributed"
+        )
+        queries.extend(
+            [
+                (
+                    "SELECT count() FROM timeSeriesSelector("
+                    f"'default', 'shard_only{suffix}_prometheus', 'protected_metric', "
+                    "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+                ),
+                f"SELECT count() FROM prometheusQuery('default', 'shard_only{suffix}_prometheus', 'protected_metric', 1000)",
+                "SELECT count() FROM prometheusQueryRange("
+                f"'default', 'shard_only{suffix}_prometheus', 'protected_metric', 1000, 1000, 1)",
+            ]
+        )
+
+    node.query("CREATE VIEW shard_only_tags AS SELECT 1 AS metric_name")
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    shard.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(f"CREATE ROLE {role_name}")
+        shard.query(f"CREATE ROLE {role_name}")
+        node.query(f"GRANT {role_name} TO {user_name}")
+        shard.query(f"GRANT {role_name} TO {user_name}")
+        shard.query(f"ALTER USER {user_name} DEFAULT ROLE {role_name}")
+        for suffix, _ in (("", ""), ("_explicit", "default")):
+            node.query(f"GRANT SELECT ON default.shard_only{suffix}_prometheus TO {user_name}")
+
+        for query in queries:
+            for push_external_roles in ("0", "1"):
+                response = execute_sql(
+                    query,
+                    auth=auth,
+                    params={
+                        "push_external_roles_in_interserver_queries": push_external_roles,
+                    },
+                )
+                assert response.status_code == 200, response.text
+                assert response.text.strip() == "1", response.text
+
+        shard.query(
+            f"CREATE ROW POLICY {policy_name} ON default.shard_only_tags "
+            f"FOR SELECT USING 0 TO {role_name}"
+        )
+
+        for query in queries:
+            for push_external_roles in ("0", "1"):
+                response = execute_sql(
+                    query,
+                    auth=auth,
+                    params={
+                        "push_external_roles_in_interserver_queries": push_external_roles,
+                    },
+                )
+                assert response.status_code == 200, response.text
+                assert response.text.strip() == "1", response.text
+
+            for push_external_roles in ("0", "1"):
+                response = execute_sql(
+                    query,
+                    auth=auth,
+                    params={
+                        "role": role_name,
+                        "push_external_roles_in_interserver_queries": push_external_roles,
+                    },
+                )
+                assert response.status_code != 200, response.text
+                assert "row polic" in response.text.lower(), response.text
+    finally:
+        shard.query(f"DROP ROW POLICY IF EXISTS {policy_name} ON default.shard_only_tags")
+        node.query("DROP VIEW IF EXISTS default.shard_only_tags")
+        node.query(f"REVOKE {role_name} FROM {user_name}")
+        shard.query(f"REVOKE {role_name} FROM {user_name}")
+        node.query(f"DROP ROLE IF EXISTS {role_name}")
+        shard.query(f"DROP ROLE IF EXISTS {role_name}")
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        shard.query(f"DROP USER IF EXISTS {user_name}")
+        for suffix, _ in (("", ""), ("_explicit", "default")):
+            node.query(f"DROP TABLE IF EXISTS shard_only{suffix}_prometheus")
+            node.query(f"DROP TABLE IF EXISTS shard_only_tags{suffix}_distributed")
+            node.query(f"DROP TABLE IF EXISTS shard_only_samples{suffix}_distributed")
+        shard.query("DROP TABLE IF EXISTS shard_only_tags")
+        shard.query("DROP TABLE IF EXISTS shard_only_samples")
+
+
+def test_remote_only_distributed_alias_target_expands_on_shard():
+    suffix = uuid.uuid4().hex
+    base_samples = f"remote_alias_samples_{suffix}"
+    base_tags = f"remote_alias_tags_{suffix}"
+    alias_tags = f"remote_alias_tags_alias_{suffix}"
+    user_name = f"metadata_remote_alias_reader_{suffix}"
+    auth = (user_name, "")
+    time_series_tables = []
+
+    shard.query(
+        f"CREATE TABLE {base_samples} "
+        "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    shard.query(
+        f"CREATE TABLE {base_tags} "
+        "(id Tuple(UInt64, UUID), metric_name LowCardinality(String), "
+        "tags Map(LowCardinality(String), String), "
+        "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+        "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+        "ENGINE=AggregatingMergeTree PRIMARY KEY metric_name "
+        "ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key=1"
+    )
+    shard.query(
+        f"CREATE TABLE {alias_tags} ENGINE=Alias('default', '{base_tags}')"
+    )
+    shard.query(
+        f"INSERT INTO {base_tags} VALUES "
+        "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+        "'remote_alias_metric', {'__name__': 'remote_alias_metric'}, "
+        "toDateTime64(1000, 3), toDateTime64(1000, 3))"
+    )
+    shard.query(
+        f"INSERT INTO {base_samples} VALUES "
+        "((1, toUUID('00000000-0000-0000-0000-000000000001')), "
+        "toDateTime64(1000, 3), 42)"
+    )
+
+    for table_suffix, remote_database in (("", ""), ("_explicit", "default")):
+        samples_distributed = f"remote_alias_samples{table_suffix}_{suffix}"
+        tags_distributed = f"remote_alias_tags{table_suffix}_{suffix}"
+        time_series_table = f"remote_alias_prometheus{table_suffix}_{suffix}"
+        node.query(
+            f"CREATE TABLE {samples_distributed} "
+            "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+            f"ENGINE=Distributed('shard_only_cluster', '{remote_database}', '{base_samples}', rand())"
+        )
+        node.query(
+            f"CREATE TABLE {tags_distributed} "
+            "(id Tuple(UInt64, UUID), metric_name LowCardinality(String), "
+            "tags Map(LowCardinality(String), String), "
+            "min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
+            "max_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))) "
+            f"ENGINE=Distributed('shard_only_cluster', '{remote_database}', '{alias_tags}', rand())"
+        )
+        node.query(
+            f"CREATE TABLE {time_series_table} ENGINE=TimeSeries "
+            f"SAMPLES {samples_distributed} TAGS {tags_distributed}"
+        )
+        time_series_tables.append(time_series_table)
+
+    node.query(
+        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+    )
+    shard.query(
+        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        for time_series_table in time_series_tables:
+            node.query(
+                f"GRANT SELECT ON default.{time_series_table} TO {user_name}"
+            )
+            response = execute_sql(
+                f"SELECT count() FROM timeSeriesTags('default', '{time_series_table}')",
+                auth=auth,
+                params={"prefer_localhost_replica": "0"},
+            )
+            assert response.status_code == 200, response.text
+            assert response.text.strip() == "1", response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        shard.query(f"DROP USER IF EXISTS {user_name}")
+        for time_series_table in time_series_tables:
+            node.query(f"DROP TABLE IF EXISTS {time_series_table}")
+        node.query(f"DROP TABLE IF EXISTS remote_alias_tags_explicit_{suffix}")
+        node.query(f"DROP TABLE IF EXISTS remote_alias_samples_explicit_{suffix}")
+        node.query(f"DROP TABLE IF EXISTS remote_alias_tags_{suffix}")
+        node.query(f"DROP TABLE IF EXISTS remote_alias_samples_{suffix}")
+        shard.query(f"DROP TABLE IF EXISTS {alias_tags}")
+        shard.query(f"DROP TABLE IF EXISTS {base_tags}")
+        shard.query(f"DROP TABLE IF EXISTS {base_samples}")
 
 
 def test_distributed_targets_use_logical_table_grants():
@@ -721,7 +975,11 @@ def test_distributed_targets_use_logical_table_grants():
         node.query(f"GRANT SELECT ON default.wrapped_prometheus TO {user_name}")
 
         for query, expected in queries:
-            response = execute_sql(query, auth=auth)
+            response = execute_sql(
+                query,
+                auth=auth,
+                params={"prefer_localhost_replica": "0"},
+            )
             assert response.status_code == 200, response.text
             assert response.text.strip() == expected, response.text
 
@@ -730,6 +988,39 @@ def test_distributed_targets_use_logical_table_grants():
                 {"type": "gauge", "help": "new help", "unit": ""},
             ]
         }
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+@pytest.mark.parametrize(
+    "table_name, remote_target_name",
+    [
+        (
+            "external_selector_view_distributed_prometheus",
+            "external_selector_tags_view",
+        ),
+        (
+            "external_selector_alias_view_distributed_prometheus",
+            "external_selector_tags_view_alias",
+        ),
+    ],
+)
+def test_distributed_targets_reject_remote_views(table_name, remote_target_name):
+    user_name = f"metadata_remote_view_reader_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    node.query(
+        f"CREATE USER {user_name} SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(f"GRANT SELECT ON default.{table_name} TO {user_name}")
+        response = execute_sql(
+            f"SELECT count() FROM timeSeriesTags('default', '{table_name}')",
+            auth=auth,
+            params={"prefer_localhost_replica": "0"},
+        )
+        assert response.status_code != 200, response.text
+        error = response.text.lower()
+        assert "view targets" in error or remote_target_name in error, response.text
     finally:
         node.query(f"DROP USER IF EXISTS {user_name}")
 
@@ -991,6 +1282,14 @@ def test_wrapped_replacing_metrics_target_uses_final():
 
 def test_distributed_final_success_is_logged_as_user_query():
     query_id = f"prometheus-distributed-final-success-test-{uuid.uuid4()}"
+    node.query("SYSTEM FLUSH LOGS query_metric_log", settings={"query_metric_log_interval": 0})
+    empty_metric_rows_before = int(
+        node.query(
+            "SELECT count() FROM system.query_metric_log "
+            "WHERE query_id = '' "
+            "SETTINGS query_metric_log_interval = 0"
+        )
+    )
     assert get_wrapped_metadata(
         {"metric": "wrapped_metric"},
         headers={"X-ClickHouse-Query-Id": query_id},
@@ -1000,11 +1299,23 @@ def test_distributed_final_success_is_logged_as_user_query():
         ]
     }
 
+    node.query("SYSTEM FLUSH LOGS query_metric_log", settings={"query_metric_log_interval": 0})
+    assert_eq_with_retry(
+        node,
+        "SELECT countIf(query_id = "
+        f"'{query_id}') > 0 AND countIf(query_id = '') = {empty_metric_rows_before} "
+        "FROM system.query_metric_log "
+        "SETTINGS query_metric_log_interval = 0",
+        "1\n",
+        retry_count=30,
+        sleep_time=1,
+    )
+
     node.query("SYSTEM FLUSH LOGS query_log")
     assert_eq_with_retry(
         node,
         f"SELECT count() FROM system.query_log "
-        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}' AND is_internal = 0",
         "1\n",
         retry_count=30,
         sleep_time=1,
@@ -1497,7 +1808,17 @@ def test_time_series_table_function_schema_allows_select_with_outer_row_policy(q
         node.query(f"DROP ROW POLICY {policy_name} ON default.prometheus")
 
 
-def test_time_series_table_function_schema_inference_allows_select_with_outer_row_policy():
+def test_time_series_table_function_create_select_succeeds_without_outer_row_policy():
+    temporary_table_name = f"inferred_metadata_{uuid.uuid4().hex}"
+    response = execute_sql(
+        f"CREATE TEMPORARY TABLE {temporary_table_name} AS "
+        "SELECT * FROM timeSeriesMetrics('default', 'prometheus')",
+        auth=("metadata_select_temp_table_only", ""),
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_time_series_table_function_create_select_rejects_outer_row_policy():
     policy_name = f"prometheus_schema_inference_policy_{uuid.uuid4().hex}"
     temporary_table_name = f"inferred_metadata_{uuid.uuid4().hex}"
     node.query(
@@ -1510,7 +1831,9 @@ def test_time_series_table_function_schema_inference_allows_select_with_outer_ro
             "SELECT * FROM timeSeriesMetrics('default', 'prometheus')",
             auth=("metadata_select_temp_table_only", ""),
         )
-        assert response.status_code == 200, response.text
+        assert response.status_code != 200, response.text
+        assert "row policies" in response.text, response.text
+        assert "default.prometheus" in response.text, response.text
     finally:
         node.query(f"DROP ROW POLICY {policy_name} ON default.prometheus")
 
@@ -1527,6 +1850,164 @@ def test_time_series_table_function_insert_requires_insert_access():
     assert "default.prometheus" in response.text, response.text
 
 
+def test_time_series_table_functions_require_outer_select_with_target_select():
+    user_name = f"metadata_target_select_only_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(f"GRANT SELECT ON default.external_selector_tags TO {user_name}")
+        response = execute_sql(
+            "SELECT count() FROM timeSeriesTags('default', 'external_selector_prometheus')",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert "SELECT" in response.text, response.text
+        assert "default.external_selector_prometheus" in response.text, response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_time_series_target_context_keeps_buffer_destination_select_required():
+    suffix = uuid.uuid4().hex
+    protected_table = f"metadata_buffer_destination_{suffix}"
+    buffer_table = f"metadata_buffer_{suffix}"
+    time_series_table = f"metadata_buffer_prometheus_{suffix}"
+    user_name = f"metadata_buffer_reader_{suffix}"
+    auth = (user_name, "")
+
+    node.query(
+        f"CREATE TABLE {protected_table} "
+        "(metric_family_name String, type String, unit String, help String) "
+        "ENGINE = MergeTree ORDER BY metric_family_name"
+    )
+    node.query(
+        f"INSERT INTO {protected_table} VALUES "
+        "('protected_metric', 'gauge', '', 'protected')"
+    )
+    node.query(
+        f"CREATE TABLE {buffer_table} "
+        "(metric_family_name String, type String, unit String, help String) "
+        f"ENGINE = Buffer('default', '{protected_table}', 1, 10, 100, "
+        "10000, 1000000, 10000000, 100000000)"
+    )
+    node.query(
+        f"CREATE TABLE {time_series_table} ENGINE = TimeSeries METRICS {buffer_table}"
+    )
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+    node.query(f"GRANT SELECT ON default.{time_series_table} TO {user_name}")
+
+    try:
+        response = execute_sql(
+            f"SELECT count() FROM timeSeriesMetrics('default', '{time_series_table}')",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert protected_table in response.text, response.text
+
+        node.query(f"GRANT SELECT ON default.{protected_table} TO {user_name}")
+        response = execute_sql(
+            f"SELECT count() FROM timeSeriesMetrics('default', '{time_series_table}')",
+            auth=auth,
+        )
+        assert response.status_code == 200, response.text
+        assert response.text.strip() == "1", response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP TABLE IF EXISTS {time_series_table}")
+        node.query(f"DROP TABLE IF EXISTS {buffer_table}")
+        node.query(f"DROP TABLE IF EXISTS {protected_table}")
+
+
+def test_time_series_table_function_insert_rejects_buffer_target():
+    suffix = uuid.uuid4().hex
+    protected_table = f"metadata_buffer_insert_destination_{suffix}"
+    buffer_table = f"metadata_buffer_insert_{suffix}"
+    time_series_table = f"metadata_buffer_insert_prometheus_{suffix}"
+    user_name = f"metadata_buffer_insert_writer_{suffix}"
+    auth = (user_name, "")
+
+    node.query(
+        f"CREATE TABLE {protected_table} "
+        "(metric_family_name String, type String, unit String, help String) "
+        "ENGINE = MergeTree ORDER BY metric_family_name"
+    )
+    node.query(
+        f"CREATE TABLE {buffer_table} "
+        "(metric_family_name String, type String, unit String, help String) "
+        f"ENGINE = Buffer('default', '{protected_table}', 1, 10, 100, "
+        "10000, 1000000, 10000000, 100000000)"
+    )
+    node.query(
+        f"CREATE TABLE {time_series_table} ENGINE = TimeSeries METRICS {buffer_table}"
+    )
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    try:
+        node.query(f"GRANT INSERT ON default.{time_series_table} TO {user_name}")
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user_name}")
+        response = execute_sql(
+            f"INSERT INTO TABLE FUNCTION timeSeriesMetrics('default', '{time_series_table}') "
+            "VALUES ('buffer_metric', 'gauge', '', 'buffer help')",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert "through Buffer storage" in response.text, response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP TABLE IF EXISTS {time_series_table}")
+        node.query(f"DROP TABLE IF EXISTS {buffer_table}")
+        node.query(f"DROP TABLE IF EXISTS {protected_table}")
+
+
+def test_time_series_table_function_insert_allows_lazy_table_proxy_target():
+    suffix = uuid.uuid4().hex
+    database = f"metadata_lazy_{suffix}"
+    target_table = f"metadata_lazy_metrics_{suffix}"
+    time_series_table = f"metadata_lazy_prometheus_{suffix}"
+    user_name = f"metadata_lazy_writer_{suffix}"
+    auth = (user_name, "")
+
+    node.query(
+        f"CREATE DATABASE {database} ENGINE = Atomic SETTINGS lazy_load_tables = 1"
+    )
+    node.query(
+        f"CREATE TABLE {database}.{target_table} "
+        "(metric_family_name String, type String, unit String, help String) "
+        "ENGINE = MergeTree ORDER BY metric_family_name"
+    )
+    node.query(
+        f"CREATE TABLE {database}.{time_series_table} ENGINE = TimeSeries "
+        f"METRICS {database}.{target_table}"
+    )
+    node.query(f"DETACH DATABASE {database} SYNC")
+    node.query(f"ATTACH DATABASE {database}")
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE "
+        "SETTINGS allow_experimental_time_series_table = 1"
+    )
+
+    try:
+        node.query(f"GRANT INSERT ON {database}.{time_series_table} TO {user_name}")
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user_name}")
+        response = execute_sql(
+            f"INSERT INTO TABLE FUNCTION timeSeriesMetrics('{database}', '{time_series_table}') "
+            "VALUES ('lazy_metric', 'gauge', '', 'lazy help')",
+            auth=auth,
+        )
+        assert response.status_code == 200, response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+
 def test_time_series_table_function_insert_allows_insert_only_user():
     response = execute_sql(
         "INSERT INTO TABLE FUNCTION timeSeriesSamples('default', 'prometheus') "
@@ -1535,6 +2016,103 @@ def test_time_series_table_function_insert_allows_insert_only_user():
         auth=("metadata_insert_temp_table_only", ""),
     )
     assert response.status_code == 200, response.text
+
+
+def test_time_series_table_function_insert_rejects_forwarding_target_with_outer_insert_access():
+    user_name = f"metadata_insert_alias_temp_table_only_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(
+            f"GRANT INSERT ON default.external_selector_alias_prometheus TO {user_name}"
+        )
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user_name}")
+        response = execute_sql(
+            "INSERT INTO TABLE FUNCTION timeSeriesTags('default', 'external_selector_alias_prometheus') "
+            "VALUES ((toUInt64(2), toUUID('00000000-0000-0000-0000-000000000002')), "
+            "'alias_insert_metric', {'__name__': 'alias_insert_metric'}, "
+            "toDateTime64(1001, 3), toDateTime64(1001, 3))",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert "forwarding target" in response.text.lower(), response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_time_series_table_function_insert_rejects_distributed_target_with_outer_insert_access():
+    user_name = f"metadata_insert_distributed_temp_table_only_{uuid.uuid4().hex}"
+    auth = (user_name, "")
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(
+            f"GRANT INSERT ON default.external_selector_distributed_prometheus TO {user_name}"
+        )
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user_name}")
+        response = execute_sql(
+            "INSERT INTO TABLE FUNCTION timeSeriesSamples('default', 'external_selector_distributed_prometheus') "
+            "SELECT tuple(toUInt64(0), toUUID('00000000-0000-0000-0000-000000000001')), "
+            "toDateTime64(2000, 3), 1.0",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert "remote" in response.text.lower() or "distributed" in response.text.lower(), response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+
+
+def test_time_series_table_function_insert_rejects_materialized_view_target_with_outer_insert_access():
+    suffix = uuid.uuid4().hex
+    target_table = f"materialized_view_samples_target_{suffix}"
+    source_table = f"materialized_view_samples_source_{suffix}"
+    view_table = f"materialized_view_samples_{suffix}"
+    time_series_table = f"materialized_view_prometheus_{suffix}"
+    user_name = f"metadata_insert_materialized_view_{suffix}"
+    auth = (user_name, "")
+
+    node.query(
+        f"CREATE TABLE {target_table} "
+        "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        f"CREATE TABLE {source_table} "
+        "(id Tuple(UInt64, UUID), timestamp DateTime64(3), value Float64) "
+        "ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query(
+        f"CREATE MATERIALIZED VIEW {view_table} TO {target_table} "
+        f"AS SELECT id, timestamp, value FROM {source_table}"
+    )
+    node.query(
+        f"CREATE TABLE {time_series_table} ENGINE=TimeSeries "
+        f"SAMPLES {view_table} TAGS external_selector_tags"
+    )
+    node.query(
+        f"CREATE USER {user_name} DEFAULT ROLE NONE SETTINGS allow_experimental_time_series_table = 1"
+    )
+    try:
+        node.query(f"GRANT INSERT ON default.{time_series_table} TO {user_name}")
+        node.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user_name}")
+        response = execute_sql(
+            f"INSERT INTO TABLE FUNCTION timeSeriesSamples('default', '{time_series_table}') "
+            "SELECT tuple(toUInt64(0), toUUID('00000000-0000-0000-0000-000000000001')), "
+            "toDateTime64(2000, 3), 1.0",
+            auth=auth,
+        )
+        assert response.status_code != 200, response.text
+        assert "view target" in response.text.lower(), response.text
+        assert time_series_table in response.text, response.text
+    finally:
+        node.query(f"DROP USER IF EXISTS {user_name}")
+        node.query(f"DROP TABLE IF EXISTS {time_series_table}")
+        node.query(f"DROP TABLE IF EXISTS {view_table}")
+        node.query(f"DROP TABLE IF EXISTS {source_table}")
+        node.query(f"DROP TABLE IF EXISTS {target_table}")
 
 
 @pytest.mark.parametrize(
@@ -1657,8 +2235,8 @@ def test_combined_handler_does_not_match_endpoint_suffixes(path):
         (
             "/combined/api/v1/series",
             {"match[]": '{__name__="http_requests_total"}'},
-            400,
-            "series endpoint is not implemented",
+            200,
+            None,
         ),
         (
             "/combined/api/v1/labels",

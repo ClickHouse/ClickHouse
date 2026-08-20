@@ -757,7 +757,8 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
     std::vector<UUID> effective_external_roles = external_roles;
     const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
         && query_context->getClientInfo().current_roles.has_value()
-        && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
+        && (query_context->getClientInfo().is_time_series_target_read
+            || global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries]);
     if (apply_initiator_roles)
     {
         const auto & role_names = *query_context->getClientInfo().current_roles;

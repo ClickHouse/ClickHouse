@@ -21,6 +21,8 @@ public:
     String getName() const override { return name; }
 
 private:
+    std::optional<AccessTypeObjects::Source> getSourceAccessObject() const override { return {}; }
+
     void parseArguments(const ASTPtr & ast_function, ContextPtr context) override;
 
     StoragePtr executeImpl(

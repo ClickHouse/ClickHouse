@@ -28,7 +28,8 @@ ContextAccessParams::ContextAccessParams(
     const std::optional<UUID> & initial_user_id_)
     : user_id(user_id_)
     , full_access(full_access_)
-    , allow_time_series_target_select(client_info_.is_time_series_target_read)
+    , time_series_target_tables(
+        client_info_.is_time_series_target_read ? client_info_.time_series_target_tables : std::vector<QualifiedTableName>{})
     , use_default_roles(use_default_roles_)
     , current_roles(current_roles_)
     , external_roles(external_roles_)
@@ -53,8 +54,17 @@ String ContextAccessParams::toString() const
         out << separator() << "user_id = " << *user_id;
     if (full_access)
         out << separator() << "full_access = " << full_access;
-    if (allow_time_series_target_select)
-        out << separator() << "allow_time_series_target_select = " << allow_time_series_target_select;
+    if (!time_series_target_tables.empty())
+    {
+        out << separator() << "time_series_target_tables = [";
+        for (size_t i = 0; i != time_series_target_tables.size(); ++i)
+        {
+            if (i)
+                out << ", ";
+            out << time_series_target_tables[i].database << "." << time_series_target_tables[i].table;
+        }
+        out << "]";
+    }
     if (use_default_roles)
         out << separator() << "use_default_roles = " << use_default_roles;
     if (current_roles && !current_roles->empty())
@@ -125,7 +135,7 @@ bool operator ==(const ContextAccessParams & left, const ContextAccessParams & r
 
     CONTEXT_ACCESS_PARAMS_EQUALS(user_id)
     CONTEXT_ACCESS_PARAMS_EQUALS(full_access)
-    CONTEXT_ACCESS_PARAMS_EQUALS(allow_time_series_target_select)
+    CONTEXT_ACCESS_PARAMS_EQUALS(time_series_target_tables)
     CONTEXT_ACCESS_PARAMS_EQUALS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(current_roles)
     CONTEXT_ACCESS_PARAMS_EQUALS(external_roles)
@@ -177,7 +187,7 @@ bool operator <(const ContextAccessParams & left, const ContextAccessParams & ri
 
     CONTEXT_ACCESS_PARAMS_LESS(user_id)
     CONTEXT_ACCESS_PARAMS_LESS(full_access)
-    CONTEXT_ACCESS_PARAMS_LESS(allow_time_series_target_select)
+    CONTEXT_ACCESS_PARAMS_LESS(time_series_target_tables)
     CONTEXT_ACCESS_PARAMS_LESS(use_default_roles)
     CONTEXT_ACCESS_PARAMS_LESS(current_roles)
     CONTEXT_ACCESS_PARAMS_LESS(external_roles)

@@ -591,10 +591,6 @@ protected:
 
     /// A flag, used to distinguish between user query and internal query to a database engine (MaterializedPostgreSQL).
     bool is_internal_query = false;
-    /// CREATE TEMPORARY TABLE ... AS SELECT uses table-function target storage while building and
-    /// populating the temporary table. Keep its established schema-inference behavior even when
-    /// the logical TimeSeries table has an outer SELECT row policy.
-    bool allow_time_series_table_function_read_with_outer_row_policy = false;
     /// A flag, used to detect sub-operations of background operations - in this case we won't need to build another background contexts
     bool is_background_operation = false;
     /// Set for queries created internally by the server for DDL replication (ON CLUSTER, DatabaseReplicated)
@@ -1822,15 +1818,6 @@ public:
 
     bool isInternalQuery() const { return is_internal_query; }
     void setInternalQuery(bool internal) { is_internal_query = internal; }
-
-    bool isTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed() const
-    {
-        return allow_time_series_table_function_read_with_outer_row_policy;
-    }
-    void setTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed(bool value)
-    {
-        allow_time_series_table_function_read_with_outer_row_policy = value;
-    }
 
     bool isDDLOrOnClusterInternal() const { return is_ddl_or_on_cluster_internal; }
     void setDDLOrOnClusterInternal(bool value) { is_ddl_or_on_cluster_internal = value; }

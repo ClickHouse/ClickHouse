@@ -1,7 +1,8 @@
 #pragma once
 
-#include <Interpreters/ClientInfo.h>
+#include <Core/QualifiedTableName.h>
 #include <Core/UUID.h>
+#include <Interpreters/ClientInfo.h>
 #include <optional>
 #include <vector>
 
@@ -36,9 +37,9 @@ public:
     /// This is used for the global context.
     const bool full_access;
 
-    /// A server-generated TimeSeries target read keeps the original user for row-policy evaluation
-    /// but does not require a direct SELECT grant on the hidden implementation table.
-    const bool allow_time_series_target_select;
+    /// Exact table identities covered by a server-generated TimeSeries target read. The original
+    /// user is kept for row-policy evaluation, while SELECT is bypassed only for these identities.
+    const std::vector<QualifiedTableName> time_series_target_tables;
 
     const bool use_default_roles;
     const std::shared_ptr<const std::vector<UUID>> current_roles;

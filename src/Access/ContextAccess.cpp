@@ -10,6 +10,9 @@
 #include <Access/EnabledSettings.h>
 #include <Access/SettingsProfilesInfo.h>
 #include <Databases/DatabaseFactory.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageDistributed.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -89,6 +92,102 @@ namespace
 
     template <typename... OtherArgs>
     std::string_view getDatabase(std::string_view arg1, const OtherArgs &...) { return arg1; }
+
+    template <typename... Args>
+    bool isTimeSeriesTargetView(const ContextPtr &, const Args &...)
+    {
+        return false;
+    }
+
+    /// Match only a fully qualified table access against the server-generated TimeSeries target
+    /// scope. In particular, database-level SELECT checks must not match this helper: forwarding
+    /// engines such as Merge use those checks while discovering their child tables.
+    template <typename... Args>
+    bool isTimeSeriesTargetTable(const ContextAccessParams &, const Args &...)
+    {
+        return false;
+    }
+
+    template <typename... OtherArgs>
+    bool isTimeSeriesTargetTable(
+        const ContextAccessParams & params,
+        std::string_view database,
+        std::string_view table,
+        const OtherArgs &...)
+    {
+        if (database.empty() || table.empty())
+            return false;
+
+        for (const auto & target : params.time_series_target_tables)
+        {
+            if (target.database == database && target.table == table)
+                return true;
+        }
+
+        return false;
+    }
+
+    template <typename... OtherArgs>
+    bool isTimeSeriesTargetTable(
+        const ContextAccessParams & params,
+        std::string_view database,
+        const String & table,
+        const OtherArgs &... args)
+    {
+        return isTimeSeriesTargetTable(params, database, std::string_view(table), args...);
+    }
+
+    template <typename... OtherArgs>
+    bool isTimeSeriesTargetView(
+        const ContextPtr & context,
+        std::string_view database,
+        std::string_view table,
+        const OtherArgs &...)
+    {
+        if (database.empty() || table.empty())
+            return false;
+
+        auto storage = DatabaseCatalog::instance().tryGetTable(StorageID{String(database), String(table)}, context);
+        std::unordered_set<const IStorage *> visited;
+
+        while (storage && visited.insert(storage.get()).second)
+        {
+            if (storage->isView())
+                return true;
+
+            if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+            {
+                storage = alias->tryGetTargetTable();
+                continue;
+            }
+
+            if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+            {
+                storage = proxy->getNested();
+                continue;
+            }
+
+            if (const auto * distributed = dynamic_cast<const StorageDistributed *>(storage.get()))
+            {
+                const auto remote_database = distributed->getRemoteDatabaseName();
+                const auto remote_table = distributed->getRemoteTableName();
+                /// A same-named coordinator table may be unrelated to a remote-only Distributed
+                /// target. The physical shard validates that target when the query is forwarded.
+                if (!distributed->isRemoteFunction() && !remote_database.empty() && !remote_table.empty()
+                    && distributed->getCluster()->getLocalShardCount() > 0)
+                {
+                    storage = DatabaseCatalog::instance().tryGetTable(
+                        StorageID{remote_database, remote_table},
+                        context);
+                    continue;
+                }
+            }
+
+            break;
+        }
+
+        return false;
+    }
 }
 
 
@@ -567,9 +666,13 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
     if (filter)
         checkRowPolicyFilterExpression(filter->expression);
 
+    const bool is_time_series_target =
+        isTimeSeriesTargetTable(params, std::string_view(database), std::string_view(table_name));
+
     if (filter && filter->policies.empty())
     {
-        if (access_control->shouldThrowOnUnmatchedRowPolicies())
+        if (access_control->shouldThrowOnUnmatchedRowPolicies()
+            && !(is_time_series_target && filter_type == RowPolicyFilterType::SELECT_FILTER))
         {
             throw Exception(ErrorCodes::ACCESS_DENIED,
                             "{}: Table {}.{} has row policies, but none of them are for the current user",
@@ -585,6 +688,20 @@ RowPolicyFilterPtr ContextAccess::getRowPolicyFilter(const String & database, co
             LOG_TRACE(trace_log, "{}: Table {}.{} has row policies, but none of them are for the current user{}",
                       getUserName(), backQuoteIfNeed(database), backQuoteIfNeed(table_name), filter_info);
         }
+    }
+
+    /// A TimeSeries target is an implementation detail of the logical table. The initiator
+    /// rejects target row policies when it can inspect them locally, but a Distributed target
+    /// may exist only on a remote shard. Enforce the same contract where the physical table is
+    /// actually resolved, while preserving the original user's roles for ordinary access checks.
+    if (is_time_series_target
+        && filter_type == RowPolicyFilterType::SELECT_FILTER
+        && filter
+        && !filter->isAlwaysTrue())
+    {
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Cannot read TimeSeries targets because SELECT row policies are applied on a target");
     }
 
     return filter;
@@ -690,12 +807,25 @@ bool ContextAccess::checkAccessImplHelper(const ContextPtr & context, AccessFlag
     if (params.full_access)
         return true;
 
-    /// TimeSeries target reads authenticate the original user so row policies and active roles
-    /// still apply on a shard, but the physical target is an implementation detail and must not
-    /// require a separate SELECT grant. Only SELECT itself is bypassed; source and write grants
-    /// remain enforced.
-    if (params.allow_time_series_target_select && flags == AccessFlags(AccessType::SELECT))
+    /// TimeSeries target reads authenticate the original user so active roles and target
+    /// row-policy checks still use the caller's identity on a shard, but the physical target is
+    /// an implementation detail and must not require a separate SELECT grant. Only SELECT on an
+    /// explicitly scoped target table is bypassed; source, child-table and write grants remain
+    /// enforced.
+    if (flags == AccessFlags(AccessType::SELECT) && isTimeSeriesTargetTable(params, args...))
+    {
+        if (isTimeSeriesTargetView(context, args...))
+        {
+            if constexpr (throw_if_denied)
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Cannot read TimeSeries targets because view targets are not supported");
+
+            return false;
+        }
+
         return true;
+    }
 
     auto access_granted = [&]
     {

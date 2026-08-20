@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <map>
 #include <memory>
 #include <optional>
@@ -9,6 +10,8 @@
 #include <base/types.h>
 #include <Common/HTTPFieldLess.h>
 #include <Common/OpenTelemetryTracingContext.h>
+#include <Core/QualifiedTableName.h>
+#include <Interpreters/QueryFlags.h>
 #include <Poco/Net/SocketAddress.h>
 
 /// On ppc64le, Poco's socket headers transitively include <termios.h>, which defines the CR1/CR2/CR3
@@ -74,6 +77,8 @@ public:
     };
 
     ClientInfo();
+
+    static constexpr size_t MAX_TIME_SERIES_TARGET_TABLES = 1024;
 
     QueryKind query_kind = QueryKind::NO_QUERY;
 
@@ -174,11 +179,17 @@ public:
     /// Server-internal query (not user-issued), propagated to remote queries.
     /// Independent of `query_kind == SECONDARY_QUERY`: either can hold without the other.
     bool is_internal = false;
+    /// Trusted server-side query that must not be charged to the caller's quota, propagated to remote queries.
+    bool ignore_quota = false;
     /// Read of a physical table hidden behind a logical TimeSeries table. The interserver
     /// authentication still uses the original user, but the receiving shard must not require a
     /// direct SELECT grant on the implementation table. Row policies and active roles remain
     /// attached to the original user.
     bool is_time_series_target_read = false;
+    /// Exact, fully qualified table identities for which the server-generated TimeSeries target
+    /// read may bypass SELECT. The scope is accepted only from authenticated interserver traffic
+    /// and is never accepted from a regular client connection.
+    std::vector<QualifiedTableName> time_series_target_tables;
 
     /// For parallel processing on replicas
     bool collaborate_with_initiator{false};
@@ -192,14 +203,33 @@ public:
       * Revisions are passed to use format that server will understand or client was used.
       */
     /// `with_trailing_fields` controls whether fields added after the async `Distributed` insert header layout
-    /// was frozen — `client_agent`, `is_internal`, `current_roles`, `http_handler_name` and
+    /// was frozen — `client_agent`, `is_internal`, `ignore_quota`, `current_roles`, `http_handler_name` and
     /// `http_request_url` — are (de)serialized as part of `ClientInfo`. It must be `false` for the embedded
     /// `ClientInfo` of the persisted async `Distributed` insert header, where the fields that are supported by
     /// that format are stored as trailing header fields instead, so older binaries draining newer queue files
-    /// can read the header without misinterpreting it. The server-generated TimeSeries target marker is
-    /// intentionally omitted from persisted async-insert headers.
+    /// can read the header without misinterpreting it. The server-generated TimeSeries target marker
+    /// and target scope are intentionally omitted from persisted async-insert headers.
+    /// The target scope is also used by interserver authentication to cover the capability itself.
     void write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields = true) const;
     void read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields = true);
+
+    /// Serializes the server-generated target scope in the same canonical form used on the wire and
+    /// in the interserver authentication hash.
+    void writeTimeSeriesTargetTables(WriteBuffer & out) const;
+
+    /// Remove server-generated capabilities that are not trusted from the incoming connection.
+    /// Query kind is client-supplied, so regular TCP secondary queries are sanitized as client input.
+    /// Older interserver peers serialize `is_internal`, but do not authenticate it until the
+    /// query-execution-flags protocol revision.
+    void sanitizeServerGeneratedFields(bool is_interserver_mode, UInt64 client_protocol_revision);
+
+    /// Derive execution flags from an authenticated interserver connection.
+    QueryFlags getTrustedQueryFlags(bool is_interserver_mode, UInt64 client_protocol_revision) const;
+
+    void setTrustedQueryFlags(const QueryFlags & flags);
+    QueryFlags getTrustedQueryFlagsForForwarding() const;
+    /// Build a normalized ClientInfo copy for a remote hop from the flags accepted for execution.
+    ClientInfo getClientInfoForInterserverForwarding() const;
 
     /// Initialize parameters on client initiating query.
     void setInitialQuery();
@@ -228,6 +258,9 @@ private:
     /// `ClientInfo::getLastForwardedFor` can be called several times while processing one HTTP request.
     /// Cache successful and rejected parses so the header is parsed once and an invalid value is logged once.
     mutable std::shared_ptr<const ForwardedForCache> last_forwarded_for_cache;
+
+    bool trusted_is_internal = false;
+    bool trusted_ignore_quota = false;
 
     void fillOSUserHostNameAndVersionInfo();
 

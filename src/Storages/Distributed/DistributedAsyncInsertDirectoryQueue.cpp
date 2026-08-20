@@ -525,8 +525,12 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        return std::tie(settings, query, client_info.query_kind, client_info.client_agent, client_info.is_internal) ==
-               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent, other.client_info.is_internal) &&
+        const auto trusted_query_flags = client_info.getTrustedQueryFlagsForForwarding();
+        const auto other_trusted_query_flags = other.client_info.getTrustedQueryFlagsForForwarding();
+        return std::tie(settings, query, client_info.query_kind, client_info.client_agent,
+                        trusted_query_flags.internal, trusted_query_flags.ignore_quota) ==
+               std::tie(other.settings, other.query, other.client_info.query_kind, other.client_info.client_agent,
+                        other_trusted_query_flags.internal, other_trusted_query_flags.ignore_quota) &&
                blocksHaveEqualStructure(header, other.header);
     }
 
@@ -537,7 +541,9 @@ struct DistributedAsyncInsertDirectoryQueue::BatchHeader
             SipHash hash_state;
             hash_state.update(batch_header.query.data(), batch_header.query.size());
             hash_state.update(batch_header.client_info.client_agent.data(), batch_header.client_info.client_agent.size());
-            hash_state.update(batch_header.client_info.is_internal);
+            const auto trusted_query_flags = batch_header.client_info.getTrustedQueryFlagsForForwarding();
+            hash_state.update(trusted_query_flags.internal);
+            hash_state.update(trusted_query_flags.ignore_quota);
             batch_header.header.updateHash(hash_state);
             return hash_state.get64();
         }

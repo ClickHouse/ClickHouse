@@ -213,6 +213,33 @@ String ClientInfo::getLastForwardedForHost() const
 }
 
 
+void ClientInfo::writeTimeSeriesTargetTables(WriteBuffer & out) const
+{
+    if (!is_time_series_target_read)
+    {
+        writeVarUInt(0, out);
+        return;
+    }
+
+    if (time_series_target_tables.empty())
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "TimeSeries target read must contain at least one target table");
+
+    writeVarUInt(time_series_target_tables.size(), out);
+    for (const auto & table : time_series_target_tables)
+    {
+        if (table.database.empty() || table.table.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "TimeSeries target scope must contain fully qualified table names");
+
+        writeBinary(table.database, out);
+        writeBinary(table.table, out);
+    }
+}
+
+
 void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool with_trailing_fields) const
 {
     if (server_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
@@ -340,12 +367,30 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
     }
 
     if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_READ)
-        writeBinary(is_time_series_target_read, out);
+    {
+        /// Pre-scope peers interpret this marker as a context-wide SELECT bypass. Never send the
+        /// marker without its table scope, even during a rolling upgrade.
+        writeBinary(
+            is_time_series_target_read && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE,
+            out);
+    }
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS)
+        writeBinary(ignore_quota, out);
+
+    if (with_trailing_fields && server_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE)
+        writeTimeSeriesTargetTables(out);
 }
 
 
 void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool with_trailing_fields)
 {
+    /// `ClientInfo` instances from a session can be reused for several query packets. These fields
+    /// are not part of the regular wire payload, so reset them before even validating the revision
+    /// or handling NO_QUERY.
+    trusted_is_internal = false;
+    trusted_ignore_quota = false;
+
     if (client_protocol_revision < DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Method ClientInfo::read is called for unsupported client revision");
 
@@ -491,6 +536,46 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
         readBinary(is_time_series_target_read, in);
     else
         is_time_series_target_read = false;
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS)
+        readBinary(ignore_quota, in);
+    else
+        ignore_quota = false;
+
+    if (with_trailing_fields && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_TIME_SERIES_TARGET_SCOPE)
+    {
+        UInt64 size = 0;
+        readVarUInt(size, in);
+        if (size > ClientInfo::MAX_TIME_SERIES_TARGET_TABLES)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Too many TimeSeries target tables in ClientInfo: {} (maximum {})",
+                size,
+                ClientInfo::MAX_TIME_SERIES_TARGET_TABLES);
+
+        time_series_target_tables.resize(size);
+        for (auto & table : time_series_target_tables)
+        {
+            readStringBinary(table.database, in, DBMS_MAX_HELLO_STRING_SIZE);
+            readStringBinary(table.table, in, DBMS_MAX_HELLO_STRING_SIZE);
+
+            if (table.database.empty() || table.table.empty())
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "TimeSeries target scope must contain fully qualified table names");
+        }
+
+        /// The scope is meaningful only together with the server-generated marker. Keep the
+        /// conjunction enforced even for an authenticated but malformed interserver payload.
+        if (!is_time_series_target_read)
+            time_series_target_tables.clear();
+        else if (time_series_target_tables.empty())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "TimeSeries target read must contain at least one target table");
+    }
+    else
+        time_series_target_tables.clear();
 }
 
 
@@ -503,6 +588,74 @@ void ClientInfo::setInitialQuery()
     else
         client_name = std::string(VERSION_NAME) + " " + client_name;
 }
+
+
+void ClientInfo::sanitizeServerGeneratedFields(bool is_interserver_mode, UInt64 client_protocol_revision)
+{
+    /// Server-generated capabilities and the TimeSeries target scope are accepted only from an
+    /// authenticated interserver connection. Query kind is supplied by the client, so a regular TCP
+    /// secondary query must not be treated as server-generated traffic.
+    if (!is_interserver_mode || query_kind != QueryKind::SECONDARY_QUERY)
+    {
+        is_time_series_target_read = false;
+        time_series_target_tables.clear();
+    }
+
+    if (!is_interserver_mode)
+    {
+        is_internal = false;
+        ignore_quota = false;
+    }
+    else if (client_protocol_revision < DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS)
+    {
+        /// `is_internal` has been serialized since 54486, but is not covered by the interserver
+        /// authentication hash until 54494. Do not let an older peer turn it into a capability.
+        is_internal = false;
+    }
+}
+
+
+QueryFlags ClientInfo::getTrustedQueryFlags(bool is_interserver_mode, UInt64 client_protocol_revision) const
+{
+    const bool trust_interserver_flags =
+        is_interserver_mode && client_protocol_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_QUERY_EXECUTION_FLAGS;
+
+    return QueryFlags{
+        .internal = trust_interserver_flags && is_internal,
+        .ignore_quota = trust_interserver_flags && ignore_quota,
+    };
+}
+
+
+void ClientInfo::setTrustedQueryFlags(const QueryFlags & flags)
+{
+    trusted_is_internal = flags.internal;
+    trusted_ignore_quota = flags.ignore_quota;
+}
+
+
+QueryFlags ClientInfo::getTrustedQueryFlagsForForwarding() const
+{
+    return QueryFlags{
+        .internal = trusted_is_internal,
+        .ignore_quota = trusted_ignore_quota,
+    };
+}
+
+
+ClientInfo ClientInfo::getClientInfoForInterserverForwarding() const
+{
+    ClientInfo result = *this;
+    result.is_internal = trusted_is_internal;
+    result.ignore_quota = trusted_ignore_quota;
+    if (result.query_kind != QueryKind::SECONDARY_QUERY)
+    {
+        result.is_time_series_target_read = false;
+        result.time_series_target_tables.clear();
+    }
+    return result;
+}
+
 
 void ClientInfo::setClientVersionFromConnectionIfUnknown()
 {

@@ -1672,17 +1672,6 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 {
     auto component_guard = Coordination::setCurrentComponent("InterpreterCreateQuery::createTable");
 
-    const bool is_temporary_create_select = create.isTemporary() && create.select;
-    const bool previous_time_series_target_read_policy_mode
-        = getContext()->isTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed();
-    if (is_temporary_create_select)
-        getContext()->setTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed(true);
-    SCOPE_EXIT({
-        if (is_temporary_create_select)
-            getContext()->setTimeSeriesTableFunctionReadWithOuterRowPolicyAllowed(
-                previous_time_series_target_read_policy_mode);
-    });
-
     /// Temporary tables are created out of databases.
     if (create.isTemporary() && create.attach)
         throw Exception(ErrorCodes::SYNTAX_ERROR, "ATTACH of TEMPORARY tables are not supported");

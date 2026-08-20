@@ -1365,6 +1365,7 @@ ContextData::ContextData(const ContextData &o) :
     input_blocks_reader(o.input_blocks_reader),
     user_id(o.user_id),
     current_roles(o.current_roles),
+    external_roles(o.external_roles),
     settings_constraints_and_current_profiles(o.settings_constraints_and_current_profiles),
     access(o.access),
     need_recalculate_access(o.need_recalculate_access),
@@ -1406,8 +1407,6 @@ ContextData::ContextData(const ContextData &o) :
     background_context(o.background_context),
     buffer_context(o.buffer_context),
     is_internal_query(o.is_internal_query),
-    allow_time_series_table_function_read_with_outer_row_policy(
-        o.allow_time_series_table_function_read_with_outer_row_policy),
     is_background_operation(o.is_background_operation),
     is_ddl_or_on_cluster_internal(o.is_ddl_or_on_cluster_internal),
     is_view_inner_query(o.is_view_inner_query),

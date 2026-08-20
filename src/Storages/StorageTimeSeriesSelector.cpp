@@ -35,6 +35,8 @@
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
+#include <unordered_set>
+
 
 namespace DB
 {
@@ -269,7 +271,8 @@ namespace
         const std::unordered_map<String, String> & column_name_by_tag_name,
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
-        const DataTypePtr & timestamp_data_type)
+        const DataTypePtr & timestamp_data_type,
+        bool tags_table_is_remote)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -294,23 +297,73 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
-        /// FROM tags_table_id
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-
+        auto make_tags_table_query = [&]
         {
+            auto tags_table_query = make_intrusive<ASTSelectQuery>();
+
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
+            auto & select_list = select_list_exp->children;
+            std::unordered_set<String> selected_columns;
+            auto add_column = [&](const String & column_name)
+            {
+                if (selected_columns.insert(column_name).second)
+                    select_list.push_back(make_intrusive<ASTIdentifier>(column_name));
+            };
+
+            add_column(TimeSeriesColumnNames::ID);
+            add_column(TimeSeriesColumnNames::Tags);
+            add_column(TimeSeriesColumnNames::MetricName);
+            for (const auto & tag_name_and_column_name : column_name_by_tag_name)
+                add_column(tag_name_and_column_name.second);
+            tags_table_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
             auto table = make_intrusive<ASTTablesInSelectQueryElement>();
             auto table_exp = make_intrusive<ASTTableExpression>();
             table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
             table_exp->children.emplace_back(table_exp->database_and_table_name);
-
             table->table_expression = table_exp;
             tables->children.push_back(table);
+            tags_table_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
 
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
-        }
+            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time, timestamp_data_type);
+            tags_table_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+            return tags_table_query;
+        };
 
-        /// WHERE <filter>
+        if (tags_table_is_remote)
         {
+            auto tags_table_query = make_tags_table_query();
+            auto tags_table_union = make_intrusive<ASTSelectWithUnionQuery>();
+            tags_table_union->union_mode = SelectUnionMode::UNION_DEFAULT;
+            auto tags_table_list = make_intrusive<ASTExpressionList>();
+            tags_table_list->children.push_back(std::move(tags_table_query));
+            tags_table_union->children.push_back(std::move(tags_table_list));
+            tags_table_union->list_of_selects = tags_table_union->children.back();
+
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->subquery = make_intrusive<ASTSubquery>(std::move(tags_table_union));
+            table_exp->children.push_back(table_exp->subquery);
+
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            table->table_expression = table_exp;
+            table->children.push_back(table->table_expression);
+
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(std::move(table));
+            select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+        }
+        else
+        {
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            auto table_exp = make_intrusive<ASTTableExpression>();
+            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
+            table_exp->children.emplace_back(table_exp->database_and_table_name);
+            table->table_expression = table_exp;
+            tables->children.push_back(table);
+            select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
             auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
@@ -333,7 +386,8 @@ namespace
         DateTime64 min_time,
         DateTime64 max_time,
         const DataTypePtr & timestamp_data_type,
-        ASTs whole_metric_id_range_conditions)
+        ASTs whole_metric_id_range_conditions,
+        bool use_global_in)
     {
         ASTs conditions;
 
@@ -360,7 +414,13 @@ namespace
         /// id IN (SELECT id FROM (select_id_query))
         /// Wrap the SELECT in ASTSubquery so it formats with surrounding parentheses.
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
-        conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
+        /// The tags subquery calls timeSeriesStoreTags, which stores the metadata used later by
+        /// timeSeriesIdToGroup. GLOBAL IN keeps the set on the initiator when the selector reads
+        /// remote targets, and the nested tags query keeps the stateful function there as well.
+        conditions.push_back(makeASTFunction(
+            use_global_in ? "globalIn" : "in",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID),
+            std::move(select_as_subquery)));
 
         /// For a whole-metric selector over a metric-clustered id layout two more conditions are
         /// added: <raw id column> >= tuple(hash(metric_name), min) AND <raw id column> <= tuple(
@@ -378,7 +438,8 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
-                                        ASTs whole_metric_id_range_conditions)
+                                        ASTs whole_metric_id_range_conditions,
+                                        bool use_global_in)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -422,7 +483,12 @@ namespace
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
             auto where_filter = makeWhereFilterForDataTable(
-                select_query_from_tags_table, min_time, max_time, timestamp_data_type, std::move(whole_metric_id_range_conditions));
+                select_query_from_tags_table,
+                min_time,
+                max_time,
+                timestamp_data_type,
+                std::move(whole_metric_id_range_conditions),
+                use_global_in);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -778,10 +844,17 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const TimeSeriesSettings & time_series_settings,
     const std::optional<DateTime64> & min_time,
     const std::optional<DateTime64> & max_time,
-    const DataTypePtr & timestamp_data_type)
+    const DataTypePtr & timestamp_data_type,
+    bool tags_table_is_remote)
 {
     auto select_query = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
+        tags_table_id,
+        matchers,
+        makeColumnNameByTagNameMap(time_series_settings),
+        min_time,
+        max_time,
+        timestamp_data_type,
+        tags_table_is_remote);
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
@@ -802,24 +875,22 @@ void StorageTimeSeriesSelector::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto target_context = getTimeSeriesTargetContext(context);
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, target_context));
+    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.time_series_storage_id, context));
     auto time_series_settings = time_series_storage->getStorageSettings();
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
-    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, target_context);
-    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, target_context);
+    auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, context);
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto samples_table_id = samples_table->getStorageID();
     auto tags_table_id = tags_table->getStorageID();
 
     checkTimeSeriesTargetSelectAccess(context, config.time_series_storage_id, samples_table);
     checkTimeSeriesTargetSelectAccess(context, config.time_series_storage_id, tags_table);
-    /// Every generated target query uses the internal context. Ordinary Distributed targets keep
-    /// the original user in ClientInfo for the shard, where active-role row policies are still
-    /// evaluated, while their hidden target SELECT grant is bypassed by the authenticated marker.
     checkTimeSeriesTargetSelectRowPolicy(context, config.time_series_storage_id, samples_table);
     checkTimeSeriesTargetSelectRowPolicy(context, config.time_series_storage_id, tags_table);
+
+    auto target_context = getTimeSeriesTargetContext(context, {samples_table, tags_table});
 
     auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
 
@@ -833,7 +904,13 @@ void StorageTimeSeriesSelector::readImpl(
     }
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
+        tags_table_id,
+        matchers,
+        column_name_by_tag_name,
+        min_time_to_filter_ids,
+        max_time_to_filter_ids,
+        config.timestamp_data_type,
+        tags_table->isRemote());
 
     auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(target_context, false);
     auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(target_context, false);
@@ -878,7 +955,8 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
-        std::move(whole_metric_id_range_conditions));
+        std::move(whole_metric_id_range_conditions),
+        samples_table->isRemote() || tags_table->isRemote());
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),

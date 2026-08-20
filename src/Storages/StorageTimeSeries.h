@@ -1,17 +1,19 @@
 #pragma once
 
+#include <Core/QualifiedTableName.h>
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <array>
-#include <chrono>
-#include <mutex>
 #include <optional>
+#include <vector>
 
 
 namespace DB
 {
+
+class ClientInfo;
 struct TimeSeriesSettings;
 using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 
@@ -110,12 +112,6 @@ public:
     std::vector<StorageID> getInnerStorageIDs() const override;
 #endif
 
-    /// Returns the recently probed capability of a remote Metrics target to execute queries with
-    /// FINAL, or nullopt when there is no fresh probe result. The Prometheus metadata endpoint is
-    /// polled frequently, so the probe result is cached briefly to avoid a probe query per request.
-    std::optional<bool> getCachedMetricsTargetFinalSupport() const;
-    void setCachedMetricsTargetFinalSupport(bool supports_final) const;
-
 private:
     /// Represents one of the three target tables (Samples, Tags, Metrics).
     /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
@@ -143,11 +139,6 @@ private:
 
     const std::vector<Target> targets;
     const bool has_inner_tables;
-
-    /// The result of the last FINAL-support probe of a remote Metrics target and its expiration.
-    mutable std::mutex metrics_target_final_support_mutex;
-    mutable std::optional<bool> metrics_target_final_support;
-    mutable std::chrono::steady_clock::time_point metrics_target_final_support_expires_at;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);
@@ -176,8 +167,25 @@ void checkTimeSeriesTargetSelectRowPolicy(
     const StorageID & time_series_table_id,
     const StoragePtr & target_table);
 
+/// Forwarding targets re-check access on their physical destination, so the logical TimeSeries
+/// grant cannot replace the physical target grant without a separate write-side marker.
+void checkTimeSeriesTargetInsertAccess(
+    const ContextPtr & context,
+    const StorageID & time_series_table_id,
+    const StoragePtr & target_table);
+
 /// Builds the internal context used by TimeSeries table functions to read their target tables.
 /// The caller must check the logical TimeSeries table first.
-ContextMutablePtr getTimeSeriesTargetContext(const ContextPtr & context);
+ContextMutablePtr getTimeSeriesTargetContext(
+    const ContextPtr & context,
+    const std::vector<StoragePtr> & target_tables);
+
+/// Returns the exact, fully qualified named storages covered by a target read. Forwarding wrappers
+/// are included, as is the named remote table of a Distributed target.
+std::vector<QualifiedTableName> getTimeSeriesTargetTableNames(
+    const std::vector<StoragePtr> & target_tables,
+    const ContextPtr & context);
+
+void expandTimeSeriesTargetTableNames(ClientInfo & client_info, const ContextPtr & context);
 
 }

@@ -130,7 +130,7 @@ TEST(DistributedAsyncInsertHeader, FillsZeroVersionForCurrentLayout)
 }
 
 /// The embedded `ClientInfo` layout of the queue-file header is frozen: fields added after the freeze
-/// (`client_agent`, `is_internal`, `current_roles`, `http_handler_name`, `http_request_url`, and the
+/// (`client_agent`, `is_internal`, `ignore_quota`, `current_roles`, `http_handler_name`, `http_request_url`, and the
 /// TimeSeries target-read marker) must not be
 /// serialized with `with_trailing_fields = false`, or an older binary draining the file would misinterpret
 /// the fields that follow the embedded `ClientInfo` - starting with `rows` and `bytes`.
@@ -204,9 +204,12 @@ TEST(DistributedAsyncInsertHeader, HTTPHandlerFieldsPropagateAsTrailingFields)
         writeStringBinary("default.dist", header_buf);
         writeStringBinary("default.local", header_buf);
         writeStringBinary("", header_buf); /// client_agent
-        writeBinary(false, header_buf); /// is_internal
+        client_info.setTrustedQueryFlags(QueryFlags{.internal = true, .ignore_quota = true});
+        writeBinary(client_info.getTrustedQueryFlagsForForwarding().internal, header_buf); /// legacy is_internal
         writeStringBinary("some_handler", header_buf);
         writeStringBinary("/some/url", header_buf);
+        writeBinary(client_info.getTrustedQueryFlagsForForwarding().internal, header_buf); /// trusted_is_internal
+        writeBinary(client_info.getTrustedQueryFlagsForForwarding().ignore_quota, header_buf); /// trusted_ignore_quota
         header_buf.finalize();
 
         const std::string_view header_data = header_buf.stringView();
@@ -217,6 +220,60 @@ TEST(DistributedAsyncInsertHeader, HTTPHandlerFieldsPropagateAsTrailingFields)
 
     EXPECT_EQ(header.client_info.http_handler_name, "some_handler");
     EXPECT_EQ(header.client_info.http_request_url, "/some/url");
+    EXPECT_TRUE(header.client_info.is_internal);
+    EXPECT_TRUE(header.client_info.ignore_quota);
+    EXPECT_TRUE(header.client_info.getTrustedQueryFlagsForForwarding().internal);
+    EXPECT_TRUE(header.client_info.getTrustedQueryFlagsForForwarding().ignore_quota);
+}
+
+TEST(DistributedAsyncInsertHeader, LegacyInternalFieldIsNotTrustedWithoutValidatedFlags)
+{
+    const auto header = roundTrip("legacy_internal", [](WriteBuffer & out)
+    {
+        ClientInfo client_info;
+        client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
+        client_info.interface = ClientInfo::Interface::TCP;
+        client_info.initial_address = Poco::Net::SocketAddress("127.0.0.1:9000");
+        client_info.client_version_major = VERSION_MAJOR;
+        client_info.client_version_minor = VERSION_MINOR;
+        client_info.client_version_patch = VERSION_PATCH;
+        client_info.client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION;
+
+        Block block;
+        block.insert({DataTypeUInt64().createColumn(), std::make_shared<DataTypeUInt64>(), "x"});
+
+        WriteBufferFromOwnString header_buf;
+        writeVarUInt(DBMS_TCP_PROTOCOL_VERSION, header_buf);
+        writeStringBinary("INSERT INTO t VALUES", header_buf);
+        Settings settings;
+        settings.write(header_buf);
+        client_info.write(header_buf, DBMS_TCP_PROTOCOL_VERSION, /*with_trailing_fields=*/ false);
+        writeVarUInt(1, header_buf);
+        writeVarUInt(8, header_buf);
+        writeStringBinary(block.dumpStructure(), header_buf);
+        {
+            NativeWriter header_stream{header_buf, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty())};
+            header_stream.write(block.cloneEmpty());
+        }
+        writeVarUInt(1, header_buf); /// shard_num
+        writeStringBinary("test_cluster", header_buf);
+        writeStringBinary("default.dist", header_buf);
+        writeStringBinary("default.local", header_buf);
+        writeStringBinary("", header_buf); /// client_agent
+        writeBinary(true, header_buf); /// legacy is_internal from an old queue writer
+        writeStringBinary("", header_buf); /// http_handler_name
+        writeStringBinary("", header_buf); /// http_request_url
+        header_buf.finalize();
+
+        const std::string_view header_data = header_buf.stringView();
+        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+        writeStringBinary(header_data, out);
+        writePODBinary(CityHash_v1_0_2::CityHash128(header_data.data(), header_data.size()), out);
+    });
+
+    EXPECT_FALSE(header.client_info.is_internal);
+    EXPECT_FALSE(header.client_info.getTrustedQueryFlagsForForwarding().internal);
+    EXPECT_FALSE(header.client_info.getClientInfoForInterserverForwarding().is_internal);
 }
 
 /// A non-zero version identifies the real initiator and must be preserved as is.
