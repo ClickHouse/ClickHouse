@@ -196,9 +196,10 @@ TEST_F(MetadataPlainRewritableDiskTest, DirectoryPathsAreGenericUtf8)
     metadata = restartMetadataStorage("DirectoryPathsAreGenericUtf8");
     EXPECT_TRUE(metadata->existsDirectory(directory));
 
+    /// The check that a directory is not moved inside itself compares the generic (`/`-separated)
+    /// forms of both paths, and it rejects the move right away rather than at commit time.
     auto tx = metadata->createTransaction();
-    tx->moveDirectory("A", "A/B");
-    EXPECT_THROW(tx->commit(DB::NoCommitOptions{}), Exception);
+    EXPECT_THROW(tx->moveDirectory("A", "A/B"), Exception);
 }
 
 TEST_F(MetadataPlainRewritableDiskTest, Ls)
