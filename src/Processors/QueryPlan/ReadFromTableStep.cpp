@@ -16,10 +16,12 @@ ReadFromTableStep::ReadFromTableStep(
     SharedHeader header,
     String table_name_,
     TableExpressionModifiers table_expression_modifiers_,
+    bool is_merge_tree_,
     bool use_parallel_replicas_)
     : ISourceStep(std::move(header))
     , table_name(std::move(table_name_))
     , table_expression_modifiers(std::move(table_expression_modifiers_))
+    , is_merge_tree(is_merge_tree_)
     , use_parallel_replicas(use_parallel_replicas_)
 {
 }
@@ -40,8 +42,10 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (table_expression_modifiers.hasSampleOffsetRatio())
         flags |= 4;
-    if (use_parallel_replicas)
+    if (is_merge_tree)
         flags |= 8;
+    if (use_parallel_replicas)
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -75,17 +79,19 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 4)
         sample_offset_ratio = deserializeRational(ctx.in);
 
+    const char is_merge_tree = flags & 8;
+
     char use_parallel_replicas = 0;
-    if (flags & 8)
+    if (flags & 16)
         readIntBinary(use_parallel_replicas, ctx.in);
 
     TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
-    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, is_merge_tree, use_parallel_replicas);
 }
 
 QueryPlanStepPtr ReadFromTableStep::clone() const
 {
-    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, use_parallel_replicas);
+    return std::make_unique<ReadFromTableStep>(getOutputHeader(), table_name, table_expression_modifiers, is_merge_tree, use_parallel_replicas);
 }
 
 void registerReadFromTableStep(QueryPlanStepRegistry & registry);
