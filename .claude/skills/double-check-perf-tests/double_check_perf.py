@@ -2081,6 +2081,7 @@ def print_report(
     local_arch: str,
     failed_tests: Optional[dict[str, int]] = None,
     unreadable: Optional[list[tuple[str, int, int, str]]] = None,
+    local_arch_measured: bool = True,
 ) -> None:
     print()
     print("=" * 120)
@@ -2243,6 +2244,13 @@ def print_report(
             "its own confirmation rerun ('Unconfirmed Changes' in the report), "
             "so its numbers come from report.html and its CI verdict was "
             "already in doubt before this local rerun."
+        )
+    if not local_arch_measured:
+        print(
+            f"CI ran no {local_arch} shard for this commit, so every CI number "
+            f"above is from another architecture. This rerun says whether the "
+            f"change also shows on {local_arch}; it cannot confirm or refute "
+            f"the arch CI measured."
         )
     print(
         f"CI@ column: which arch(es) CI flagged the query on. "
@@ -2423,15 +2431,32 @@ def main() -> int:
 
     arch_shards = [s for s in shards if s.arch == perf_arch]
     other_arch_shards = [s for s in shards if s.arch != perf_arch]
+    # The play.clickhouse.com lookups are keyed by architecture, so they have
+    # to ask about an arch CI actually measured. What they return is a master
+    # *commit*, not a binary, and every master build publishes both arches --
+    # so the local-arch binaries for that commit exist even when CI ran only
+    # the other arch. Nothing else here is arch-bound: the download path is
+    # built from the local build type, and the report already labels rows CI
+    # flagged elsewhere. Rerunning them is the whole point of the cross-arch
+    # rule, and it does not stop applying when the local arch happens to have
+    # no shards at all -- a perf check runs on AMD only for a PR labeled
+    # `pr-performance`, so an ARM-only report is the common case, not an edge.
+    reference_arch = perf_arch
     if not arch_shards:
-        die(
-            f"no Performance Comparison shards for arch={perf_arch}; "
-            f"available archs: {sorted({s.arch for s in shards})}"
+        reference_arch = sorted({s.arch for s in other_arch_shards})[0]
+        log(
+            f"WARNING: CI ran no {perf_arch} perf shard for this commit "
+            f"(only {sorted({s.arch for s in shards})}). Every flagged query "
+            f"is rerun on {perf_arch} anyway, but the CI old/new/Δ columns are "
+            f"{reference_arch} timings: NOT REPRODUCED then means "
+            f"'{perf_arch} does not show it', not 'CI was wrong'. The "
+            f"reference SHA comes from the {reference_arch} run."
         )
-    log(
-        f"found {len(arch_shards)} {perf_arch} perf shard(s): "
-        f"{[(s.baseline, f'{s.shard_num}/{s.total_shards}') for s in arch_shards]}"
-    )
+    else:
+        log(
+            f"found {len(arch_shards)} {perf_arch} perf shard(s): "
+            f"{[(s.baseline, f'{s.shard_num}/{s.total_shards}') for s in arch_shards]}"
+        )
 
     # Collect changes from every arch. We re-run them all locally regardless
     # of which arch CI flagged them on, because:
@@ -2628,7 +2653,7 @@ def main() -> int:
         if cq.numbers_from_html and cq.changed_threshold is None
     ]
     if demoted:
-        run_day = fetch_run_day(pr_number, pr_sha, perf_arch)
+        run_day = fetch_run_day(pr_number, pr_sha, reference_arch)
         historical = fetch_historical_thresholds(run_day) if run_day else None
         if historical is None:
             log(
@@ -2657,7 +2682,7 @@ def main() -> int:
     # Find the reference SHA. A dry run only prints it, so it must not be the
     # thing that makes the planning path require `clickhouse client`.
     ref_sha = args.reference_sha or fetch_reference_sha(
-        pr_number, pr_sha, perf_arch, required=not args.dry_run
+        pr_number, pr_sha, reference_arch, required=not args.dry_run
     )
     if ref_sha:
         log(f"reference SHA: {ref_sha}")
@@ -2837,7 +2862,8 @@ def main() -> int:
                 )
                 local_results[(test, qi)] = d
 
-        print_report(changed, local_results, perf_arch, failed_tests, unreadable)
+        print_report(changed, local_results, perf_arch, failed_tests,
+                     unreadable, local_arch_measured=bool(arch_shards))
         # JSON dump for downstream use
         json_path = work_dir / "result.json"
         json_path.write_text(

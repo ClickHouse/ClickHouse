@@ -332,13 +332,19 @@ treated as CI noise.
   its numbers, and this skill does not collect flamegraphs.
 - The skill does **not** attempt to reproduce flamegraphs or profiling —
   for that, use the `perf-report` skill on the same PR.
-- Architecture mismatch is partial: if a PR has only ARM shards and you're
-  on AMD, the script bails (it needs at least one shard for the local arch
-  to compare against). If both archs exist, the script runs queries
-  flagged on *either* arch locally — the CI@ column tells you which arch
-  CI flagged each query on. For the strictest verification, run the skill
-  on each arch separately; otherwise the AMD rerun of an ARM-only change
-  is still useful ("local AMD doesn't reproduce the ARM regression" is a
+- **Architecture mismatch is not a blocker.** The script runs queries
+  flagged on *either* arch locally, and that rule keeps applying when the
+  local arch has no shards at all — an ARM-only report is the common case,
+  since the AMD shards run only for a PR labeled `pr-performance`. Only the
+  `play.clickhouse.com` lookups are keyed by architecture, so they ask about
+  an arch CI measured; what they return is a master *commit*, and every
+  master build publishes both arches, so the local-arch binaries for it
+  exist regardless. When CI never measured the local arch the script says so
+  up front and again under the table: the CI old/new/Δ columns are then the
+  other arch's timings, so `NOT REPRODUCED` means "the local arch does not
+  show it", not "CI was wrong". For the strictest verification, run the skill
+  on each arch separately; otherwise the AMD rerun of an ARM-only change is
+  still useful ("local AMD doesn't reproduce the ARM regression" is a
   meaningful and common verdict).
 - **Only the `master_head` baseline is supported.** CI runs a second flavour
   of the comparison, `release_base`, which measures against the latest
