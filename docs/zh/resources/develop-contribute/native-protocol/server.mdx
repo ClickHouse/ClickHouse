@@ -32,15 +32,15 @@ keywords: ['原生协议', 'TCP 协议', '客户端-服务器', '协议规范', 
 
 对 [客户端 hello](/zh/resources/develop-contribute/native-protocol/client#hello) 的响应。
 
-| 字段                | 类型      | 值               | 描述           |
-| ----------------- | ------- | --------------- | ------------ |
-| name              | String  | `Clickhouse`    | 服务器名称        |
-| version&#95;major | UVarInt | `21`            | 服务器主版本号      |
-| version&#95;minor | UVarInt | `12`            | 服务器次版本号      |
-| revision          | UVarInt | `54452`         | 服务器修订号       |
-| tz                | String  | `Europe/Moscow` | 服务器时区        |
-| display&#95;name  | String  | `Clickhouse`    | UI 中显示的服务器名称 |
-| version&#95;patch | UVarInt | `3`             | 服务器补丁版本      |
+| 字段                | 类型      | 值                            | 描述           |
+| ----------------- | ------- | ---------------------------- | ------------ |
+| name              | String  | `ClickHouse`                 | 服务器名称        |
+| version&#95;major | UVarInt | `21`                         | 服务器主版本       |
+| version&#95;minor | UVarInt | `12`                         | 服务器次版本       |
+| revision          | UVarInt | `54452`                      | 服务器修订号       |
+| tz                | String  | `Europe/Moscow`              | 服务器时区        |
+| display&#95;name  | String  | `<display_name-or-hostname>` | UI 中显示的服务器名称 |
+| version&#95;patch | UVarInt | `3`                          | 服务器补丁版本      |
 
 <div id="exception">
   ## Exception

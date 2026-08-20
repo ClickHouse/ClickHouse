@@ -902,6 +902,16 @@ Tamanho alvo do grupo de linhas, em bytes, antes da compressão.
 
 Use o tipo String do Parquet em vez de Binary para colunas String.
 
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para gravar valores `Int128`, `UInt128`, `Int256` e `UInt256` como valores `DECIMAL` padrão do Parquet. O valor anterior mantém a representação legada `FIXED_LEN_BYTE_ARRAY` little-endian."}]}]} />
+
+Grava valores `Int128`, `UInt128`, `Int256` e `UInt256` como valores `DECIMAL` do Parquet em conformidade com o padrão, na ordem de bytes big-endian. O padrão mantém a representação legada `FIXED_LEN_BYTE_ARRAY` não anotada e little-endian para garantir a compatibilidade com versões mais antigas do ClickHouse. A representação decimal permite estatísticas numéricas interoperáveis, mas alguns leitores de Parquet não oferecem suporte a precisões superiores a 38 ou 76.
+
 <div id="output_format_parquet_write_bloom_filter">
   ## output_format_parquet_write_bloom_filter
 </div>
