@@ -94,6 +94,12 @@ public:
 
     const Int32 os_threads_nice_value;
 
+    /// Borrowed child groups parent their `memory_tracker` and `performance_counters` at the parent
+    /// group's trackers through raw pointers. Materialized-view children also copy cancellation callbacks
+    /// that capture the parent `ThreadGroup` through raw `this`. Keep the parent alive until after the child
+    /// and its trackers are destroyed. Null for top-level query and background groups.
+    const ThreadGroupPtr parent_thread_group;
+
     MemorySpillScheduler::Ptr memory_spill_scheduler;
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
