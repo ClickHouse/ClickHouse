@@ -10,9 +10,12 @@ SELECT name FROM system.documentation
 WHERE type = 'Statement' AND name IN ('SELECT', 'INSERT INTO', 'CREATE TABLE', 'WHERE')
 ORDER BY name;
 
--- The documentation of a statement is rendered as Markdown assembled from the structured parts.
-SELECT description LIKE '%**Syntax**%' AND description LIKE '%**Examples**%'
-FROM system.documentation WHERE type = 'Statement' AND name = 'WHERE';
+-- The complete statement page is exposed verbatim through both system tables.
+SELECT count() = 0
+FROM system.statements AS statements
+INNER JOIN system.documentation AS documentation
+    ON documentation.type = 'Statement' AND documentation.name = statements.name
+WHERE statements.description != documentation.description;
 
 -- The enclosing statement is rendered as well, and a top-level statement has none.
 SELECT description LIKE '%**Part of:** `SELECT`%'

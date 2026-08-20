@@ -360,6 +360,24 @@ void addDocumented(MutableColumns & res_columns, EntityType type, const Factory 
     }
 }
 
+/// For factories whose `Documentation::description` is always the complete reference page.
+/// Structured fields such as `syntax` remain available through the component-specific system table, but appending
+/// them here would duplicate sections already present in the page body.
+template <typename Factory>
+void addFullPageDocumented(MutableColumns & res_columns, EntityType type, const Factory & factory)
+{
+    for (const auto & name : factory.getAllRegisteredNames())
+    {
+        const auto & documentation = factory.getDocumentation(name);
+        addRow(
+            res_columns,
+            type,
+            name,
+            boost::algorithm::trim_copy(documentation.description),
+            makeRepoRelative(documentation.source));
+    }
+}
+
 /// For factories which carry `Documentation` and have aliases (data type families). See `addFunctionLike` for the
 /// two-pass scheme used to resolve the source of aliases.
 template <typename Factory>
@@ -954,7 +972,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     }
 
     /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
-    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+    addFullPageDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
 
     /// System tables document themselves with their table comment, authored at the attachment site.
     if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
