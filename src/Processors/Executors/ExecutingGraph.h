@@ -113,9 +113,9 @@ public:
         Port::UpdateInfo::UpdateList post_updated_output_ports;
 
         /// Counters for profiling.
-        uint64_t num_executed_jobs = 0;
-        uint64_t execution_time_ns = 0;
-        uint64_t preparation_time_ns = 0;
+        std::atomic<int64_t> num_executed_jobs = 0;
+        std::atomic<int64_t> execution_time_ns = 0;
+        std::atomic<int64_t> preparation_time_ns = 0;
         /// Cached clock for EXPLAIN ANALYZE
         StepWallClockCache cached_clock{};
 
