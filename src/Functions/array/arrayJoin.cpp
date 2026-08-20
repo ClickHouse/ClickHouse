@@ -84,6 +84,8 @@ and Aggregate Functions which take a group of rows and "compress" or "reduce" th
 
 All the values in the columns are simply copied, except the values in the column where this function is applied;
 these are replaced with the corresponding array value.
+
+`unnest` (since version 26.5) is a case-insensitive alias of `arrayJoin` in function-call form (`SELECT unnest(arr)`). PostgreSQL table-source syntax is not supported (`FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL`). Use the `ARRAY JOIN` clause for those queries.
 )";
     FunctionDocumentation::Syntax syntax = "arrayJoin(arr)";
     FunctionDocumentation::Arguments arguments = {
