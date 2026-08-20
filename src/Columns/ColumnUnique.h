@@ -252,14 +252,16 @@ private:
         const IColumnUnique & src_dictionary,
         const PaddedPODArray<SourceIndexType> & src_indexes,
         size_t start,
-        size_t length);
+        size_t length,
+        size_t destination_size_upper_bound);
 
     template <typename DestinationIndexType>
     IColumnUnique::IndexesWithMaxIndex uniqueInsertRangeFromDictionaryForDestinationType(
         const IColumnUnique & src_dictionary,
         const IColumn & src_indexes,
         size_t start,
-        size_t length);
+        size_t length,
+        size_t destination_size_upper_bound);
 };
 
 template <typename ColumnType>
@@ -472,7 +474,8 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
     const IColumnUnique & src_dictionary,
     const PaddedPODArray<SourceIndexType> & src_indexes,
     size_t start,
-    size_t length)
+    size_t length,
+    size_t destination_size_upper_bound)
 {
     auto translated_column = ColumnVector<DestinationIndexType>::create();
     auto & translated_indexes = translated_column->getData();
@@ -486,6 +489,10 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
             "Invalid source dictionary type for ColumnUnique. Expected {}, got {}",
             column_holder->getName(),
             src_dictionary.getName());
+
+    if constexpr (!is_float_vector_v<ColumnType>)
+        if (getRawColumnPtr()->size() == numSpecialValues())
+            reverse_index.reserve(destination_size_upper_bound);
 
     const bool source_is_nullable = src_dictionary.nestedColumnIsNullable();
     const size_t source_null_value_index = source_is_nullable ? src_dictionary.getNullValueIndex() : 0;
@@ -545,20 +552,21 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
     const IColumnUnique & src_dictionary,
     const IColumn & src_indexes,
     size_t start,
-    size_t length)
+    size_t length,
+    size_t destination_size_upper_bound)
 {
     if (const auto * indexes = typeid_cast<const ColumnUInt8 *>(&src_indexes))
         return uniqueInsertRangeFromDictionaryImpl<UInt8, DestinationIndexType>(
-            src_dictionary, indexes->getData(), start, length);
+            src_dictionary, indexes->getData(), start, length, destination_size_upper_bound);
     if (const auto * indexes = typeid_cast<const ColumnUInt16 *>(&src_indexes))
         return uniqueInsertRangeFromDictionaryImpl<UInt16, DestinationIndexType>(
-            src_dictionary, indexes->getData(), start, length);
+            src_dictionary, indexes->getData(), start, length, destination_size_upper_bound);
     if (const auto * indexes = typeid_cast<const ColumnUInt32 *>(&src_indexes))
         return uniqueInsertRangeFromDictionaryImpl<UInt32, DestinationIndexType>(
-            src_dictionary, indexes->getData(), start, length);
+            src_dictionary, indexes->getData(), start, length, destination_size_upper_bound);
     if (const auto * indexes = typeid_cast<const ColumnUInt64 *>(&src_indexes))
         return uniqueInsertRangeFromDictionaryImpl<UInt64, DestinationIndexType>(
-            src_dictionary, indexes->getData(), start, length);
+            src_dictionary, indexes->getData(), start, length, destination_size_upper_bound);
     throw Exception(
         ErrorCodes::ILLEGAL_COLUMN,
         "Indexes column for LowCardinality translation must be ColumnUInt, got {}",
@@ -574,12 +582,16 @@ IColumnUnique::IndexesWithMaxIndex ColumnUnique<ColumnType>::uniqueInsertRangeFr
     size_t destination_size_upper_bound)
 {
     if (destination_size_upper_bound <= std::numeric_limits<UInt8>::max())
-        return uniqueInsertRangeFromDictionaryForDestinationType<UInt8>(src_dictionary, src_indexes, start, length);
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt8>(
+            src_dictionary, src_indexes, start, length, destination_size_upper_bound);
     if (destination_size_upper_bound <= std::numeric_limits<UInt16>::max())
-        return uniqueInsertRangeFromDictionaryForDestinationType<UInt16>(src_dictionary, src_indexes, start, length);
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt16>(
+            src_dictionary, src_indexes, start, length, destination_size_upper_bound);
     if (destination_size_upper_bound <= std::numeric_limits<UInt32>::max())
-        return uniqueInsertRangeFromDictionaryForDestinationType<UInt32>(src_dictionary, src_indexes, start, length);
-    return uniqueInsertRangeFromDictionaryForDestinationType<UInt64>(src_dictionary, src_indexes, start, length);
+        return uniqueInsertRangeFromDictionaryForDestinationType<UInt32>(
+            src_dictionary, src_indexes, start, length, destination_size_upper_bound);
+    return uniqueInsertRangeFromDictionaryForDestinationType<UInt64>(
+        src_dictionary, src_indexes, start, length, destination_size_upper_bound);
 }
 
 template <typename ColumnType>
