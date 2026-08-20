@@ -225,8 +225,8 @@ ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/confi
 function is_sanitizer_build()
 {
     # A runtime sanitizer build is marked with -DSANITIZER (cmake/sanitize.cmake). Do not test for
-    # -fsanitize=, which also matches link-time-only checks such as CFI (cfi-vcall,
-    # cfi-derived-cast) whose builds symbolize at full speed.
+    # -fsanitize=, which also matches CFI (cfi-vcall, cfi-derived-cast): its checks trap on a bad
+    # vcall or cast without a sanitizer runtime, so symbolization runs at full speed.
     [ "$(clickhouse local --query "SELECT value LIKE '%-DSANITIZER%' FROM system.build_options WHERE name = 'CXX_FLAGS'")" = "1" ]
 }
 if is_sanitizer_build; then
