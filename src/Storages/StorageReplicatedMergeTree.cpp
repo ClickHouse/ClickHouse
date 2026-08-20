@@ -88,6 +88,7 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -6495,7 +6496,7 @@ SinkToStoragePtr StorageReplicatedMergeTree::write(const ASTPtr & /*query*/, con
 
 
 bool StorageReplicatedMergeTree::optimize(
-    const ASTPtr &,
+    const ASTPtr & query,
     const StorageMetadataPtr &,
     const ASTPtr & partition,
     bool final,
@@ -6513,6 +6514,21 @@ bool StorageReplicatedMergeTree::optimize(
 
     if (!is_leader)
         throw Exception(ErrorCodes::NOT_A_LEADER, "OPTIMIZE cannot be done on this replica because it is not a leader");
+
+    /// Extract MERGE SMALLPARTS options from the query AST (if available).
+    bool merge_smallparts = false;
+    UInt64 merge_smallparts_limit = 0;
+    if (query)
+    {
+        if (const auto * optimize_query = query->as<ASTOptimizeQuery>())
+        {
+            merge_smallparts = optimize_query->merge_smallparts;
+            merge_smallparts_limit = optimize_query->merge_smallparts_limit;
+        }
+    }
+
+    if (merge_smallparts && !partition)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "OPTIMIZE ... MERGE SMALLPARTS requires a PARTITION clause");
 
     const auto mode = (*getSettings())[MergeTreeSetting::deduplicate_merge_projection_mode];
     auto projections_metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
@@ -6588,6 +6604,17 @@ bool StorageReplicatedMergeTree::optimize(
                             /*storage_id_=*/getStorageID()
                         ),
                         /*partitions_hint=*/std::nullopt);
+                }
+                else if (merge_smallparts)
+                {
+                    UInt64 max_total_bytes = (*storage_settings_ptr)[MergeTreeSetting::max_bytes_to_merge_at_max_space_in_pool];
+                    return merger_mutator.selectSmallPartsToMergeWithinPartition(
+                        metadata_snapshot,
+                        parts_collector,
+                        merge_predicate,
+                        partition_id,
+                        static_cast<size_t>(merge_smallparts_limit),
+                        max_total_bytes);
                 }
                 else
                 {
