@@ -44,7 +44,6 @@ protected:
     size_t row_number_width = 7; // "10000. "
 
     FormatSettings format_settings;
-    Serializations serializations;
 
     using Widths = PODArray<size_t>;
     using WidthsPerColumn = std::vector<Widths>;
