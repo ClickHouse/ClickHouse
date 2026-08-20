@@ -82,12 +82,6 @@
             --metric-c6: #dc2626;
             --error-color: #FEE; /* Light-pink on light-cyan is so neat, I even want to trigger errors to see this cool combination of colors. */
             --table-header-color: #EEE;
-            /* How a column-header icon is muted while the feature it controls is not in effect on that
-               column: it is drained of its color and nudged towards the header background (lighter
-               here, darker in the dark theme), which lands it at about the weight of the glyph icons
-               beside it. Used only for the emoji icons, which cannot take a text color; the glyph icons
-               are muted with `--misc-text-color` instead. */
-            --icon-muted-filter: grayscale(1) brightness(1.1);
             /* What a header control in effect on its column is drawn in - the arrow of the active sort
                direction, the funnel of a filtered column, and the filter it shows underneath. Its own
                colour rather than the link colour: these are not links, and a hue nothing else in the
@@ -172,7 +166,6 @@
             --metric-c6: #f85149;
             --error-color: #400;
             --table-header-color: #102020;
-            --icon-muted-filter: grayscale(1) brightness(0.85);
             --active-control-color: #FF0;
             --table-hover-filter: contrast(0.9) brightness(2);
             --link-color: #4BDAF7;
@@ -2666,10 +2659,13 @@ class QueryResultElement extends HTMLElement
     /// The glyph used to render SQL NULL values (superscript "NULL").
     static _NULL_TEXT = 'ᴺᵁᴸᴸ';
 
-    /// The funnel that opens a filter, in a column header and on the selected cell, and the play
-    /// triangle of the button that applies a typed filter. Inline SVG rather than an emoji (unlike the
-    /// pushpin and rainbow of the older header icons): both need to read as controls of the same
-    /// family as the copy icon, and to take the surrounding text color in either theme.
+    /// The header and cell icons, as inline SVG in one weight and one 24x24 grid, so they render at
+    /// the same size and stroke themselves in the surrounding text color. Emoji (a pushpin and a
+    /// rainbow) used to stand in for the first two: they sat visibly larger than the line-art icons
+    /// beside them, and being colour glyphs they could take no text color, so marking them as active or
+    /// muted needed a filter of their own rather than the color every other control uses.
+    static _PIN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>';
+    static _PALETTE_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.83-.44-1.12a1.6 1.6 0 0 1-.44-1.13c0-.92.75-1.66 1.67-1.66h2c3.05 0 5.56-2.51 5.56-5.56C22 6.01 17.46 2 12 2Z"/><circle cx="6.5" cy="12.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="9.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="14.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="17.5" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>';
     static _FUNNEL_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>';
     static _PLAY_ICON = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" stroke="none"><polygon points="5 3 19 12 5 21 5 3"/></svg>';
 
@@ -2838,14 +2834,16 @@ class QueryResultElement extends HTMLElement
                     vertical-align: top;
                     background-color: var(--table-header-color);
                     border: 1px solid var(--border-color);
-                    /* Where the header icons sit (they are absolutely positioned, and centred on this
-                       point): level with the column NAME's own line, not with the middle of the header
-                       cell. A header grows a second line when its column carries a filter, and centring
-                       in the cell would then drop the icons into that line instead of leaving them
-                       beside the name. The value is the top padding above plus half the line box the
-                       name occupies; it is in rem, so it tracks the header's inherited font size.
+                    /* The height of a header cell showing nothing but the column name: the line box the
+                       name occupies plus the padding above and below. A header grows past this when its
+                       column carries a filter, shown - or edited - on a second line under the name, and
+                       the two things anchored to the FIRST line stay where they are when it does: the
+                       icons, centred on it, and the resizer, which covers exactly it. Both would
+                       otherwise slide down into the filter's line. In rem, so they track the header's
+                       inherited font size.
                        No backticks in this comment: this style block lives inside a JS template literal. */
-                    --header-icon-top: 0.875rem;
+                    --header-first-line: 1.75rem;
+                    --header-icon-top: calc(var(--header-first-line) / 2);
                 }
 
                 th .name
@@ -2880,6 +2878,11 @@ class QueryResultElement extends HTMLElement
                     display: inline-block;
                 }
 
+                /* The column-width grab strip, down the right edge of the header. Only as tall as the
+                   name line, not the whole cell: a header grown for a filter would otherwise lay this
+                   strip over the filter input, which overflows the cell to the right in a narrow column
+                   - hovering the input would light the resizer up, and the input's right end (the apply
+                   button) would sit underneath it. */
                 .resizer
                 {
                     position: absolute;
@@ -2888,7 +2891,7 @@ class QueryResultElement extends HTMLElement
                     width: 0.5rem;
                     cursor: col-resize;
                     user-select: none;
-                    height: 100%;
+                    height: var(--header-first-line);
                 }
 
                 .resizer:hover, .resizer-dragging
@@ -2911,7 +2914,6 @@ class QueryResultElement extends HTMLElement
                     left: 1.8rem;
                     transform: translateY(-50%);
                     cursor: pointer;
-                    font-size: 0.9em;
                     line-height: 1;
                     user-select: none;
                 }
@@ -2954,19 +2956,19 @@ class QueryResultElement extends HTMLElement
                     left: 0.35rem;
                     transform: translateY(-50%);
                     cursor: pointer;
-                    font-size: 0.9em;
                     line-height: 1;
                     user-select: none;
                     opacity: 0;
                     pointer-events: none;
-                    /* Reset the <button> chrome so it reads as a plain icon, like the emoji it once
-                       was as a <span>; the focus outline itself is left to the browser default. */
+                    /* Reset the <button> chrome so it reads as a plain icon; the focus outline itself
+                       is left to the browser default. Inheriting the font matters beyond the family: a
+                       button otherwise keeps the browser's form-control font size, and the icon inside
+                       is sized in em. */
+                    font: inherit;
                     background: none;
                     border: none;
                     padding: 0;
                     margin: 0;
-                    font-family: inherit;
-                    color: inherit;
                 }
 
                 /* Reveal the icon only when the table can scroll horizontally: on header hover, on
@@ -3078,72 +3080,56 @@ class QueryResultElement extends HTMLElement
                    effect on this column, at FULL strength once it is - and at full strength while the
                    pointer or the keyboard focus is on the icon itself, as a preview of turning it on.
 
-                   Muting is a loss of colour and contrast, never of opacity. A half-transparent icon
-                   sitting over a column name (or over the colour coding of the cells below) reads as
-                   damaged rather than as inactive, and how transparent it looks depends on whatever
-                   happens to be behind it. Opacity is used only to hide an icon outright, which is a
-                   different thing, and only because it keeps these buttons in the tab order while they
-                   are invisible - display: none would not.
+                   Muting is a loss of colour, never of opacity. A half-transparent icon sitting over a
+                   column name (or over the colour coding of the cells below) reads as damaged rather
+                   than as inactive, and how transparent it looks depends on whatever happens to be
+                   behind it. Opacity is used only to hide an icon outright, which is a different thing,
+                   and only because it keeps these buttons in the tab order while they are invisible -
+                   display: none would not.
 
-                   The lever differs by icon because the glyphs do: the emoji icons (pushpin, rainbow)
-                   cannot take a text colour, so they are muted with a filter that drains their colour
-                   and pushes them towards the header background; the arrows and the funnel take a
-                   colour directly, which a filter could not do for them (no brightness can lighten a
-                   black glyph). */
+                   All four are line art of the same weight - the arrows are text glyphs, the other three
+                   inline SVG stroking itself in the current colour - so one colour drives the lot. */
+                .pin-toggle,
+                .colorize-toggle,
                 .sort-toggle,
                 .filter-toggle
                 {
                     color: var(--misc-text-color);
                 }
 
+                th .pin-toggle:hover,
+                th .colorize-toggle:hover,
                 th .sort-toggle:hover,
                 th .filter-toggle:hover,
+                th .pin-toggle:focus-visible,
                 th .sort-toggle:focus-visible,
                 th .filter-toggle:focus-visible
                 {
                     color: var(--text-color);
                 }
 
-                /* Placed after the hover rules, so a column already sorted or filtered keeps saying so
-                   while the pointer passes over it. */
+                /* Placed after the hover rules, so a column already pinned, colorized, sorted or
+                   filtered keeps saying so while the pointer passes over it. */
+                #data-table.has-hscroll th.pinned-column .pin-toggle,
+                th.keep-colorize-toggle .colorize-toggle,
                 .sort-toggle.sort-active,
                 th.filtered-column .filter-toggle
                 {
                     color: var(--active-control-color);
                 }
 
-                .pin-toggle,
-                .colorize-toggle
-                {
-                    --icon-mute: var(--icon-muted-filter);
-                }
-
-                #data-table.has-hscroll th.pinned-column .pin-toggle,
-                #data-table.has-hscroll th .pin-toggle:hover,
-                #data-table.has-hscroll th .pin-toggle:focus-visible,
-                th.keep-colorize-toggle .colorize-toggle,
-                th .colorize-toggle:hover
-                {
-                    /* A no-op filter rather than an empty value, so the chain below stays valid CSS. */
-                    --icon-mute: grayscale(0);
-                }
-
                 /* Every header icon is absolutely positioned over the column name, which the name of a
                    narrow column runs under. Draw a halo of the header background around each glyph so
                    the two stay legible instead of merging into each other. A drop-shadow rather than a
-                   text-shadow: it also applies to the colour-emoji icons (the pushpin and the
-                   rainbow), for which the browser ignores text-shadow, and to the inline SVG of the
-                   funnel. Five stacked passes of a 1px blur make the halo opaque enough to cut a
-                   letter behind the glyph, while staying invisible against the plain header. The muting
-                   above rides in front of the halo in the same chain, since one element has one filter.
-                   No backticks in this comment: this style block lives inside a JS template literal. */
+                   text-shadow: it also applies to the inline SVG of the three icons that are drawn
+                   rather than typed. Five stacked passes of a 1px blur make the halo opaque enough to
+                   cut a letter behind the glyph, while staying invisible against the plain header. */
                 .pin-toggle,
                 .colorize-toggle,
                 .sort-toggle,
                 .filter-toggle
                 {
-                    filter: var(--icon-mute, grayscale(0))
-                            drop-shadow(0 0 1px var(--table-header-color))
+                    filter: drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
                             drop-shadow(0 0 1px var(--table-header-color))
@@ -3172,17 +3158,24 @@ class QueryResultElement extends HTMLElement
                     pointer-events: none;
                     cursor: pointer;
                     line-height: 1;
+                    /* See the pin toggle: a button does not inherit the surrounding font size. */
+                    font: inherit;
                     background: none;
                     border: none;
                     padding: 0;
                     margin: 0;
                 }
 
+                /* One size for every drawn header icon, in em of the header's own font, so the three
+                   sit at the same weight as each other and as the sort arrows (0.8em text glyphs) next
+                   to them. */
+                .pin-toggle svg,
+                .colorize-toggle svg,
                 .filter-toggle svg
                 {
                     display: block;
-                    width: 1em;
-                    height: 1em;
+                    width: 0.85em;
+                    height: 0.85em;
                 }
 
                 th:hover .filter-toggle,
@@ -3202,6 +3195,36 @@ class QueryResultElement extends HTMLElement
                         opacity: 1;
                         pointer-events: auto;
                     }
+                }
+
+                /* A filtered column moves its funnel down to the bottom left corner, onto the very line
+                   the filter is shown on. On the name's line the sort arrows sit immediately to its
+                   right, so it cannot be beside the filter it belongs to there, and that leaves the
+                   filter's line starting with a gap where its icon should be. */
+                th.filtered-column .filter-toggle
+                {
+                    top: auto;
+                    bottom: 0.25rem;
+                    left: 0.35rem;
+                    right: auto;
+                    transform: none;
+                }
+
+                /* The filter text is centred in the cell, so hold it clear of that corner. */
+                th.filtered-column .filter-state
+                {
+                    padding-left: 1.4rem;
+                }
+
+                /* ...unless the input is open, which takes that line for itself; the funnel then goes
+                   back up beside the other icons. */
+                th.filtered-column.filter-open .filter-toggle
+                {
+                    top: var(--header-icon-top);
+                    bottom: auto;
+                    left: auto;
+                    right: 1.8rem;
+                    transform: translateY(-50%);
                 }
 
                 /* The filter in effect on a column, shown under its name for as long as it is set:
@@ -3386,7 +3409,9 @@ class QueryResultElement extends HTMLElement
                     align-items: baseline;
                     flex-wrap: wrap;
                     gap: 0.3rem;
-                    padding: 0.35rem 0;
+                    /* The same padding all round, so the row of pages is inset from the table edge by
+                       as much as it is from the table above it. */
+                    padding: 0.35rem;
                     color: var(--misc-text-color);
                 }
 
@@ -4456,8 +4481,7 @@ class QueryResultElement extends HTMLElement
         toggle.type = 'button';
         toggle.className = 'pin-toggle';
         toggle.disabled = true;
-        /// A pushpin emoji, conveying "pin this column".
-        toggle.textContent = '\u{1F4CC}';
+        toggle.innerHTML = QueryResultElement._PIN_ICON;
         this._updatePinToggle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -4721,8 +4745,7 @@ class QueryResultElement extends HTMLElement
     {
         const toggle = document.createElement('span');
         toggle.className = 'colorize-toggle';
-        /// A rainbow emoji, conveying "change the coloring".
-        toggle.textContent = '\u{1F308}';
+        toggle.innerHTML = QueryResultElement._PALETTE_ICON;
         this._updateColorizeToggleTitle(toggle, name);
         toggle.addEventListener('click', (e) => {
             e.stopPropagation();

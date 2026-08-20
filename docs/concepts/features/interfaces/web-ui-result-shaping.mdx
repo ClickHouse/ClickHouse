@@ -17,7 +17,7 @@ Two arrows appear at the right of every column header: ▲ sorts the result by t
 
 On devices with a hovering pointer (a mouse) the arrows are shown only while the header is hovered or an arrow is focused, so they stay out of the way otherwise; on touch and other coarse-pointer devices, which have no hover, they are always shown so they can be tapped directly. A column that is part of the sort shows both of its arrows without hovering — one so the sort is readable at a glance, the other because reversing the direction is the likeliest next action.
 
-Every icon in a column header reads the same way, whichever feature it controls: it is muted while that feature is not in effect on the column, and at full strength once it is, which is also when it stays shown without hovering. "Full strength" is a color reserved for controls in effect — magenta in the light theme, yellow in the dark one — or, for the pushpin and the rainbow, their own colors. Muting is a loss of color, never of transparency, so an icon never looks faded over a column name or over the color coding of the cells.
+Every icon in a column header reads the same way, whichever feature it controls: it is muted while that feature is not in effect on the column, and drawn in the color reserved for controls in effect — magenta in the light theme, yellow in the dark one — once it is, which is also when it stays shown without hovering. Muting is a loss of color, never of transparency, so an icon never looks faded over a column name or over the color coding of the cells.
 
 ### Sorting by several columns {#sorting-by-several-columns}
 
@@ -48,7 +48,7 @@ Picking one applies it immediately. A date or a time is compared against the ver
 
 ### The filter in effect {#the-filter-in-effect}
 
-A column that is being filtered shows its predicate under its name for as long as it is set, so it is never invisible that the rows on screen are a subset of the result. Clicking that text reopens the input on it, in its place; the ✕ next to it removes the filter, as does applying an empty input. Both re-run the query.
+A column that is being filtered shows its predicate under its name for as long as it is set, so it is never invisible that the rows on screen are a subset of the result; its funnel moves down beside it, into the bottom left corner of the header. Clicking the predicate reopens the input on it, in its place; the ✕ next to it removes the filter, as does applying an empty input. Both re-run the query.
 
 There is one filter per column, wherever it came from: setting a filter from a cell replaces whatever the header input had put there, and the header always displays the filter in effect.
 
