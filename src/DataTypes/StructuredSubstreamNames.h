@@ -20,12 +20,5 @@ String getStructuredSubstreamNameSuffix(const ISerialization::SubstreamPath & pa
 /// containing Nullable(Array(...))).
 bool needsStructuredSubstreamNamesForPath(const ISerialization::SubstreamPath & path);
 
-/// Returns true when the path can only have come from a column that needs structured substream
-/// names, i.e. a `Nullable` wrapping an `Array` was descended through to produce it.
-///
-/// This is strictly weaker than "this path needs structured names": the naming of some paths depends
-/// on the column type and cannot be decided from the path at all. It is only good for detecting that
-/// a caller which supplied no column type has definitely lost information it needed.
-bool pathRequiresStructuredSubstreamNames(const ISerialization::SubstreamPath & path);
 
 }

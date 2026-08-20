@@ -220,50 +220,29 @@ bool needsStructuredSubstreamNames(const IDataType & type)
 bool needsStructuredSubstreamNamesForPath(const SubstreamPath & path)
 {
     /// Covers `Dynamic` and `Object` columns, whose static type does not reveal that a runtime variant
-    /// holds a `Nullable(Array)`. The shape that matters is a `Nullable` sitting directly above an
-    /// `Array`, which `SerializationNullable` marks by pushing `NullableElements` before recursing.
+    /// holds a `Nullable(Array)`.
     ///
-    /// Requiring that order matters: `Array(Nullable(T))` also puts an array and a null map on the
-    /// same path, but in the opposite nesting, and it must keep its legacy names. Matching it here
-    /// renamed the streams of existing JSON columns holding `Array(Nullable(T))` dynamic paths.
-    bool has_dynamic_or_object_prefix = false;
-    bool seen_nullable_elements = false;
-
-    for (const auto & element : path)
+    /// The shape is a `Nullable` sitting *directly* on an `Array`: `SerializationNullable` pushes
+    /// `NullableElements` and `SerializationArray` pushes an array substream immediately after it.
+    /// Adjacency is the whole point. `Array(Nullable(T))` puts the same two components on a path in
+    /// the opposite nesting, and `Nullable(Tuple(x Array(T)))` puts a `TupleElement` between them -
+    /// both are ordinary types that must keep their legacy names.
+    for (size_t i = 0; i + 1 < path.size(); ++i)
     {
-        if (element.type == Substream::DynamicData
-            || element.type == Substream::ObjectTypedPath
-            || element.type == Substream::ObjectDynamicPath)
-        {
-            has_dynamic_or_object_prefix = true;
-            seen_nullable_elements = false;
-        }
-        else if (element.type == Substream::NullableElements)
-        {
-            seen_nullable_elements = true;
-        }
-        else if ((element.type == Substream::ArraySizes || element.type == Substream::ArrayElements)
-                 && seen_nullable_elements && has_dynamic_or_object_prefix)
-        {
-            return true;
-        }
-    }
-    return false;
-}
+        if (path[i].type != Substream::NullableElements)
+            continue;
 
-bool pathRequiresStructuredSubstreamNames(const SubstreamPath & path)
-{
-    /// `SerializationNullable` pushes `NullableElements` before recursing into the nested type, so a
-    /// `NullableElements` followed by an array substream means a `Nullable` sat directly above an
-    /// `Array`. `Array(Nullable(T))` never produces that order: there the array substreams come first
-    /// and `NullableElements` appears only below `ArrayElements`.
-    bool seen_nullable_elements = false;
-    for (const auto & element : path)
-    {
-        if (element.type == Substream::NullableElements)
-            seen_nullable_elements = true;
-        else if (seen_nullable_elements && (element.type == Substream::ArraySizes || element.type == Substream::ArrayElements))
-            return true;
+        const auto next = path[i + 1].type;
+        if (next != Substream::ArraySizes && next != Substream::ArrayElements)
+            continue;
+
+        for (size_t j = 0; j < i; ++j)
+        {
+            if (path[j].type == Substream::DynamicData
+                || path[j].type == Substream::ObjectTypedPath
+                || path[j].type == Substream::ObjectDynamicPath)
+                return true;
+        }
     }
     return false;
 }

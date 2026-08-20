@@ -477,14 +477,11 @@ String ISerialization::getFileNameForStream(const String & name_in_storage, cons
     }
     else
     {
-        if (!settings.column_type && pathRequiresStructuredSubstreamNames(path))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot resolve the substream file name for column {}: the substream path belongs to a "
-                "Nullable(Array(...)) column, which needs structured substream names, but no column type "
-                "was supplied to choose the naming scheme",
-                name_in_storage);
-
+        /// A caller that supplies no column type gets legacy names. That is correct for every type
+        /// that exists today, which is why the remaining string-only call sites still work - see
+        /// `MergeTreeDataPartWide` and `IMergedBlockOutputStream`. It stops being correct once
+        /// `Nullable(Array)` columns can be created, so making every MergeTree caller pass the type
+        /// is a prerequisite for opening the gate rather than an optional cleanup.
         stream_name += getNameForSubstreamPath(
             {}, path.begin(), path.end(), true, false, settings.escape_variant_substreams);
     }

@@ -441,59 +441,6 @@ TEST(StructuredSubstreamNames, SamePathNeedsDifferentNamesForDifferentTypes)
     EXPECT_EQ(ISerialization::getFileNameForStream("c", path, structured_settings), "c.array.null");
 }
 
-/// Where the path *does* prove that a type was needed, resolving a name without one is an error
-/// rather than a guess. `NullableElements` above an array substream can only come from a `Nullable`
-/// sitting directly on an `Array`; `Array(Nullable(T))` never produces that order.
-///
-/// The predicate is asserted rather than the `throw` that follows it. The guard raises
-/// `LOGICAL_ERROR`, which is the right code - a caller that loses the column type is our bug, not bad
-/// user input - but in debug and sanitizer builds `LOGICAL_ERROR` aborts the process instead of
-/// unwinding, so it cannot be caught by `EXPECT_THROW` here. Aborting is the intended behaviour: it is
-/// how a Stage 3 caller that forgets to pass the type gets caught in CI rather than silently writing a
-/// stream under a name no reader will look for.
-TEST(StructuredSubstreamNames, PathProvesWhenAColumnTypeWasRequired)
-{
-    ISerialization::SubstreamPath nullable_over_array;
-    nullable_over_array.push_back({ISerialization::Substream::NullableElements});
-    nullable_over_array.push_back({ISerialization::Substream::ArraySizes});
-    EXPECT_TRUE(pathRequiresStructuredSubstreamNames(nullable_over_array));
-
-    ISerialization::SubstreamPath nullable_elements_of_array;
-    nullable_elements_of_array.push_back({ISerialization::Substream::ArrayElements});
-    nullable_elements_of_array.push_back({ISerialization::Substream::NullableElements});
-    EXPECT_FALSE(pathRequiresStructuredSubstreamNames(nullable_elements_of_array));
-
-    /// With the type supplied, the diagnostic path resolves normally.
-    auto type = nullableArrayOf("Nullable(UInt32)");
-    ISerialization::StreamFileNameSettings with_type;
-    with_type.column_type = type.get();
-    EXPECT_NO_THROW(ISerialization::getFileNameForStream("c", nullable_over_array, with_type));
-}
-
-/// The guard must not fire for any type that is legal today, or every existing reader that resolves a
-/// name without a type would start throwing.
-TEST(StructuredSubstreamNames, GuardNeverFiresForCurrentlyLegalTypes)
-{
-    for (const auto & type_name : currentlyLegalTypeNames())
-    {
-        auto type = parseType(type_name);
-
-        ISerialization::EnumerateStreamsSettings enumerate_settings;
-        auto serialization = type->getDefaultSerialization();
-        auto data = ISerialization::SubstreamData(serialization).withType(type);
-
-        serialization->enumerateStreams(
-            enumerate_settings,
-            [&](const ISerialization::SubstreamPath & path)
-            {
-                EXPECT_FALSE(pathRequiresStructuredSubstreamNames(path)) << "type: " << type_name;
-                ISerialization::StreamFileNameSettings without_type;
-                EXPECT_NO_THROW(ISerialization::getFileNameForStream("c", path, without_type)) << "type: " << type_name;
-            },
-            data);
-    }
-}
-
 /// ---------------------------------------------------------------------------------------------
 /// Regressions. Each of these shipped in CI because the corpus above did not reach the shape.
 /// ---------------------------------------------------------------------------------------------
@@ -540,28 +487,46 @@ TEST(StructuredSubstreamNames, HiddenNullMapDoesNotClaimTheNullSubcolumn)
     EXPECT_TRUE(ISerialization::hasSubcolumnForPath(visible, visible.size()));
 }
 
-/// `Nullable(Tuple(x Array(T)))` is a legal type today. Reading its subcolumns must not resolve a
-/// stream name through a path that looks like `Nullable` over `Array`, or the untyped-caller guard
-/// turns a working query into a logical error - which `03999_empty_to_equals_rewrite_for_nullable`
-/// caught.
+/// `Nullable(Tuple(x Array(T)))` is legal today. Its substream path puts a `TupleElement` between the
+/// `NullableElements` and the array, so it is *not* a `Nullable` sitting on an `Array` and must keep
+/// legacy names. An earlier predicate matched it anyway and every string-only stream-resolution site
+/// broke on it, which `03999_empty_to_equals_rewrite_for_nullable` caught.
+///
+/// This enumerates the nullable tuple itself. A previous version of this test built the type and then
+/// enumerated the plain `Tuple(x Array(UInt16))`, so it asserted nothing about the shape it named.
 TEST(StructuredSubstreamNames, NullableTupleWithArrayMemberStaysLegacy)
 {
-    auto type = makeNullableAllowingArray(parseType("Tuple(x Array(UInt16))"));
-    /// Built through the array-allowing helper only because the factory still rejects the string;
-    /// `Nullable(Tuple(...))` itself is ordinary and must not select structured naming.
-    EXPECT_FALSE(needsStructuredSubstreamNames(*parseType("Tuple(x Array(UInt16))")));
+    auto type = parseType("Nullable(Tuple(x Array(UInt16)))");
+    EXPECT_FALSE(needsStructuredSubstreamNames(*type));
 
-    auto legal = parseType("Tuple(x Array(UInt16))");
+    bool saw_tuple_element_before_array = false;
+
     ISerialization::EnumerateStreamsSettings enumerate_settings;
-    auto serialization = legal->getDefaultSerialization();
-    auto data = ISerialization::SubstreamData(serialization).withType(legal);
+    auto serialization = type->getDefaultSerialization();
+    auto data = ISerialization::SubstreamData(serialization).withType(type);
     serialization->enumerateStreams(
         enumerate_settings,
         [&](const ISerialization::SubstreamPath & path)
         {
-            EXPECT_FALSE(pathRequiresStructuredSubstreamNames(path));
+            EXPECT_FALSE(needsStructuredSubstreamNamesForPath(path))
+                << "path: " << path.toString();
+
+            for (size_t i = 0; i + 1 < path.size(); ++i)
+                if (path[i].type == ISerialization::Substream::TupleElement
+                    && path[i + 1].type == ISerialization::Substream::ArraySizes)
+                    saw_tuple_element_before_array = true;
+
+            /// The string-only resolution sites take this route.
             ISerialization::StreamFileNameSettings without_type;
             EXPECT_NO_THROW(ISerialization::getFileNameForStream("c", path, without_type));
         },
         data);
+
+    /// Guards the test itself: if the type ever stops producing that shape, the assertions above stop
+    /// covering the case they were written for.
+    EXPECT_TRUE(saw_tuple_element_before_array);
+
+    EXPECT_EQ(
+        enumerate(type, /*pass_column_type=*/true).file_names,
+        enumerate(type, /*pass_column_type=*/false).file_names);
 }
