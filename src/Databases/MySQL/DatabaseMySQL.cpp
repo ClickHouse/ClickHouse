@@ -39,6 +39,7 @@
 #    include <Common/parseAddress.h>
 #    include <Common/parseRemoteDescription.h>
 #    include <Common/setThreadName.h>
+#    include <Core/LogsLevel.h>
 
 #if CLICKHOUSE_CLOUD
 #    include <Interpreters/SharedDatabaseCatalog.h>
@@ -492,8 +493,29 @@ void DatabaseMySQL::cleanOutdatedTables()
         ///   the marker and entry are preserved even if the remote table disappears. This ensures that
         ///   if a same-name table is later recreated remotely, it stays hidden in ClickHouse until
         ///   explicit ATTACH TABLE — matching the documented behavior.
-        /// Skip reconciliation if there are no detached tables to avoid unnecessary network I/O.
-        if (!remove_or_detach_tables.empty())
+        /// Skip reconciliation if there are no detached tables, or if all detached tables are
+        /// permanent markers (which can never be pruned), to avoid unnecessary network I/O and
+        /// spurious error-level logging during expected remote outages.
+        bool has_non_permanent_detach = false;
+        if (!remove_or_detach_tables.empty() && persistent)
+        {
+            auto db_disk = getDisk();
+            for (const auto & table_name : remove_or_detach_tables)
+            {
+                fs::path remove_flag = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+                if (!db_disk->existsFile(remove_flag))
+                {
+                    has_non_permanent_detach = true;
+                    break;
+                }
+            }
+        }
+        else if (!remove_or_detach_tables.empty() && !persistent)
+        {
+            has_non_permanent_detach = true;  /// All entries are non-permanent in non-persistent mode
+        }
+
+        if (has_non_permanent_detach)
         {
             try
             {
@@ -535,7 +557,11 @@ void DatabaseMySQL::cleanOutdatedTables()
             }
             catch (...)
             {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
+                /// Remote connection failures are expected during MySQL outages; log them at warning
+                /// level rather than error to avoid noisy logs when a database legitimately sits with
+                /// only permanent detach markers and the remote is unreachable.
+                tryLogCurrentException("DatabaseMySQL", "Background reconciliation failed to fetch remote schema",
+                                       LogsLevel::warning);
                 /// Ensure we re-acquire the lock before wait_for
                 if (!lock.owns_lock())
                     lock.lock();
