@@ -41,6 +41,10 @@ BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER = (
     "/etc/clickhouse-server/config.d/bad_keeper_control_no_port.xml"
 )
 
+# Every error-log grep below passes `only_latest`. These instances set `<rotateOnOpen>`, so a start
+# rotates the previous log aside instead of truncating it, and the cases share one container: a
+# report left by an earlier start is a different start's evidence, whether it is being required or
+# ruled out.
 ERR_LOG = "clickhouse-server.err.log"
 
 
@@ -84,7 +88,9 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure(start_cluster)
         # `zgrep` treats the substring as a regular expression, so a bracketed literal such as
         # `Listen [0.0.0.0]:8123 failed` would match a character class and silently never fire.
         # Everything asserted here is therefore bracket-free.
-        reported = node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG)
+        reported = node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
+        )
         assert reported != ""
 
         # The reason must be reported on its own terms. Constructing the handler factory inside
@@ -105,16 +111,6 @@ def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_clus
     # alongside the explicit `<listen_host>` the integration harness supplies.
     node.stop_clickhouse()
 
-    # The error log carries warnings too (`logger.errorlog_level` defaults to `notice`), which is
-    # the severity of the message this case must not find, and `grep_in_log` globs every rotation
-    # while these instances set `<rotateOnOpen>`. An earlier start's report would therefore be in
-    # the search space and could satisfy the assertions below on its own. The harness greps
-    # `clickhouse-server.log` and `stderr.log` for crashes, so those are left alone.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
     node.copy_file_to_container(
         os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
@@ -126,7 +122,9 @@ def test_handler_config_error_is_not_discarded_when_listen_try_is_set(start_clus
         # The startup must fail. It used to succeed here, serving no HTTP.
         node.start_clickhouse(expected_to_fail=True)
 
-        reported = node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG)
+        reported = node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
+        )
         assert reported != ""
 
         # Bracket-free for the same reason as in the case above. `consider to` is the distinctive
@@ -149,14 +147,6 @@ def test_handler_config_is_not_read_without_an_http_port(start_cluster):
     # behind the same condition inside `createServer`.
     node.stop_clickhouse()
 
-    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search space
-    # would fail it for the wrong reason: `grep_in_log` globs every rotation and these instances set
-    # `<rotateOnOpen>`.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
     node.copy_file_to_container(
         os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
@@ -168,7 +158,9 @@ def test_handler_config_is_not_read_without_an_http_port(start_cluster):
         node.start_clickhouse()
 
         assert node.query("SELECT 1").strip() == "1"
-        assert node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG) == ""
+        assert node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
+        ) == ""
     finally:
         node.exec_in_container(
             [
@@ -188,13 +180,6 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure_on_https(start
     # attributed to the HTTPS path.
     node.stop_clickhouse()
 
-    # An absence is asserted below, so an earlier case's report must not survive in the search
-    # space: `grep_in_log` globs every rotation and these instances set `<rotateOnOpen>`.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
     node.copy_file_to_container(
         os.path.join(configs_dir, "bad_handler.xml"), BAD_CONFIG_IN_CONTAINER
@@ -205,7 +190,9 @@ def test_handler_config_error_is_not_reported_as_a_listen_failure_on_https(start
     try:
         node.start_clickhouse(expected_to_fail=True)
 
-        reported = node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG)
+        reported = node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
+        )
         assert reported != ""
 
         # Bracket-free for the same reason as in the cases above: the secure socket was bound
@@ -233,13 +220,6 @@ def test_prometheus_handler_config_error_is_not_reported_as_a_listen_failure(
     # read by the Prometheus factory, so a failure can only be attributed to that path.
     node.stop_clickhouse()
 
-    # An absence is asserted below, so an earlier case's report must not survive in the search
-    # space: `grep_in_log` globs every rotation and these instances set `<rotateOnOpen>`.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
     node.copy_file_to_container(
         os.path.join(configs_dir, "bad_prometheus.xml"),
@@ -249,7 +229,9 @@ def test_prometheus_handler_config_error_is_not_reported_as_a_listen_failure(
         node.start_clickhouse(expected_to_fail=True)
 
         reported = node.grep_in_log(
-            substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+            substring="Unknown type no_such_prometheus_type",
+            filename=ERR_LOG,
+            only_latest=True,
         )
         assert reported != ""
 
@@ -270,11 +252,6 @@ def test_prometheus_handler_config_error_is_not_discarded_when_listen_try_is_set
     # about `<listen_host>` and the server ran on with no Prometheus endpoint at all.
     node.stop_clickhouse()
 
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     configs_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
     node.copy_file_to_container(
         os.path.join(configs_dir, "bad_prometheus.xml"),
@@ -288,7 +265,9 @@ def test_prometheus_handler_config_error_is_not_discarded_when_listen_try_is_set
         node.start_clickhouse(expected_to_fail=True)
 
         reported = node.grep_in_log(
-            substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+            substring="Unknown type no_such_prometheus_type",
+            filename=ERR_LOG,
+            only_latest=True,
         )
         assert reported != ""
 
@@ -354,14 +333,6 @@ def test_prometheus_handler_config_is_not_read_without_a_prometheus_port(start_c
     # port check that keeps the parse out of that path.
     node.stop_clickhouse()
 
-    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search space
-    # would fail it for the wrong reason: `grep_in_log` globs every rotation and these instances
-    # set `<rotateOnOpen>`.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
-
     node.copy_file_to_container(
         os.path.join(
             os.path.dirname(os.path.realpath(__file__)),
@@ -375,7 +346,9 @@ def test_prometheus_handler_config_is_not_read_without_a_prometheus_port(start_c
         assert node.query("SELECT 1").strip() == "1"
         assert (
             node.grep_in_log(
-                substring="Unknown type no_such_prometheus_type", filename=ERR_LOG
+                substring="Unknown type no_such_prometheus_type",
+                filename=ERR_LOG,
+                only_latest=True,
             )
             == ""
         )
@@ -457,7 +430,7 @@ def test_keeper_control_handler_config_error_is_not_reported_as_a_listen_failure
         node.start_clickhouse(expected_to_fail=True)
 
         reported = node.grep_in_log(
-            substring="Unknown handler type", filename=ERR_LOG
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
         )
         assert reported != ""
         assert "Listen" not in reported
@@ -480,7 +453,7 @@ def test_keeper_secure_control_handler_config_error_is_not_reported_as_a_listen_
         node.start_clickhouse(expected_to_fail=True)
 
         reported = node.grep_in_log(
-            substring="Unknown handler type", filename=ERR_LOG
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
         )
         assert reported != ""
         assert "Listen" not in reported
@@ -497,15 +470,11 @@ def test_keeper_control_handler_config_is_not_read_without_a_control_port(start_
         BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER,
     )
 
-    # The assertion below is an ABSENCE, so an earlier case's report surviving in the search
-    # space would fail it for the wrong reason: `grep_in_log` globs every rotation.
-    node.exec_in_container(
-        ["bash", "-c", "rm -f /var/log/clickhouse-server/clickhouse-server.err.log*"],
-        user="root",
-    )
     try:
         node.start_clickhouse()
         assert node.query("SELECT 1").strip() == "1"
-        assert node.grep_in_log(substring="Unknown handler type", filename=ERR_LOG) == ""
+        assert node.grep_in_log(
+            substring="Unknown handler type", filename=ERR_LOG, only_latest=True
+        ) == ""
     finally:
         _without_config(BAD_KEEPER_CONTROL_NO_PORT_CONFIG_IN_CONTAINER)
