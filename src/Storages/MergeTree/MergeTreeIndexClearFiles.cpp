@@ -65,6 +65,27 @@ std::set<MergeTreeIndexPtr> getIndexesExpiredByClearTTL(
     return result;
 }
 
+bool markExpiredIndexClearTTLsFinished(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time)
+{
+    bool updated = false;
+    for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
+    {
+        const auto it = ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (it != ttl_infos.index_clear_ttl.end()
+            && !it->second.finished()
+            && it->second.max
+            && it->second.max <= current_time)
+        {
+            it->second.ttl_finished = true;
+            updated = true;
+        }
+    }
+    return updated;
+}
+
 SkipIndexClearFiles getClearIndexFilesToClear(
     const std::shared_ptr<const IMergeTreeDataPart> & part,
     const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
@@ -95,23 +116,33 @@ NameSet getSkipIndexSubstreamFileNames(
     for (const auto & index : indexes)
     {
         const String file_name = index->getFileName();
+        auto add_file = [&](const String & stream_name, const String & extension)
+        {
+            result.insert(stream_name + extension);
+            if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, checksums))
+                result.insert(*actual + extension);
+            if (storage)
+                if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *storage))
+                    result.insert(*actual + extension);
+        };
+
         for (const auto & substream : index->getAllSubstreamsInPart(checksums, file_name, storage))
         {
             const String stream_name = file_name + substream.suffix;
-            result.insert(stream_name + substream.extension);
-            result.insert(stream_name + mrk_extension);
+            add_file(stream_name, substream.extension);
+            add_file(stream_name, mrk_extension);
+        }
 
-            auto add_actual_name = [&](const String & extension)
-            {
-                if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, checksums))
-                    result.insert(*actual + extension);
-                if (storage)
-                    if (auto actual = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, *storage))
-                        result.insert(*actual + extension);
-            };
-
-            add_actual_name(substream.extension);
-            add_actual_name(mrk_extension);
+        /// Corrupted parts may contain standalone index files omitted from `checksums.txt`.
+        /// Probe every declared substream and both historical data-file extensions so cleanup
+        /// can remove those orphans. This runs only after a cleanup has been selected.
+        for (const auto & substream : index->getSubstreams())
+        {
+            const String stream_name = file_name + substream.suffix;
+            add_file(stream_name, substream.extension);
+            add_file(stream_name, mrk_extension);
+            add_file(stream_name, ".idx");
+            add_file(stream_name, ".idx2");
         }
     }
     return result;
@@ -138,28 +169,6 @@ SkipIndexClearFiles collectSkipIndexClearFiles(
     }
 
     return result;
-}
-
-bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index)
-{
-    const auto & checksums = part.checksums;
-
-    /// Resolve hashed names from checksums. Omitting storage avoids `existsFile` calls.
-    const NameSet candidates = getSkipIndexSubstreamFileNames({index}, part.getMarksFileExtension(), checksums, /*storage=*/nullptr);
-
-    for (const auto & file : candidates)
-        if (checksums.has(file))
-            return true;
-
-    /// Packed index files lack individual checksum entries, so `candidates` is empty for an
-    /// archive-only index. Inspect the cached archive listing using the index's known substreams.
-    if (checksums.has(String(SKIP_INDICES_PACKED_FILENAME)))
-    {
-        const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&part.getDataPartStorage());
-        return skipIndexHasFilesInPackedArchive(*index, disk_storage, part.getMarksFileExtension());
-    }
-
-    return false;
 }
 
 bool skipIndexHasFilesInPackedArchive(

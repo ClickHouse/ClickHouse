@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndexClearFiles.h>
-#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/TTLDescription.h>
 
@@ -68,29 +67,15 @@ time_t buildNextIndexClearTTL(StorageMetadataPtr metadata_snapshot, MergeTreeDat
     if (!metadata_snapshot->hasAnyIndexClearTTL())
         return 0;
 
-    const auto & index_factory = MergeTreeIndexFactory::instance();
-    const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
-
     time_t next_index_clear_ttl = 0;
     for (const auto & ttl : metadata_snapshot->getIndexClearTTLs())
     {
-        auto it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
-        if (it == part->ttl_infos.index_clear_ttl.end())
+        const auto it = part->ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (it == part->ttl_infos.index_clear_ttl.end() || it->second.finished())
             continue;
 
         const time_t max_ttl = it->second.max;
         if (!max_ttl || max_ttl > current_time || (next_index_clear_ttl && next_index_clear_ttl <= max_ttl))
-            continue;
-
-        const auto index_it = std::find_if(
-            secondary_indices.begin(), secondary_indices.end(),
-            [&](const auto & index) { return index.name == ttl.index_name; });
-        if (index_it == secondary_indices.end())
-            continue;
-
-        /// Check every index file so an already cleared part is not selected again.
-        const auto index = index_factory.get(metadata_snapshot, *index_it, *part->storage.getSettings());
-        if (!partHasSkipIndexFiles(*part, index))
             continue;
 
         next_index_clear_ttl = max_ttl;
@@ -135,13 +120,15 @@ bool canPreserveFilesForIndexClear(
     return canCopyPartFilesWithSkip(part->getDataPartStorage(), copy_options);
 }
 
-bool canPreserveFilesForIndexClear(const FutureMergedMutatedPart & future_part)
+bool canPreserveFilesForIndexClear(
+    const StorageMetadataPtr & metadata_snapshot,
+    const FutureMergedMutatedPart & future_part)
 {
     if (future_part.parts.size() != 1 || !future_part.patch_parts.empty())
         return false;
 
     const auto & source_part = future_part.parts.front();
-    if (source_part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full
+    if (!canPreserveFilesForIndexClear(metadata_snapshot, source_part)
         || future_part.part_format.storage_type != MergeTreeDataPartStorageType::Full
         || future_part.part_format.part_type != source_part->getType()
         || future_part.part_format.storage_type != source_part->getDataPartStorage().getType()

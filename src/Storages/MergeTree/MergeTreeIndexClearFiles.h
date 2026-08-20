@@ -43,6 +43,11 @@ std::set<MergeTreeIndexPtr> getIndexesExpiredByClearTTL(
     time_t current_time,
     bool ttl_merges_allowed);
 
+bool markExpiredIndexClearTTLsFinished(
+    const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
+    MergeTreeDataPartTTLInfos & ttl_infos,
+    time_t current_time);
+
 SkipIndexClearFiles getClearIndexFilesToClear(
     const std::shared_ptr<const IMergeTreeDataPart> & part,
     const std::shared_ptr<const StorageInMemoryMetadata> & metadata_snapshot,
@@ -63,10 +68,6 @@ SkipIndexClearFiles collectSkipIndexClearFiles(
     const String & mrk_extension,
     const MergeTreeDataPartChecksums & checksums,
     const IDataPartStorage & storage);
-
-/// Return whether the part still contains any file of the skip index. This uses checksums and
-/// the cached packed archive listing without calling `existsFile`.
-bool partHasSkipIndexFiles(const IMergeTreeDataPart & part, const MergeTreeIndexPtr & index);
 
 /// Return whether the packed skip-index archive contains a data or mark file for the index.
 bool skipIndexHasFilesInPackedArchive(

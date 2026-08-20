@@ -1541,7 +1541,7 @@ static void finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
     const IMergedBlockOutputStream::GatheredData & all_gathered_data,
-    ExecuteTTLType execute_ttl_type,
+    bool write_ttl_infos,
     const CompressionCodecPtr & codec,
     ContextPtr context,
     StorageMetadataPtr metadata_snapshot,
@@ -1560,7 +1560,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out));
     }
 
-    if (execute_ttl_type != ExecuteTTLType::NONE)
+    if (write_ttl_infos)
     {
         /// Write a file with ttl infos in json format.
         auto out_ttl = new_data_part->getDataPartStorage().writeFile("ttl.txt", 4096, context->getWriteSettings());
@@ -1821,6 +1821,7 @@ struct MutationContext
 
     bool need_sync{};
     ExecuteTTLType execute_ttl_type{ExecuteTTLType::NONE};
+    bool rewrite_ttl_infos{false};
 
     MergeTreeTransactionPtr txn;
 
@@ -2854,7 +2855,7 @@ private:
                 ctx->statistics_to_build.emplace(stat_name, it->second);
         }
 
-        if (ctx->execute_ttl_type != ExecuteTTLType::NONE)
+        if (ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos)
             ctx->files_to_skip.insert("ttl.txt");
 
         ctx->new_data_part->getDataPartStorage().createDirectories();
@@ -3161,7 +3162,7 @@ private:
             ctx->source_part,
             ctx->new_data_part,
             ctx->all_gathered_data,
-            ctx->execute_ttl_type,
+            ctx->execute_ttl_type != ExecuteTTLType::NONE || ctx->rewrite_ttl_infos,
             ctx->compression_codec,
             ctx->context,
             ctx->metadata_snapshot,
@@ -3933,6 +3934,19 @@ bool MutateTask::prepare()
 
     if (ctx->mutating_pipeline_builder.initialized())
         ctx->execute_ttl_type = MutationHelpers::shouldExecuteTTL(ctx->metadata_snapshot, ctx->interpreter->getColumnDependencies());
+
+    for (const auto & ttl : ctx->metadata_snapshot->getIndexClearTTLs())
+    {
+        if (!ctx->materialized_indices.contains(ttl.index_name))
+            continue;
+
+        const auto it = ctx->new_data_part->ttl_infos.index_clear_ttl.find(ttl.result_column);
+        if (it != ctx->new_data_part->ttl_infos.index_clear_ttl.end() && it->second.finished())
+        {
+            it->second.ttl_finished = false;
+            ctx->rewrite_ttl_infos = true;
+        }
+    }
 
     if ((*ctx->data->getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && lightweight_delete_mode)
     {

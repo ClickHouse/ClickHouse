@@ -17,6 +17,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <Disks/SingleDiskVolume.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -558,6 +559,22 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
 }
 
 
+static void writeTTLInfosFile(
+    const MergeTreeData::MutableDataPartPtr & part,
+    bool sync,
+    const WriteSettings & write_settings)
+{
+    auto out_ttl = part->getDataPartStorage().writeFile("ttl.txt", 4096, write_settings);
+    HashingWriteBuffer out_hashing(*out_ttl);
+    part->ttl_infos.write(out_hashing);
+    out_hashing.finalize();
+    part->checksums.files["ttl.txt"].file_size = out_hashing.count();
+    part->checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
+    out_ttl->finalize();
+    if (sync)
+        out_ttl->sync();
+}
+
 static void pruneExpiredIndexFilesFromPart(
     const MergeTreeData::MutableDataPartPtr & part,
     const StorageMetadataPtr & metadata_snapshot,
@@ -626,12 +643,12 @@ static void pruneExpiredIndexFilesFromPart(
 
 void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPart() const
 {
-    /// A `TTLClearIndex` merge has one algorithm on every replica: preserve source files and
-    /// remove the expired index files. It must not continue into the row-rewriting merge code.
+    /// This path preserves source files and removes the expired index files. Callers use the
+    /// regular row-rewriting path when the source files cannot be preserved.
     if (global_ctx->future_part->merge_type != MergeType::TTLClearIndex
         || global_ctx->parent_part
         || ctx->force_ttl
-        || !canPreserveFilesForIndexClear(*global_ctx->future_part)
+        || !canPreserveFilesForIndexClear(global_ctx->metadata_snapshot, *global_ctx->future_part)
         || global_ctx->new_data_part->getDataPartStorage().getType() != MergeTreeDataPartStorageType::Full)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot preserve files for `TTLClearIndex` merge of part {}", global_ctx->future_part->name);
 
@@ -641,7 +658,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
         source_part,
         global_ctx->metadata_snapshot,
         global_ctx->time_of_merge,
-        !global_ctx->ttl_merges_blocker->isCancelled());
+        /*ttl_merges_allowed=*/true);
     const auto & index_files_to_clear = clear_index_files.files;
     auto & dst_storage = global_ctx->new_data_part->getDataPartStorage();
     const auto & src_storage = source_part->getDataPartStorage();
@@ -649,6 +666,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
 
     NameSet files_to_skip = index_files_to_clear;
     files_to_skip.insert("checksums.txt");
+    files_to_skip.insert("ttl.txt");
     files_to_skip.insert(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
     if (clear_index_files.packed_archive_dirty)
         files_to_skip.insert(String(SKIP_INDICES_PACKED_FILENAME));
@@ -708,6 +726,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareClearIndexReplacementPa
 
     for (const auto & file : index_files_to_clear)
         global_ctx->new_data_part->checksums.remove(file);
+
+    markExpiredIndexClearTTLsFinished(
+        global_ctx->metadata_snapshot,
+        global_ctx->new_data_part->ttl_infos,
+        global_ctx->time_of_merge);
+    writeTTLInfosFile(global_ctx->new_data_part, need_sync, global_ctx->context->getWriteSettings());
 
     {
         auto out_checksums = dst_storage.writeFile("checksums.txt", 4096, global_ctx->context->getWriteSettings());
@@ -881,6 +905,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             global_ctx->new_data_part->name);
         ctx->need_clear_expired_indexes = false;
     }
+    global_ctx->clear_expired_indexes = ctx->need_clear_expired_indexes;
 
     const auto & patch_parts = global_ctx->future_part->patch_parts;
 
@@ -1182,8 +1207,17 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     if (global_ctx->future_part->merge_type == MergeType::TTLClearIndex)
     {
-        prepareClearIndexReplacementPart();
-        return false;
+        const bool can_preserve_files = !global_ctx->parent_part
+            && !ctx->force_ttl
+            && canPreserveFilesForIndexClear(global_ctx->metadata_snapshot, *global_ctx->future_part)
+            && global_ctx->new_data_part->getDataPartStorage().getType() == MergeTreeDataPartStorageType::Full;
+        if (can_preserve_files)
+        {
+            prepareClearIndexReplacementPart();
+            return false;
+        }
+
+        LOG_INFO(ctx->log, "Rewriting part {} because its files cannot be preserved for `TTLClearIndex`", global_ctx->future_part->name);
     }
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
@@ -2591,6 +2625,12 @@ bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
         part->getDataPartStorage().commitTransaction();
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
+
+    if (global_ctx->clear_expired_indexes)
+        markExpiredIndexClearTTLsFinished(
+            global_ctx->metadata_snapshot,
+            global_ctx->new_data_part->ttl_infos,
+            global_ctx->time_of_merge);
 
     if (global_ctx->chosen_merge_algorithm != MergeAlgorithm::Vertical)
         global_ctx->to->finalizePart(global_ctx->new_data_part, global_ctx->gathered_data, ctx->need_sync, nullptr);

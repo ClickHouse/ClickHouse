@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergeFromLogEntryTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
-#include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Interpreters/Context.h>
 
@@ -275,17 +274,6 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     {
         throw Exception(ErrorCodes::BAD_DATA_PART_NAME, "Future merged part name {} differs from part name in log entry: {}",
             backQuote(future_merged_part->name), backQuote(entry.new_part_name));
-    }
-
-    if (entry.merge_type == MergeType::TTLClearIndex
-        && !canPreserveFilesForIndexClear(*future_merged_part))
-    {
-        LOG_INFO(log, "Will fetch part {} because this replica cannot preserve files for `TTLClearIndex`", entry.new_part_name);
-        return PrepareResult{
-            .prepared_successfully = false,
-            .need_to_check_missing_part_in_fetch = true,
-            .part_log_writer = part_log_writer,
-        };
     }
 
     std::optional<CurrentlySubmergingEmergingTagger> tagger;

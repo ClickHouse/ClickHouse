@@ -14,20 +14,6 @@
 namespace DB
 {
 
-static MergeSelectorChoice makeTTLIndexClearMergeChoice(PartsRange range, PartsRange patch_parts)
-{
-    chassert(range.size() == 1);
-
-    if (range.front().can_preserve_files_for_index_clear)
-    {
-        /// A `TTLClearIndex` entry preserves source files and leaves patch parts pending.
-        /// TODO: Track the history of rewritten parts with no changes to row offsets, so patch parts do not have to fall back to joining on block columns.
-        return MergeSelectorChoice{std::move(range), {}, MergeType::TTLClearIndex};
-    }
-
-    return MergeSelectorChoice{std::move(range), std::move(patch_parts), MergeType::Regular};
-}
-
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 max_bytes_to_merge_at_max_space_in_pool;
@@ -140,12 +126,11 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
             choices.reserve(merge_ranges.size());
             for (auto & range : merge_ranges)
             {
-                const bool apply_patches_in_regular_fallback
+                const bool apply_patches_in_rewrite
                     = !range.front().can_preserve_files_for_index_clear
                     && ctx.merge_tree_settings[MergeTreeSetting::apply_patches_on_merge];
-                PartsRange patch_parts
-                    = apply_patches_in_regular_fallback ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
-                choices.push_back(makeTTLIndexClearMergeChoice(std::move(range), std::move(patch_parts)));
+                PartsRange patch_parts = apply_patches_in_rewrite ? ctx.predicate.getPatchesToApplyOnMerge(range) : PartsRange{};
+                choices.push_back(MergeSelectorChoice{std::move(range), std::move(patch_parts), MergeType::TTLClearIndex});
             }
             return choices;
         }

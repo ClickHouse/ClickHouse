@@ -60,7 +60,7 @@ struct PartProperties
     const time_t next_index_clear_ttl = 0;
 
     /// Whether the source part can produce a clear-index replacement while preserving files.
-    /// When false, the selector schedules a one-part `Regular` merge.
+    /// When false, the `TTLClearIndex` merge rewrites the part.
     const bool can_preserve_files_for_index_clear = false;
 };
 
@@ -72,7 +72,9 @@ bool canPreserveFilesForIndexClear(
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeDataPartPtr & part);
 
-bool canPreserveFilesForIndexClear(const FutureMergedMutatedPart & future_part);
+bool canPreserveFilesForIndexClear(
+    const StorageMetadataPtr & metadata_snapshot,
+    const FutureMergedMutatedPart & future_part);
 
 PartProperties buildPartProperties(
     const MergeTreeDataPartPtr & part,
