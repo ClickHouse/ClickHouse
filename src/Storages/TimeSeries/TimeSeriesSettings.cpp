@@ -30,6 +30,8 @@ namespace ErrorCodes
     DECLARE(Bool, filter_by_min_time_and_max_time, true, "If set to true then the table will use the 'min_time' and 'max_time' columns for filtering time series", 0) \
     DECLARE(UInt64, samples_index_granularity, 32768, "Sets 'index_granularity' of the inner 'samples' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external samples table and a non-MergeTree engine", 0) \
     DECLARE(UInt64, tags_index_granularity, 8192, "Sets 'index_granularity' of the inner 'tags' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external tags table and a non-MergeTree engine", 0) \
+    DECLARE(Bool, store_native_histograms, false, "If set to true then the table gets a fourth target table 'histograms' storing Prometheus native histogram samples. An explicit HISTOGRAMS clause in the CREATE query enables it too", 0) \
+    DECLARE(UInt64, histograms_index_granularity, 8192, "Sets 'index_granularity' of the inner 'histograms' table. When set explicitly, it overrides 'index_granularity' from the engine declaration. Ignored for an external histograms table and a non-MergeTree engine", 0) \
 
 DECLARE_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TIMESERIES_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(TimeSeriesSettingsTraits, LIST_OF_TIME_SERIES_SETTINGS, TimeSeriesSettings, TimeSeriesSetting)

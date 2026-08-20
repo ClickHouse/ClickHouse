@@ -85,6 +85,7 @@ private:
     LoggerPtr log;
 
     bool insert_tags_and_samples = false;
+    bool insert_histograms = false;
     bool insert_metrics = false;
     bool async_insert = false;
 
@@ -103,6 +104,7 @@ private:
 
     std::unique_ptr<TargetPipeline> tags_pipeline;
     std::unique_ptr<TargetPipeline> samples_pipeline;
+    std::unique_ptr<TargetPipeline> histograms_pipeline;
     std::unique_ptr<TargetPipeline> metrics_pipeline;
 };
 

@@ -52,11 +52,16 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Returns the three target kinds: Samples, Tags, Metrics.
+    /// Returns the three required target kinds: Samples, Tags, Metrics.
+    /// The optional Histograms target is not listed here; see hasTarget().
     static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
         return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
     }
+
+    /// Whether this table has the specified target. Always true for the three required kinds,
+    /// true for Histograms only when the table was created with a "histograms" target.
+    bool hasTarget(ViewTarget::Kind target_kind) const;
 
     void readImpl(
         QueryPlan & query_plan,
@@ -126,6 +131,9 @@ private:
 
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
+
+    /// Returns the information about a target, or nullptr for an absent optional target.
+    const Target * tryGetTargetInfo(ViewTarget::Kind target_kind) const;
 
     /// The CREATE query with normalization applied.
     const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
