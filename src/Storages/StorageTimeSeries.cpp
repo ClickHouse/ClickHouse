@@ -721,16 +721,21 @@ Then this table can be used with the following protocols (a port must be assigne
 When configuring a Prometheus remote-write handler with `enable_table_name_url_routing`, the URL is expected to start with `/{database}/{table}/`. This option cannot be combined with a fixed `database` or `table` in the handler configuration. Make sure the handler's `<url>` rule matches paths that include the database and table name. For example:
 
 ```xml
-<my_rule>
-    <url>regex:^/[^/]+/[^/]+/write$</url>
-    <handler>
-        <type>remote_write</type>
-        <enable_table_name_url_routing>true</enable_table_name_url_routing>
-    </handler>
-</my_rule>
+<http_handlers>
+    <defaults/>
+    <rule>
+        <url>regex:^/[^/]+/[^/]+/write$</url>
+        <handler>
+            <type>prometheus_write</type>
+            <enable_table_name_url_routing>true</enable_table_name_url_routing>
+        </handler>
+    </rule>
+</http_handlers>
 ```
 
 For a `prometheus_api_v1` handler, `enable_table_name_url_routing` is supported only for the remote-write `/write` endpoint. The `/read`, `/query`, and metadata endpoints must use a fixed table in the handler configuration or the existing `database` and `table` query parameters.
+
+See [Route remote write by URL path](/concepts/features/interfaces/prometheus#remote-write-url-routing) for the full handler configuration.
 
 ### Outer columns {#outer-columns}
 
