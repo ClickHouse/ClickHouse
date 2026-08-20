@@ -73,8 +73,14 @@ DROP TABLE IF EXISTS nats_file_with_url_override_from_existing_metadata;
 CREATE NAMED COLLECTION 04891_nats_existing_sql_collection AS
     nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSONEachRow',
     nats_startup_connect_tries = 0, nats_reconnect_wait = 1;
-CREATE TABLE nats_file_from_existing_sql_collection (key UInt64)
-ENGINE = NATS(04891_nats_existing_sql_collection);
+-- A full-definition `ATTACH` is validated exactly like `CREATE`, and unlike `CREATE` it tolerates
+-- a failing connection attempt, so the table exists afterwards and its metadata can be replayed.
+-- The `SETTINGS` clause carries an unrelated key on purpose: an engine definition whose settings
+-- are all inherited from the named collection is stored with an empty `SETTINGS` clause, which the
+-- metadata reload then fails to parse.
+ATTACH TABLE nats_file_from_existing_sql_collection UUID 'c6d2423a-9ab2-4a37-8e56-10e479541002' (key UInt64)
+ENGINE = NATS(04891_nats_existing_sql_collection)
+SETTINGS nats_num_consumers = 1;
 DETACH TABLE nats_file_from_existing_sql_collection;
 ALTER NAMED COLLECTION 04891_nats_existing_sql_collection SET nats_credential_file = '/etc/passwd';
 ATTACH TABLE nats_file_from_existing_sql_collection; -- { serverError BAD_ARGUMENTS }
@@ -102,6 +108,20 @@ SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'JSO
 
 CREATE TABLE nats_basic_credentials_with_url_override (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials, nats_url = 'nats://attacker:4222'); -- { serverError BAD_ARGUMENTS }
+
+-- Clearing the authentication a configuration-defined collection carries does not resurrect the
+-- server-global `<nats>` fallback. The table definition decided its authentication - the decision
+-- being to have none - so the global account is not sent to the destination the query selected.
+-- Otherwise clearing the collection's keys would be a way to pair the global credentials with an
+-- arbitrary endpoint: it drops `trusted_credentials_from_collection`, so the destination override
+-- below is accepted.
+CREATE TABLE nats_cleared_basic_credentials_with_url_override (key UInt64)
+ENGINE = NATS(nats_config_basic_credentials, nats_username = '', nats_password = '',
+    nats_url = '127.0.0.1:1'); -- { serverError CANNOT_CONNECT_NATS }
+
+CREATE TABLE nats_cleared_basic_credentials_in_settings_with_url_override (key UInt64)
+ENGINE = NATS(nats_config_basic_credentials)
+SETTINGS nats_username = '', nats_password = '', nats_url = '127.0.0.1:1'; -- { serverError CANNOT_CONNECT_NATS }
 
 CREATE TABLE nats_basic_credentials_with_server_list_override (key UInt64)
 ENGINE = NATS(nats_config_basic_credentials)
