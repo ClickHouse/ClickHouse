@@ -239,6 +239,7 @@ void optimizeAggregationPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &,
 void optimizeLimitByPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeDistinctPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
+void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeVectorSearchWithVectorIndexSecondPass(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 bool optimizeVectorSearchWithQuantizedCodes(QueryPlan::Node & root, Stack & stack, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings, size_t max_limit_for_lazy_materialization);
 void materializeQueryPlanReferences(QueryPlan::Node & node, QueryPlan::Nodes & nodes);

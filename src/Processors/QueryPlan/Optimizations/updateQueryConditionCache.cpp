@@ -58,26 +58,6 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     if (outputs.size() != 1)
         return;
 
-    /// Runtime filters are added after the TopK optimization and may remain as a separate
-    /// `FilterStep` above the read. They affect the running TopK threshold, but their per-query
-    /// contents are not part of the PREWHERE cache key. Do not let those cache entries be reused.
-    /// `__topKFilter` itself is deliberately allowed: its plan salt is part of that key.
-    if (read_from_merge_tree->isSelectedForTopKFilterOptimization())
-    {
-        for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
-        {
-            if (const auto * filter_step = typeid_cast<const FilterStep *>(iter->node->step.get()))
-            {
-                const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
-                if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
-                {
-                    read_from_merge_tree->disableTopKPrewhereQueryConditionCache();
-                    break;
-                }
-            }
-        }
-    }
-
     /// Issues #81506 and #84508.
     for (const auto * output : outputs)
     {
@@ -112,6 +92,56 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             return;
         }
     }
+}
+
+
+/// Join runtime filters (`__applyFilter`) are injected and pushed down after the main
+/// `updateQueryConditionCache` walk, so the walk above cannot see them. They change which rows
+/// reach the sorter and therefore the running TopK threshold, but their per-execution contents are
+/// not part of the query condition cache key. Run this pass after runtime filters are in place: for
+/// a TopK read with such a filter above it, disable the TopK PREWHERE cache (reuse and write) and
+/// drop the TopK-salted WHERE key that the earlier walk may have attached.
+/// `__topKFilter` itself is deliberately allowed: its plan salt is part of those keys.
+void disableTopKQueryConditionCacheUnderNonDeterministicFilters(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.use_query_condition_cache)
+        return;
+
+    const auto & frame = stack.back();
+
+    auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(frame.node->step.get());
+    if (!read_from_merge_tree || !read_from_merge_tree->isSelectedForTopKFilterOptimization())
+        return;
+
+    /// The `FilterStep` directly above the read is the one that `updateQueryConditionCache` tags
+    /// with the WHERE cache key; any non-deterministic filter anywhere above the read invalidates
+    /// both that key and the PREWHERE entries.
+    FilterStep * tagged_filter_step = nullptr;
+    bool has_non_deterministic_filter = false;
+
+    for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+    {
+        auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get());
+        if (!filter_step)
+            continue;
+
+        const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+        if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
+        {
+            has_non_deterministic_filter = true;
+            break;
+        }
+
+        if (!tagged_filter_step)
+            tagged_filter_step = filter_step;
+    }
+
+    if (!has_non_deterministic_filter)
+        return;
+
+    read_from_merge_tree->disableTopKPrewhereQueryConditionCache();
+    if (tagged_filter_step)
+        tagged_filter_step->resetConditionForQueryConditionCache();
 }
 
 }

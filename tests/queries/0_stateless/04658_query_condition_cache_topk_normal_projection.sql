@@ -118,25 +118,31 @@ ORDER BY event_time_microseconds;
 -- Projection parts all share the projection name, so the TopK part-set salt must use
 -- the parent-part-qualified identity. Otherwise dropping one parent part leaves the
 -- unchanged projection's cache entry reusable under the old threshold snapshot.
+--
+-- The observable discriminator is the number of entries: repeating the same query reuses the same
+-- key (the entry count stays put), while a query over a changed part set writes under a fresh key
+-- (the count grows). A warm read of a projection part cannot report a cache *hit* today: a
+-- projection candidate is analysed - and the cache consulted - in `optimizeUseNormalProjections`
+-- before the projection read's `PREWHERE` is built, so `filterPartsByQueryConditionCache` never sees
+-- the `PREWHERE` these entries are keyed by. The write is still gated and salted correctly, which is
+-- what this section pins down.
 SET use_query_condition_cache_for_top_k = 1;
 SET use_top_k_dynamic_filtering = 1;
 SET max_block_size = 8192;
+-- Reading the projection in `v1` order lets the read stop before the dynamic `__topKFilter` has a
+-- chance to reject whole granules, so nothing would be recorded. Pin the setting: its default (and
+-- the test settings randomization) would otherwise decide whether entries appear at all.
+SET optimize_read_in_order = 0;
 INSERT INTO tab_proj SELECT 1, rand(), number, number FROM numbers(1_000_000);
 SYSTEM CLEAR QUERY CONDITION CACHE;
 
 SELECT '--- Projection TopK part-set changes use a fresh QCC key';
+-- One entry per projection part, and the repeated query must not add any.
 SELECT v1 FROM tab_proj WHERE v2 >= 0 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1, log_comment = '04658_projection_topk_prime';
 SELECT v1 FROM tab_proj WHERE v2 >= 0 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1, log_comment = '04658_projection_topk_warm';
 SELECT count() FROM system.query_condition_cache;
 
-SYSTEM FLUSH LOGS query_log;
-
-SELECT '--- Warm projection TopK read hits QCC';
-SELECT ProfileEvents['QueryConditionCacheHits'] > 0
-FROM system.query_log
-WHERE current_database = currentDatabase() AND log_comment = '04658_projection_topk_warm' AND type = 'QueryFinish'
-ORDER BY event_time_microseconds DESC LIMIT 1;
-
+-- The part set changed, so the surviving projection part is recorded under a fresh key: 2 + 1 = 3.
 ALTER TABLE tab_proj DROP PARTITION 0;
 SELECT v1 FROM tab_proj WHERE v2 >= 0 ORDER BY v1 ASC LIMIT 5 FORMAT Null SETTINGS force_optimize_projection = 1;
 SELECT count() FROM system.query_condition_cache;

@@ -9,6 +9,4 @@
 04658_plain_prime	1
 --- Projection TopK part-set changes use a fresh QCC key
 2
---- Warm projection TopK read hits QCC
-1
 3
