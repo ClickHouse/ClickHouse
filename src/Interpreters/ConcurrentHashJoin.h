@@ -64,6 +64,9 @@ public:
     const Block & getTotals() const override;
     size_t getTotalRowCount() const override;
     size_t getTotalByteCount() const override;
+
+    StepAnalysisReport getAnalysisReport() const override;
+
     bool alwaysReturnsEmptySet() const override;
     bool supportParallelJoin() const override { return true; }
 
@@ -134,6 +137,9 @@ private:
     HashJoinStatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
 
+    /// Sum of per-slot build peaks captured right before the build finishes
+    size_t peak_build_bytes = 0;
+
     std::mutex totals_mutex;
     Block totals;
 
@@ -142,8 +148,16 @@ private:
     std::atomic<size_t> global_total_rows{0};
     std::atomic<size_t> global_total_bytes{0};
 
+    size_t getRightTableRowCount() const;
+    size_t getUniqueKeys() const;
+
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    JoinAnalysisCounters collectMatchedRowsCounters() const;
+
     bool useZeroCopyApproach(const Block & from_block) const;
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block, bool use_zero_copy);
+
     std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
     void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };

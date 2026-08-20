@@ -6,6 +6,7 @@
       "group": "はじめに",
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
+        "ja/get-started/index",
         "ja/get-started/quickstarts/home",
         {
           "expandable": true,
@@ -21,27 +22,28 @@
           "expanded": true,
           "group": "ユースケース",
           "pages": [
+            "ja/get-started/use-cases/overview",
             "ja/get-started/use-cases/real-time-analytics",
             "ja/get-started/use-cases/observability",
             "ja/get-started/use-cases/data-warehousing",
             "ja/get-started/use-cases/agentic-analytics"
-          ],
-          "root": "ja/get-started/use-cases/overview"
+          ]
         },
         "ja/get-started/about/deployment-modes"
-      ],
-      "root": "ja/get-started/index"
+      ]
     },
     {
       "expanded": true,
       "group": "セットアップ",
       "icon": "/images/menu-icon-gear.svg",
       "pages": [
+        "ja/get-started/setup/install",
         "ja/get-started/setup/cloud",
         {
           "expanded": true,
           "group": "セルフマネージド",
           "pages": [
+            "ja/get-started/setup/self-managed/overview",
             {
               "group": "ローカル開発",
               "pages": [
@@ -60,17 +62,16 @@
                 "ja/get-started/setup/self-managed/other-linux"
               ]
             }
-          ],
-          "root": "ja/get-started/setup/self-managed/overview"
+          ]
         }
-      ],
-      "root": "ja/get-started/setup/install"
+      ]
     },
     {
       "expanded": true,
       "group": "サンプルデータセット",
       "icon": "/images/menu-icon-database.svg",
       "pages": [
+        "ja/get-started/sample-datasets/index",
         "ja/get-started/sample-datasets/playground",
         {
           "group": "ベンチマーク",
@@ -94,7 +95,7 @@
           ]
         },
         {
-          "group": "Web・ソーシャル分析",
+          "group": "Web・ソーシャルアナリティクス",
           "pages": [
             "ja/get-started/sample-datasets/amazon-reviews",
             "ja/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -106,7 +107,7 @@
           ]
         },
         {
-          "group": "Geoと位置情報",
+          "group": "Geo と位置情報",
           "pages": [
             "ja/get-started/sample-datasets/cell-towers",
             "ja/get-started/sample-datasets/foursquare-os-places",
@@ -132,14 +133,14 @@
             "ja/get-started/sample-datasets/uk-price-paid"
           ]
         }
-      ],
-      "root": "ja/get-started/sample-datasets/index"
+      ]
     },
     {
       "expanded": true,
       "group": "移行",
       "icon": "/images/caret-double-right.svg",
       "pages": [
+        "ja/get-started/migrate/overview",
         {
           "group": "PostgreSQL",
           "pages": [
@@ -153,8 +154,7 @@
               ]
             },
             "ja/get-started/migrate/postgres/appendix"
-          ],
-          "root": "ja/get-started/migrate/postgres/index"
+          ]
         },
         {
           "group": "BigQuery",
@@ -162,8 +162,7 @@
             "ja/get-started/migrate/bigquery/overview",
             "ja/get-started/migrate/bigquery/migrating-to-clickhouse-cloud",
             "ja/get-started/migrate/bigquery/loading-data"
-          ],
-          "root": "ja/get-started/migrate/bigquery/index"
+          ]
         },
         {
           "group": "Snowflake",
@@ -190,7 +189,8 @@
         {
           "group": "OSS から Cloud への移行",
           "pages": [
-            "ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
+            "ja/get-started/migrate/oss-to-cloud/clickhouse-to-cloud",
+            "ja/get-started/migrate/oss-to-cloud/oss-to-cloud-backup-restore"
           ]
         },
         {
@@ -201,8 +201,7 @@
             "ja/get-started/migrate/other-methods/object-storage-to-clickhouse"
           ]
         }
-      ],
-      "root": "ja/get-started/migrate/overview"
+      ]
     }
   ]
 }

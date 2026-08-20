@@ -56,6 +56,7 @@
 #include <Common/ThreadProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/getMappedArea.h>
+#include <Common/SignalHandlers.h>
 #include <Common/remapExecutable.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/Config/AbstractConfigurationComparison.h>
@@ -66,6 +67,7 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/SQLDefinedHandlers/SQLDefinedHandlersFactory.h>
 #include <Server/createServer.h>
 #include <Server/socketBindListen.h>
 #include <Server/stopServers.h>
@@ -246,7 +248,6 @@ namespace ServerSetting
     extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
-    extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 disk_connections_soft_limit;
     extern const ServerSettingsUInt64 disk_connections_store_limit;
     extern const ServerSettingsUInt64 disk_connections_hard_limit;
@@ -581,6 +582,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
@@ -657,6 +659,21 @@ Strings getInterserverListenHosts(const Poco::Util::AbstractConfiguration & conf
 
     /// Use more general restriction in case of emptiness
     return getListenHosts(config);
+}
+
+bool isIntrospectionProtocol(const Poco::Util::AbstractConfiguration & config, const std::string & protocol)
+{
+    return config.getBool("protocols." + protocol + ".introspection", false);
+}
+
+bool hasIntrospectionProtocols(const Poco::Util::AbstractConfiguration & config)
+{
+    Poco::Util::AbstractConfiguration::Keys protocols;
+    config.keys("protocols", protocols);
+    return std::any_of(protocols.begin(), protocols.end(), [&](const auto & protocol)
+    {
+        return isIntrospectionProtocol(config, protocol);
+    });
 }
 
 bool getListenTry(const Poco::Util::AbstractConfiguration & config, const ServerSettings & server_settings)
@@ -1302,8 +1319,88 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
-        size_t size = remapExecutable();
-        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently).
+        ///
+        /// Restart the async logging threads even if remapExecutable throws, so the exception unwinding
+        /// through Server::main is logged by a fully running logger (a stopped channel falls back to
+        /// synchronous delivery, but anything already queued waits until the threads run again).
+        /// The remap exception is stashed rather than rethrown directly, so the restart happens outside the
+        /// signal-blocking scope: the mask is restored first, and the logging threads get the same mask as
+        /// during a normal startup.
+        std::exception_ptr remap_exception;
+        size_t remapped_size = 0;
+#if USE_JEMALLOC
+        bool jemalloc_background_threads_were_enabled = false;
+#endif
+        {
+            /// `BaseDaemon::initializeTerminationAndSignalProcessing` has already installed the signal handlers
+            /// and started the signal listener thread. Block the asynchronously delivered handled signals in this
+            /// thread first, so that no new record can be queued into the signal pipe from here on. Nothing is
+            /// lost: the signal stays pending for the process and is delivered once the mask is restored below.
+            BlockSignalsScope block_signals(asynchronousHandledSignals());
+
+#if USE_JEMALLOC
+            /// `Jemalloc::setup` in `BaseDaemon::initialize` has already started jemalloc background threads
+            /// (`jemalloc_enable_background_threads` defaults to true). They execute allocator code from the text
+            /// segment, and they were created with an unblocked signal mask, so they could also take a handled
+            /// signal inside the remap window. Writing `false` into the `background_thread` mallctl stops *and
+            /// joins* every background thread before returning, so after this call they are fully quiesced.
+            /// They are restarted below, after the remap. `max_background_threads` is a separate mallctl and is
+            /// left untouched, so re-enabling restores the configured limit.
+            if (Jemalloc::tryGetValue("background_thread", jemalloc_background_threads_were_enabled)
+                && jemalloc_background_threads_were_enabled)
+                Jemalloc::setBackgroundThreads(false);
+#endif
+
+            /// Blocking the signals is not enough by itself: a signal that arrived just before the mask was set
+            /// may already have written a record into the signal pipe, and the listener thread would execute the
+            /// corresponding callback at an arbitrary later moment - possibly inside the remap window. Stop and
+            /// join the listener thread: it drains every record already queued (they are ordered in the pipe
+            /// before the stop request) while the code is still mapped, and then exits. It is restarted below.
+            stopSignalListener();
+
+            /// The async logging threads poll rather than block, so join them for the duration and restart afterwards.
+            /// This fails closed: if any logging thread cannot be joined, the exception propagates and the remap
+            /// is aborted, instead of rewriting the text segment under a thread that may still execute from it.
+            stopAsyncLoggingThreads();
+
+            /// At this point the process is single-threaded again and all handled signals are blocked,
+            /// so no code other than this thread can possibly run while the text segment is rewritten.
+            try
+            {
+                remapped_size = remapExecutable();
+            }
+            catch (...)
+            {
+                remap_exception = std::current_exception();
+            }
+        }
+
+#if USE_JEMALLOC
+        /// Restarted outside the signal-blocking scope, so the new background threads inherit the same
+        /// (unblocked) signal mask they had before the remap. Restarted even if remapExecutable threw,
+        /// for the same reason the logging threads are: the allocator must be back in its configured
+        /// state while the exception unwinds. `verifySetup` below cross-checks the state against the
+        /// server settings, so a failure to restore would not go unnoticed.
+        if (jemalloc_background_threads_were_enabled)
+            Jemalloc::setBackgroundThreads(true);
+#endif
+
+        /// Fail closed if the restart itself throws: continuing with only part of the logging threads
+        /// running would keep accepting messages into queues that no consumer drains. open() tears the
+        /// partially opened channel back down before rethrowing, and a stopped channel delivers messages
+        /// synchronously, so the exception propagating out of Server::main still reaches the log.
+        startAsyncLoggingThreads();
+
+        /// Restarted after the logging threads, so that if this throws, the exception is still logged normally.
+        /// A pending signal delivered when the mask was restored above only writes a record into the signal
+        /// pipe; the record waits there until the restarted listener thread picks it up, so it is not lost.
+        startSignalListener();
+
+        if (remap_exception)
+            std::rethrow_exception(remap_exception);
+        LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(remapped_size));
     }
 
     if (server_settings[ServerSetting::mlock_executable])
@@ -1563,9 +1660,12 @@ try
         server_settings[ServerSetting::global_profiler_real_time_period_ns],
         server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
 
+    std::unique_ptr<Poco::ThreadPool> introspection_server_pool;
+
     std::mutex servers_lock;
     std::vector<ProtocolServerAdapter> servers;
     std::vector<ProtocolServerAdapter> servers_to_start_before_tables;
+    std::vector<ProtocolServerAdapter> introspection_servers;
 
     /// Wait for all threads to avoid possible use-after-free (for example logging objects can be already destroyed).
     SCOPE_EXIT_SAFE({
@@ -1612,12 +1712,15 @@ try
         std::vector<ProtocolServerMetrics> metrics;
 
         std::lock_guard lock(servers_lock);
-        metrics.reserve(servers_to_start_before_tables.size() + servers.size());
+        metrics.reserve(servers_to_start_before_tables.size() + servers.size() + introspection_servers.size());
 
         for (const auto & server : servers_to_start_before_tables)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
 
         for (const auto & server : servers)
+            metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
+
+        for (const auto & server : introspection_servers)
             metrics.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentThreads(), server.refusedConnections()});
         return metrics;
     };
@@ -1654,6 +1757,9 @@ try
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
+        /// Required for the startup exception case where the termination block that should set is_cancelled=true never runs.
+        is_cancelled = true;
+
         /// Stop accepting connections on the regular servers. In the normal shutdown path they are
         /// already stopped, but on startup failure some of them can still be running: the Prometheus
         /// endpoint is started before tables are loaded. Otherwise `server_pool.joinAll()` below
@@ -2453,6 +2559,7 @@ try
     setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
 
     NamedCollectionFactory::instance().loadIfNot();
+    SQLDefinedHandlersFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
     /// Initialize main config reloader.
@@ -2708,7 +2815,6 @@ try
                     : std::nullopt);
 
             global_context->setS3QueueDisableStreaming(new_server_settings[ServerSetting::s3queue_disable_streaming]);
-            global_context->setMessageQueueDisableInsertion(new_server_settings[ServerSetting::message_queue_disable_insertion]);
 
             global_context->setOSCPUOverloadSettings(static_cast<double>(new_server_settings[ServerSetting::min_os_cpu_wait_time_ratio_to_drop_connection]), static_cast<double>(new_server_settings[ServerSetting::max_os_cpu_wait_time_ratio_to_drop_connection]));
 
@@ -3230,6 +3336,17 @@ try
         throw;
     }
 
+    auto disable_config_reload_callbacks = [&]
+    {
+        global_context->setConfigReloadCallback([]
+        {
+            throw Exception(ErrorCodes::ABORTED, "Cannot reload config because the server is shutting down");
+        });
+        if (cgroups_memory_usage_observer)
+            cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([] {});
+    };
+    SCOPE_EXIT({ disable_config_reload_callbacks(); });
+
     if (cgroups_memory_usage_observer)
     {
         cgroups_memory_usage_observer->setOnMemoryAmountAvailableChangedFn([&]() { main_config_reloader->reload(); });
@@ -3252,6 +3369,10 @@ try
     global_context->setStartServersCallback([&](const ServerType & server_type)
     {
         std::lock_guard lock(servers_lock);
+        /// Introspection server can run SYSTEM START LISTEN before other servers' startup or after other servers' shutdown.
+        /// In either case, we need to return an error.
+        if (is_cancelled || !global_context->isServerCompletelyStarted())
+            throw Exception(ErrorCodes::ABORTED, "Cannot start listeners because the server is starting up or shutting down");
         createServers(
             config(),
             server_settings,
@@ -3309,10 +3430,21 @@ try
     {
         /// All settings can be changed in the global config
         bool allowed_experimental = true;
+        bool allowed_private_preview = true;
         bool allowed_beta = true;
         size_t background_pool_tasks = global_context->getMergeMutateExecutor()->getMaxTasksCount();
-        global_context->getMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
-        global_context->getReplicatedMergeTreeSettings().sanityCheck(background_pool_tasks, allowed_experimental, allowed_beta, global_context->wasBackgroundPoolAutoLowered());
+        global_context->getMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
+        global_context->getReplicatedMergeTreeSettings().sanityCheck(
+            background_pool_tasks,
+            allowed_experimental,
+            allowed_private_preview,
+            allowed_beta,
+            global_context->wasBackgroundPoolAutoLowered());
     }
     /// try set up encryption. There are some errors in config, error will be printed and server wouldn't start.
     CompressionCodecEncrypted::Configuration::instance().load(config(), "encryption_codecs");
@@ -3374,6 +3506,72 @@ try
         // Waits for all currently running jobs to finish and do not run any other pending jobs.
         global_context->getAsyncLoader().shutdown();
     );
+
+    /// The introspection servers accept TCP connections while the server is otherwise unreachable:
+    /// before attaching and after detaching of tables.
+    if (hasIntrospectionProtocols(config()))
+    {
+        global_context->setStopIntrospectionServersCallback([&]
+        {
+            if (introspection_servers.empty())
+                return;
+
+            LOG_DEBUG(log, "Waiting for current connections to introspection servers to finish.");
+            size_t current_connections = 0;
+            {
+                std::lock_guard lock(servers_lock);
+                for (auto & server : introspection_servers)
+                {
+                    server.stop();
+                    current_connections += server.currentConnections();
+                }
+            }
+
+            if (current_connections)
+                LOG_INFO(log, "Closed all introspection listening sockets. Waiting for {} outstanding connections.", current_connections);
+            else
+                LOG_INFO(log, "Closed all introspection listening sockets.");
+
+            global_context->getProcessList().killAllQueries();
+
+            if (current_connections)
+                current_connections = waitServersToFinish(
+                    introspection_servers, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
+
+            if (current_connections)
+            {
+                dumpCoverageReportIfPossible();
+                LOG_WARNING(log, "Closed connections to introspection servers. But {} remain. Will shutdown forcefully.", current_connections);
+                /// No leak check: remaining connection handlers still own memory it would report as
+                /// leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
+            }
+
+            LOG_INFO(log, "Closed connections to introspection servers.");
+            introspection_server_pool->joinAll();
+        });
+
+        introspection_server_pool = std::make_unique<Poco::ThreadPool>(
+            /* minCapacity */ 1,
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
+            /* idleTime */ 60,
+            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
+            server_settings[ServerSetting::global_profiler_real_time_period_ns],
+            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+
+        std::lock_guard lock(servers_lock);
+        createServers(
+            config(),
+            server_settings,
+            listen_hosts,
+            listen_try,
+            *introspection_server_pool,
+            *async_metrics,
+            introspection_servers,
+            /* start_servers= */ true,
+            ServerType(ServerType::Type::QUERIES_ALL),
+            /* only_introspection_protocols= */ true);
+    }
 
     try
     {
@@ -3616,6 +3814,7 @@ try
             /// Stop reloading of the main config. This must be done before everything else because it
             /// can try to access/modify already deleted objects.
             /// E.g. it can recreate new servers or it may pass a changed config to some destroyed parts of ContextSharedPart.
+            disable_config_reload_callbacks();
             main_config_reloader.reset();
             access_control.stopPeriodicReloading();
 
@@ -3635,6 +3834,7 @@ try
                 }
             }
 
+            global_context->getBackgroundQueryPool().finish();
             global_context->getRefreshSet().setRefreshesStopped(true);
 
             if (current_connections)
@@ -3658,21 +3858,26 @@ try
 
             size_t wait_limit_seconds = server_settings[ServerSetting::shutdown_wait_unfinished];
             auto wait_start = std::chrono::steady_clock::now();
+            auto shutdown_deadline = wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000);
 
             if (current_connections)
                 current_connections = waitServersToFinish(servers, servers_lock, wait_limit_seconds);
 
             if (current_connections)
                 LOG_WARNING(log, "Closed connections. But {} remain."
-                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>60</shutdown_wait_unfinished>", current_connections);
+                    " Tip: To increase wait time add to config: <shutdown_wait_unfinished>300</shutdown_wait_unfinished>", current_connections);
             else
                 LOG_INFO(log, "Closed connections.");
 
-            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(wait_start + std::chrono::milliseconds(wait_limit_seconds * 1000));
+            bool joined_refresh_tasks = global_context->getRefreshSet().joinBackgroundTasks(shutdown_deadline);
+            bool joined_background_queries = global_context->getBackgroundQueryPool().waitUntil(shutdown_deadline);
+
+            if (!joined_background_queries)
+                LOG_WARNING(log, "{} background queries remain.", global_context->getBackgroundQueryPool().active());
 
             dns_cache_updater.reset();
 
-            if (current_connections || !joined_refresh_tasks)
+            if (current_connections || !joined_refresh_tasks || !joined_background_queries)
             {
                 /// There is no better way to force connections to close in Poco.
                 /// Otherwise connection handlers will continue to live
@@ -3682,7 +3887,9 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
-                safeExit(0);
+                /// No leak check: remaining connection handlers, refresh tasks or background queries still own memory
+                /// it would report as leaked. Reported, because here stderr is the server log.
+                safeExit(0, LeakCheck::SkipAndReport);
             }
         });
 
@@ -3808,7 +4015,7 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
             if (config.has(conf_name + ".handlers"))
                 handlers_config_key = config.getString(conf_name + ".handlers");
             return TCPServerConnectionFactory::Ptr(
-                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
+                new HTTPServerConnectionFactory(httpContext(), http_params, createHandlerFactory(*this, config, async_metrics, "HTTPHandler-factory", handlers_config_key, protocol), ProfileEvents::InterfaceHTTPReceiveBytes, ProfileEvents::InterfaceHTTPSendBytes)
             );
         }
         if (type == "prometheus")
@@ -3830,7 +4037,10 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
     std::string prefix = conf_name + ".";
     std::unordered_set<std::string> pset {conf_name};
 
-    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name);
+    const bool is_introspection = isIntrospectionProtocol(config, protocol);
+    std::string innermost_type;
+
+    auto stack = std::make_unique<TCPProtocolStackFactory>(*this, conf_name, is_introspection);
 
     while (true)
     {
@@ -3845,6 +4055,13 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
                 is_secure = true;
             }
 
+            if (is_introspection && type != "tcp" && type != "tls" && type != "proxy1")
+                throw Exception(
+                    ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Introspection protocol '{}' contains a '{}' layer, but only 'tcp' optionally wrapped "
+                    "into 'tls' and 'proxy1' layers is supported", protocol, type);
+
+            innermost_type = type;
             stack->append(create_factory(type, conf_name));
         }
 
@@ -3857,6 +4074,11 @@ std::unique_ptr<TCPProtocolStackFactory> Server::buildProtocolStackFromConfig(
         if (!pset.insert(conf_name).second)
             throw Exception(ErrorCodes::INVALID_CONFIG_PARAMETER, "Protocol '{}' configuration contains a loop on '{}'", protocol, conf_name);
     }
+
+    if (is_introspection && innermost_type != "tcp")
+        throw Exception(
+            ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Introspection protocol '{}' must end in a 'tcp' layer", protocol);
 
     return stack;
 }
@@ -3875,7 +4097,8 @@ void Server::createServers(
     AsynchronousMetrics & async_metrics,
     std::vector<ProtocolServerAdapter> & servers,
     bool start_servers,
-    const ServerType & server_type)
+    const ServerType & server_type,
+    bool only_introspection_protocols)
 {
     const Settings & settings = global_context->getSettingsRef();
 
@@ -3898,6 +4121,10 @@ void Server::createServers(
 
     for (const auto & protocol : protocols)
     {
+        const bool is_introspection = isIntrospectionProtocol(config, protocol);
+        if (is_introspection != only_introspection_protocols)
+            continue;
+
         if (!server_type.shouldStart(ServerType::Type::CUSTOM, protocol))
             continue;
 
@@ -3940,10 +4167,14 @@ void Server::createServers(
                         server_pool,
                         socket,
                         makeServerParams(server_settings),
-                        connection_filter));
+                        is_introspection ? TCPServerConnectionFilter::Ptr() : connection_filter));
             });
         }
     }
+
+    /// Introspection ports can only be configured in the protocols config section.
+    if (only_introspection_protocols)
+        return;
 
     for (const auto & listen_host : listen_hosts)
     {

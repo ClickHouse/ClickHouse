@@ -61,11 +61,13 @@ struct MutableColumnsAndConstraints;
     M(CLASS_NAME, MergeTreeObjectSerializationVersion) \
     M(CLASS_NAME, MergeTreeObjectSharedDataSerializationVersion) \
     M(CLASS_NAME, MergeTreeDynamicSerializationVersion) \
+    M(CLASS_NAME, MergeTreePatchPartsVersion) \
     M(CLASS_NAME, MergeTreeMapBucketsStrategy) \
     M(CLASS_NAME, MergeTreeMapSerializationVersion) \
     M(CLASS_NAME, MergeTreePartMinMaxIndexColumns) \
     M(CLASS_NAME, SearchOrphanedPartsDisks) \
-    M(CLASS_NAME, TextIndexPostingListCodec)
+    M(CLASS_NAME, TextIndexPostingListCodec) \
+    M(CLASS_NAME, MergeTreeTextIndexSerializationVersion)
 
 MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, DECLARE_SETTING_TRAIT)
 
@@ -101,7 +103,12 @@ struct MergeTreeSettings
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
 
     bool needSyncPart(size_t input_rows, size_t input_bytes) const;
-    void sanityCheck(size_t background_pool_tasks, bool allow_experimental, bool allow_beta, bool background_pool_auto_lowered) const;
+    void sanityCheck(
+        size_t background_pool_tasks,
+        bool allow_experimental,
+        bool allow_private_preview,
+        bool allow_beta,
+        bool background_pool_auto_lowered) const;
 
     void dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndConstraints & params) const;
     void dumpToSystemCompletionsColumns(MutableColumns & columns) const;

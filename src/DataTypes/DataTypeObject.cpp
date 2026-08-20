@@ -54,6 +54,7 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int ILLEGAL_COLUMN;
 }
 
 DataTypeObject::DataTypeObject(
@@ -676,9 +677,15 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeObject::getDynamicSubcolu
     /// as a static subcolumn, then tried to resolve the remaining ":`Array(JSON)`.x" via the typed path's
     /// type chain, which eventually called this method. We return nullptr here so that the resolution falls
     /// through to the outer DataTypeObject::getDynamicSubcolumnData with the full subcolumn name, where
-    /// the type hint can be properly detected and stripped.
+    /// the type hint can be properly detected and stripped. That prefix-match probe always passes
+    /// throw_if_null=false; in throw_if_null mode there is no outer attempt to fall through to, so the
+    /// name is unresolvable.
     if (subcolumn_name.starts_with(":`"))
+    {
+        if (throw_if_null)
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
         return nullptr;
+    }
 
     /// Split requested subcolumn to the JSON path, type hint, and remaining subcolumn.
     auto split = splitPathAndDynamicTypeSubcolumn(subcolumn_name, getTypeOfNestedObjects()->getName());
@@ -1776,7 +1783,7 @@ Let's investigate the content of the [GH Archive](https://www.gharchive.org/) da
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPaths(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 ```
 
 ```text title="Response"
@@ -1836,7 +1843,7 @@ FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz
 
 ```sql title="Query"
 SELECT arrayJoin(distinctJSONPathsAndTypes(json))
-FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', JSONAsObject)
+FROM s3('s3://clickhouse-public-datasets/gharchive/original/2020-01-01-*.json.gz', NOSIGN, JSONAsObject)
 SETTINGS date_time_input_format = 'best_effort'
 ```
 

@@ -36,7 +36,7 @@ ENGINE = ODBC(datasource, external_database, external_table)
 
 * يجب أن تكون أسماء الأعمدة مطابقةً لما في الجدول المصدر، ولكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
 * قد تختلف أنواع الأعمدة عن تلك الموجودة في الجدول المصدر. يحاول ClickHouse [cast](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) القيم إلى أنواع بيانات ClickHouse.
-* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من nulls. وينطبق ذلك أيضًا على قيم NULL داخل المصفوفات.
+* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings/external-table#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من nulls. وينطبق ذلك أيضًا على قيم NULL داخل المصفوفات.
 
 **معلمات المحرك**
 

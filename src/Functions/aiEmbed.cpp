@@ -44,10 +44,6 @@ namespace Setting
     extern const SettingsUInt64 ai_function_max_retries;
     extern const SettingsUInt64 ai_function_retry_initial_delay_ms;
     extern const SettingsBool ai_function_throw_on_error;
-    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
-    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
-    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsNonZeroUInt64 ai_function_embedding_max_batch_size;
     extern const SettingsString ai_function_embedding_default_credentials;
 }
@@ -97,7 +93,7 @@ public:
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         FunctionArgumentDescriptors mandatory_args{
-            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String or Nullable(String)"},
+            {"text", static_cast<FunctionArgumentDescriptor::TypeValidator>(&FunctionBaseAI::isStringOrNullableString), nullptr, "String"},
             {"model", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), &isColumnConst, "const String"},
         };
         FunctionArgumentDescriptors optional_args{
@@ -132,11 +128,8 @@ public:
         bool throw_on_error = settings[Setting::ai_function_throw_on_error].value;
         size_t max_batch_size = static_cast<size_t>(settings[Setting::ai_function_embedding_max_batch_size].value);
 
-        AIQuotaTracker quota(
-            settings[Setting::ai_function_max_input_tokens_per_query].value,
-            settings[Setting::ai_function_max_output_tokens_per_query].value,
-            settings[Setting::ai_function_max_api_calls_per_query].value,
-            settings[Setting::ai_function_throw_on_quota_exceeded].value);
+        /// Shared across every AI function call in the query
+        auto quota_tracker = getContext()->getAIQuotaTracker();
 
         auto timeouts = ConnectionTimeouts::getHTTPTimeouts(settings, getContext()->getServerSettings());
         timeouts.receive_timeout = Poco::Timespan(static_cast<int64_t>(timeout_sec) /*s*/, 0 /*us*/);
@@ -171,7 +164,7 @@ public:
         }
 
         auto embedding_result = FunctionBaseAI::embedTexts(
-            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, quota, timeouts);
+            *provider, model, dimensions, getName(), inputs, max_batch_size, max_retries, retry_delay_ms, throw_on_error, *quota_tracker, timeouts);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output
         auto offsets_col = ColumnArray::ColumnOffsets::create();
@@ -249,7 +242,7 @@ requests a vector of the given size; otherwise the model's native size is return
         .arguments
         = {{"text", "Text to embed.", {"String"}},
            {"model", "Embedding model name.", {"const String"}},
-           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/sql-reference/functions/ai-functions)).", {"Map(String, String)"}}},
+           {"params", "Optional constant `Map(String, String)` of parameters. Function-specific key: `dimensions` (target dimensionality of the output vector; `0` or omitted means the model's native size). The common parameter `credentials` also applies (see [AI Functions](/reference/functions/regular-functions/ai-functions)).", {"Map(String, String)"}}},
         .returned_value = {"The embedding vector, or an empty array if the input is NULL or empty, the request failed and `ai_function_throw_on_error` is disabled, or a quota was exceeded with `ai_function_throw_on_quota_exceeded` disabled.", {"Array(Float32)"}},
         .examples
         = {{"Embed a single string (`credentials` can be omitted if the `ai_function_embedding_default_credentials` setting is set)", "SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))", ""},

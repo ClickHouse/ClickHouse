@@ -7,10 +7,10 @@
          Stack Overflow Posts table. See PR #104268. -->
 
     <create_query>
-        CREATE TABLE topk_join_l (id UInt64, k Int64, payload String) ENGINE = MergeTree() ORDER BY id
+        CREATE TABLE topk_join_l (id UInt64, k Int64, payload String) ENGINE = MergeTree() ORDER BY id SETTINGS auto_statistics_types=''
     </create_query>
     <create_query>
-        CREATE TABLE topk_join_r (id UInt64, value String) ENGINE = MergeTree() ORDER BY id
+        CREATE TABLE topk_join_r (id UInt64, value String) ENGINE = MergeTree() ORDER BY id SETTINGS auto_statistics_types=''
     </create_query>
 
     <!-- `k` is uncorrelated with `id` so the storage primary key cannot satisfy
