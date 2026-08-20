@@ -73,3 +73,14 @@ plan: cross_joins=0 substituted=1 null_prefiltered=1
 plan: substituted=0
 a
 bb
+-- Case 22: scalar count() through narrowing, outer Int32 vs inner Int64; outer 0 must count only the genuine inner 0 (non-convertible values must not fold into it), and 705032704 (= 5000000000 mod 2^32) must not count 5000000000
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0	1
+1	2
+2	\N
+705032704	\N
+-- Case 23: scalar count() through the float-to-int accurate cast, outer Int32 vs inner Float64; outer 0 must count only the genuine 0.0 (0.5 and 1.5 must not fold into 0), and 3.0 must count for 3
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0	1
+1	\N
+3	1

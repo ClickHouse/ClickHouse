@@ -353,10 +353,13 @@ QueryPlan decorrelateQueryPlan(
                 {
                     /// Rows whose member value is NULL or does not convert exactly to the correlated
                     /// type can never satisfy the recorded equality (a top-level AND-conjunct of an
-                    /// ancestor FilterStep), so they are dropped up front. This is required for
-                    /// correctness: assumeNotNull of such a value would produce the nested default
-                    /// value and, with correlated identifiers used as aggregation keys, merge such
-                    /// rows into a genuine group.
+                    /// ancestor FilterStep), so they are dropped up front. This guarantees the
+                    /// default values produced by assumeNotNull for such rows never exist in any
+                    /// downstream step, independently of filter/expression step merging,
+                    /// short-circuit settings, and other expressions over the correlated column
+                    /// (which could otherwise throw on values the original query never evaluates).
+                    /// The retained recorded equality would still drop these rows by itself, but
+                    /// only after downstream expressions computed on the garbage values.
                     ActionsDAG filter_dag(decorrelated_plan_header->getNamesAndTypesList());
                     ActionsDAG::NodeRawConstPtrs conditions;
                     std::unordered_set<String> deduplicated_conditions;

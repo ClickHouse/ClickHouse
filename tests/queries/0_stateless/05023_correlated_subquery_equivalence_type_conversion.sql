@@ -307,3 +307,34 @@ SELECT format('plan: substituted={}',
               toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0))
 FROM (EXPLAIN PLAN actions = 1 SELECT s FROM t_outer_21 AS o WHERE EXISTS (SELECT 1 FROM t_inner_21 AS i WHERE i.s = o.s));
 SELECT s FROM t_outer_21 AS o WHERE EXISTS (SELECT 1 FROM t_inner_21 AS i WHERE i.s = o.s) ORDER BY s;
+
+-- Scalar count() through the accurate-cast pre-filter: the outer default value (0) is
+-- sensitive to non-convertible inner values folding into the nested default, so the counts
+-- (not only the plan probes) must show that they are filtered out. Unmatched outer rows
+-- print NULL, as established in case 5.
+
+SELECT '-- Case 22: scalar count() through narrowing, outer Int32 vs inner Int64; outer 0 must count only the genuine inner 0 (non-convertible values must not fold into it), and 705032704 (= 5000000000 mod 2^32) must not count 5000000000';
+CREATE TABLE t_outer_22 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_22 (x Int64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_22 VALUES (0), (1), (2), (705032704);
+INSERT INTO t_inner_22 VALUES (0), (1), (1), (5000000000), (-9000000000);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_22 AS i WHERE i.x = o.x) FROM t_outer_22 AS o);
+SELECT x, (SELECT count() FROM t_inner_22 AS i WHERE i.x = o.x) FROM t_outer_22 AS o ORDER BY x;
+
+SELECT '-- Case 23: scalar count() through the float-to-int accurate cast, outer Int32 vs inner Float64; outer 0 must count only the genuine 0.0 (0.5 and 1.5 must not fold into 0), and 3.0 must count for 3';
+CREATE TABLE t_outer_23 (x Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_inner_23 (x Float64) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_outer_23 VALUES (0), (1), (3);
+INSERT INTO t_inner_23 VALUES (0.0), (0.5), (1.5), (3.0);
+
+SELECT format('plan: cross_joins={} substituted={} null_prefiltered={}',
+              toString(countIf(explain ILIKE '%cross%')),
+              toString(countIf(explain LIKE '%Renaming correlated columns to equivalent expressions in subquery%') > 0),
+              toString(countIf(explain LIKE '%Filter values of expressions equivalent to correlated columns that cannot match%') > 0))
+FROM (EXPLAIN PLAN actions = 1 SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o);
+SELECT x, (SELECT count() FROM t_inner_23 AS i WHERE i.x = o.x) FROM t_outer_23 AS o ORDER BY x;
