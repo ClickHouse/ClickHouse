@@ -2811,7 +2811,7 @@ void registerStatementColumnsTransformers(StatementFactory & factory)
 {
     factory.registerStatement("APPLY modifier",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 > Allows you to invoke some function for each row returned by an outer table expression of a query.
 
 ## Syntax {#syntax}
@@ -2833,7 +2833,7 @@ SELECT * APPLY(sum) FROM columns_transformers;
 │    220 │     18 │    347 │
 └────────┴────────┴────────┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> APPLY(<func>) FROM [db.]table_name
 )",
@@ -2843,7 +2843,7 @@ SELECT <expr> APPLY(<func>) FROM [db.]table_name
 
     factory.registerStatement("EXCEPT modifier",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 > Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
 
 ## Syntax {#syntax}
@@ -2864,7 +2864,7 @@ SELECT * EXCEPT (i) from columns_transformers;
 │  8 │  23 │
 └────┴─────┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
 )",
@@ -2874,7 +2874,7 @@ SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_n
 
     factory.registerStatement("REPLACE modifier",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 > Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
 
 Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches
@@ -2900,7 +2900,7 @@ SELECT * REPLACE(i + 1 AS i) from columns_transformers;
 │ 121 │  8 │  23 │
 └─────┴────┴─────┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
 )",

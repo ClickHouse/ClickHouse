@@ -171,7 +171,7 @@ void registerStatementRole(StatementFactory & factory)
 {
     factory.registerStatement("CREATE ROLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates new [roles](/concepts/features/security/access-rights#role-management). Role is a set of [privileges](/reference/statements/grant#granting-privilege-syntax). A [user](/reference/statements/create/user) assigned a role gets all the privileges of this role.
 
 Syntax:
@@ -213,7 +213,7 @@ After the role is assigned, the user can apply it and execute the allowed querie
 SET ROLE accountant;
 SELECT * FROM db.*;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [IN access_storage_type]
@@ -225,7 +225,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
     factory.registerStatement("ALTER ROLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Changes roles.
 
 Syntax:
@@ -243,7 +243,7 @@ ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 ```
 
 `SET variable = value` is an alias for `MODIFY SETTING variable = value`: it changes a single setting in place while keeping the rest, unlike the bare `SETTINGS` clause which replaces the whole settings list and also removes all inherited (parent) profiles.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER ROLE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]

@@ -325,7 +325,7 @@ void registerStatementRowPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE ROW POLICY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates a [row policy](/concepts/features/security/access-rights#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
 
 <Tip>
@@ -493,7 +493,7 @@ Allows creating row policies on a cluster, see [Distributed DDL](/reference/stat
 `CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
 
 `CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
@@ -509,7 +509,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
 
     factory.registerStatement("ALTER ROW POLICY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Changes row policy.
 
 Syntax:
@@ -576,7 +576,7 @@ ALTER POLICY p1 ON db.table, db.table2 USING NONE;
 -- Mixed targets without rename
 ALTER POLICY p1 ON db.table, p2 ON db2.table2 TO ALL;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER [ROW] POLICY [IF EXISTS] name [, ...]
     ON { [database.]table | database.* } [, ...]

@@ -98,7 +98,7 @@ void registerStatementWith(StatementFactory & factory)
 {
     factory.registerStatement("WITH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ClickHouse supports Common Table Expressions ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)), Common Scalar Expressions and Recursive Queries.
 
 ## Common Table Expressions {#common-table-expressions}
@@ -625,7 +625,7 @@ WITH
     total * 2 AS doubled,
 SELECT total, doubled;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 WITH <expression> AS <identifier>
 WITH <identifier> AS [MATERIALIZED] <subquery expression>

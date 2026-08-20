@@ -211,7 +211,7 @@ void registerStatementDrop(StatementFactory & factory)
 {
     factory.registerStatement("DROP",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
 
 ## DROP DATABASE {#drop-database}
@@ -356,7 +356,7 @@ DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY] [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
@@ -376,7 +376,7 @@ DROP NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 
     factory.registerStatement("DETACH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Makes the server "forget" about the existence of a table, a materialized view, a dictionary, or a database.
 
 **Syntax**
@@ -442,7 +442,7 @@ In ClickHouse Cloud users should use the `PERMANENTLY` clause e.g. `DETACH TABLE
 
 - [Materialized View](/reference/statements/create/view#materialized-view)
 - [Dictionaries](/reference/statements/create/dictionary)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster] [PERMANENTLY] [SYNC]
 )",
@@ -451,7 +451,7 @@ DETACH TABLE|VIEW|DICTIONARY|DATABASE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
     factory.registerStatement("TRUNCATE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `TRUNCATE` statement in ClickHouse is used to quickly remove all data from a table or database while preserving their structure.
 
 ## TRUNCATE TABLE {#truncate-table}
@@ -513,7 +513,7 @@ Removes all tables from a database but keeps the database itself. When the claus
 <Note>
 `TRUNCATE DATABASE` is not supported for `Replicated` databases. Instead, just `DROP` and `CREATE` the database.
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]

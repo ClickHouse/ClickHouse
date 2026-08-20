@@ -86,7 +86,7 @@ void registerStatementWatch(StatementFactory & factory)
 {
     factory.registerStatement("WATCH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 
 <DeprecatedBadge/>
@@ -94,7 +94,7 @@ import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/Deprecated
 This feature is deprecated and will be removed in the future.
 
 For your convenience, the old documentation is located [here](https://pastila.nl/?007cd3ec/47276db1eb25eb10c6ee043a44fdf597#AESDirdloBX4wF5BjPSZSA==)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 WATCH [db.]live_view [EVENTS] [LIMIT n] [FORMAT format]
 )",

@@ -387,7 +387,7 @@ void registerStatementInsert(StatementFactory & factory)
 {
     factory.registerStatement("INSERT INTO",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Inserts data into a table.
 
 **Syntax**
@@ -682,7 +682,7 @@ When you are inserting large amounts of data, ClickHouse will optimize write per
 - [async_insert_max_data_size](/reference/settings/session-settings/async-insert#async_insert_max_data_size)
 - [async_insert_busy_timeout_ms](/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)
 - `async_insert_stale_timeout_ms`
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] FORMAT format_name data_set

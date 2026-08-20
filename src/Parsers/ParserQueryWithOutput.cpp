@@ -271,7 +271,7 @@ void registerStatementQueryWithOutput(StatementFactory & factory)
 {
     factory.registerStatement("FORMAT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ClickHouse supports a wide range of [serialization formats](/reference/formats/index) that can be used on query results among other things. There are multiple ways to choose a format for `SELECT` output, one of them is to specify `FORMAT format` at the end of query to get resulting data in any specific format.
 
 Specific format might be used either for convenience, integration with other systems or performance gain.
@@ -283,7 +283,7 @@ If the `FORMAT` clause is omitted, the default format is used, which depends on 
 ## Implementation Details {#implementation-details}
 
 When using the command-line client, data is always passed over the network in an internal efficient format (`Native`). The client independently interprets the `FORMAT` clause of the query and formats the data itself (thus relieving the network and the server from the extra load).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... FORMAT format
 )",
@@ -293,7 +293,7 @@ SELECT ... FORMAT format
 
     factory.registerStatement("INTO OUTFILE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
 Compressed files are supported. Compression type is detected by the extension of the file name (mode `'auto'` is used by default). Or it can be explicitly specified in a `COMPRESSION` clause. The compression level for a certain compression type can be specified in a `LEVEL` clause.
@@ -329,7 +329,7 @@ zcat select.gz
 ```text title="Response"
 1,"ABC"
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
 )",

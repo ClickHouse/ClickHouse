@@ -822,7 +822,7 @@ void registerStatementSelect(StatementFactory & factory)
 {
     factory.registerStatement("SELECT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 `SELECT` queries perform data retrieval. By default, the requested data is returned to the client, while in conjunction with [INSERT INTO](/reference/statements/insert-into) it can be forwarded to a different table.
 
 ## Syntax {#syntax}
@@ -1086,7 +1086,7 @@ For boolean settings set to true, you can use a shorthand syntax by omitting the
 ```sql
 SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 [WITH expr_list(subquery)]
 SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
@@ -1113,7 +1113,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 
     factory.registerStatement("DISTINCT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
 
 You can specify the list of columns that must have unique values: `SELECT DISTINCT ON (column1, column2,...)`. If the columns are not specified, all of them are taken into consideration.
@@ -1217,7 +1217,7 @@ It is possible to obtain the same result by applying [GROUP BY](/reference/state
 - `DISTINCT` can be applied together with `GROUP BY`.
 - When [ORDER BY](/reference/statements/select/order-by) is omitted and [LIMIT](/reference/statements/select/limit) is defined, the query stops running immediately after the required number of different rows has been read.
 - Data blocks are output as they are processed, without waiting for the entire query to finish running.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 )",
@@ -1227,7 +1227,7 @@ SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
 
     factory.registerStatement("ALL",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 If there are multiple matching rows in a table, then `ALL` returns all of them. `SELECT ALL` is identical to `SELECT` without `DISTINCT`. If both `ALL` and `DISTINCT` are specified, then an exception will be thrown.
 
 `ALL` can be specified inside aggregate functions, although it has no practical effect on the query's result.
@@ -1243,7 +1243,7 @@ Is equivalent to:
 ```sql
 SELECT sum(number) FROM numbers(10);
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ALL expr_list ...
 )",
@@ -1253,7 +1253,7 @@ SELECT ALL expr_list ...
 
     factory.registerStatement("PREWHERE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 `PREWHERE` can make filtering more efficient by reducing the amount of data read. By default, ClickHouse applies this optimization, even when a query does not explicitly specify `PREWHERE`, by moving eligible conditions from [`WHERE`](/reference/statements/select/where) to `PREWHERE`. You can specify `PREWHERE` explicitly to control which conditions are applied at this stage.
 
 With `PREWHERE`, ClickHouse first reads only the columns needed to evaluate the condition. It then reads the other columns required by the query only for blocks that contain at least one matching row. This can reduce the amount of data read when the condition uses fewer columns than the rest of the query and filters out many blocks.
@@ -1386,7 +1386,7 @@ WHERE B = 0;
 
 -- The query with manually specified PREWHERE processes slightly less data: 158.89 MB instead of 168.89 MB.
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... PREWHERE expr ...
 )",
@@ -1396,7 +1396,7 @@ SELECT ... PREWHERE expr ...
 
     factory.registerStatement("WHERE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `WHERE` clause allows you to filter the data that comes from the[`FROM`](/reference/statements/select/from) clause of `SELECT`.
 
 If there is a `WHERE` clause, it must be followed by an expression of type `UInt8`.
@@ -1830,7 +1830,7 @@ WHERE CASE
 END;
 -- Result: Laptop, Monitor, Mouse, Lamp
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... WHERE expr ...
 )",
@@ -1840,7 +1840,7 @@ SELECT ... WHERE expr ...
 
     factory.registerStatement("GROUP BY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 `GROUP BY` clause switches the `SELECT` query into an aggregation mode, which works as follows:
 
 - `GROUP BY` clause contains a list of expressions (or a single expression, which is considered to be the list of length one). This list acts as a "grouping key", while each individual expression will be referred to as a "key expression".
@@ -2219,7 +2219,7 @@ When merging data flushed to the disk, as well as when merging results from remo
 When external aggregation is enabled, if there was less than `max_bytes_before_external_group_by` of data (i.e. data was not flushed), the query runs just as fast as without external aggregation. If any temporary data was flushed, the run time will be several times longer (approximately three times).
 
 If you have an [ORDER BY](/reference/statements/select/order-by) with a [LIMIT](/reference/statements/select/limit) after `GROUP BY`, then the amount of used RAM depends on the amount of data in `LIMIT`, not in the whole table. But if the `ORDER BY` does not have `LIMIT`, do not forget to enable external sorting (`max_bytes_before_external_sort`).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... GROUP BY expr_list [WITH ROLLUP | WITH CUBE] [WITH TOTALS] ...
 SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS (...) ...
@@ -2230,7 +2230,7 @@ SELECT ... GROUP BY ROLLUP(expr_list) | CUBE(expr_list) | GROUPING SETS (...) ..
 
     factory.registerStatement("HAVING",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Allows filtering the aggregation results produced by [GROUP BY](/reference/statements/select/group-by). It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before aggregation, while `HAVING` is performed after it.
 
 It is possible to reference aggregation results from `SELECT` clause in `HAVING` clause by their alias. Alternatively, `HAVING` clause can filter on results of additional aggregates that are not returned in query results.
@@ -2264,7 +2264,7 @@ This will list sales people with greater than 10,000 in total sales in their reg
 ## Limitations {#limitations}
 
 `HAVING` can't be used if aggregation is not performed. Use `WHERE` instead.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... GROUP BY ... HAVING expr ...
 )",
@@ -2274,7 +2274,7 @@ SELECT ... GROUP BY ... HAVING expr ...
 
     factory.registerStatement("QUALIFY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Allows filtering window functions results. It is similar to the [WHERE](/reference/statements/select/where) clause, but the difference is that `WHERE` is performed before window functions evaluation, while `QUALIFY` is performed after it.
 
 It is possible to reference window functions results from `SELECT` clause in `QUALIFY` clause by their alias. Alternatively, `QUALIFY` clause can filter on results of additional window functions that are not returned in query results.
@@ -2302,7 +2302,7 @@ ORDER BY number;
 │      9 │               4 │
 └────────┴─────────────────┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... QUALIFY expr ...
 )",
@@ -2312,7 +2312,7 @@ SELECT ... QUALIFY expr ...
 
     factory.registerStatement("ORDER BY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `ORDER BY` clause contains
 
 - a list of expressions, e.g. `ORDER BY visits, search_phrase`,
@@ -2936,7 +2936,7 @@ This behavior is controlled by setting `use_with_fill_by_sorting_prefix` (enable
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'locale'] [, ...]
     [WITH FILL [FROM expr] [TO expr] [STEP expr] [STALENESS expr]] [INTERPOLATE [(expr_list)]] ...
@@ -2947,7 +2947,7 @@ SELECT ... ORDER BY expr [ASC | DESC] [NULLS FIRST | NULLS LAST] [COLLATE 'local
 
     factory.registerStatement("LIMIT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `LIMIT` clause controls how many rows are returned from your query results.
 
 ## Basic syntax {#basic-syntax}
@@ -3111,7 +3111,7 @@ This modifier can be combined with the [`ORDER BY ... WITH FILL`](/reference/sta
 ## See also {#see-also}
 
 - [LIMIT BY](/reference/statements/select/limit-by) — Limits rows per group of values, useful for getting top N results within each category.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... LIMIT m [WITH TIES]
 SELECT ... LIMIT n, m [WITH TIES]
@@ -3124,7 +3124,7 @@ SELECT TOP m ...
 
     factory.registerStatement("LIMIT BY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 A query with the `LIMIT n BY expressions` clause selects the first `n` rows for each distinct value of `expressions`. The key for `LIMIT BY` can contain any number of [expressions](/reference/syntax#expressions).
 
 ClickHouse supports the following syntax variants:
@@ -3318,7 +3318,7 @@ This is equivalent to:
 ```sql
 SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY id, val;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... LIMIT [offset_value, ]n BY expressions ...
 SELECT ... LIMIT n OFFSET offset_value BY expressions ...
@@ -3329,7 +3329,7 @@ SELECT ... LIMIT n OFFSET offset_value BY expressions ...
 
     factory.registerStatement("OFFSET FETCH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 `OFFSET` and `FETCH` allow you to retrieve data by portions. They specify a row block which you want to get by a single query.
 
 ```sql
@@ -3423,7 +3423,7 @@ SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
 │ 5 │ 7 │
 └───┴───┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... [OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
 SELECT ... [LIMIT [n, ]m] [OFFSET offset_row_count]

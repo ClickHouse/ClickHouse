@@ -89,7 +89,7 @@ void registerStatementUndrop(StatementFactory & factory)
 {
     factory.registerStatement("UNDROP",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Cancels the dropping of the table.
 
 Beginning with ClickHouse version 23.3, you can recover a table in an `Atomic` database with `UNDROP TABLE`
@@ -171,7 +171,7 @@ comment:
 codec_expression:
 ttl_expression:
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 UNDROP TABLE [db.]name [UUID '<uuid>'] [ON CLUSTER cluster]
 )",

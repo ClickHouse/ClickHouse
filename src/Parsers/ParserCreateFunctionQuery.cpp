@@ -396,7 +396,7 @@ void registerStatementCreateFunction(StatementFactory & factory)
 {
     factory.registerStatement("CREATE FUNCTION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates a user defined function (UDF) from a lambda expression. The expression must consist of function parameters, constants, operators, or other function calls.
 
 **Syntax**
@@ -468,7 +468,7 @@ SELECT create_query FROM system.functions WHERE name = 'exampleReplaceFunction';
 ### [Executable UDFs](/reference/functions/regular-functions/udf). {#executable-udfs}
 
 ### [User-defined functions in ClickHouse Cloud](https://clickhouse.com/blog/user-defined-functions-clickhouse-udfs) {#user-defined-functions-in-clickhouse-cloud}
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE [OR REPLACE] FUNCTION name [ON CLUSTER cluster] AS (parameter0, ...) -> expression
 )",

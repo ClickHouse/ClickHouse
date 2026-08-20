@@ -94,7 +94,7 @@ void registerStatementSetRole(StatementFactory & factory)
 {
     factory.registerStatement("SET ROLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Activates roles for the current user.
 
 ```sql
@@ -136,7 +136,7 @@ Set all the granted roles as default except for specific roles `role1` and `role
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]

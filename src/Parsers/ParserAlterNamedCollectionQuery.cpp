@@ -107,7 +107,7 @@ void registerStatementAlterNamedCollection(StatementFactory & factory)
 {
     factory.registerStatement("ALTER NAMED COLLECTION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
@@ -135,7 +135,7 @@ ALTER NAMED COLLECTION foobar SET a = '2' OVERRIDABLE, c = '3';
 
 ALTER NAMED COLLECTION foobar DELETE b;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
 [ SET key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ... ] |

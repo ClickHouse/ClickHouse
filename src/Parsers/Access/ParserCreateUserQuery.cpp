@@ -774,7 +774,7 @@ void registerStatementUser(StatementFactory & factory)
 {
     factory.registerStatement("CREATE USER",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates [user accounts](/concepts/features/security/access-rights#user-account-management).
 
 Syntax:
@@ -1022,7 +1022,7 @@ Use a query parameter to create the user account `john`:
 SET param_user=john;
 CREATE USER {user:Identifier};
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password | plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash | bcrypt_password | bcrypt_hash | ldap | kerberos | ssl_certificate | ssh_key | http | jwt | scram_sha256_password | scram_sha256_hash}] BY {'password' | 'hash'}} [,...]]
@@ -1040,7 +1040,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
     factory.registerStatement("ALTER USER",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Changes ClickHouse user accounts.
 
 Syntax:
@@ -1147,7 +1147,7 @@ Examples:
 - `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
 - `ALTER USER name1 VALID UNTIL 'infinity'`
 - `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]

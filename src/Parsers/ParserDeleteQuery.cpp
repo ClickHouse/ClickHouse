@@ -104,7 +104,7 @@ void registerStatementDelete(StatementFactory & factory)
 {
     factory.registerStatement("DELETE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The lightweight `DELETE` statement removes rows from the table `[db.]table` that match the expression `expr`. It is only available for the *MergeTree table engine family.
 
 ```sql
@@ -192,7 +192,7 @@ GRANT ALTER DELETE ON db.table to username;
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr
 )",

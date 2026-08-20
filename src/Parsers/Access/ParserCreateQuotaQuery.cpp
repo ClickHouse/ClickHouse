@@ -417,7 +417,7 @@ void registerStatementQuota(StatementFactory & factory)
 {
     factory.registerStatement("CREATE QUOTA",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates a [quota](/concepts/features/security/access-rights#quotas-management) that can be assigned to a user or a role.
 
 Syntax:
@@ -473,7 +473,7 @@ Further examples, using the xml configuration (not supported in ClickHouse Cloud
 ## Related Content {#related-content}
 
 - Blog: [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IN access_storage_type]
@@ -490,7 +490,7 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
     factory.registerStatement("ALTER QUOTA",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Changes quotas.
 
 Syntax:
@@ -527,7 +527,7 @@ For the default user limit the maximum execution time with half a second in 30 m
 ```sql
 ALTER QUOTA IF EXISTS qB FOR INTERVAL 30 minute MAX execution_time = 0.5, FOR INTERVAL 5 quarter MAX queries = 321, errors = 10 TO default;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER QUOTA [IF EXISTS] name [ON CLUSTER cluster_name]
     [RENAME TO new_name]

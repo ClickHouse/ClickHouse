@@ -401,7 +401,7 @@ void registerStatementTablesInSelect(StatementFactory & factory)
 {
     factory.registerStatement("FROM",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `FROM` clause specifies the source to read data from:
 
 - [Table](/reference/engines/table-engines/index)
@@ -510,7 +510,7 @@ The `system.one` table contains exactly one row (this table fulfills the same pu
 
 To execute a query, all the columns listed in the query are extracted from the appropriate table. Any columns not needed for the external query are thrown out of the subqueries.
 If a query does not list any columns (for example, `SELECT count() FROM t`), some column is extracted from the table anyway (the smallest one is preferred), in order to calculate the number of rows.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... FROM [db.]table | (subquery) | table_function | VALUES (...) [FINAL] [SAMPLE ...] ...
 FROM [db.]table SELECT ...
@@ -521,7 +521,7 @@ FROM [db.]table SELECT ...
 
     factory.registerStatement("JOIN",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `JOIN` clause produces a new table by combining columns from one or multiple tables by using values common to each. It is a common operation in databases with SQL support, which corresponds to [relational algebra](https://en.wikipedia.org/wiki/Relational_algebra#Joins_and_join-like_operators) join. The special case of one table join is often referred to as a "self-join".
 
 **Syntax**
@@ -1050,7 +1050,7 @@ LIMIT 10
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 2](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 3](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)
 - Blog: [ClickHouse: A Blazingly Fast DBMS with Full SQL Join Support - Under the Hood - Part 4](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr_list>
 FROM <left_table>
@@ -1063,7 +1063,7 @@ FROM <left_table>
 
     factory.registerStatement("ARRAY JOIN",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 It is a common operation for tables that contain an array column to produce a new table that has a row with each individual array element of that initial column, while values of other columns are duplicated. This is the basic case of what `ARRAY JOIN` clause does.
 
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
@@ -1443,7 +1443,7 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 ## Related content {#related-content}
 
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT <expr_list>
 FROM <left_subquery>
@@ -1457,7 +1457,7 @@ FROM <left_subquery>
 
     factory.registerStatement("SAMPLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `SAMPLE` clause allows for approximated `SELECT` query processing.
 
 When data sampling is enabled, the query is not performed on all the data, but only on a certain fraction of data (sample). For example, if you need to calculate statistics for all the visits, it is enough to execute the query on the 1/10 fraction of all the visits and then multiply the result by 10.
@@ -1565,7 +1565,7 @@ SAMPLE 1/10 OFFSET 1/2
 Here, a sample of 10% is taken from the second half of the data.
 
 `[------++------]`
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... FROM table SAMPLE k
 SELECT ... FROM table SAMPLE n

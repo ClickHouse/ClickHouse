@@ -54,7 +54,7 @@ void registerStatementParallelWith(StatementFactory & factory)
 {
     factory.registerStatement("PARALLEL WITH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Allows to execute multiple statements in parallel.
 
 ## Syntax {#syntax}
@@ -95,7 +95,7 @@ The `PARALLEL WITH` clause is a bit similar to [UNION](/reference/statements/sel
 - `PARALLEL WITH` doesn't return any results from executing its operands, it can only rethrow an exception from them if any;
 - `PARALLEL WITH` doesn't require its operands to have the same set of result columns;
 - `PARALLEL WITH` can execute any statements (not just `SELECT`).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
 )",

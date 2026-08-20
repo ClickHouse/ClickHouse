@@ -141,7 +141,7 @@ void registerStatementOptimize(StatementFactory & factory)
 {
     factory.registerStatement("OPTIMIZE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 This query tries to initialize an unscheduled merge of data parts for tables. Note that we generally recommend against using `OPTIMIZE TABLE ... FINAL` (see these [docs](/concepts/best-practices/avoid-optimize-final)) as its use case is meant for administration, not for daily operations.
 
 <Note>
@@ -407,7 +407,7 @@ SELECT * FROM example;
 │           1 │             1 │     2 │             3 │
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL | FORCE] [DEDUPLICATE [BY expression]]
 OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUPLICATE [BY expression]] [CLEANUP]

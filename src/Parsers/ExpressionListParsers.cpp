@@ -4097,7 +4097,7 @@ void registerStatementIn(StatementFactory & factory)
 {
     factory.registerStatement("IN",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `IN`, `NOT IN`, `GLOBAL IN`, and `GLOBAL NOT IN` operators are covered separately, since their functionality is quite rich.
 
 The left side of the operator is either a single column or a tuple.
@@ -4395,7 +4395,7 @@ Therefore adding the [max_parallel_replicas](#distributed-subqueries-and-max_par
 One workaround if `local_table_2` does not meet the requirements, is to use `GLOBAL IN` or `GLOBAL JOIN`.
 
 If a table doesn't have a sampling key, more flexible options for [parallel_replicas_custom_key](/reference/settings/session-settings/parallel-replicas#parallel_replicas_custom_key) can be used that can produce different and more optimal behaviour.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 expr IN (literal [, ...])
 expr IN table | (subquery) | table_function(...)

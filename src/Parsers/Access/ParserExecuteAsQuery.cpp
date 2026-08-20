@@ -86,7 +86,7 @@ void registerStatementExecuteAs(StatementFactory & factory)
 {
     factory.registerStatement("EXECUTE AS",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
@@ -122,7 +122,7 @@ SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
 CREATE USER james;
 EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 EXECUTE AS target_user
 EXECUTE AS target_user subquery

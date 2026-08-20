@@ -199,7 +199,7 @@ void registerStatementSettingsProfile(StatementFactory & factory)
 {
     factory.registerStatement("CREATE SETTINGS PROFILE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates [settings profiles](/concepts/features/security/access-rights#settings-profiles-management) that can be assigned to a user or a role.
 
 Syntax:
@@ -228,7 +228,7 @@ CREATE
 SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000
 TO robin
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
     [ON CLUSTER cluster_name]
@@ -242,7 +242,7 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
     factory.registerStatement("ALTER SETTINGS PROFILE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Changes settings profiles.
 
 Syntax:
@@ -417,7 +417,7 @@ ALTER SETTINGS PROFILE p ADD PROFILES base_profile;
 ALTER SETTINGS PROFILE p DROP PROFILES base_profile;
 ALTER SETTINGS PROFILE p DROP ALL PROFILES;
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]

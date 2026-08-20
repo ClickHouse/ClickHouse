@@ -200,7 +200,7 @@ void registerStatementExplain(StatementFactory & factory)
 {
     factory.registerStatement("EXPLAIN",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Shows the execution plan of a statement.
 
 <div class='vimeo-container'>
@@ -1286,7 +1286,7 @@ PARTITION BY toYYYYMM(assumeNotNull(created))
 <Note>
 The validation is not complete, so a successful query does not guarantee that the override would not cause issues.
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ANALYZE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [

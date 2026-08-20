@@ -422,7 +422,7 @@ void registerStatementSet(StatementFactory & factory)
 {
     factory.registerStatement("SET",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 SET param = value
 ```
@@ -491,7 +491,7 @@ Query parameters are particularly useful when the same query needs to be execute
 For more detailed information about query parameters, including usage with the `Identifier` type, see [Defining and Using Query Parameters](/reference/syntax#defining-and-using-query-parameters).
 
 For more information, see [Settings](/reference/settings/session-settings).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SET param = value
 SET profile = 'profile-name-from-the-settings-file'

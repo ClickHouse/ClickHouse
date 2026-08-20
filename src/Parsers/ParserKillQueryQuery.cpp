@@ -70,7 +70,7 @@ void registerStatementKillQuery(StatementFactory & factory)
 {
     factory.registerStatement("KILL",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 There are two kinds of kill statements: to kill a query and to kill a mutation
 
 ## KILL QUERY {#kill-query}
@@ -209,7 +209,7 @@ Changes already made by the mutation are not rolled back.
 <Note>
 `is_killed=1` column (ClickHouse Cloud only) in the [system.mutations](/reference/system-tables/mutations) table does not necessarily mean the mutation is completely finalized. It is possible for a mutation to remain in a state where `is_killed=1` and `is_done=0` for an extended period. This can happen if another long-running mutation is blocking the killed mutation. This is a normal situation.
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 KILL QUERY [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.processes query> [SYNC|ASYNC|TEST] [FORMAT format]
 KILL MUTATION [ON CLUSTER cluster] WHERE <where expression to SELECT FROM system.mutations query> [TEST] [FORMAT format]

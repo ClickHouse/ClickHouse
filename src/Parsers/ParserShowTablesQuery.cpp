@@ -219,7 +219,7 @@ void registerStatementShow(StatementFactory & factory)
 {
     factory.registerStatement("SHOW",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 <Note>
 
 `SHOW CREATE (TABLE|DATABASE|USER)` hides secrets unless the following settings are turned on:
@@ -939,7 +939,7 @@ The `SHOW CREATE MASKING POLICY` statement shows parameters which were used at [
 ```sql title="Syntax"
 SHOW CREATE MASKING POLICY name ON [database.]table
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SHOW [CREATE] TABLE | DICTIONARY | VIEW | DATABASE [db.]name [INTO OUTFILE filename] [FORMAT format]
 SHOW [FULL] [TEMPORARY] TABLES [{FROM | IN} <db>] [[NOT] LIKE | ILIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]

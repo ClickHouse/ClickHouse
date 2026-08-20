@@ -61,7 +61,7 @@ void registerStatementUse(StatementFactory & factory)
 {
     factory.registerStatement("USE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 USE [DATABASE] db
 ```
@@ -71,7 +71,7 @@ Lets you set the current database for the session.
 The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
 
 This query can't be made when using the HTTP protocol, since there is no concept of a session.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 USE [DATABASE] db
 )",

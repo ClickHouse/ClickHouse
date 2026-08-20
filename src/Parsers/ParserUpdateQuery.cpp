@@ -106,7 +106,7 @@ void registerStatementUpdate(StatementFactory & factory)
 {
     factory.registerStatement("UPDATE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
@@ -221,7 +221,7 @@ Patch parts of both formats remain readable and applicable regardless of the set
 - [`ALTER UPDATE`](/reference/statements/alter/update) - Heavy `UPDATE` operations
 - [Lightweight `DELETE`](/reference/statements/delete) - Lightweight `DELETE` operations
 - [`APPLY PATCHES`](/reference/statements/alter/apply-patches) - Force physical materialization of patches to data parts (mutation operation)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 )",

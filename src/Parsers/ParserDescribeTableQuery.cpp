@@ -174,7 +174,7 @@ void registerStatementDescribeTable(StatementFactory & factory)
 {
     factory.registerStatement("DESCRIBE TABLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Returns information about table columns.
 
 **Syntax**
@@ -251,7 +251,7 @@ This usage returns metadata about the result columns of the specified query or s
 **See Also**
 
 - [describe_include_subcolumns](/reference/settings/session-settings/describe-include#describe_include_subcolumns) setting.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 DESC|DESCRIBE [TABLE] [db.]table | (subquery) | table_function [INTO OUTFILE filename] [FORMAT format]
 )",

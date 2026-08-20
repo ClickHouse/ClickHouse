@@ -2093,9 +2093,9 @@ void registerStatementCreate(StatementFactory & factory)
 {
     factory.registerStatement("CREATE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 CREATE queries create (for example) new [databases](/reference/statements/create/database), [tables](/reference/statements/create/table) and [views](/reference/statements/create/view).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE DATABASE ...
 CREATE TABLE ...
@@ -2110,7 +2110,7 @@ CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 
     factory.registerStatement("CREATE DATABASE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates a new database.
 
 ```sql
@@ -2190,7 +2190,7 @@ Applies to database engines that store table metadata on disk (e.g. `Atomic`, `O
 - The first query to an unloaded table incurs a one-time loading cost (parsing the stored `CREATE TABLE` statement and initializing the engine).
 
 Default value: `0` (disabled).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 )",
@@ -2200,7 +2200,7 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
     factory.registerStatement("CREATE TABLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Creates a new table. By default, tables are created only on the current server.
 Distributed DDL queries are implemented as `ON CLUSTER` clause, which is [described separately](/reference/statements/distributed-ddl).
 
@@ -2638,7 +2638,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 
 - Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
@@ -2658,7 +2658,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], ...)] ENGINE = engi
 
     factory.registerStatement("CREATE TEMPORARY TABLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ## Temporary table support {#temporary-table-support}
 
 <Note>
@@ -2690,7 +2690,7 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 In most cases, temporary tables are not created manually, but when using external data for a query, or for distributed `(GLOBAL) IN`. For more information, see the appropriate sections
 
 It's possible to use tables with [ENGINE = Memory](/reference/engines/table-engines/special/memory) instead of temporary tables.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 (
@@ -2704,7 +2704,7 @@ CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
 
     factory.registerStatement("REPLACE TABLE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ## Overview {#overview}
 
 The `REPLACE` statement allows you to update a table [atomically](/concepts/core-concepts/glossary#atomicity).
@@ -2871,7 +2871,7 @@ SELECT * FROM base.t1;
 ```
 </Tab>
 </Tabs>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 {CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
 )",
@@ -2881,7 +2881,7 @@ SELECT * FROM base.t1;
 
     factory.registerStatement("CODEC",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
@@ -3148,7 +3148,7 @@ Selection currently covers integer-like columns: integers, enums, dates and time
 
 - Blog: [Optimizing ClickHouse with Schemas and Codecs](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 - Blog: [Working with time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
 )",
@@ -3158,7 +3158,7 @@ column_name type CODEC(codec1[(arguments)][, codec2[(arguments)], ...])
 
     factory.registerStatement("CREATE VIEW",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { DeprecatedBadge } from "/snippets/components/DeprecatedBadge/DeprecatedBadge.jsx";
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -3849,7 +3849,7 @@ GLOBAL ANY INNER JOIN v_ids USING (id)
 WHERE n.number < 100;
 
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
@@ -3868,7 +3868,7 @@ AS SELECT ...
 
     factory.registerStatement("CREATE DICTIONARY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { CloudSupportedBadge } from "/snippets/components/CloudSupportedBadge/CloudSupportedBadge.jsx";
 
@@ -3954,7 +3954,7 @@ You can configure any number of dictionaries in the same file.
 - [Attributes](/reference/statements/create/dictionary/attributes) — Key and attribute configuration
 - [Embedded Dictionaries](/reference/statements/create/dictionary/embedded) — Built-in geobase dictionaries
 - [system.dictionaries](/reference/system-tables/dictionaries) — System table with dictionary information
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE [OR REPLACE] DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
@@ -3975,7 +3975,7 @@ COMMENT 'Comment'
 
     factory.registerStatement("CREATE NAMED COLLECTION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
@@ -4006,7 +4006,7 @@ CREATE NAMED COLLECTION foobar AS a = '1', b = '2' OVERRIDABLE;
 **See Also**
 
 - [Named collections guide](/concepts/features/configuration/server-config/named-collections)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE NAMED COLLECTION [IF NOT EXISTS] name [ON CLUSTER cluster]
 AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT] OVERRIDABLE], ...
@@ -4017,7 +4017,7 @@ AS key_name1 = 'some value' [[NOT] OVERRIDABLE], key_name2 = 'some value' [[NOT]
 
     factory.registerStatement("ATTACH",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Attaches a table or a dictionary, for example, when moving a database to another server.
 
 **Syntax**
@@ -4140,7 +4140,7 @@ Attaches a previously detached database.
 ```sql
 ATTACH DATABASE [IF NOT EXISTS] name [ENGINE=<database engine>] [ON CLUSTER cluster]
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ATTACH TABLE|VIEW|DICTIONARY|DATABASE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster] ...
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]

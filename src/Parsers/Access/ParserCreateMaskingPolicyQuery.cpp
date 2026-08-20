@@ -238,7 +238,7 @@ void registerStatementMaskingPolicy(StatementFactory & factory)
 {
     factory.registerStatement("CREATE MASKING POLICY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge/>
@@ -322,7 +322,7 @@ PRIORITY 10;
 - Masking policies may impact query performance depending on expression complexity
 - Some optimizations may be disabled for tables with active masking policies
 </Info>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
     UPDATE column1 = expression1 [, column2 = expression2 ...]
@@ -336,7 +336,7 @@ CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]tab
 
     factory.registerStatement("ALTER MASKING POLICY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudOnlyBadge } from "/snippets/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge/>
@@ -354,7 +354,7 @@ ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
 ```
 
 All clauses are optional. Only the specified clauses will be updated.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
     [UPDATE column1 = expression1 [, column2 = expression2 ...]]

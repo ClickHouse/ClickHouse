@@ -102,7 +102,7 @@ void registerStatementMoveAccessEntity(StatementFactory & factory)
 {
     factory.registerStatement("MOVE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 This statement allows to move an access entity from one access storage to another.
 
 Syntax:
@@ -127,7 +127,7 @@ MOVE USER test TO local_directory
 ```sql
 MOVE ROLE test TO memory
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 MOVE {USER | ROLE | QUOTA | SETTINGS PROFILE | ROW POLICY} name1 [, name2, ...] TO access_storage_type
 )",

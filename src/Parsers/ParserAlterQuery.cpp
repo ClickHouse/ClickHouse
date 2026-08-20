@@ -1264,7 +1264,7 @@ void registerStatementAlter(StatementFactory & factory)
 {
     factory.registerStatement("ALTER",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Most `ALTER TABLE` queries modify table settings or data:
 
 | Modifier                                                                            |
@@ -1359,7 +1359,7 @@ If you need ordered mutation apply, you can still issue one `MATERIALIZE INDEX` 
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]name [ON CLUSTER cluster] action [, action ...]
 ALTER DATABASE [db.]name [ON CLUSTER cluster] action
@@ -1373,7 +1373,7 @@ ALTER USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
 
     factory.registerStatement("ALTER TABLE ... COLUMN",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 A set of queries that allow changing the table structure.
 
 Syntax:
@@ -1751,7 +1751,7 @@ If the `ALTER` query is not sufficient to make the table changes you need, you c
 The `ALTER` query blocks all reads and writes for the table. In other words, if a long `SELECT` is running at the time of the `ALTER` query, the `ALTER` query will wait for it to complete. At the same time, all new queries to the same table will wait while this `ALTER` is running.
 
 For tables that do not store data themselves (such as [Merge](/reference/statements/alter/index) and [Distributed](/reference/statements/alter/index)), `ALTER` just changes the table structure, and does not change the structure of subordinate tables. For example, when running ALTER for a `Distributed` table, you will also need to run `ALTER` for the tables on all remote servers.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
 
@@ -1770,7 +1770,7 @@ MATERIALIZE COLUMN name [IN PARTITION partition_id]
 
     factory.registerStatement("ALTER TABLE ... PARTITION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The following operations with [partitions](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) are available:
 
 - [DETACH PARTITION\|PART](#detach-partitionpart) — Moves a partition or part to the `detached` directory and forget it.
@@ -2147,7 +2147,7 @@ OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 `IN PARTITION` specifies the partition to which the [UPDATE](/reference/statements/alter/update) or [DELETE](/reference/statements/alter/delete) expressions are applied as a result of the `ALTER TABLE` query. New parts are created only from the specified partition. In this way, `IN PARTITION` helps to reduce the load when the table is divided into many partitions, and you only need to update the data point-by-point.
 
 The examples of `ALTER ... PARTITION` queries are demonstrated in the tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) and [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -2171,7 +2171,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] MODIFY PARTITION|PART partition_expr
 
     factory.registerStatement("ALTER TABLE ... DELETE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 ```
@@ -2199,7 +2199,7 @@ The synchronicity of the query processing is defined by the [mutations_sync](/re
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 )",
@@ -2209,7 +2209,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE WHERE filter_expr
 
     factory.registerStatement("ALTER TABLE ... UPDATE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 ```
@@ -2276,7 +2276,7 @@ column for this reason. To bring such a column up to date, re-`INSERT` the affec
 ## Related content {#related-content}
 
 - Blog: [Handling Updates and Deletes in ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 )",
@@ -2286,7 +2286,7 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 
     factory.registerStatement("ALTER TABLE ... MODIFY ORDER BY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 ```
@@ -2298,7 +2298,7 @@ The command is lightweight in a sense that it only changes metadata. To keep the
 <Note>
 It only works for tables in the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 )",
@@ -2308,7 +2308,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
 
     factory.registerStatement("ALTER TABLE ... MODIFY SAMPLE BY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The following operations are available:
 
 ## MODIFY {#modify}
@@ -2332,7 +2332,7 @@ The commands `MODIFY` and `REMOVE` are lightweight in the sense that they only c
 <Note>
 It only works for tables in the [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) family (including [replicated](/reference/engines/table-engines/mergetree-family/replication) tables).
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SAMPLE BY new_expression
 ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
@@ -2343,7 +2343,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] REMOVE SAMPLE BY
 
     factory.registerStatement("ALTER TABLE ... MODIFY TTL",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 <Note>
 If you are looking for details on using TTL for managing old data, check out the [Manage Data with TTL](/concepts/features/operations/delete/ttl) user guide. The docs below demonstrate how to alter or remove an existing TTL rule.
 </Note>
@@ -2426,7 +2426,7 @@ The `TTL` is no longer there, so the second row is not deleted:
 
 - More about the [TTL-expression](/reference/statements/create/table#ttl-expression).
 - Modify column [with TTL](/reference/statements/alter/ttl).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] MODIFY TTL ttl_expression
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
@@ -2437,7 +2437,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] REMOVE TTL
 
     factory.registerStatement("ALTER TABLE ... MODIFY SETTING",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 There is a set of queries to change table settings. You can modify settings or reset them to default values. A single query can change several settings at once.
 If a setting with the specified name does not exist, then the query raises an exception.
 
@@ -2491,7 +2491,7 @@ ALTER TABLE example_table RESET SETTING max_part_loading_threads;
 **See Also**
 
 - [MergeTree settings](/reference/settings/merge-tree-settings)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY SETTING setting_name = value [, ...]
 ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
@@ -2502,7 +2502,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] RESET SETTING setting_name [, ...]
 
     factory.registerStatement("ALTER TABLE ... CONSTRAINT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Constraints could be added, modified or deleted using following syntax:
 
 ```sql
@@ -2524,7 +2524,7 @@ Constraint check **will not be executed** on existing data if it was added or mo
 </Tip>
 
 All changes on replicated tables are broadcast to ZooKeeper and will be applied on other replicas as well.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] ADD CONSTRAINT [IF NOT EXISTS] constraint_name {CHECK|ASSUME} expression
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY CONSTRAINT [IF EXISTS] constraint_name {CHECK|ASSUME} expression
@@ -2536,7 +2536,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] DROP CONSTRAINT [IF EXISTS] constrain
 
     factory.registerStatement("ALTER TABLE ... INDEX",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The following operations are available:
 
 ## ADD INDEX {#add-index}
@@ -2570,7 +2570,7 @@ Index manipulation is supported only for tables with [`*MergeTree`](/reference/e
 On replicated tables, rapid separate `ALTER`s against one table can raise `CANNOT_ASSIGN_ALTER` (code 517) when previous `ALTER`s have not yet been applied on the replica (metadata still behind — can remain true after an earlier alter was already assigned). This is a general concurrent metadata-`ALTER` / mutation condition (not mutation-only); serialize/retry, wait for prior mutation-producing alters via [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) / `is_done` in [`system.mutations`](/reference/system-tables/mutations), or combine independent metadata operations into one multi-clause `ALTER` when the grammar allows it. See [Synchronicity of ALTER Queries](/reference/statements/alter/index#synchronicity-of-alter-queries) and [Concurrent ALTER assignment](/reference/statements/alter/index#concurrent-alter-assignment-on-one-table).
 
 Multiple `MATERIALIZE INDEX` clauses can appear in one `ALTER`. The covered case in-tree is packing several `ADD INDEX` clauses together with `MATERIALIZE INDEX` for those same new indexes in a single statement (`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). That packed form is for ordinary (non-`DatabaseReplicated`) databases — `DatabaseReplicated` rejects mixed `ADD INDEX` + `MATERIALIZE INDEX` segments with `QUERY_IS_PROHIBITED`. Materialize-only multi-clause forms on already-existing indexes follow the same metadata-snapshot prepare path in the current implementation, but that exact shape is not yet covered by a focused stateless test—treat it as current implementation behavior rather than a separately guaranteed contract until such coverage exists. For ordered apply, issue one `MATERIALIZE INDEX` per statement and wait with [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] ADD INDEX [IF NOT EXISTS] name expression TYPE type [GRANULARITY value] [FIRST|AFTER name]
 ALTER TABLE [db.]table_name [ON CLUSTER cluster] DROP INDEX [IF EXISTS] name
@@ -2583,7 +2583,7 @@ ALTER TABLE [db.]table_name [ON CLUSTER cluster] CLEAR INDEX [IF EXISTS] name [I
 
     factory.registerStatement("ALTER TABLE ... PROJECTION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 This page discusses what projections are, how you can use them and various options for manipulating projections.
 
 ## Overview of projections {#overview}
@@ -2998,7 +2998,7 @@ ENGINE = MergeTree ORDER BY id;
 - ["Control Of Projections During Merges" (blog post)](https://clickhouse.com/blog/clickhouse-release-24-08#control-of-projections-during-merges)
 - ["Projections" (guide)](/concepts/features/projections/projections#using-projections-to-speed-up-UK-price-paid)
 - ["Materialized Views versus Projections"](/concepts/features/projections/materialized-views-versus-projections)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]name [ON CLUSTER cluster] ADD PROJECTION [IF NOT EXISTS] name (SELECT <COLUMN LIST EXPR> [WHERE <expr>] [ORDER BY] | [GROUP BY]) [WITH SETTINGS (setting_name = setting_value, ...)]
 ALTER TABLE [db.]name [ON CLUSTER cluster] DROP PROJECTION [IF EXISTS] name
@@ -3011,7 +3011,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] CLEAR PROJECTION [IF EXISTS] name [IN
 
     factory.registerStatement("ALTER TABLE ... STATISTICS",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge/>
@@ -3043,7 +3043,7 @@ ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 <Note>
 Statistic are supported only for [`*MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) engine tables (including [replicated](/reference/engines/table-engines/mergetree-family/replication) variants).
 </Note>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)
 ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)
@@ -3057,7 +3057,7 @@ ALTER TABLE [db].table MATERIALIZE STATISTICS [IF EXISTS] (column list)
 
     factory.registerStatement("ALTER TABLE ... MODIFY COMMENT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Adds, modifies, or removes a table comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.tables`](/reference/system-tables/tables)
 and in the `SHOW CREATE TABLE` query.
@@ -3135,7 +3135,7 @@ ClickHouse versions.
 
 - [`COMMENT`](/reference/statements/create/table#comment-clause) clause
 - [`ALTER DATABASE ... MODIFY COMMENT`](/reference/statements/alter/database-comment)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
@@ -3145,7 +3145,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
     factory.registerStatement("ALTER DATABASE ... MODIFY COMMENT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Adds, modifies, or removes a database comment, regardless of whether it was set
 before or not. The comment change is reflected in both [`system.databases`](/reference/system-tables/databases)
 and the `SHOW CREATE DATABASE` query.
@@ -3210,7 +3210,7 @@ WHERE  name = 'database_with_comment';
 
 - [`COMMENT`](/reference/statements/create/table#comment-clause) clause
 - [`ALTER TABLE ... MODIFY COMMENT`](/reference/statements/alter/comment)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 )",
@@ -3220,7 +3220,7 @@ ALTER DATABASE [db].name [ON CLUSTER cluster] MODIFY COMMENT 'Comment'
 
     factory.registerStatement("ALTER TABLE ... MODIFY QUERY",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 You can modify `SELECT` query that was specified when a [materialized view](/reference/statements/create/view#materialized-view) was created with the `ALTER TABLE ... MODIFY QUERY` statement without interrupting ingestion process.
 
 This command is created to change materialized view created with `TO [db.]name` clause. It does not change the structure of the underlying storage table and it does not change the columns' definition of the materialized view, because of this the application of this command is very limited for materialized views are created without `TO [db.]name` clause.
@@ -3443,7 +3443,7 @@ Limitations:
 - The `all_replicas` refresh setting cannot be changed after the view is created.
 
 The full list of refresh settings is documented in [Refresh Settings](/reference/statements/create/view#refresh-settings). Refresh status, including the currently applied settings, is visible in [`system.view_refreshes`](/reference/system-tables/view_refreshes).
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 )",
@@ -3453,7 +3453,7 @@ ALTER TABLE [db.]name [ON CLUSTER cluster] MODIFY QUERY SELECT ...
 
     factory.registerStatement("ALTER TABLE ... APPLY DELETED MASK",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 ```sql
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 ```
@@ -3468,7 +3468,7 @@ It only works for tables in the [`MergeTree`](/reference/engines/table-engines/m
 
 - [Lightweight deletes](/reference/statements/delete)
 - [Heavyweight deletes](/reference/statements/alter/delete)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION partition_id]
 )",
@@ -3478,7 +3478,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] APPLY DELETED MASK [IN PARTITION part
 
     factory.registerStatement("ALTER TABLE ... APPLY PATCHES",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge/>
@@ -3537,7 +3537,7 @@ WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
 
 - [Lightweight `UPDATE`](/reference/statements/update) - Create patch parts with lightweight updates
 - [`apply_patches_on_merge` setting](/reference/settings/merge-tree-settings/other#apply_patches_on_merge) - Control automatic patch application during merges
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
 )",

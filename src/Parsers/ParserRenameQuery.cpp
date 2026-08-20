@@ -119,7 +119,7 @@ void registerStatementRename(StatementFactory & factory)
 {
     factory.registerStatement("RENAME",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
 Note that the `RENAME` query with several entities is non-atomic operation. To swap entities names atomically, use the [EXCHANGE](/reference/statements/exchange) statement.
 
@@ -176,7 +176,7 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 **See Also**
 
 - [Dictionaries](/reference/statements/create/dictionary)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 )",
@@ -185,7 +185,7 @@ RENAME [DATABASE|TABLE|DICTIONARY] name TO new_name [,...] [ON CLUSTER cluster]
 
     factory.registerStatement("EXCHANGE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Exchanges the names of two tables or dictionaries atomically.
 This task can also be accomplished with a [`RENAME`](/reference/statements/rename) query using a temporary name, but the operation is not atomic in that case.
 
@@ -282,7 +282,7 @@ EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
 **See Also**
 
 - [Dictionaries](/reference/statements/create/dictionary)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
 )",

@@ -218,7 +218,7 @@ void registerStatementGrant(StatementFactory & factory)
 {
     factory.registerStatement("GRANT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 - Grants [privileges](#privileges) to ClickHouse user accounts or roles.
@@ -1024,7 +1024,7 @@ Doesn't grant any privileges.
 ### ADMIN OPTION {#admin-option}
 
 The `ADMIN OPTION` privilege allows a user to grant their role to another user.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
@@ -1034,7 +1034,7 @@ GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_US
 
     factory.registerStatement("REVOKE",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 Revokes privileges from users or roles.
 
 ## Syntax {#syntax}
@@ -1076,7 +1076,7 @@ REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
 [Original article](/reference/settings/session-settings)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]

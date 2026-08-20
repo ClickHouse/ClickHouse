@@ -1142,7 +1142,7 @@ void registerStatementSystem(StatementFactory & factory)
 {
     factory.registerStatement("SYSTEM",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 ## SYSTEM RELOAD EMBEDDED DICTIONARIES {#reload-embedded-dictionaries}
@@ -2096,7 +2096,7 @@ Blocks until the given file has been processed or permanently failed by the give
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
 SYSTEM RELOAD [EMBEDDED] DICTIONARIES | DICTIONARY [db.]name

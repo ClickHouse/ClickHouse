@@ -54,7 +54,7 @@ void registerStatementUnion(StatementFactory & factory)
 {
     factory.registerStatement("UNION",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 You can use `UNION` with explicitly specifying `UNION ALL` or `UNION DISTINCT`.
 
 If you don't specify `ALL` or `DISTINCT`, it will depend on the `union_default_mode` setting. The difference between `UNION ALL` and `UNION DISTINCT` is that `UNION DISTINCT` will do a distinct transform for union result, it is equivalent to `SELECT DISTINCT` from a subquery containing `UNION ALL`.
@@ -125,7 +125,7 @@ Queries that are parts of `UNION/UNION ALL/UNION DISTINCT` can be run simultaneo
 
 - [insert_null_as_default](/reference/settings/session-settings/insert#insert_null_as_default) setting.
 - [union_default_mode](/reference/settings/session-settings/other#union_default_mode) setting.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 )",
@@ -135,7 +135,7 @@ SELECT ... UNION [ALL | DISTINCT] SELECT ... [UNION [ALL | DISTINCT] SELECT ...]
 
     factory.registerStatement("INTERSECT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `INTERSECT` clause returns only those rows that result from both the first and the second queries. The queries must match the number of columns, order, and type. The result of `INTERSECT` can contain duplicate rows.
 
 Multiple `INTERSECT` statements are executed left to right if parentheses are not specified. The `INTERSECT` operator has a higher priority than the `UNION` and `EXCEPT` clauses.
@@ -278,7 +278,7 @@ WHERE price > 100;
 
 - [UNION](/reference/statements/select/union)
 - [EXCEPT](/reference/statements/select/except)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT column1 [, column2] FROM table1 [WHERE condition]
 INTERSECT [ALL | DISTINCT]
@@ -290,7 +290,7 @@ SELECT column1 [, column2] FROM table2 [WHERE condition]
 
     factory.registerStatement("EXCEPT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 > The `EXCEPT` clause returns only those rows that result from the first query without the second.
 
 - Both queries must have the same number of columns in the same order and data type.
@@ -488,7 +488,7 @@ WHERE price < 10;
 
 - [UNION](/reference/statements/select/union)
 - [INTERSECT](/reference/statements/select/intersect)
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 SELECT column1 [, column2] FROM table1 [WHERE condition]
 EXCEPT [ALL | DISTINCT]

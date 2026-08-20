@@ -45,7 +45,7 @@ void registerStatementOnCluster(StatementFactory & factory)
 {
     factory.registerStatement("ON CLUSTER",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 By default, the `CREATE`, `DROP`, `ALTER`, and `RENAME` queries affect only the current server where they are executed. In a cluster setup, it is possible to run such queries in a distributed manner with the `ON CLUSTER` clause.
 
 For example, the following query creates the `all_hits` `Distributed` table on each host in `cluster`:
@@ -61,7 +61,7 @@ The local version of the query will eventually be executed on each host in the c
 <Warning>
 The order for executing queries within a single host is guaranteed.
 </Warning>
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 <query> ... ON CLUSTER cluster ...
 )",

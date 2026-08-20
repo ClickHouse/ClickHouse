@@ -38,7 +38,7 @@ void registerStatementCheckGrant(StatementFactory & factory)
 {
     factory.registerStatement("CHECK GRANT",
     {
-        .description = R"MARKDOWN(
+        .description = R"DOCS_MD(
 The `CHECK GRANT` query is used to check whether the current user/role has been granted a specific privilege.
 
 ## Syntax {#syntax}
@@ -78,7 +78,7 @@ CHECK GRANT SELECT(col2) ON table_2;
 
 ## Wildcard {#wildcard}
 Specifying privileges you can use asterisk (`*`) instead of a table or a database name. Please check [WILDCARD GRANTS](/reference/statements/grant#wildcard-grants) for wildcard rules.
-)MARKDOWN",
+)DOCS_MD",
         .syntax = R"(
 CHECK GRANT privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*}
 )",
