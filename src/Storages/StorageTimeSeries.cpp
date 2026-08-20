@@ -84,7 +84,14 @@ std::vector<StorageTimeSeries::Target> StorageTimeSeries::buildTargets(
     }
 
     std::vector<Target> targets;
-    for (auto target_kind : getTargetKinds())
+    std::vector<ViewTarget::Kind> kinds{getTargetKinds().begin(), getTargetKinds().end()};
+
+    /// The optional "histograms" target exists only when the normalized create query declares it
+    /// (an external table, or inner columns added by normalizeTimeSeriesDefinition()).
+    if (create_query.hasTargetTableID(ViewTarget::Histograms) || create_query.getTargetInnerColumns(ViewTarget::Histograms))
+        kinds.push_back(ViewTarget::Histograms);
+
+    for (auto target_kind : kinds)
     {
         Target target;
         target.kind = target_kind;
@@ -171,13 +178,33 @@ StoragePtr StorageTimeSeries::tryGetTargetTable(ViewTarget::Kind target_kind, co
     return getTargetTableImpl(target_kind, local_context, /* throw_if_not_found = */ false);
 }
 
+const StorageTimeSeries::Target * StorageTimeSeries::tryGetTargetInfo(ViewTarget::Kind target_kind) const
+{
+    /// `targets` is populated in the `getTargetKinds()` order, with the optional Histograms target last.
+    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
+    if (index < targets.size() && targets[index].kind == target_kind)
+        return &targets[index];
+    if (target_kind != ViewTarget::Histograms)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
+    return nullptr;
+}
+
+bool StorageTimeSeries::hasTarget(ViewTarget::Kind target_kind) const
+{
+    return tryGetTargetInfo(target_kind) != nullptr;
+}
+
 StoragePtr StorageTimeSeries::getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    const auto & target = targets[index];
+    const auto * target_info = tryGetTargetInfo(target_kind);
+    if (!target_info)
+    {
+        if (throw_if_not_found)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries table {} has no {} target table",
+                            getStorageID().getNameForLogs(), target_kind);
+        return nullptr;
+    }
+    const auto & target = *target_info;
 
     auto lookup = [&](const StorageID & id) -> StoragePtr
     {
@@ -250,11 +277,8 @@ StorageID StorageTimeSeries::tryGetTargetTableID(ViewTarget::Kind target_kind, c
 
 bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 {
-    /// `targets` is populated in the `getTargetKinds()` order.
-    auto index = static_cast<size_t>(target_kind - ViewTarget::Samples);
-    if (index >= targets.size() || targets[index].kind != target_kind)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected target kind {} (index={})", target_kind, index);
-    return targets[index].is_inner_table;
+    const auto * target_info = tryGetTargetInfo(target_kind);
+    return target_info && target_info->is_inner_table;
 }
 
 
@@ -271,8 +295,9 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
+        auto target_kind = target.kind;
         if (isInnerTable(target_kind))
         {
             if (auto inner_table_id = tryGetTargetTableID(target_kind, local_context))
@@ -292,12 +317,12 @@ void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) c
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        if (!isInnerTable(target_kind))
+        if (!target.is_inner_table)
             continue;
 
-        if (auto inner_table = tryGetTargetTable(target_kind, query_context))
+        if (auto inner_table = tryGetTargetTable(target.kind, query_context))
             inner_table->checkTableSizeBelowDropLimit(query_context);
     }
 }
@@ -310,12 +335,12 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
                         getStorageID().getNameForLogs());
     }
 
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
         /// We truncate only inner tables here.
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
-            auto inner_table_id = getTargetTableID(target_kind, local_context);
+            auto inner_table_id = getTargetTableID(target.kind, local_context);
             InterpreterDropQuery::executeDropQuery(
                 ASTDropQuery::Kind::Truncate, getContext(), local_context, inner_table_id, /* sync= */ true);
         }
@@ -328,11 +353,11 @@ std::optional<UInt64> StorageTimeSeries::totalRows(ContextPtr query_context) con
     if (!hasInnerTables())
         return 0;
     UInt64 total_rows = 0;
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
-            auto inner_table = tryGetTargetTable(target_kind, query_context);
+            auto inner_table = tryGetTargetTable(target.kind, query_context);
             if (!inner_table)
                 return std::nullopt;
 
@@ -351,11 +376,11 @@ std::optional<UInt64> StorageTimeSeries::totalBytes(ContextPtr query_context) co
     if (!hasInnerTables())
         return 0;
     UInt64 total_bytes = 0;
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
-            auto inner_table = tryGetTargetTable(target_kind, query_context);
+            auto inner_table = tryGetTargetTable(target.kind, query_context);
             if (!inner_table)
                 return std::nullopt;
 
@@ -374,11 +399,11 @@ std::optional<UInt64> StorageTimeSeries::totalBytesUncompressed(const Settings &
     if (!hasInnerTables())
         return 0;
     UInt64 total_bytes = 0;
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
-            auto inner_table = tryGetTargetTable(target_kind, getContext());
+            auto inner_table = tryGetTargetTable(target.kind, getContext());
             if (!inner_table)
                 return std::nullopt;
 
@@ -395,9 +420,9 @@ std::optional<UInt64> StorageTimeSeries::totalBytesUncompressed(const Settings &
 Strings StorageTimeSeries::getDataPaths() const
 {
     Strings data_paths;
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        auto table = tryGetTargetTable(target_kind, getContext());
+        auto table = tryGetTargetTable(target.kind, getContext());
         if (!table)
             continue;
 
@@ -424,11 +449,11 @@ bool StorageTimeSeries::optimize(
     }
 
     bool optimized = false;
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
-            auto inner_table = getTargetTable(target_kind, local_context);
+            auto inner_table = getTargetTable(target.kind, local_context);
             const auto inner_metadata = inner_table->getInMemoryMetadataPtr(local_context, false);
             optimized |= inner_table->optimize(query, inner_metadata, partition, final, deduplicate, deduplicate_by_columns, cleanup, local_context);
         }
@@ -519,9 +544,10 @@ void StorageTimeSeries::renameInMemory(const StorageID & new_table_id)
         /// them one by one would leave the table half-renamed (some inner tables moved, the rest
         /// not) if a later destination name happened to be occupied.
         std::vector<std::pair<StorageID, String>> inner_renames;
-        for (auto target_kind : getTargetKinds())
+        for (const auto & target : targets)
         {
-            if (!isInnerTable(target_kind))
+            auto target_kind = target.kind;
+            if (!target.is_inner_table)
                 continue;
 
             auto inner_table = tryGetTargetTable(target_kind, getContext());
@@ -556,10 +582,11 @@ void StorageTimeSeries::backupData(BackupEntriesCollector & backup_entries_colle
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
+        auto target_kind = target.kind;
         /// We backup the target table's data only if it's inner.
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
             auto table = getTargetTable(target_kind, backup_entries_collector.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
@@ -574,10 +601,11 @@ void StorageTimeSeries::restoreDataFromBackup(RestorerFromBackup & restorer, con
     if (!hasInnerTables())
         return;
 
-    for (auto target_kind : getTargetKinds())
+    for (const auto & target : targets)
     {
+        auto target_kind = target.kind;
         /// We restore the target table's data only if it's inner.
-        if (isInnerTable(target_kind))
+        if (target.is_inner_table)
         {
             auto table = getTargetTable(target_kind, restorer.getContext());
             String kind_str{magic_enum::enum_name(target_kind)};
@@ -698,6 +726,7 @@ CREATE TABLE name [(columns)] ENGINE=TimeSeries
 [SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
 [TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
 [METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
+[HISTOGRAMS db.histograms_table_name | [HISTOGRAMS INNER COLUMNS (...)] [HISTOGRAMS INNER ENGINE engine(arguments)]]
 ```
 
 :::note
@@ -829,6 +858,35 @@ The _metrics_ table must have columns:
 | `type` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The type of a metric family, one of "counter", "gauge", "summary", "stateset", "histogram", "gaugehistogram" |
 | `unit` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The unit used in a metric |
 | `help` | [x] | `String` | `String` or `LowCardinality(String)` | The description of a metric |
+
+### Histograms table {#histograms-table}
+
+The optional _histograms_ table stores [Prometheus native histogram](https://prometheus.io/docs/specs/native_histograms/) samples.
+It exists only when the table was created with a `HISTOGRAMS` clause or with the [store_native_histograms](#settings) setting;
+tables without it silently keep working with three target tables, and native histograms received
+via remote-write are then dropped with a warning in the server log.
+
+The _histograms_ table must have columns:
+
+| Name | Mandatory? | Default type | Possible types | Description |
+|---|---|---|---|---|
+| `id` | [x] | `Tuple(UInt64, UUID)` | any (must match the type of `id` in the [samples](#samples-table) table) | Identifies a combination of a metric name and tags |
+| `timestamp` | [x] | `DateTime64(3)` | `DateTime64(X)` | A time point |
+| `flags` | [x] | `UInt8` | `UInt8` | Bit 0: float histogram; bits 1-2: counter reset hint (unknown/yes/no/gauge); bit 3: gauge histogram; bit 4: stale marker |
+| `schema` | [x] | `Int8` | `Int8` | The bucket schema (-4..8 exponential, -53 for custom bucket boundaries) |
+| `zero_threshold` | [x] | `Float64` | `Float64` | Breadth of the zero bucket |
+| `count` | [x] | `Float64` | `Float64` | Total count of observations |
+| `sum` | [x] | `Float64` | `Float64` | Sum of observations |
+| `zero_count` | [x] | `Float64` | `Float64` | Count of observations in the zero bucket |
+| `positive_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | same | Spans of the positive buckets |
+| `positive_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the positive buckets (deltas are decoded on ingestion) |
+| `negative_spans` | [x] | `Array(Tuple(offset Int32, length UInt32))` | same | Spans of the negative buckets |
+| `negative_values` | [x] | `Array(Float64)` | `Array(Float64)` | Absolute counts of the negative buckets |
+| `custom_values` | [x] | `Array(Float64)` | `Array(Float64)` | Custom bucket boundaries (only used with `schema` = -53) |
+
+A table with this target gets an additional outer `histograms` column of type `Array(Tuple(...))` carrying
+one tuple per histogram sample with the same elements as the table columns after `id`, and the stored
+histograms can be read back with the [timeSeriesHistograms](#functions) table function.
 
 ## Creation {#creation}
 
@@ -1078,6 +1136,8 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
+| `store_native_histograms` | Bool | false | If set to true then the table gets a fourth target table [histograms](#histograms-table) storing Prometheus native histogram samples. An explicit `HISTOGRAMS` clause in the `CREATE` query enables it too |
+| `histograms_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [histograms](#histograms-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external histograms table and a non-MergeTree engine |
 
 # Functions {#functions}
 
@@ -1085,6 +1145,7 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
 - [timeSeriesSamples](/reference/functions/table-functions/timeSeriesSamples)
 - [timeSeriesTags](/reference/functions/table-functions/timeSeriesTags)
 - [timeSeriesMetrics](/reference/functions/table-functions/timeSeriesMetrics)
+- [timeSeriesHistograms](/reference/functions/table-functions/timeSeriesHistograms)
 )DOCS_MD",
         .syntax = "ENGINE = TimeSeries()"});
 }

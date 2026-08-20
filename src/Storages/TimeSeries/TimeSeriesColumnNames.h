@@ -27,6 +27,23 @@ struct TimeSeriesColumnNames
     static constexpr const char * MinTime = "min_time";
     static constexpr const char * MaxTime = "max_time";
 
+    /// The optional "histograms" table contains native histogram samples; `id` and `timestamp` are shared
+    /// with the "samples" table layout, the remaining columns mirror the Prometheus native histogram model.
+    static constexpr const char * Flags = "flags";
+    static constexpr const char * Schema = "schema";
+    static constexpr const char * ZeroThreshold = "zero_threshold";
+    static constexpr const char * Count = "count";
+    static constexpr const char * Sum = "sum";
+    static constexpr const char * ZeroCount = "zero_count";
+    static constexpr const char * PositiveSpans = "positive_spans";
+    static constexpr const char * PositiveValues = "positive_values";
+    static constexpr const char * NegativeSpans = "negative_spans";
+    static constexpr const char * NegativeValues = "negative_values";
+    static constexpr const char * CustomValues = "custom_values";
+
+    /// The outer column of a TimeSeries table with a "histograms" target: an array of histogram samples per row.
+    static constexpr const char * Histograms = "histograms";
+
     /// The "metrics" table contains general information (metadata) about metrics:
     static constexpr const char * MetricFamily = "metric_family";
     static constexpr const char * Type = "type";
