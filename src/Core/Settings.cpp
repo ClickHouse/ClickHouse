@@ -4496,7 +4496,7 @@ Reject patterns which will likely be expensive to evaluate with hyperscan (due t
 Allow using simdjson library in 'JSON*' functions if AVX2 instructions are available. If disabled rapidjson will be used.
 
 :::note
-simdjson rejects `String` values which are not valid UTF-8, as the JSON specification requires. Reading such values requires this setting disabled, so that rapidjson is used instead.
+simdjson rejects `String` values which are not valid UTF-8, as the JSON specification requires. Reading such values requires this setting disabled, so that rapidjson is used instead. This applies where the parser is chosen by this setting: the `JSON` data type and the `JSONExtract*` function family.
 
 Disabling it also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable for any input: those functions have no rapidjson implementation and throw `NOT_IMPLEMENTED`.
 :::

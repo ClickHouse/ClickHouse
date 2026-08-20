@@ -999,8 +999,9 @@ Every `String` value being cast must be valid UTF-8. A value which is not raises
 because the default JSON parser is simdjson, which rejects such values as the JSON specification requires.
 
 Setting [`allow_simdjson`](/reference/settings/session-settings/allow#allow_simdjson) to `0` selects rapidjson,
-which parses them. That also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable, and it changes
-`JSONExtract*` from silently returning a default value for such input to returning the bytes.
+which parses them. That also makes `JSON_VALUE`, `JSON_EXISTS` and `JSON_QUERY` unavailable, and it lets the
+`JSONExtract*` functions parse such input instead of silently returning a default value; the byte-returning
+variants then preserve the invalid bytes.
 </Note>
 
 <Note>
