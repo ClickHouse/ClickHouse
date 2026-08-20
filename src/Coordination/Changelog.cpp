@@ -164,6 +164,30 @@ struct ChangelogFileOperation
     ChangelogFileDescriptionPtr changelog;
     ChangelogFileOperationVariant operation;
     std::atomic<bool> done = false;
+
+    void setError(std::exception_ptr e)
+    {
+        if (!e)
+            return;
+        std::lock_guard lock(error_mutex);
+        if (!error)
+            error = e;
+    }
+
+    void rethrowIfFailed() const
+    {
+        std::exception_ptr e;
+        {
+            std::lock_guard lock(error_mutex);
+            e = error;
+        }
+        if (e)
+            std::rethrow_exception(e);
+    }
+
+private:
+    mutable std::mutex error_mutex;
+    std::exception_ptr error;
 };
 
 void ChangelogFileDescription::waitAllAsyncOperations()
@@ -4314,7 +4338,10 @@ void Changelog::writeAt(uint64_t index, const LogEntryPtr & log_entry)
 
     /// Append the rewrite only after superseded changelog files are gone.
     for (const auto & op : pending_superseded_removes)
+    {
         op->done.wait(false);
+        op->rethrowIfFailed();
+    }
 
     /// Remove redundant logs from memory
     /// Everything >= index must be removed
@@ -4634,10 +4661,12 @@ void Changelog::backgroundChangelogOperationsThread()
                     catch (Exception & e)
                     {
                         LOG_WARNING(log, "Failed to remove changelog {} in compaction, error message: {}", changelog.path, e.message());
+                        changelog_operation->setError(std::current_exception());
                     }
                     catch (...)
                     {
                         tryLogCurrentException(log);
+                        changelog_operation->setError(std::current_exception());
                     }
                 });
         }

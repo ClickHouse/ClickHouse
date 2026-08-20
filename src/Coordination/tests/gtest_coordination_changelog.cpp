@@ -616,6 +616,26 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestBatchOperationsEmpty)
 }
 
 
+class FailingRemoveChangelogDisk : public DB::DiskLocal
+{
+public:
+    using DB::DiskLocal::DiskLocal;
+
+    void setFailRemovePrefix(std::string prefix) { fail_remove_prefix = std::move(prefix); }
+
+    void removeFile(const String & path) override
+    {
+        if (!fail_remove_prefix.empty() && path.starts_with(fail_remove_prefix))
+            throw std::runtime_error("Injected changelog remove failure");
+
+        DB::DiskLocal::removeFile(path);
+    }
+
+private:
+    std::string fail_remove_prefix;
+};
+
+
 TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 {
 
@@ -678,6 +698,45 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog_read.start_index(), 1);
     EXPECT_EQ(changelog_read.next_slot(), 8);
     EXPECT_EQ(changelog_read.last_entry()->get_term(), 5555);
+}
+
+TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtFailsWhenSupersededSegmentRemoveFails)
+{
+    ChangelogDirTest test("./logs");
+
+    auto disk = std::make_shared<FailingRemoveChangelogDisk>("LogDisk", "./logs");
+    disk->setFailRemovePrefix("changelog_11_");
+
+    auto settings = std::make_shared<DB::CoordinationSettings>();
+    keeper_context = std::make_shared<DB::KeeperContext>(true, settings);
+    keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setLogDisk(disk);
+    extension = enable_compression ? ".zstd" : "";
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (size_t i = 0; i < 33; ++i)
+    {
+        auto entry = getLogEntry(std::to_string(i) + "_hello_world", i * 10);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    EXPECT_EQ(changelog.size(), 33);
+
+    auto e1 = getLogEntry("helloworld", 5555);
+    EXPECT_THROW(changelog.write_at(7, e1), std::exception);
+
+    /// Failed unlink must not truncate/ack the rewrite (#112101).
+    EXPECT_TRUE(fs::exists("./logs/changelog_11_15.bin" + extension));
+    EXPECT_EQ(changelog.size(), 33);
+    EXPECT_EQ(changelog.last_entry()->get_term(), 32 * 10);
 }
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtFileBorder)
