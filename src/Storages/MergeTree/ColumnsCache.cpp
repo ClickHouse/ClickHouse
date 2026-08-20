@@ -102,7 +102,7 @@ ColumnsCache::getIntersecting(
     const String & column_name,
     size_t row_begin,
     size_t row_end,
-    UInt64 metadata_version)
+    UInt64 table_generation)
 {
     std::vector<std::pair<Key, MappedPtr>> result;
 
@@ -133,7 +133,7 @@ ColumnsCache::getIntersecting(
         if (it != intervals.begin())
         {
             auto prev_it = std::prev(it);
-            if (prev_it->second.row_end > row_begin && prev_it->second.metadata_version == metadata_version)
+            if (prev_it->second.row_end > row_begin && prev_it->second.table_generation == table_generation)
                 intersecting_keys.push_back(prev_it->second);
         }
 
@@ -147,7 +147,7 @@ ColumnsCache::getIntersecting(
                 break;
 
             /// Check if this interval actually intersects
-            if (key.row_end > row_begin && key.metadata_version == metadata_version)
+            if (key.row_end > row_begin && key.table_generation == table_generation)
             {
                 intersecting_keys.push_back(key);
             }
@@ -332,6 +332,12 @@ bool ColumnsCache::set(
 
 void ColumnsCache::removeTable(const UUID & table_uuid)
 {
+    /// A cache that cannot hold anything has nothing to invalidate: a zero-sized cache admits
+    /// no writes, so no deferred write can resurrect stale data. Remembering a stamp for every
+    /// table would otherwise grow forever on a server where the columns cache is disabled.
+    if (Base::maxSizeInBytes() == 0)
+        return;
+
     /// Lock ordering matches removePart: interval_index_mutex first, then the
     /// CacheBase mutex (taken inside Base::remove). No lock-order cycle.
     std::lock_guard lock(interval_index_mutex);
@@ -339,7 +345,7 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
     /// Advance the table's invalidation generation before clearing entries, so a
     /// deferred set() from a reader that captured an older generation is rejected
     /// and cannot repopulate the cache with stale data after this invalidation.
-    ++table_generations[table_uuid];
+    table_generations[table_uuid] = nextGeneration();
     std::erase_if(part_generations, [&](const auto & item) { return item.first.table_uuid == table_uuid; });
 
     std::vector<PartIdentifier> parts_to_remove;
@@ -364,6 +370,10 @@ void ColumnsCache::removeTable(const UUID & table_uuid)
 
 void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
 {
+    /// Nothing to invalidate while the cache is disabled, see removeTable.
+    if (Base::maxSizeInBytes() == 0)
+        return;
+
     /// Hold interval_index_mutex across both the index erase and the Base::remove
     /// calls so that a concurrent set() for the same key cannot re-insert between
     /// the two steps and end up with the Base entry deleted but the interval_index
@@ -375,7 +385,7 @@ void ColumnsCache::removePart(const UUID & table_uuid, const String & part_name)
     std::lock_guard lock(interval_index_mutex);
 
     PartIdentifier part_id{table_uuid, part_name};
-    ++part_generations[part_id];
+    part_generations[part_id] = nextGeneration();
     auto part_it = interval_index.find(part_id);
     if (part_it == interval_index.end())
         return;

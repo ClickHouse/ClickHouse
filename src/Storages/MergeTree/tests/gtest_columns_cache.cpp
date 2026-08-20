@@ -19,7 +19,7 @@ ColumnsCache::MappedPtr makeEntry(size_t rows)
 {
     auto column = ColumnUInt64::create();
     column->getData().resize_fill(rows, 0);
-    return std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows, {}});
+    return std::make_shared<ColumnsCacheEntry>(ColumnsCacheEntry{std::move(column), rows});
 }
 
 }
@@ -195,19 +195,68 @@ TEST(ColumnsCache, RemovePartIsStickyAgainstInFlightReaders)
     EXPECT_TRUE(cache.set(key, makeEntry(100), new_table_generation, new_part_generation));
 }
 
+TEST(ColumnsCache, ClearAllRejectsTokensOfEveryEarlierInvalidation)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    /// `clearAll` forgets the per-table stamps, so its own stamp must be greater than every
+    /// table stamp handed out before it, no matter how many times the table was invalidated.
+    cache.removeTable(table_uuid);
+    const auto [stale_table_generation, stale_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    cache.removeTable(table_uuid);
+    cache.clearAll();
+
+    EXPECT_NE(cache.getInvalidationGenerations(table_uuid, "part_1").first, stale_table_generation);
+
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100, stale_table_generation};
+    EXPECT_FALSE(cache.set(key, makeEntry(100), stale_table_generation, stale_part_generation));
+}
+
+TEST(ColumnsCache, EntriesAreNotVisibleAcrossTableGenerations)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
+    ColumnsCacheKey key{table_uuid, "part_1", "col", 0, 100, table_generation};
+    EXPECT_TRUE(cache.set(key, makeEntry(100), table_generation, part_generation));
+
+    /// The same reader repeating the read finds its entry.
+    EXPECT_EQ(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100, table_generation).size(), 1u);
+    /// A reader that observed a later invalidation of the table does not.
+    EXPECT_TRUE(cache.getIntersecting(table_uuid, "part_1", "col", 0, 100, table_generation + 1).empty());
+}
+
+TEST(ColumnsCache, DisabledCacheDoesNotRememberInvalidations)
+{
+    ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
+        /*max_size_in_bytes=*/ 0, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
+    const UUID table_uuid = UUIDHelpers::generateV4();
+
+    /// A cache that admits nothing must not accumulate invalidation metadata for every table
+    /// and part of the server.
+    cache.removeTable(table_uuid);
+    cache.removePart(table_uuid, "part_1");
+    EXPECT_EQ(cache.getInvalidationGenerations(table_uuid, "part_1"), std::make_pair(UInt64(0), UInt64(0)));
+}
+
 TEST(ColumnsCache, RemoveTableReclaimsPartGenerationTombstones)
 {
     ColumnsCache cache("LRU", CurrentMetrics::ColumnsCacheBytes, CurrentMetrics::ColumnsCacheEntries,
         /*max_size_in_bytes=*/ 1 << 20, /*max_count=*/ 0, /*size_ratio=*/ 0.5);
     const UUID table_uuid = UUIDHelpers::generateV4();
 
+    const auto [initial_table_generation, initial_part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
     cache.removePart(table_uuid, "part_1");
-    EXPECT_EQ(cache.getInvalidationGenerations(table_uuid, "part_1").second, 1u);
+    EXPECT_NE(cache.getInvalidationGenerations(table_uuid, "part_1").second, initial_part_generation);
 
     /// Dropping a table invalidates in-flight readers through the table token,
     /// so the per-part tombstone is no longer needed.
     cache.removeTable(table_uuid);
     const auto [table_generation, part_generation] = cache.getInvalidationGenerations(table_uuid, "part_1");
-    EXPECT_EQ(table_generation, 1u);
+    EXPECT_NE(table_generation, initial_table_generation);
     EXPECT_EQ(part_generation, 0u);
 }

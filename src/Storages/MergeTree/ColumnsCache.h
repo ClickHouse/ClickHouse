@@ -20,8 +20,6 @@ namespace ProfileEvents
 namespace DB
 {
 
-struct StorageInMemoryMetadata;
-
 /// Key for looking up cached deserialized columns.
 /// Identifies a specific column in a specific row range of a specific data part.
 /// Uses Table UUID so that RENAME TABLE properly invalidates the cache.
@@ -33,10 +31,14 @@ struct ColumnsCacheKey
     String column_name;
     size_t row_begin = 0;
     size_t row_end = 0;
-    /// Identity of the `StorageInMemoryMetadata` snapshot used to deserialize
-    /// this column. Cache data from an earlier schema must not be used after an
-    /// `ALTER` makes the same column name refer to a different column.
-    UInt64 metadata_version = 0;
+    /// The table's invalidation stamp at the time the column was read, see
+    /// getInvalidationGenerations. Cache data from an earlier schema must not be used after
+    /// an `ALTER` makes the same column name refer to a different column: such an `ALTER`
+    /// advances the stamp, so entries written before it can no longer be looked up, even if
+    /// they were written by a reader that had already observed the new metadata but the old
+    /// stamp. The stamp is stable while the table is not invalidated, so a repeated read of
+    /// an unchanged table finds its entries.
+    UInt64 table_generation = 0;
 
     bool operator==(const ColumnsCacheKey & other) const = default;
 
@@ -60,7 +62,7 @@ struct ColumnsCacheKeyHash
         hash.update(key.column_name);
         hash.update(key.row_begin);
         hash.update(key.row_end);
-        hash.update(key.metadata_version);
+        hash.update(key.table_generation);
         return hash.get64();
     }
 };
@@ -70,10 +72,6 @@ struct ColumnsCacheEntry
 {
     ColumnPtr column;
     size_t rows;
-    /// Keeps the metadata snapshot alive while its address is used in a cache
-    /// key, preventing allocator reuse from making two different schemas share
-    /// a metadata_version.
-    std::shared_ptr<const StorageInMemoryMetadata> metadata;
 };
 
 struct ColumnsCacheWeightFunction
@@ -126,7 +124,7 @@ private:
     PartIndexMap interval_index;
     mutable std::mutex interval_index_mutex;
 
-    /// Per-table invalidation generation, advanced by removeTable. See
+    /// Per-table invalidation stamp, advanced by removeTable. See
     /// getInvalidationGenerations. Guarded by interval_index_mutex.
     std::unordered_map<UUID, UInt64> table_generations;
 
@@ -136,21 +134,29 @@ private:
     /// Guarded by interval_index_mutex.
     std::unordered_map<PartIdentifier, UInt64, PartIdentifierHash> part_generations;
 
-    /// Cache-wide invalidation generation, advanced by clearAll (`SYSTEM DROP
-    /// COLUMNS CACHE`). It is folded into the token returned by
+    /// Cache-wide invalidation stamp, advanced by clearAll (`SYSTEM DROP COLUMNS
+    /// CACHE`). It participates in the token returned by
     /// getInvalidationGenerations, so a drop also rejects deferred writes from
     /// readers that started before it. Guarded by interval_index_mutex.
     UInt64 global_generation = 0;
 
-    /// The invalidation token a reader captures for a table: the sum of the
-    /// cache-wide and the per-table generations. Both components only ever
-    /// increase, so the sum increases on every invalidation and a token captured
-    /// before an invalidation can never compare equal to the current one.
+    /// Source of invalidation stamps: every invalidation event takes the next value, so two
+    /// different events never produce the same stamp. Guarded by interval_index_mutex.
+    UInt64 last_generation = 0;
+
+    UInt64 nextGeneration() { return ++last_generation; }
+
+    /// The invalidation token a reader captures for a table: the later of the cache-wide and
+    /// the per-table stamp. Stamps come from a single monotonic source, so the token changes
+    /// on every invalidation of the table and on every drop of the whole cache, and a token
+    /// captured before an invalidation can never compare equal to the current one. This also
+    /// lets clearAll forget the per-table stamps: the new cache-wide stamp is greater than
+    /// every stamp handed out before it.
     /// Must be called with interval_index_mutex held.
     UInt64 currentGeneration(const UUID & table_uuid) const
     {
         auto it = table_generations.find(table_uuid);
-        return global_generation + (it == table_generations.end() ? 0 : it->second);
+        return std::max(global_generation, it == table_generations.end() ? UInt64(0) : it->second);
     }
 
     UInt64 currentPartGeneration(const PartIdentifier & part_id) const
@@ -204,7 +210,7 @@ public:
         const String & column_name,
         size_t row_begin,
         size_t row_end,
-        UInt64 metadata_version = 0);
+        UInt64 table_generation = 0);
 
     /// Insert a column into the cache.
     /// Maintains a non-overlapping invariant on the per-column interval map so
@@ -255,7 +261,10 @@ public:
     void clearAll()
     {
         std::lock_guard lock(interval_index_mutex);
-        ++global_generation;
+        global_generation = nextGeneration();
+        /// The new cache-wide stamp already invalidates every token captured so far, so the
+        /// per-table and per-part stamps can be reclaimed instead of being kept forever.
+        table_generations.clear();
         part_generations.clear();
         Base::clear();
         interval_index.clear();
