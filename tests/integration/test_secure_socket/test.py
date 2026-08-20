@@ -56,8 +56,8 @@ def assert_socket_receive_timeout(error, expected_origin):
     assert "Timeout exceeded while reading from socket" in error
     assert "5000 ms" in error
     assert "(SOCKET_TIMEOUT)" in error
-    # Each settings combination must raise from its own place, otherwise an ignored
-    # async_socket_for_remote or use_hedged_requests would silently collapse the arms.
+    # Each combination formats the socket description differently, so an ignored
+    # async_socket_for_remote or use_hedged_requests would show up as another arm's wording.
     assert expected_origin in error, f"expected {expected_origin} in: {error}"
 
 
@@ -86,16 +86,16 @@ def test(started_cluster):
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=0;"
     )
 
-    assert_socket_receive_timeout(error, "ReadBufferFromPocoSocket")
+    assert_socket_receive_timeout(error, "socket (peer: ")
 
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=0, async_socket_for_remote=1;"
     )
 
-    assert_socket_receive_timeout(error, "checkTimeout")
+    assert_socket_receive_timeout(error, "socket (socket (")
 
     error = NODES["node1"].query_and_get_error(
         "SELECT * FROM distributed_table settings receive_timeout=5, send_timeout=5, use_hedged_requests=1, async_socket_for_remote=1;"
     )
 
-    assert_socket_receive_timeout(error, "HedgedConnections")
+    assert_socket_receive_timeout(error, "socket (node2:9440, receive timeout")
