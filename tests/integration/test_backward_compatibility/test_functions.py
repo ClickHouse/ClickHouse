@@ -178,28 +178,51 @@ def test_aggregate_states(start_cluster):
 
 
 def test_single_value_or_null_native_compatibility(start_cluster):
-    table = "single_value_or_null_native_compatibility"
-    backward.query(f"DROP TABLE IF EXISTS {table}")
+    backward_table = "single_value_or_null_native_compatibility_backward"
+    upstream_table = "single_value_or_null_native_compatibility_upstream"
+    backward.query(f"DROP TABLE IF EXISTS {backward_table}")
+    upstream.query(f"DROP TABLE IF EXISTS {upstream_table}")
     backward.query(
         f"""
-        CREATE TABLE {table}
+        CREATE TABLE {backward_table}
         (
             state AggregateFunction(singleValueOrNull, UInt64)
         )
         ENGINE = Memory
         """
     )
+    upstream.query(
+        f"""
+        CREATE TABLE {upstream_table}
+        (
+            state AggregateFunction(0, singleValueOrNull, UInt64)
+        )
+        ENGINE = Memory
+        """
+    )
 
     try:
+        # Revision negotiation keeps the legacy v0 stream readable, but it cannot restore the missing semantic flags.
         upstream.query(
             f"""
-            INSERT INTO FUNCTION remote('{backward.ip_address}', currentDatabase(), {table})
+            INSERT INTO FUNCTION remote('{backward.ip_address}', currentDatabase(), {backward_table})
             SELECT singleValueOrNullState(toUInt64(42))
             """
         )
-        assert backward.query(f"SELECT singleValueOrNullMerge(state) FROM {table}").strip() == "42"
+        assert backward.query(f"SELECT toTypeName(state) FROM {backward_table}").strip() == "AggregateFunction(singleValueOrNull, UInt64)"
+        assert backward.query(f"SELECT isNull(singleValueOrNullMerge(state)) FROM {backward_table}").strip() == "1"
+
+        backward.query(
+            f"""
+            INSERT INTO FUNCTION remote('{upstream.ip_address}', currentDatabase(), {upstream_table})
+            SELECT singleValueOrNullState(toUInt64(42))
+            """
+        )
+        assert upstream.query(f"SELECT toTypeName(state) FROM {upstream_table}").strip() == "AggregateFunction(singleValueOrNull, UInt64)"
+        assert upstream.query(f"SELECT isNull(singleValueOrNullMerge(state)) FROM {upstream_table}").strip() == "1"
     finally:
-        backward.query(f"DROP TABLE IF EXISTS {table}")
+        backward.query(f"DROP TABLE IF EXISTS {backward_table}")
+        upstream.query(f"DROP TABLE IF EXISTS {upstream_table}")
 
 
 def test_string_functions(start_cluster):
