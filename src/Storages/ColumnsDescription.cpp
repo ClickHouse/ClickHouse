@@ -1925,7 +1925,18 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
     expandColumnMatchersImpl(expression_list, columns);
 }
 
-std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context)
+std::optional<String> MaterializedColumnInputInfo::findFirstUnsafeColumn(const NameSet & columns) const
+{
+    std::optional<String> result;
+    for (const auto & name : columns)
+    {
+        if (unsafe_legacy_columns.contains(name) && (!result || name < *result))
+            result = name;
+    }
+    return result;
+}
+
+MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context)
 {
     /// EPHEMERAL columns are included in the analysis set so TreeRewriter can resolve
     /// MATERIALIZED expressions that reference them; the callers reject such dependencies.
@@ -1933,7 +1944,44 @@ std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(
     for (const auto & col : columns.getEphemeral())
         source_columns.push_back(col);
 
-    std::unordered_map<String, Names> materialized_column_inputs;
+    NameSet all_column_names;
+    for (const auto & column : columns)
+        all_column_names.insert(column.name);
+    for (const auto & column : columns.getEphemeral())
+        all_column_names.insert(column.name);
+
+    auto collect_raw_inputs_following_aliases = [&](const ColumnDefault & column_default)
+    {
+        auto expression = cloneAndExpandColumnDefaultExpression(column_default, columns);
+        NameSet dependencies;
+        collectColumnDependenciesFromAST(expression, all_column_names, columns, dependencies);
+
+        std::vector<String> worklist(dependencies.begin(), dependencies.end());
+        for (size_t pos = 0; pos < worklist.size(); ++pos)
+        {
+            if (!columns.has(worklist[pos]))
+                continue;
+
+            const auto & dependency_column = columns.get(worklist[pos]);
+            if (dependency_column.default_desc.kind != ColumnDefaultKind::Alias || !dependency_column.default_desc.expression)
+                continue;
+
+            auto alias_expression = cloneAndExpandColumnDefaultExpression(dependency_column.default_desc, columns);
+            NameSet alias_inputs;
+            collectColumnDependenciesFromAST(alias_expression, all_column_names, columns, alias_inputs);
+            for (const auto & input : alias_inputs)
+            {
+                if (dependencies.insert(input).second)
+                    worklist.push_back(input);
+            }
+        }
+
+        Names result(dependencies.begin(), dependencies.end());
+        std::sort(result.begin(), result.end());
+        return result;
+    };
+
+    MaterializedColumnInputInfo result;
     /// Metadata loading deliberately retains stored expressions that predate the alias-lambda
     /// capture rule. They must not make an unrelated `CLEAR COLUMN` fail while computing its
     /// materialization closure. An ALTER that introduces such a violation is rejected during
@@ -1945,15 +1993,19 @@ std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(
             continue;
 
         if (legacy_capture_violations.contains(column.name))
+        {
+            result.unsafe_legacy_columns.insert(column.name);
+            result.by_column.emplace(column.name, collect_raw_inputs_following_aliases(column.default_desc));
             continue;
+        }
 
         auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns, context);
         validateNoCyclicAliasesAfterExpansion(column.name, query, columns);
         replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
         auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
-        materialized_column_inputs.emplace(column.name, syntax_result->requiredSourceColumns());
+        result.by_column.emplace(column.name, syntax_result->requiredSourceColumns());
     }
-    return materialized_column_inputs;
+    return result;
 }
 
 NameSet collectMaterializedColumnsStaleAfterClear(

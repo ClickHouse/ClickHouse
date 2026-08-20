@@ -2351,13 +2351,19 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     auto materialized_column_inputs = collectMaterializedColumnInputsAfterExpansion(all_columns, context);
 
                     auto stale_columns
-                        = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, {command.column_name});
+                        = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs.by_column, {command.column_name});
+
+                    if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(stale_columns))
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but its "
+                            "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
+                            backQuote(command.column_name), backQuote(*unsafe_column));
 
                     Names sorting_key_columns = metadata->getColumnsRequiredForSortingKey();
                     Names partition_key_columns = metadata->getColumnsRequiredForPartitionKey();
                     for (const auto & stale_column : stale_columns)
                     {
-                        for (const auto & required_column : materialized_column_inputs.at(stale_column))
+                        for (const auto & required_column : materialized_column_inputs.by_column.at(stale_column))
                         {
                             if (ephemeral_names.contains(required_column))
                                 throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,

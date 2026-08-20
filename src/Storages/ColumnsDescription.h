@@ -373,12 +373,23 @@ void expandColumnMatchersInExpressionList(ASTPtr & expression_list, const Column
 NameSet collectMaterializedColumnsStaleAfterClear(
     const std::unordered_map<String, Names> & materialized_column_inputs, const NameSet & cleared_columns);
 
-/// Map every `MATERIALIZED` column of `columns` to the storage columns its expression reads, with
-/// matchers and `ALIAS` bodies expanded and subcolumn references canonicalized to their owning
-/// storage column. `AlterCommands::validate` and `MutationsInterpreter` both build the input of
+struct MaterializedColumnInputInfo
+{
+    std::unordered_map<String, Names> by_column;
+    NameSet unsafe_legacy_columns;
+
+    std::optional<String> findFirstUnsafeColumn(const NameSet & columns) const;
+};
+
+/// Map every `MATERIALIZED` column of `columns` to the storage columns its expression reads.
+/// Safe expressions have matchers and `ALIAS` bodies expanded and subcolumn references
+/// canonicalized to their owning storage column. For stored expressions that predate
+/// alias-lambda capture validation, collect conservative raw dependencies while following
+/// table-scope `ALIAS` columns and record the host column in `unsafe_legacy_columns`.
+/// `AlterCommands::validate` and `MutationsInterpreter` both build the input of
 /// `collectMaterializedColumnsStaleAfterClear` through this helper, so `ALTER` validation and
 /// mutation preparation cannot disagree about which recalculations a `CLEAR COLUMN` triggers.
-std::unordered_map<String, Names> collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context);
+MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context);
 
 /// Collect (instead of throwing) the alias-lambda-capture violations that
 /// `validateNoAliasLambdaCaptureInStoredExpressions` would report for `columns`, keyed by the

@@ -1657,7 +1657,7 @@ void MutationsInterpreter::prepare(bool dry_run)
     /// recalculation stage below will write and register their dependencies before the
     /// dependency sets are consumed.
     NameSet clear_rematerialized_columns;
-    std::unordered_map<String, Names> materialized_column_inputs;
+    MaterializedColumnInputInfo materialized_column_inputs;
     if (need_recalculate_materialized_for_clear)
     {
         /// The same helper backs the `CLEAR COLUMN` check in `AlterCommands::validate`, so the
@@ -1668,8 +1668,15 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// another recalculated MATERIALIZED column, are the ones the clear makes stale. They are
         /// the only ones the guards below reject the ALTER for, because they are the only ones the
         /// clear itself forces to be rewritten.
-        NameSet clear_stale_materialized = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs, cleared_columns);
+        NameSet clear_stale_materialized
+            = collectMaterializedColumnsStaleAfterClear(materialized_column_inputs.by_column, cleared_columns);
         clear_rematerialized_columns = clear_stale_materialized;
+
+        if (auto unsafe_column = materialized_column_inputs.findFirstUnsafeColumn(clear_stale_materialized))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, but its "
+                "expression contains a legacy ALIAS reference captured by a lambda and cannot be evaluated safely",
+                backQuote(*unsafe_column));
 
         const Names sorting_key_columns = metadata_snapshot->getColumnsRequiredForSortingKey();
         const Names partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
@@ -1710,7 +1717,7 @@ void MutationsInterpreter::prepare(bool dry_run)
         /// mutation that leaves the column inconsistent with its declared expression.
         for (const auto & name : clear_stale_materialized)
         {
-            for (const auto & dep : materialized_column_inputs.at(name))
+            for (const auto & dep : materialized_column_inputs.by_column.at(name))
             {
                 if (ephemeral_columns.contains(dep))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -1740,12 +1747,13 @@ void MutationsInterpreter::prepare(bool dry_run)
                 cleared_columns_with_dependencies.insert(name);
             }
 
-            for (const auto & [name, inputs] : materialized_column_inputs)
+            for (const auto & [name, inputs] : materialized_column_inputs.by_column)
             {
                 if (clear_rematerialized_columns.contains(name) || cleared_columns.contains(name))
                     continue;
 
-                if (reads_ephemeral_column(inputs) || is_key_column(name))
+                if (materialized_column_inputs.unsafe_legacy_columns.contains(name)
+                    || reads_ephemeral_column(inputs) || is_key_column(name))
                     continue;
 
                 clear_rematerialized_columns.insert(name);
@@ -1862,7 +1870,7 @@ void MutationsInterpreter::prepare(bool dry_run)
 
                 size_t level = 0;
                 bool inputs_ready = true;
-                for (const auto & input : materialized_column_inputs.at(name))
+                for (const auto & input : materialized_column_inputs.by_column.at(name))
                 {
                     if (!clear_rematerialized_columns.contains(input))
                         continue;
