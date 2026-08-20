@@ -2,8 +2,8 @@
 Regression tests for NightlyFuzzers sharing MasterCI's ARM release build.
 
 NightlyFuzzers needs the release binary to generate the fuzzer dictionary, and
-gets it by reusing the build MasterCI already ran for the same commit. Two
-things have to line up for that, and both were wrong:
+gets it by reusing the build MasterCI already ran for the same commit. Three
+things have to line up for that, and all three were wrong:
 
   - The job digest covers `command` and the `provides` artifact configs
     (ci/praktika/digest.py drops only requires/enable_commit_status/
@@ -17,9 +17,13 @@ things have to line up for that, and both were wrong:
     the cache and replaces MasterCI's long-retention binary with a
     default-retention one.
 
-So the digest equality asserted here is the whole mechanism: it is what makes
-the workflow's own comment true, and it holds only when the job variant *and*
-the artifact tags agree with MasterCI.
+  - `run_after` is hashed too, and mangle appends the docker job names to it, so
+    the two workflows must inject the same docker jobs. MasterCI merges a
+    multiplatform manifest; a workflow that does not gets a shorter run_after
+    and a different key, however well the rest agrees.
+
+The digests are therefore compared post-mangle: the pre-mangle objects miss
+that last difference and report a cache hit the runtime does not have.
 """
 
 import dataclasses
@@ -77,6 +81,22 @@ def _job(workflow, name):
     raise AssertionError(f"{workflow.name} has no job {name!r}")
 
 
+def _mangled(name):
+    """The workflow as praktika will run it.
+
+    The imported module-level object is the pre-mangle one: mangle injects the
+    docker and native jobs and appends them to every other job's `run_after`,
+    so a digest computed from the import misses differences that decide the
+    real cache key.
+    """
+    from ci.praktika.mangle import _get_workflows
+
+    for workflow in _get_workflows():
+        if workflow.name == name:
+            return workflow
+    raise AssertionError(f"no workflow named {name!r}")
+
+
 def _config_digest(job, workflow):
     """The job-config half of the digest, as hook_cache.py feeds it.
 
@@ -97,10 +117,26 @@ def _config_digest(job, workflow):
 
 class TestBuildIsSharedWithMasterCI:
     def test_digest_matches_master(self):
-        # The workflow comment claims a cache hit; this is that claim.
-        assert _config_digest(
-            _job(nightly_workflow, _SHARED_BUILD), nightly_workflow
-        ) == _config_digest(_job(master_workflow, _SHARED_BUILD), master_workflow)
+        # The workflow comment claims a cache hit; this is that claim, computed
+        # from the mangled workflows because that is what praktika hashes.
+        nightly, master = _mangled("NightlyFuzzers"), _mangled("MasterCI")
+        assert _config_digest(_job(nightly, _SHARED_BUILD), nightly) == _config_digest(
+            _job(master, _SHARED_BUILD), master
+        )
+
+    def test_the_pre_mangle_comparison_is_not_what_decides_the_cache_key(self):
+        # Negative control for the test above. Mangle appends the docker job
+        # names to run_after, and run_after is hashed, so comparing the
+        # imported objects can report a match the runtime does not have.
+        nightly, master = _mangled("NightlyFuzzers"), _mangled("MasterCI")
+        assert _job(nightly, _SHARED_BUILD).run_after, (
+            "mangle did not populate run_after, so this control cannot "
+            "distinguish the pre- and post-mangle comparisons"
+        )
+        assert (
+            _job(nightly, _SHARED_BUILD).run_after
+            == _job(master, _SHARED_BUILD).run_after
+        ), "the docker job graphs differ, so the release builds cannot share a cache entry"
 
     def test_plain_release_variant_would_not_match(self):
         # Mutation arm: the variant NightlyFuzzers used to take. Without this,

@@ -44,6 +44,10 @@ workflow = Workflow.Config(
         *ArtifactConfigs.clickhouse_tgzs,
         ArtifactConfigs.clickhouse_examples,
     ],
+    # Mangle appends the docker job names to every job's run_after, and run_after
+    # is part of the job digest, so a workflow whose docker graph differs from
+    # MasterCI's cannot hit its cache entry for the shared release build.
+    enable_dockers_manifest_merge=True,
     enable_cache=True,
     enable_report=True,
     enable_cidb=True,
