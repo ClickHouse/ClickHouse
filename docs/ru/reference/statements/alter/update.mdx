@@ -30,6 +30,49 @@ ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN P
 * [Легковесный `UPDATE`](/ru/reference/statements/update) - Альтернативное легковесное обновление с использованием патч-частей
 * [`APPLY PATCHES`](/ru/reference/statements/alter/apply-patches) - Ручное применение патчей из легковесных обновлений
 
+<div id="materialized-columns">
+  ## Материализованные столбцы
+</div>
+
+Значение столбца [`MATERIALIZED`](/ru/reference/statements/create/table#materialized), выражение которого использует обновлённый
+столбец, пересчитывается в ходе мутации, поэтому оно остаётся согласованным с новыми данными.
+
+<div id="columns-calculated-from-ephemeral-columns">
+  ### Столбцы, вычисляемые на основе EPHEMERAL-столбцов
+</div>
+
+Столбец [`EPHEMERAL`](/ru/reference/statements/create/table#ephemeral) существует только во время выполнения
+`INSERT` и никогда не сохраняется, поэтому `MATERIALIZED`-столбец, вычисляемый на его основе, нельзя пересчитать с помощью
+мутации. Такой столбец сохраняет значение, вычисленное во время `INSERT`, которое впоследствии перестаёт соответствовать его
+выражению:
+
+```sql
+CREATE TABLE test
+(
+    x Int32,
+    e Int32 EPHEMERAL 0,
+    m Int32 MATERIALIZED x + e
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test (x, e) VALUES (1, 7);
+
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+
+SELECT x, m FROM test;
+```
+
+```text
+┌─x─┬─m─┐
+│ 2 │ 8 │
+└───┴───┘
+```
+
+`m` равно `8` — значению, вычисленному при выполнении `INSERT`, а не `2 + 7`: значение `e` недоступно
+за пределами `INSERT`, в котором оно было задано. Если по этой причине мутация пропускает
+столбец, она записывает предупреждение в журнал сервера. Чтобы обновить такой столбец, повторно выполните `INSERT` для затронутых строк.
+
 <div id="related-content">
   ## Связанные материалы
 </div>

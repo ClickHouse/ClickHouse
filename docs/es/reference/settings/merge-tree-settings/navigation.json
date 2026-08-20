@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "MergeTree tables settings",
+  "group": "Configuración de tablas MergeTree",
   "pages": [
     "es/reference/settings/merge-tree-settings/add-minmax",
     "es/reference/settings/merge-tree-settings/allow",
