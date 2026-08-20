@@ -79,3 +79,11 @@ scan	1
 ['0A6C6576656C6572726F72','0A6C6576656C7761726E']
 -- a mix of LowCardinality and String is accepted
 created
+-- a part without a materialized index must not lose rows under exact direct read
+some part has no materialized index	1
+subcolumns=0	1
+subcolumns=0	2
+subcolumns=1	1
+subcolumns=1	2
+scan	1
+scan	2

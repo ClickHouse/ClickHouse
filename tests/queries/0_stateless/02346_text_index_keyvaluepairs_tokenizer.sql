@@ -190,3 +190,33 @@ DROP TABLE IF EXISTS tab_lc_mixed;
 CREATE TABLE tab_lc_mixed (id UInt32, m Map(LowCardinality(String), String), INDEX idx m TYPE text(tokenizer = 'keyValuePairs')) ENGINE = MergeTree ORDER BY id;
 SELECT 'created';
 DROP TABLE tab_lc_mixed;
+
+SELECT '-- a part without a materialized index must not lose rows under exact direct read';
+
+DROP TABLE IF EXISTS tab_partial;
+
+CREATE TABLE tab_partial
+(
+    id UInt32,
+    m Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES tab_partial;
+
+-- This part predates the index, so the index is not materialized in it.
+INSERT INTO tab_partial VALUES (1, {'level':'error'});
+
+ALTER TABLE tab_partial ADD INDEX idx m TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 1;
+
+-- This one is written with the index in place.
+INSERT INTO tab_partial VALUES (2, {'level':'error'}), (3, {'level':'warn'});
+
+SELECT 'some part has no materialized index', count() > 0 FROM system.parts WHERE database = currentDatabase() AND table = 'tab_partial' AND active AND secondary_indices_marks_bytes = 0;
+SELECT 'subcolumns=0', id FROM tab_partial WHERE m['level'] = 'error' ORDER BY id SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT 'subcolumns=1', id FROM tab_partial WHERE m['level'] = 'error' ORDER BY id SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT 'scan', id FROM tab_partial WHERE m['level'] = 'error' ORDER BY id SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_partial;
