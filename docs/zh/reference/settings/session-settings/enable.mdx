@@ -14,6 +14,18 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
+<div id="enable_adaptive_aggregator">
+  ## enable_adaptive_aggregator
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "新增设置，用于启用自适应 `GROUP BY` 聚合：每个线程的本地哈希表达到 `adaptive_aggregator_freeze_threshold` 个键后即冻结。高频键继续在较小的本地表中聚合，低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次；因此低频键只需存储和处理一次，而非每个线程各处理一次。"}]}]} />
+
+启用自适应 `GROUP BY` 算法：每个线程先在本地哈希表中聚合，直至达到 `adaptive_aggregator_freeze_threshold` 个键，随后该表冻结。已出现过的高频键对应的行会继续原地更新该表；新的低频键则根据其哈希值路由到各桶的积压队列，并在桶并行合并期间仅聚合一次。高频键保留在可驻留于缓存的小型表中，低频键则只需存储和处理一次，而非每个线程各处理一次。
+
+遵循外部聚合设置 (`max_bytes_before_external_group_by`、`max_bytes_ratio_before_external_group_by`) ：超过阈值后，会将积压队列提前排空至共享表；如果仍无法降至阈值以下，则通过常规外部聚合将共享表落盘。
+
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
 </div>
@@ -47,6 +59,19 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 如果启用此设置，当分区键表达式是确定性的，且分区键表达式中使用的所有列都包含在主键中时，ClickHouse 会自动启用此优化。
 这种自动推导可确保具有相同主键值的行始终属于同一分区，因此可以安全地避免跨分区合并。
+
+<div id="enable_cascades_optimizer">
+  ## enable_cascades_optimizer
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "新增实验性设置。"}]}]} />
+
+为分布式查询计划启用 Cascades 成本优化器。
+仅当同时设置 `make_distributed_plan = 1` 时才生效：仅启用此设置不会改变单节点查询的规划方式。
 
 <div id="enable_early_constant_folding">
   ## enable_early_constant_folding
