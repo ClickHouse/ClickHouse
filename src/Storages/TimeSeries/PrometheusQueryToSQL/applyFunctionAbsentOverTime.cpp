@@ -160,7 +160,11 @@ SQLQueryPiece applyFunctionAbsentOverTime(const PrometheusQueryTree::Function * 
     /// (timeSeriesPresentToGrid: 1 where the window has a sample, NULL otherwise), then aggregate
     /// across all series with `countForEach` and invert: emit 1 at grid points where no series has
     /// a sample, NULL otherwise. This mirrors `absent()` but over a range window.
-    SQLQueryPiece presence_grid = applyFunctionOverRange(function_node, "present_over_time", std::move(arguments), context);
+    /// The grid keeps the metric name: it is a private intermediate that is collapsed across all
+    /// series anyway, and dropping the name here could only manufacture duplicate label sets (e.g.
+    /// a selector matching several metrics on the same tags), which the public path rejects.
+    SQLQueryPiece presence_grid
+        = applyFunctionOverRange(function_node, "present_over_time", std::move(arguments), context, /* drop_metric_name = */ false);
 
     /// A statically-empty presence grid means there is no data at all in the range: emit 1 at every
     /// step for the synthetic series.

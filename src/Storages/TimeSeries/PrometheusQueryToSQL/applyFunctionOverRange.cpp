@@ -199,7 +199,8 @@ SQLQueryPiece applyFunctionOverRange(
     const Node * node,
     std::string_view function_name,
     std::vector<SQLQueryPiece> && arguments,
-    ConverterContext & context)
+    ConverterContext & context,
+    std::optional<bool> drop_metric_name)
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
@@ -363,7 +364,7 @@ SQLQueryPiece applyFunctionOverRange(
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && impl_info->drop_metric_name)
+    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
         res = dropMetricName(std::move(res), context);
 
     return res;

@@ -51,7 +51,15 @@ INSERT INTO ts_data VALUES
     ('00000000-0000-0000-0000-000000000003', toDateTime64(1699999940, 3, 'UTC'), 100),
     ('00000000-0000-0000-0000-000000000003', toDateTime64(1700000000, 3, 'UTC'), 100),
     -- host4: only one sample, before the [3m] window (1699999820, 1700000000]
-    ('00000000-0000-0000-0000-000000000004', toDateTime64(1699999000, 3, 'UTC'), 7);
+    ('00000000-0000-0000-0000-000000000004', toDateTime64(1699999000, 3, 'UTC'), 7),
+    -- up2/host1: a second metric that differs from up/host1 only by __name__, for the multi-metric
+    -- absent_over_time regression (the internal presence grid must not collapse them into duplicates)
+    ('00000000-0000-0000-0000-000000000005', toDateTime64(1700000000, 3, 'UTC'), 1);
+"
+
+$CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -q "
+INSERT INTO ts_tags VALUES
+    ('00000000-0000-0000-0000-000000000005', 'up2', {'instance':'host1'}, toDateTime64(1699999000, 3, 'UTC'), toDateTime64(1700001000, 3, 'UTC'));
 "
 
 promql_client()
@@ -70,6 +78,10 @@ promql_client -q "absent_over_time(up[3m])"
 echo "-- absent_over_time(nonexistent_metric[5m]): no samples anywhere, so a single synthetic series"
 echo "-- with value 1 is emitted (with the labels inferred from the selector: none here)."
 promql_client -q "absent_over_time(nonexistent_metric[5m])"
+
+echo "-- absent_over_time({__name__=~\"up|up2\",instance=\"host1\"}[3m]): both metrics have samples in the"
+echo "-- range; series differing only by __name__ must not clash inside the internal presence grid."
+promql_client -q 'absent_over_time({__name__=~"up|up2",instance="host1"}[3m])'
 
 echo "-- absent_over_time(up{instance=\"nohost\"}[5m]): no series matches, so the synthetic series"
 echo "-- carries the equality-matcher label instance=\"nohost\"."
