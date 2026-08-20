@@ -4,6 +4,7 @@
         <max_insert_threads>1</max_insert_threads>
         <max_block_size>1000000</max_block_size>
         <min_insert_block_size_rows>1000000</min_insert_block_size_rows>
+        <async_insert>0</async_insert>
     </settings>
 
     <substitutions>
