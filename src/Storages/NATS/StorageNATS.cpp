@@ -143,7 +143,8 @@ StorageNATS::StorageNATS(
 
     try
     {
-        createConsumersConnection();
+        if (!getContext()->getMessageQueueDisableInsertion())
+            createConsumersConnection();
     }
     catch (...)
     {
@@ -483,6 +484,12 @@ SinkToStoragePtr StorageNATS::write(const ASTPtr &, const StorageMetadataPtr & m
 
 void StorageNATS::startup()
 {
+    if (getContext()->getMessageQueueDisableInsertion())
+    {
+        LOG_INFO(log, "Streaming to views is disabled");
+        return;
+    }
+
     initialize_consumers_task->activateAndSchedule();
 }
 
