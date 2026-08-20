@@ -121,10 +121,44 @@ class TestBuildShConsumesRatherThanRegenerates:
             r"^cp \$SRC/tests/fuzz/\*\.dict \$OUT/$", _read(_BUILD_SH), re.M
         ), "build.sh must stage tests/fuzz/*.dict into $OUT for the .options files"
 
-    def test_does_not_generate_its_own_copy(self):
-        # update_dict.sh overwrites the source-derived fallback with the
-        # binary-derived dictionary; regenerating here would discard it.
-        assert "generate_source_dict.sh" not in _read(_BUILD_SH)
+    @staticmethod
+    def _dictionary_commands(body):
+        """Non-comment lines that touch a dictionary file or a generator."""
+        return [
+            line.strip()
+            for line in body.splitlines()
+            if line.strip() and not line.lstrip().startswith("#")
+            if ".dict" in line or "_dict.sh" in line
+        ]
+
+    def test_only_copies_the_dictionary(self):
+        # Any write here replaces the binary-derived dictionary the nightly job
+        # installed, whichever generator produces it, so the contract is
+        # positive: one copy into $OUT and nothing else.
+        touching = self._dictionary_commands(_read(_BUILD_SH))
+        assert touching == ["cp $SRC/tests/fuzz/*.dict $OUT/"], (
+            "build.sh must only copy the current dictionary into $OUT, never "
+            f"regenerate or write one: {touching}"
+        )
+
+    @pytest.mark.parametrize(
+        "regeneration",
+        [
+            "bash $SRC/tests/fuzz/update_dict.sh",
+            "$SRC/tests/fuzz/generate_source_dict.sh $SRC $SRC/tests/fuzz/all.dict",
+            'clickhouse local -q "SELECT name FROM system.functions" > '
+            "$SRC/tests/fuzz/all.dict",
+        ],
+        ids=["binary-derived", "source-derived", "inlined"],
+    )
+    def test_a_regenerating_build_sh_is_rejected(self, regeneration):
+        # Mutation arm, one per way the regression can come back: naming no
+        # single script is not the property being asserted.
+        mutated = _read(_BUILD_SH).replace(
+            "cp $SRC/tests/fuzz/*.dict $OUT/",
+            f"{regeneration}\ncp $SRC/tests/fuzz/*.dict $OUT/",
+        )
+        assert self._dictionary_commands(mutated) != ["cp $SRC/tests/fuzz/*.dict $OUT/"]
 
 
 class TestDictionaryIsGeneratedNotCommitted:
@@ -288,3 +322,63 @@ class TestSuiteInputsAreInTheJobDigest:
             f"remove and cannot prove anything: {include_paths}"
         )
         assert self._uncovered(self._all_reads(), reduced) != []
+
+
+class TestFuzzersBuildDigestCoversItsOwnInputs:
+    """`Build (arm_fuzzers)` stages inputs the shared build digest does not cover.
+
+    Its POST_BUILD step runs tests/fuzz/build.sh, which packs the .options files,
+    the dictionary and seed corpora repacked from tests/queries/0_stateless into
+    the artifact. Without those paths in the digest, a commit changing the
+    dictionary wiring or the corpus takes a cache hit and every consumer -
+    NightlyFuzzers included - reuses a stale ARM_FUZZERS artifact.
+    """
+
+    _REQUIRED = ["./tests/fuzz/", "./tests/queries/0_stateless/"]
+
+    @staticmethod
+    def _fuzzers_job():
+        from ci.defs.defs import BuildTypes
+        from ci.defs.job_configs import JobConfigs
+
+        return next(
+            j
+            for j in JobConfigs.special_build_jobs
+            if j.parameter == BuildTypes.ARM_FUZZERS
+        )
+
+    def test_staged_inputs_are_in_the_digest(self):
+        include_paths = self._fuzzers_job().digest_config.include_paths
+        missing = [p for p in self._REQUIRED if p not in include_paths]
+        assert (
+            missing == []
+        ), f"Build (arm_fuzzers) stages these but does not hash them: {missing}"
+
+    def test_the_shared_build_digest_does_not_already_cover_them(self):
+        # Negative control: the assertion above holds trivially if the shared
+        # digest carries these paths, so the per-job widening proves nothing.
+        from ci.defs.job_configs import build_digest_config
+
+        overlap = [p for p in self._REQUIRED if p in build_digest_config.include_paths]
+        assert overlap == [], (
+            "the shared build digest now covers these, so the widening above is "
+            f"redundant and this guard proves nothing: {overlap}"
+        )
+
+    def test_submodule_hashing_is_preserved(self):
+        # Replacing the digest config drops fields that are not carried over,
+        # and the fuzzers build needs contrib pinned like every other build.
+        assert self._fuzzers_job().digest_config.with_git_submodules
+
+    def test_only_the_fuzzers_build_is_widened(self):
+        # The widening is per-job on purpose: adding these to the shared digest
+        # would invalidate every unrelated build on a corpus change.
+        from ci.defs.defs import BuildTypes
+        from ci.defs.job_configs import JobConfigs
+
+        widened = [
+            j.parameter
+            for j in JobConfigs.special_build_jobs
+            if any(p in j.digest_config.include_paths for p in self._REQUIRED)
+        ]
+        assert widened == [BuildTypes.ARM_FUZZERS], widened

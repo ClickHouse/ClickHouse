@@ -40,6 +40,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ci.defs.defs import (  # noqa: E402
     BINARIES_WITH_LONG_RETENTION,
     ArtifactConfigs,
+    ArtifactNames,
     with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs  # noqa: E402
@@ -129,6 +130,50 @@ class TestBuildIsSharedWithMasterCI:
         # The job provides it, so the workflow has to declare it or the upload
         # has nowhere to go.
         assert "CLICKHOUSE_EXAMPLES" in {a.name for a in nightly_workflow.artifacts}
+
+
+class TestConsumerRequiresTheReleaseBinary:
+    """The producer side above is only half of the wiring.
+
+    `libFuzzer tests` generates the dictionary by running the release binary, so
+    it has to declare that artifact. Without the edge the job starts with no
+    binary to run and the sharing asserted above is pointless.
+    """
+
+    _CONSUMER = "libFuzzer tests"
+
+    def test_job_config_requires_the_release_binary(self):
+        assert ArtifactNames.CH_ARM_RELEASE in JobConfigs.libfuzzer_job.requires
+
+    def test_the_workflow_job_requires_it_too(self):
+        # The workflow takes the shared config, but a workflow is free to
+        # substitute a job, so assert the instance the workflow will run.
+        assert (
+            ArtifactNames.CH_ARM_RELEASE
+            in _job(nightly_workflow, self._CONSUMER).requires
+        )
+
+    def test_the_workflow_produces_what_the_consumer_requires(self):
+        # An edge naming an artifact no job in this workflow provides would
+        # never resolve.
+        provided = {a for job in nightly_workflow.jobs for a in job.provides}
+        required = set(_job(nightly_workflow, self._CONSUMER).requires)
+        assert ArtifactNames.CH_ARM_RELEASE in provided
+        assert required <= provided, sorted(required - provided)
+
+    def test_dictionary_inputs_are_in_the_consumer_digest(self):
+        # The job runs update_dict.sh against the curated dictionary, so a
+        # change to either has to re-run it rather than take a cache hit.
+        include_paths = JobConfigs.libfuzzer_job.digest_config.include_paths
+        missing = [
+            path
+            for path in (
+                "./tests/fuzz/update_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
+            )
+            if path not in include_paths
+        ]
+        assert missing == [], missing
 
 
 class TestLongRetentionTags:
