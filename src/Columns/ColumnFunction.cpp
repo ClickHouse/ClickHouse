@@ -7,11 +7,14 @@
 #include <Common/PODArray.h>
 #include <Common/SipHash.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <Functions/IFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+
+#include <optional>
 
 
 namespace ProfileEvents
@@ -461,7 +464,11 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, FunctionExecution
                         "arguments but {} columns were captured.",
                         function->getName(), toString(args), toString(captured));
 
-    Stopwatch watch;
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> watch;
+    if constexpr (with_profile)
+        watch.emplace();
+
     ColumnsWithTypeAndName columns = captured_columns;
     /// Arguments of lazy executed function can also be lazy executed.
     if (is_short_circuit_argument)
@@ -520,7 +527,7 @@ ColumnWithTypeAndName ColumnFunction::reduceImpl(bool dry_run, FunctionExecution
 
     if constexpr (with_profile)
     {
-        size_t total_elapsed = watch.elapsed();
+        size_t total_elapsed = watch->elapsed();
         size_t side_elapsed = 0;
         for (const auto & arg_profile : profile->argument_profiles)
             side_elapsed += arg_profile.second.lazy_executed_additional_elapsed;

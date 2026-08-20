@@ -14,6 +14,8 @@
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/Stopwatch.h>
+
+#include <optional>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -174,7 +176,11 @@ public:
 
     ColumnPtr executeImplWithProfile(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, FunctionExecutionProfile * profile) const override
     {
-        Stopwatch watch;
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        std::optional<Stopwatch> watch;
+        if (profile)
+            watch.emplace();
+
         ColumnsWithTypeAndName arguments = args;
         if (profile)
             executeShortCircuitArguments<true>(arguments, profile);
@@ -255,12 +261,12 @@ public:
                 break;
         }
 
-        auto take_profile = [](Stopwatch & watch_, size_t rows_, FunctionExecutionProfile * profile_)
+        auto take_profile = [](std::optional<Stopwatch> & watch_, size_t rows_, FunctionExecutionProfile * profile_)
         {
             if (profile_)
             {
                 profile_->executed_rows = rows_;
-                profile_->execution_elapsed = watch_.elapsed();
+                profile_->execution_elapsed = watch_->elapsed();
             }
         };
 

@@ -11,6 +11,8 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Columns/FilterDescription.h>
 #include <Common/Stopwatch.h>
+
+#include <optional>
 #include <Columns/MaskOperations.h>
 #include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
@@ -755,7 +757,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
     if (Name::name != NameAnd::name && Name::name != NameOr::name)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} doesn't support short circuit execution", getName());
 
-    Stopwatch watch;
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> watch;
+    if constexpr (with_profile)
+        watch.emplace();
+
     if (with_profile && checkAndGetShortCircuitArgument(arguments[0].column))
     {
         profile->argument_profiles.emplace_back(std::make_pair(0, FunctionExecutionProfile()));
@@ -833,7 +839,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeShortCircuit(ColumnsWithTy
 
     if constexpr (with_profile)
     {
-        profile->execution_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch->elapsed();
         profile->executed_rows = res->size();
         size_t side_elapsed = 0;
         for (const auto & [i, arg_profile] : profile->argument_profiles)
@@ -875,7 +881,10 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         ColumnRawPtrs not_short_circuit_args;
         VectorWithMemoryTracking<size_t> short_circuit_args_index;
         ColumnsWithTypeAndName new_args;
-        Stopwatch watch;
+        /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+        std::optional<Stopwatch> watch;
+        if (profile)
+            watch.emplace();
 
         // When the function is invoked from ColumnFunction::reduce, the profile->argument_profiles might already contain data
         size_t existing_arg_profiles_num = profile != nullptr ? profile->argument_profiles.size() : 0;
@@ -899,7 +908,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
                 if (profile)
                 {
                     profile->executed_rows = input_rows_count;
-                    profile->execution_elapsed = watch.elapsed();
+                    profile->execution_elapsed = watch->elapsed();
                 }
                 return partial_result;
             }
@@ -912,7 +921,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
 
         if (profile)
         {
-            auto coalesce_elapsed = watch.elapsed();
+            auto coalesce_elapsed = watch->elapsed();
             auto res = executeShortCircuit<true>(new_args, result_type, profile);
             profile->execution_elapsed += coalesce_elapsed;
             // Profiles are only available for short-circuit arguments, and their positions need to be mapped back to the
@@ -926,7 +935,11 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
         return executeShortCircuit<false>(new_args, result_type, profile);
     }
 
-    Stopwatch watch;
+    /// Creating a `Stopwatch` costs a `clock_gettime`, so it is only done when profiling is requested.
+    std::optional<Stopwatch> watch;
+    if (profile)
+        watch.emplace();
+
     ColumnRawPtrs args_in;
     for (const auto & arg_index : arguments)
         args_in.push_back(arg_index.column.get());
@@ -939,7 +952,7 @@ ColumnPtr FunctionAnyArityLogical<Impl, Name>::executeImplWithProfile(
     if (profile)
     {
         profile->executed_rows = input_rows_count;
-        profile->execution_elapsed = watch.elapsed();
+        profile->execution_elapsed = watch->elapsed();
     }
     return result_col;
 }
