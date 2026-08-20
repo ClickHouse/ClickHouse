@@ -168,6 +168,10 @@ void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name,
 
 StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & name)
 {
+    /// This does not go through `DatabaseWithOwnTablesBase::detachTable`, so the deferred population has to be
+    /// triggered here as well.
+    ensurePopulated();
+
     // it is important to call the destructors of not_in_use without
     // locked mutex to avoid potential deadlock.
     DetachedTables not_in_use;

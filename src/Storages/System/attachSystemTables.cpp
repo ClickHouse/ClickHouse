@@ -174,7 +174,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
 }
 
-void validateUserQueryLogConfig(ContextPtr context)
+void validateSystemUserQueryLog(ContextPtr context, const IDatabase & system_database)
 {
     if (!context->getConfigRef().getBool("query_log.enable_user_query_log", true))
         return;
@@ -188,6 +188,12 @@ void validateUserQueryLogConfig(ContextPtr context)
             "the query log table is always created in the `system` database, where `system.user_query_log` "
             "shows the query log records of the current user. "
             "Rename the query log table or set `query_log.enable_user_query_log` to 0");
+
+    /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
+    if (system_database.isTableExist("user_query_log", context))
+        throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
+            "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
+            "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
 }
 
 void attachSystemTableOne(ContextPtr context, IDatabase & system_database)
@@ -369,16 +375,10 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
         attach<StorageSystemTransactions>(context, system_database, "transactions", "Contains a list of transactions and their state.");
     }
 
+    validateSystemUserQueryLog(context, system_database);
+
     if (context->getConfigRef().getBool("query_log.enable_user_query_log", true))
     {
-        validateUserQueryLogConfig(context);
-
-        /// A table with this name could have been created by a user before upgrading to a version with `system.user_query_log`.
-        if (system_database.isTableExist("user_query_log", context))
-            throw Exception(ErrorCodes::TABLE_ALREADY_EXISTS,
-                "Table `system.user_query_log` already exists, but this name is used for the query log records of the current user. "
-                "Rename or drop the existing table, or set `query_log.enable_user_query_log` to 0");
-
         attach<StorageSystemUserQueryLog>(context, system_database, "user_query_log",
             "Contains the query log records of the current user: rows of the query log table (`system.query_log` by default) "
             "whose initiating user is the current user. Unlike the query log table itself, it can be read without any grants. "

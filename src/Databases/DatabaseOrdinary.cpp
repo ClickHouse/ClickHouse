@@ -703,6 +703,7 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOrdinary::getDetachedTablesIte
 
 VectorWithMemoryTracking<String> DatabaseOrdinary::getAllTableNames(ContextPtr) const
 {
+    ensurePopulated();
     std::set<String> unique_names;
     {
         std::lock_guard lock(mutex);

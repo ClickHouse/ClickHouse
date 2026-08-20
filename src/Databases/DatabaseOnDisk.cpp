@@ -234,6 +234,7 @@ void DatabaseOnDisk::createTable(
     const ASTPtr & query)
 {
     auto component_guard = Coordination::setCurrentComponent("DatabaseOnDisk::createTable");
+    ensurePopulated();
     auto db_disk = getDisk();
     createDirectories();
 
