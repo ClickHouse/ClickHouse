@@ -76,6 +76,8 @@ class ClickHouseService:
             "--user_files_path", self.user_files_path,
             "--top_level_domains_path", f"{self.ch_config_dir}/top_level_domains",
             "--logger.stderr", f"{self.log_dir}/stderr.log",
+            # NOTE (strtgbb): master binary rejects unknown cas_log keys (ErrorCodes 137)
+            "--skip_check_for_incorrect_settings", "1",
         ]
         print(f"Starting ClickHouse server: {shlex.join(argv)}")
         with open(f"{self.log_dir}/clickhouse-server.log", "w") as log_fd:
