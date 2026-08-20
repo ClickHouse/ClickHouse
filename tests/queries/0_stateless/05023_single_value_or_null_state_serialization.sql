@@ -38,7 +38,8 @@ ENGINE = MergeTree
 ORDER BY tuple();
 
 INSERT INTO single_value_or_null_legacy_state
-SELECT singleValueOrNullState(toUInt64(42));
+SELECT singleValueOrNullState(number)
+FROM numbers(2);
 
 SELECT DISTINCT toTypeName(state) FROM single_value_or_null_legacy_state;
 
