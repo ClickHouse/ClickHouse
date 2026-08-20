@@ -1,0 +1,120 @@
+---
+import versionsManifest from '@generated/data/versions.json';
+
+interface VersionEntry {
+  id: string;
+  kind: 'channel' | 'release';
+  label: string;
+  exactVersion?: string;
+  description: string;
+  available: boolean;
+  indexable: boolean;
+  routes?: Record<string, string>;
+  fallbackRoute?: string;
+}
+
+interface Props {
+  stableId?: string;
+}
+
+const { stableId } = Astro.props;
+const versions = versionsManifest.versions as VersionEntry[];
+const current = versions.find((version) => version.id === versionsManifest.currentId) ?? versions[0];
+const channels = versions.filter((version) => version.kind === 'channel');
+const releases = versions.filter((version) => version.kind === 'release');
+
+function destination(version: VersionEntry) {
+  if (!version.available) return null;
+  return (stableId && version.routes?.[stableId]) || version.fallbackRoute || null;
+}
+---
+
+<details class="version-selector">
+  <summary aria-label={`Documentation version: ${current.label}`}>
+    <span class="version-symbol" aria-hidden="true">V</span>
+    <span class="version-trigger-copy">
+      <strong>{current.label}</strong>
+      {current.exactVersion && <small>{current.exactVersion}</small>}
+    </span>
+    <span class="version-chevron" aria-hidden="true">⌃</span>
+  </summary>
+
+  <div class="version-menu" role="listbox" aria-label="Documentation versions">
+    <header>
+      <strong>Documentation version</strong>
+      <span>Choose the ClickHouse release these pages describe.</span>
+    </header>
+
+    <div class="version-options">
+      {channels.map((version) => {
+        const href = destination(version);
+        return href ? (
+          <a
+            class:list={['version-option', { selected: version.id === current.id }]}
+            href={href}
+            role="option"
+            aria-selected={version.id === current.id}
+          >
+            <span>
+              <strong>{version.label}</strong>
+              <small>{version.exactVersion ? `${version.exactVersion} · ${version.description}` : version.description}</small>
+            </span>
+            {version.id === current.id && <span class="version-check" aria-hidden="true">✓</span>}
+          </a>
+        ) : (
+          <span class="version-option disabled" role="option" aria-disabled="true" aria-selected="false">
+            <span>
+              <strong>{version.label}</strong>
+              <small>{version.description}</small>
+            </span>
+            <em>Not published</em>
+          </span>
+        );
+      })}
+    </div>
+
+    <div class="version-release-heading">
+      <span>Archived releases</span>
+    </div>
+
+    {releases.length > 0 ? (
+      <div class="version-options release-options">
+        {releases.map((version) => {
+          const href = destination(version);
+          return href ? (
+            <a
+              class:list={['version-option', { selected: version.id === current.id }]}
+              href={href}
+              role="option"
+              aria-selected={version.id === current.id}
+            >
+              <span><strong>{version.label}</strong><small>{version.description}</small></span>
+              {version.id === current.id && <span class="version-check" aria-hidden="true">✓</span>}
+            </a>
+          ) : null;
+        })}
+      </div>
+    ) : (
+      <p class="version-empty">Archived bundles will appear here after publication.</p>
+    )}
+
+    <footer>Versions map pages by stable document ID.</footer>
+  </div>
+</details>
+
+<script>
+  const versionSelector = document.querySelector<HTMLDetailsElement>('.version-selector');
+
+  document.addEventListener('click', (event) => {
+    if (versionSelector?.open && !versionSelector.contains(event.target as Node)) {
+      versionSelector.open = false;
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && versionSelector?.open) {
+      versionSelector.open = false;
+      versionSelector.querySelector<HTMLElement>('summary')?.focus();
+    }
+  });
+</script>

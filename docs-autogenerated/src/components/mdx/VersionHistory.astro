@@ -1,0 +1,33 @@
+---
+interface VersionItem {
+  label?: string;
+}
+
+interface VersionRow {
+  id?: string;
+  items?: VersionItem[];
+}
+
+interface Props {
+  rows?: VersionRow[];
+}
+
+const { rows = [] } = Astro.props;
+---
+
+{rows.length > 0 && (
+  <details class="version-history">
+    <summary>Version history <span>{rows.length}</span></summary>
+    <ol>
+      {rows.map((row) => {
+        const labels = (row.items ?? []).map(({ label }) => label ?? '').filter(Boolean);
+        return (
+          <li>
+            <code>{labels[0] ?? 'Version'}</code>
+            <span>{labels.slice(1).join(' · ')}</span>
+          </li>
+        );
+      })}
+    </ol>
+  </details>
+)}

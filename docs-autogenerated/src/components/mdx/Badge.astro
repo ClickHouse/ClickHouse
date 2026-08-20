@@ -1,0 +1,9 @@
+---
+interface Props {
+  label: string;
+  tone?: 'green' | 'amber' | 'blue' | 'gray';
+}
+
+const { label, tone = 'gray' } = Astro.props;
+---
+<span class:list={['mdx-badge', `mdx-badge-${tone}`]}><slot />{label}</span>

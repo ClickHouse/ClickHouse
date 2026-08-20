@@ -1,0 +1,6 @@
+.artifacts/
+.astro/
+.mintlify/
+dist/
+node_modules/
+src/generated/

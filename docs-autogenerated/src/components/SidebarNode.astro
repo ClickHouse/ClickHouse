@@ -1,0 +1,81 @@
+---
+import { containsPath, isNavGroup, isNavPage, type NavEntry, type NavGroup } from '@mintlify/astro/helpers';
+
+interface Props {
+  entry: NavEntry;
+  currentRoute: string;
+  depth?: number;
+}
+
+interface DisclosureGroup extends NavGroup {
+  expandable?: boolean;
+  expanded?: boolean;
+}
+
+const { entry, currentRoute, depth = 0 } = Astro.props;
+const page = isNavPage(entry) ? entry : null;
+const group = isNavGroup(entry) ? entry as DisclosureGroup : null;
+const active = page ? page.href === currentRoute : containsPath(group?.pages ?? [], currentRoute);
+const label = page?.title ?? group?.group ?? '';
+const children = group?.pages ?? [];
+const rootGroup = depth === 0 && group;
+const expanded = (active || group?.expanded === true) && children.length > 0;
+function firstPageHref(candidate: NavEntry): string | null {
+  if (isNavPage(candidate)) return candidate.href;
+  if (!isNavGroup(candidate)) return null;
+  for (const child of candidate.pages) {
+    const href = firstPageHref(child);
+    if (href) return href;
+  }
+  return null;
+}
+const groupHref = group ? firstPageHref(group) : null;
+---
+
+<li class:list={['sidebar-node', `sidebar-depth-${depth}`, { active, expanded }] }>
+  {rootGroup ? (
+    <>
+      {active || !groupHref
+        ? (
+          <div class="sidebar-group-heading">
+            <span>{label}</span>
+            <span class="sidebar-chevron" aria-hidden="true"></span>
+          </div>
+        )
+        : (
+          <a class="sidebar-group-heading sidebar-group-heading-link" href={groupHref}>
+            <span>{label}</span>
+            <span class="sidebar-chevron" aria-hidden="true"></span>
+          </a>
+        )}
+      {expanded && (
+        <ul>
+          {children.map((child) => (
+            <Astro.self entry={child} currentRoute={currentRoute} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </>
+  ) : page ? (
+    <a href={page.href} aria-current={page.href === currentRoute ? 'page' : undefined}>
+      <span>{label}</span>
+    </a>
+  ) : group && expanded ? (
+    <details class="sidebar-disclosure" open={expanded}>
+      <summary>
+        <span>{label}</span>
+        <span class="sidebar-chevron" aria-hidden="true"></span>
+      </summary>
+      <ul>
+        {children.map((child) => (
+          <Astro.self entry={child} currentRoute={currentRoute} depth={depth + 1} />
+        ))}
+      </ul>
+    </details>
+  ) : group && groupHref ? (
+    <a class="sidebar-group-link" href={groupHref}>
+      <span>{label}</span>
+      <span class="sidebar-chevron" aria-hidden="true"></span>
+    </a>
+  ) : null}
+</li>

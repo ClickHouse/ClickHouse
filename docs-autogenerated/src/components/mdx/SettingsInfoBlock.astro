@@ -1,0 +1,17 @@
+---
+interface Props {
+  type: string;
+  default_value: string;
+  changeable_without_restart?: boolean | string;
+}
+
+const { type, default_value: defaultValue, changeable_without_restart: changeableWithoutRestart } = Astro.props;
+---
+
+<dl class="settings-info">
+  <div><dt>Type</dt><dd><code>{type}</code></dd></div>
+  <div><dt>Default</dt><dd><code>{defaultValue}</code></dd></div>
+  {changeableWithoutRestart !== undefined && (
+    <div><dt>Runtime</dt><dd>{String(changeableWithoutRestart) === 'true' ? 'Changeable' : 'Restart required'}</dd></div>
+  )}
+</dl>

@@ -1,0 +1,57 @@
+---
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import { components as mintlifyComponents } from '@mintlify/astro/components';
+import { resolvePageData, type NavEntry, type NavPage } from '@mintlify/astro/helpers';
+import type { DocsConfig } from '@mintlify/astro';
+
+import docsConfig from '@generated/mintlify/docs.json';
+import * as clickhouseComponents from '@components/mdx';
+
+import DocsLayout from '../../../layouts/DocsLayout.astro';
+
+type ReferenceEntry = CollectionEntry<'reference'>;
+
+interface Props {
+  entry: ReferenceEntry;
+  sidebarEntries: NavEntry[];
+  previous: NavPage | null;
+  next: NavPage | null;
+}
+
+export async function getStaticPaths() {
+  const entries = await getCollection('reference');
+  const titleMap = Object.fromEntries(
+    entries.map((entry) => [entry.id, entry.data.title]),
+  );
+
+  return entries.map((entry) => {
+    const page = resolvePageData(docsConfig as DocsConfig, {
+      currentPath: entry.data.route,
+      titleMap,
+    });
+
+    return {
+      params: { slug: entry.data.route.slice('/docs/reference/'.length) },
+      props: {
+        entry,
+        sidebarEntries: page.sidebarEntries,
+        previous: page.footerPages.prev,
+        next: page.footerPages.next,
+      },
+    };
+  });
+}
+
+const { entry, sidebarEntries, previous, next } = Astro.props;
+const { Content, headings } = await render(entry);
+---
+
+<DocsLayout
+  document={entry.data}
+  sidebarEntries={sidebarEntries}
+  headings={headings}
+  previous={previous}
+  next={next}
+>
+  <Content components={{ ...mintlifyComponents, ...clickhouseComponents }} />
+</DocsLayout>
