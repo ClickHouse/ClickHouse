@@ -84,7 +84,6 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
-            /// Database-level shortcuts can bypass a table-specific catalog lookup in `ContextAccess`.
             if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
                 return;
 

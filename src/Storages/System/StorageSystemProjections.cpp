@@ -115,7 +115,6 @@ protected:
                 if (!table)
                     continue;
 
-                /// Database-level shortcuts can bypass a table-specific catalog lookup in `ContextAccess`.
                 if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_TABLES, {}))
                     continue;
 

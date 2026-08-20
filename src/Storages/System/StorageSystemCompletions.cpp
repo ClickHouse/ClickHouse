@@ -97,7 +97,6 @@ static void fillDataWithTableColumns(
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 
-        /// Database-level shortcuts and external tables can bypass a table-specific catalog lookup in `ContextAccess`.
         if (!table->isGrantedToExposeMetadata(context, AccessType::SHOW_COLUMNS, column.name))
             continue;
 

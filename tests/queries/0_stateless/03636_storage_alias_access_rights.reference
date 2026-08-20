@@ -41,11 +41,11 @@ Test SHOW CREATE without target permission
 ACCESS_DENIED
 Test SHOW COLUMNS without target permission
 Test table statistics without target permission
-0
+1	1	1	1	1
 Test table metadata without target permission
-0
+1	1	1	1	1	1
 Test persisted table metadata without target permission
-0
+1	1
 Test column statistics without target permission
 0
 Test other metadata tables without target permission
@@ -53,7 +53,7 @@ Test other metadata tables without target permission
 Test index metadata and statistics without target permission
 0
 Test lifetime statistics without target permission
-0
+1	1
 Test direct and Alias count with column-scoped target SELECT permission using the analyzer
 2	2
 Test table statistics with target permission

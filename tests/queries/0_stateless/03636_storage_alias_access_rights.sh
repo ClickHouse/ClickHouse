@@ -187,21 +187,32 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "SHOW COLUMNS FROM test
 
 echo "Test table statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT count()
+    SELECT
+        isNull(total_rows),
+        isNull(total_bytes),
+        isNull(total_bytes_uncompressed),
+        empty(data_paths),
+        empty(storage_policy)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
 echo "Test table metadata without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT count()
+    SELECT
+        empty(partition_key),
+        empty(sorting_key),
+        empty(primary_key),
+        empty(sampling_key),
+        empty(skipping_indices_types),
+        empty(comment)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
 
 echo "Test persisted table metadata without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT count()
+    SELECT empty(create_table_query), empty(engine_full)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_access';
 "
@@ -230,7 +241,7 @@ ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
 
 echo "Test lifetime statistics without target permission"
 ${CLICKHOUSE_CLIENT} --user="${access_username}" --query "
-    SELECT count()
+    SELECT isNull(lifetime_rows), isNull(lifetime_bytes)
     FROM system.tables
     WHERE database = currentDatabase() AND name = 'test_alias_buffer_access';
 "
