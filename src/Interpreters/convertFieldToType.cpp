@@ -317,12 +317,35 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     if (which_type.isDateTime() && which_from_type.isTime64())
     {
+        /// Mirror `ToDateTimeImpl::execute(Int64)` - the column path used by `CAST` and
+        /// `INSERT SELECT` - exactly, so that a `VALUES` constant and the runtime conversion of the
+        /// same value agree. In particular, with the default `ignore` behavior a negative
+        /// time-of-day wraps into the end of the `DateTime` range rather than being clamped to the
+        /// epoch.
+        const Int64 seconds = time64_to_seconds();
+        if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Ignore)
+            return static_cast<UInt64>(static_cast<UInt32>(seconds));
+
+        if (seconds < 0 || seconds >= MAX_DATETIME_TIMESTAMP)
+        {
+            if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Saturate)
+                return seconds < 0 ? UInt64(0) : static_cast<UInt64>(std::numeric_limits<UInt32>::max());
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", seconds);
+        }
+        return static_cast<UInt64>(seconds);
+    }
+    if (which_type.isTime() && which_from_type.isTime64())
+    {
+        /// Mirror `TransformTime64<ToTimeTransform64Signed<Int64, Int32, ...>>`: floor the
+        /// sub-second part towards negative infinity (already done by `time64_to_seconds`), then
+        /// clamp to the `Time` range - which `ToTimeTransform64Signed` does for every behavior
+        /// except `throw`.
         const Int64 seconds = time64_to_seconds();
         if (format_settings.date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw
-            && (seconds < 0 || seconds > MAX_DATETIME_TIMESTAMP))
-            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime", seconds);
+            && (seconds < -MAX_TIME_TIMESTAMP || seconds > MAX_TIME_TIMESTAMP))
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time", seconds);
 
-        return static_cast<UInt64>(std::clamp(seconds, Int64(0), Int64(MAX_DATETIME_TIMESTAMP)));
+        return static_cast<Int64>(std::clamp(seconds, -static_cast<Int64>(MAX_TIME_TIMESTAMP), static_cast<Int64>(MAX_TIME_TIMESTAMP)));
     }
     if (which_type.isDateTime64() && which_from_type.isTime64())
     {
