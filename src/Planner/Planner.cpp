@@ -2281,6 +2281,13 @@ void Planner::buildPlanForUnionNode()
 /// `createRemotePlanForParallelReplicas`). The cache steps hold node-local state - a
 /// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
 /// representation. The cache is populated and read by the plan the initiator executes itself.
+///
+/// `make_distributed_plan` is not such a kind: whether the plan is really split into fragments is
+/// decided only later, by `QueryPlan::convertToDistributed`, which falls back to one local stage for
+/// a plan that has no exchange. The write path therefore stays enabled here - the fragment split
+/// drops `StreamInQueryResultCacheStep`, so nothing non-serializable reaches a worker, and the local
+/// fallback keeps the cache working. Only the read path is disabled for a distributed plan, see
+/// `shouldReadFromQueryCacheForSubquery`.
 static bool shouldUseQueryCacheForSubquery(
     const QueryNode & query_node,
     bool outer_can_use_cache,
@@ -2294,8 +2301,7 @@ static bool shouldUseQueryCacheForSubquery(
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    if (select_query_options.build_logical_plan
-        || (settings[Setting::make_distributed_plan] && !select_query_options.is_local_plan_for_distributed_query))
+    if (select_query_options.build_logical_plan)
         return false;
 
     const bool is_subquery = select_query_options.is_subquery;
@@ -2319,6 +2325,19 @@ static bool shouldUseQueryCacheForSubquery(
         return true;
 
     return false;
+}
+
+/// A cache hit replaces the whole subquery plan with a `ReadFromQueryResultCacheStep`, a node-local
+/// source of the cached chunks. Unlike the write step, it cannot be dropped when the plan is split
+/// into fragments - there is no subplan left behind it to run instead - so a hit would either fail
+/// serialization or make the query fall back to local execution depending on what the cache happens
+/// to hold. Do not read the cache while a distributed plan is being built, so the plan shape never
+/// depends on cache contents.
+static bool shouldReadFromQueryCacheForSubquery(const Settings & settings, const SelectQueryOptions & select_query_options)
+{
+    if (!settings[Setting::enable_reads_from_query_cache])
+        return false;
+    return !settings[Setting::make_distributed_plan] || select_query_options.is_local_plan_for_distributed_query;
 }
 
 void Planner::buildPlanForQueryNode()
@@ -2369,7 +2388,7 @@ void Planner::buildPlanForQueryNode()
         settings_copy = settings;
 
     /// If it is a non-internal SELECT, and passive (read) use of the query cache is enabled, and the cache knows the query, then add a ReadFromQueryResultCacheStep instead of building the rest of the plan.
-    if (should_cache && settings[Setting::enable_reads_from_query_cache])
+    if (should_cache && shouldReadFromQueryCacheForSubquery(settings, select_query_options))
     {
         QueryResultCache::Key key(ast, query_context->getCurrentDatabase(), *settings_copy, query_context->getCurrentQueryId(), query_context->getUserID(), query_context->getCurrentRoles(), /* is_subquery = */ true);
         auto reader = std::make_shared<QueryResultCacheReader>(query_result_cache->createReader(key));
