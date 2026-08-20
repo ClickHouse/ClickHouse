@@ -1,0 +1,485 @@
+<test>
+    <!-- Compares Map(LowCardinality(String), String) with bucketed serialization against JSON
+         (fully dynamic, and with the 3 hottest paths type-hinted) for storing sparse,
+         high-cardinality attribute sets, e.g. OTel-style event attributes.
+
+         All three schema variants at a given cardinality are filled from the same staging
+         table, so they hold byte-identical logical content and only the storage
+         representation differs.
+
+         Per row, 3 "hot" paths (http.route, http.status, error.type - the ones the sample
+         query patterns filter/group on) are always present, plus a sparse sample of the
+         remaining vocabulary: 85% of rows sample 10-34 extra keys, 15% sample 60-149,
+         capped by the vocabulary size, approximating a real-world observed distribution of
+         avg ~31 / p90 ~117 keys per row. Row counts are scaled down as cardinality grows to
+         bound the cost of shuffling the key vocabulary per row.
+
+         See tests/performance/map_bucketed_serialization.xml and
+         tests/performance/json_shared_data_wide.xml for the individual mechanisms this
+         combines. -->
+
+    <tag>long</tag>
+
+    <!-- ============================== cardinality 10 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c10
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c10
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(7)), 1, least(7, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(200000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c10
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c10 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c10 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c10
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c10
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c10
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c10
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c10
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c10
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c10 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c10 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c10 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c10</fill_query>
+
+    <!-- ============================== cardinality 100 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c100
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c100
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(97)), 1, least(97, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(200000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c100
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c100 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c100 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c100
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c100
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c100
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c100
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c100
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c100
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c100 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c100 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c100 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c100</fill_query>
+
+    <!-- ============================== cardinality 500 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c500
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c500
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(497)), 1, least(497, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(100000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c500
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c500 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c500 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c500
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c500
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c500
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c500
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c500
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c500
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c500 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c500 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c500 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c500</fill_query>
+
+    <!-- ============================== cardinality 1000 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c1000
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c1000
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(997)), 1, least(997, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(50000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c1000
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c1000 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c1000 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c1000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c1000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c1000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c1000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c1000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c1000
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c1000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c1000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c1000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c1000</fill_query>
+
+    <!-- ============================== cardinality 5000 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c5000
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c5000
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(4997)), 1, least(4997, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(20000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c5000
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c5000 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c5000 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c5000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c5000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c5000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c5000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c5000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c5000
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c5000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c5000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c5000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c5000</fill_query>
+
+    <!-- ============================== cardinality 10000 ============================== -->
+    <create_query>
+        CREATE TABLE staging_c10000
+        (
+            id UInt64, http_route String, http_status UInt16, error_type Nullable(String),
+            tail Array(Tuple(String, String))
+        ) ENGINE = MergeTree ORDER BY id
+    </create_query>
+    <fill_query>
+        INSERT INTO staging_c10000
+        SELECT
+            number AS id,
+            '/api/' || toString(number % 50) AS http_route,
+            arrayElement([200, 301, 400, 404, 500, 502], (number % 6) + 1) AS http_status,
+            if(rand() % 20 = 0, 'timeout', NULL) AS error_type,
+            arrayMap(i -> ('attr_' || toString(i), randomStringUTF8(12)),
+                arraySlice(arrayShuffle(range(9997)), 1, least(9997, if(rand() % 100 &lt; 85, 10 + rand() % 25, 60 + rand() % 90))))
+                AS tail
+        FROM numbers(10000)
+    </fill_query>
+
+    <create_query>
+        CREATE TABLE map_c10000
+        (
+            id UInt64, Attributes Map(LowCardinality(String), String),
+            INDEX idx_attr_keys mapKeys(Attributes) TYPE bloom_filter,
+            INDEX idx_attr_values mapValues(Attributes) TYPE bloom_filter
+        ) ENGINE = MergeTree ORDER BY id SETTINGS map_serialization_version = 'with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_dynamic_c10000 (id UInt64, Attributes JSON(max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+    <create_query>
+        CREATE TABLE json_hinted_c10000 (id UInt64, Attributes JSON(http.route String, http.status UInt16, error.type String, max_dynamic_paths=0)) ENGINE = MergeTree ORDER BY id
+        SETTINGS object_shared_data_serialization_version = 'advanced', object_shared_data_serialization_version_for_zero_level_parts = 'map_with_buckets'
+    </create_query>
+
+    <fill_query>
+        INSERT INTO map_c10000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))
+        FROM staging_c10000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_dynamic_c10000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c10000
+    </fill_query>
+    <fill_query>
+        INSERT INTO json_hinted_c10000
+        SELECT id, mapFromArrays(
+            arrayConcat(['http.route', 'http.status', 'error.type'], arrayMap(x -> x.1, tail)),
+            arrayConcat([http_route, toString(http_status), coalesce(error_type, '')], arrayMap(x -> x.2, tail)))::Map(String, String)
+        FROM staging_c10000
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE map_c10000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_dynamic_c10000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>OPTIMIZE TABLE json_hinted_c10000 FINAL SETTINGS mutations_sync=1</fill_query>
+    <fill_query>DROP TABLE staging_c10000</fill_query>
+
+    <!-- ========================= Query 1: filter on error, mirrors filtering the `errors` field over a time window ========================= -->
+    <query tag='q1_error_filter'>SELECT count() FROM map_c10 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c10 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c10 WHERE Attributes.error.type != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM map_c100 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c100 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c100 WHERE Attributes.error.type != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM map_c500 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c500 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c500 WHERE Attributes.error.type != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM map_c1000 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c1000 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c1000 WHERE Attributes.error.type != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM map_c5000 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c5000 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c5000 WHERE Attributes.error.type != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM map_c10000 WHERE Attributes['error.type'] != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_dynamic_c10000 WHERE Attributes.error.type.:String != '' FORMAT Null</query>
+    <query tag='q1_error_filter'>SELECT count() FROM json_hinted_c10000 WHERE Attributes.error.type != '' FORMAT Null</query>
+
+    <!-- ========================= Query 2: grouped error count by route/status, mirrors the http drill-down ========================= -->
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c10 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c10 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c10 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c100 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c100 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c100 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c500 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c500 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c500 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c1000 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c1000 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c1000 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c5000 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c5000 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c5000 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes['http.route'], Attributes['http.status'], count() FROM map_c10000 WHERE Attributes['error.type'] != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c10000 WHERE Attributes.error.type.:String != '' GROUP BY 1, 2 FORMAT Null</query>
+    <query tag='q2_grouped_drilldown'>SELECT Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c10000 WHERE Attributes.error.type != '' GROUP BY 1, 2 FORMAT Null</query>
+
+    <!-- ========================= Query 3: unfiltered grouped scan, mirrors the multi-day trend view (a wider, less selective scan) ========================= -->
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c10 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c10 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c10 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c100 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c100 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c100 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c500 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c500 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c500 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c1000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c1000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c1000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c5000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c5000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c5000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes['http.route'], Attributes['http.status'], count() FROM map_c10000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route.:String, Attributes.http.status.:String, count() FROM json_dynamic_c10000 GROUP BY 1, 2, 3 FORMAT Null</query>
+    <query tag='q3_trend_scan'>SELECT intDiv(id, 10000) AS bucket, Attributes.http.route, Attributes.http.status, count() FROM json_hinted_c10000 GROUP BY 1, 2, 3 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS map_c10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c10</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_c100</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c100</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c100</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_c500</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c500</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c500</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_c1000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c1000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c1000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_c5000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c5000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c5000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS map_c10000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_dynamic_c10000</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_hinted_c10000</drop_query>
+</test>
