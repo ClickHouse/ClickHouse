@@ -377,8 +377,9 @@ IMPLEMENT_SETTING_ENUM(
      {"onelake", DatabaseDataLakeCatalogType::ICEBERG_ONELAKE},
      {"biglake", DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE},
      {"paimon_rest", DatabaseDataLakeCatalogType::PAIMON_REST},
-     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING},
-     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON}})
+     {"horizon", DatabaseDataLakeCatalogType::ICEBERG_HORIZON}},
+     {"s3tables", DatabaseDataLakeCatalogType::S3_TABLES},
+     {"delta_sharing", DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING}})
 
 IMPLEMENT_SETTING_ENUM(
     FileCachePolicy,
@@ -463,6 +464,12 @@ IMPLEMENT_SETTING_ENUM(
     {{"v1", MergeTreeDynamicSerializationVersion::V1},
      {"v2", MergeTreeDynamicSerializationVersion::V2},
      {"v3", MergeTreeDynamicSerializationVersion::V3}})
+
+IMPLEMENT_SETTING_ENUM(
+    MergeTreePatchPartsVersion,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"v1", MergeTreePatchPartsVersion::V1},
+     {"v2", MergeTreePatchPartsVersion::V2}})
 
 IMPLEMENT_SETTING_ENUM(
     SearchOrphanedPartsDisks,
