@@ -3,7 +3,7 @@ import re
 import requests
 import struct
 
-from helpers.cluster import ClickHouseCluster, QueryRuntimeException
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, tsv_close_to
 from .prometheus_test_utils import (
     PROMETHEUS_STALE_NAN,
@@ -493,7 +493,7 @@ def test_external_tables():
 # normalizeTimeSeriesDefinition.cpp), but is rejected by the Prometheus-specific remote-write and
 # PromQL query paths with a clear, actionable error instead of silently treating every row as fresh
 # (see PrometheusRemoteWriteProtocol::writeTimeSeries and StorageTimeSeriesSelector::readImpl).
-def test_external_samples_table_missing_is_stale_marker():
+def test_external_samples_table_without_is_stale_marker_keeps_working():
     node.query(
         "CREATE TABLE mysamples (id UUID, timestamp DateTime64(3), value Float64) "
         "ENGINE=MergeTree ORDER BY (id, timestamp)"
@@ -517,19 +517,17 @@ def test_external_samples_table_missing_is_stale_marker():
         "SAMPLES mysamples TAGS mytags METRICS mymetrics"
     )
 
-    # Remote-write must fail closed instead of silently writing a raw stale-NaN into `value`
-    # with the flag omitted.
+    # A legacy 3-column samples table keeps working with the pre-column behavior: the write
+    # succeeds (a stale marker would be stored as its raw NaN payload) and a PromQL read treats
+    # every stored row as an ordinary non-stale sample.
     protobuf = convert_time_series_to_protobuf(
         [({"__name__": "up", "job": "myjob"}, {timestamp: 1.0})]
     )
     response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
-    assert response.status_code != requests.codes.no_content
-    assert "is_stale_marker" in response.text
+    assert response.status_code == requests.codes.no_content
 
-    # A PromQL query (bare instant selector) must fail the same way instead of fabricating
-    # `is_stale_marker = 0` for every row.
-    with pytest.raises(QueryRuntimeException, match="is_stale_marker"):
-        node.query(f"SELECT * FROM prometheusQuery(prometheus, 'up', {timestamp})")
+    result = node.query(f"SELECT value FROM prometheusQuery(prometheus, 'up', {timestamp})")
+    assert result.strip() == "1"
 
 
 # Checks that the `DATA` keyword works as an alias for `SAMPLES`

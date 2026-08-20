@@ -1,6 +1,5 @@
 import os
 import pytest
-import requests
 
 from helpers.cluster import ClickHouseCluster
 from helpers.database_disk import get_database_disk_name, write_metadata
@@ -8,7 +7,6 @@ from helpers.database_disk import get_database_disk_name, write_metadata
 from helpers.test_tools import TSV
 from .prometheus_test_utils import (
     convert_time_series_to_protobuf,
-    get_response_to_remote_write,
     send_protobuf_to_remote_write,
 )
 
@@ -186,15 +184,14 @@ def send_bar_via_remote_write():
     send_protobuf_to_remote_write(node.ip_address, 9093, "/write", protobuf)
 
 
-# Attempts to send the `bar` metric via RemoteWrite protocol and checks it's rejected because the
-# "samples"/"data" table still has the prealpha 3-column schema (no `is_stale_marker`).
-# The Prometheus remote-write path must fail closed on such tables instead of silently writing raw
-# stale-NaN samples with no way to flag them (see PrometheusRemoteWriteProtocol::writeTimeSeries).
-def send_bar_via_remote_write_expect_missing_is_stale_marker():
-    protobuf = convert_time_series_to_protobuf(bar)
-    response = get_response_to_remote_write(node.ip_address, 9093, "/write", protobuf)
-    assert response.status_code != requests.codes.no_content
-    assert "is_stale_marker" in response.text
+# Checks that a PromQL read works against the current samples table (with or without
+# `is_stale_marker`: a legacy 3-column table treats every stored row as non-stale).
+def check_bar_via_promql():
+    result = node.query(
+        "SELECT value FROM prometheusQuery(default.prometheus, 'bar', 2000)",
+        settings={"allow_experimental_time_series_table": 1},
+    )
+    assert result.strip() == "20"
 
 
 # Finds the name of the "samples"/"data" inner table currently backing `prometheus` and adds the
@@ -229,15 +226,17 @@ def cleanup_after_test():
 
 
 # Checks that an prealpha-version TimeSeries table can be attached and used.
-# The "data" table upgraded from prealpha still has the old 3-column schema (no `is_stale_marker`),
-# so RemoteWrite must reject it until it's migrated (see
-# send_bar_via_remote_write_expect_missing_is_stale_marker() above).
+# The "data" table upgraded from prealpha still has the old 3-column schema (no `is_stale_marker`);
+# remote writes and PromQL reads keep working with the prealpha behavior (stale markers, if any,
+# are stored and read back as raw NaN samples) until the operator migrates the table.
 def test_upgrade_from_prealpha():
     create_and_fill_prealpha_time_series()
-    send_bar_via_remote_write_expect_missing_is_stale_marker()
-    migrate_data_table_add_is_stale_marker()
     send_bar_via_remote_write()
     check_foo_and_bar()
+    check_bar_via_promql()
+    migrate_data_table_add_is_stale_marker()
+    check_foo_and_bar()
+    check_bar_via_promql()
 
 
 # Checks that an prealpha-version TimeSeries table can be attached and used (Ordinary database).
@@ -249,10 +248,12 @@ def test_upgrade_from_prealpha_ordinary_db():
     )
 
     create_and_fill_prealpha_time_series()
-    send_bar_via_remote_write_expect_missing_is_stale_marker()
-    migrate_data_table_add_is_stale_marker()
     send_bar_via_remote_write()
     check_foo_and_bar()
+    check_bar_via_promql()
+    migrate_data_table_add_is_stale_marker()
+    check_foo_and_bar()
+    check_bar_via_promql()
 
     node.query("DROP TABLE default.prometheus SYNC")
     node.query("DROP DATABASE default SYNC")

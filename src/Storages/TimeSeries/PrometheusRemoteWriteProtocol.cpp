@@ -33,7 +33,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -310,22 +309,19 @@ void PrometheusRemoteWriteProtocol::write(
     /// The Prometheus remote-write protocol relies on the `is_stale_marker` column of the "samples" table to
     /// flag Prometheus stale markers instead of writing them as ordinary NaN samples (see
     /// `isPrometheusStaleMarker()` above). A "samples" table predating that column (or an
-    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts
-    /// for other purposes) cannot represent that flag, so writing to it here would silently store raw
-    /// stale-NaN samples that are later read back as ordinary samples. Fail closed instead of doing that.
+    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts)
+    /// cannot represent that flag; keep accepting writes with the pre-column behavior (stale markers stored
+    /// as their raw NaN payload) so an upgrade does not break existing tables, and point at the migration.
     if (!time_series.empty())
     {
         auto samples_table = time_series_storage->getTargetTable(ViewTarget::Samples, getContext());
         auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(getContext(), false);
         if (!samples_table_metadata->columns.has(TimeSeriesColumnNames::IsStaleMarker))
-            throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-                "{}: the \"samples\" table {} is missing column {} required for Prometheus stale-marker handling. "
-                "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it. "
-                "Adding the column marks all existing rows non-stale, so a table which already holds stale markers "
-                "needs a backfill too: with a Float64 \"value\" run "
-                "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002; "
-                "with a Float32 \"value\" the marker's NaN payload was already lost at insert, "
-                "so such history can only be corrected by re-ingesting it",
+            LOG_WARNING(log,
+                "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers are stored as raw NaN "
+                "samples and are not recognized on reads. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "
+                "stale-marker handling (existing rows become non-stale; with a Float64 \"value\" backfill markers with "
+                "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002)",
                 storage_id.getNameForLogs(),
                 samples_table->getStorageID().getNameForLogs(),
                 TimeSeriesColumnNames::IsStaleMarker,

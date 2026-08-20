@@ -45,7 +45,6 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int THERE_IS_NO_COLUMN;
 }
 
 namespace
@@ -380,7 +379,8 @@ namespace
                                         DateTime64 min_time,
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
-                                        ASTs whole_metric_id_range_conditions)
+                                        ASTs whole_metric_id_range_conditions,
+                                        bool has_stale_marker_column)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -400,7 +400,8 @@ namespace
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp));
             select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value));
 
-            select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
+            if (has_stale_marker_column)
+                select_list.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker));
 
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
@@ -459,7 +460,8 @@ namespace
     ASTPtr makeSelectQuery(ASTPtr select_query_from_data_table,
                            const DataTypePtr & id_data_type,
                            const DataTypePtr & timestamp_data_type,
-                           const DataTypePtr & scalar_data_type)
+                           const DataTypePtr & scalar_data_type,
+                           bool has_stale_marker_column)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -484,10 +486,13 @@ namespace
             select_list.back()->setAlias(TimeSeriesColumnNames::Value);
 
             /// The type declared for this column by TableFunctionTimeSeriesSelector, which the samples
-            /// table is validated against too (see normalizeTimeSeriesDefinition.cpp).
+            /// table is validated against too (see normalizeTimeSeriesDefinition.cpp). A legacy 3-column
+            /// samples table has no such column; every row then reads as non-stale, which is exactly how
+            /// such tables behaved before the column existed.
             select_list.push_back(makeASTFunction(
                 "_CAST",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker),
+                has_stale_marker_column ? static_cast<ASTPtr>(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::IsStaleMarker))
+                                        : static_cast<ASTPtr>(make_intrusive<ASTLiteral>(UInt64{0})),
                 make_intrusive<ASTLiteral>(std::make_shared<DataTypeUInt8>()->getName())));
             select_list.back()->setAlias(TimeSeriesColumnNames::IsStaleMarker);
 
@@ -825,22 +830,16 @@ void StorageTimeSeriesSelector::readImpl(
     /// Prometheus stale markers apart from ordinary samples (see PrometheusRemoteWriteProtocol.cpp's
     /// `isPrometheusStaleMarker()` and fromSelector.cpp, which builds both explicit range-selector and bare
     /// instant-selector queries against this table function). A "samples" table predating that column (or an
-    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts
-    /// for other purposes) cannot represent that flag, so treating every row as fresh here would silently
-    /// return wrong results for any stale marker actually stored (as raw NaN) in such a table. Fail closed
-    /// instead of doing that.
-    if (!samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker))
-        throw Exception(ErrorCodes::THERE_IS_NO_COLUMN,
-            "{}: the \"samples\" table {} is missing column {} required for Prometheus stale-marker handling. "
-            "Run ALTER TABLE {} ADD COLUMN {} UInt8, or recreate the TimeSeries table, to add it. "
-            "Adding the column marks all existing rows non-stale, so a table which already holds stale markers "
-            "needs a backfill too: with a Float64 \"value\" run "
-            "ALTER TABLE {} UPDATE {} = 1 WHERE reinterpretAsUInt64(value) = 0x7FF0000000000002; "
-            "with a Float32 \"value\" the marker's NaN payload was already lost at insert, "
-            "so such history can only be corrected by re-ingesting it",
+    /// external table using the old 3-column schema, which `normalizeTimeSeriesDefinition.cpp` still accepts)
+    /// cannot represent that flag; such tables keep their pre-column behavior - every row reads as an
+    /// ordinary non-stale sample - so an upgrade does not break existing tables.
+    const bool has_stale_marker_column = samples_table_metadata->getColumns().has(TimeSeriesColumnNames::IsStaleMarker);
+    if (!has_stale_marker_column)
+        LOG_WARNING(log,
+            "{}: the \"samples\" table {} has no column {}, so Prometheus stale markers stored in it (as raw NaN "
+            "samples) are treated as ordinary samples. Run ALTER TABLE {} ADD COLUMN {} UInt8 to enable "
+            "stale-marker handling",
             config.time_series_storage_id.getNameForLogs(),
-            samples_table_id.getNameForLogs(),
-            TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
             TimeSeriesColumnNames::IsStaleMarker,
             samples_table_id.getNameForLogs(),
@@ -886,13 +885,15 @@ void StorageTimeSeriesSelector::readImpl(
         config.min_time,
         config.max_time,
         config.timestamp_data_type,
-        std::move(whole_metric_id_range_conditions));
+        std::move(whole_metric_id_range_conditions),
+        has_stale_marker_column);
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_data_table),
         config.id_data_type,
         config.timestamp_data_type,
-        config.scalar_data_type);
+        config.scalar_data_type,
+        has_stale_marker_column);
 
     LOG_DEBUG(log, "Building SQL for selector: {}", config.selector.toString());
     LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
