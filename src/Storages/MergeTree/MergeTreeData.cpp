@@ -7450,24 +7450,19 @@ void MergeTreeData::throwIfTableSizeLimitsExceeded(
                 total_rows += part_rows(*part);
         }
 
+        /// The parts covered by the operation are removed from the active set when it commits,
+        /// so they are not part of the table size any more.
         UInt64 covered_rows = 0;
         for (const auto & part : covered_parts)
             covered_rows += part_rows(*part);
 
-        const UInt64 added_rows = added_part ? part_rows(*added_part) : 0;
+        total_rows -= std::min(total_rows, covered_rows);
 
-        /// The number of rows in the table after the operation is committed:
-        /// the covered parts are removed from the active set and the new part is added to it.
-        const UInt64 new_total_rows = total_rows - std::min(total_rows, covered_rows) + added_rows;
-
-        /// An operation that does not increase the number of rows is always allowed, so that a table that
-        /// has already crossed the limit can be brought back under it, e.g. by a mutation deleting rows or
-        /// by a lightweight delete, and not only by dropping whole parts.
-        if (new_total_rows > max_rows && (!added_part || added_rows > covered_rows))
+        if (total_rows > max_rows)
             throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
                 "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
                 "which exceeds the 'max_table_size_rows' setting value ({})",
-                getLogName(), new_total_rows, max_rows);
+                getLogName(), total_rows, max_rows);
     }
 
     if (max_bytes_compressed || max_bytes_uncompressed)
@@ -7495,28 +7490,27 @@ void MergeTreeData::throwIfTableSizeLimitsExceeded(
             covered_bytes_uncompressed += part->getBytesUncompressedOnDisk();
         }
 
-        const UInt64 added_bytes_compressed = added_part ? added_part->getBytesOnDisk() : 0;
-        const UInt64 added_bytes_uncompressed = added_part ? added_part->getBytesUncompressedOnDisk() : 0;
+        /// An operation that replaces the covered parts with a not larger part is always allowed, so that a
+        /// table that has already crossed a limit can be brought back under it by a size-reducing merge or
+        /// mutation, and not only by dropping whole parts. Note that the covered parts are not subtracted
+        /// from the total: they only become inactive and still occupy the disk until they are removed in
+        /// the background.
+        const bool is_shrinking_compressed = added_part && added_part->getBytesOnDisk() <= covered_bytes_compressed;
+        const bool is_shrinking_uncompressed = added_part && added_part->getBytesUncompressedOnDisk() <= covered_bytes_uncompressed;
 
-        /// As above, an operation replacing the covered parts with a smaller part is always allowed,
-        /// even though the covered parts still occupy the disk until they are removed in the background.
-        if (max_bytes_compressed
-            && total_bytes_compressed + added_bytes_compressed > max_bytes_compressed
-            && (!added_part || added_bytes_compressed > covered_bytes_compressed))
+        if (max_bytes_compressed && total_bytes_compressed > max_bytes_compressed && !is_shrinking_compressed)
             throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
                 "Table size limit exceeded: the total size of compressed data in active and inactive parts of table {} is {}, "
                 "which exceeds the 'max_table_size_bytes_compressed' setting value ({}). "
                 "Note: inactive parts are removed in the background, so the total size can decrease over time",
-                getLogName(), ReadableSize(total_bytes_compressed + added_bytes_compressed), ReadableSize(max_bytes_compressed));
+                getLogName(), ReadableSize(total_bytes_compressed), ReadableSize(max_bytes_compressed));
 
-        if (max_bytes_uncompressed
-            && total_bytes_uncompressed + added_bytes_uncompressed > max_bytes_uncompressed
-            && (!added_part || added_bytes_uncompressed > covered_bytes_uncompressed))
+        if (max_bytes_uncompressed && total_bytes_uncompressed > max_bytes_uncompressed && !is_shrinking_uncompressed)
             throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
                 "Table size limit exceeded: the total size of uncompressed data in active and inactive parts of table {} is {}, "
                 "which exceeds the 'max_table_size_bytes_uncompressed' setting value ({}). "
                 "Note: inactive parts are removed in the background, so the total size can decrease over time",
-                getLogName(), ReadableSize(total_bytes_uncompressed + added_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
+                getLogName(), ReadableSize(total_bytes_uncompressed), ReadableSize(max_bytes_uncompressed));
     }
 }
 

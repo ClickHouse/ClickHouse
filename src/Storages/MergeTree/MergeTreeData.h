@@ -2146,9 +2146,9 @@ private:
         bool check_table_size_limits);
 
     /// The same as the public throwIfTableSizeLimitsExceeded, but for the callers that already hold a lock on the parts set.
-    /// If 'added_part' is set, the limits are checked against the size of the table after this part is committed
-    /// and the 'covered_parts' are removed from the active set. In this case an operation that does not increase
-    /// the size of the table is always allowed, so that a table that has crossed a limit can get back under it.
+    /// The 'covered_parts' are the active parts that the committed 'added_part' replaces: they are not counted,
+    /// because they are removed from the active set when the operation commits. An operation replacing them with
+    /// a not larger part is always allowed, so that a table that has crossed a limit can get back under it.
     void throwIfTableSizeLimitsExceeded(
         const DataPartsAnyLock & parts_lock,
         const IMergeTreeDataPart * added_part,
