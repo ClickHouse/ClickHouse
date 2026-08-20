@@ -25,9 +25,12 @@
 #include <Compression/CompressedWriteBuffer.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 
+#include <Core/Defines.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ExpressionListParsers.h>
+#include <Parsers/parseQuery.h>
 
 #include <Processors/ISource.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -118,7 +121,37 @@ std::string formattedAST(const ASTPtr & ast)
 {
     if (!ast)
         return "";
-    return ast->formatWithSecretsOneLine();
+    /// KeeperMap metadata is shared across server versions, so cosmetic parentheses must not
+    /// change its serialized representation.
+    return ast->formatIgnoringRedundantParentheses();
+}
+
+/// Some builds persisted a single primary-key expression as `(key)`, while others wrote `key`.
+/// Parse both representations before comparing existing metadata.
+std::string canonicalPrimaryKey(const std::string & primary_key)
+{
+    ParserExpressionList parser(/*allow_alias_without_as_keyword_=*/ false);
+    const char * pos = primary_key.data();
+    const char * end = pos + primary_key.size();
+    std::string error_message;
+
+    ASTPtr ast = tryParseQuery(
+        parser,
+        pos,
+        end,
+        error_message,
+        /*hilite=*/ false,
+        /*description=*/ "KeeperMap primary key",
+        /*allow_multi_statements=*/ false,
+        DBMS_DEFAULT_MAX_QUERY_SIZE,
+        DBMS_DEFAULT_MAX_PARSER_DEPTH,
+        DBMS_DEFAULT_MAX_PARSER_BACKTRACKS,
+        /*skip_insignificant=*/ true);
+
+    if (!ast)
+        return primary_key;
+
+    return ast->formatIgnoringRedundantParentheses();
 }
 
 void verifyTableId(const StorageID & table_id)
@@ -671,21 +704,24 @@ bool StorageKeeperMap::isMetadataStringEqual(
         return true;
 
     const std::string_view metadata_format_version_prefix = "KeeperMap metadata format version: 1\ncolumns: ";
-    const std::string_view primary_key_header = "primary key: ";
+    const std::string_view primary_key_header = "\nprimary key: ";
 
-    if (!local_metadata_string.starts_with(metadata_format_version_prefix))
+    if (!zk_metadata_string.starts_with(metadata_format_version_prefix))
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or columns definition in ZK: {}", zk_metadata_string);
 
-    auto zk_pk_pos = zk_metadata_string.rfind(primary_key_header);
+    if (!local_metadata_string.starts_with(metadata_format_version_prefix))
+        throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or columns definition: {}", local_metadata_string);
+
+    auto zk_pk_pos = zk_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
     if (zk_pk_pos == std::string::npos)
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid KeeperMap metadata format version or primary key definition in ZK: {}", zk_metadata_string);
 
-    auto local_pk_pos = local_metadata_string.rfind(primary_key_header);
+    auto local_pk_pos = local_metadata_string.find(primary_key_header, metadata_format_version_prefix.size());
     if (local_pk_pos == std::string::npos)
         throw Exception(ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED, "Invalid local KeeperMap metadata format version or primary key definition: {}", local_metadata_string);
 
-    auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos - metadata_format_version_prefix.size()));
-    auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos - metadata_format_version_prefix.size()));
+    auto local_columns = ColumnsDescription::parse(local_metadata_string.substr(metadata_format_version_prefix.size(), local_pk_pos + 1 - metadata_format_version_prefix.size()));
+    auto zk_columns = ColumnsDescription::parse(zk_metadata_string.substr(metadata_format_version_prefix.size(), zk_pk_pos + 1 - metadata_format_version_prefix.size()));
 
     /// Comment may be added later with ALTER command, and since we don't update metadata during ALTER, we should not compare comments
     bool columns_equal = zk_columns.toString(/*include_comments=*/ false) == local_columns.toString(/*include_comments=*/ false);
@@ -693,7 +729,7 @@ bool StorageKeeperMap::isMetadataStringEqual(
     auto zk_pk = zk_metadata_string.substr(zk_pk_pos + primary_key_header.size());
     auto local_pk = local_metadata_string.substr(local_pk_pos + primary_key_header.size());
 
-    bool pk_equal = zk_pk == local_pk;
+    bool pk_equal = zk_pk == local_pk || canonicalPrimaryKey(zk_pk) == canonicalPrimaryKey(local_pk);
 
     if (columns_equal && pk_equal)
         return true;
@@ -703,8 +739,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}",
-            columns_equal ? "columns" : "primary key",
             zk_root_path,
+            columns_equal ? "primary key" : "columns",
             zk_metadata_string,
             local_metadata_string);
     }
@@ -713,8 +749,8 @@ bool StorageKeeperMap::isMetadataStringEqual(
         log,
         "Path {} is already used but the stored {} definition doesn't match. Stored metadata: {}, local metadata: {}. "
         "Will use stored metadata",
-        columns_equal ? "columns" : "primary key",
         zk_root_path,
+        columns_equal ? "primary key" : "columns",
         zk_metadata_string,
         local_metadata_string);
 

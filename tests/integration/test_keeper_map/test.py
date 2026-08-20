@@ -195,3 +195,100 @@ def test_keeper_map_create_without_drop_lock_version(started_cluster):
     assert run_query(f"SELECT key, value FROM {table_name} ORDER BY key").strip() == "2\t22"
 
     run_query(f"DROP TABLE {table_name} SYNC")
+
+
+def test_parenthesized_primary_key_metadata_compatibility(started_cluster):
+    table_name = "test_keeper_map_parenthesized_primary_key"
+    second_table_name = f"{table_name}_second"
+    writer_table_name = f"{table_name}_writer"
+    delimiter_table_name = f"{table_name}_delimiter"
+    delimiter_second_table_name = f"{delimiter_table_name}_second"
+    bad_table_name = f"{table_name}_bad"
+    malformed_table_name = f"{table_name}_malformed"
+    zk_path = f"/test_keeper_map/{table_name}/metadata"
+
+    table_names = (
+        malformed_table_name,
+        bad_table_name,
+        second_table_name,
+        table_name,
+        writer_table_name,
+        delimiter_second_table_name,
+        delimiter_table_name,
+    )
+    for name in table_names:
+        run_query(f"DROP TABLE IF EXISTS {name} SYNC")
+
+    zk_client = None
+    legacy_metadata = None
+    try:
+        run_query(
+            f"CREATE TABLE {table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{table_name}') PRIMARY KEY key"
+        )
+
+        zk_client = get_genuine_zk()
+        metadata = zk_client.get(zk_path)[0]
+        assert b"primary key: key\n" in metadata
+
+        legacy_metadata = metadata.replace(
+            b"primary key: key\n", b"primary key: (key)\n"
+        )
+        assert legacy_metadata != metadata
+        zk_client.set(zk_path, legacy_metadata)
+
+        run_query(
+            f"CREATE TABLE {second_table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{table_name}') PRIMARY KEY key"
+        )
+
+        run_query(f"INSERT INTO {table_name} VALUES (1, 'value')")
+        assert run_query(f"SELECT * FROM {second_table_name}") == "1\tvalue\n"
+
+        error = node.query_and_get_error(
+            f"CREATE TABLE {bad_table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{table_name}') PRIMARY KEY value"
+        )
+        assert "stored primary key definition doesn't match" in error
+
+        malformed_metadata = legacy_metadata.replace(
+            b"primary key: (key)\n", b"primary key: (key\n"
+        )
+        zk_client.set(zk_path, malformed_metadata)
+        error = node.query_and_get_error(
+            f"CREATE TABLE {malformed_table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{table_name}') PRIMARY KEY key"
+        )
+        assert "stored primary key definition doesn't match" in error
+
+        zk_client.set(zk_path, legacy_metadata)
+        run_query(
+            f"CREATE TABLE {writer_table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{writer_table_name}') PRIMARY KEY(key)"
+        )
+        writer_metadata = zk_client.get(
+            f"/test_keeper_map/{writer_table_name}/metadata"
+        )[0]
+        assert b"primary key: key\n" in writer_metadata
+
+        primary_key_with_header_text = (
+            "sipHash64(concat(toString(key), 'primary key: '))"
+        )
+        run_query(
+            f"CREATE TABLE {delimiter_table_name} (key UInt64, value String) "
+            f"ENGINE = KeeperMap('/{delimiter_table_name}') "
+            f"PRIMARY KEY {primary_key_with_header_text}"
+        )
+        run_query(
+            f"CREATE TABLE {delimiter_second_table_name} "
+            f"(key UInt64 COMMENT 'comment added later', value String) "
+            f"ENGINE = KeeperMap('/{delimiter_table_name}') "
+            f"PRIMARY KEY {primary_key_with_header_text}"
+        )
+    finally:
+        if zk_client is not None:
+            if legacy_metadata is not None and zk_client.exists(zk_path) is not None:
+                zk_client.set(zk_path, legacy_metadata)
+            zk_client.stop()
+        for name in table_names:
+            node.query(f"DROP TABLE IF EXISTS {name} SYNC")
