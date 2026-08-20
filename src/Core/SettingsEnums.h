@@ -620,6 +620,14 @@ enum class MergeTreePartExportFileAlreadyExistsPolicy : uint8_t
 
 DECLARE_SETTING_ENUM(MergeTreePartExportFileAlreadyExistsPolicy)
 
+enum class MergeTreePartExportSchemaMismatchMode : uint8_t
+{
+    strict,
+    ignore_extra_source_columns_by_position,
+};
+
+DECLARE_SETTING_ENUM(MergeTreePartExportSchemaMismatchMode)
+
 enum class ExportPartitionAllOnError : uint8_t
 {
     throw_first,

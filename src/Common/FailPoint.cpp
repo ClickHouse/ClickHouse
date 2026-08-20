@@ -164,6 +164,8 @@ static struct InitFiu
     ONCE(write_file_operation_fail_on_read) \
     REGULAR(slowdown_parallel_replicas_local_plan_read) \
     ONCE(iceberg_writes_cleanup) \
+    ONCE(iceberg_alter_catalog_update_schema_fail) \
+    ONCE(iceberg_alter_catalog_commit_reported_as_failed) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(iceberg_writes_non_retry_cleanup) \
     ONCE(iceberg_writes_post_publish_throw) \

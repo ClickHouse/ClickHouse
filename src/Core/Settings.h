@@ -87,6 +87,7 @@ class WriteBuffer;
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, MaxThreads) \
     M(CLASS_NAME, MergeTreePartExportFileAlreadyExistsPolicy) \
+    M(CLASS_NAME, MergeTreePartExportSchemaMismatchMode) \
     M(CLASS_NAME, Milliseconds) \
     M(CLASS_NAME, MsgPackUUIDRepresentation) \
     M(CLASS_NAME, MySQLDataTypesSupport) \
