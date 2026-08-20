@@ -168,12 +168,13 @@ private:
     /// decoder recurses (and falling back to a `target_types` lookup by `path`, the dotted column name). It
     /// only affects `date32`: when the hint resolves to a numeric type the raw `Int32` day number is read
     /// without the `Date32` range/overflow check, matching the library reader's numeric type hint.
+    /// `list_depth` counts the List/Map levels crossed on the way to this field (see `resolveTargetHint`).
     /// `invisible_rows`, when non-null, is sized to this field's row count (see `InvisibleRowsMask`);
     /// null maps and column types are built from each field's own declared validity exactly as without
     /// a mask.
     ColumnPtr decodeField(
         const ArrowField & field, bool allow_low_cardinality,
-        const DataTypePtr & target_hint, const String & path,
+        const DataTypePtr & target_hint, const String & path, size_t list_depth,
         const InvisibleRowsMask * invisible_rows);
     /// Advances the node/buffer/variadic cursors over `field` exactly as `decodeField` would, without
     /// reading or materializing its data. Used to skip an unrequested top-level column while keeping the
@@ -181,7 +182,7 @@ private:
     void skipField(const ArrowField & field);
     ColumnPtr decodeInner(
         const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
-        const InvisibleRowsMask * invisible_rows);
+        size_t list_depth, const InvisibleRowsMask * invisible_rows);
     ColumnPtr decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows);
     /// `invisible_rows` carries the field's own nulls too (composed by `decodeField` from the same
     /// validity buffer), so this function needs no separate null map for the indices.
@@ -190,10 +191,15 @@ private:
     ColumnPtr buildNullMap(const Slice & validity, size_t rows, Int64 null_count) const;
     ColumnPtr readOffsetsAndChild(
         const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
-        const InvisibleRowsMask * invisible_rows);
+        size_t list_depth, const InvisibleRowsMask * invisible_rows);
     /// The requested ClickHouse type for a field, preferring the hint derived from its parent and otherwise
-    /// looking up `path` (the dotted column name) in `target_types`. Returns null when neither is available.
-    DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const;
+    /// looking up `path` (the dotted column name) in `target_types`. A dotted name reached through
+    /// enclosing lists names the flattened column (`Nested(d Int32)` flattens to `n.d Array(Int32)`),
+    /// which wraps the element type in one Array per crossed List/Map level; `list_depth` of them are
+    /// peeled off the looked-up type so the hint matches this field's own type, the same way the
+    /// parent-derived chain unwraps one Array per list. Returns null when no hint is available or the
+    /// looked-up type has fewer Array layers than `list_depth`.
+    DataTypePtr resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const;
 
     void prepareBuffers(const flatbuf::RecordBatch & batch, const PODArray<char> & body, const VectorWithMemoryTracking<char> * reachable);
 

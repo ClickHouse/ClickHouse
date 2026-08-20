@@ -428,7 +428,7 @@ ColumnPtr RecordBatchDecoder::buildNullMap(const Slice & validity, size_t rows, 
 
 ColumnPtr RecordBatchDecoder::decodeInner(
     const ArrowField & field, size_t rows, const DataTypePtr & target_hint, const String & path,
-    const InvisibleRowsMask * invisible_rows)
+    size_t list_depth, const InvisibleRowsMask * invisible_rows)
 {
     const ArrowType & type = field.type;
     DataTypePtr inner_type = fieldToCHType(field, settings, /*make_nullable=*/false, /*allow_null_type=*/true);
@@ -436,7 +436,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
 
     /// This field's requested ClickHouse type (parent-derived hint, or a dotted-name lookup), used only to
     /// decide whether a `date32` maps to a numeric target and is read raw; and to derive child hints below.
-    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path);
+    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
     const bool date32_as_number = effective_hint && isNumber(stripHint(effective_hint));
 
     auto child_path = [&](const String & child_name) -> String
@@ -820,7 +820,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
         case TypeKind::LargeList:
             return readOffsetsAndChild(
                 field, rows, /*large=*/type.kind == TypeKind::LargeList, arrayElementHint(effective_hint), path,
-                invisible_rows);
+                list_depth, invisible_rows);
         case TypeKind::FixedSizeList:
         {
             /// No offsets buffer: each row has exactly `list_size` elements. `list_size` is untrusted IPC
@@ -864,7 +864,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             }();
             ColumnPtr child = decodeField(
                 type.children.at(0), /*allow_low_cardinality=*/false, arrayElementHint(effective_hint), path,
-                maskPtr(child_invisible));
+                list_depth + 1, maskPtr(child_invisible));
             if (child->size() != expected_child)
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
@@ -903,7 +903,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
                 ColumnPtr element = decodeField(
                     child, /*allow_low_cardinality=*/false,
                     tupleElementHint(effective_hint, child.name, i, settings.arrow.case_insensitive_column_matching),
-                    child_path(child.name), invisible_rows);
+                    child_path(child.name), list_depth, invisible_rows);
                 /// Every struct field carries its own `FieldNode.length`, but they must all equal the
                 /// parent struct's row count. A malformed file can shorten one field (or slice a child
                 /// out of range), leaving a `ColumnTuple` with elements of unequal size. Reject it here
@@ -946,7 +946,7 @@ ColumnPtr RecordBatchDecoder::decodeInner(
             /// built from the Map hint; the struct recursion then matches them by position.
             ColumnPtr entries = decodeField(
                 type.children.at(0), /*allow_low_cardinality=*/false, mapEntriesHint(effective_hint), path,
-                maskPtr(entries_invisible));
+                list_depth + 1, maskPtr(entries_invisible));
             const auto & entries_tuple = assert_cast<const ColumnTuple &>(*entries);
             if (entries_tuple.tupleSize() != 2)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Arrow IPC map entries must be a struct of (key, value)");
@@ -1021,7 +1021,7 @@ ColumnUInt64::MutablePtr RecordBatchDecoder::decodeListOffsets(
 
 ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     const ArrowField & field, size_t rows, bool large, const DataTypePtr & target_hint, const String & path,
-    const InvisibleRowsMask * invisible_rows)
+    size_t list_depth, const InvisibleRowsMask * invisible_rows)
 {
     Int64 base = 0;
     Int64 prev = 0;
@@ -1046,9 +1046,10 @@ ColumnPtr RecordBatchDecoder::readOffsetsAndChild(
     const std::optional<InvisibleRowsMask> child_invisible = buildOffsetsChildInvisibleMask(rows, base, prev, offs, invisible_rows);
 
     /// `target_hint`/`path` are this list's element hint and dotted name, threaded for the recursive
-    /// `date32` numeric type hint (a list does not extend the dotted path).
+    /// `date32` numeric type hint (a list does not extend the dotted path, but does add an Array layer
+    /// to the flattened dotted-name types, hence `list_depth + 1`).
     ColumnPtr child = decodeField(
-        field.type.children.at(0), /*allow_low_cardinality=*/false, target_hint, path,
+        field.type.children.at(0), /*allow_low_cardinality=*/false, target_hint, path, list_depth + 1,
         maskPtr(child_invisible));
     /// A sliced Arrow list can begin at a non-zero first offset; only child[base, prev) is referenced.
     /// Reject offsets that point past the child, then slice it to the referenced range so its size matches
@@ -1213,6 +1214,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             /*allow_low_cardinality=*/false,
             /*target_hint=*/nullptr,
             /*path=*/{},
+            /*list_depth=*/0,
             maskPtr(child_invisible));
         DataTypePtr child_type = fieldToCHType(child, settings, /*make_nullable=*/false);
         /// Variant elements cannot be Nullable; remember the null map, then drop the nullability.
@@ -1344,7 +1346,7 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
 
 ColumnPtr RecordBatchDecoder::decodeField(
     const ArrowField & field, bool allow_low_cardinality, const DataTypePtr & target_hint, const String & path,
-    const InvisibleRowsMask * invisible_rows)
+    size_t list_depth, const InvisibleRowsMask * invisible_rows)
 {
     const flatbuf::FieldNode & node = nextNode();
     /// `FieldNode::length` is signed IPC metadata; reject a negative (corrupted) length before casting,
@@ -1436,7 +1438,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     if (field.dictionary)
         return decodeDictionary(field, rows, allow_low_cardinality, effective_invisible);
 
-    ColumnPtr inner = decodeInner(field, rows, target_hint, path, effective_invisible);
+    ColumnPtr inner = decodeInner(field, rows, target_hint, path, list_depth, effective_invisible);
 
     /// Only wrap in Nullable when the type allows it; Array/Map cannot be inside Nullable in ClickHouse, so
     /// (matching the Apache Arrow library reader) their outer validity is dropped. A Struct (Tuple) is only
@@ -1444,7 +1446,7 @@ ColumnPtr RecordBatchDecoder::decodeField(
     /// target type at this field is already nullable (e.g. reading into an existing `Nullable(Tuple)` column).
     /// This mirrors the library reader's `allow_nullable_struct`. Otherwise the struct is read as a plain
     /// Tuple, dropping the struct-level null map. `decodeColumns` reconciles the reported type to this column.
-    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path);
+    const DataTypePtr effective_hint = resolveTargetHint(target_hint, path, list_depth);
     const bool nullable_tuple_allowed = settings.schema_inference_allow_nullable_tuple_type
         || (effective_hint && (effective_hint->isNullable() || effective_hint->isLowCardinalityNullable()));
     const bool struct_not_allowed_nullable = field.type.kind == TypeKind::Struct && !nullable_tuple_allowed;
@@ -1649,6 +1651,7 @@ RecordBatchDecoder::DecodedColumns RecordBatchDecoder::decodeColumns(
             /*allow_low_cardinality=*/true,
             /*target_hint=*/nullptr,
             normalized_name,
+            /*list_depth=*/0,
             /*invisible_rows=*/nullptr /*a top-level field has no ancestors*/);
         /// `decodeField` may wrap a struct in Nullable based on the requested type hint even when
         /// `fieldToCHType` did not (setting off); reconcile the reported type with the decoded column so the
@@ -1964,20 +1967,26 @@ void RecordBatchDecoder::validateBatchLayout(const flatbuf::RecordBatch & batch,
             total_nodes, total_buffers, declared_variadic);
 }
 
-DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path) const
+DataTypePtr RecordBatchDecoder::resolveTargetHint(const DataTypePtr & parent_hint, const String & path, size_t list_depth) const
 {
     /// A hint derived from the parent (Array element, Tuple element, Map key/value) wins; it already
     /// reflects this exact node. Otherwise look the dotted column name up in the caller's requested types,
     /// which resolves a `date32` addressed as a subcolumn (e.g. `t.d`).
     if (parent_hint)
         return parent_hint;
-    if (target_types)
-    {
-        auto it = target_types->find(path);
-        if (it != target_types->end())
-            return it->second;
-    }
-    return nullptr;
+    if (!target_types)
+        return nullptr;
+    auto it = target_types->find(path);
+    if (it == target_types->end())
+        return nullptr;
+    /// The looked-up type describes the flattened column, one Array layer per List/Map level crossed on
+    /// the way here (`Nested(d Int32)` requests `n.d Array(Int32)` while this field's own type is the
+    /// element); peel those layers so the hint matches this field, exactly as the parent-derived chain
+    /// unwraps one Array per list. A type with fewer layers does not describe this field: no hint.
+    DataTypePtr hint = it->second;
+    for (size_t i = 0; i < list_depth && hint; ++i)
+        hint = arrayElementHint(hint);
+    return hint;
 }
 
 }
