@@ -50,7 +50,14 @@ namespace
 /// but without a SELECT pipeline to materialize it. A subquery hidden inside the set side
 /// (`x IN (1, (SELECT 1))`) is not a not-ready set and is rejected like any other nested
 /// scalar subquery.
-bool containsForbiddenSubquery(const ASTPtr & ast, const NameSet & source_column_names)
+///
+/// Every bare identifier on the set side is a table name, even when a column of the table has
+/// the same name: the DDL interpreters run `AddDefaultDatabaseVisitor` over the constraint before
+/// it reaches this check, and that visitor turns the set-side identifier of an `IN` operator into
+/// a table identifier qualified with the current database (`x IN arr` becomes `x IN default.arr`)
+/// and stores it in that form in the table metadata. Use `has(arr, x)` to test membership in an
+/// array column.
+bool containsForbiddenSubquery(const ASTPtr & ast)
 {
     if (ast->as<ASTSubquery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSelectWithUnionQuery>())
         return true;
@@ -62,30 +69,23 @@ bool containsForbiddenSubquery(const ASTPtr & ast, const NameSet & source_column
         {
             /// Validate every argument except the set side (the last one).
             for (size_t i = 0; i + 1 < arguments.size(); ++i)
-                if (containsForbiddenSubquery(arguments[i], source_column_names))
+                if (containsForbiddenSubquery(arguments[i]))
                     return true;
 
             /// The set side is allowed to be a direct subquery (`x IN (SELECT ...)`),
             /// which becomes a not-ready set built lazily at insert time.  Any other
             /// shape must still be validated: a scalar subquery nested in a tuple or
-            /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert. A
-            /// bare identifier is valid only when it names a table column; otherwise
-            /// it is the unsupported table-backed set form (`x IN table`).
+            /// list (`x IN (1, (SELECT 1))`) would otherwise run on every insert.
             const auto & set_side = arguments.back();
-            if (const auto * table_identifier = set_side->as<ASTTableIdentifier>();
-                table_identifier && (!table_identifier->isShort() || !source_column_names.contains(table_identifier->shortName())))
-                return true;
-            if (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side, source_column_names))
-                return true;
-            if (const auto * identifier = set_side->as<ASTIdentifier>();
-                identifier && (!identifier->isShort() || !source_column_names.contains(identifier->shortName())))
+            if (set_side->as<ASTIdentifier>() || set_side->as<ASTTableIdentifier>()
+                || (!set_side->as<ASTSubquery>() && containsForbiddenSubquery(set_side)))
                 return true;
         }
         return false;
     }
 
     for (const auto & child : ast->children)
-        if (containsForbiddenSubquery(child, source_column_names))
+        if (containsForbiddenSubquery(child))
             return true;
 
     return false;
@@ -96,13 +96,15 @@ bool containsForbiddenSubquery(const ASTPtr & ast, const NameSet & source_column
 /// so a subquery hidden inside a UDF body would bypass an AST-level check of the expression itself.
 /// Run the check on a copy with SQL UDFs expanded the same way the Analyzer would inline them
 /// (the expansion rejects recursive UDFs, so it always terminates).
-void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const NamesAndTypesList & source_columns, const ContextPtr & context)
+void checkExpressionDoesntContainSubqueries(const ASTPtr & expr, const ContextPtr & context)
 {
     ASTPtr expanded_expr = expr->clone();
     UserDefinedSQLFunctionVisitor::visit(expanded_expr, context);
-    if (containsForbiddenSubquery(expanded_expr, source_columns.getNameSet()))
+    if (containsForbiddenSubquery(expanded_expr))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator");
+            "Subqueries and table names are not allowed in CHECK constraints, except a direct subquery on the right-hand side of an IN operator. "
+            "A bare identifier on the right-hand side of IN is a table name, even if a column with that name exists; "
+            "use has(arr, x) to test membership in an array column");
 }
 
 }
@@ -233,7 +235,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
             ASTPtr expr = constraint_ptr->expr->clone();
             /// The DDL paths reject such constraints already (see `validateNoSubqueries`); this covers
             /// metadata that was created before that validation existed.
-            checkExpressionDoesntContainSubqueries(expr, source_columns_, context);
+            checkExpressionDoesntContainSubqueries(expr, context);
             /// Do not build `IN (subquery)` sets eagerly here: the constraint actions are
             /// compiled while the INSERT pipeline is being constructed (in the
             /// `CheckConstraintsTransform` constructor), before the sample-block handshake.
@@ -254,7 +256,7 @@ ConstraintsExpressions ConstraintsDescription::getExpressions(const DB::ContextP
     return res;
 }
 
-void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const NamesAndTypesList & source_columns, const ContextPtr & context)
+void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context)
 {
     for (const auto & constraint : constraints_)
     {
@@ -263,7 +265,7 @@ void ConstraintsDescription::validateNoSubqueries(const ASTs & constraints_, con
 
         const auto * constraint_ptr = constraint->as<ASTConstraintDeclaration>();
         if (constraint_ptr && constraint_ptr->type == ASTConstraintDeclaration::Type::CHECK)
-            checkExpressionDoesntContainSubqueries(constraint_ptr->expr, source_columns, context);
+            checkExpressionDoesntContainSubqueries(constraint_ptr->expr, context);
     }
 }
 

@@ -64,7 +64,7 @@ public:
     /// DDL paths (`CREATE TABLE`, `ALTER TABLE ADD CONSTRAINT`, `ALTER TABLE MODIFY CONSTRAINT`) only, so that
     /// tables whose metadata already contains such a constraint keep loading; for them the same check runs when
     /// the constraint actions are compiled, see `getExpressions`.
-    static void validateNoSubqueries(const ASTs & constraints_, const NamesAndTypesList & source_columns, const ContextPtr & context);
+    static void validateNoSubqueries(const ASTs & constraints_, const ContextPtr & context);
 
     struct AtomId
     {

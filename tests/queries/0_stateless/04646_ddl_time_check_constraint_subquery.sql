@@ -43,3 +43,18 @@ SELECT count() FROM ddl_in_set;
 -- `ATTACH TABLE t` form (or on server startup), only the compilation of the constraint expression rejects
 -- it, on the first insert into such a table. A full-definition `ATTACH TABLE t (...) ENGINE = ...` is fresh
 -- user input and is rejected -- see `04671_attach_full_definition_check_constraint_subquery`.
+
+-- A bare identifier on the set side of `IN` is a table name, even when a column of the table has that name:
+-- the DDL interpreters run `AddDefaultDatabaseVisitor` over the constraint before it is stored, and that
+-- visitor qualifies the set-side identifier with the current database (`c0 IN c1` becomes `c0 IN default.c1`).
+-- Such a constraint can only ever be a table-backed set, which has no pipeline to materialize it, so it is
+-- rejected on the DDL path instead of failing on every insert.
+CREATE TABLE ddl_in_table (c0 Int, CONSTRAINT c0 CHECK c0 IN ddl_in_set_src) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+CREATE TABLE ddl_in_column (c0 Int, c1 Array(Int), CONSTRAINT c0 CHECK c0 IN c1) ENGINE = MergeTree() ORDER BY tuple(); -- { serverError BAD_ARGUMENTS }
+ALTER TABLE ddl_alter ADD CONSTRAINT c2 CHECK c0 IN ddl_in_set_src; -- { serverError BAD_ARGUMENTS }
+
+-- Membership in an array column is expressed with `has`, which is a plain function and is allowed.
+CREATE TABLE ddl_has_column (c0 Int, c1 Array(Int), CONSTRAINT c0 CHECK has(c1, c0)) ENGINE = MergeTree() ORDER BY tuple();
+INSERT INTO ddl_has_column VALUES (1, [1, 2]);
+INSERT INTO ddl_has_column VALUES (3, [1, 2]); -- { serverError VIOLATED_CONSTRAINT }
+SELECT count() FROM ddl_has_column;
