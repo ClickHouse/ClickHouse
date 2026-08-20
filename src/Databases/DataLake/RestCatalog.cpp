@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
+#include <stdexcept>
 #include <unordered_set>
 #include <Core/SettingsEnums.h>
 #include "config.h"
@@ -82,6 +83,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_transport_net_fail[];
     extern const char iceberg_catalog_commit_rejected[];
     extern const char iceberg_catalog_commit_predispatch_fail[];
+    extern const char iceberg_catalog_commit_std_throw[];
 }
 
 namespace ProfileEvents
@@ -1692,6 +1694,13 @@ void RestCatalog::sendRequest(
             {
                 throw Poco::Net::NetException("Injected net failure");
             });
+
+            /// Same site, but outside the Poco hierarchy: an allocation failure while the response
+            /// body is read arrives this way, and the transport's retry handlers do not cover it.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_std_throw,
+            {
+                throw std::runtime_error("Injected std failure");
+            });
         };
     }
 
@@ -1988,10 +1997,21 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         if (nothing_was_dispatched())
             throw;
 
-        /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so a transport failure can
-        /// arrive as a plain Poco exception carrying no status. Nothing may escape unclassified.
+        /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so such a failure carries no status.
         classifyAmbiguousCommit(
             namespace_name, table_name, new_snapshot_id, DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", ex.displayText()));
+    }
+    catch (...)
+    {
+        if (nothing_was_dispatched())
+            throw;
+
+        /// Every failure of a dispatched commit is classified, whatever its type.
+        classifyAmbiguousCommit(
+            namespace_name,
+            table_name,
+            new_snapshot_id,
+            DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", DB::getCurrentExceptionMessage(false)));
     }
     return true;
 }

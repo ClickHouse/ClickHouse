@@ -2076,3 +2076,34 @@ def test_glue_commit_rejected_is_not_reported_as_committed(started_cluster):
     assert after == before, (before, after)
     assert _s3_uri_exists(started_cluster.minio_client, after), after
     assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"
+
+
+def test_glue_commit_update_throw_keeps_files(started_cluster):
+    # An exception raised by the UpdateTable call itself is not evidence that the update was
+    # rejected: the SDK may already have retried an attempt that applied. So it must be reconciled
+    # like any other failed outcome, and when the read-back cannot resolve it the outcome is
+    # unknown and the staged files are kept.
+    node = started_cluster.instances["node1"]
+    root_namespace, table_name, table_ref, write_settings = _setup_glue_commit_table(
+        started_cluster, node, f"test_glue_commit_update_throws_{uuid.uuid4()}"
+    )
+    before = _glue_metadata_location(started_cluster, root_namespace, table_name)
+
+    try:
+        # Only the throw: the real UpdateTable never runs, so the pointer cannot advance.
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_update_throw")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(f"INSERT INTO {table_ref} VALUES ('789');", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_update_throw")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The thrown error's own text must survive, so the user keeps the actionable detail.
+    assert "Injected update throw" in error, error
+
+    # The pointer never advanced, and the previous snapshot's metadata file is untouched.
+    after = _glue_metadata_location(started_cluster, root_namespace, table_name)
+    assert after == before, (before, after)
+    assert _s3_uri_exists(started_cluster.minio_client, after), after
+    assert node.query(f"SELECT * FROM {table_ref} ORDER BY ALL") == "123\n456\n"

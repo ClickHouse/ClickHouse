@@ -235,6 +235,8 @@ static struct InitFiu
     REGULAR(iceberg_catalog_commit_transport_net_fail) \
     REGULAR(iceberg_catalog_commit_rejected) \
     REGULAR(iceberg_catalog_commit_predispatch_fail) \
+    REGULAR(iceberg_catalog_commit_update_throw) \
+    REGULAR(iceberg_catalog_commit_std_throw) \
     REGULAR(storage_cluster_read_sleep) \
     ONCE(backup_add_empty_memory_table) \
     ONCE(backup_from_snapshot_fail_after_batch) \

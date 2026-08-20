@@ -69,6 +69,7 @@ namespace DB::FailPoints
     extern const char iceberg_catalog_commit_reconcile_fail[];
     extern const char iceberg_catalog_commit_reconcile_throw[];
     extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_update_throw[];
 }
 
 namespace DB::Setting
@@ -759,14 +760,47 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
     bool rejected = false;
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected, { rejected = true; });
 
-    /// Models a request glue rejects outright, so the pointer never advances.
-    auto response = rejected ? Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
-                                   Aws::Glue::GlueErrors::ACCESS_DENIED, "InjectedRejection", "Injected rejection", false))
-                             : glue_client->UpdateTable(request);
+    Aws::Glue::Model::UpdateTableOutcome response;
+    std::optional<String> thrown_error_message;
 
-    bool failed = !response.IsSuccess();
-    String error_message = failed ? String(response.GetError().GetMessage()) : String();
-    String error_name = failed ? String(response.GetError().GetExceptionName()) : String();
+    if (rejected)
+    {
+        /// Models a request glue rejects outright, so the pointer never advances.
+        response = Aws::Glue::Model::UpdateTableOutcome(Aws::Client::AWSError<Aws::Glue::GlueErrors>(
+            Aws::Glue::GlueErrors::ACCESS_DENIED, "InjectedRejection", "Injected rejection", false));
+    }
+    else
+    {
+        /// An exception raised by the call says no more about whether the update applied than an
+        /// unsuccessful outcome does, so it is one more unknown outcome rather than a rejection.
+        try
+        {
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_update_throw,
+            {
+                throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injected update throw");
+            });
+
+            response = glue_client->UpdateTable(request);
+        }
+        catch (...)
+        {
+            thrown_error_message = DB::getCurrentExceptionMessage(false);
+        }
+    }
+
+    bool failed = thrown_error_message.has_value() || !response.IsSuccess();
+    String error_message;
+    String error_name;
+    if (thrown_error_message.has_value())
+    {
+        error_message = *thrown_error_message;
+        error_name = "Exception";
+    }
+    else if (failed)
+    {
+        error_message = String(response.GetError().GetMessage());
+        error_name = String(response.GetError().GetExceptionName());
+    }
 
     fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
     {

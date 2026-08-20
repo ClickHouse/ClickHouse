@@ -2338,6 +2338,60 @@ def test_catalog_commit_transport_failure_unknown_keeps_files(started_cluster):
     assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
 
 
+def test_catalog_commit_std_exception_keeps_committed_snapshot(started_cluster):
+    # A failure that is outside the Poco hierarchy, such as an allocation failure while the response
+    # body is read, carries no status either and none of the transport's handlers cover it. The
+    # commit did take effect here, so the read-back confirms it and the INSERT succeeds.
+    node = started_cluster.instances["node1"]
+    catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
+        started_cluster, node, f"test_commit_std_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query(f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings)
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_std_throw")
+
+    snapshot = _current_snapshot(catalog, root_namespace, table_name)
+    assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
+        f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
+    )
+    for manifest in snapshot.manifests(catalog.load_table(f"{root_namespace}.{table_name}").io):
+        assert _s3_uri_exists(started_cluster.minio_client, manifest.manifest_path), manifest.manifest_path
+
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+
+
+def test_catalog_commit_std_exception_unknown_keeps_files(started_cluster):
+    # Same non-Poco failure, but the read-back cannot resolve it either: the outcome is unknown, the
+    # query fails and the files of the snapshot the catalog now names are kept.
+    node = started_cluster.instances["node1"]
+    catalog, root_namespace, table_name, table_ref, write_settings = _setup_catalog_commit_table(
+        started_cluster, node, f"test_commit_std_unknown_{uuid.uuid4()}"
+    )
+
+    try:
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM ENABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+        error = node.query_and_get_error(
+            f"INSERT INTO {table_ref} VALUES (NULL, 'CCC', 1.0, 2.0, tuple('bot'));", settings=write_settings
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_std_throw")
+        node.query("SYSTEM DISABLE FAILPOINT iceberg_catalog_commit_reconcile_fail")
+
+    assert "UNKNOWN_STATUS_OF_TRANSACTION" in error, error
+    # The original error must still be readable, so the user keeps the actionable detail.
+    assert "Injected std failure" in error, error
+
+    snapshot = _current_snapshot(catalog, root_namespace, table_name)
+    assert _s3_uri_exists(started_cluster.minio_client, snapshot.manifest_list), (
+        f"manifest list {snapshot.manifest_list} of the current snapshot was deleted"
+    )
+    assert node.query(f"SELECT count() FROM {table_ref}").strip() == "3"
+
+
 def test_catalog_commit_single_attempt(started_cluster):
     # A commit is not idempotent: a transport-level retry re-POSTs it, and the second attempt is
     # rejected by the requirement the first one already satisfied, which makes the received status
