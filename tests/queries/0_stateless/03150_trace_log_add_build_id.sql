@@ -1,7 +1,7 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage, no-cfi
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage
 
--- no-cfi: `symbols` comes out all-empty in the ThinLTO+CFI build; tracked in
--- https://github.com/ClickHouse/ClickHouse/issues/115122 - remove the tag when it is fixed.
+-- Known to fail in the ThinLTO+CFI build (`symbols` comes out all-empty), see
+-- https://github.com/ClickHouse/ClickHouse/issues/115122.
 
 -- build_id and symbol-name resolution come from the binary's own symbol table, so they are portable
 -- (including macOS). Source-line (file:line:col) resolution needs DWARF and lives in a sibling test.

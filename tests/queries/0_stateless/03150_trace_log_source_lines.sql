@@ -1,6 +1,6 @@
--- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage, no-darwin, no-cfi
--- no-cfi: `lines` comes out all-empty in the ThinLTO+CFI build; tracked in
--- https://github.com/ClickHouse/ClickHouse/issues/115122 - remove the tag when it is fixed.
+-- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-llvm-coverage, no-darwin
+-- Known to fail in the ThinLTO+CFI build (`lines` comes out all-empty), see
+-- https://github.com/ClickHouse/ClickHouse/issues/115122.
 -- no-darwin: source-line symbolization needs DWARF, which on Mach-O lives in a separate .dSYM bundle
 -- that the standard macOS build does not produce (ELF embeds DWARF directly in the binary).
 
