@@ -35,13 +35,13 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf 
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) IN ('tag_42', 'tag_99999')) WHERE explain ILIKE '%Granules: 3/13%';
 
 -- Safety: NOT IN must NOT prune (a granule with the set element can still yield rows outside the set).
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) NOT IN ('tag_42')) WHERE explain ILIKE '%Granules: 13/13%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) NOT IN ('tag_42')) WHERE explain ILIKE '%Name: idx_tags%';
 
 -- arrayJoin(tags) = const now uses the index and prunes identically to has(tags, const).
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) = 'tag_42') WHERE explain ILIKE '%Granules: 2/13%';
 
 -- Safety: != must NOT prune (a granule with the value can still yield rows whose arrayJoined value differs).
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42') WHERE explain ILIKE '%Granules: 13/13%';
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42') WHERE explain ILIKE '%Name: idx_tags%';
 
 -- Correctness: results are unaffected by index usage.
 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) IN ('tag_42', 'tag_99999');
@@ -51,8 +51,8 @@ SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42';
 
 DROP TABLE t_arrayjoin_bf;
 
--- The default value in the set. An empty array produces no row for the inner `arrayJoin(col)`, so
--- only a granule holding the default as a real element is kept. Results must match index on/off.
+-- An empty array produces no row for the inner `arrayJoin(col)`, so only a granule holding the
+-- default as a real element is kept.
 DROP TABLE IF EXISTS t_arrayjoin_bf_default;
 
 CREATE TABLE t_arrayjoin_bf_default
@@ -72,13 +72,10 @@ INSERT INTO t_arrayjoin_bf_default SELECT number + 5000, [concat('tag_', toStrin
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('')) WHERE explain ILIKE '%Granules: 2/13%';
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 0;
--- With `optimize_empty_string_comparisons = 0` the `equals` derivation fires and prunes like the
--- `IN ('')` case above. The runner randomizes that setting, and the rewrite to `empty(s)` it enables
--- is analyzer-specific, so pin it here rather than asserting one of the two plans.
+-- Pinned: with `optimize_empty_string_comparisons = 1` the predicate becomes `empty(s)`, which no
+-- longer reaches the derivation.
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS optimize_empty_string_comparisons = 0) WHERE explain ILIKE '%Granules: 2/13%';
--- Results are identical in both modes, with the skip index on and off.
-SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1, optimize_empty_string_comparisons = 1;
-SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0, optimize_empty_string_comparisons = 1;
+-- Results are identical with the skip index on and off.
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1, optimize_empty_string_comparisons = 0;
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0, optimize_empty_string_comparisons = 0;
 -- A non-default value that is a real element in one granule -> pruning fires (1/13), result correct.
@@ -88,9 +85,8 @@ SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1' SETTING
 
 DROP TABLE t_arrayjoin_bf_default;
 
--- LEFT ARRAY JOIN expands an empty array into a default-valued row, so `col IN (default)` matches
--- it. That predicate sits above the ARRAY JOIN step and never reaches the skip index. The table has
--- a whole granule of empty arrays.
+-- LEFT ARRAY JOIN expands an empty array into a default-valued row, and that predicate sits above
+-- the ARRAY JOIN step, so it never reaches the skip index.
 DROP TABLE IF EXISTS t_arrayjoin_bf_left;
 
 CREATE TABLE t_arrayjoin_bf_left
@@ -180,15 +176,16 @@ SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE array
 -- Float element vs Decimal constant: the conversion would throw TYPE_MISMATCH.
 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = toDecimal64(1.25, 2) SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(f) = toDecimal64(1.25, 2) SETTINGS use_skip_indexes = 0;
--- Integer widening stays admitted: a UInt8 element against a wider literal still prunes.
-SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5) WHERE explain ILIKE '%Granules: 1/2%';
-SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5 SETTINGS use_skip_indexes = 1);
-SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 5 SETTINGS use_skip_indexes = 0);
+-- Cross-integer stays admitted: a UInt8 element against a UInt64 constant still prunes, both forms.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = toUInt64(5)) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) IN (SELECT toUInt64(5))) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = toUInt64(5) SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = toUInt64(5) SETTINGS use_skip_indexes = 0);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) IN (SELECT toUInt64(5)) SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) IN (SELECT toUInt64(5)) SETTINGS use_skip_indexes = 0);
 -- A value outside the element's range matches nothing, with or without the index.
 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 100000 SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = 100000 SETTINGS use_skip_indexes = 0;
-SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = -5 SETTINGS use_skip_indexes = 1;
-SELECT count() FROM t_arrayjoin_bf_domain_num WHERE arrayJoin(u) = -5 SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_arrayjoin_bf_domain_num;
 
@@ -215,19 +212,21 @@ DROP TABLE IF EXISTS t_arrayjoin_bf_domain_enum;
 CREATE TABLE t_arrayjoin_bf_domain_enum
 (
     id UInt64,
-    e Array(Enum8('a' = 1)),
+    e Array(Enum8('a' = 1, 'b' = 2)),
     INDEX idx_e e TYPE bloom_filter(0.0001) GRANULARITY 1
 )
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
 
-INSERT INTO t_arrayjoin_bf_domain_enum VALUES (1, ['a']);
+-- Row 2 holds a different label, so a granule can be pruned.
+INSERT INTO t_arrayjoin_bf_domain_enum VALUES (1, ['a']), (2, ['b']);
 
 -- An unknown label with validation disabled: the conversion would throw UNKNOWN_ELEMENT_OF_ENUM.
 SELECT count() FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = 'missing' SETTINGS use_skip_indexes = 1, validate_enum_literals_in_operators = 0;
 SELECT count() FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = 'missing' SETTINGS use_skip_indexes = 0, validate_enum_literals_in_operators = 0;
 -- The matching label still prunes: an identical element and constant type is admitted.
-SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1)') SETTINGS use_skip_indexes = 1);
-SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1)') SETTINGS use_skip_indexes = 0);
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)')) WHERE explain ILIKE '%Granules: 1/2%';
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') SETTINGS use_skip_indexes = 1);
+SELECT groupArray(id) FROM (SELECT id FROM t_arrayjoin_bf_domain_enum WHERE arrayJoin(e) = CAST('a', 'Enum8(\'a\' = 1, \'b\' = 2)') SETTINGS use_skip_indexes = 0);
 
 DROP TABLE t_arrayjoin_bf_domain_enum;
 

@@ -557,16 +557,11 @@ static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const D
 
     auto value = removeLowCardinalityAndNullable(value_type);
     auto element = removeLowCardinalityAndNullable(nested_type);
-    WhichDataType which_value(value);
-    WhichDataType which_element(element);
 
-    if (which_value.isFloat() || which_element.isFloat())
+    if (isFloat(value) || isFloat(element))
         return false;
 
-    const bool both_integers = (which_value.isInt() || which_value.isUInt())
-        && (which_element.isInt() || which_element.isUInt());
-
-    return both_integers || value->equals(*element);
+    return (isInteger(value) && isInteger(element)) || value->equals(*element);
 }
 
 bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
@@ -711,31 +706,33 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
     /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
     /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    if ((function_name == "in" || function_name == "globalIn") && column)
-    {
-        if (auto array_join_argument = key_node.getArrayJoinArgument())
-        {
-            auto array_column_name = array_join_argument->getColumnName();
-            if (header.has(array_column_name))
-            {
-                size_t position = header.getPositionByName(array_column_name);
-                const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
-                if (array_type && bloomFilterHashDomainMatches(type, array_type->getNestedType()))
-                {
-                    size_t row_size = column->size();
-                    const auto & array_nested_type = array_type->getNestedType();
-                    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-                    out.predicate.emplace_back(std::make_pair(
-                        position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
-                    out.function = RPNElement::FUNCTION_HAS_ANY;
-                    return true;
-                }
-            }
-        }
-    }
+    if (function_name != "in" && function_name != "globalIn")
+        return false;
+    if (!column)
+        return false;
 
-    return false;
+    auto array_join_argument = key_node.getArrayJoinArgument();
+    if (!array_join_argument)
+        return false;
+
+    auto array_column_name = array_join_argument->getColumnName();
+    if (!header.has(array_column_name))
+        return false;
+
+    size_t position = header.getPositionByName(array_column_name);
+    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
+    if (!array_type)
+        return false;
+
+    const auto & array_nested_type = array_type->getNestedType();
+    if (!bloomFilterHashDomainMatches(type, array_nested_type))
+        return false;
+
+    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+    out.predicate.emplace_back(
+        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.function = RPNElement::FUNCTION_HAS_ANY;
+    return true;
 }
 
 
@@ -948,8 +945,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (header.has(array_column_name))
             {
                 size_t position = header.getPositionByName(array_column_name);
-                const DataTypePtr & index_type = header.getByPosition(position).type;
-                const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
+                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
