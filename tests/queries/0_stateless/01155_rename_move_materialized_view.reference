@@ -27,6 +27,7 @@ mv2
 src
 3	.inner_id.	after renaming databasemv1
 3	.inner_id.	before moving tablesmv1
+3	dist	after moving tables
 3	dist	after renaming database
 3	dist	before moving tables
 3	dst	after renaming databasemv2
@@ -50,6 +51,7 @@ CREATE DATABASE test_01155_atomic\nENGINE = Atomic
 4	.inner.mv1	after renaming databasemv1
 4	.inner.mv1	after renaming tablesmv1
 4	.inner.mv1	before moving tablesmv1
+4	dist	after moving tables
 4	dist	after renaming database
 4	dist	after renaming tables
 4	dist	before moving tables
