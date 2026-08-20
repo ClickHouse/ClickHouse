@@ -81,6 +81,16 @@ def test_embedded_ca_certificates(started_cluster):
         > 100
     )
 
+    # The outbound (client) TLS context is created from the same embedded certificates.
+    # Verification of the self-signed certificate of the node fails, but the context is
+    # created at all: without the embedded certificates, the creation of the client
+    # context threw "Cannot load default CA certificates" before anything was sent.
+    error = node.query_and_get_error(
+        f"SELECT * FROM url('https://{node.ip_address}:8443/ping', LineAsString)"
+    )
+    assert "Cannot load default CA certificates" not in error
+    assert "certificate" in error.lower()
+
     # An existing but empty certificate directory must also engage the fallback:
     # a directory without hash-named files can never yield a certificate at
     # verification time, so it does not count as certificates being present.
