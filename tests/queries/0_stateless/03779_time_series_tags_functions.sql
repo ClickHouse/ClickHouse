@@ -74,7 +74,9 @@ SELECT 'timeSeriesExtractTag:';
 SELECT timeSeriesTagsToGroup([('region', 'eu'), ('env', 'dev')], '__name__', 'http_requests_count') AS group,
        timeSeriesExtractTag(group, '__name__'),
        timeSeriesExtractTag(group, 'env'),
-       timeSeriesExtractTag(group, 'instance');
+       timeSeriesExtractTag(group, 'instance'),
+       isNotNull(timeSeriesExtractTag(group, '__name__')),
+       isNull(timeSeriesExtractTag(group, 'instance'));
 
 SELECT '';
 SELECT 'timeSeriesCopyTag:';
