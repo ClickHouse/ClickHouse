@@ -2130,7 +2130,7 @@ TEST_P(CoordinationTestWithCompression, TestSnapshotOrphanedEphemeralCleanup)
     EXPECT_FALSE(committedNodeExists(*restored_storage, "/missing/ephemeral"));
 
     /// Ephemeral tracking should be cleaned up
-    EXPECT_EQ(restored_storage->committed_ephemerals.count(session_id), 0);
+    EXPECT_FALSE(restored_storage->committed_ephemerals.contains(session_id));
     EXPECT_EQ(restored_storage->committed_ephemeral_nodes, 0);
 }
 

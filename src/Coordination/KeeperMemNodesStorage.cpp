@@ -339,7 +339,7 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
     /// Keeper would start with an empty database. This also covers a snapshot with no nodes at all,
     /// which is corrupted for the same reason: every valid Keeper snapshot contains `"/"`. Refuse to
     /// load such a snapshot regardless of `remove_orphaned_nodes_on_startup`.
-    if (container.find("/") == container.end())
+    if (!container.contains("/"))
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
             "Snapshot is missing the root node '/' ({} nodes loaded). Refusing to load it: the whole data tree would be treated as "
@@ -355,7 +355,7 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
         if (itr.key != "/")
         {
             auto parent_path = Coordination::parentNodePath(itr.key);
-            if (container.find(parent_path) == container.end())
+            if (!container.contains(parent_path))
                 orphan_paths.insert(std::string(itr.key));
         }
     }
@@ -473,7 +473,7 @@ void KeeperMemNodesStorage::loadNodesFromSnapshot(KeeperSnapshotReader & reader,
             while (true)
             {
                 auto parent = Coordination::parentNodePath(damaged);
-                if (container.find(parent) != container.end())
+                if (container.contains(parent))
                     break;
                 damaged = parent;
             }
