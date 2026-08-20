@@ -901,6 +901,16 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 Использовать тип String в Parquet вместо Binary для столбцов String.
 
+<div id="output_format_parquet_wide_integer_as_decimal">
+  ## output_format_parquet_wide_integer_as_decimal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Новая настройка для записи значений `Int128`, `UInt128`, `Int256` и `UInt256` как стандартных значений Parquet `DECIMAL`. Предыдущее значение сохраняет устаревшее представление `FIXED_LEN_BYTE_ARRAY` в порядке little-endian."}]}]} />
+
+Записывать значения `Int128`, `UInt128`, `Int256` и `UInt256` как соответствующие стандарту Parquet значения `DECIMAL` с порядком байтов big-endian. Значение по умолчанию сохраняет устаревшее представление `FIXED_LEN_BYTE_ARRAY` без аннотации в порядке little-endian для совместимости со старыми версиями ClickHouse. Десятичное представление обеспечивает совместимость числовой статистики, однако некоторые ридеры Parquet не поддерживают точность свыше 38 или 76.
+
 <div id="output_format_parquet_write_bloom_filter">
   ## output_format_parquet_write_bloom_filter
 </div>

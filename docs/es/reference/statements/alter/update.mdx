@@ -30,6 +30,49 @@ El carácter síncrono del procesamiento de la consulta se define mediante la co
 * [`UPDATE` ligera](/es/reference/statements/update) - Actualización ligera alternativa mediante partes de parche
 * [`APPLY PATCHES`](/es/reference/statements/alter/apply-patches) - Aplicar manualmente parches de actualizaciones ligeras
 
+<div id="materialized-columns">
+  ## Columnas materializadas
+</div>
+
+Una columna [`MATERIALIZED`](/es/reference/statements/create/table#materialized) cuya expresión hace referencia a una
+columna actualizada se recalcula mediante la mutación, por lo que su valor almacenado se mantiene coherente con los nuevos datos.
+
+<div id="columns-calculated-from-ephemeral-columns">
+  ### Columnas calculadas a partir de columnas EPHEMERAL
+</div>
+
+Una columna [`EPHEMERAL`](/es/reference/statements/create/table#ephemeral) existe únicamente durante un
+`INSERT` y nunca se almacena, por lo que una columna `MATERIALIZED` calculada a partir de ella no puede volver a calcularse mediante una
+mutación. Esta columna conserva el valor calculado en el momento del `INSERT`, que deja de coincidir con su
+expresión:
+
+```sql
+CREATE TABLE test
+(
+    x Int32,
+    e Int32 EPHEMERAL 0,
+    m Int32 MATERIALIZED x + e
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO test (x, e) VALUES (1, 7);
+
+ALTER TABLE test UPDATE x = 2 WHERE 1;
+
+SELECT x, m FROM test;
+```
+
+```text
+┌─x─┬─m─┐
+│ 2 │ 8 │
+└───┴───┘
+```
+
+`m` es `8`, el valor calculado durante el `INSERT`, y no `2 + 7`: el valor de `e` no está disponible
+fuera del `INSERT` que lo proporcionó. La mutación escribe una advertencia en el registro del servidor cuando omite una
+columna por este motivo. Para actualizar dicha columna, vuelva a insertar las filas afectadas mediante `INSERT`.
+
 <div id="related-content">
   ## Contenido relacionado
 </div>

@@ -13,6 +13,55 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
+<div id="http_allow_database_as_path">
+  ## http_allow_database_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para reconhecer um nome de banco de dados no caminho da URL de requisições HTTP."}]}]} />
+
+Quando habilitada, a interface HTTP reconhece o componente `/database/` no caminho da URL e o usa como banco de dados atual.
+
+Esta é uma configuração por usuário que controla se uma requisição roteada baseada em caminho é interpretada. O roteamento em si é controlado globalmente pela configuração `http_allow_path_requests` no nível do servidor (desativada por padrão), que deve ser habilitada para que a interface HTTP encaminhe uma requisição baseada em caminho (como `/my_db/my_table.csv`) ao manipulador de consultas — essa decisão de roteamento é tomada antes da autenticação da requisição e, portanto, não pode depender de uma configuração por usuário. Quando `http_allow_path_requests` está desativada, caminhos desconhecidos retornam um `404` simples. Após o roteamento, essa configuração é verificada novamente com base nas configurações efetivas do usuário autenticado, podendo ser habilitada seletivamente por usuário, função ou perfil.
+
+<div id="http_allow_filters_as_path">
+  ## http_allow_filters_as_path
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para reconhecer filtros `name=value` no estilo Hive no caminho da URL de requisições HTTP."}]}]} />
+
+Quando habilitada, a interface HTTP reconhece componentes `/name=value/` no caminho (estilo de particionamento Hive) e os converte em filtros combinados com AND. Os operadores `>`, `<`, `>=`, `<=`, `!=`, `<>` também são reconhecidos.
+
+Assim como [`http_allow_database_as_path`](/pt-BR/reference/settings/session-settings/http#http_allow_database_as_path), esta é uma configuração por usuário; o roteamento de requisições baseadas em caminho é controlado globalmente pela configuração `http_allow_path_requests` no nível do servidor (o roteamento ocorre antes da autenticação).
+
+<div id="http_allow_filters_as_unrecognized_url_parameters">
+  ## http_allow_filters_as_unrecognized_url_parameters
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para tratar parâmetros de URL não reconhecidos como expressões de filtro em requisições HTTP."}]}]} />
+
+Quando habilitado, qualquer parâmetro de URL que não seja reconhecido como um parâmetro, uma configuração ou um prefixo `param_*` conhecido é tratado como um filtro e combinado com AND. São aceitas duas formas:
+
+* Um `name=value` simples é convertido na igualdade `` `name` = 'value' `` (o identificador é delimitado por crases, e o valor é colocado entre aspas como um literal de string).
+* Um operador de comparação (`!=`, `>`, `<`, `>=`, `<=`, `<>`) faz com que o parâmetro seja tratado como uma comparação: ele pode ser separado no parâmetro (`?a!=2`, `?a>=2`) ou escrito inline quando a URL não contém `=` para separá-lo (`?a<>2`, `?f(x)>3`); nesse caso, o `name[=value]` recomposto é convertido em uma expressão SQL completa.
+
+<div id="http_allow_table_as_file">
+  ## http_allow_table_as_file
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "Nova configuração para reconhecer um nome de tabela no caminho da URL de requisições HTTP, com extensões opcionais de formato\/compressão."}]}]} />
+
+Quando habilitada, a interface HTTP reconhece o último componente do caminho da URL como um nome de tabela nas formas `table`, `table.format` ou `table.format.compression`. O caminho é interpretado como `SELECT * FROM table`.
+
+Assim como [`http_allow_database_as_path`](/pt-BR/reference/settings/session-settings/http#http_allow_database_as_path), esta é uma configuração por usuário; o roteamento de requisições baseadas em caminho é controlado globalmente pela configuração `http_allow_path_requests` no nível do servidor (o roteamento ocorre antes da autenticação).
+
 <div id="http_connection_timeout">
   ## http_connection_timeout
 </div>
