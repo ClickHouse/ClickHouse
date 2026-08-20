@@ -647,7 +647,8 @@ void TCPHandler::runImpl()
                         return;
 
                     std::lock_guard lock(*callback_mutex_ptr);
-                    sendLogs(*query_state_ptr, std::move(out_ptr), tcp_protocol_version);
+                    sendLogs(*query_state_ptr, out_ptr, tcp_protocol_version);
+                    out_ptr->sync();
                 });
 
             if (query_state->run_query_in_background && session->sessionContext()
