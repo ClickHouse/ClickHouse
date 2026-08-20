@@ -14,10 +14,10 @@ doc_type: 'reference'
 Добавленный в: v25.6.0
 
 Агрегатная функция, которая принимает данные временных рядов в виде пар временных меток и значений и вычисляет [дельта в стиле PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#delta) по этим данным на регулярной временной сетке, задаваемой начальной временной меткой, конечной временной меткой и шагом.
-Для каждой точки сетки выборки для вычисления `delta` берутся в пределах указанного временного окна.
+Для каждой точки сетки образцы для вычисления `delta` берутся в пределах указанного временного окна.
 
 <Warning>
-  Эта функция экспериментальная. Чтобы включить её, установите `allow_experimental_ts_to_grid_aggregate_function=true`.
+  Эта функция экспериментальная. Чтобы включить её, установите `allow_experimental_time_series_aggregate_functions=true`.
 </Warning>
 
 **Синтаксис**
@@ -28,19 +28,19 @@ timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(time
 
 **Параметры**
 
-* `start_timestamp` — Задает начало сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `end_timestamp` — Задает конец сетки. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime)
-* `grid_step` — Задает шаг сетки в секундах. [`UInt32`](/ru/reference/data-types/int-uint)
-* `staleness` — Задает максимально допустимую давность учитываемых отсчетов в секундах. Окно устаревания представляет собой интервал, открытый слева и закрытый справа. [`UInt32`](/ru/reference/data-types/int-uint)
+* `start_timestamp` — Задает начало сетки. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `end_timestamp` — Задает конец сетки. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо текст даты и времени. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`DateTime64`](/ru/reference/data-types/datetime64) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `grid_step` — Задает шаг сетки в секундах. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
+* `staleness` — Задает максимально допустимое устаревание учитываемых образцов в секундах. Окно устаревания представляет собой интервал, открытый слева и закрытый справа. При аргументе временной метки типа `DateTime64` также может быть дробным числом или строкой, содержащей число либо длительность, например &#39;15s&#39; или &#39;1m&#39;. [`UInt32`](/ru/reference/data-types/int-uint) или [`Float*`](/ru/reference/data-types/float) или [`Decimal*`](/ru/reference/data-types/decimal) или [`String`](/ru/reference/data-types/string)
 
 **Аргументы**
 
-* `timestamp` — Временная метка отсчета. Может быть отдельным значением или массивом. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`Array(UInt32)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array)
+* `timestamp` — Временная метка образца. Может быть отдельным значением или массивом. [`UInt32`](/ru/reference/data-types/int-uint) или [`DateTime`](/ru/reference/data-types/datetime) или [`Array(UInt32)`](/ru/reference/data-types/array) или [`Array(DateTime)`](/ru/reference/data-types/array)
 * `value` — Значение временного ряда, соответствующее временной метке. Может быть отдельным значением или массивом. [`Float*`](/ru/reference/data-types/float) или [`Array(Float*)`](/ru/reference/data-types/array)
 
 **Возвращаемое значение**
 
-Возвращает значения дельты на указанной сетке. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если в пределах окна недостаточно отсчетов, чтобы вычислить значение дельты для конкретной точки сетки. [`Array(Nullable(Float64))`](/ru/reference/data-types/array)
+Возвращает значения дельты на указанной сетке. Возвращаемый массив содержит по одному значению для каждой точки временной сетки. Значение равно NULL, если в пределах окна недостаточно образцов, чтобы вычислить значение дельты для конкретной точки сетки. [`Array(Nullable(Float64))`](/ru/reference/data-types/array)
 
 **Примеры**
 

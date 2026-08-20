@@ -706,6 +706,22 @@ Can be overridden by explicit `posting_list_codec` index argument.
 Allow creating text indexes with the experimental `support_phrase_search` argument
 which stores token positions to support exact phrase matching.
 )", EXPERIMENTAL) \
+    DECLARE(MergeTreeTextIndexSerializationVersion, text_index_serialization_version, MergeTreeTextIndexSerializationVersion::V2_WithPositions, R"(
+The preferred on-disk serialization format version for writing text indexes.
+
+The setting is a preference rather than a hard constraint: if the configured version cannot
+represent an index, a newer version that can represent it is chosen automatically, and
+writing a text index never fails because of this setting.
+
+During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
+the already upgraded servers, so that they keep writing the format that older servers can still read.
+
+Possible values:
+
+- `v0_initial` — The original format. Does not persist the posting list codec type.
+- `v1_with_codec` — Persists the posting list codec type in the text index header.
+- `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+)", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no
 parts were selected. A lower setting will trigger selecting tasks in
@@ -878,6 +894,17 @@ Minimal amount of data parts which merge selector can pick to merge at once
 )", 0) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
+)", 0) \
+    DECLARE(MergeTreePatchPartsVersion, patch_parts_version, "v2", R"(
+On-disk serialization version for patch parts produced by lightweight UPDATE queries.
+
+Possible values:
+- `v1` - legacy format: patch parts contain `_part, _part_offset` system columns and are sorted by
+`(_part, _part_offset)`. In the worst case, memory usage during apply is bounded by the size of the whole patch part.
+- `v2` - patch parts carry the main table's sort-key columns and are sorted by
+`(sorting_key_columns..., _block_number, _block_offset)`. Memory usage during apply is bounded by the largest equal-sort-key run.
+
+Old-format patches on disk remain readable regardless of this setting.
 )", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(
