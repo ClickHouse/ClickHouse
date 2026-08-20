@@ -11,7 +11,7 @@ keywords: ['query optimization', 'data types', 'ordering key', 'materialized vie
 
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
-Use evidence from [query logs](/operations/system-tables/query_log), controlled comparisons, and [query plans](/sql-reference/statements/explain) to evaluate optimization approaches that address the measured bottleneck.
+Use evidence from [query logs](/reference/system-tables/query_log), controlled comparisons, and [query plans](/reference/statements/explain) to evaluate optimization approaches that address the measured bottleneck.
 
 ## Before you begin {#before-you-begin}
 
@@ -41,7 +41,7 @@ If the evidence does not match one of these categories, return to the query plan
 - **Change:** Reduce the size or number of columns read by the query.
 - **Validate:** Compare `read_bytes`, memory use, and duration under the same conditions.
 
-ClickHouse reads only the columns required by a query, but it still has to read, decompress, and process the selected data. Review both the selected columns and their types. [Schema inference](/interfaces/schema-inference) provides a practical starting point, but inferred types can be wider or more permissive than the production data requires.
+ClickHouse reads only the columns required by a query, but it still has to read, decompress, and process the selected data. Review both the selected columns and their types. [Schema inference](/concepts/features/interfaces/schema-inference) provides a practical starting point, but inferred types can be wider or more permissive than the production data requires.
 
 ### Review column types {#review-column-types}
 
@@ -49,13 +49,13 @@ ClickHouse reads only the columns required by a query, but it still has to read,
 
 **Choose precise types**
 
-Choose types that preserve the range and precision the workload requires without storing more data than necessary. Use numeric and date types rather than a general-purpose [`String`](/sql-reference/data-types/string) for those values, and choose the smallest [signed or unsigned numeric type](/sql-reference/data-types/int-uint) that safely represents the expected range. For temporal columns, use [`Date`](/sql-reference/data-types/date) or [`DateTime`](/sql-reference/data-types/datetime) unless you need the wider range or fractional precision of [`Date32`](/sql-reference/data-types/date32) or [`DateTime64`](/sql-reference/data-types/datetime64).
+Choose types that preserve the range and precision the workload requires without storing more data than necessary. Use numeric and date types rather than a general-purpose [`String`](/reference/data-types/string) for those values, and choose the smallest [signed or unsigned numeric type](/reference/data-types/int-uint) that safely represents the expected range. For temporal columns, use [`Date`](/reference/data-types/date) or [`DateTime`](/reference/data-types/datetime) unless you need the wider range or fractional precision of [`Date32`](/reference/data-types/date32) or [`DateTime64`](/reference/data-types/datetime64).
 
 <span id="use-nullable-columns-deliberately"></span>
 
 **Use nullable columns deliberately**
 
-A [`Nullable`](/sql-reference/data-types/nullable) column stores a separate null mask in addition to its values, which ClickHouse must also read and process. Use it when the distinction between a null value and the type's default value is meaningful. If a column is guaranteed to contain a value, a non-nullable type avoids that additional work.
+A [`Nullable`](/reference/data-types/nullable) column stores a separate null mask in addition to its values, which ClickHouse must also read and process. Use it when the distinction between a null value and the type's default value is meaningful. If a column is guaranteed to contain a value, a non-nullable type avoids that additional work.
 
 Before changing a column, check the source data and ingestion path rather than assuming that observed non-null data will always remain non-null. The [worked optimization example](/guides/clickhouse/performance-and-monitoring/query-optimization-example#nullable) demonstrates how to identify columns that contain null values and measure the effect of changing the schema.
 
@@ -63,7 +63,7 @@ Before changing a column, check the source data and ingestion path rather than a
 
 **Use dictionary encoding for repeated values**
 
-[`LowCardinality`](/sql-reference/data-types/lowcardinality) uses dictionary encoding and is often effective for string columns such as status values, country codes, or other dimensions with substantially fewer distinct values than rows. Approximately 10,000 distinct values is a useful starting point for identifying candidates, not a fixed limit. Avoid identifiers and other mostly unique columns, and compare measurements before and after changing the type.
+[`LowCardinality`](/reference/data-types/lowcardinality) uses dictionary encoding and is often effective for string columns such as status values, country codes, or other dimensions with substantially fewer distinct values than rows. Approximately 10,000 distinct values is a useful starting point for identifying candidates, not a fixed limit. Avoid identifiers and other mostly unique columns, and compare measurements before and after changing the type.
 
 See [Selecting data types](/best-practices/select-data-types) for more detailed guidance.
 
@@ -71,7 +71,7 @@ See [Selecting data types](/best-practices/select-data-types) for more detailed 
 
 Because ClickHouse stores data by column, selecting fewer columns directly reduces the data read. List the required columns instead of using `SELECT *`, particularly for wide tables or queries that return only a small subset of each row.
 
-Use `read_bytes` from [`system.query_log`](/operations/system-tables/query_log) to compare the amount of data read before and after narrowing the selected columns. If `read_bytes` remains high, inspect the query plan for expressions, filters, joins, or nested queries that still require additional columns.
+Use `read_bytes` from [`system.query_log`](/reference/system-tables/query_log) to compare the amount of data read before and after narrowing the selected columns. If `read_bytes` remains high, inspect the query plan for expressions, filters, joins, or nested queries that still require additional columns.
 
 For example, if a dashboard needs only the pickup time, payment type, and total amount, select those columns rather than the complete row:
 
@@ -92,11 +92,11 @@ Compare this query with the same filter and limit using `SELECT *`. The number o
 
 - **Use when:** A selective filter still reads many parts or granules.
 - **Change:** Align the physical layout with the filters used by recurring queries.
-- **Validate:** Compare the parts and granules selected by [`EXPLAIN indexes = 1`](/sql-reference/statements/explain), then check `read_rows`, `read_bytes`, and duration.
+- **Validate:** Compare the parts and granules selected by [`EXPLAIN indexes = 1`](/reference/statements/explain), then check `read_rows`, `read_bytes`, and duration.
 
 ### Start with the ordering key {#start-with-the-ordering-key}
 
-For [tables in the `MergeTree` family](/engines/table-engines/mergetree-family/), the ordering key determines how rows are arranged on disk. By default, it also serves as the primary key that defines the [sparse primary index](/primary-indexes). Unlike a primary key in an OLTP database, a ClickHouse primary key does not enforce uniqueness. Its performance benefit comes from allowing ClickHouse to skip granules that cannot satisfy a query's filters.
+For [tables in the `MergeTree` family](/reference/engines/table-engines/mergetree-family/), the ordering key determines how rows are arranged on disk. By default, it also serves as the primary key that defines the [sparse primary index](/primary-indexes). Unlike a primary key in an OLTP database, a ClickHouse primary key does not enforce uniqueness. Its performance benefit comes from allowing ClickHouse to skip granules that cannot satisfy a query's filters.
 
 Prioritize columns that appear frequently in selective filters, including their order in the key. Grouping related values can also improve compression. When a query's grouping or sorting order aligns with the key, ClickHouse might use in-order optimizations for `GROUP BY` or `ORDER BY`.
 
@@ -240,7 +240,7 @@ WHERE source.payment_type IS NOT NULL
 GROUP BY payment_type;
 ```
 
-The report reads the precomputed target while ClickHouse refreshes the complete result on schedule. Validate the change by comparing its query duration with the original aggregation, then inspect [`system.view_refreshes`](/operations/system-tables/view_refreshes) to confirm that refresh duration, status, and frequency suit the workload.
+The report reads the precomputed target while ClickHouse refreshes the complete result on schedule. Validate the change by comparing its query duration with the original aggregation, then inspect [`system.view_refreshes`](/reference/system-tables/view_refreshes) to confirm that refresh duration, status, and frequency suit the workload.
 
 ### Purpose-built table {#purpose-built-table}
 

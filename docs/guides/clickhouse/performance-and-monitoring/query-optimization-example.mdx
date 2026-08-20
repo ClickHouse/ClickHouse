@@ -108,7 +108,7 @@ Schema inference is a practical way to begin exploring a dataset, but the inferr
 
 ### Avoid unnecessary Nullable columns {#nullable}
 
-A [`Nullable`](/sql-reference/data-types/nullable) column stores a null mask in addition to its values. Keep `Nullable` when the distinction between a null value and the type's default value is meaningful, but avoid it for columns that are guaranteed to contain a value.
+A [`Nullable`](/reference/data-types/nullable) column stores a null mask in addition to its values. Keep `Nullable` when the distinction between a null value and the type's default value is meaningful, but avoid it for columns that are guaranteed to contain a value.
 
 Count null values in the columns used by the example schema:
 
@@ -153,7 +153,7 @@ Only `mta_tax` and `payment_type` contain null values in this dataset. The optim
 
 ### Use LowCardinality for repeated values {#low-cardinality}
 
-[`LowCardinality`](/sql-reference/data-types/lowcardinality) uses dictionary encoding and can reduce storage and processing for columns with many repeated values. Check the number of distinct values before applying it:
+[`LowCardinality`](/reference/data-types/lowcardinality) uses dictionary encoding and can reduce storage and processing for columns with many repeated values. Check the number of distinct values before applying it:
 
 ```sql
 SELECT
@@ -195,7 +195,7 @@ FROM nyc_taxi.trips_small_inferred;
    └───────────────────┴───────────────────┴──────────────────────┴──────────────────────┘
 ```
 
-Both integer columns fit in [`UInt8`](/sql-reference/data-types/int-uint), although `passenger_count` reaches its maximum value of 255. The example also uses [`Float32`](/sql-reference/data-types/float) for `trip_distance` and [`Decimal32`](/sql-reference/data-types/decimal) for monetary values. It replaces the inferred [`DateTime64`](/sql-reference/data-types/datetime64) columns with [`DateTime`](/sql-reference/data-types/datetime) in the same `UTC` timezone because the example queries do not require fractional-second precision.
+Both integer columns fit in [`UInt8`](/reference/data-types/int-uint), although `passenger_count` reaches its maximum value of 255. The example also uses [`Float32`](/reference/data-types/float) for `trip_distance` and [`Decimal32`](/reference/data-types/decimal) for monetary values. It replaces the inferred [`DateTime64`](/reference/data-types/datetime64) columns with [`DateTime`](/reference/data-types/datetime) in the same `UTC` timezone because the example queries do not require fractional-second precision.
 
 These choices are specific to this dataset. Confirm the range, precision, and nullability requirements of production data before applying the same changes.
 
@@ -267,7 +267,7 @@ For this dataset, the optimized schema reduces compressed storage by approximate
 
 ## Optimize the ordering key {#the-importance-of-primary-keys}
 
-In the [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) family, the ordering key determines how rows are arranged on disk. ClickHouse builds a sparse primary index over that order so that it can skip granules that cannot satisfy a query's filters. Unlike a primary key in many transactional databases, it does not enforce uniqueness.
+In the [`MergeTree`](/reference/engines/table-engines/mergetree-family/mergetree) family, the ordering key determines how rows are arranged on disk. ClickHouse builds a sparse primary index over that order so that it can skip granules that cannot satisfy a query's filters. Unlike a primary key in many transactional databases, it does not enforce uniqueness.
 
 The ordering key should reflect the filters used by important recurring queries. Column order matters: a key is most effective when the query filters on a useful prefix. Lower-cardinality columns sometimes make effective leading entries when they are commonly filtered, and a time component is often useful for time-based workloads. For detailed selection guidance, see [Choosing a primary key](/best-practices/choosing-a-primary-key).
 
