@@ -33,7 +33,7 @@ De plus, elles sont répliquées, les métadonnées des statistiques étant sync
 Ajout de deux types de statistiques sur deux colonnes :
 
 ```sql
-ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE tdigest, uniq_v2;
 ```
 
 <Note>

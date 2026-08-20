@@ -1,13 +1,13 @@
 ---
-sidebarTitle: 'Référence'
+title: "Référence"
+sidebarTitle: "Référence"
 description: "Détaille les formats, les sources, les garanties de livraison, l'authentification et les fonctionnalités expérimentales pris en charge par Kafka ClickPipes."
-slug: /integrations/clickpipes/kafka/reference
-title: 'Référence'
-doc_type: 'reference'
-keywords: ['référence kafka', 'clickpipes', 'sources de données', 'avro', 'colonnes virtuelles']
+slug: "/integrations/clickpipes/kafka/reference"
+doc_type: "reference"
+keywords: ["référence kafka", "clickpipes", "sources de données", "avro", "colonnes virtuelles"]
 integration:
-  - support_level: 'core'
-  - category: 'clickpipes'
+  - support_level: "core"
+  - category: "clickpipes"
 ---
 
 import { Image } from "/snippets/fr/components/Image.jsx";
@@ -17,14 +17,20 @@ import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/Exp
   ## Sources de données prises en charge
 </div>
 
-| Nom              | Logo                                                                                                 | Type      | Statut | Description                                                                                                          |
-| ---------------- | ---------------------------------------------------------------------------------------------------- | --------- | ------ | -------------------------------------------------------------------------------------------------------------------- |
-| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="logo Apache Kafka" width="32" />                | Streaming | Stable | Configurez ClickPipes et commencez à ingérer des données en streaming depuis Apache Kafka dans ClickHouse Cloud.     |
-| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="logo Confluent Cloud" width="32" />         | Streaming | Stable | Profitez de la puissance combinée de Confluent et de ClickHouse Cloud grâce à notre intégration directe.             |
-| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="logo Redpanda" width="32" />           | Streaming | Stable | Configurez ClickPipes et commencez à ingérer des données en streaming depuis Redpanda dans ClickHouse Cloud.         |
-| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="logo AWS MSK" width="32" />                       | Streaming | Stable | Configurez ClickPipes et commencez à ingérer des données en streaming depuis AWS MSK dans ClickHouse Cloud.          |
-| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="logo Azure Event Hubs" width="32" /> | Streaming | Stable | Configurez ClickPipes et commencez à ingérer des données en streaming depuis Azure Event Hubs dans ClickHouse Cloud. |
-| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="logo WarpStream" width="32" />             | Streaming | Stable | Configurez ClickPipes et commencez à ingérer des données en streaming depuis WarpStream dans ClickHouse Cloud.       |
+| Nom              | Logo                                                                                                 | Type      | Statut | Description                                                                                                       |
+| ---------------- | ---------------------------------------------------------------------------------------------------- | --------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Logo Apache Kafka" width="32" />                | Streaming | Stable | Configurez ClickPipes pour commencer à ingérer des données en streaming d’Apache Kafka dans ClickHouse Cloud.     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Logo Confluent Cloud" width="32" />         | Streaming | Stable | Exploitez la puissance combinée de Confluent et de ClickHouse Cloud grâce à notre intégration directe.            |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Logo Redpanda" width="32" />           | Streaming | Stable | Configurez ClickPipes pour commencer à ingérer des données en streaming de Redpanda dans ClickHouse Cloud.        |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="Logo AWS MSK" width="32" />                       | Streaming | Stable | Configurez ClickPipes pour commencer à ingérer des données en streaming d’AWS MSK dans ClickHouse Cloud.          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Logo Azure Event Hubs" width="32" /> | Streaming | Stable | Configurez ClickPipes pour commencer à ingérer des données en streaming d’Azure Event Hubs dans ClickHouse Cloud. |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="Logo WarpStream" width="32" />             | Streaming | Stable | Configurez ClickPipes pour commencer à ingérer des données en streaming de WarpStream dans ClickHouse Cloud.      |
+
+<div id="isolation-level">
+  ## Niveau d’isolation
+</div>
+
+Le niveau d’isolation du consommateur Kafka détermine si un ClickPipe lit et insère uniquement les messages validés par une transaction Kafka. Activez le paramètre `kafka_read_committed` pour utiliser `read_committed` et ignorer les messages provenant de transactions Kafka abandonnées. Désactivez-le pour utiliser `read_uncommitted` et lire tous les messages. Vous pouvez configurer ce paramètre dans **Paramètres avancés**.
 
 <div id="supported-data-formats">
   ## Formats de données pris en charge
@@ -71,11 +77,8 @@ Les types de données ClickHouse standard suivants sont actuellement pris en cha
 
 ClickPipes prend en charge le type Variant dans les cas suivants :
 
-* Unions Avro.  Si votre schéma Avro contient une union avec plusieurs types non NULL, ClickPipes inférera le
-  type Variant approprié.  Les types Variant ne sont pas pris en charge autrement pour les données Avro.
-* Champs JSON.  Vous pouvez spécifier manuellement un type Variant (tel que `Variant(String, Int64, DateTime)`) pour n’importe quel champ JSON
-  dans le flux de données source.  Les sous-types complexes (arrays/maps/tuples) ne sont pas pris en charge.  De plus, en raison de la façon dont ClickPipes détermine
-  le sous-type Variant approprié à utiliser, un seul type entier ou DateTime peut être utilisé dans la définition de Variant - par exemple, `Variant(Int64, UInt32)` n’est pas pris en charge.
+* Unions Avro.  Si votre schéma Avro contient une union avec plusieurs types non NULL, ClickPipes inférera le type Variant approprié.  Les types Variant ne sont pas pris en charge autrement pour les données Avro.
+* Champs JSON.  Vous pouvez spécifier manuellement un type Variant (tel que `Variant(String, Int64, DateTime)`) pour n’importe quel champ JSON dans le flux de données source.  Les sous-types complexes (arrays/maps/tuples) ne sont pas pris en charge.  De plus, en raison de la façon dont ClickPipes détermine le sous-type Variant approprié à utiliser, un seul type entier ou DateTime peut être utilisé dans la définition de Variant - par exemple, `Variant(Int64, UInt32)` n’est pas pris en charge.
 
 <div id="json-type-support">
   ### Prise en charge du type JSON
@@ -98,15 +101,13 @@ Notez que vous devrez modifier manuellement la colonne de destination pour lui a
   #### Types de données Avro pris en charge
 </div>
 
-ClickPipes prend en charge tous les types primitifs et complexes d’Avro, ainsi que tous les types logiques d’Avro, à l’exception de `local-timestamp-millis` et `local_timestamp-micros`.  Les types Avro `record` sont convertis en Tuple, les types `array` en Array, et `map` en Map (clés de type chaîne uniquement).  De manière générale, les conversions répertoriées [ici](/fr/concepts/features/interfaces/schema-inference#avro) sont disponibles.  Nous recommandons d’utiliser une correspondance exacte des types pour les types numériques Avro, car ClickPipes ne vérifie pas les dépassements de capacité ni les pertes de précision lors des conversions de type.
-Sinon, tous les types Avro peuvent être insérés dans une colonne `String` et seront alors représentés sous la forme d’une chaîne JSON valide.
+ClickPipes prend en charge tous les types primitifs et complexes d’Avro, ainsi que tous les types logiques d’Avro, à l’exception de `local-timestamp-millis` et `local_timestamp-micros`.  Les types Avro `record` sont convertis en Tuple, les types `array` en Array, et `map` en Map (clés de type chaîne uniquement).  De manière générale, les conversions répertoriées [ici](/fr/concepts/features/interfaces/schema-inference#avro) sont disponibles.  Nous recommandons d’utiliser une correspondance exacte des types pour les types numériques Avro, car ClickPipes ne vérifie pas les dépassements de capacité ni les pertes de précision lors des conversions de type. Sinon, tous les types Avro peuvent être insérés dans une colonne `String` et seront alors représentés sous la forme d’une chaîne JSON valide.
 
 <div id="nullable-types-and-avro-unions">
   #### Types Nullable et unions Avro
 </div>
 
-Dans Avro, les types Nullable sont définis à l’aide d’un schéma Union de `(T, null)` ou `(null, T)`, où T est le type Avro de base. Lors de l’inférence de schéma, ces unions sont mappées sur une colonne ClickHouse « Nullable ». Notez que ClickHouse ne prend pas en charge les types
-`Nullable(Array)`, `Nullable(Map)` ou `Nullable(Tuple)`. Les unions Avro avec null pour ces types seront mappées sur des versions non Nullable (les types record Avro sont mappés sur un named Tuple ClickHouse). Les valeurs « null » Avro pour ces types seront insérées comme suit :
+Dans Avro, les types Nullable sont définis à l’aide d’un schéma Union de `(T, null)` ou `(null, T)`, où T est le type Avro de base. Lors de l’inférence de schéma, ces unions sont mappées sur une colonne ClickHouse « Nullable ». Notez que ClickHouse ne prend pas en charge les types `Nullable(Array)`, `Nullable(Map)` ou `Nullable(Tuple)`. Les unions Avro avec null pour ces types seront mappées sur des versions non Nullable (les types record Avro sont mappés sur un named Tuple ClickHouse). Les valeurs « null » Avro pour ces types seront insérées comme suit :
 
 * Un Array vide pour un tableau Avro null
 * Une Map vide pour une Map Avro null
@@ -120,8 +121,7 @@ Dans Avro, les types Nullable sont définis à l’aide d’un schéma Union de 
   #### Types de données Protobuf pris en charge
 </div>
 
-ClickPipes prend en charge tous les types Protobuf 2 et 3, à l’exception du type `group` de proto 2, obsolète de longue date. Les conversions de types de base utilisent
-les correspondances suivantes :
+ClickPipes prend en charge tous les types Protobuf 2 et 3, à l’exception du type `group` de proto 2, obsolète de longue date. Les conversions de types de base utilisent les correspondances suivantes :
 
 <Note>
   Les variantes `Array`, `Map` et `Nullable` de tous les types de base sont également prises en charge.
@@ -164,10 +164,7 @@ Les [types bien connus](https://protobuf.dev/reference/protobuf/google.protobuf/
   #### Protobuf `oneof`
 </div>
 
-Lors de l’inférence de schéma, les champs Protobuf `oneof` sont, par défaut, mappés sur un `Tuple` nommé, dans lequel un seul champ au maximum contient une
-valeur autre que la valeur par défaut. Ces champs peuvent également être automatiquement mappés sur une colonne `Variant`, où la valeur active prend le type du
-champ constitutif qui est défini. Autrement, chaque champ constitutif peut être mappé manuellement à sa propre colonne ClickHouse ; comme les champs `oneof`
-sont mutuellement exclusifs, une seule colonne sera renseignée pour chaque enregistrement.
+Lors de l’inférence de schéma, les champs Protobuf `oneof` sont, par défaut, mappés sur un `Tuple` nommé, dans lequel un seul champ au maximum contient une valeur autre que la valeur par défaut. Ces champs peuvent également être automatiquement mappés sur une colonne `Variant`, où la valeur active prend le type du champ constitutif qui est défini. Autrement, chaque champ constitutif peut être mappé manuellement à sa propre colonne ClickHouse ; comme les champs `oneof` sont mutuellement exclusifs, une seule colonne sera renseignée pour chaque enregistrement.
 
 <div id="protobuf-message-lists">
   #### Listes de messages
@@ -195,3 +192,15 @@ Les colonnes virtuelles suivantes sont prises en charge pour les sources de donn
 Notez que la colonne `_raw_message` n’est recommandée que pour les données JSON.
 Pour les cas d’usage où seule la chaîne JSON est requise (par exemple, lors de l’utilisation des fonctions ClickHouse [`JsonExtract*`](/fr/reference/functions/regular-functions/json-functions#jsonextract-functions) pour
 alimenter une vue matérialisée en aval), la suppression de toutes les colonnes « non virtuelles » peut améliorer les performances de ClickPipes.
+
+<div id="structured-message-keys">
+  ### Clés de messages structurées
+</div>
+
+La mise en correspondance de `_key` vers une colonne `String` stocke la clé du message Kafka d’origine. Cette mise en correspondance contourne le décodage de la clé et la recherche de schéma. Pour extraire des champs d’une clé structurée, mettez les champs source commençant par `_key.` en correspondance. Par exemple, pour la clé JSON `{"customer":{"id":42}}`, mettez `_key.customer.id` en correspondance avec une colonne de destination telle que `customer_id`.
+
+Pour les mises en correspondance `_key.*` ou une mise en correspondance directe de `_key` vers un type autre que `String`, ClickPipes vérifie d’abord si la clé a été encodée à l’aide du registre de schémas configuré. Si ce n’est pas le cas, ClickPipes vérifie si la clé est un objet JSON. Une clé encodée à l’aide d’un registre doit utiliser le même format et la même famille de registres que la valeur de l’enregistrement, mais peut utiliser un ID de schéma différent. Les modifications du schéma de la clé sont détectées automatiquement.
+
+Lorsque le décodage est activé, les clés brutes, les scalaires ou tableaux JSON et les JSON mal formés ne renseignent pas les champs de clé imbriqués ; leurs colonnes de destination reçoivent les valeurs par défaut de leur type. Si ClickPipes reconnaît une clé encodée à l’aide d’un registre, mais ne peut pas récupérer ou appliquer son schéma, il écrit l’enregistrement Kafka dans la table d’erreurs de ClickPipes.
+
+Une clé Avro peut également avoir un schéma racine autre qu’un enregistrement, tel qu’un type primitif, un tableau, une map ou un type fixe. Pour la décoder, mettez `_key` directement en correspondance avec un type de destination compatible autre que `String`. Les schémas qui ne sont pas des enregistrements ne peuvent pas renseigner les champs de clé imbriqués.
