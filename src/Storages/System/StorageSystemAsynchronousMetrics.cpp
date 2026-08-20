@@ -1,5 +1,6 @@
 #include <Columns/IColumn.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -16,7 +17,7 @@ ColumnsDescription StorageSystemAsynchronousMetrics::getColumnsDescription()
     {
         {"metric", std::make_shared<DataTypeString>(), "Metric name."},
         {"value", std::make_shared<DataTypeFloat64>(), "Metric value. For key-value metrics (broken down per CPU core, block device, disk, ...) it is NaN, and the values are in the `key_values` column."},
-        {"key_values", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeFloat64>()), "Values of a key-value metric, e.g. keyed by the CPU core number or the block device name. Empty for scalar metrics."},
+        {"key_values", std::make_shared<DataTypeMap>(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), std::make_shared<DataTypeFloat64>()), "Values of a key-value metric, e.g. keyed by the CPU core number or the block device name. Empty for scalar metrics."},
         {"description", std::make_shared<DataTypeString>(), "Metric description."},
     };
 
