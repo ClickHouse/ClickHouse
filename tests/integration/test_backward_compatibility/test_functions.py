@@ -177,6 +177,31 @@ def test_aggregate_states(start_cluster):
     assert failed + passed + skipped == len(aggregate_functions)
 
 
+def test_single_value_or_null_native_compatibility(start_cluster):
+    table = "single_value_or_null_native_compatibility"
+    backward.query(f"DROP TABLE IF EXISTS {table}")
+    backward.query(
+        f"""
+        CREATE TABLE {table}
+        (
+            state AggregateFunction(singleValueOrNull, UInt64)
+        )
+        ENGINE = Memory
+        """
+    )
+
+    try:
+        upstream.query(
+            f"""
+            INSERT INTO FUNCTION remote('{backward.ip_address}', currentDatabase(), {table})
+            SELECT singleValueOrNullState(toUInt64(42))
+            """
+        )
+        assert backward.query(f"SELECT singleValueOrNullMerge(state) FROM {table}").strip() == "42"
+    finally:
+        backward.query(f"DROP TABLE IF EXISTS {table}")
+
+
 def test_string_functions(start_cluster):
     if (
         upstream.is_built_with_thread_sanitizer()
