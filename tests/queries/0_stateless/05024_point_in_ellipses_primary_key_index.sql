@@ -3,6 +3,11 @@
 -- EXPLAIN output may differ between old and new format
 SET explain_query_plan_default = 'legacy';
 
+-- Part-level statistics can prune with the same condition and add their own block to
+-- EXPLAIN indexes (and the PrimaryKey block then reports 0/0 parts); do not materialize
+-- statistics, so the output does not depend on the randomized statistics settings
+SET materialize_statistics_on_insert = 0;
+
 DROP TABLE IF EXISTS points_xy;
 CREATE TABLE points_xy (x Float64, y Float64) ENGINE = MergeTree ORDER BY (x, y) SETTINGS index_granularity = 1000;
 
