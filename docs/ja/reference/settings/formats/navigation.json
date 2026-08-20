@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Format Settings",
+  "group": "フォーマット設定",
   "pages": [
     "ja/reference/settings/formats/bool",
     "ja/reference/settings/formats/date-time",

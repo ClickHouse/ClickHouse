@@ -2296,6 +2296,10 @@
     "source": "/cloud/security/saml-setup"
   },
   {
+    "destination": "/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup",
+    "source": "/cloud/security/jwt-authentication-setup"
+  },
+  {
     "destination": "/products/cloud/guides/security/cloud-access-management/scim-setup",
     "source": "/cloud/security/scim-setup"
   },
