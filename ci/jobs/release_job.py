@@ -101,6 +101,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not make any actual changes, just show what will be done",
     )
+    parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=8,
+        help="With --ref auto, how many recent commits per release branch to consider",
+    )
     args = parser.parse_args()
 
     # When CLI args are absent, fall back to workflow inputs (CI runs).
@@ -133,6 +139,45 @@ def parse_args() -> argparse.Namespace:
 
 
 RELEASE_INFO_FILE = "/tmp/release_info.json"
+
+
+def _release_branches() -> List[str]:
+    raw = GH.get_output_with_retries(
+        "gh pr list --state open --label release --json headRefName"
+    )
+    if not raw:
+        raise RuntimeError("gh pr list failed for release PRs after retries")
+    return sorted(pr["headRefName"] for pr in json.loads(raw))
+
+
+def _latest_release_tag(branch: str) -> str:
+    out = Shell.get_output(f"git tag -l {shlex.quote(f'v{branch}.*')} --sort=v:refname")
+    tags = [t for t in out.splitlines() if t.strip()]
+    return tags[-1] if tags else ""
+
+
+def _select_patch_dry_run_ref(max_candidates: int) -> str:
+    """Newest release-branch commit a patch dry run can target, or "" if none.
+
+    The newest commit since a branch's latest release tag, minus the
+    post-release version-bump commit — the state prepare() needs for a patch.
+    Newest branch first, up to max_candidates commits per branch. It does NOT
+    require green CI or uploaded artifacts (unlike the real auto-release
+    candidate) because --dry-run --skip-repo publishes nothing.
+    """
+    for branch in reversed(_release_branches()):
+        tag = _latest_release_tag(branch)
+        if not tag or tag.endswith("new"):
+            continue
+        commits = Shell.get_output(
+            f"git rev-list --first-parent {shlex.quote(tag)}..origin/{shlex.quote(branch)}"
+        ).splitlines()
+        # rev-list is newest-first, so commits[-1] is the version-bump commit cut right after the tag; drop it, then take the newest max_candidates.
+        candidates = commits[:-1][:max_candidates]
+        if candidates:
+            print(f"[{branch}] patch dry-run candidate [{candidates[0]}]")
+            return candidates[0]
+    return ""
 
 
 def main():
@@ -210,6 +255,21 @@ def main():
         workdir=REPO_PATH,
     )
 
+    # A "new" release cuts from `master` via `checkout("master")`, but the PR
+    # dry-run check runs on a detached merge ref with no local `master`. Create
+    # it from origin. Skipped on a real release, which is already on `master`
+    # (`git branch -f` refuses the current branch).
+    if (
+        ok
+        and args.release_type == "new"
+        and Shell.get_output("git rev-parse --abbrev-ref HEAD") != "master"
+    ):
+        step(
+            name="Ensure Local master Branch",
+            command=["git branch --force master origin/master"],
+            workdir=REPO_PATH,
+        )
+
     step(
         name="Configure Git Auth for Release Pushes",
         command=[
@@ -224,6 +284,19 @@ def main():
         ],
         workdir=REPO_PATH,
     )
+
+    # Resolve `--ref auto` (the patch dry-run PR check) now that the fetch above
+    # made every release branch and tag local. No candidate is a pass, not a
+    # failure — there is simply no unreleased commit to rehearse against.
+    if ok and args.ref == "auto":
+        assert (
+            args.dry_run and args.release_type == "patch"
+        ), "--ref auto is only valid for a patch dry run"
+        args.ref = _select_patch_dry_run_ref(args.max_candidates)
+        if not args.ref:
+            print("No release-branch commit to patch dry-run; skipping")
+            Result.create_from(results=results, stopwatch=stopwatch).complete_job()
+            return
 
     # Authenticate to Docker Hub in the setup phase, before any release
     # mutation (tag push, GitHub release, repo export). Pushing docker images
@@ -419,7 +492,8 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if ok and args.release_type == "patch" and changelog_absent:
+    # `not args.skip_docker`: the changelog is generated in the style-test docker image, so skip-docker (recovery, or the docker-less patch dry-run check) skips its generation too.
+    if ok and args.release_type == "patch" and changelog_absent and not args.skip_docker:
         with open(RELEASE_INFO_FILE) as f:
             release_tag = json.load(f)["release_tag"]
         uid = os.getuid()

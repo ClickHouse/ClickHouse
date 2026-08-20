@@ -1,6 +1,6 @@
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import SECRETS
+from ci.defs.defs import SECRETS, RunnerLabels
 
 robot_token_secret = Secret.Config(
     name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
@@ -18,6 +18,53 @@ release_job = Job.Config(
     # release-branch tag). release_job.py exports it as GH_TOKEN.
     secrets=[robot_token_secret],
 )
+
+# PR checks: rehearse the release pipeline in --dry-run so a change to the
+# release code is exercised before it can break a real release. Digest-gated to
+# the release code (they run only when it changes) and run on the small PR pool,
+# not amd-release-maker (the PR workflow's `pr-` label prefix cannot resolve it).
+# No robot PAT: the only remote write is `git push --dry-run`, which negotiates
+# with the default token. --skip-repo/--skip-docker drop package export, image
+# builds, and (via skip-docker) the docker changelog generation, so the checks
+# stay to the git/gh release logic.
+_release_dry_run_digest = Job.CacheDigestConfig(
+    include_paths=[
+        "./.github/workflows/create_release.yml",
+        "./ci/workflows/create_release.py",
+        "./ci/jobs/release_job.py",
+        "./ci/jobs/scripts/create_release.py",
+        "./ci/jobs/scripts/clickhouse_version.py",
+    ],
+)
+
+# "new" cuts from master; release_job.py makes master a local branch when the
+# checkout is detached (the PR case) so its `checkout("master")` steps resolve.
+release_dry_run_new_job = Job.Config(
+    name="Release Dry Run (new)",
+    runs_on=RunnerLabels.ARM_SMALL,
+    command=(
+        "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
+        " --ref master --release-type new --dry-run --skip-repo --skip-docker"
+    ),
+    digest_config=_release_dry_run_digest,
+    timeout=1800,
+)
+
+# "patch" needs an unreleased release-branch commit; --ref auto finds one (a pass
+# when none exists). --max-candidates widens the per-branch commit scan.
+release_dry_run_patch_job = Job.Config(
+    name="Release Dry Run (patch)",
+    runs_on=RunnerLabels.ARM_SMALL,
+    command=(
+        "PYTHONPATH=. python3 ./ci/jobs/release_job.py"
+        " --ref auto --release-type patch --dry-run --skip-repo --skip-docker"
+        " --max-candidates 8"
+    ),
+    digest_config=_release_dry_run_digest,
+    timeout=1800,
+)
+
+PR_DRY_RUN_JOBS = [release_dry_run_new_job, release_dry_run_patch_job]
 
 workflow = Workflow.Config(
     name="CreateRelease",
