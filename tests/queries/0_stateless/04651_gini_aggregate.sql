@@ -62,16 +62,16 @@ SELECT gini(x) FROM (SELECT [1, nan, 3] :: Array(BFloat16) AS arr) ARRAY JOIN ar
 SELECT gini(x) FROM (SELECT [inf, inf] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x; -- { serverError BAD_ARGUMENTS }
 SELECT abs(gini(x) - 1.0 / 514) < 1e-15 FROM (SELECT [1, 1.0078125] :: Array(BFloat16) AS arr) ARRAY JOIN arr AS x;
 
--- Nullable input.
-SELECT gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
-
--- An all-NULL nullable input is treated as no values.
-SELECT gini(x) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
-
--- Over a Nullable column a wrapped gini is Nullable and yields NULL when nothing qualifies, as sumIf is.
+-- Over a Nullable column the result is Nullable, NULLs are skipped, and a single
+-- remaining value still gives NaN. The plain form and the wrapped forms agree, as they do for sum.
+SELECT toTypeName(gini(x)), gini(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(gini(x)), gini(x) FROM (SELECT [1, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 SELECT toTypeName(giniIf(x, x > 1)), giniIf(x, x > 1) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
-SELECT toTypeName(giniIf(x, x > 100)), isNull(giniIf(x, x > 100)) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 SELECT toTypeName(giniDistinct(x)), giniDistinct(x) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+
+-- With no non-NULL value the result is NULL, for the plain form as well as the wrapped ones.
+SELECT toTypeName(gini(x)), isNull(gini(x)) FROM (SELECT [NULL, NULL] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
+SELECT toTypeName(giniIf(x, x > 100)), isNull(giniIf(x, x > 100)) FROM (SELECT [1, NULL, 3] :: Array(Nullable(Int32)) AS arr) ARRAY JOIN arr AS x;
 
 -- A literal NULL argument folds to Nullable(Nothing), as it does for sum.
 SELECT toTypeName(gini(NULL)), isNull(gini(NULL));
