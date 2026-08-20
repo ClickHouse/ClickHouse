@@ -1158,20 +1158,11 @@ static std::pair<const ASTFunction *, const IAST *> extractLambdaParamsAndBody(c
     return {params_tuple, lambda_arg->arguments->children[1].get()};
 }
 
-static bool isIdentifierReferencedInBody(const IdentifierNameSet & body_names, const String & param_name)
-{
-    if (body_names.contains(param_name))
-        return true;
-    const String prefix = param_name + ".";
-    return std::ranges::any_of(body_names, [&](const String & name) { return name.starts_with(prefix); });
-}
-
 static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNameSet & names, std::unordered_set<String> & masked_names)
 {
     if (const auto * identifier = node.as<ASTIdentifier>())
     {
-        const auto & root_name = identifier->name_parts.empty() ? identifier->name() : identifier->name_parts.front();
-        if (!masked_names.contains(identifier->name()) && !masked_names.contains(root_name))
+        if (!masked_names.contains(identifier->name()))
             names.insert(identifier->name());
         return;
     }
@@ -1246,7 +1237,7 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 1; i < params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && isIdentifierReferencedInBody(body_names, param_identifier->name()))
+                    if (param_identifier && body_names.contains(param_identifier->name()))
                         collectValueCarryingIdentifierNames(*args[i], names, masked_names);
                 }
                 collectValueCarryingIdentifierNames(*args.back(), names, masked_names);
@@ -1266,7 +1257,7 @@ static void collectValueCarryingIdentifierNames(const IAST & node, IdentifierNam
                 for (size_t i = 0; i != params.size(); ++i)
                 {
                     const auto * param_identifier = params[i]->as<ASTIdentifier>();
-                    if (param_identifier && isIdentifierReferencedInBody(body_names, param_identifier->name()))
+                    if (param_identifier && body_names.contains(param_identifier->name()))
                         collectValueCarryingIdentifierNames(*args[1 + i], names, masked_names);
                 }
                 return;
