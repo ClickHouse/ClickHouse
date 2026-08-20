@@ -106,11 +106,15 @@ SELECT 1 OR ((SELECT count(*) FROM test_03562) > throwIf(1)) AS non_literal_comp
 
 SELECT 'Test view-backed count subqueries fall back to normal analysis';
 DROP TABLE IF EXISTS test_03562_view_alias;
+DROP TABLE IF EXISTS test_03562_view_merge;
 DROP VIEW IF EXISTS test_03562_view;
 CREATE VIEW test_03562_view AS SELECT number FROM numbers(1) WHERE throwIf(1) = 0;
 SELECT 1 OR ((SELECT count() FROM test_03562_view) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
 CREATE TABLE test_03562_view_alias ENGINE = Alias('test_03562_view');
 SELECT 1 OR ((SELECT count() FROM test_03562_view_alias) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+CREATE TABLE test_03562_view_merge ENGINE = Merge(currentDatabase(), '^test_03562_view$');
+SELECT 1 OR ((SELECT count() FROM test_03562_view_merge) > 0); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+DROP TABLE test_03562_view_merge;
 DROP TABLE test_03562_view_alias;
 DROP VIEW test_03562_view;
 

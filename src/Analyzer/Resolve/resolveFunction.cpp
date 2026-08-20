@@ -392,12 +392,15 @@ bool isUnsafeCountScalarSource(const QueryTreeNodePtr & join_tree, const Identif
         return true;
 
     const auto & storage = table->getStorage();
-    /// Remote storages can attach policies and filters on shard-local tables that are not
-    /// visible in initiator-side metadata, so they cannot be proven safe speculatively.
-    /// Alias forwards reads to another storage but does not forward isView(), and policies are
-    /// evaluated against its target instead of the alias name. Reject it rather than proving a
-    /// target that can change independently during analysis.
-    return storage->isView() || storage->isRemote() || storage->getName() == "Alias";
+    /// The speculative pass cannot inspect fan-out or forwarding storage children. In particular,
+    /// Merge applies each matching child's view and row-policy behavior later, while Alias does
+    /// not forward isView() and evaluates policies on its target. Remote storages can likewise
+    /// apply shard-local policies and filters not visible in initiator-side metadata.
+    ///
+    /// Keep the opt-in fast path limited to local physical tables: Memory and MergeTree-family
+    /// engines. All other storages fail closed rather than requiring per-engine semantic proofs.
+    const bool is_local_physical_table = storage->getName() == "Memory" || storage->isMergeTree();
+    return !is_local_physical_table || storage->isView() || storage->isRemote() || storage->getName() == "Alias";
 }
 
 bool hasLateAttachedTableFilter(
