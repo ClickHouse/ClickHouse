@@ -592,7 +592,8 @@ protected:
 
 
 /**
-  * [ENGINE = name] [PARTITION BY expr] [ORDER BY expr] [PRIMARY KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
+  * [ENGINE = name] [KEYS (expr, ...)] [PARTITION BY expr] [PRIMARY KEY expr]
+  * [ORDER BY expr] [UNIQUE KEY expr] [SAMPLE BY expr] [SETTINGS name = value, ...]
   */
 class ParserStorage : public IParserBase
 {

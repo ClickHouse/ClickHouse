@@ -367,6 +367,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.index_decl = command_ast->index_decl->clone();
+        if (command_ast->index_decl->as<ASTExpressionList>())
+        {
+            if (command_ast->first || command_ast->index)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lookup `INDEX (...)` does not support `FIRST` or `AFTER`");
+            command.type = AlterCommand::ADD_LOOKUP_INDEX;
+            command.lookup_index = command_ast->index_decl->clone();
+            command.if_not_exists = command_ast->if_not_exists;
+            return command;
+        }
         command.type = AlterCommand::ADD_INDEX;
 
         const auto & ast_index_decl = command_ast->index_decl->as<ASTIndexDeclaration &>();
@@ -474,6 +483,13 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     {
         AlterCommand command;
         command.ast = command_ast->clone();
+        if (command_ast->index_decl && command_ast->index_decl->as<ASTExpressionList>())
+        {
+            command.type = AlterCommand::DROP_LOOKUP_INDEX;
+            command.lookup_index = command_ast->index_decl->clone();
+            command.if_exists = command_ast->if_exists;
+            return command;
+        }
         command.type = AlterCommand::DROP_INDEX;
         command.index_name = command_ast->index->as<ASTIdentifier &>().name();
         command.if_exists = command_ast->if_exists;
@@ -904,6 +920,14 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context,
             insert_it,
             IndexDescription::getIndexFromAST(
                 index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+    }
+    else if (type == ADD_LOOKUP_INDEX)
+    {
+        auto indexes = metadata.lookup_indexes
+            ? metadata.lookup_indexes->clone()->as<ASTExpressionList &>().clone()
+            : make_intrusive<ASTExpressionList>();
+        indexes->children.push_back(lookup_index->clone());
+        metadata.lookup_indexes = std::move(indexes);
     }
     else if (type == DROP_INDEX)
     {
@@ -1973,6 +1997,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     for (size_t i = 0; i < size(); ++i)
     {
         const auto & command = (*this)[i];
+
+        if ((command.type == AlterCommand::ADD_LOOKUP_INDEX || command.type == AlterCommand::DROP_LOOKUP_INDEX)
+            && !StorageFactory::instance().getStorageFeatures(table->getName()).supports_lookup_indexes)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support lookup `INDEX (...)`", table->getName());
 
         if (command.ttl && !table->supportsTTL())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine {} doesn't support TTL clause", table->getName());

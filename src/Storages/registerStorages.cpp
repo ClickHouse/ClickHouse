@@ -15,6 +15,7 @@ void registerStorageBuffer(StorageFactory & factory);
 void registerStorageDistributed(StorageFactory & factory);
 void registerStorageRemote(StorageFactory & factory);
 void registerStorageMemory(StorageFactory & factory);
+void registerStorageOverwriteCache(StorageFactory & factory);
 void registerStorageQueryRunner(StorageFactory & factory);
 void registerStorageFile(StorageFactory & factory);
 void registerStorageURL(StorageFactory & factory);
@@ -128,6 +129,7 @@ void registerStorages()
     registerStorageDistributed(factory);
     registerStorageRemote(factory);
     registerStorageMemory(factory);
+    registerStorageOverwriteCache(factory);
     registerStorageQueryRunner(factory);
     registerStorageFile(factory);
     registerStorageURL(factory);

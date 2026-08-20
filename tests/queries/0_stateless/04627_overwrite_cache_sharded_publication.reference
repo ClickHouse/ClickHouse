@@ -1,0 +1,14 @@
+pending-primary	2	0
+pending-secondary	1000	0
+committed-primary	0	4
+committed-secondary	0	2000
+second-pending	2000	0
+second-committed	0	2000
+rollback-publication	2000	0
+rollback-new-key	0
+index-build-rollback	0
+index-catch-up	index-catch-up
+drop-during-insert-prep	drop-race
+add-during-insert-prep	add-race
+rollback-old-reader	0
+drop-old-reader	2001

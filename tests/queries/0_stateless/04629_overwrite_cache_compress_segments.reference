@@ -1,0 +1,10 @@
+winners agree with the reference
+1	1	0	0
+lookup indexes agree
+1	1
+point lookups agree
+0
+repeated replacement
+0	0
+0	0
+rejects an unsupported value

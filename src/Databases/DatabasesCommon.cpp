@@ -230,8 +230,8 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
     {
         ASTStorage & storage_ast = *ast_create_query.storage;
 
-        bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
+        bool is_extended_storage_def = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key
+            || storage_ast.sample_by || storage_ast.settings || storage_ast.lookup_indexes || metadata.lookup_indexes;
 
         if (is_extended_storage_def)
         {
@@ -258,6 +258,11 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
+
+            if (metadata.lookup_indexes)
+                storage_ast.set(storage_ast.lookup_indexes, metadata.lookup_indexes);
+            else if (storage_ast.lookup_indexes)
+                storage_ast.reset(storage_ast.lookup_indexes);
         }
         else if (metadata.settings_changes)
         {

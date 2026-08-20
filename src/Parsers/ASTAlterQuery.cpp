@@ -715,7 +715,14 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << "ADD INDEX " << (if_not_exists ? "IF NOT EXISTS " : "")
                      ;
-        index_decl->format(ostr, settings, state, frame);
+        if (index_decl->as<ASTExpressionList>())
+        {
+            ostr << '(';
+            index_decl->format(ostr, settings, state, frame);
+            ostr << ')';
+        }
+        else
+            index_decl->format(ostr, settings, state, frame);
 
         if (first)
             ostr << " FIRST ";
@@ -729,7 +736,14 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << (clear_index ? "CLEAR " : "DROP ") << "INDEX "
                       << (if_exists ? "IF EXISTS " : "");
-        index->format(ostr, settings, state, frame);
+        if (index_decl && index_decl->as<ASTExpressionList>())
+        {
+            ostr << '(';
+            index_decl->format(ostr, settings, state, frame);
+            ostr << ')';
+        }
+        else
+            index->format(ostr, settings, state, frame);
         if (partition)
         {
             ostr << " IN PARTITION ";

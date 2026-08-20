@@ -41,6 +41,10 @@ ASTPtr ASTStorage::clone() const
     /// `normalizeChildrenOrder`. `IAST::updateTreeHash` iterates `children` in sequence.
     if (engine)
         res->set(res->engine, engine->clone());
+    if (keys)
+        res->set(res->keys, keys->clone());
+    if (lookup_indexes)
+        res->set(res->lookup_indexes, lookup_indexes->clone());
     if (partition_by)
         res->set(res->partition_by, partition_by->clone());
     if (primary_key)
@@ -182,6 +186,28 @@ void ASTStorage::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Format
         ostr << s.nl_or_ws << "ENGINE" << " = ";
         engine->format(ostr, s, state, modified_frame);
     }
+    if (keys)
+    {
+        ostr << s.nl_or_ws << "KEYS (";
+        auto nested_frame = modified_frame;
+        nested_frame.expression_list_prepend_whitespace = false;
+        keys->format(ostr, s, state, nested_frame);
+        ostr << ')';
+    }
+    if (lookup_indexes)
+    {
+        ostr << s.nl_or_ws << "INDEX ";
+        for (size_t index = 0; index < lookup_indexes->children.size(); ++index)
+        {
+            if (index)
+                ostr << ", ";
+            ostr << '(';
+            auto nested_frame = modified_frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            lookup_indexes->children[index]->format(ostr, s, state, nested_frame);
+            ostr << ')';
+        }
+    }
     if (partition_by)
     {
         ostr << s.nl_or_ws << "PARTITION BY ";
@@ -244,6 +270,10 @@ void ASTStorage::normalizeChildrenOrder()
     old_children.swap(children);
 
     if (engine) children.emplace_back(engine);
+    if (keys)
+        children.emplace_back(keys);
+    if (lookup_indexes)
+        children.emplace_back(lookup_indexes);
     if (partition_by) children.emplace_back(partition_by);
     if (primary_key) children.emplace_back(primary_key);
     if (order_by) children.emplace_back(order_by);
@@ -256,7 +286,7 @@ void ASTStorage::normalizeChildrenOrder()
 
 bool ASTStorage::isExtendedStorageDefinition() const
 {
-    return partition_by || primary_key || order_by || unique_key || sample_by || settings;
+    return keys || lookup_indexes || partition_by || primary_key || order_by || unique_key || sample_by || settings;
 }
 
 

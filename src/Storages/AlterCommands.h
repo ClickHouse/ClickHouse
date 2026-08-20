@@ -43,6 +43,8 @@ struct AlterCommand
         MODIFY_SAMPLE_BY,
         ADD_INDEX,
         DROP_INDEX,
+        ADD_LOOKUP_INDEX,
+        DROP_LOOKUP_INDEX,
         ADD_CONSTRAINT,
         DROP_CONSTRAINT,
         MODIFY_CONSTRAINT,
@@ -121,6 +123,9 @@ struct AlterCommand
 
     /// For ADD/DROP INDEX
     String index_name;
+
+    /// For engine-specific `ADD INDEX (...)`.
+    ASTPtr lookup_index;
 
     // For ADD/MODIFY CONSTRAINT
     ASTPtr constraint_decl = nullptr;

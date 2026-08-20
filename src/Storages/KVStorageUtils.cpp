@@ -124,16 +124,19 @@ bool traverseDAGFilterSingleColumn(
             return false;
 
         const auto * key = elem->children.at(0);
+        const auto * value = elem->children.at(1);
         while (key->type == ActionsDAG::ActionType::ALIAS)
             key = key->children.at(0);
+        while (value->type == ActionsDAG::ActionType::ALIAS)
+            value = value->children.at(0);
 
-        if (key->type != ActionsDAG::ActionType::INPUT)
-            return false;
+        if (key->type != ActionsDAG::ActionType::INPUT || key->result_name != primary_key)
+        {
+            std::swap(key, value);
+            if (key->type != ActionsDAG::ActionType::INPUT || key->result_name != primary_key)
+                return false;
+        }
 
-        if (key->result_name != primary_key)
-            return false;
-
-        const auto * value = elem->children.at(1);
         if (value->type != ActionsDAG::ActionType::COLUMN)
             return false;
 
@@ -251,57 +254,60 @@ bool traverseDAGFilter(
         const auto * left = elem->children.at(0);
         const auto * right = elem->children.at(1);
 
-        // Skip aliases
         while (left->type == ActionsDAG::ActionType::ALIAS)
             left = left->children.at(0);
+        while (right->type == ActionsDAG::ActionType::ALIAS)
+            right = right->children.at(0);
 
-        // Check if left side is tuple function with our key columns
-        if (left->type == ActionsDAG::ActionType::FUNCTION && left->function_base->getName() == "tuple")
+        const auto is_primary_key_tuple = [&](const ActionsDAG::Node * node)
         {
-            // Verify all tuple elements are our primary key columns in order
-            if (left->children.size() != primary_keys.size())
+            if (node->type != ActionsDAG::ActionType::FUNCTION || node->function_base->getName() != "tuple")
+                return false;
+            if (node->children.size() != primary_keys.size())
                 return false;
 
             for (size_t i = 0; i < primary_keys.size(); ++i)
             {
-                const auto * key_node = left->children.at(i);
+                const auto * key_node = node->children.at(i);
                 while (key_node->type == ActionsDAG::ActionType::ALIAS)
                     key_node = key_node->children.at(0);
 
                 if (key_node->type != ActionsDAG::ActionType::INPUT || key_node->result_name != primary_keys[i])
                     return false;
             }
-
-            // Extract tuple value from right side
-            if (right->type != ActionsDAG::ActionType::COLUMN)
-                return false;
-
-            auto value_field = right->column->getField();
-            if (value_field.getType() != Field::Types::Tuple)
-                return false;
-
-            const auto & tuple_value = value_field.safeGet<Tuple>();
-            if (tuple_value.size() != primary_keys.size())
-                return false;
-
-            // Convert each tuple element to the correct type
-            std::vector<Field> converted_values;
-            converted_values.reserve(tuple_value.size());
-            for (size_t i = 0; i < tuple_value.size(); ++i)
-            {
-                auto converted = convertFieldToType(tuple_value[i], *primary_key_types[i]);
-                if (converted.isNull())
-                    return false;
-                converted_values.push_back(converted);
-            }
-
-            res->push_back(createTupleField(converted_values));
             return true;
+        };
+
+        if (!is_primary_key_tuple(left))
+        {
+            std::swap(left, right);
+            if (!is_primary_key_tuple(left))
+                return false;
         }
 
-        // Fall back to single-column handling for individual column equality
-        // This will be caught by AND handler below
-        return false;
+        if (right->type != ActionsDAG::ActionType::COLUMN)
+            return false;
+
+        auto value_field = right->column->getField();
+        if (value_field.getType() != Field::Types::Tuple)
+            return false;
+
+        const auto & tuple_value = value_field.safeGet<Tuple>();
+        if (tuple_value.size() != primary_keys.size())
+            return false;
+
+        std::vector<Field> converted_values;
+        converted_values.reserve(tuple_value.size());
+        for (size_t i = 0; i < tuple_value.size(); ++i)
+        {
+            auto converted = convertFieldToType(tuple_value[i], *primary_key_types[i]);
+            if (converted.isNull())
+                return false;
+            converted_values.push_back(converted);
+        }
+
+        res->push_back(createTupleField(converted_values));
+        return true;
     }
 
     // Handle tuple IN: (key1, key2) IN ((v1, v2), (v3, v4))
@@ -359,7 +365,7 @@ bool traverseDAGFilter(
             const auto & set_elements = set->getSetElements();
 
             if (set_elements.empty())
-                return false;
+                return true;
 
             size_t num_rows = set_elements[0]->size();
 
@@ -386,7 +392,7 @@ bool traverseDAGFilter(
                     res->push_back(createTupleField(tuple_values));
             }
 
-            return !res->empty();
+            return true;
         }
 
         return false;
@@ -395,6 +401,18 @@ bool traverseDAGFilter(
     // Handle AND: key1 = v1 AND key2 = v2
     if (func_name == "and")
     {
+        /// A complete tuple predicate provides a bounded candidate set. Any other
+        /// conjuncts remain in the query filter and are applied to those candidates.
+        for (const auto * child : elem->children)
+        {
+            FieldVectorPtr child_res = std::make_shared<FieldVector>();
+            if (traverseDAGFilter(primary_keys, primary_key_types, child, context, child_res))
+            {
+                res->insert(res->end(), child_res->begin(), child_res->end());
+                return true;
+            }
+        }
+
         // Collect filters for each key column separately
         std::unordered_map<String, FieldVector> column_filters;
 
@@ -406,11 +424,11 @@ bool traverseDAGFilter(
                 FieldVectorPtr child_res = std::make_shared<FieldVector>();
                 if (traverseDAGFilterSingleColumn(primary_keys[i], primary_key_types[i], child, context, child_res))
                 {
-                    if (!child_res->empty())
-                    {
-                        for (const auto & val : *child_res)
-                            column_filters[primary_keys[i]].push_back(val);
-                    }
+                    /// An explicitly matched empty set makes the whole conjunction empty.
+                    if (child_res->empty())
+                        return true;
+                    for (const auto & val : *child_res)
+                        column_filters[primary_keys[i]].push_back(val);
                 }
             }
         }

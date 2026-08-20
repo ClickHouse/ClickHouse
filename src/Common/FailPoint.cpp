@@ -33,6 +33,15 @@ static struct InitFiu
 
 #define APPLY_FOR_FAILPOINTS(ONCE, REGULAR, PAUSEABLE_ONCE, PAUSEABLE) \
     ONCE(replicated_merge_tree_commit_zk_fail_after_op) \
+    ONCE(overwrite_cache_throw_during_publish) \
+    ONCE(overwrite_cache_throw_during_index_build) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_after_lookup_catalog_snapshot) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_after_lookup_ids) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_after_drop_index_publication) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_before_rollback) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_before_commit) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_during_index_build) \
+    PAUSEABLE_ONCE(overwrite_cache_pause_during_lookup) \
     ONCE(replicated_queue_fail_next_entry) \
     REGULAR(replicated_queue_unfail_entries) \
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \

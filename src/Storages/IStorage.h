@@ -258,6 +258,12 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    /// Publish metadata whose allocation and copying were completed before a critical section.
+    void setInMemoryMetadata(StorageMetadataPtr metadata_)
+    {
+        metadata.setAllocated(std::move(metadata_));
+    }
+
     VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     NameDependencies getDependentViewsByColumn(ContextPtr context) const;
