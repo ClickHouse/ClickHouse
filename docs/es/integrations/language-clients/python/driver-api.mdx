@@ -321,6 +321,8 @@ Los métodos `query*` y `command` del cliente ClickHouse Connect aceptan un argu
 
 ClickHouse admite la [vinculación del lado del servidor](/es/concepts/features/interfaces/client#cli-queries-with-parameters) para los valores de la consulta. El valor vinculado se envía por separado de la consulta como un parámetro HTTP. ClickHouse Connect usa este modo cuando detecta una expresión con el formato `{<name>:<datatype>}`. Pase los valores como un diccionario de Python.
 
+Los nombres de los parámetros deben ser nombres BareWord ASCII de ClickHouse. El driver acepta `$` al inicio, dentro o al final del nombre cuando el servidor lo acepta, como en `{$tenant_id:String}`. Una clave de diccionario que comienza y termina con `$` y tiene un valor de búfer como `bytes`, `bytearray` o `memoryview` está reservada para la convención de parámetros binarios sin procesar de ClickHouse Connect. Si dicha clave se utiliza para un parámetro del lado del servidor no binario, limítela a un único placeholder `{name:Type}`. Los nombres `$tag$` repetidos pueden ser interpretados por ClickHouse como marcadores heredoc.
+
 Use `None` de Python para valores que admiten valores nulos. Se admiten valores `None` anidados dentro de parámetros `Array` y `Tuple`, y dentro de literales `Map` cuando `dict_parameter_format` se establece en `"map"`.
 
 * Vinculación del lado del servidor con diccionario de Python, valor DateTime y valor de cadena
@@ -904,7 +906,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` y `Cursor.executemany` aceptan argumentos adicionales de palabra clave, `settings` y `query_formats`. `settings` pasa ajustes de ClickHouse. `query_formats` aplica formatos de lectura según el tipo de ClickHouse cuando una sentencia devuelve filas, usando la misma correspondencia que `Client.query`. `executemany` usa la ruta nativa de inserción masiva del driver para las sentencias `INSERT ... VALUES` compatibles con una secuencia materializada de filas. `fetchone`, `fetchmany` y `fetchall` consumen el resultado materializado actual.
+`Cursor.execute` y `Cursor.executemany` aceptan argumentos adicionales de palabra clave, `settings` y `query_formats`. `settings` pasa ajustes de ClickHouse. `query_formats` aplica formatos de lectura según el tipo de ClickHouse cuando una sentencia devuelve filas, usando la misma correspondencia que `Client.query`. `Cursor.execute` también acepta el argumento exclusivo de palabra clave `pyformat_encoded`. Su valor predeterminado, `True`, se ajusta al contrato `pyformat` de DB-API. El dialecto SQLAlchemy lo establece en `False` cuando el compilador de sentencias emitió signos de porcentaje sin procesar, por lo que normalmente las aplicaciones no deberían establecerlo. `executemany` usa la ruta nativa de inserción masiva del driver para las sentencias `INSERT ... VALUES` compatibles con una secuencia materializada de filas. `fetchone`, `fetchmany` y `fetchall` consumen el resultado materializado actual.
 
 `Cursor.description` deriva `null_ok` del tipo de cada columna de resultado. Los tipos que no admiten valores NULL informan `False`, y los tipos que admiten valores NULL informan `True`, incluidos los envoltorios `Nullable`, `Variant` y `Dynamic`. `None` significa que se desconoce la nulabilidad. Cuando una consulta que comienza con `SELECT` o `WITH`, ignorando los comentarios iniciales, no devuelve filas ni metadatos de columnas, el cursor ejecuta una consulta de metadatos `LIMIT 0` para poblar `description`. Si esa consulta de metadatos falla, `description` se deja vacío.
 
