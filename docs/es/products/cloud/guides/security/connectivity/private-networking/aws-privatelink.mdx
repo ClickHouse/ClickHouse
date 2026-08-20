@@ -42,6 +42,7 @@ Para restringir el acceso a sus servicios de ClickHouse Cloud exclusivamente a t
   * ap-northeast-2
   * ap-northeast-3
   * ap-south-1
+  * ap-southeast-5
   * ap-southeast-4
   * ap-southeast-3
   * ap-south-2
@@ -51,7 +52,10 @@ Para restringir el acceso a sus servicios de ClickHouse Cloud exclusivamente a t
   * us-west-1
   * us-east-2
   * us-east-1
-    Consideraciones sobre precios: AWS cobrará a los usuarios por la transferencia de datos entre regiones; consulte los precios [aquí](https://aws.amazon.com/privatelink/pricing/).
+</Note>
+
+<Note>
+  AWS cobra por la transferencia de datos entre regiones. Consulte los detalles en los [precios de AWS PrivateLink](https://aws.amazon.com/privatelink/pricing/).
 </Note>
 
 **Complete lo siguiente para habilitar AWS PrivateLink**:
@@ -163,7 +167,9 @@ Seleccione **Endpoint services that use NLBs and GWLBs** y use `Service name`<su
 
 <Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="Configuración del endpoint de AWS PrivateLink" border />
 
-Si quiere establecer una conexión entre regiones mediante PrivateLink, active la casilla &quot;Cross region endpoint&quot; y especifique la región del servicio. La región del servicio es donde se ejecuta la instancia de ClickHouse.
+<Note>
+  Para una conexión entre regiones, active la casilla **Cross region endpoint** y especifique la región del servicio donde se ejecuta su servicio de ClickHouse.
+</Note>
 
 Si aparece el error &quot;Service name couldn&#39;t be verified.&quot;, póngase en contacto con el servicio de atención al cliente para solicitar que se añadan nuevas regiones a la lista de regiones compatibles.
 
@@ -177,9 +183,9 @@ Como paso opcional, asigne grupos de seguridad/etiquetas:
   Asegúrese de que los puertos `443`, `8443`, `9440`, `3306` estén permitidos en el grupo de seguridad.
 </Note>
 
-Después de crear el endpoint de VPC, anote el valor de `Endpoint ID`; lo necesitará en un paso posterior.
+Después de crear el endpoint de la VPC, anote el valor de `Endpoint ID`; lo necesitará en un paso posterior.
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="ID del endpoint de VPC" border />
+<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="ID del endpoint de la VPC" border />
 
 <div id="option-2-aws-cloudformation">
   #### Opción 2: AWS CloudFormation
