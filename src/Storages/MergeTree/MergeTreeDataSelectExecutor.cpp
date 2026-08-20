@@ -999,6 +999,15 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
+    /// per_part_index_orders can be shorter than the parts being read when index analysis was cached
+    /// for a smaller part set; fall back to the natural order (the order only picks which index to try first).
+    auto index_order_at = [&skip_indexes](size_t part_index, size_t idx) -> size_t
+    {
+        return part_index < skip_indexes.per_part_index_orders.size()
+            ? skip_indexes.per_part_index_orders[part_index][idx]
+            : idx;
+    };
+
     std::atomic<size_t> sum_marks_pk = 0;
     std::atomic<size_t> sum_parts_pk = 0;
     std::atomic<size_t> top_k_elapsed_us = 0;
@@ -1050,7 +1059,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         // These limits are checked per part so that we can fail very quickly
         // if we hit row limits on large datasets. Row counts use an atomic
         // counter as part processing typically uses multiple threads (max_threads)
-        auto [limits, leaf_limits] = getRowLimits(settings, query_info);
+        auto [limits, leaf_limits] = filter_context.check_row_limits ? getRowLimits(settings, query_info) : RowLimits{};
         std::atomic<size_t> total_rows{0};
 
         /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
@@ -1139,7 +1148,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::FilteringMarksWithSecondaryKeysMicroseconds);
 
-                    const auto index_idx = skip_indexes.per_part_index_orders[part_index][idx];
+                    const auto index_idx = index_order_at(part_index, idx);
                     const auto & index_and_condition = skip_indexes.useful_indices[index_idx];
 
                     auto index_stat_idx = idx;
@@ -1341,7 +1350,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         for (size_t idx = 0; idx < skip_indexes.useful_indices.size(); ++idx)
         {
             const auto & stat = useful_indices_stat[part_index * num_indices + idx];
-            const auto & index_and_condition = skip_indexes.useful_indices[skip_indexes.per_part_index_orders[part_index][idx]];
+            const auto & index_and_condition = skip_indexes.useful_indices[index_order_at(part_index, idx)];
             const auto & index_name = index_and_condition.index->index.name;
             LOG_DEBUG(
                 log,
@@ -1562,7 +1571,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
-    /// `use_query_condition_cache_for_top_k` setting (disabled by default). When it is off, skip the
+    /// `use_query_condition_cache_for_top_k` setting (enabled by default). When it is off, skip the
     /// consult entirely for any read stamped as TopK — including shapes where no `__topKFilter` node
     /// is folded into the filter DAG (skip-index-only TopK, or a query with a PREWHERE), whose plain
     /// condition hash would otherwise still hit entries primed by an ordinary `SELECT ... WHERE`.
@@ -1822,7 +1831,8 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
-        /*supports_skip_indexes_on_data_read*/false);
+        /*supports_skip_indexes_on_data_read*/false,
+        /*check_row_limits=*/true);
 }
 
 QueryPlanStepPtr MergeTreeDataSelectExecutor::readFromParts(

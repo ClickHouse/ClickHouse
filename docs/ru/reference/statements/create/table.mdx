@@ -1,25 +1,23 @@
 ---
 description: 'Документация по таблице'
-keywords: ['сжатие', 'кодек', 'схема', 'DDL']
-sidebarTitle: 'TABLE'
+keywords: ['схема', 'DDL']
+sidebarTitle: 'CREATE TABLE'
 slug: /sql-reference/statements/create/table
 title: 'CREATE TABLE'
 doc_type: 'справочник'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
-import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-Создаёт новую таблицу. Этот запрос может иметь различные синтаксические формы в зависимости от сценария использования.
-
-По умолчанию таблицы создаются только на текущем сервере. Распределённые DDL-запросы реализованы в виде предложения `ON CLUSTER`, которое [описано отдельно](/ru/reference/statements/distributed-ddl).
+Создаёт новую таблицу. По умолчанию таблицы создаются только на текущем сервере.
+Распределённые DDL-запросы реализованы в виде предложения `ON CLUSTER`, которое [описано отдельно](/ru/reference/statements/distributed-ddl).
 
 <div id="syntax-forms">
-  ## Варианты синтаксиса
+  ## Синтаксические формы
 </div>
 
+Этот запрос может иметь различные синтаксические формы в зависимости от сценария использования.
+
 <div id="with-explicit-schema">
-  ### С явной схемой
+  ### Создание таблицы с явной схемой
 </div>
 
 ```sql
@@ -37,6 +35,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 В простейшем случае описание столбца имеет вид `name type`. Пример: `RegionID UInt32`.
 
+Модификаторы, следующие за типом, — `COMMENT`, `compression_codec`, `STATISTICS`, `TTL`, `COLLATE`, `PRIMARY KEY` и `SETTINGS` для каждого столбца — можно записывать в любом порядке, причём каждый из них не более одного раза. Например, `RegionID UInt32 CODEC(ZSTD) COMMENT 'comment for column'` и `RegionID UInt32 COMMENT 'comment for column' CODEC(ZSTD)` равнозначны. Обратите внимание, что `SHOW CREATE TABLE` нормализует объявление столбца: оставшиеся в нём модификаторы всегда выводятся в каноническом порядке `COMMENT`, `CODEC`, `STATISTICS`, `TTL`, `COLLATE`, `SETTINGS`, а `PRIMARY KEY` для отдельного столбца перемещается из объявления столбца в предложение `PRIMARY KEY` на уровне таблицы.
+
 Для значений по умолчанию также можно задавать выражения (см. ниже).
 
 При необходимости можно указать первичный ключ с одним или несколькими ключевыми выражениями.
@@ -44,21 +44,21 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Для столбцов и таблицы можно добавлять комментарии.
 
 <div id="with-a-schema-similar-to-other-table">
-  ### Со схемой существующей таблицы
+  ### Создать таблицу со схемой существующей таблицы
 </div>
-
-ClickHouse позволяет копировать схему и данные существующей таблицы.
-
-Чтобы скопировать схему существующей таблицы:
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
 ```
 
+ClickHouse позволяет копировать схему и данные существующей таблицы.
+
+Чтобы скопировать схему существующей таблицы:
+
 Это создает таблицу с такой же структурой, как у другой таблицы.
 
 <div id="with-a-schema-and-data-cloned-from-another-table">
-  ### Со схемой и данными существующей таблицы
+  ### Создать таблицу со схемой и данными существующей таблицы
 </div>
 
 Чтобы реплицировать схему и данные существующей таблицы:
@@ -77,7 +77,7 @@ ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 Для обеих возможностей можно указать для таблицы другой движок. Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
 
 <div id="from-a-table-function">
-  ### Из табличной функции
+  ### Создание таблицы с помощью табличной функции
 </div>
 
 ```sql
@@ -87,7 +87,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 Создаёт таблицу с тем же результатом, что и указанная [табличная функция](/ru/reference/functions/table-functions/index). Созданная таблица также будет работать так же, как соответствующая табличная функция.
 
 <div id="from-select-query">
-  ### Из запроса SELECT
+  ### Создание таблицы с помощью SELECT-запроса
 </div>
 
 ```sql
@@ -113,18 +113,8 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## Модификаторы `NULL` и `NOT NULL`
-</div>
-
-Модификаторы `NULL` и `NOT NULL`, указанные после типа данных в определении столбца, соответственно разрешают или запрещают делать его [Nullable](/ru/reference/data-types/nullable).
-
-Если тип не `Nullable` и указан `NULL`, он будет трактоваться как `Nullable`; если указан `NOT NULL`, то нет. Например, `INT NULL` — то же самое, что `Nullable(INT)`. Если тип — `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, будет сгенерировано исключение.
-
-См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings#data_type_default_nullable).
-
 <div id="default_values">
-  ## Значения по умолчанию
+  ## Указание значений по умолчанию
 </div>
 
 Описание столбца может задавать выражение значения по умолчанию в форме `DEFAULT expr`, `MATERIALIZED expr` или `ALIAS expr`. Пример: `URLDomain String DEFAULT domain(URL)`.
@@ -282,40 +272,56 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
+<div id="null-or-not-null-modifiers">
+  ## Модификаторы `NULL` и `NOT NULL`
+</div>
+
+Модификаторы `NULL` и `NOT NULL`, указанные после типа данных в определении столбца, соответственно разрешают или запрещают делать его [Nullable](/ru/reference/data-types/nullable).
+
+Если тип не `Nullable` и указан `NULL`, он будет трактоваться как `Nullable`; если указан `NOT NULL`, то нет. Например, `INT NULL` — то же самое, что `Nullable(INT)`. Если тип — `Nullable` и указаны модификаторы `NULL` или `NOT NULL`, будет сгенерировано исключение.
+
+См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings/other#data_type_default_nullable).
+
 <div id="primary-key">
   ## Первичный ключ
 </div>
 
 При создании таблицы можно определить [первичный ключ](/ru/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries). Первичный ключ можно задать двумя способами:
 
-* В списке столбцов
+<Columns cols={2}>
+  <div>
+    **В списке столбцов**
 
-```sql
-CREATE TABLE [db.]table_name
-(
-    name1 type1, name2 type2, ...,
-    PRIMARY KEY(expr1[, expr2,...])
-)
-ENGINE = engine;
-```
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...,
+        PRIMARY KEY(expr1[, expr2,...])
+    )
+    ENGINE = engine;
+    ```
+  </div>
 
-* Вне списка столбцов
+  <div>
+    **Вне списка столбцов**
 
-```sql
-CREATE TABLE [db.]table_name
-(
-    name1 type1, name2 type2, ...
-)
-ENGINE = engine
-PRIMARY KEY(expr1[, expr2,...]);
-```
+    ```sql
+    CREATE TABLE [db.]table_name
+    (
+        name1 type1, name2 type2, ...
+    )
+    ENGINE = engine
+    PRIMARY KEY(expr1[, expr2,...]);
+    ```
+  </div>
+</Columns>
 
 <Tip>
   Нельзя использовать оба способа в одном запросе.
 </Tip>
 
 <div id="constraints">
-  ## Ограничения
+  ## Задание ограничений таблицы
 </div>
 
 Наряду с описанием столбцов можно также задавать ограничения:
@@ -367,20 +373,62 @@ ORDER BY (name_len, name);
 `ASSUME CONSTRAINT` **не обеспечивает соблюдение ограничения**, а лишь сообщает оптимизатору, что ограничение выполняется. Если ограничение на самом деле не выполняется, результаты запросов могут быть некорректными. Поэтому использовать `ASSUME CONSTRAINT` следует только в том случае, если вы уверены, что ограничение действительно выполняется.
 
 <div id="ttl-expression">
-  ## Выражение TTL
+  ## Укажите срок хранения с TTL
 </div>
 
 Определяет срок хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробное описание см. в разделе [TTL для столбцов и таблиц](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
 <div id="column_compression_codec">
-  ## Кодеки сжатия столбцов
+  ## Выбор кодеков сжатия для столбцов
 </div>
 
-По умолчанию в самоуправляемой версии ClickHouse используется сжатие `lz4`, а в ClickHouse Cloud — `zstd`.
+{/* Якоря для ссылок на разделы, перенесённые в /reference/statements/create/table/codec */}
 
-Для семейства движков `MergeTree` метод сжатия по умолчанию можно изменить в разделе [compression](/ru/reference/settings/server-settings/settings#compression) конфигурации сервера.
+<a id="general-purpose-codecs" />
 
-Метод сжатия также можно задать для каждого отдельного столбца в запросе `CREATE TABLE`.
+<a id="none" />
+
+<a id="lz4" />
+
+<a id="lz4hc" />
+
+<a id="zstd" />
+
+<a id="zxc" />
+
+<a id="zstd_qat" />
+
+<a id="deflate_qpl" />
+
+<a id="specialized-codecs" />
+
+<a id="delta" />
+
+<a id="doubledelta" />
+
+<a id="gcd" />
+
+<a id="gorilla" />
+
+<a id="alp" />
+
+<a id="fpc" />
+
+<a id="sz3" />
+
+<a id="t64" />
+
+<a id="quantized" />
+
+<a id="encryption-codecs" />
+
+<a id="aes_128_gcm_siv" />
+
+<a id="aes-256-gcm-siv" />
+
+<a id="adaptive-codec-selection" />
+
+По умолчанию в самоуправляемой версии ClickHouse используется сжатие `lz4`, а в ClickHouse Cloud — `zstd`. Также можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`:
 
 ```sql
 CREATE TABLE codec_example
@@ -395,423 +443,28 @@ ENGINE = <Engine>
 ...
 ```
 
-Кодек `Default` можно указать, чтобы использовать сжатие по умолчанию, которое во время выполнения может зависеть от различных настроек (и свойств данных).
-Пример: `value UInt64 CODEC(Default)` — то же самое, что и отсутствие указания кодека.
-
-Также можно удалить текущий CODEC из столбца и использовать сжатие по умолчанию из config.xml:
-
-```sql
-ALTER TABLE codec_example MODIFY COLUMN float_value CODEC(Default);
-```
-
-Кодеки можно объединять в конвейер, например, `CODEC(Delta, Default)`.
-
-<Tip>
-  Файлы базы данных ClickHouse нельзя распаковать с помощью внешних утилит, таких как `lz4`. Вместо этого используйте специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
-</Tip>
-
-Сжатие поддерживается для следующих движков таблиц:
-
-* Семейство [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Поддерживает кодеки сжатия для столбцов и выбор метода сжатия по умолчанию через настройки [compression](/ru/reference/settings/server-settings/settings#compression).
-* Семейство [Log](/ru/reference/engines/table-engines/log-family/index). По умолчанию использует метод сжатия `lz4` и поддерживает кодеки сжатия для столбцов.
-* [Set](/ru/reference/engines/table-engines/special/set). Поддерживается только сжатие по умолчанию.
-* [Join](/ru/reference/engines/table-engines/special/join). Поддерживается только сжатие по умолчанию.
-
-ClickHouse поддерживает кодеки общего назначения и специализированные кодеки.
-
-<div id="general-purpose-codecs">
-  ### Кодеки общего назначения
-</div>
-
-<div id="none">
-  #### NONE
-</div>
-
-`NONE` — без сжатия.
-
-<div id="lz4">
-  #### LZ4
-</div>
-
-`LZ4` — алгоритм [сжатия данных](https://github.com/lz4/lz4) без потерь, используемый по умолчанию. Использует быстрое сжатие LZ4.
-
-<div id="lz4hc">
-  #### LZ4HC
-</div>
-
-`LZ4HC[(level)]` — алгоритм LZ4 HC (высокая степень сжатия) с настраиваемым уровнем. Уровень по умолчанию: 9. Если задано `level <= 0`, используется уровень по умолчанию. Допустимые уровни: [1, 12]. Рекомендуемый диапазон уровней: [4, 9].
-
-<div id="zstd">
-  #### ZSTD
-</div>
-
-`ZSTD[(level)]` — [алгоритм сжатия ZSTD](https://en.wikipedia.org/wiki/Zstandard) с настраиваемым `level`. Возможные уровни: [1, 22]. Уровень по умолчанию: 1.
-
-Высокие уровни сжатия полезны в асимметричных сценариях, например когда данные сжимаются один раз, а распаковываются многократно. Чем выше уровень, тем лучше сжатие и тем выше нагрузка на CPU.
-
-<div id="zxc">
-  #### ZXC
-</div>
-
-`ZXC[(level)]` — асимметричный [алгоритм сжатия `zxc`](https://github.com/hellobertrand/zxc) с настраиваемым `level`. Возможные уровни: [1, 7]. Уровень по умолчанию: 3.
-
-`ZXC` жертвует скоростью сжатия ради очень быстрой распаковки, обеспечивая коэффициент сжатия между `LZ4` и `ZSTD`. Он хорошо подходит для сценариев, где данные сжимаются один раз, а распаковываются многократно, и показывает максимальную скорость распаковки на современных ядрах ARM. Более высокие уровни дают лучшее сжатие, но замедляют сам процесс сжатия, при этом распаковка остается быстрой.
-
-<div id="zstd_qat">
-  #### Устарело: ZSTD_QAT
-</div>
-
-<CloudNotSupportedBadge />
-
-<div id="deflate_qpl">
-  #### Устарел: DEFLATE_QPL
-</div>
-
-<CloudNotSupportedBadge />
-
-<div id="specialized-codecs">
-  ### Специализированные кодеки
-</div>
-
-Эти кодеки предназначены для повышения эффективности сжатия за счет использования определенных особенностей данных. Некоторые из них сами по себе данные не сжимают, а вместо этого предварительно обрабатывают их так, чтобы на втором этапе сжатия кодек общего назначения мог обеспечить более высокую степень сжатия.
-
-<div id="delta">
-  #### Delta
-</div>
-
-`Delta(delta_bytes)` — метод сжатия, при котором исходные значения заменяются разностью двух соседних значений, кроме первого, которое остаётся без изменений. `delta_bytes` — максимальный размер исходных значений; значение по умолчанию — `sizeof(type)`. Указывать `delta_bytes` в качестве аргумента не рекомендуется, и в будущем эта возможность будет удалена. Delta — кодек подготовки данных, то есть его нельзя использовать самостоятельно.
-
-<div id="doubledelta">
-  #### DoubleDelta
-</div>
-
-`DoubleDelta(bytes_size)` — вычисляет дельту дельт и записывает её в компактном двоичном виде. `bytes_size` имеет смысл, аналогичный `delta_bytes` в кодеке [Delta](#delta). Указывать `bytes_size` в качестве аргумента не рекомендуется, и в будущих релизах его поддержка будет удалена. Наилучшее сжатие достигается для монотонных последовательностей с постоянным шагом, например для данных временных рядов. Может использоваться с любым числовым типом. Реализует алгоритм, используемый в Gorilla TSDB, с расширением для поддержки 64-битных типов. Использует 1 дополнительный бит для 32-битных дельт: 5-битные префиксы вместо 4-битных. Дополнительные сведения см. в разделе Compressing Time Stamps статьи [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf). DoubleDelta — это кодек подготовки данных, то есть его нельзя использовать самостоятельно.
-
-<div id="gcd">
-  #### GCD
-</div>
-
-`GCD()` - - вычисляет наибольший общий делитель (GCD) значений в столбце, а затем делит каждое значение на GCD. Может использоваться со столбцами целочисленных, десятичных типов и типов даты/времени. Этот кодек хорошо подходит для столбцов со значениями, которые изменяются (увеличиваются или уменьшаются) с шагом, кратным GCD, например 24, 28, 16, 24, 8, 24 (GCD = 4). GCD — это кодек подготовки данных, то есть его нельзя использовать самостоятельно.
-
-<div id="gorilla">
-  #### Gorilla
-</div>
-
-`Gorilla(bytes_size)` — вычисляет XOR между текущим и предыдущим значением с плавающей запятой и записывает результат в компактной двоичной форме. Чем меньше разница между последовательными значениями, то есть чем медленнее меняются значения серии, тем выше степень сжатия. Реализует алгоритм, используемый в Gorilla TSDB, с расширением для поддержки 64-битных типов. Возможные значения `bytes_size`: 1, 2, 4, 8; значение по умолчанию — `sizeof(type)`, если оно равно 1, 2, 4 или 8. Во всех остальных случаях используется 1. Дополнительные сведения см. в разделе 4.1 статьи [Gorilla: A Fast, Scalable, In-Memory Time Series Database](https://doi.org/10.14778/2824032.2824078).
-
-<div id="alp">
-  #### ALP
-</div>
-
-<ExperimentalBadge />
-
-`ALP(variant)` — адаптивное сжатие без потерь для данных с плавающей точкой. Поддерживает `Float32` и `Float64`. Подробнее см. [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
-
-Кодек принимает необязательный аргумент variant:
-
-* `ALP()` или `ALP(AUTO)` (по умолчанию) — использует STD и при необходимости переключается на RD на основе оценки сжатого размера.
-* `ALP(STD)` — стандартный вариант ALP. Представляет каждое значение как точно масштабированное целое число с использованием степеней десяти, а затем сжимает полученные целые числа с помощью Frame-of-Reference и bit-packing. Значения, которые нельзя представить таким образом, сохраняются как необработанные исключения. Лучше всего подходит для чисел, происходящих из десятичных значений (например, измерений или цен).
-* `ALP(RD)` — вариант Real Doubles. Интерпретирует битовый шаблон каждого значения и разделяет его на старшую часть (знак + экспонента + старшие биты мантиссы) и младшую часть. Старшие части кодируются словарём (до 8 записей), младшие части упаковываются побитово. Лучше всего подходит в случаях, когда у многих значений совпадают старшие биты.
-
-<Note>
-  Этот кодек является экспериментальным и для его использования требуется `SET allow_experimental_codecs = 1`.
-</Note>
-
-<div id="fpc">
-  #### FPC
-</div>
-
-`FPC(level, float_size)` — многократно предсказывает следующее значение с плавающей запятой в последовательности, используя лучший из двух предикторов, затем выполняет XOR фактического и предсказанного значений и сжимает результат за счёт ведущих нулей. Как и Gorilla, этот кодек эффективен при хранении серии значений с плавающей запятой, которые изменяются медленно. Для 64-битных значений (double) FPC быстрее, чем Gorilla; для 32-битных значений результат может отличаться. Возможные значения `level`: 1–28, значение по умолчанию — 12. Возможные значения `float_size`: 4, 8; значение по умолчанию — `sizeof(type)`, если тип — Float. Во всех остальных случаях это 4. Подробное описание алгоритма см. в статье [High Throughput Compression of Double-Precision Floating-Point Data](https://userweb.cs.txstate.edu/~burtscher/papers/dcc07a.pdf).
-
-<div id="sz3">
-  #### SZ3
-</div>
-
-<ExperimentalBadge />
-
-`SZ3` or `SZ3(algorithm, error_bound_mode, error_bound)` — кодек с потерями, но с ограничением ошибки ([SZ3 Lossy Compressor](https://szcompressor.org/)) для столбцов типа Float32, Float64, Array(Float32) или Array(Float64). Для столбцов типа Array сжатие наиболее эффективно, когда все массивы имеют одинаковую длину (в этом случае они сжимаются как векторы фиксированной длины); массивы разной длины тоже поддерживаются и сжимаются как плоская последовательность значений. Кодек неприменим к столбцам типа Map, поскольку их ключи будут повреждены из-за сжатия с потерями. Поддерживаемые значения для `algorithm`: `ALGO_LORENZO_REG`, `ALGO_INTERP_LORENZO` и `ALGO_INTERP`. Поддерживаемые значения для `error_bound_mode`: `ABS`, `REL`, `PSNR` и `ABS_AND_REL`. Аргумент `error_bound` задаёт максимальную ошибку и имеет тип Float64.
-
-<Note>
-  Этот кодек экспериментальный; для его использования требуется `SET allow_experimental_codecs = 1`.
-</Note>
-
-<div id="t64">
-  #### T64
-</div>
-
-`T64` — метод сжатия, при котором отбрасываются неиспользуемые старшие биты значений в целочисленных типах данных (включая `Enum`, `Date` и `DateTime`). На каждом шаге алгоритма кодек берет блок из 64 значений, помещает их в битовую матрицу 64x64, транспонирует ее, отбрасывает неиспользуемые биты значений и возвращает оставшуюся последовательность. Неиспользуемые биты — это биты, которые не различаются у максимального и минимального значений во всей части данных, для которой используется сжатие.
-
-Кодеки `DoubleDelta` и `Gorilla` используются в Gorilla TSDB как части его алгоритма сжатия. Подход Gorilla эффективен в сценариях, где есть последовательность медленно меняющихся значений с соответствующими временными метками. Временные метки эффективно сжимаются кодеком `DoubleDelta`, а значения — кодеком `Gorilla`. Например, чтобы получить таблицу с эффективным хранением, можно создать ее в следующей конфигурации:
-
-```sql
-CREATE TABLE codec_example
-(
-    timestamp DateTime CODEC(DoubleDelta),
-    slow_values Float32 CODEC(Gorilla)
-)
-ENGINE = MergeTree()
-```
-
-<div id="encryption-codecs">
-  ### Кодеки шифрования
-</div>
-
-Эти кодеки фактически не сжимают данные, а шифруют их на диске. Они доступны только в том случае, если в настройках [encryption](/ru/reference/settings/server-settings/settings#encryption) указан ключ шифрования. Обратите внимание, что шифрование имеет смысл применять только в конце конвейеров кодеков, поскольку зашифрованные данные обычно уже нельзя сколько-либо эффективно сжимать.
-
-Кодеки шифрования:
-
-<div id="aes_128_gcm_siv">
-  #### AES_128_GCM_SIV
-</div>
-
-`CODEC('AES-128-GCM-SIV')` — Шифрует данные с помощью AES-128 в режиме GCM-SIV, описанном в [RFC 8452](https://tools.ietf.org/html/rfc8452).
-
-<div id="aes-256-gcm-siv">
-  #### AES-256-GCM-SIV
-</div>
-
-`CODEC('AES-256-GCM-SIV')` — шифрует данные с помощью AES-256 в режиме GCM-SIV.
-
-Эти кодеки используют фиксированный `nonce`, поэтому шифрование является детерминированным. Это делает их совместимыми с движками с дедупликацией, такими как [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication), но у этого есть слабая сторона: если один и тот же блок данных зашифровать дважды, получившийся шифртекст будет в точности одинаковым, поэтому злоумышленник, имеющий доступ к чтению с диска, сможет увидеть это совпадение (хотя и только факт совпадения, без доступа к содержимому).
-
-<Note>
-  Большинство движков, включая семейство &quot;*MergeTree&quot;, создают на диске файлы индекса без применения кодеков. Это означает, что открытый текст появится на диске, если для зашифрованного столбца создан индекс.
-</Note>
-
-<Note>
-  Если вы выполняете запрос SELECT, в котором указано конкретное значение в зашифрованном столбце (например, в предложении WHERE), это значение может появиться в [system.query&#95;log](/ru/reference/system-tables/query_log). Возможно, вам стоит отключить журналирование.
-</Note>
-
-**Пример**
-
-```sql
-CREATE TABLE mytable
-(
-    x String CODEC(AES_128_GCM_SIV)
-)
-ENGINE = MergeTree ORDER BY x;
-```
-
-<Note>
-  Если требуется использовать сжатие, его нужно явно указать. В противном случае к данным будет применяться только шифрование.
-</Note>
-
-**Пример**
-
-```sql
-CREATE TABLE mytable
-(
-    x String CODEC(Delta, LZ4, AES_128_GCM_SIV)
-)
-ENGINE = MergeTree ORDER BY x;
-```
+Сведения о доступных универсальных, специализированных кодеках и кодеках шифрования см. в разделе [Кодеки сжатия столбцов](/ru/reference/statements/create/table/codec).
 
 <div id="temporary-tables">
-  ## Временные таблицы
+  ## Создание временных таблиц
 </div>
 
-<Note>
-  Обратите внимание: временные таблицы не реплицируются. Поэтому нет гарантии, что данные, вставленные во временную таблицу, будут доступны на других репликах. Основной сценарий, в котором временные таблицы могут быть полезны, — выполнение запросов к небольшим внешним датасетам или JOIN с ними в рамках одного сеанса.
-</Note>
-
-ClickHouse поддерживает временные таблицы со следующими характеристиками:
-
-* Временные таблицы исчезают после завершения сеанса, в том числе при потере соединения.
-* Временная таблица использует движок таблицы Memory, если движок не указан, и может использовать любой движок таблицы, кроме Replicated и `KeeperMap`.
-* Для временной таблицы нельзя указать БД. Она создаётся вне баз данных.
-* Невозможно создать временную таблицу с помощью распределённого DDL-запроса на всех серверах кластера (с использованием `ON CLUSTER`): такая таблица существует только в текущем сеансе.
-* Если временная таблица имеет то же имя, что и другая таблица, и в запросе указано имя таблицы без указания БД, будет использована временная таблица.
-* При распределённой обработке запросов временные таблицы с движком Memory, используемые в запросе, передаются на удалённые серверы.
-
-Чтобы создать временную таблицу, используйте следующий синтаксис:
-
-```sql
-CREATE [OR REPLACE] TEMPORARY TABLE [IF NOT EXISTS] table_name
-(
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-    ...
-) [ENGINE = engine]
-```
-
-В большинстве случаев временные таблицы создаются не вручную, а при использовании внешних данных в запросе или для распределённого `(GLOBAL) IN`. Подробнее см. в соответствующих разделах
-
-Вместо временных таблиц можно использовать таблицы с [ENGINE = Memory](/ru/reference/engines/table-engines/special/memory).
+ClickHouse поддерживает временные таблицы, которые удаляются после завершения сеанса. Подробнее см. [CREATE TEMPORARY TABLE](/ru/reference/statements/create/table/temporary-table).
 
 <div id="replace-table">
-  ## REPLACE TABLE
+  ## Атомарное обновление таблицы с помощью REPLACE TABLE
 </div>
 
-Оператор `REPLACE` позволяет атомарно обновить таблицу [атомарно](/ru/concepts/core-concepts/glossary#atomicity).
+{/* Якоря для ссылок на разделы, перемещённые в /reference/statements/create/table/replace-table */}
 
-<Note>
-  Этот оператор поддерживается для движков баз данных [`Atomic`](/ru/reference/engines/database-engines/atomic) и [`Replicated`](/ru/reference/engines/database-engines/replicated),
-  которые являются движками баз данных по умолчанию для ClickHouse и ClickHouse Cloud соответственно.
-</Note>
+<a id="syntax" />
 
-Обычно, если вам нужно удалить часть данных из таблицы,
-вы можете создать новую таблицу и заполнить её результатом оператора `SELECT`, который не выбирает нежелательные данные,
-затем удалить старую таблицу и переименовать новую.
-Этот подход показан в примере ниже:
+<a id="examples" />
 
-```sql
-CREATE TABLE myNewTable AS myOldTable;
-
-INSERT INTO myNewTable
-SELECT * FROM myOldTable 
-WHERE CounterID <12345;
-
-DROP TABLE myOldTable;
-
-RENAME TABLE myNewTable TO myOldTable;
-```
-
-Вместо описанного выше подхода можно также использовать `REPLACE` (при условии, что вы используете движки баз данных по умолчанию), чтобы добиться того же результата:
-
-```sql
-REPLACE TABLE myOldTable
-ENGINE = MergeTree()
-ORDER BY CounterID 
-AS
-SELECT * FROM myOldTable
-WHERE CounterID <12345;
-```
-
-<div id="syntax">
-  ### Синтаксис
-</div>
-
-```sql
-{CREATE [OR REPLACE] | REPLACE} TABLE [db.]table_name
-```
-
-<Note>
-  Для этого оператора также применимы все синтаксические формы оператора `CREATE`. Вызов `REPLACE` для несуществующей таблицы приведет к ошибке.
-</Note>
-
-<div id="examples">
-  ### Примеры:
-</div>
-
-<Tabs>
-  <Tab title="Локально">
-    Рассмотрим следующую таблицу:
-
-    ```sql
-    CREATE DATABASE base 
-    ENGINE = Atomic;
-
-    CREATE OR REPLACE TABLE base.t1
-    (
-        n UInt64,
-        s String
-    )
-    ENGINE = MergeTree
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (1, 'test');
-
-    SELECT * FROM base.t1;
-
-    ┌─n─┬─s────┐
-    │ 1 │ test │
-    └───┴──────┘
-    ```
-
-    Мы можем использовать оператор `REPLACE`, чтобы удалить все данные:
-
-    ```sql
-    CREATE OR REPLACE TABLE base.t1 
-    (
-        n UInt64,
-        s Nullable(String)
-    )
-    ENGINE = MergeTree
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (2, null);
-
-    SELECT * FROM base.t1;
-
-    ┌─n─┬─s──┐
-    │ 2 │ \N │
-    └───┴────┘
-    ```
-
-    Или можно использовать оператор `REPLACE`, чтобы изменить структуру таблицы:
-
-    ```sql
-    REPLACE TABLE base.t1 (n UInt64) 
-    ENGINE = MergeTree 
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (3);
-
-    SELECT * FROM base.t1;
-
-    ┌─n─┐
-    │ 3 │
-    └───┘
-    ```
-  </Tab>
-
-  <Tab title="Cloud">
-    Рассмотрим следующую таблицу в ClickHouse Cloud:
-
-    ```sql
-    CREATE DATABASE base;
-
-    CREATE OR REPLACE TABLE base.t1 
-    (
-        n UInt64,
-        s String
-    )
-    ENGINE = MergeTree
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (1, 'test');
-
-    SELECT * FROM base.t1;
-
-    1    test
-    ```
-
-    Мы можем использовать оператор `REPLACE`, чтобы удалить все данные:
-
-    ```sql
-    CREATE OR REPLACE TABLE base.t1 
-    (
-        n UInt64, 
-        s Nullable(String)
-    )
-    ENGINE = MergeTree
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (2, null);
-
-    SELECT * FROM base.t1;
-
-    2    
-    ```
-
-    Или можно использовать оператор `REPLACE`, чтобы изменить структуру таблицы:
-
-    ```sql
-    REPLACE TABLE base.t1 (n UInt64) 
-    ENGINE = MergeTree 
-    ORDER BY n;
-
-    INSERT INTO base.t1 VALUES (3);
-
-    SELECT * FROM base.t1;
-
-    3
-    ```
-  </Tab>
-</Tabs>
+Оператор `REPLACE` позволяет атомарно обновить таблицу [атомарно](/ru/concepts/core-concepts/glossary#atomicity). Подробнее см. в разделе [REPLACE TABLE](/ru/reference/statements/create/table/replace-table).
 
 <div id="comment-clause">
-  ## Предложение COMMENT
+  ## Добавление комментария к таблице
 </div>
 
 Комментарий к таблице можно добавить при её создании.
