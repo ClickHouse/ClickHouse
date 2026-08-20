@@ -136,6 +136,9 @@ void fillJemallocBinsRows(MutableColumns & res_columns, const JemallocBinsGeomet
 
 static void fillJemallocBins(MutableColumns & res_columns, bool per_arena)
 {
+    /// Refresh the cached stats (note we have other places in the code, so atomicity is not guaranteed)
+    Jemalloc::setValue<uint64_t>("epoch", 1);
+
     auto geometry = getJemallocBinsGeometry();
 
     if (!per_arena)
