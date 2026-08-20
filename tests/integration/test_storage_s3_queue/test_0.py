@@ -1354,10 +1354,10 @@ def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster
         # Enable message_queue_disable_insertion
         node.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "0",
-            "1",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()
 
         assert (
             "true"
@@ -1393,7 +1393,7 @@ def test_message_queue_disable_insertion_does_not_affect_s3queue(started_cluster
     finally:
         node.replace_in_config(
             "/etc/clickhouse-server/config.d/disable_insertion.xml",
-            "1",
-            "0",
+            "<message_queue_disable_insertion>1</message_queue_disable_insertion>",
+            "<message_queue_disable_insertion>0</message_queue_disable_insertion>",
         )
-        node.query("SYSTEM RELOAD CONFIG")
+        node.restart_clickhouse()
