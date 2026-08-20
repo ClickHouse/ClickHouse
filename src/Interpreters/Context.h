@@ -1353,7 +1353,6 @@ public:
     void setS3QueueDisableStreaming(bool s3queue_disable_streaming) const;
 
     bool getMessageQueueDisableInsertion() const;
-    void setMessageQueueDisableInsertion(bool message_queue_disable_insertion) const;
 
     /// The port that the server listens for executing SQL queries.
     UInt16 getTCPPort() const;
@@ -1811,6 +1810,9 @@ public:
 
     void startServers(const ServerType & server_type) const;
     void stopServers(const ServerType & server_type) const;
+
+    using StopIntrospectionServersCallback = std::function<void()>;
+    void setStopIntrospectionServersCallback(StopIntrospectionServersCallback && callback);
 
     void shutdown();
 
