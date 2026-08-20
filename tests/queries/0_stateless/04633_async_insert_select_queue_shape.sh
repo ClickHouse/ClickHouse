@@ -275,3 +275,38 @@ ${CLICKHOUSE_CLIENT} -q "
       AND table = 'test_04633_skewed'
 "
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_skewed"
+
+# Case 9: an Alias destination whose target has a dependent materialized view must never reach
+# the queue either. The view is attached to the target, not to the Alias itself, so it is invisible
+# to `InsertDependenciesBuilder::isViewsInvolved` and is only caught via
+# `forwardedInsertHidesDependentView` (the `AliasSink` runs its nested `INSERT` into the target,
+# and that hidden `INSERT` is what would actually feed the view).
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_alias_mv_alias"
+${CLICKHOUSE_CLIENT} -q "DROP VIEW IF EXISTS test_04633_alias_mv"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_alias_mv_view_target"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS test_04633_alias_mv_target"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_04633_alias_mv_target (n UInt64) ENGINE = MergeTree ORDER BY n"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_04633_alias_mv_view_target (n UInt64) ENGINE = MergeTree ORDER BY n"
+${CLICKHOUSE_CLIENT} -q "
+    CREATE MATERIALIZED VIEW test_04633_alias_mv TO test_04633_alias_mv_view_target AS
+    SELECT n FROM test_04633_alias_mv_target
+"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE test_04633_alias_mv_alias ENGINE = Alias('test_04633_alias_mv_target')"
+${CLICKHOUSE_CLIENT} -q "
+    INSERT INTO test_04633_alias_mv_alias SELECT number FROM numbers(3)
+    SETTINGS async_insert = 1, wait_for_async_insert = 1, parallel_view_processing = 1
+"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_04633_alias_mv_target"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM test_04633_alias_mv_view_target"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS asynchronous_insert_log"
+${CLICKHOUSE_CLIENT} -q "
+    SELECT count()
+    FROM system.asynchronous_insert_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND database = currentDatabase()
+      AND table = 'test_04633_alias_mv_alias'
+"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_alias_mv_alias"
+${CLICKHOUSE_CLIENT} -q "DROP VIEW test_04633_alias_mv"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_alias_mv_view_target"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE test_04633_alias_mv_target"

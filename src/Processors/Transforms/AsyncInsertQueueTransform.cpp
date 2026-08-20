@@ -7,11 +7,15 @@
 #include <Core/Block.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/ProcessList.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Processors/Executors/PushingAsyncPipelineExecutor.h>
 #include <Processors/Sources/WaitForAsyncInsertSource.h>
+#include <QueryPipeline/QueryPipeline.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 #include <base/arithmeticOverflow.h>
@@ -112,7 +116,12 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     UInt64 max_data_size_,
     UInt64 wait_timeout_ms_,
     bool wait_for_flush_,
-    TableLockHolder destination_lock_)
+    TableLockHolder destination_lock_,
+    InsertDependenciesBuilder::ConstPtr insert_dependencies_,
+    StoragePtr table_,
+    size_t max_threads_,
+    bool no_squash_,
+    bool async_insert_flag_)
     : ExceptionKeepingTransform(header_, header_, /* ignore_on_start_and_finish */ false)
     , queue(queue_)
     , context(std::move(context_))
@@ -123,19 +132,74 @@ AsyncInsertQueueTransform::AsyncInsertQueueTransform(
     , wait_for_flush(wait_for_flush_)
     , destination_lock(std::move(destination_lock_))
     , logger(getLogger("AsyncInsertQueueTransform"))
+    , insert_dependencies(std::move(insert_dependencies_))
+    , table(std::move(table_))
+    , max_threads(max_threads_)
+    , no_squash(no_squash_)
+    , async_insert_flag(async_insert_flag_)
 {
+}
+
+AsyncInsertQueueTransform::~AsyncInsertQueueTransform()
+{
+    /// Safety net for a non-exceptional abort (e.g. `timeout_overflow_mode = 'break'`), the same
+    /// pattern `AliasSink` uses for its own nested executor: `finish()` already made this a no-op
+    /// on the normal path.
+    if (fallback_executor)
+    {
+        try
+        {
+            fallback_executor->cancel();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(logger);
+        }
+    }
+}
+
+void AsyncInsertQueueTransform::startFallback()
+{
+    if (fallback_executor)
+        return;
+
+    /// Only the divert path releases it, and that path runs after the last chunk was consumed.
+    chassert(insert_dependencies);
+
+    fallback_pipeline = std::make_unique<QueryPipeline>(
+        InterpreterInsertQuery::buildPushPipelineFromDependencies(insert_dependencies, context, table, max_threads, no_squash, async_insert_flag));
+    fallback_pipeline->setProcessListElement(context->getProcessListElement());
+    /// `report_read_progress = false`: the `SELECT` side already reported progress for these rows.
+    fallback_executor = std::make_unique<PushingAsyncPipelineExecutor>(*fallback_pipeline, /* report_read_progress */ false);
+    fallback_executor->start();
+}
+
+void AsyncInsertQueueTransform::disqualify(Chunk chunk)
+{
+    queued_eligible = false;
+    held = nullptr;
+    startFallback();
+
+    /// `pending` is still in arrival order, including `*held` at its original position.
+    while (!pending.empty())
+    {
+        fallback_executor->push(std::move(pending.front()));
+        pending.pop_front();
+    }
+    fallback_executor->push(std::move(chunk));
 }
 
 void AsyncInsertQueueTransform::onConsume(Chunk chunk)
 {
     if (!queued_eligible)
     {
-        pending.push_back(std::move(chunk));
+        fallback_executor->push(std::move(chunk));
         return;
     }
 
-    /// Passed through, not dropped: a zero-row chunk can still carry info an upstream transform
-    /// attached (e.g. `RestoreChunkInfosTransform` after squashing).
+    /// Buffered, not dropped: a zero-row chunk can still carry info an upstream transform attached
+    /// (e.g. `RestoreChunkInfosTransform` after squashing). Replayed into the fallback pipeline if
+    /// eligibility is lost later; simply discarded if the block is diverted instead.
     if (chunk.getNumRows() == 0)
     {
         pending.push_back(std::move(chunk));
@@ -153,8 +217,7 @@ void AsyncInsertQueueTransform::onConsume(Chunk chunk)
                 "INSERT ... SELECT will be executed synchronously (reason: estimated block size {} exceeds "
                 "async_insert_max_data_size {})",
                 estimated_bytes, max_data_size);
-            queued_eligible = false;
-            pending.push_back(std::move(chunk));
+            disqualify(std::move(chunk));
             return;
         }
 
@@ -173,36 +236,32 @@ void AsyncInsertQueueTransform::onConsume(Chunk chunk)
                 "INSERT ... SELECT will be executed synchronously (reason: materialized block size {} exceeds "
                 "async_insert_max_data_size {}, estimated {})",
                 materialized_bytes, max_data_size, estimated_bytes);
-            queued_eligible = false;
-            pending.push_back(std::move(materialized));
+            disqualify(std::move(materialized));
         }
         else
         {
-            held = std::move(materialized);
+            pending.push_back(std::move(materialized));
+            held = &pending.back();
         }
         return;
     }
 
     /// A second non-empty block means the result is not a single block.
     LOG_DEBUG(logger, "INSERT ... SELECT will be executed synchronously (reason: the result is not a single block)");
-    queued_eligible = false;
-    pending.push_back(std::move(*held));
-    held.reset();
-    pending.push_back(std::move(chunk));
+    disqualify(std::move(chunk));
 }
 
 bool AsyncInsertQueueTransform::canGenerate()
 {
-    return !pending.empty();
+    /// Nothing ever flows out of this transform's own output port: a diverted block goes to the
+    /// queue and a fallback block goes into the pipeline owned by `fallback_executor`, both from
+    /// `onConsume` / `getRemaining` directly. The outer pipeline caps this port with an `EmptySink`.
+    return false;
 }
 
 AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::onGenerate()
 {
-    GenerateResult res;
-    res.chunk = std::move(pending.front());
-    pending.pop_front();
-    res.is_done = pending.empty();
-    return res;
+    return {};
 }
 
 AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemaining()
@@ -210,7 +269,8 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
     if (held)
     {
         auto block = getInputPort().getHeader().cloneWithColumns(held->detachColumns());
-        held.reset();
+        held = nullptr;
+        pending.clear();
 
         auto async_query = query_ast->clone();
         auto & async_insert_query = async_query->as<ASTInsertQuery &>();
@@ -221,11 +281,14 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             async_insert_query.columns->children.push_back(make_intrusive<ASTIdentifier>(name));
         auto result = queue->pushQueryWithBlock(async_query, std::move(block), context);
 
-        /// The queue owns the block now, and the flush takes its own lock under a fresh query id.
-        /// Holding this one across the wait below would deadlock against an exclusive locker that
-        /// arrived in between: it would queue ahead of the flush, which then cannot join this
-        /// reader group, while this pipeline waits for that same flush.
+        /// The queue owns the block, and the flush relocks the table under a fresh query id, so it
+        /// cannot join the reader group of this query: a share lock kept across the wait below lets an
+        /// exclusive locker queue between the two, and neither side moves. `InsertDependenciesBuilder`
+        /// holds one such lock per node of the dependency path. Only the fallback pipeline needs the
+        /// builder, and it can no longer be built, so this transform is its last owner.
+        chassert(insert_dependencies.use_count() == 1);
         destination_lock.reset();
+        insert_dependencies.reset();
 
         /// The queue owns the block and the flush proceeds independently of this pipeline, so
         /// there is nothing left to keep alive here; the client gives up the flush result, i.e.
@@ -236,7 +299,7 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
         /// `cancelQuery` sets `is_killed` before cancelling the pipeline executors, so a `KILL QUERY`
         /// (or `max_execution_time`) is visible here as `throwIfKilled()` / `checkTimeLimit()`. Shared
         /// by the loop and the post-loop check, since a `false` return under `'break'` is ignored.
-        auto throwIfKilledOrTimedOut = [&]
+        auto throw_if_killed_or_timed_out = [&]
         {
             if (auto process_list_elem = context->getProcessListElement())
             {
@@ -257,14 +320,14 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             if (result.future.wait_for(std::min(flush_wait_cancellation_check_interval, remaining_wait)) == std::future_status::ready)
                 break;
 
-            throwIfKilledOrTimedOut();
+            throw_if_killed_or_timed_out();
 
             if (isCancelled())
                 return {};
         }
 
         /// Readiness must not outrank a kill or an expired `max_execution_time` observed in the same poll window.
-        throwIfKilledOrTimedOut();
+        throw_if_killed_or_timed_out();
 
         if (result.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
             throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout ({} ms) exceeded", wait_timeout_ms);
@@ -276,6 +339,12 @@ AsyncInsertQueueTransform::GenerateResult AsyncInsertQueueTransform::getRemainin
             context->getProcessListElement(), context->getProgressCallback(),
             /* report_read_progress */ false);
     }
+
+    /// Set only once the fallback pipeline actually ran (`disqualify` -> `startFallback`); a no-op
+    /// otherwise, e.g. an eligible query that diverted above, or an empty `SELECT` result that never
+    /// produced a block to divert or fall back at all.
+    if (fallback_executor)
+        fallback_executor->finish();
 
     return {};
 }
