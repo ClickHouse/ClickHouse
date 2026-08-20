@@ -191,6 +191,9 @@ DEFINE_ICEBERG_FIELD_COMPOUND(data_file, file_size_in_bytes);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, key_metadata);
 DEFINE_ICEBERG_FIELD_COMPOUND(data_file, first_row_id);
 
+constexpr Int32 row_id_field_id = 2147483540;
+constexpr Int32 last_updated_sequence_number_field_id = 2147483539;
+
 /// Fallback defaults for snapshot retention policy when table properties are absent.
 /// These values follow the Java reference implementation; the Iceberg spec does not
 /// mandate specific defaults. They are used as defaults for corresponding ClickHouse

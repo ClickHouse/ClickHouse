@@ -649,7 +649,6 @@ Chunk StorageObjectStorageSource::generate()
             {
                 iceberg_metadata_file_path = &iceberg_info->info.data_object_file_path_key.serialize();
                 first_row_id = iceberg_info->info.first_row_id;
-                std::cerr << "Iceberg first_row_id for '" << object_info->getPath() << "': " << (first_row_id.has_value() ? std::to_string(*first_row_id) : "nullopt") << std::endl;
                 if (first_row_id.has_value())
                     last_updated_sequence_number = iceberg_info->info.sequence_number;
             }

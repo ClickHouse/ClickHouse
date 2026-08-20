@@ -17,6 +17,7 @@
 
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/String.h>
 #include <Storages/ColumnsDescription.h>
@@ -129,6 +130,62 @@ namespace
         }
     }
 
+}
+
+namespace
+{
+    std::optional<DB::Range> getMaterializedRowLineageRange(const ParsedManifestFileEntry & parsed_entry, Int32 field_id)
+    {
+        auto bounds = parsed_entry.value_bounds.find(field_id);
+        if (bounds == parsed_entry.value_bounds.end())
+            return std::nullopt;
+
+        auto column_info = parsed_entry.columns_infos.find(field_id);
+        if (column_info == parsed_entry.columns_infos.end() || !column_info->second.nulls_count.has_value()
+            || *column_info->second.nulls_count != 0)
+            return std::nullopt;
+
+        String left_str;
+        String right_str;
+        if (!bounds->second.first.tryGet(left_str) || !bounds->second.second.tryGet(right_str))
+            return std::nullopt;
+
+        auto type = std::make_shared<DB::DataTypeUInt64>();
+        auto left = deserializeFieldFromBinaryRepr(left_str, type, true);
+        auto right = deserializeFieldFromBinaryRepr(right_str, type, false);
+        if (!left || !right)
+            return std::nullopt;
+
+        return DB::Range(*left, true, *right, true);
+    }
+
+    void addRowLineageHyperrectangles(std::unordered_map<Int32, DB::Range> & hyperrectangles, const ProcessedManifestFileEntry & entry)
+    {
+        const auto & parsed_entry = *entry.parsed_entry;
+        if (parsed_entry.columns_infos.empty() || parsed_entry.record_count <= 0)
+            return;
+
+        const bool has_materialized_row_lineage
+            = parsed_entry.columns_infos.contains(row_id_field_id) || parsed_entry.columns_infos.contains(last_updated_sequence_number_field_id);
+
+        if (has_materialized_row_lineage)
+        {
+            for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
+            {
+                if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id))
+                    hyperrectangles.emplace(field_id, *range);
+            }
+            return;
+        }
+
+        if (entry.first_row_id.has_value())
+        {
+            hyperrectangles.emplace(
+                row_id_field_id,
+                DB::Range(*entry.first_row_id, true, *entry.first_row_id + static_cast<UInt64>(parsed_entry.record_count) - 1, true));
+            hyperrectangles.emplace(last_updated_sequence_number_field_id, DB::Range(static_cast<UInt64>(entry.sequence_number)));
+        }
+    }
 }
 
 const std::vector<ProcessedManifestFileEntryPtr> &
@@ -537,6 +594,8 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
                 hyperrectangles.emplace(column_id, DB::Range(*left, true, *right, true));
             }
+
+            addRowLineageHyperrectangles(hyperrectangles, *entry);
         }
 
         const ManifestFilesPruner * current_pruner = getOrCreatePruner(entry->resolved_schema_id);
