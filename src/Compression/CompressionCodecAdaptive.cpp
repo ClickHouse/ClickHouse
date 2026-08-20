@@ -115,16 +115,6 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
     return pool;
 }
 
-VectorWithMemoryTracking<TypeIndex> AdaptiveCodec::candidateTypeIndexes()
-{
-    VectorWithMemoryTracking<TypeIndex> result;
-    for (const auto & [codec_expr, types] : CANDIDATES)
-        for (const TypeIndex type_id : types)
-            if (std::ranges::find(result, type_id) == result.end()) /// distinct: a type may appear in more than one group
-                result.push_back(type_id);
-    return result;
-}
-
 CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
 {

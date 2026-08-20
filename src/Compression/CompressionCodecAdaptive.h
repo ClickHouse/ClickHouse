@@ -1,8 +1,6 @@
 #pragma once
 
 #include <Compression/ICompressionCodec.h>
-#include <Core/TypeId.h>
-#include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
 {
@@ -18,9 +16,6 @@ namespace AdaptiveCodec
 /// [1] is the default codec, thus we get "no worse than the default" compression. Extra candidates come from a per-type table.
 /// Beyond [0] and [1], candidates must be ordered by descending decompression speed as draw in size should resolve to the fastest reads.
 Codecs poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default);
-
-/// The distinct types that can get a non-default codec. Only used by tests to drift-guard the candidate table.
-VectorWithMemoryTracking<TypeIndex> candidateTypeIndexes();
 
 }
 
