@@ -355,20 +355,17 @@ def main():
 
         step(name="Validate Recovery Ref", command=_require_recovery_ref)
 
-    # "new" opens a version-bump PR against master (landed via the merge queue); "patch" pushes its changelog straight to master with no PR. Both idempotent on rerun.
-    changelog_absent = False  # patch: changelog not yet on master
-    release_pr_absent = False  # new: version-bump PR not yet created
-    release_pr_needs_merge = False  # new: version-bump PR not yet merged
-    if args.dry_run:
-        if args.release_type == "patch":
+    # Both release types land their changes on master with a direct push, no PR:
+    # "patch" pushes the changelog, "new" pushes the master version bump (below).
+    # For patch, detect whether the changelog is already on master so a rerun is
+    # idempotent; the "new" bump self-checks the master version instead.
+    changelog_absent = False
+    if args.release_type == "patch":
+        if args.dry_run:
             changelog_absent = not is_tag_pushed
-        else:
-            release_pr_absent = not is_tag_pushed
-            release_pr_needs_merge = not is_tag_pushed
-    elif ok:
-        with open(RELEASE_INFO_FILE) as f:
-            _info = json.load(f)
-        if args.release_type == "patch":
+        elif ok:
+            with open(RELEASE_INFO_FILE) as f:
+                _info = json.load(f)
             changelog_path = f"docs/changelogs/{_info['release_tag']}.md"
             on_master = bool(
                 Shell.get_output(
@@ -380,17 +377,6 @@ def main():
                 f"ChangeLog [{changelog_path}] on master: "
                 + ("yes — skipping" if on_master else "no — will push")
             )
-        else:
-            release_pr_branch = f"bump_version_{_info['version']}"
-            release_pr_state = GH.get_pr_state_by_branch(
-                release_pr_branch, "ClickHouse/ClickHouse"
-            )
-            print(
-                f"Release PR branch [{release_pr_branch}] state: "
-                + (release_pr_state or "absent — will create")
-            )
-            release_pr_absent = release_pr_state == ""
-            release_pr_needs_merge = release_pr_state != "MERGED"
 
     # Fail-fast: verify the release packages exist (this downloads them) before
     # pushing the tag or opening the changelog PR, so a missing-artifacts run
@@ -425,16 +411,16 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # For a "new" release the version bump also opens the master bump PR that
-    # the merge_prs step merges below, so it must run here, before that merge. For a
-    # "patch" release the bump is only a direct push of the branch version file
+    # For a "new" release the version bump pushes the master version file
+    # directly (idempotent: it self-checks master's version), so it runs here. For
+    # a "patch" release the bump is only a direct push of the branch version file
     # and nothing downstream depends on it; it is deferred to the very end of the
-    # run (after the merge_prs step) so that a rerun after any failure between the tag
-    # push and the end always sees an un-bumped branch. prepare then reads the
-    # branch tip as the just-released version, recovers the existing release, and
-    # never refuses a rerun as "out-of-order" or mints a release below the tip —
-    # all without scanning git tags. See the deferred step near the end of main.
-    if args.release_type == "new" and release_pr_absent:
+    # run so that a rerun after any failure between the tag push and the end always
+    # sees an un-bumped branch. prepare then reads the branch tip as the
+    # just-released version, recovers the existing release, and never refuses a
+    # rerun as "out-of-order" or mints a release below the tip — all without
+    # scanning git tags. See the deferred step near the end of main.
+    if args.release_type == "new":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
@@ -766,7 +752,7 @@ def main():
     # Always restore git state — equivalent to `if: ${{ !cancelled() }}`, so it
     # must run even after a failure (hence Result.from_commands_run, not step()
     # which skips when ok is already False). But a failed restore must still
-    # block the release mutation below (the merge_prs step), so fold its result into ok.
+    # block the release mutation below (the deferred bump), so fold its result into ok.
     results.append(
         Result.from_commands_run(
             name="Checkout Back",
@@ -783,8 +769,7 @@ def main():
     # un-bumped branch and prepare recovers the existing release instead of
     # refusing it or minting a below-tip release. `step` skips it when a prior
     # step already failed, so a failed publish leaves the branch un-bumped and
-    # recoverable. ("new" bumps earlier, above, because the merge step below
-    # merges the master bump PR it opens.)
+    # recoverable. ("new" bumps earlier, above.)
     # `not is_bump_landed`: a recovery whose bump has not landed still completes it (skip-repo/skip-docker included); once landed, no rerun rewrites the version.
     if not is_bump_landed and args.release_type == "patch":
         step(
@@ -793,28 +778,6 @@ def main():
                 f"python3 ./ci/jobs/scripts/create_release.py --create-bump-version-pr"
                 f" {dry_run_flag}".strip()
             ],
-            workdir=REPO_PATH,
-        )
-
-    # Enqueue the "new"-release version-bump PR (last action); patch pushes its changelog straight to master, so `release_pr_needs_merge` is False and this is skipped.
-    def merge_created_prs():
-        # Imported lazily so the module-level boto3 dependency of create_release
-        # is only needed on the release machine, not at praktika config time.
-        from ci.jobs.scripts.create_release import (
-            ReleaseContextManager,
-            ReleaseProgress,
-        )
-
-        with ReleaseContextManager(
-            release_progress=ReleaseProgress.MERGE_CREATED_PRS
-        ) as release_info:
-            release_info.update_release_info(dry_run=args.dry_run)
-            release_info.merge_prs(dry_run=args.dry_run)
-
-    if release_pr_needs_merge:
-        step(
-            name="Update Release Info and Merge Created PRs",
-            command=merge_created_prs,
             workdir=REPO_PATH,
         )
 
