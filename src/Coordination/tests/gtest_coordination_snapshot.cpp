@@ -1975,6 +1975,23 @@ TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFile
     assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 50);
 }
 
+TEST_P(CoordinationTestWithCompression, SerializeSnapshotToDiskCleansPartialFilesOnSyncException)
+{
+    ChangelogDirTest snapshots("./snapshots");
+
+    this->keeper_context->setSnapshotDisk(std::make_shared<ThrowingSnapshotDisk>(
+        "SnapshotDisk", "./snapshots", "snapshot_57_", SnapshotDiskFailureMode::SyncFile));
+
+    DB::KeeperSnapshotManager manager(3, this->keeper_context, this->enable_compression);
+    const auto storage_ptr = DB::KeeperStorage::create(500, "", this->keeper_context);
+    DB::KeeperStorage & storage = *storage_ptr;
+    addNode(storage, "/hello", "world");
+    DB::KeeperStorageSnapshot snapshot(&storage, 57, nullptr, this->keeper_context->getWriteSnapshotVersion());
+
+    EXPECT_THROW(manager.serializeSnapshotToDisk(snapshot), std::exception);
+    assertNoSnapshotArtifactsAndNoRegistration(manager, "./snapshots", 57);
+}
+
 TEST_P(CoordinationTestWithCompression, SerializeSnapshotBufferToDiskCleansPartialFilesOnSyncException)
 {
     ChangelogDirTest snapshots("./snapshots");

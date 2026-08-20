@@ -23,7 +23,7 @@ node = cluster.add_instance(
 # snapshots are written in ClickHouse's own compressed block format instead of zstd.
 node_uncompressed = cluster.add_instance(
     "node_uncompressed",
-    main_configs=["configs/enable_keeper_uncompressed.xml"],
+    main_configs=["configs/enable_keeper.xml", "configs/uncompressed_snapshots.xml"],
     stay_alive=True,
 )
 
@@ -269,8 +269,9 @@ def test_snapshot_size(started_cluster, request):
             pass
 
 
-@pytest.mark.parametrize("keeper_node", [node, node_uncompressed])
-def test_snapshot_survives_restart(started_cluster, request, keeper_node):
+@pytest.mark.parametrize("node_name", ["node", "node_uncompressed"])
+def test_snapshot_survives_restart(started_cluster, request, node_name):
+    keeper_node = started_cluster.instances[node_name]
     keeper_utils.wait_until_connected(started_cluster, keeper_node)
     node_zk = None
     try:
@@ -286,8 +287,15 @@ def test_snapshot_survives_restart(started_cluster, request, keeper_node):
         node_zk.close()
         node_zk = None
 
-        keeper_utils.send_4lw_cmd(started_cluster, keeper_node, "csnp")
-        keeper_node.wait_for_log_line("Created persistent snapshot")
+        # 'csnp' only schedules the snapshot, so wait for the index it returns: the log already
+        # holds lines from the snapshots taken every snapshot_distance records.
+        snapshot_idx = keeper_utils.send_4lw_cmd(
+            started_cluster, keeper_node, "csnp"
+        ).strip()
+        assert snapshot_idx.isdigit(), f"csnp did not return a log index: {snapshot_idx!r}"
+        keeper_node.wait_for_log_line(
+            f"Created persistent snapshot {snapshot_idx} with path"
+        )
 
         snapshot_sizes = keeper_node.exec_in_container(
             [

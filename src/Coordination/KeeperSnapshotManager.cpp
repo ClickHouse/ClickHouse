@@ -902,16 +902,15 @@ SnapshotFileInfoPtr KeeperSnapshotManager::writeSnapshotFile(const KeeperStorage
 
         compressed_writer->finalize();
 
-        Stopwatch watch;
-        /// A CompressedWriteBuffer does not own the file buffer, so finalizing it only moves the
-        /// compressed blocks into the file buffer: that buffer has to be finalized and synced here.
+        /// A CompressedWriteBuffer does not own the buffer it writes into, so the file buffer needs
+        /// its own finalize. When compressing with zstd it was moved into the decorator, which
+        /// finalizes and syncs it, and `writer` is null here.
         if (writer)
-        {
             writer->finalize();
-            writer->sync();
-        }
-        else
-            compressed_writer->sync();
+        WriteBuffer & file_buffer = writer ? *writer : *compressed_writer;
+
+        Stopwatch watch;
+        file_buffer.sync();
         ProfileEvents::increment(ProfileEvents::KeeperSnapshotFileSyncMicroseconds, watch.elapsedMicroseconds());
 
         compressed_writer.reset();
