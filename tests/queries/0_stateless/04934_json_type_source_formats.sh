@@ -33,6 +33,10 @@ echo "RowBinary (typed paths that are not in the data)"
 $CLICKHOUSE_LOCAL -q "SELECT '{\"b\" : 1}'::JSON AS json FORMAT RowBinary" \
     | $CLICKHOUSE_LOCAL --input-format=RowBinary --structure="json JSON(with_source=1, s String, arr Array(UInt32))" -q "SELECT json, json.__source FROM table"
 
+echo "A reserved path in Native input is rejected"
+$CLICKHOUSE_LOCAL -q "SELECT '{\"__source\" : 42}'::JSON AS json FORMAT Native" \
+    | $CLICKHOUSE_LOCAL --input-format=Native --structure="json $JSON_TYPE" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"
+
 echo "A reserved key in RowBinary input is rejected"
 $CLICKHOUSE_LOCAL --output_format_binary_write_json_as_string=0 -q "SELECT '{\"__source\" : 42}'::JSON AS json FORMAT RowBinary" \
     | $CLICKHOUSE_LOCAL --input-format=RowBinary --structure="json $JSON_TYPE" -q "SELECT json FROM table" 2>&1 | grep -c "INCORRECT_DATA"

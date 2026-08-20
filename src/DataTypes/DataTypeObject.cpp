@@ -1347,7 +1347,8 @@ original text is not available:
 - values of nested `JSON(with_source=1)` type hints (for example `JSON(with_source=1, a JSON(with_source=1))`):
   only the top level column receives the original text, `json.a.__source` is constructed from the
   sub-object,
-- results of functions that create JSON objects, such as `mergedJSONPatch`.
+- results of functions that create JSON objects, such as `mergedJSONPatch`,
+- values that were converted through the `Field` representation, for example during constant folding.
 
 The created text is written without the settings that were used during parsing, so with
 [json_type_escape_dots_in_keys](/reference/settings/formats/other#json_type_escape_dots_in_keys) enabled

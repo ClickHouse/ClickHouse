@@ -24,6 +24,15 @@ SELECT json.__source FROM t_json_source_misc ORDER BY json.__source;
 DROP TABLE t_json_no_source;
 DROP TABLE t_json_source_misc;
 
+SELECT 'the text of a default row contains typed paths';
+SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1, a UInt32)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
+SELECT json, json.__source FROM format(JSONEachRow, 'json JSON(with_source=1)', '{"json" : null}') SETTINGS input_format_null_as_default = 1;
+
+SELECT 'the common type keeps the source only if all types have it';
+SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(with_source=1, b UInt32)));
+SELECT toTypeName(if(1, '{}'::JSON(with_source=1, max_dynamic_paths=8), '{}'::JSON(with_source=1, max_dynamic_paths=16)));
+SELECT toTypeName(if(1, '{}'::JSON(with_source=1, a UInt32), '{}'::JSON(b UInt32)));
+
 SELECT 'inside Nullable and Array';
 DROP TABLE IF EXISTS t_json_source_containers;
 CREATE TABLE t_json_source_containers (n Nullable(JSON(with_source=1)), a Array(JSON(with_source=1))) ENGINE = MergeTree ORDER BY tuple();

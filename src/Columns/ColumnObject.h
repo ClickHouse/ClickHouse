@@ -288,6 +288,8 @@ public:
     /// Create the source of the last inserted row from the object itself. Used when the original JSON
     /// text is not available (for example when the row was restored from an aggregation key).
     void materializeSourceForLastRow();
+    /// JSON text of a default row. It's the same for all default rows, so it's created once.
+    const String & getDefaultSourceText();
     /// Append the JSON text of default (empty) objects to the source column.
     void insertDefaultIntoSource(size_t length = 1);
 
@@ -405,6 +407,7 @@ private:
     /// Pop back all the values that were inserted after the column had prev_size rows.
     void restoreSizes(size_t prev_size);
     void expandSource(const Filter & mask, bool inverted);
+    String createDefaultSourceText() const;
     /// Copy the source column and fill rows after the end of the original column with default values.
     MutableColumnPtr cloneResizedSource(size_t new_size) const;
     void serializePathAndValueIntoArena(Arena & arena, const char *& begin, std::string_view path, std::string_view value, std::string_view & res) const;
@@ -439,6 +442,8 @@ private:
     DataTypePtr object_type;
     /// Serialization of object_type, created on first use.
     SerializationPtr object_serialization;
+    /// JSON text of a default row, created on first use.
+    String default_source_text;
 
     /// Maximum number of dynamic paths. If this limit is reached, all new paths will be inserted into shared data.
     /// This limit can be different for different instances of Object column. For example, we can decrease it

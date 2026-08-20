@@ -554,7 +554,18 @@ void SerializationObject::deserializeBinaryBulkStatePrefix(
     }
 
     if (source_serialization)
+    {
+        /// Paths come from the data here, so the reserved name must be rejected the same way as during parsing.
+        if (structure_state_concrete->sorted_dynamic_paths)
+        {
+            for (const auto & path : *structure_state_concrete->sorted_dynamic_paths)
+                checkPathIsNotReserved(path);
+        }
+        for (const auto & path : structure_state_concrete->flattened_paths)
+            checkPathIsNotReserved(path);
+
         source_serialization->deserializeBinaryBulkStatePrefix(settings, object_state->source_state, cache);
+    }
 
     settings.path.push_back(Substream::ObjectData);
 

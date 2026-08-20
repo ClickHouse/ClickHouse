@@ -177,6 +177,7 @@ ColumnObject::ColumnObject(const ColumnObject & other)
     , source(other.source)
     , object_type(other.object_type)
     , object_serialization(other.object_serialization)
+    , default_source_text(other.default_source_text)
     , max_dynamic_paths(other.max_dynamic_paths)
     , global_max_dynamic_paths(other.global_max_dynamic_paths)
     , max_dynamic_types(other.max_dynamic_types)
@@ -325,11 +326,6 @@ MutableColumnPtr ColumnObject::cloneResized(size_t size) const
 Field ColumnObject::operator[](size_t n) const
 {
     Object object;
-
-    /// Keep the JSON text of the row in the Field, so it's not lost when the Field is inserted back
-    /// into an Object column (for example when a constant expression is folded into a literal).
-    if (hasSource())
-        object[DataTypeObject::SOURCE_SUBCOLUMN_NAME] = getSourceColumn()[n];
 
     for (const auto & [path, column] : typed_paths)
         object[path] = (*column)[n];
@@ -620,12 +616,7 @@ void ColumnObject::insert(const Field & x)
     size_t current_size = size();
     for (const auto & [path, value_field] : object)
     {
-        /// The source of the object is stored in a separate column and not as a path.
-        if (hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
-        {
-            insertSource(value_field.safeGet<String>());
-        }
-        else if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
+        if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
         {
             typed_it->second->insert(value_field);
         }
@@ -667,9 +658,8 @@ void ColumnObject::insert(const Field & x)
             column->insertDefault();
     }
 
-    /// A field may come from a column without source or from a literal, then create the source
-    /// from the inserted object.
-    if (hasSource() && source->size() == current_size)
+    /// The Field representation has no JSON text, create it from the inserted object.
+    if (hasSource())
         materializeSourceForLastRow();
 }
 
@@ -720,17 +710,7 @@ bool ColumnObject::tryInsert(const Field & x)
 
     for (const auto & [path, value_field] : object)
     {
-        /// The source of the object is stored in a separate column and not as a path.
-        if (hasSource() && path == DataTypeObject::SOURCE_SUBCOLUMN_NAME)
-        {
-            if (value_field.getType() != Field::Types::Which::String)
-            {
-                restore_sizes();
-                return false;
-            }
-            insertSource(value_field.safeGet<String>());
-        }
-        else if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
+        if (auto typed_it = typed_paths.find(path); typed_it != typed_paths.end())
         {
             if (!typed_it->second->tryInsert(value_field))
             {
@@ -782,9 +762,8 @@ bool ColumnObject::tryInsert(const Field & x)
             column->insertDefault();
     }
 
-    /// A field may come from a column without source or from a literal, then create the source
-    /// from the inserted object.
-    if (hasSource() && source->size() == prev_size)
+    /// The Field representation has no JSON text, create it from the inserted object.
+    if (hasSource())
         materializeSourceForLastRow();
 
     return true;
@@ -1045,9 +1024,42 @@ void ColumnObject::materializeSourceForLastRow()
 
 void ColumnObject::insertDefaultIntoSource(size_t length)
 {
+    const auto & text = getDefaultSourceText();
     auto & source_column = getSourceColumn();
     for (size_t i = 0; i != length; ++i)
-        source_column.insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+        source_column.insertData(text.data(), text.size());
+}
+
+const String & ColumnObject::getDefaultSourceText()
+{
+    if (default_source_text.empty())
+        default_source_text = createDefaultSourceText();
+    return default_source_text;
+}
+
+String ColumnObject::createDefaultSourceText() const
+{
+    /// Typed paths have default values in a default row, so its JSON text is not always an empty object.
+    if (typed_paths.empty())
+        return String(EMPTY_OBJECT_SOURCE);
+
+    /// Serialize a default row of a column without the source, so creating the text is not recursive.
+    UnorderedMapWithMemoryTracking<String, MutableColumnPtr> empty_typed_paths;
+    empty_typed_paths.reserve(typed_paths.size());
+    for (const auto & [path, column] : typed_paths)
+        empty_typed_paths[path] = column->cloneEmpty();
+
+    auto default_row = ColumnObject::create(std::move(empty_typed_paths), max_dynamic_paths, max_dynamic_types);
+    default_row->insertDefault();
+
+    FormatSettings format_settings = getFormatSettings();
+    format_settings.json.json_type_use_source = false;
+    WriteBufferFromOwnString buf;
+    if (object_serialization)
+        object_serialization->serializeText(*default_row, 0, buf, format_settings);
+    else
+        object_type->getDefaultSerialization()->serializeText(*default_row, 0, buf, format_settings);
+    return buf.str();
 }
 
 MutableColumnPtr ColumnObject::cloneResizedSource(size_t new_size) const
@@ -1055,8 +1067,12 @@ MutableColumnPtr ColumnObject::cloneResizedSource(size_t new_size) const
     auto result = source->cloneEmpty();
     size_t rows_to_copy = std::min(new_size, source->size());
     result->insertRangeFrom(*source, 0, rows_to_copy);
-    for (size_t i = rows_to_copy; i != new_size; ++i)
-        result->insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+    if (rows_to_copy != new_size)
+    {
+        const auto text = default_source_text.empty() ? createDefaultSourceText() : default_source_text;
+        for (size_t i = rows_to_copy; i != new_size; ++i)
+            result->insertData(text.data(), text.size());
+    }
     return result;
 }
 
@@ -1562,7 +1578,8 @@ void ColumnObject::expand(const Filter & mask, bool inverted)
 void ColumnObject::expandSource(const Filter & mask, bool inverted)
 {
     /// Cannot use ColumnString::expand here: it fills the gaps with empty strings, but rows added
-    /// by expand are default objects and their source is the JSON text of an empty object.
+    /// by expand are default objects and their source is the JSON text of a default object.
+    const auto & default_text = getDefaultSourceText();
     const auto & source_column = getSourceColumn();
     if (mask.size() < source_column.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Mask size should be no less than data size.");
@@ -1581,7 +1598,7 @@ void ColumnObject::expandSource(const Filter & mask, bool inverted)
         }
         else
         {
-            expanded_source->insertData(EMPTY_OBJECT_SOURCE.data(), EMPTY_OBJECT_SOURCE.size());
+            expanded_source->insertData(default_text.data(), default_text.size());
         }
     }
 

@@ -10,6 +10,13 @@ inserting into a type without the source does not create a path
 inserting from a type without the source creates the text
 {"a" :  42}
 {"a":42}
+the text of a default row contains typed paths
+{"a":0}	{"a":0}
+{}	{}
+the common type keeps the source only if all types have it
+JSON(with_source=1)
+JSON(with_source=1, max_dynamic_paths=16)
+JSON
 inside Nullable and Array
 {"x" :  1}	['{"y" :  2}']
 \N	[]

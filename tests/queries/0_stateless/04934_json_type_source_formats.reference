@@ -10,5 +10,7 @@ RowBinary (JSON as string on both sides, original text is preserved)
 {"a":42,"b":"Hello"}	{"b" : "Hello",  "a" : 42}
 RowBinary (typed paths that are not in the data)
 {"arr":[],"b":1,"s":""}	{"arr":[],"b":1,"s":""}
+A reserved path in Native input is rejected
+1
 A reserved key in RowBinary input is rejected
 1
