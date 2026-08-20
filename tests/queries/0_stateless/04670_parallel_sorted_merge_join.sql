@@ -14,11 +14,13 @@ CREATE TABLE psmj_left (id UInt64, a UInt64) ENGINE = MergeTree ORDER BY id SETT
 CREATE TABLE psmj_right (id UInt64, b UInt64) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 256;
 
 -- Overlapping inserts give several parts per side, so the layer split has intersecting ranges to
--- distribute; duplicate ids exercise many-to-many matches within a shard.
-INSERT INTO psmj_left SELECT number % 30000, number FROM numbers(0, 40000);
-INSERT INTO psmj_left SELECT number % 30000, number FROM numbers(40000, 40000);
-INSERT INTO psmj_right SELECT number % 20000, number * 2 FROM numbers(0, 50000);
-INSERT INTO psmj_right SELECT number % 20000, number * 3 FROM numbers(50000, 50000);
+-- distribute; duplicate ids exercise many-to-many matches within a shard. The row counts are kept as
+-- low as the layer split allows (42 and 50 granules): the correctness cases below run a full join per
+-- kind twice, so the data volume is what this test costs, and the flaky-check job runs it 50 times.
+INSERT INTO psmj_left SELECT number % 3750, number FROM numbers(0, 5000);
+INSERT INTO psmj_left SELECT number % 3750, number FROM numbers(5000, 5000);
+INSERT INTO psmj_right SELECT number % 2500, number * 2 FROM numbers(0, 6250);
+INSERT INTO psmj_right SELECT number % 2500, number * 3 FROM numbers(6250, 6250);
 
 -- The eligibility of `parallel_sorted_merge` is decided on the query plan, which exists only for the
 -- analyzer. The default is overridden to 0 in the old-analyzer CI configuration, so pin it explicitly.
