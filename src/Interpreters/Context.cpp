@@ -106,6 +106,7 @@
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Functions/AI/AIQuotaTracker.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -239,6 +240,9 @@ namespace CurrentMetrics
     extern const Metric BackgroundCommonPoolSize;
     extern const Metric IcebergSchedulePoolTask;
     extern const Metric IcebergSchedulePoolSize;
+    extern const Metric BackgroundQueryThreads;
+    extern const Metric BackgroundQueryThreadsActive;
+    extern const Metric BackgroundQueryThreadsScheduled;
     extern const Metric BackgroundStreamingSchedulePoolTask;
     extern const Metric BackgroundStreamingSchedulePoolSize;
     extern const Metric MarksLoaderThreads;
@@ -292,6 +296,10 @@ ContextPtr ContextData::global_context_instance;
 ContextPtr ContextData::background_context_instance;
 namespace Setting
 {
+    extern const SettingsUInt64 ai_function_max_input_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_output_tokens_per_query;
+    extern const SettingsUInt64 ai_function_max_api_calls_per_query;
+    extern const SettingsBool ai_function_throw_on_quota_exceeded;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsFloat ast_fuzzer_runs;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
@@ -418,6 +426,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsUInt64 tables_loader_background_pool_size;
@@ -571,6 +580,9 @@ struct ContextSharedPart : boost::noncopyable
 
     mutable OnceFlag backups_worker_initialized;
     std::optional<BackupsWorker> backups_worker;
+
+    mutable OnceFlag background_query_pool_initialized;
+    mutable std::unique_ptr<ThreadPool> background_query_pool;
 
     /// No lock required for default_profile_name, system_profile_name, buffer_profile_name modified only during initialization
     String default_profile_name;                                /// Default profile name used for default values.
@@ -1039,6 +1051,13 @@ struct ContextSharedPart : boost::noncopyable
 
         NamedCollectionFactory::instance().shutdown();
         SQLDefinedHandlersFactory::instance().shutdown();
+
+        std::unique_ptr<ThreadPool> delete_background_query_pool;
+        {
+            std::lock_guard lock(mutex);
+            delete_background_query_pool = std::move(background_query_pool);
+        }
+        delete_background_query_pool.reset();
 
         delete_async_insert_queue.reset();
 
@@ -3583,6 +3602,12 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
+void Context::setSettingsConstraintsAndCurrentProfiles(std::shared_ptr<const SettingsConstraintsAndProfileIDs> constraints_and_profiles)
+{
+    std::lock_guard lock(mutex);
+    settings_constraints_and_current_profiles = std::move(constraints_and_profiles);
+}
+
 String Context::getCurrentDatabase() const
 {
     SharedLockGuard lock(mutex);
@@ -4282,6 +4307,22 @@ BackupsWorker & Context::getBackupsWorker() const
     });
 
     return *shared->backups_worker;
+}
+
+ThreadPool & Context::getBackgroundQueryPool() const
+{
+    callOnce(shared->background_query_pool_initialized, [&] {
+        shared->background_query_pool = std::make_unique<ThreadPool>(
+            CurrentMetrics::BackgroundQueryThreads,
+            CurrentMetrics::BackgroundQueryThreadsActive,
+            CurrentMetrics::BackgroundQueryThreadsScheduled,
+            shared->server_settings[ServerSetting::max_thread_pool_size],
+            /*max_free_threads_=*/ 0,
+            /*queue_size_=*/ 0,
+            /*shutdown_on_exception_=*/ false);
+    });
+
+    return *shared->background_query_pool;
 }
 
 void Context::waitAllBackupsAndRestores() const
@@ -8757,6 +8798,24 @@ ReverseLookupCache & Context::getReverseLookupCache() const
             ReverseLookupCache::DEFAULT_SIZE_RATIO);
     }
     return *query_context->reverse_lookup_cache;
+}
+
+AIQuotaTrackerPtr Context::getAIQuotaTracker() const
+{
+    auto query_context = getQueryContext();
+
+    const auto & settings_ref = query_context->getSettingsRef();
+
+    std::lock_guard<ContextSharedMutex> lock(query_context->mutex);
+    if (!query_context->ai_quota_tracker)
+    {
+        query_context->ai_quota_tracker = std::make_shared<AIQuotaTracker>(
+            settings_ref[Setting::ai_function_max_input_tokens_per_query],
+            settings_ref[Setting::ai_function_max_output_tokens_per_query],
+            settings_ref[Setting::ai_function_max_api_calls_per_query],
+            settings_ref[Setting::ai_function_throw_on_quota_exceeded]);
+    }
+    return query_context->ai_quota_tracker;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

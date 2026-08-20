@@ -107,13 +107,13 @@ SELECT timeSeriesRateToGridMerge(100, 200, 20, 100)(st) = (SELECT timeSeriesRate
 DROP TABLE ts_agg_states;
 
 -- Servers of older versions serialize samples in hash-map order, so any wire order must be accepted. Both literals
--- are a FORMAT_VERSION 3 timeSeriesRateToGridState(100, 200, 20, 100) over samples (110, 1), (125, 3), (140, 2);
+-- are a FORMAT_VERSION 4 timeSeriesRateToGridState(100, 200, 20, 100) over samples (110, 1), (125, 3), (140, 2);
 -- in the second one the two 16-byte (timestamp, value) pairs of its two-sample bucket are swapped.
 -- Regenerate both literals if the serialization format ever changes.
 SELECT 'deserializing samples in a different wire order gives the same result (grid, 1):';
 WITH
-    CAST(unhex('03000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F0600000000000000020000000000000048E80100000000000000000000000840E0220200000000000000000000000040'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS sorted_state,
-    CAST(unhex('03000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F06000000000000000200000000000000E022020000000000000000000000004048E80100000000000000000000000840'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS swapped_state
+    CAST(unhex('04000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F0600000000000000020000000000000048E80100000000000000000000000840E0220200000000000000000000000040'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS sorted_state,
+    CAST(unhex('04000A00000000000000020000000000000005000000000000000100000000000000B0AD010000000000000000000000F03F06000000000000000200000000000000E022020000000000000000000000004048E80100000000000000000000000840'), 'AggregateFunction(timeSeriesRateToGrid(100, 200, 20, 100), DateTime64(3, \'UTC\'), Float64)') AS swapped_state
 SELECT finalizeAggregation(sorted_state), finalizeAggregation(sorted_state) = finalizeAggregation(swapped_state);
 
 -- Scalar path: the same series stored as one sorted part and as two parts with interleaved timestamps.
