@@ -13,6 +13,15 @@
 #include <Common/HashTable/Hash.h>
 
 
+namespace DB
+{
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+}
+
+
 /** Approximate calculation of anything, as usual, is constructed according to the following scheme:
   * - some data structure is used to calculate the value of X;
   * - Not all values are added to the data structure, but only selected ones (according to some selectivity criteria);
@@ -128,6 +137,14 @@ private:
         size_t place(UInt64 x) const { return (x >> (64 - UNIQUES_HASH_MAX_SIZE_DEGREE)) & mask(); }
         bool good(UInt64 hash) const { return hash == ((hash >> skip_degree) << skip_degree); }
     };
+
+    /// Thinning leaves at most 2 ^ (32 - skip_degree) hashes, and `shrinkIfNeed()` raises the
+    /// degree only while more than UNIQUES_HASH_MAX_SIZE of them remain, so one degree past the
+    /// thinning budget is the last it can produce.
+    static constexpr UInt8 max_skip_degree = UNIQUES_HASH_BITS_FOR_SKIP + 1;
+
+    /// The analogous bound for the wide set, whose hashes are 64-bit.
+    static constexpr UInt8 max_wide_skip_degree = (64 - UNIQUES_HASH_MAX_SIZE_DEGREE) + 1;
 
     UInt32 m_size;          /// Number of elements
     UInt8 size_degree{};      /// The size of the table as a power of 2
@@ -324,6 +341,11 @@ private:
             {
                 while (m_size > UNIQUES_HASH_MAX_SIZE)
                 {
+                    if (unlikely(skip_degree >= max_skip_degree))
+                        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                            "Cannot thin out UniquesHashSet: {} elements remain at the maximum skip degree of {}",
+                            static_cast<size_t>(m_size), static_cast<size_t>(max_skip_degree));
+
                     ++skip_degree;
                     rehash();
                 }
@@ -449,6 +471,11 @@ private:
             {
                 while (wide->m_size > UNIQUES_HASH_SET_WIDE_MAX_SIZE)
                 {
+                    if (unlikely(wide->skip_degree >= max_wide_skip_degree))
+                        throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                            "Cannot thin out the wide set of UniquesHashSet: {} elements remain at the maximum skip degree of {}",
+                            static_cast<size_t>(wide->m_size), static_cast<size_t>(max_wide_skip_degree));
+
                     ++wide->skip_degree;
                     wideRehash(*wide);
                 }
@@ -848,11 +875,17 @@ public:
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
             if (flags & ~1)
-                throw Poco::Exception("Cannot read UniquesHashSet: unknown flags.");
+                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
             has_wide = flags & 1;
         }
 
         DB::readBinaryLittleEndian(skip_degree, rb);
+
+        if (unlikely(skip_degree > max_skip_degree))
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                "Cannot read UniquesHashSet: skip degree is {}, which exceeds the maximum value of {}",
+                static_cast<size_t>(skip_degree), static_cast<size_t>(max_skip_degree));
+
         DB::readVarUInt(m_size, rb);
 
         if (m_size > UNIQUES_HASH_MAX_SIZE)
@@ -901,14 +934,15 @@ public:
         size_t wide_size = 0;
         DB::readVarUInt(wide_size, rb);
 
-        if (wide_size > UNIQUES_HASH_SET_WIDE_MAX_SIZE)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large wide set size.");
+        if (unlikely(wide_size > UNIQUES_HASH_SET_WIDE_MAX_SIZE))
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                "Cannot read UniquesHashSet: the wide set size is {}, which exceeds the maximum value of {}",
+                wide_size, static_cast<size_t>(UNIQUES_HASH_SET_WIDE_MAX_SIZE));
 
-        /// The structure never produces such thinning degrees (at 48 the number of possible values
-        /// passing the thinning is already below the maximum number of stored values),
-        /// and larger shifts would be undefined behavior.
-        if (wide_skip_degree >= 64)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large wide set skip_degree.");
+        if (unlikely(wide_skip_degree > max_wide_skip_degree))
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                "Cannot read UniquesHashSet: the wide set skip degree is {}, which exceeds the maximum value of {}",
+                static_cast<size_t>(wide_skip_degree), static_cast<size_t>(max_wide_skip_degree));
 
         UInt8 wide_size_degree = wide_size <= 1
             ? UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE
@@ -939,7 +973,7 @@ public:
             UInt8 flags = 0;
             DB::readBinaryLittleEndian(flags, rb);
             if (flags & ~1)
-                throw Poco::Exception("Cannot read UniquesHashSet: unknown flags.");
+                throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Cannot read UniquesHashSet: unknown flags");
             has_wide = flags & 1;
         }
 
@@ -957,8 +991,10 @@ public:
         rb.ignore();
         DB::readVarUInt(size, rb);
 
-        if (size > UNIQUES_HASH_SET_WIDE_MAX_SIZE)
-            throw Poco::Exception("Cannot read UniquesHashSet: too large wide set size.");
+        if (unlikely(size > UNIQUES_HASH_SET_WIDE_MAX_SIZE))
+            throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA,
+                "Cannot read UniquesHashSet: the wide set size is {}, which exceeds the maximum value of {}",
+                size, static_cast<size_t>(UNIQUES_HASH_SET_WIDE_MAX_SIZE));
 
         rb.ignore(sizeof(UInt64) * size);
     }
